@@ -1417,6 +1417,73 @@ public class PictureBookService {
     }
 
     /**
+     * POST /{bookObjectId}/scene/{sceneObjectId}/plan
+     * The plan inspector (V3 §12-§15, §18; P2-4): builds the scene's RenderPlan exactly as a render would
+     * and returns it without rendering - canvas, preset, style, config snapshot, model picks with their
+     * candidate trail, strategy, the compiled prompt per stage, degradations - plus {@code estimate}
+     * (§18, measured when this JVM has rendered that server/family before) and {@code contentHash}.
+     * Body (optional, sparse): { preset: "draft|standard|final", promptOverride, raw: true|false, model }.
+     * 404 book/scene (a scene of another book is 404), 400 unknown preset, 409 the book's style chain is
+     * not fully readable, 500 no SD backend. Read-only: nothing is persisted and the SD server is never
+     * contacted beyond its model list, which is cached.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/plan")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response planScene(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId, String json,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = null;
+        if (json != null && !json.isBlank()) {
+            body = JSONUtil.getMap(json.getBytes(java.nio.charset.StandardCharsets.UTF_8), String.class, Object.class);
+            if (body == null) {
+                return Response.status(400).entity("{\"error\":true,\"message\":\"Malformed request body\"}").build();
+            }
+        }
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.planScene(user, bookObjectId, sceneObjectId, body,
+                    resolveSdApiType(context), resolveSdServer(context))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/scene/{sceneObjectId}/render-plan
+     * Render the scene from its RenderPlan, synchronously (V3 §12, §16, §20; P2-5): the scene's RENDER_PLAN
+     * node is created on first use, the plan is persisted as its {@code renderPlan} artifact BEFORE anything
+     * is sent, the BASE stage goes through the renderer adapter (TEXT_ONLY; one image) and the image is
+     * recorded as the node's {@code base} artifact. No body. 200 with the executor's artifact DTO plus
+     * {@code planArtifactObjectId} / {@code planContentHash} / {@code strategy} / {@code stagesPlanned} /
+     * {@code stagesRendered}; 401 anonymous, 404 book/scene, 403 not the book's updater, 409 v1 book / pinned /
+     * in flight / no text / no installed model matches (the resolver's reason, with the plan artifact to inspect),
+     * 503 the renderer's inventory could not be read or the renderer is unreachable, 500 renderer error, no SD
+     * backend or unknown API type. Re-rolls go through POST /node/{id}/regenerate like any other node.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/render-plan")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response renderPlanScene(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestRenderPlanScene(user, bookObjectId, sceneObjectId,
+                    resolveSdApiType(context), resolveSdServer(context))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
      * POST /{bookObjectId}/render-all
      * Asynchronous render of every scene of the book that has a graph node, as one run and one
      * {@code pb.renderAll} job (shared upstream nodes are rendered once). Same semantics and status

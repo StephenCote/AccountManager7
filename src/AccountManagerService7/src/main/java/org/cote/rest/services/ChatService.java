@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -26,6 +27,7 @@ import org.cote.accountmanager.agent.AM7AgentTool;
 import org.cote.accountmanager.agent.ChainExecutor;
 import org.cote.accountmanager.mcp.McpContextBuilder;
 import org.cote.accountmanager.olio.llm.ChatListener;
+import org.cote.accountmanager.olio.llm.ChatSceneRenderUtil;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
 import org.cote.accountmanager.olio.llm.ChatLibraryUtil;
@@ -38,6 +40,7 @@ import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.llm.TemplatePatternEnumType;
 import org.cote.accountmanager.olio.illustration.IllustrationModelPolicy;
 import org.cote.accountmanager.olio.picturebook.PbModelPolicy;
+import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
@@ -1023,6 +1026,16 @@ public class ChatService {
 		}
 	}
 
+	/// A caller-supplied token that is about to be echoed into a log line and an error body: control
+	/// characters would let a request body forge a log line, and an unbounded value is reflected
+	/// verbatim. Strip the controls and cap the length; the trailing marker says it was cut.
+	private static final int ECHO_MAX = 32;
+	private static String boundedEcho(String s) {
+		if (s == null) return "";
+		String t = s.trim().replaceAll("[\\p{Cntrl}]", "?");
+		return t.length() <= ECHO_MAX ? t : t.substring(0, ECHO_MAX) + "...";
+	}
+
 	/// Escape a string for embedding inside a hand-built JSON string literal. Control characters
 	/// (newline, tab, ...) MUST be escaped too: the chain result's mcpContext block carries literal
 	/// newlines, and emitting them raw produced an unparseable `{"status":"complete",...}` body
@@ -1415,18 +1428,37 @@ public class ChatService {
 			sdConfig = JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 		}
 		if (sdConfig != null) {
-			/// Reject an unrecognized mode outright rather than letting resolveMode downgrade it to
-			/// classic: a caller who asked for "flux3" should be told, not silently given SDXL img2img.
 			String requestedMode = null;
 			try { requestedMode = sdConfig.get("compositeMode"); } catch (Exception e) { /* field may not exist */ }
+			/// V3 §37.3 Disable (Phase 2): an explicit request for the retired Kontext pipeline is invalid
+			/// content - 400 with the same "replaced by V3" message every entry point uses, not the
+			/// generic "unsupported" hint, so the caller learns it is retired rather than misspelled.
+			if (SceneCompositeUtil.isRetiredMode(requestedMode)) {
+				logger.warn("generateScene: retired compositeMode 'kontext' requested by " + user.get("name"));
+				return Response.status(400).entity("{\"error\":\"" + escJson(SceneCompositeUtil.KONTEXT_RETIRED_MESSAGE) + "\"}").build();
+			}
+			/// Reject an unrecognized mode outright rather than letting resolveMode downgrade it to
+			/// classic: a caller who asked for "flux3" should be told, not silently given SDXL img2img.
 			if (requestedMode != null && !requestedMode.isBlank() && !SceneCompositeUtil.isSupportedMode(requestedMode)) {
-				logger.warn("generateScene: unsupported compositeMode '" + requestedMode + "' requested by " + user.get("name"));
-				return Response.status(400).entity("{\"error\":\"Unsupported composite mode '" + escJson(requestedMode.trim())
+				String echoMode = boundedEcho(requestedMode);
+				logger.warn("generateScene: unsupported compositeMode '" + echoMode + "' requested by " + user.get("name"));
+				return Response.status(400).entity("{\"error\":\"Unsupported composite mode '" + escJson(echoMode)
 					+ "'; expected " + SceneCompositeUtil.SUPPORTED_MODES + "\"}").build();
 			}
 			if (sdConfig.get("refinerModel") == null) {
 				sdConfig.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
 			}
+		}
+		/// Pipeline selection lives in Objects7 (SceneCompositeUtil), not here - this endpoint is
+		/// transport. `false`: chat's absent-field fallback is classic, like every other caller (V3 design
+		/// §37.3 Deprecate, Phase 0; chat historically passed `true`). Resolved ONCE here, before the
+		/// session lookup and before the render-path branch, so a config that resolves to Kontext by the
+		/// legacy useKontext boolean is refused on BOTH render paths (409: the config's state, not the
+		/// request's syntax) before any DB, LLM or SD work - V3 §37.3 Disable, Phase 2.
+		String compositeMode = SceneCompositeUtil.resolveMode(sdConfig, false);
+		if (SceneCompositeUtil.isRetiredMode(compositeMode)) {
+			logger.warn("generateScene: config resolves to the retired compositeMode 'kontext' for " + user.get("name"));
+			return Response.status(409).entity("{\"error\":\"" + escJson(SceneCompositeUtil.KONTEXT_RETIRED_MESSAGE) + "\"}").build();
 		}
 		/// P2-3 one model policy (V3 §16): no `sd.model` defaulting here any more - the checkpoint for
 		/// each pass is resolved by PbModelPolicy against the renderer's inventory right before the
@@ -1487,17 +1519,20 @@ public class ChatService {
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		sdu.setImageAccessUser(user);
 
+		/// P2-7 (V3 §24.1): under chat.renderPath=v3 the scene renders through the shared illustration
+		/// service - one BASE stage from a transient RenderPlan, no landscape pass, no composite. The
+		/// switch is read here, at the top of the route, and nowhere below it. The v1 composite stays
+		/// the default and is untouched.
+		if (PbRenderPath.isChatV3()) {
+			return generateSceneV3(user, chat, req, sdu, sdConfig, systemChar, userChar, clientModel, objectId);
+		}
+
 		/// Parse scene config flags from sdConfig
 		boolean skipLandscape = false;
 		if (sdConfig != null) {
 			try { skipLandscape = (boolean) sdConfig.get("skipLandscape"); } catch (Exception e) { /* default false */ }
 		}
-		/// Pipeline selection lives in Objects7 (SceneCompositeUtil), not here — this endpoint is
-		/// transport. `false`: chat's absent-field fallback is now classic, like every other caller
-		/// (V3 design §37.3 Deprecate, Phase 0). Chat historically passed `true` so a config carrying
-		/// neither compositeMode nor useKontext ran Kontext; Kontext is deprecated and that default
-		/// is gone. A config that explicitly asks for Kontext still gets it (resolveMode logs a WARN).
-		String compositeMode = SceneCompositeUtil.resolveMode(sdConfig, false);
+		/// compositeMode was resolved (and a Kontext result refused) at the top of the route.
 		double sceneCreativity = SceneCompositeUtil.defaultCreativity(compositeMode);
 		if (sdConfig != null) {
 			try {
@@ -1583,8 +1618,8 @@ public class ChatService {
 			sceneResult.sysPortraitBytes, sceneResult.usrPortraitBytes, landscapeBytes,
 			sceneCreativity, sdConfig);
 		if (s2i == null) {
-			/// Unreachable for any mode resolveMode can return (it only yields the three supported
-			/// modes, and the request-level vocabulary check above already 400'd anything else); kept
+			/// Unreachable for any mode resolveMode can return (the two supported modes pass, the retired
+			/// kontext result was already 409'd above, and the vocabulary check 400'd anything else); kept
 			/// as a defensive guard so a future mode added to resolveMode but not buildSceneRequest
 			/// fails loudly with the mode named instead of an NPE.
 			logger.error("generateScene: could not build a request for compositeMode=" + compositeMode);
@@ -1617,8 +1652,61 @@ public class ChatService {
 		WebSocketService.chirpUser(user, new String[] {"sceneImage", objectId, imageOid});
 		WebSocketService.chirpUser(user, new String[] {"bgActivity", "", ""});
 
-		/// Return first image record
-		return Response.status(200).entity(images.get(0).toFullString()).build();
+		/// Return first image record, tagged with the path that produced it
+		return Response.status(200).entity(withRender(images.get(0), ChatSceneRenderUtil.describeV1())).build();
+	}
+
+	/// The v3 scene route (P2-7): LLM scene prompt as before, then one planned BASE render through the
+	/// shared illustration service. Every failure is a RenderFailure carrying its own HTTP status
+	/// (401/409/500/503) and the bgActivity chirp is always cleared. The response is the persisted
+	/// data record plus a `render` block (renderPath, strategy, compiledPrompt, model, canvas,
+	/// degradations, configNotApplied, ...) so the client can show what the plan path did and did not
+	/// honour from the saved SD config.
+	private Response generateSceneV3(BaseRecord user, Chat chat, OpenAIRequest req, SDUtil sdu, BaseRecord sdConfig,
+			BaseRecord systemChar, BaseRecord userChar, String clientModel, String objectId) {
+		WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Generating scene..."});
+		Chat.ScenePromptResult sceneResult = chat.generateScenePrompt(req, sdConfig);
+		if (sceneResult == null) {
+			logger.error("generateScene(v3): Failed to generate scene prompt");
+			WebSocketService.chirpUser(user, new String[] {"bgActivity", "", ""});
+			return Response.status(500).entity("{\"error\":\"Failed to generate scene prompt\"}").build();
+		}
+		String sysOid = systemChar.get(FieldNames.FIELD_OBJECT_ID);
+		String usrOid = userChar.get(FieldNames.FIELD_OBJECT_ID);
+		WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Rendering scene..."});
+		ChatSceneRenderUtil.ChatSceneRender render;
+		try {
+			render = ChatSceneRenderUtil.render(user, sdu, sdConfig, sceneResult, sysOid, usrOid, clientModel);
+		} catch (ChatSceneRenderUtil.RenderFailure f) {
+			logger.error("generateScene(v3): " + f.getStatus() + " " + f.getMessage());
+			WebSocketService.chirpUser(user, new String[] {"bgActivity", "", ""});
+			return Response.status(f.getStatus()).entity("{\"error\":\"" + escJson(f.getMessage()) + "\"}").build();
+		} catch (RuntimeException e) {
+			logger.error("generateScene(v3): unexpected failure", e);
+			WebSocketService.chirpUser(user, new String[] {"bgActivity", "", ""});
+			return Response.status(500).entity("{\"error\":\"Scene render failed\"}").build();
+		}
+		String imageOid = render.getData().get(FieldNames.FIELD_OBJECT_ID);
+		WebSocketService.chirpUser(user, new String[] {"sceneImage", objectId, imageOid});
+		WebSocketService.chirpUser(user, new String[] {"bgActivity", "", ""});
+		return Response.status(200).entity(withRender(render.getData(), render.describe())).build();
+	}
+
+	/// The data record's full JSON with a `render` block added; falls back to the bare record if the
+	/// record JSON cannot be re-read (it is Jackson output, so that would be a serializer defect).
+	private static String withRender(BaseRecord data, Map<String, Object> render) {
+		String base = data.toFullString();
+		try {
+			ObjectMapper om = new ObjectMapper();
+			JsonNode node = om.readTree(base);
+			if (node instanceof ObjectNode) {
+				((ObjectNode) node).set("render", om.valueToTree(render));
+				return om.writeValueAsString(node);
+			}
+		} catch (Exception e) {
+			logger.warn("generateScene: could not attach render block: " + e.getMessage());
+		}
+		return base;
 	}
 
 }

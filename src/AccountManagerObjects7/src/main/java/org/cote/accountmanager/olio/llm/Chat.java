@@ -2290,6 +2290,10 @@ public class Chat {
 		result.sysCharDesc = sysDesc;
 		result.usrCharDesc = usrDesc;
 		result.sceneDesc = sceneDesc;
+		result.settingDesc = settingDesc;
+		result.charNegativePrompt = (sysNeg != null && !sysNeg.isEmpty() ? sysNeg : null);
+		result.sysFirstName = systemChar.get("firstName");
+		result.usrFirstName = userChar.get("firstName");
 		logger.info("Scene prompt assembled: " + result.prompt.substring(0, Math.min(200, result.prompt.length())) + "...");
 		return result;
 	}
@@ -2409,6 +2413,12 @@ public class Chat {
 		public String sysCharDesc;
 		public String usrCharDesc;
 		public String sceneDesc;
+		/// The setting (else terrain) text the v1 prompt appends; empty when the setting is "random" and no terrain is set.
+		public String settingDesc;
+		/// The system character's narrative SD negative when it has one; null means the v1 default negative applied.
+		public String charNegativePrompt;
+		public String sysFirstName;
+		public String usrFirstName;
 	}
 
 	public String analyze(OpenAIRequest req, String command, boolean narrate, boolean reduce, boolean full) {

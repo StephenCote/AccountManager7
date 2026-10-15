@@ -409,18 +409,21 @@ public class TestFlux2Composite {
 
 	/// isSupportedMode is the request-time gate ChatService.generateScene uses to answer 400 for a
 	/// mode it does not know, instead of letting resolveMode quietly downgrade it to classic
-	/// (2026-10-07). resolveMode's lenient fallback for already-saved configs is unchanged.
+	/// (2026-10-07). resolveMode's lenient fallback for already-saved configs is unchanged. Since the
+	/// V3 §37.3 Disable stage (Phase 2, P2-8) "kontext" is no longer supported either — it is retired,
+	/// which TestKontextDeprecation pins separately (isRetiredMode, KONTEXT_RETIRED_MESSAGE).
 	@Test
-	public void unsupportedCompositeModeIsRejectedByTheGateButStillResolvesLeniently() throws Exception {
+	public void unsupportedOrRetiredCompositeModeIsRejectedByTheGateButStillResolvesLeniently() throws Exception {
 		assertTrue(SceneCompositeUtil.isSupportedMode("flux2"));
-		assertTrue(SceneCompositeUtil.isSupportedMode("kontext"));
+		assertFalse("kontext is retired (V3 §37.3 Disable) and no longer supported", SceneCompositeUtil.isSupportedMode("kontext"));
 		assertTrue(SceneCompositeUtil.isSupportedMode("classic"));
-		assertTrue("the gate is case-insensitive, like resolveMode", SceneCompositeUtil.isSupportedMode(" KONTEXT "));
+		assertTrue("the gate is case-insensitive, like resolveMode", SceneCompositeUtil.isSupportedMode(" FLUX2 "));
+		assertFalse(SceneCompositeUtil.isSupportedMode(" KONTEXT "));
 		assertFalse(SceneCompositeUtil.isSupportedMode("bogus"));
 		assertFalse(SceneCompositeUtil.isSupportedMode("flux3"));
 		assertFalse(SceneCompositeUtil.isSupportedMode(""));
 		assertFalse(SceneCompositeUtil.isSupportedMode(null));
-		assertEquals("flux2|kontext|classic", SceneCompositeUtil.SUPPORTED_MODES);
+		assertEquals("flux2|classic", SceneCompositeUtil.SUPPORTED_MODES);
 
 		BaseRecord cfg = sdConfig();
 		cfg.set("compositeMode", "bogus");
@@ -623,21 +626,19 @@ public class TestFlux2Composite {
 		assertEquals("model is untouched", SWUtil.defaultFlux2Model(), req.getModel());
 	}
 
-	/// Same contract in Kontext mode: Kontext also composes its own prompt (and uses an init image
-	/// rather than promptimages), so the override has to replace it there too.
+	/// V3 §37.3 Disable (P2-8): the builder itself refuses the retired Kontext mode, so a caller that
+	/// bypasses the entry-point gates by passing the constant still gets no request (the kontext branch
+	/// stays in the source, unreachable, until Phase 10 Remove). Until P2-8 this case built a Kontext
+	/// request and pinned the prompt-override contract on it; that contract stays pinned on flux2 above.
 	@Test
-	public void promptOverrideReplacesKontextComposedPrompt() throws Exception {
-		SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(SceneCompositeUtil.MODE_KONTEXT,
-			LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, OVERRIDE, "",
-			fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
-			0.65, null);
-		assertNotNull(req);
-		assertFalse("Kontext composes its own prompt; classicPrompt must not appear in it",
-			req.getPrompt().contains("translucent wings"));
-		Object initBefore = req.getInitImage();
-		SceneCompositeUtil.applyPromptOverride(req, OVERRIDE);
-		assertEquals(OVERRIDE, req.getPrompt());
-		assertEquals("init image is untouched", initBefore, req.getInitImage());
+	public void builderRefusesTheRetiredKontextMode() throws Exception {
+		for (String mode : new String[] { SceneCompositeUtil.MODE_KONTEXT, " Kontext " }) {
+			SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(mode,
+				LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, OVERRIDE, "",
+				fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
+				0.65, null);
+			assertNull("mode '" + mode + "' is retired; the builder must not produce a request", req);
+		}
 	}
 
 	/// A null, blank, or absent override is a no-op — the composed prompt is what gets sent. This is

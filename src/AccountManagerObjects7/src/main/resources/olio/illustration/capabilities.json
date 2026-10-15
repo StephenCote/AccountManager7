@@ -27,7 +27,15 @@
     "(~40 s per reference at 1024 px / 4 steps, 706 s for 3 references at 24 steps) was measured on the",
     "Strix Halo iGPU, not on the .39 GPU this work targets, and design sections 15 and 18 say estimate",
     "seeds must be measured on .39 before they are shown to anyone. P2-4's live render on .39 is the",
-    "first measurement; until then an estimate that needs this value must say it has none."
+    "first measurement; until then an estimate that needs this value must say it has none.",
+    "",
+    "promptTokenBudget (added P2-4, section 14) is the positive-prompt budget the compiler truncates",
+    "to, recorded as a PROMPT_TRUNCATED degradation (section 19). The figures are judgements, not",
+    "measured encoder limits: *xl* 225 = three 75-token CLIP chunks, flux2* 512 for the T5 encoder,",
+    "*kontext* 225 (disabled anyway). The estimator (PromptBudget.estimateTokens) is a whitespace /",
+    "punctuation approximation - the repo has no CLIP BPE tokenizer - so the budget is a soft bound.",
+    "nativeResolutions is advisory: CanvasResolver snaps to 64 px, it does not pick from this list;",
+    "832x1216 / 1216x832 are the SDXL portrait / landscape page buckets."
   ],
 
   "families": [
@@ -46,7 +54,8 @@
       "recommendedSteps": { "low": 4, "default": 4, "high": 24 },
       "cfgRange": [1.0, 3.5],
       "nativeResolutions": [[1024, 768], [768, 1024], [1024, 1024]],
-      "secondsPerStepPerReference": null
+      "secondsPerStepPerReference": null,
+      "promptTokenBudget": 512
     },
     {
       "pattern": "*xl*",
@@ -62,8 +71,9 @@
       "supportsBatch": true,
       "recommendedSteps": { "low": 12, "default": 20, "high": 30 },
       "cfgRange": [5.0, 7.0],
-      "nativeResolutions": [[1024, 1024], [1024, 768], [768, 1024]],
-      "secondsPerStepPerReference": null
+      "nativeResolutions": [[1024, 1024], [1024, 768], [768, 1024], [832, 1216], [1216, 832]],
+      "secondsPerStepPerReference": null,
+      "promptTokenBudget": 225
     },
     {
       "pattern": "*kontext*",
@@ -80,7 +90,8 @@
       "recommendedSteps": { "low": 20, "default": 28, "high": 28 },
       "cfgRange": [1.0, 1.0],
       "nativeResolutions": [[1024, 1024]],
-      "secondsPerStepPerReference": null
+      "secondsPerStepPerReference": null,
+      "promptTokenBudget": 225
     }
   ]
 }

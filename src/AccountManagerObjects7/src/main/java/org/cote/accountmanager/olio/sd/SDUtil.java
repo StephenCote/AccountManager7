@@ -235,6 +235,15 @@ public class SDUtil {
 		return resp;
 	}
 
+	/// Bytes of an image the server addressed by the relative path it returned in a txt2img response
+	/// (Swarm's `View/...` paths), or null when it could not be fetched.
+	public byte[] fetchImageBytes(String relativePath) {
+		if(relativePath == null || relativePath.isEmpty()) {
+			return null;
+		}
+		return ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + relativePath), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+	}
+
 	/// Installed checkpoints as the server lists them, or an empty list when the list could not be
 	/// read. Callers that must tell "nothing installed" from "could not ask" use listModelsOrNull().
 	public List<String> listModels() {
@@ -344,23 +353,32 @@ public class SDUtil {
 	 */
 	public static String appendLoras(String prompt, BaseRecord sdConfig) {
 		if (prompt == null) return prompt;
-		prompt = DocumentUtil.replaceSmartQuotes(prompt);
-		if (sdConfig == null) return prompt;
-		try {
-			List<String> loras = sdConfig.get("loras");
-			if (loras != null && !loras.isEmpty()) {
-				StringBuilder buff = new StringBuilder(prompt);
-				for (String lora : loras) {
-					if (lora == null || lora.isEmpty()) continue;
-					// Entry format is "name:weight" — convert to "<lora:name:weight>"
-					buff.append(", <lora:").append(lora).append(">");
-				}
-				return buff.toString();
+		List<String> loras = null;
+		if (sdConfig != null) {
+			try {
+				loras = sdConfig.get("loras");
+			} catch (Exception e) {
+				// loras field may not exist on the config
 			}
-		} catch (Exception e) {
-			// loras field may not exist on the config
 		}
-		return prompt;
+		return appendLoraTags(prompt, loras);
+	}
+
+	/// Same as {@link #appendLoras(String, BaseRecord)} for callers holding the loras list rather
+	/// than the config record (the illustration compiler works from a config snapshot map). Smart
+	/// quotes are normalised on the finished prompt here too, with or without LoRAs. Not an
+	/// overload of appendLoras: a null second argument would be ambiguous between the two.
+	public static String appendLoraTags(String prompt, List<String> loras) {
+		if (prompt == null) return prompt;
+		prompt = DocumentUtil.replaceSmartQuotes(prompt);
+		if (loras == null || loras.isEmpty()) return prompt;
+		StringBuilder buff = new StringBuilder(prompt);
+		for (String lora : loras) {
+			if (lora == null || lora.isEmpty()) continue;
+			// Entry format is "name:weight" — convert to "<lora:name:weight>"
+			buff.append(", <lora:").append(lora).append(">");
+		}
+		return buff.toString();
 	}
 
 	public int getSteps() {

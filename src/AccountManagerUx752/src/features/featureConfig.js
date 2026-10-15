@@ -27,16 +27,20 @@ let error = null;
 let successMsg = null;
 // D2: a client wiring id with no manifest entry is a hard error surfaced here, never a silent skip.
 let manifestErrors = [];
-// PictureBook V3 render-path switch per product (design §28.1 Stage 1). Boot-pinned on the server and
-// read-only here; a missing or failed GET means "v1" for both, which is also the server default.
-const RENDER_PATH_DEFAULT = Object.freeze({ picturebook: 'v1', chapbook: 'v1' });
+// PictureBook V3 render-path switch per product (design §28.1; Stage 1 for PictureBook, Stage 2 for
+// ChapBook since P2-6, chat scene since P2-7). Boot-pinned on the server and read-only here; a missing
+// or failed GET, a null body or an unrecognised value means the server's own product default -
+// picturebook v1, chapbook v3 (chapbook v1 is the rollback value, which the server only ever reports
+// when it was set explicitly), chat v1.
+const RENDER_PATH_DEFAULT = Object.freeze({ picturebook: 'v1', chapbook: 'v3', chat: 'v1' });
 let renderPathState = RENDER_PATH_DEFAULT;
 
 function normalizeRenderPath(rp) {
     if (!rp || typeof rp !== 'object') return RENDER_PATH_DEFAULT;
     return {
         picturebook: rp.picturebook === 'v3' ? 'v3' : 'v1',
-        chapbook: rp.chapbook === 'v3' ? 'v3' : 'v1'
+        chapbook: rp.chapbook === 'v1' ? 'v1' : 'v3',
+        chat: rp.chat === 'v3' ? 'v3' : 'v1'
     };
 }
 
@@ -274,14 +278,15 @@ let featureConfigView = {
             ),
 
             // Render path — deployment-wide, boot-pinned, read-only (no PUT exists; changing it is a
-            // restart with PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH set).
+            // restart with PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH / CHAT_RENDER_PATH set).
             m("div", { class: "mt-6 border-t border-gray-200 dark:border-gray-700 pt-4", "data-testid": "render-path" }, [
                 m("h3", { class: "field-label mb-2" }, "Render Path"),
                 m("p", { class: "text-sm text-gray-500 dark:text-gray-400 mb-2" },
-                    "PictureBook rendering engine per product. Set at deployment start-up (picturebook.renderPath / chapbook.renderPath); not editable here."),
+                    "Rendering engine per product. Set at deployment start-up (picturebook.renderPath / chapbook.renderPath / chat.renderPath); not editable here."),
                 m("div", { class: "flex gap-4 text-sm" }, [
                     renderPathChip("PictureBook", renderPathState.picturebook, "render-path-picturebook"),
-                    renderPathChip("ChapBook", renderPathState.chapbook, "render-path-chapbook")
+                    renderPathChip("ChapBook", renderPathState.chapbook, "render-path-chapbook"),
+                    renderPathChip("Chat", renderPathState.chat, "render-path-chat")
                 ])
             ]),
 

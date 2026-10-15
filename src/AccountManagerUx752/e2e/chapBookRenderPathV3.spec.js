@@ -13,7 +13,9 @@
  *     dataObjectId is the scene's imageObjectId; approve pins the node (a re-render is then 409 "pinned");
  *     reject keeps the lone revision selected but REJECTED; unpin + a prompt edit mark the node STALE; a
  *     re-render supersedes revision 1 with a selected revision 2 and clears imageStale; the reader shows the
- *     image (naturalWidth > 0) and is screenshotted for visual inspection.
+ *     image (naturalWidth > 0) and is screenshotted for visual inspection. Since P2-6 (ChapBook goes V3,
+ *     design §24 as-built) the page compiles through the plan path: the node carries a renderPlan artifact
+ *     per render, the job's node outcome reports configNotApplied, and the review queue lists images only.
  *   TEST B (SD): the book's auto-approve switch: a render with autoApprove=true answers autoApproved=true /
  *     APPROVED, the artifact's approvedBy is AUTO, the node is pinned, and the review queue's
  *     auto-approved filter lists it.
@@ -186,6 +188,14 @@ test.describe('ChapBook on the v3 render path — LIVE SD over REST', () => {
         expect(jobNode, 'the job result names the page node').toBeTruthy();
         expect(DONE_STATUSES).toContain(String(jobNode.status).toUpperCase());
         console.log('[v3 job] node durationMs=' + jobNode.durationMs + ' total durationMs=' + job.result.durationMs);
+        // P2-6 (design §24 as-built): the page compiled through the plan path, and what the v1 page path applied
+        // that the plan does not (sd.config style clause, hires, the default negative) is reported per render as
+        // "CODE: text" entries, never dropped silently. These are not degradations (logged, not asserted empty).
+        expect(Array.isArray(jobNode.configNotApplied), 'P2-6: the node outcome reports configNotApplied').toBe(true);
+        for (const entry of jobNode.configNotApplied) {
+            expect(entry, 'configNotApplied entry shape').toMatch(/^(HIRES|STYLE_CLAUSE|DEFAULT_NEGATIVE): \S/);
+        }
+        console.log('[v3 job] configNotApplied=' + JSON.stringify(jobNode.configNotApplied) + ' degradations=' + JSON.stringify(jobNode.degradations || []));
 
         // ── 3. The artifact row: selected landscape revision 1, GENERATED, data = the scene image ──
         const art1 = await artifactView(request, bookOid, first.artifactObjectId);
@@ -207,6 +217,10 @@ test.describe('ChapBook on the v3 render path — LIVE SD over REST', () => {
         expect(first.node.artifacts && first.node.artifacts.landscape, 'node view groups the chain by role').toBeTruthy();
         expect(first.node.artifacts.landscape.length).toBe(1);
         expect(first.node.artifacts.landscape[0].objectId).toBe(first.artifactObjectId);
+        // P2-6: the plan is persisted as the node's renderPlan artifact beside the image (§12 rule 1).
+        expect(first.node.artifacts.renderPlan, 'P2-6: the page node carries its plan artifact').toBeTruthy();
+        expect(first.node.artifacts.renderPlan.length, 'one plan per render').toBe(1);
+        expect(first.node.artifacts.renderPlan[0].objectId).not.toBe(first.artifactObjectId);
         const run = await jsonOf(await request.get(PB_REST + '/' + bookOid + '/run/' + first.body.runObjectId), 'GET run');
         console.log('[v3 run] →', JSON.stringify(run));
         expect(run.runStatus).toBe('COMPLETED');
@@ -285,17 +299,19 @@ test.describe('ChapBook on the v3 render path — LIVE SD over REST', () => {
         expect(String(chain[0].reviewStatus).toUpperCase()).toBe('REJECTED');
         expect(chain[1].objectId).toBe(second.artifactObjectId);
         expect(chain[1].selected).toBe(true);
+        expect(second.node.artifacts.renderPlan.length, 'P2-6: a new plan artifact per render').toBe(2);
         scene = await sceneByObjectId(request, scene0);
         expect(scene.imageStale, 're-render clears imageStale').toBe(false);
         after = (await bookPages(request, bookOid)).find(p => p.objectId === scene0);
         expect(after.dataObjectId, 'the page now shows revision 2').toBe(second.imageObjectId);
 
-        // ── 10. The review queue lists the node with both revisions ──
+        // ── 10. The review queue lists the node with both image revisions — and not its two plan artifacts (P2-6) ──
         const queue = await jsonOf(await request.get(PB_REST + '/' + bookOid + '/review-queue'), 'GET review-queue');
         console.log('[v3 review-queue] →', JSON.stringify(queue));
         const qn = (queue.nodes || []).find(n => n.nodeObjectId === first.body.nodeObjectId);
         expect(qn, 'the rendered page node is in the queue').toBeTruthy();
-        expect(qn.artifacts.length).toBe(2);
+        expect(qn.artifacts.length, 'the queue lists the image revisions only, never the renderPlan artifacts').toBe(2);
+        expect(qn.artifacts.every(a => a.role === 'landscape'), 'every queued artifact is the landscape role').toBe(true);
         expect(queue.artifactCount).toBeGreaterThanOrEqual(2);
 
         // ── 11. Visual proof: the reader loads and decodes the v3 artifact image ──

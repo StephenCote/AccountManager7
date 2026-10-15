@@ -25,8 +25,9 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * PictureBook V3 Phase 1, P1-8 (design §28.1 Stage 1): the boot-pinned {@link PbRenderPath} switch and the
- * {@link PbServiceFacade} gate it drives.
+ * PictureBook V3 Phase 1, P1-8 (design §28.1 Stage 1) and Phase 2, P2-6 (§28.1 Stage 2 for ChapBook): the
+ * boot-pinned {@link PbRenderPath} switch - one default per product, PictureBook {@code v1}, ChapBook
+ * {@code v3} with {@code v1} as the rollback value - and the {@link PbServiceFacade} gate it drives.
  * <p>
  * The resolver cases are pure. The facade cases run against the shared {@code pb2c-graph} fixture book in
  * {@code am7db} (the same book TestPbAutoApprove / TestPbReview / TestPbRenderJob use): with both products
@@ -60,15 +61,20 @@ public class TestPbRenderPath extends BaseTest {
 
 	// ─────────────────────────────── resolver ───────────────────────────────
 
-	/** Absent (null / blank) pins v1 for that product; the call never throws. */
+	/**
+	 * Absent (null / blank) pins the product default - v1 for PictureBook (§28.1 Stage 1) and v3 for ChapBook
+	 * (§28.1 Stage 2, P2-6); the call never throws.
+	 */
 	@Test
-	public void case01_absentIsV1() {
+	public void case01_absentIsTheProductDefault() {
+		assertEquals(PbRenderPath.V1, PbRenderPath.PICTUREBOOK_DEFAULT);
+		assertEquals(PbRenderPath.V3, PbRenderPath.CHAPBOOK_DEFAULT);
 		PbRenderPath.configure(null, null);
 		assertEquals(PbRenderPath.V1, PbRenderPath.pictureBook());
-		assertEquals(PbRenderPath.V1, PbRenderPath.chapBook());
+		assertEquals(PbRenderPath.V3, PbRenderPath.chapBook());
 		PbRenderPath.configure("", "   ");
 		assertEquals(PbRenderPath.V1, PbRenderPath.pictureBook());
-		assertEquals(PbRenderPath.V1, PbRenderPath.chapBook());
+		assertEquals(PbRenderPath.V3, PbRenderPath.chapBook());
 	}
 
 	/** Each product is independent, and the value is trimmed and case-insensitive. */
@@ -85,15 +91,55 @@ public class TestPbRenderPath extends BaseTest {
 		assertEquals(PbRenderPath.V1, PbRenderPath.chapBook());
 	}
 
-	/** An unrecognised value pins v1 (a typo must never silently enable V3) and never throws. */
+	/**
+	 * An unrecognised value pins the product default (a typo must never silently move a product off its
+	 * default: PictureBook cannot be enabled, ChapBook cannot be rolled back, by a misspelling) and never throws.
+	 */
 	@Test
-	public void case03_unrecognisedIsV1() {
+	public void case03_unrecognisedIsTheProductDefault() {
 		PbRenderPath.configure("v2", "x");
 		assertEquals(PbRenderPath.V1, PbRenderPath.pictureBook());
-		assertEquals(PbRenderPath.V1, PbRenderPath.chapBook());
+		assertEquals(PbRenderPath.V3, PbRenderPath.chapBook());
 		PbRenderPath.configure("v3", "graph");
 		assertEquals(PbRenderPath.V3, PbRenderPath.pictureBook());
-		assertEquals("the bad chapbook value must not borrow the picturebook value", PbRenderPath.V1, PbRenderPath.chapBook());
+		assertEquals("the bad chapbook value pins the chapbook default", PbRenderPath.V3, PbRenderPath.chapBook());
+		PbRenderPath.configure("graph", "v1");
+		assertEquals("the bad picturebook value must not borrow the chapbook value", PbRenderPath.V1, PbRenderPath.pictureBook());
+		assertEquals(PbRenderPath.V1, PbRenderPath.chapBook());
+	}
+
+	/**
+	 * P2-6 (§28.1 Stage 2): {@code chapbook.renderPath=v1} is the rollback value. It is honoured - the facade
+	 * refuses a CHAPBOOK book with the 409 that names the key and the env var - and it is independent of the
+	 * PictureBook value in both directions; absent restores the v3 default.
+	 */
+	@Test
+	public void case10_chapBookV1IsRollback() throws Exception {
+		BaseRecord chap = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK);
+		chap.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.CHAPBOOK.toString());
+		assertEquals(PbRenderPath.V3, PbRenderPath.chapBook());
+		assertTrue("the default admits ChapBook on v3", PbRenderPath.isV3(chap));
+		PbRenderPath.requireV3(chap);
+
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
+		assertEquals(PbRenderPath.V1, PbRenderPath.chapBook());
+		assertEquals("rollback leaves PictureBook alone", PbRenderPath.V3, PbRenderPath.pictureBook());
+		assertFalse(PbRenderPath.isV3(chap));
+		try {
+			PbRenderPath.requireV3(chap);
+			fail("CHAPBOOK under the rollback value must be refused");
+		}
+		catch(PictureBookException e) {
+			assertEquals(409, e.getStatus());
+			assertTrue(e.getMessage(), e.getMessage().startsWith(PbRenderPath.REFUSAL_PREFIX));
+			assertTrue(e.getMessage(), e.getMessage().contains(PbRenderPath.CHAPBOOK_CONFIG_KEY + "=" + PbRenderPath.V3));
+			assertTrue(e.getMessage(), e.getMessage().contains("CHAPBOOK_RENDER_PATH"));
+		}
+
+		PbRenderPath.configure(PbRenderPath.V1, null);
+		assertEquals("absent after a rollback restores the chapbook default", PbRenderPath.V3, PbRenderPath.chapBook());
+		assertEquals(PbRenderPath.V1, PbRenderPath.pictureBook());
+		assertTrue(PbRenderPath.isV3(chap));
 	}
 
 	/** The test properties pin v3/v3 and BaseTest re-applies them, so after setup both products read v3. */

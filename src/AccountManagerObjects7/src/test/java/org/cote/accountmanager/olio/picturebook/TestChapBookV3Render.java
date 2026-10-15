@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -24,10 +25,16 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
+import org.cote.accountmanager.olio.illustration.RendererAdapter;
+import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.swarm.SWImageResponse;
+import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -36,6 +43,7 @@ import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
+import org.cote.accountmanager.schema.type.PbStrategyEnumType;
 import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -44,18 +52,25 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * PictureBook V3 Phase 1, P1-9 (design §24): a ChapBook page on {@code chapbook.renderPath=v3} renders as
- * a LANDSCAPE graph node with an artifact through the same {@code pb.render} job PictureBooks use, the
- * page's {@code imageStale} maps to node STALE, and select/approve/reject plus auto-approve apply.
+ * PictureBook V3 Phase 1 P1-9 and Phase 2 P2-6 (design §24, §28.1): a ChapBook page on
+ * {@code chapbook.renderPath=v3} renders as a LANDSCAPE graph node with an artifact through the same
+ * {@code pb.render} job PictureBooks use, the page's {@code imageStale} maps to node STALE, and
+ * select/approve/reject plus auto-approve apply. Since P2-6 the page is <em>planned</em>: the executor builds
+ * and persists a {@code renderPlan} artifact (TEXT_ONLY, the page's {@code sdPrompt} as the plan's location
+ * text) before any renderer call, refuses with the plan artifact named when no installed model resolves, and
+ * sends the compiled BASE stage through the illustration adapter - so every case here reads the plan back.
  * <p>
  * Live against {@code am7db} and the Swarm node named by {@code test.swarm.server}; nothing is mocked.
  * {@code BaseTest.setup()} pins both render paths to {@code v3} from {@code resource.properties} before every
- * case, so this class never pins them itself except for the one v1-default case, which restores inside a
- * {@code finally}. Non-GPU cases hand the package-private seams an {@link SDUtil} subclass that records the
- * config reaching {@code createImage} and returns no images (the node then FAILS without touching a GPU);
- * the live cases delegate to the real {@code createImage}. The v3 path drops the per-request client
- * overlay by design, so the installed checkpoint from {@link SdTestGate#requireRenderConfig} is stored on
- * the book tier through {@link ChapBookUtil#setBookSdConfig}. Timings are recorded, never asserted.
+ * case, so this class never pins them itself except for the one rollback case, which restores inside a
+ * {@code finally}. Non-GPU cases hand the package-private seams an {@link SDUtil} subclass that records every
+ * {@code txt2img} request (the one seam both the v1 {@code createImage} path and the v3 adapter go through) and
+ * returns no response - the node then FAILS without touching a GPU. On v3 a model must still resolve against
+ * the Swarm inventory before {@code txt2img} is reached, so those cases are gated on Swarm being reachable
+ * (an {@code Assume} skip, reported as a skip, never a pass). The live cases delegate to the real
+ * {@code txt2img}. The v3 path drops the per-request client overlay by design, so the installed checkpoint
+ * from {@link SdTestGate#requireRenderConfig} is stored on the book tier through
+ * {@link ChapBookUtil#setBookSdConfig}. Timings are recorded, never asserted.
  */
 public class TestChapBookV3Render extends BaseTest {
 
@@ -64,6 +79,14 @@ public class TestChapBookV3Render extends BaseTest {
 	/// Render budgets, not thresholds: timings are recorded, never asserted.
 	private static final long RENDER_TIMEOUT_MS = 20L * 60L * 1000L;
 	private static final long JOB_WAIT_MS = 15L * 60L * 1000L;
+	private static final String BOGUS_DEPLOYMENT = "p26-nonexistent-deployment-default.safetensors";
+	private static final String PLAN_MARKER = "(plan artifact ";
+	/// P2-6 §24: a scene override that sets every knob the plan path reports under configNotApplied.
+	private static final String OVERRIDE_STYLE = "photograph";
+	private static final String OVERRIDE_NEGATIVE = "blurry, low quality, text";
+	/// Each configNotApplied entry is "CODE: text" for one of the three published codes.
+	private static final Pattern NOT_APPLIED_SHAPE = Pattern.compile("^(" + PbNodeExecutor.NOT_APPLIED_HIRES + "|"
+		+ PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE + "|" + PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE + "): \\S");
 
 	private static final String POEM_TEXT =
 		"Outside, all is pristine,\n" +
@@ -93,6 +116,9 @@ public class TestChapBookV3Render extends BaseTest {
 		testUser = IOSystem.getActiveContext().getFactory()
 			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());
 		assertNotNull("chapbookTestUser must be created", testUser);
+		/// The plan path resolves the model against the Swarm inventory; never let one case's cached list (or
+		/// a cached outage) decide the next.
+		SwarmModelInventory.invalidateAll();
 	}
 
 	// ─────────────────────────────── graph shape (no GPU) ───────────────────────────────
@@ -102,10 +128,12 @@ public class TestChapBookV3Render extends BaseTest {
 	 * node is created once and reused (two submits yield the same {@code nodeObjectId}), it is a LANDSCAPE node
 	 * with the scene's landscape handle, the scene is linked to it through {@code sceneNode}, and its
 	 * {@code promptText} mirrors the scene's {@code sdPrompt}. The job carries the caller's {@link SDUtil}: the
-	 * config reaching {@code createImage} starts with the stored prompt. With no image returned the node FAILS.
+	 * one {@code txt2img} request the plan path sends starts with the stored prompt. With no response the node
+	 * FAILS, naming the plan artifact. Gated on Swarm: the plan path must resolve a model before it renders.
 	 */
 	@Test(timeout = RENDER_TIMEOUT_MS)
 	public void pageNodeIsCreatedOnceAndLinkedToTheScene() throws Exception {
+		SdTestGate.requireSwarmReachable(swarmServer());
 		Fixture fx = createFixture("graph");
 		String sceneOid = fx.sceneOids.get(0);
 		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, GENUINE_PROMPT));
@@ -123,10 +151,10 @@ public class TestChapBookV3Render extends BaseTest {
 		assertNotNull("The DTO must carry the run", first.get("runObjectId"));
 		AsyncJob job1 = awaitJob(jobId);
 		logger.info("P1-9 graph submit 1: job " + jobId + " -> " + job1.getStatus() + " result=" + job1.getResult());
-		assertEquals("createImage must have been called exactly once by the job", 1, sdu1.captured.size());
-		String description = sdu1.captured.get(0).get("description");
-		assertTrue("The job must render the stored prompt (styled), got: " + description,
-			description != null && description.startsWith(GENUINE_PROMPT));
+		assertEquals("txt2img must have been reached exactly once by the job", 1, sdu1.captured.size());
+		String prompt = sdu1.captured.get(0).getPrompt();
+		assertTrue("The job must render the stored prompt (compiled), got: " + prompt,
+			prompt != null && prompt.startsWith(GENUINE_PROMPT));
 
 		BaseRecord node = PbGraphUtil.readNode(testUser, nodeOid, fx.orgId);
 		assertNotNull("The page node must be readable", node);
@@ -134,8 +162,11 @@ public class TestChapBookV3Render extends BaseTest {
 		assertEquals("The page node uses the scene's landscape handle", PbPipelineUtil.landscapeHandle(sceneOid), node.get(OlioFieldNames.FIELD_PB_HANDLE));
 		assertEquals("The node mirrors the scene prompt", GENUINE_PROMPT, node.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT));
 		assertEquals("The node carries the scene index", Integer.valueOf(0), node.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
-		assertEquals("With no image returned the page node FAILS", PbNodeStatusEnumType.FAILED.name(), status(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		assertEquals("With no response the page node FAILS", PbNodeStatusEnumType.FAILED.name(), status(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
 		assertFalse("A failed page node is not pinned", Boolean.TRUE.equals(node.get(OlioFieldNames.FIELD_PB_PINNED)));
+		String lastError = node.get(OlioFieldNames.FIELD_PB_LAST_ERROR);
+		assertTrue("The failure names the plan artifact, got: " + lastError, lastError != null && lastError.contains(PLAN_MARKER));
+		assertTrue("The failure is the adapter's no-response error, got: " + lastError, lastError.contains(RendererAdapter.ERROR_UNREACHABLE));
 
 		BaseRecord scene = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
 		BaseRecord sceneNode = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
@@ -151,6 +182,8 @@ public class TestChapBookV3Render extends BaseTest {
 		AsyncJob job2 = awaitJob((String) second.get("jobId"));
 		logger.info("P1-9 graph submit 2: job " + second.get("jobId") + " -> " + job2.getStatus());
 		assertEquals("The second job must re-execute the (unpinned) node", 1, sdu2.captured.size());
+		assertEquals("Each attempt persists its own plan artifact", 2,
+			PbArtifactUtil.listChain(testUser, PbGraphUtil.readNode(testUser, nodeOid, fx.orgId), PbPipelineUtil.ROLE_RENDER_PLAN).size());
 
 		BaseRecord book = PbBookUtil.readBook(testUser, fx.bookOid, fx.orgId);
 		BaseRecord workflow = PbGraphUtil.findWorkflow(testUser, book);
@@ -184,7 +217,7 @@ public class TestChapBookV3Render extends BaseTest {
 		assertNull("No job for a skipped page", result.jobId);
 		assertNull("No node for a skipped page", result.nodeObjectId);
 		assertNull("No image for a skipped page", result.imageObjectId);
-		assertTrue("createImage must never be reached for an un-prompted page", sdu.captured.isEmpty());
+		assertTrue("txt2img must never be reached for an un-prompted page", sdu.captured.isEmpty());
 
 		try {
 			PbServiceFacade.requestChapBookPageRender(testUser, fx.bookOid, sceneOid, sdu, swarmServer());
@@ -205,12 +238,55 @@ public class TestChapBookV3Render extends BaseTest {
 	}
 
 	/**
+	 * P2-6: a whitespace-only {@code sdPrompt} is "no prompt" - the facade's blank check, not a null check -
+	 * and the refusal is the exact pinned message naming the page index. {@link ChapBookUtil#setSceneLandscapePrompt}
+	 * trims blank to null, so the scene is patched directly to prove {@code "   "} is what is stored. The refusal
+	 * comes before any graph work: no txt2img request, no page node, the scene stays unlinked. No GPU.
+	 */
+	@Test
+	public void whitespaceOnlyPromptIsRefusedWithTheExactNoPromptMessage() throws Exception {
+		Fixture fx = createFixture("ws");
+		String sceneOid = fx.sceneOids.get(1);
+		BaseRecord scene = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertNotNull(scene);
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		assertNotNull("The scene carries its page index", sceneIndex);
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_CB_SD_PROMPT);
+		patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, "   ");
+		assertNotNull("The whitespace prompt patch must be written", IOSystem.getActiveContext().getAccessPoint().update(testUser, patch));
+		BaseRecord stored = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertEquals("Precondition: whitespace is what is stored, not null", "   ", stored.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+
+		CapturingSdu sdu = new CapturingSdu(swarmServer(), false);
+		try {
+			PbServiceFacade.requestChapBookPageRender(testUser, fx.bookOid, sceneOid, sdu, swarmServer());
+			fail("The facade must refuse a whitespace-only prompt");
+		} catch (PictureBookException e) {
+			logger.info("P2-6 whitespace prompt refusal: " + e.getStatus() + " " + e.getMessage());
+			assertEquals(409, e.getStatus());
+			assertEquals("Page " + sceneIndex + " has no prompt; set or generate its landscape prompt before rendering it", e.getMessage());
+		}
+		assertTrue("txt2img must never be reached for a whitespace-only prompt", sdu.captured.isEmpty());
+
+		BaseRecord book = PbBookUtil.readBook(testUser, fx.bookOid, fx.orgId);
+		BaseRecord workflow = PbGraphUtil.findWorkflow(testUser, book);
+		if (workflow != null) {
+			assertNull("A whitespace-prompted page must not get a node",
+				PbPipelineUtil.findNodeByHandle(testUser, workflow, PbPipelineUtil.landscapeHandle(sceneOid)));
+		}
+		BaseRecord after = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertNull("The scene must stay unlinked", after.get(OlioFieldNames.FIELD_PB_SCENE_NODE));
+	}
+
+	/**
 	 * Render-all (§6.C item 61 gap 1): pages without a prompt are skipped and listed, one node per prompted
 	 * page is submitted as a {@code pb.renderAll} job; when every prompted page is pinned the planner refuses
-	 * with 409; when no page has a prompt the facade refuses with 409 before any graph work.
+	 * with 409; when no page has a prompt the facade refuses with 409 before any graph work. Gated on Swarm:
+	 * the plan path resolves the model against the live inventory before it reaches txt2img.
 	 */
 	@Test(timeout = RENDER_TIMEOUT_MS)
 	public void renderAllSkipsUnPromptedPagesAndRefusesWhenNothingToRender() throws Exception {
+		SdTestGate.requireSwarmReachable(swarmServer());
 		Fixture fx = createFixture("all");
 		String promptedOid = fx.sceneOids.get(0);
 		String bareOid = fx.sceneOids.get(1);
@@ -232,8 +308,8 @@ public class TestChapBookV3Render extends BaseTest {
 		assertNotNull(jobId);
 		AsyncJob job = awaitJob(jobId);
 		logger.info("P1-9 render-all: job " + jobId + " -> " + job.getStatus() + " result=" + job.getResult());
-		assertEquals("Only the prompted page reaches createImage", 1, sdu.captured.size());
-		// The no-image double is deliberate (no GPU): the job completes, the run records the one planned node as FAILED.
+		assertEquals("Only the prompted page reaches txt2img", 1, sdu.captured.size());
+		// The no-response double is deliberate (no GPU): the job completes, the run records the one planned node as FAILED.
 		assertEquals("The job itself completes; the node outcome lives in the run", AsyncJob.Status.COMPLETED, job.getStatus());
 		Map<?, ?> runResult = JSONUtil.importObject(job.getResult(), Map.class);
 		assertNotNull("The job result must be readable", runResult);
@@ -249,9 +325,10 @@ public class TestChapBookV3Render extends BaseTest {
 		BaseRecord node = PbPipelineUtil.findNodeByHandle(testUser, workflow, PbPipelineUtil.landscapeHandle(promptedOid));
 		assertNotNull(node);
 		assertEquals(((List<?>) nodeOids).get(0), node.get(FieldNames.FIELD_OBJECT_ID));
-		assertEquals("With no image returned the page node FAILS", PbNodeStatusEnumType.FAILED.name(), status(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		assertEquals("With no response the page node FAILS", PbNodeStatusEnumType.FAILED.name(), status(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
 		String lastError = node.get(OlioFieldNames.FIELD_PB_LAST_ERROR);
-		assertTrue("The node must carry the no-image error, got: " + lastError, lastError != null && lastError.contains("no images"));
+		assertTrue("The failure names the plan artifact, got: " + lastError, lastError != null && lastError.contains(PLAN_MARKER));
+		assertTrue("The failure is the adapter's no-response error, got: " + lastError, lastError.contains(RendererAdapter.ERROR_UNREACHABLE));
 
 		assertTrue("Pinning the only prompted page's node must succeed", PbGraphUtil.setPinned(testUser, node, true));
 		try {
@@ -273,11 +350,13 @@ public class TestChapBookV3Render extends BaseTest {
 	}
 
 	/**
-	 * With {@code chapbook.renderPath=v1} the old path stays live and default: the seam renders synchronously
-	 * and reports {@code v1}, the detachable submit returns {@code null}, and the v3 facade entry refuses 409.
+	 * {@code v1} is the ChapBook rollback value (§28.1 Stage 2; the product default is {@code v3}): configured
+	 * explicitly, the old path comes back - the seam renders synchronously on the request thread and reports
+	 * {@code v1}, no node or plan artifact is made, the detachable submit returns {@code null}, and the v3 facade
+	 * entry refuses 409. No Swarm gate: v1 proceeds with the deployment default even when the inventory is down.
 	 */
 	@Test
-	public void v1DefaultKeepsTheOldPath() throws Exception {
+	public void v1RollbackReenablesTheOldPath() throws Exception {
 		Fixture fx = createFixture("v1");
 		String sceneOid = fx.sceneOids.get(0);
 		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, GENUINE_PROMPT));
@@ -289,7 +368,9 @@ public class TestChapBookV3Render extends BaseTest {
 			assertEquals(ChapBookUtil.SceneRenderStatus.FAILED, result.status);
 			assertNull("v1 has no job", result.jobId);
 			assertNull("v1 has no node", result.nodeObjectId);
-			assertEquals("v1 calls createImage directly", 1, sdu.captured.size());
+			assertEquals("v1 reaches txt2img once, through createImage", 1, sdu.captured.size());
+			String v1Prompt = sdu.captured.get(0).getPrompt();
+			assertTrue("v1 renders the stored prompt, got: " + v1Prompt, v1Prompt != null && v1Prompt.startsWith(GENUINE_PROMPT));
 
 			assertNull("The detachable submit must return null on v1",
 				ChapBookUtil.submitChapBookRender(testUser, fx.bookOid, "SWARM", swarmServer(), null, null));
@@ -314,6 +395,152 @@ public class TestChapBookV3Render extends BaseTest {
 			assertNull("v1 never links the scene to a node", after.get(OlioFieldNames.FIELD_PB_SCENE_NODE));
 		} finally {
 			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
+		}
+	}
+
+	// ─────────────────────────────── P2-6: the plan path (no GPU) ───────────────────────────────
+
+	/**
+	 * P2-6 (§24): a ChapBook page renders through the illustration pipeline. Before any renderer call the
+	 * attempt persists a {@code renderPlan} artifact on the page node - a SCENE-purpose, TEXT_ONLY plan with
+	 * no actors (the continuity composer up front, {@code olio.pb.scene.characters} has no writer yet) and a
+	 * resolved BASE model pick - and the one txt2img request is exactly that plan's compiled BASE prompt, step
+	 * count and model. With no response the node FAILS naming the artifact; no landscape artifact is made.
+	 * Gated on Swarm: the plan path resolves the model against the live inventory before it reaches txt2img.
+	 */
+	@Test(timeout = RENDER_TIMEOUT_MS)
+	public void pageRenderPersistsAPlanArtifactBeforeRendering() throws Exception {
+		SdTestGate.requireSwarmReachable(swarmServer());
+		Fixture fx = createFixture("plan");
+		String sceneOid = fx.sceneOids.get(0);
+		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, GENUINE_PROMPT));
+
+		CapturingSdu sdu = new CapturingSdu(swarmServer(), false);
+		Map<String, Object> submit = PbServiceFacade.requestChapBookPageRender(testUser, fx.bookOid, sceneOid, sdu, swarmServer());
+		String nodeOid = (String) submit.get("nodeObjectId");
+		assertNotNull(nodeOid);
+		AsyncJob job = awaitJob((String) submit.get("jobId"));
+		logger.info("P2-6 plan case: job " + job.getStatus() + " result=" + job.getResult());
+
+		BaseRecord node = PbGraphUtil.readNode(testUser, nodeOid, fx.orgId);
+		assertEquals("With no response the page node FAILS", PbNodeStatusEnumType.FAILED.name(), status(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		String lastError = node.get(OlioFieldNames.FIELD_PB_LAST_ERROR);
+		logger.info("MEASURED: P2-6 no-response failure: " + lastError);
+		String planOid = planOidOf(lastError);
+		assertNotNull("The failure names the plan artifact, got: " + lastError, planOid);
+		assertTrue("The failure is the adapter's no-response error, got: " + lastError, lastError.contains(RendererAdapter.ERROR_UNREACHABLE));
+		assertFalse("The failure never carries the renderer host", lastError.contains(swarmServer()));
+
+		BaseRecord planArtifact = PbArtifactUtil.readArtifact(testUser, planOid, fx.orgId);
+		assertNotNull("The plan artifact is readable as its owner", planArtifact);
+		assertEquals(PbPipelineUtil.ROLE_RENDER_PLAN, planArtifact.get(OlioFieldNames.FIELD_PB_ROLE));
+		assertEquals("The plan artifact is the node's selection", planOid,
+			PbArtifactUtil.findSelected(testUser, node, PbPipelineUtil.ROLE_RENDER_PLAN).get(FieldNames.FIELD_OBJECT_ID));
+		assertNull("No landscape artifact is made when the renderer does not answer",
+			PbArtifactUtil.findSelected(testUser, node, PbPipelineUtil.ROLE_LANDSCAPE));
+
+		RenderPlan plan = PbRenderPlanUtil.readPlanArtifact(planArtifact);
+		assertNotNull("The plan artifact must decode", plan);
+		assertEquals(RenderPlan.PURPOSE_SCENE, plan.getPurpose());
+		assertEquals("The page is its own location: no actors", 0, plan.getActors().size());
+		assertEquals(PbStrategyEnumType.TEXT_ONLY, plan.getStrategy().getName());
+		assertEquals("The stored prompt is the plan's location text", GENUINE_PROMPT, plan.getLocation().getDescription());
+		RenderPlan.ModelPick pick = plan.pickForStage(RenderPlan.STAGE_BASE);
+		assertNotNull(pick);
+		assertTrue("The BASE model resolved against the live inventory", pick.isResolved());
+		assertNotNull(pick.getModel());
+		assertFalse("The plan never carries the renderer host", plan.toJson().contains(swarmServer()));
+		String compiled = plan.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt();
+		assertTrue("The compiled BASE prompt starts with the stored prompt, got: " + compiled, compiled.startsWith(GENUINE_PROMPT));
+
+		assertEquals("txt2img is reached exactly once", 1, sdu.captured.size());
+		SWTxt2Img req = sdu.captured.get(0);
+		assertEquals("The request is the compiled BASE prompt, verbatim", compiled, req.getPrompt());
+		assertEquals("The request carries the preset's step count", plan.getPreset().getSteps(), req.getSteps());
+		assertEquals("The request carries the plan's resolved model", pick.getModel(), req.getModel());
+	}
+
+	/**
+	 * §28.1 check 2 evidence: a hand-set (locked) page prompt is the plan's location text verbatim and is sent
+	 * verbatim - the compiled BASE prompt begins with it and the txt2img request is the compiled prompt. Same
+	 * no-response double and Swarm gate as {@link #pageRenderPersistsAPlanArtifactBeforeRendering()}.
+	 */
+	@Test(timeout = RENDER_TIMEOUT_MS)
+	public void lockedPromptIsThePlanLocationTextAndIsSentVerbatim() throws Exception {
+		SdTestGate.requireSwarmReachable(swarmServer());
+		Fixture fx = createFixture("locked");
+		String sceneOid = fx.sceneOids.get(0);
+		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, SECOND_PROMPT));
+		BaseRecord locked = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertEquals("A hand-set prompt is locked", Boolean.TRUE, locked.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		assertEquals(SECOND_PROMPT, locked.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+
+		CapturingSdu sdu = new CapturingSdu(swarmServer(), false);
+		Map<String, Object> submit = PbServiceFacade.requestChapBookPageRender(testUser, fx.bookOid, sceneOid, sdu, swarmServer());
+		awaitJob((String) submit.get("jobId"));
+		BaseRecord node = PbGraphUtil.readNode(testUser, (String) submit.get("nodeObjectId"), fx.orgId);
+		assertEquals(PbNodeStatusEnumType.FAILED.name(), status(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		assertEquals("The locked prompt is mirrored onto the node", SECOND_PROMPT, node.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT));
+
+		RenderPlan plan = selectedPlanOf(node);
+		assertEquals("The locked prompt is the plan's location text, verbatim", SECOND_PROMPT, plan.getLocation().getDescription());
+		String compiled = plan.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt();
+		assertTrue("The compiled BASE prompt begins with the locked prompt, got: " + compiled, compiled.startsWith(SECOND_PROMPT));
+		assertEquals("txt2img is reached exactly once", 1, sdu.captured.size());
+		assertEquals("The locked prompt is sent as compiled, verbatim", compiled, sdu.captured.get(0).getPrompt());
+		logger.info("MEASURED: P2-6 locked prompt sent as: " + sdu.captured.get(0).getPrompt());
+	}
+
+	/**
+	 * §20 on the ChapBook page: a fresh ChapBook (no style, no book config) resolves its model at the
+	 * deployment default. With that pointed at a checkpoint Swarm does not list, the attempt is refused
+	 * before txt2img - the node FAILS with the 409 text naming the step, the requested checkpoint and
+	 * {@code NOT_INSTALLED}, plus the plan artifact; nothing is sent to the renderer; the plan's BASE pick
+	 * is unresolved with no guessed model. The deployment default is restored in finally (and BaseTest re-pins
+	 * it on every test). Gated on Swarm: with the inventory down the refusal would be the 503, not this one.
+	 */
+	@Test(timeout = RENDER_TIMEOUT_MS)
+	public void noInstalledModelIsA409BeforeRendering() throws Exception {
+		SdTestGate.requireSwarmReachable(swarmServer());
+		CapturingSdu sdu = new CapturingSdu(swarmServer(), false);
+		assertFalse("Precondition: the bogus checkpoint is not installed", SdTestGate.isModelInstalled(sdu, BOGUS_DEPLOYMENT));
+		Fixture fx = createFixture("nomodel");
+		String sceneOid = fx.sceneOids.get(0);
+		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, GENUINE_PROMPT));
+
+		String previousDefault = SDUtil.getDefaultModel();
+		try {
+			SDUtil.setDefaultModel(BOGUS_DEPLOYMENT);
+			SwarmModelInventory.invalidateAll();
+			Map<String, Object> submit = PbServiceFacade.requestChapBookPageRender(testUser, fx.bookOid, sceneOid, sdu, swarmServer());
+			String nodeOid = (String) submit.get("nodeObjectId");
+			AsyncJob job = awaitJob((String) submit.get("jobId"));
+			logger.info("P2-6 no-model case: job " + job.getStatus() + " result=" + job.getResult());
+
+			BaseRecord node = PbGraphUtil.readNode(testUser, nodeOid, fx.orgId);
+			assertEquals("The refused page node FAILS", PbNodeStatusEnumType.FAILED.name(), status(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
+			String lastError = node.get(OlioFieldNames.FIELD_PB_LAST_ERROR);
+			logger.info("MEASURED: P2-6 NO_CANDIDATE refusal on a page: " + lastError);
+			assertNotNull(lastError);
+			assertTrue("The refusal names the page, got: " + lastError, lastError.contains("No installed model for page "));
+			assertTrue("The refusal names the step, checkpoint and reason, got: " + lastError, lastError.contains(
+				ModelResolver.Step.DEPLOYMENT_DEFAULT.name() + " '" + BOGUS_DEPLOYMENT + "' " + ModelResolver.Reason.NOT_INSTALLED.name()));
+			String planOid = planOidOf(lastError);
+			assertNotNull("The refusal names the plan artifact, got: " + lastError, planOid);
+			assertFalse("The refusal never carries the renderer host", lastError.contains(swarmServer()));
+			assertTrue("Nothing is sent to the renderer", sdu.captured.isEmpty());
+			assertNull("No landscape artifact is made", PbArtifactUtil.findSelected(testUser, node, PbPipelineUtil.ROLE_LANDSCAPE));
+
+			RenderPlan plan = PbRenderPlanUtil.readPlanArtifact(PbArtifactUtil.readArtifact(testUser, planOid, fx.orgId));
+			assertNotNull(plan);
+			RenderPlan.ModelPick pick = plan.pickForStage(RenderPlan.STAGE_BASE);
+			assertNotNull(pick);
+			assertFalse(pick.isResolved());
+			assertNull("No model was guessed (§20)", pick.getModel());
+			assertEquals(ModelResolver.Reason.NO_CANDIDATE.name(), pick.getReason());
+		} finally {
+			SDUtil.setDefaultModel(previousDefault);
+			SwarmModelInventory.invalidateAll();
 		}
 	}
 
@@ -356,12 +583,19 @@ public class TestChapBookV3Render extends BaseTest {
 		assertFalse(result.llmUnavailable);
 		assertFalse(result.llmDegraded);
 
-		assertEquals("createImage must be called once", 1, sdu.captured.size());
-		BaseRecord cfg = sdu.captured.get(0);
-		assertEquals("The job must render with the book-tier installed checkpoint", expectedModel, cfg.get(OlioFieldNames.FIELD_SD_MODEL));
-		assertEquals("The job must honour the book-tier steps", Integer.valueOf(12), cfg.get(OlioFieldNames.FIELD_SD_STEPS));
-		String description = cfg.get("description");
-		assertTrue("The job must render the stored prompt, got: " + description, description.startsWith(GENUINE_PROMPT));
+		assertEquals("txt2img must be reached once", 1, sdu.captured.size());
+		SWTxt2Img req = sdu.captured.get(0);
+		assertEquals("The job must render with the book-tier installed checkpoint", expectedModel, req.getModel());
+		assertTrue("The job must render the stored prompt, got: " + req.getPrompt(), req.getPrompt() != null && req.getPrompt().startsWith(GENUINE_PROMPT));
+		BaseRecord nodeForPlan = PbGraphUtil.readNode(testUser, result.nodeObjectId, fx.orgId);
+		RenderPlan plan = selectedPlanOf(nodeForPlan);
+		assertEquals("The plan compiles the page as a scene", RenderPlan.PURPOSE_SCENE, plan.getPurpose());
+		assertEquals("The plan is TEXT_ONLY (the continuity composer up front)", PbStrategyEnumType.TEXT_ONLY, plan.getStrategy().getName());
+		assertEquals("The locked prompt is the plan's location text, verbatim", GENUINE_PROMPT, plan.getLocation().getDescription());
+		assertEquals("The plan's resolved model is what was sent", expectedModel, plan.pickForStage(RenderPlan.STAGE_BASE).getModel());
+		/// Steps are preset-governed on the plan path (D6 as-built, §6.C 165): the book tier's 12 is not what is sent.
+		assertEquals("The job sends the preset's step count", plan.getPreset().getSteps(), req.getSteps());
+		assertEquals("The request is the compiled BASE prompt", plan.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt(), req.getPrompt());
 
 		BaseRecord artifact = PbArtifactUtil.readArtifact(testUser, result.artifactObjectId, fx.orgId);
 		assertNotNull("The artifact row must read back", artifact);
@@ -440,6 +674,106 @@ public class TestChapBookV3Render extends BaseTest {
 	}
 
 	/**
+	 * P2-6 (§24 as-built): what the page's plan path does not apply reaches the caller through the per-node
+	 * outcome of the {@code pb.render} job ({@code PbRenderJobUtil} copies the executor's {@code configNotApplied}
+	 * onto the outcome), never as a degradation. Page 0 - no book tier, no override: the effective config is the
+	 * schema default ({@code hires=true}, no style, no negative), so the outcome reports exactly
+	 * {HIRES, DEFAULT_NEGATIVE} and the txt2img request the job sent carries no refiner and no negative. Page 1 -
+	 * a scene override with {@code hires=false}, {@code style=photograph} and a {@code negativePrompt}, mirrored
+	 * onto the node by the facade: exactly {STYLE_CLAUSE} naming the style, and the config's negative is what was
+	 * sent. Each set is also checked against the §24 iff-rule computed from the node's persisted plan. Two real
+	 * renders through the facade's page seam and the job.
+	 */
+	@Test(timeout = 2L * RENDER_TIMEOUT_MS)
+	public void pageRenderReportsConfigNotAppliedThroughTheJobOutcome() throws Exception {
+		String server = swarmServer();
+		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, server, "ChapBook V3 P2-6 configNotApplied");
+		String installed = renderConfig.get(OlioFieldNames.FIELD_SD_MODEL);
+		assertNotNull("The render gate must name an installed checkpoint", installed);
+		assertEquals("precondition: the deployment default this JVM resolves is the installed checkpoint (BaseTest pins it)",
+			installed, SDUtil.getDefaultModel());
+		Fixture fx = createFixture("cna");
+		PbStyleResolver.EffectiveStyle chain = PbStyleResolver.resolve(testUser, PbBookUtil.readBook(testUser, fx.bookOid, fx.orgId));
+		assertTrue("precondition: a fresh ChapBook resolves no style hop (no LIBRARY style under /Library/"
+			+ PbStyleResolver.LIBRARY_STYLES + " in this org); got " + chain.chain().size() + " hop(s)", chain.isEmpty());
+
+		/// Page 0: schema defaults only - no book tier is stored on purpose.
+		String scene0 = fx.sceneOids.get(0);
+		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, scene0, GENUINE_PROMPT));
+		CapturingSdu sdu0 = new CapturingSdu(server, true);
+		long t0 = System.currentTimeMillis();
+		Map<String, Object> submit0 = PbServiceFacade.requestChapBookPageRender(testUser, fx.bookOid, scene0, sdu0, server);
+		String node0Oid = (String) submit0.get("nodeObjectId");
+		assertNotNull(node0Oid);
+		AsyncJob job0 = awaitJob((String) submit0.get("jobId"));
+		logger.info("P2-6 page 0 durationMs=" + (System.currentTimeMillis() - t0) + " job=" + job0.getStatus() + " result=" + job0.getResult());
+		Map<?, ?> outcome0 = soleOutcome(job0, node0Oid);
+		assertNotNull("The page outcome names its artifact", outcome0.get("artifactObjectId"));
+		Object deg0 = outcome0.get("degradations");
+		assertTrue("Not a degradation (absent or empty), got " + deg0, deg0 == null || ((List<?>) deg0).isEmpty());
+		Object na0 = outcome0.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED);
+		assertTrue("The outcome carries configNotApplied as a list, got " + na0, na0 instanceof List);
+		Set<String> codes0 = notAppliedCodes((List<?>) na0);
+		RenderPlan plan0 = selectedPlanOf(PbGraphUtil.readNode(testUser, node0Oid, fx.orgId));
+		Map<String, Object> cfg0 = plan0.getConfig();
+		assertEquals("The schema default hires=true is the effective config", Boolean.TRUE, cfg0.get("hires"));
+		assertNull("No tier set a style", cfg0.get("style"));
+		assertNull("No tier set a negativePrompt", cfg0.get("negativePrompt"));
+		String negative0 = plan0.getCompiled().get(RenderPlan.STAGE_BASE).getNegative();
+		assertTrue("No exclusions and no negativePrompt compile to a blank negative, got '" + negative0 + "'",
+			negative0 == null || negative0.isBlank());
+		assertEquals("HIRES iff hires, STYLE_CLAUSE iff style, DEFAULT_NEGATIVE iff blank negative: " + na0,
+			expectedCodesOf(plan0), codes0);
+		assertEquals(new HashSet<>(Arrays.asList(PbNodeExecutor.NOT_APPLIED_HIRES, PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE)), codes0);
+		assertEquals("txt2img must be reached once", 1, sdu0.captured.size());
+		SWTxt2Img req0 = sdu0.captured.get(0);
+		assertEquals("The deployment default (installed) is what was sent", installed, req0.getModel());
+		assertNull("HIRES: no refiner pass was sent", req0.getRefinerModel());
+		assertTrue("DEFAULT_NEGATIVE: no negative was sent (the v1 default is not applied), got " + req0.getNegativePrompt(),
+			req0.getNegativePrompt() == null || req0.getNegativePrompt().isBlank());
+		logger.info("MEASURED: P2-6 page 0 configNotApplied=" + na0);
+
+		/// Page 1: a scene override setting each knob the plan path reports, mirrored onto the node by the facade.
+		String scene1 = fx.sceneOids.get(1);
+		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, scene1, SECOND_PROMPT));
+		String sparse = overrideJson(installed);
+		assertTrue("The scene override must be stored", PbBookUtil.setSceneConfigOverride(testUser, scene1, sparse));
+		CapturingSdu sdu1 = new CapturingSdu(server, true);
+		t0 = System.currentTimeMillis();
+		Map<String, Object> submit1 = PbServiceFacade.requestChapBookPageRender(testUser, fx.bookOid, scene1, sdu1, server);
+		String node1Oid = (String) submit1.get("nodeObjectId");
+		assertNotNull(node1Oid);
+		assertNotEquals("Each page has its own node", node0Oid, node1Oid);
+		AsyncJob job1 = awaitJob((String) submit1.get("jobId"));
+		logger.info("P2-6 page 1 durationMs=" + (System.currentTimeMillis() - t0) + " job=" + job1.getStatus() + " result=" + job1.getResult());
+		BaseRecord node1 = PbGraphUtil.readNode(testUser, node1Oid, fx.orgId);
+		assertEquals("The facade mirrored the scene override onto the node verbatim", sparse, node1.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+		Map<?, ?> outcome1 = soleOutcome(job1, node1Oid);
+		Object deg1 = outcome1.get("degradations");
+		assertTrue("An installed override is not a degradation (absent or empty), got " + deg1, deg1 == null || ((List<?>) deg1).isEmpty());
+		Object na1 = outcome1.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED);
+		assertTrue("The outcome carries configNotApplied as a list, got " + na1, na1 instanceof List);
+		Set<String> codes1 = notAppliedCodes((List<?>) na1);
+		RenderPlan plan1 = selectedPlanOf(node1);
+		Map<String, Object> cfg1 = plan1.getConfig();
+		assertEquals("The override's hires=false is the effective config", Boolean.FALSE, cfg1.get("hires"));
+		assertEquals("The override's style is the effective config", OVERRIDE_STYLE, cfg1.get("style"));
+		assertEquals("The override's negativePrompt is the effective config", OVERRIDE_NEGATIVE, cfg1.get("negativePrompt"));
+		assertEquals("The config's negativePrompt compiles into the BASE negative", OVERRIDE_NEGATIVE,
+			plan1.getCompiled().get(RenderPlan.STAGE_BASE).getNegative());
+		assertEquals("HIRES iff hires, STYLE_CLAUSE iff style, DEFAULT_NEGATIVE iff blank negative: " + na1,
+			expectedCodesOf(plan1), codes1);
+		assertEquals(new HashSet<>(Arrays.asList(PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE)), codes1);
+		assertTrue("STYLE_CLAUSE names the style it did not apply: " + na1, String.valueOf(((List<?>) na1).get(0)).contains("'" + OVERRIDE_STYLE + "'"));
+		assertEquals("txt2img must be reached once", 1, sdu1.captured.size());
+		SWTxt2Img req1 = sdu1.captured.get(0);
+		assertEquals("The override's installed checkpoint is what was sent", installed, req1.getModel());
+		assertNull("hires=false: no refiner pass was sent", req1.getRefinerModel());
+		assertEquals("The compiled negative is what was sent", OVERRIDE_NEGATIVE, req1.getNegativePrompt());
+		logger.info("MEASURED: P2-6 page 1 configNotApplied=" + na1);
+	}
+
+	/**
 	 * Auto-approve (§10 rule 5) on a ChapBook: with {@code autoApprove} on, the rendered page's artifact is
 	 * APPROVED by {@code PbArtifactUtil.APPROVED_BY_AUTO}, the node is pinned, the seam reports it, and the
 	 * review queue's {@code auto-approved} filter lists it.
@@ -489,7 +823,9 @@ public class TestChapBookV3Render extends BaseTest {
 	 * Drift on a ChapBook page: a prompt edit and a config override each mark the page node STALE and mirror
 	 * onto it; merging the next stanza up sets {@code imageStale} and STALE; a re-render then supersedes the
 	 * artifact (chain of two, newest selected), returns the node to DONE_UNVERIFIED and clears
-	 * {@code imageStale} - using the mirrored override (steps) rather than the book tier.
+	 * {@code imageStale}. The override is mirrored onto the node and read into the plan's config snapshot, but
+	 * steps are preset-governed on the plan path (D6 as-built, §6.C 165): neither the override's 13 nor the
+	 * book tier's 12 is what is sent.
 	 */
 	@Test(timeout = RENDER_TIMEOUT_MS)
 	public void editsMarkThePageStaleAndRerenderClearsIt() throws Exception {
@@ -537,13 +873,18 @@ public class TestChapBookV3Render extends BaseTest {
 		assertEquals("The re-render reuses the page node", nodeOid, second.nodeObjectId);
 		assertNotEquals("The re-render produces a new artifact", first.artifactObjectId, second.artifactObjectId);
 		assertNotEquals("The re-render produces a new image", first.imageObjectId, second.imageObjectId);
-		BaseRecord cfg = sdu.captured.get(0);
-		assertEquals("The mirrored page override beats the book tier", Integer.valueOf(13), cfg.get(OlioFieldNames.FIELD_SD_STEPS));
-		assertEquals(expectedModel, cfg.get(OlioFieldNames.FIELD_SD_MODEL));
-		assertTrue(((String) cfg.get("description")).startsWith(SECOND_PROMPT));
+		assertEquals("txt2img must be reached once by the re-render", 1, sdu.captured.size());
+		SWTxt2Img req = sdu.captured.get(0);
+		assertEquals(expectedModel, req.getModel());
+		assertTrue("The re-render sends the edited prompt, got: " + req.getPrompt(), req.getPrompt() != null && req.getPrompt().startsWith(SECOND_PROMPT));
 
 		node = PbGraphUtil.readNode(testUser, nodeOid, fx.orgId);
 		assertEquals(PbNodeStatusEnumType.DONE_UNVERIFIED.name(), status(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		RenderPlan plan2 = selectedPlanOf(node);
+		assertEquals("The re-render's plan carries the edited prompt as its location text", SECOND_PROMPT, plan2.getLocation().getDescription());
+		assertEquals("The mirrored override reaches the plan's config snapshot", Integer.valueOf(13), plan2.getConfig().get(OlioFieldNames.FIELD_SD_STEPS));
+		assertEquals("Steps sent are the preset's, not the override's (D6 as-built)", plan2.getPreset().getSteps(), req.getSteps());
+		assertEquals("Two attempts, two plan revisions", 2, PbArtifactUtil.listChain(testUser, node, PbPipelineUtil.ROLE_RENDER_PLAN).size());
 		BaseRecord after = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
 		assertFalse("Re-render clears imageStale", Boolean.TRUE.equals(after.get(OlioFieldNames.FIELD_PB_IMAGE_STALE)));
 		assertEquals(second.imageObjectId, after.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID));
@@ -607,7 +948,7 @@ public class TestChapBookV3Render extends BaseTest {
 		assertNotEquals("The re-render is a new run", first.runObjectId, second.runObjectId);
 		assertNotEquals("The re-render produces a new artifact", first.artifactObjectId, second.artifactObjectId);
 		assertNotEquals("The re-render produces a new image", first.imageObjectId, second.imageObjectId);
-		assertEquals("createImage must be called exactly once by the forced re-render", 1, sdu.captured.size());
+		assertEquals("txt2img must be reached exactly once by the forced re-render", 1, sdu.captured.size());
 
 		BaseRecord revision2 = PbArtifactUtil.readArtifact(testUser, second.artifactObjectId, fx.orgId);
 		assertNotNull(revision2);
@@ -935,9 +1276,13 @@ public class TestChapBookV3Render extends BaseTest {
 
 	// ─────────────────────────────── helpers ───────────────────────────────
 
-	/** Records every config reaching {@code createImage}; renders for real only when {@code delegate}. */
+	/**
+	 * Records every Swarm txt2img request (v1's {@code createImage} and the v3 {@code SwarmRendererAdapter} both
+	 * go through it); renders for real only when {@code delegate}, otherwise answers null (v1: no images, FAILED;
+	 * v3: the adapter's no-response error on the node).
+	 */
 	private static final class CapturingSdu extends SDUtil {
-		final List<BaseRecord> captured = new ArrayList<>();
+		final List<SWTxt2Img> captured = new ArrayList<>();
 		private final boolean delegate;
 
 		CapturingSdu(String server, boolean delegate) {
@@ -946,13 +1291,97 @@ public class TestChapBookV3Render extends BaseTest {
 		}
 
 		@Override
-		public List<BaseRecord> createImage(BaseRecord user, String groupPath, BaseRecord sdConfig, String name, int batch, boolean hires, int seed) {
-			captured.add(sdConfig);
-			if (delegate) {
-				return super.createImage(user, groupPath, sdConfig, name, batch, hires, seed);
-			}
-			return new ArrayList<>();
+		public SWImageResponse txt2img(SWTxt2Img req) {
+			captured.add(req);
+			return (delegate ? super.txt2img(req) : null);
 		}
+	}
+
+	/** The plan artifact objectId a refusal / failure message names, or null. */
+	private static String planOidOf(String message) {
+		if (message == null) {
+			return null;
+		}
+		int at = message.indexOf(PLAN_MARKER);
+		if (at < 0) {
+			return null;
+		}
+		int start = at + PLAN_MARKER.length();
+		int end = message.indexOf(')', start);
+		return (end > start ? message.substring(start, end) : null);
+	}
+
+	/** The selected renderPlan artifact of a page node, read back and decoded. */
+	private RenderPlan selectedPlanOf(BaseRecord node) {
+		BaseRecord planArtifact = PbArtifactUtil.findSelected(testUser, node, PbPipelineUtil.ROLE_RENDER_PLAN);
+		assertNotNull("The page node must carry a selected renderPlan artifact", planArtifact);
+		RenderPlan plan = PbRenderPlanUtil.readPlanArtifact(planArtifact);
+		assertNotNull("The renderPlan artifact must decode", plan);
+		return plan;
+	}
+
+	/** Every configNotApplied entry is "CODE: text" for a published code, no code twice; returns the codes. */
+	private static Set<String> notAppliedCodes(List<?> entries) {
+		Set<String> codes = new HashSet<>();
+		for (Object o : entries) {
+			assertTrue("a configNotApplied entry is a string: " + o, o instanceof String);
+			String e = (String) o;
+			assertTrue("entry shape 'CODE: text' with a published code: '" + e + "'", NOT_APPLIED_SHAPE.matcher(e).find());
+			String code = e.substring(0, e.indexOf(':'));
+			assertTrue("code " + code + " reported twice: " + entries, codes.add(code));
+		}
+		return codes;
+	}
+
+	/**
+	 * The §24 contract computed from the persisted plan itself: HIRES iff the plan's config asks for hires,
+	 * STYLE_CLAUSE iff it carries a non-blank style, DEFAULT_NEGATIVE iff the compiled BASE negative is blank.
+	 */
+	private static Set<String> expectedCodesOf(RenderPlan plan) {
+		Set<String> expected = new HashSet<>();
+		Map<String, Object> cfg = plan.getConfig();
+		if (Boolean.TRUE.equals(cfg.get("hires"))) {
+			expected.add(PbNodeExecutor.NOT_APPLIED_HIRES);
+		}
+		Object style = cfg.get("style");
+		if (style instanceof String && !((String) style).isBlank()) {
+			expected.add(PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE);
+		}
+		String negative = plan.getCompiled().get(RenderPlan.STAGE_BASE).getNegative();
+		if (negative == null || negative.isBlank()) {
+			expected.add(PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE);
+		}
+		return expected;
+	}
+
+	/** The one node outcome of a COMPLETED single-page {@code pb.render} job, with the run-level counts checked. */
+	private Map<?, ?> soleOutcome(AsyncJob job, String nodeOid) {
+		assertEquals("Job error: " + job.getError(), AsyncJob.Status.COMPLETED, job.getStatus());
+		Map<?, ?> result = JSONUtil.importObject(job.getResult(), Map.class);
+		assertNotNull("The job result parses: " + job.getResult(), result);
+		assertEquals(PbRunStatusEnumType.COMPLETED.name(), result.get("runStatus"));
+		assertEquals(Integer.valueOf(1), result.get("executedNodeCount"));
+		List<?> outcomes = (List<?>) result.get("nodes");
+		assertNotNull("The job result lists its node outcomes", outcomes);
+		assertEquals(1, outcomes.size());
+		Map<?, ?> outcome = (Map<?, ?>) outcomes.get(0);
+		assertEquals(nodeOid, outcome.get("nodeObjectId"));
+		assertEquals(PbNodeStatusEnumType.DONE_UNVERIFIED.name(), outcome.get("status"));
+		return outcome;
+	}
+
+	/** A sparse scene override: the installed checkpoint at 12 steps, hires off, a style and a negative prompt. */
+	private static String overrideJson(String installed) throws Exception {
+		String[] fields = { OlioFieldNames.FIELD_SD_MODEL, OlioFieldNames.FIELD_SD_STEPS, "hires", "style", "negativePrompt" };
+		BaseRecord override = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG, fields);
+		override.set(OlioFieldNames.FIELD_SD_MODEL, installed);
+		override.set(OlioFieldNames.FIELD_SD_STEPS, Integer.valueOf(12));
+		override.set("hires", Boolean.FALSE);
+		override.set("style", OVERRIDE_STYLE);
+		override.set("negativePrompt", OVERRIDE_NEGATIVE);
+		String sparse = PbConfigUtil.sparseOverride(override, Arrays.asList(fields));
+		assertNotNull("sparse override", sparse);
+		return sparse;
 	}
 
 	private static final class Fixture {

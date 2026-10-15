@@ -319,7 +319,7 @@
 			"type": "string",
 			"maxLength": 16,
 			"default": "flux2",
-			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, the default and recommended mode), 'kontext' (FLUX Kontext stitched panel strip), or 'classic' (Graphics2D paste + SDXL img2img). DEFAULTS TO flux2 because its checkpoint (flux2Model, default flux2Klein_9b) is the one that actually ships on the local Swarm. It previously defaulted to unset, which fell back to useKontext=true and requested kontextModel's default flux1Kontext_flux1KontextDev - a checkpoint absent from the local node, so Swarm refused EVERY composite with 'Invalid model value for param Model' and the pipeline produced nothing. Set 'kontext' explicitly, with an installed kontextModel, to opt back in."
+			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, the default and recommended mode) or 'classic' (Graphics2D paste + SDXL img2img). 'kontext' (FLUX Kontext stitched panel strip) is RETIRED (V3 design section 37.3; disabled in Phase 2, removed in Phase 10): a config that resolves to it - this field set to 'kontext', or the legacy useKontext=true with this field cleared - is refused by every entry point with the 'replaced by V3' response before any LLM or SD work. DEFAULTS TO flux2 because its checkpoint (flux2Model, default flux2Klein_9b) is the one that actually ships on the local Swarm. It previously defaulted to unset, which fell back to useKontext=true and requested kontextModel's default flux1Kontext_flux1KontextDev - a checkpoint absent from the local node, so Swarm refused EVERY composite with 'Invalid model value for param Model' and the pipeline produced nothing."
 		},
 		{
 			"name": "flux2Model",
@@ -390,7 +390,7 @@
 		{
 			"name": "kontextModel",
 			"type": "string",
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE: the old default flux1Kontext_flux1KontextDev is not installed on the local Swarm, and because a default is never null it was sent on every kontext-mode request and refused with 'Invalid model value for param Model'. compositeMode now defaults to flux2 instead; set this explicitly (to a checkpoint the target node actually carries) if you opt into compositeMode=kontext."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE: the old default flux1Kontext_flux1KontextDev is not installed on the local Swarm, and because a default is never null it was sent on every kontext-mode request and refused with 'Invalid model value for param Model'. compositeMode now defaults to flux2 instead, and since Phase 2 compositeMode=kontext is refused at every entry point, so nothing reads this field until Phase 10 removes it."
 		},
 		{
 			"name": "kontextSteps",

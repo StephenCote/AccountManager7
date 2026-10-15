@@ -14,7 +14,8 @@ import m from 'mithril';
 import { page } from '../core/pageClient.js';
 import { layout, pageLayout } from '../router.js';
 import { resolveImageUrl } from '../workflows/sceneExtractor.js';
-import { getReviewQueue, selectArtifact, approveArtifact, rejectArtifact } from '../workflows/pictureBookWorkflow.js';
+import { getReviewQueue, selectArtifact, approveArtifact, rejectArtifact, nodeView, loadNodePlan } from '../workflows/pictureBookWorkflow.js';
+import { PbPlanInspector } from '../components/PbPlanInspector.js';
 
 let bookObjectId = null;
 let queue = null;
@@ -24,6 +25,34 @@ let filter = 'all';
 let busyArtifact = null;
 let imageUrls = {};
 let loadSeq = 0;
+let nodePlans = {};   // nodeObjectId → {open, loading, plan, artifact, error} (V3 P2-9 per-node plan expander)
+
+/** Per-node "Plan" expander: nodeView → newest renderPlan artifact → GET /artifact → inspector. Lazy, once per node. */
+export async function toggleNodePlan(nodeObjectId) {
+    let st = nodePlans[nodeObjectId] || (nodePlans[nodeObjectId] = { open: false, loading: false, plan: null, artifact: null, error: null });
+    if (st.open) { st.open = false; m.redraw(); return; }
+    st.open = true;
+    if (st.plan || st.loading) { m.redraw(); return; }
+    let bookId = bookObjectId;
+    st.loading = true;
+    st.error = null;
+    m.redraw();
+    try {
+        let nv = await nodeView(bookId, nodeObjectId);
+        if (bookId !== bookObjectId) return;
+        let r = await loadNodePlan(bookId, nv && nv.artifacts);
+        if (bookId !== bookObjectId) return;
+        if (!r) throw new Error('This node has no render-plan artifact');
+        if (!r.plan) throw new Error('The render-plan artifact ' + (r.artifact && r.artifact.objectId) + ' does not carry plan JSON');
+        st.plan = r.plan;
+        st.artifact = r.artifact;
+    } catch (e) {
+        if (bookId !== bookObjectId) return;
+        st.error = (e && e.message) || 'Could not load the plan';
+    }
+    st.loading = false;
+    m.redraw();
+}
 
 // ── Pure derivations (exported for Vitest) ─────────────────────────────
 
@@ -75,7 +104,7 @@ export function nodeLabel(n) {
 }
 
 export function __reviewStateForTest() {
-    return { bookObjectId, queue, loading, error, filter, busyArtifact };
+    return { bookObjectId, queue, loading, error, filter, busyArtifact, nodePlans };
 }
 export function __setReviewStateForTest(patch) {
     patch = patch || {};
@@ -85,6 +114,7 @@ export function __setReviewStateForTest(patch) {
     if ('error' in patch) error = patch.error;
     if ('filter' in patch) filter = patch.filter;
     if ('busyArtifact' in patch) busyArtifact = patch.busyArtifact;
+    if ('nodePlans' in patch) nodePlans = patch.nodePlans || {};
 }
 
 // ── Data ───────────────────────────────────────────────────────────────
@@ -205,6 +235,7 @@ function renderArtifact(n, a) {
 
 function renderNode(n) {
     let chain = orderNewestFirst(n.artifacts);
+    let ps = nodePlans[n.nodeObjectId];
     return m('div', {
         key: n.nodeObjectId,
         'data-testid': 'pb2-review-node',
@@ -216,8 +247,20 @@ function renderNode(n) {
             m('span', { class: 'text-xs text-gray-500' }, String(n.nodeStatus || '').toUpperCase()),
             n.pinned ? m('span', { class: 'text-xs px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700' }, 'pinned') : null,
             m('span', { class: 'flex-1' }),
-            m('span', { class: 'text-xs text-gray-500' }, chain.length + ' revision' + (chain.length !== 1 ? 's' : ''))
+            m('span', { class: 'text-xs text-gray-500' }, chain.length + ' revision' + (chain.length !== 1 ? 's' : '')),
+            m('button', {
+                'data-testid': 'pb2-review-plan-toggle',
+                class: 'text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40',
+                disabled: !!(ps && ps.loading),
+                title: 'Show the render plan this node was generated from',
+                onclick: function () { toggleNodePlan(n.nodeObjectId); }
+            }, ps && ps.loading ? 'Loading plan…' : (ps && ps.open ? 'Hide plan' : 'Plan'))
         ]),
+        ps && ps.open && ps.error ? m('div', { 'data-testid': 'pb2-review-plan-error', class: 'mb-2 text-xs text-red-600 dark:text-red-400 break-words' }, ps.error) : null,
+        ps && ps.open && ps.plan ? m('div', { 'data-testid': 'pb2-review-plan', class: 'mb-3 p-2 rounded border dark:border-gray-700 max-h-96 overflow-y-auto' }, [
+            ps.artifact ? m('div', { class: 'text-[10px] text-gray-500 mb-1' }, 'rev ' + (ps.artifact.revision != null ? ps.artifact.revision : '?') + ' · ' + (ps.artifact.objectId || '')) : null,
+            m(PbPlanInspector, { plan: ps.plan })
+        ]) : null,
         chain.length
             ? m('div', { class: 'space-y-2' }, chain.map(function (a) { return renderArtifact(n, a); }))
             : m('div', { class: 'text-xs text-gray-500 italic' }, 'No artifacts yet.')
@@ -282,6 +325,7 @@ const reviewView = {
             error = null;
             filter = 'all';
             imageUrls = {};
+            nodePlans = {};
         }
         if (bookObjectId) loadQueue();
     },

@@ -106,12 +106,12 @@ test.describe('P1-8 render-path switch — live', () => {
         console.log('[renderPath] story =', storyBookOid, '| chapbook =', chapBookOid);
     });
 
-    test('GET /rest/config/render-path reports v3/v3 on the test stack and needs a principal', async ({ request }) => {
+    test('GET /rest/config/render-path reports v3/v3/v3 on the test stack and needs a principal', async ({ request }) => {
         await apiLogin(request, shared.testUserName, shared.testPassword);
         const r = await request.get(REST + '/config/render-path');
         expect(r.status(), 'render-path status (a 404 means the Service7 under test predates P1-8)').toBe(200);
         const body = await r.json();
-        expect(body).toEqual({ picturebook: 'v3', chapbook: 'v3' });
+        expect(body, 'a missing chat key means the Service7 under test predates P2-7').toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v3' });
         await request.get(REST + '/logout');
 
         // No session at all: a fresh context must not be served the switch.
@@ -168,7 +168,7 @@ test.describe('P1-8 render-path switch — live', () => {
         await request.get(REST + '/logout');
     });
 
-    test('the Feature Configuration page shows both products read-only', async ({ page, request }) => {
+    test('the Feature Configuration page shows all three products read-only', async ({ page, request }) => {
         const featAdmin = await ensureAdminRoleTestUser(request);
         expect(featAdmin.user && featAdmin.user.objectId, 'admin-role test user').toBeTruthy();
         expect(featAdmin.roleAssigned, 'AccountAdministrators role on the test user').toBe(true);
@@ -183,10 +183,13 @@ test.describe('P1-8 render-path switch — live', () => {
 
         const pb = page.locator('[data-testid="render-path-picturebook"]');
         const cb = page.locator('[data-testid="render-path-chapbook"]');
+        const ch = page.locator('[data-testid="render-path-chat"]');
         await expect(pb).toHaveAttribute('data-value', 'v3', { timeout: 15000 });
         await expect(cb).toHaveAttribute('data-value', 'v3');
+        await expect(ch).toHaveAttribute('data-value', 'v3');
         await expect(pb).toContainText('v3 (graph)');
         await expect(cb).toContainText('v3 (graph)');
+        await expect(ch).toContainText('v3 (graph)');
         // Read-only: no control inside the section.
         const section = page.locator('[data-testid="render-path"]');
         await expect(section).toBeVisible();

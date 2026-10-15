@@ -47,7 +47,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 |---|---|---|
 | **0 — Hygiene + Kontext Deprecate** | **AT PHASE END — gate red only on Stephen's items** (started 2026-10-09; all 15 task rows DONE except P0-12, the gate itself; every review verdict in incl. the phase-level verifier pass, every cheap finding fixed and re-proven with logs; first full `verify.sh` 2026-10-10 01:50–04:23 `VERIFY_FAILED` on environmental causes (§4.1) that Stephen's 2026-10-10 instructions then had me fix — §6.I/§6.J/§6.K RESOLVED, fixture repaired, named Postgres volume, chromium-only gate + `chromium-vite` project; **second full gate 12:38–16:22 `VERIFY_FAILED`** (§4.2): backend red only on the pre-existing §6.A ×3 / §6.B / §6.F / §6.H, e2e 75 failed → §4.3 triage finds one environmental cause (hardcoded `:8899` fixture base, fixed §6.C item 20) and 16 + 6 + 3 residuals, all environmental / missing fixture / stale tests / "any record" fixture picks, **none a Phase 0 regression**; Ux752 quick gate after the fix `VERIFY_OK`; §6.M SDXL model-ref defect fixed and proven live) | 136 green in the task runs (Slice A 6 + Slice B 30 + P0-5's `TestFlux2Composite` 36 / `TestPbConfigPrecedence` 2 + Slice C backend 8 + Slice C transport `TestChapBookRestContract` 8 + P0-10d Vitest 13 + Playwright `chapBookBookSettings` 8 (3 REST + 5 UI) + P0-11 `TestKontextDeprecation` 7 + Playwright `chatChainSceneReimageRoutes` 8 regression + 2 live (§2.8) — `TestFlux2Composite` counted once, regression specs of other features not counted); module gates: Objects7 RED on §6.A/B/F, Service7 `108 run, 1 error` on the §6.H fixture (§4.1); Ux752 e2e re-verified serially after the environment fixes (§4.2) |
 | 1 — Graph-first rendering + review | **IN PROGRESS — end-of-(A) verifiers 2026-10-13 11:39 → 11:48: three PASS-WITH-NOTES, PF-1 / PF-9 / PF-15b DONE (§9.3.6 / §9.4.2 / §9.2.3), Objects7 quick gate run 6 11:47:25 → 12:23:01 **VOID** (§4.4 row 6: Docker Desktop's engine stopped 12:05:14 under the WSL 3.0.3.0 update mid-run — 991/589/1/5 is the outage, not a result; one real pre-outage red `TestGameUtil:964` to classify; restart denied to me ⚠ §6.C 148; Stephen restarted WSL/Docker ~13:57, `postgres3` started by me 14:08, **run 7 14:12:04 → 16:41:28 VALID** (§4.4 row 7): `Tests run: 991, Failures: 4, Errors: 0, Skipped: 15` — the four reds are §6.A ×3 + the mannequin copy artefact, all baseline; §6.B and §6.F green for the first time in a full gate; `TestGameUtil` 25/25 (run-6 red = flaky); `TestWebAuthnUtil` 8/8, `TestPbRenderJob` 11/11 — **(A)'s gate obligation met**) · PF-5b/PF-5c LANDED (live) 2026-10-13 11:14: passkey assertion verification + list cache, JUnit 8/8 + 10/10 (both red → green), `webauthn.spec.js` `16 passed`, Service7 gate `VERIFY_OK` 142/0/0/0, verifier PASS, security PASS (§9.3.5, §6.C 146); follow-up product fixes (A) under way 2026-10-12 from 14:40 (§9): Ux752 batch PF-2/3/4/6/7/15a/15b/15d landed + proven live (Vitest 89/1156 green, 7 Playwright specs green, PF-7 gated `.42` run `1 passed (12.5m)` with the new PF-15d teardown proven), Service7 PF-1/5/8 landed + proven live 16:05–16:50 (JUnit 18/18 on H2 incl. the two new contract classes, `worldDeleteBreadcrumb` `3 passed`, `webauthn` `13 passed`, `bugfix3-live:211` `1 passed (1.6m)` with a real `.39` render, Service7 quick gate `VERIFY_OK` after the H2 fixture repair §6.C 137) — **but PF-5 is BLOCKED by the 20:27 security review FAIL: the parse fix makes the never-verified passkey login reachable (sign-in as any passkey user without the key; §6.C 142, §9.3.1) — decision asked, nothing changed, the test stack still runs the PF-5 bytes**, **2026-10-13 08:40 Stephen: implement assertion verification → PF-5b IN PROGRESS; 09:25: PF-15b hardening landed + proven (Vitest `sdConfigSavePlacement.test.js` `3 failed` → `13 passed (13)`, built, container md5 equal), PF-1 re-find fix landed (`OlioService.java:786`, both-principals recheck) + new H2 JUnit `TestOlioServiceDeleteWorld` red `{deleted=false}` → 4/4, Service7 H2 suites 16/16 — redeploy + Playwright re-proof waited for the §4.6 re-gate (§6.C 144, §9.2.2, §9.3.3); **§4.6 run 2 is back (08:48:11 → 09:26:03): `VERIFY_FAILED` on e2e only — `518 passed / 10 failed / 3 flaky / 92 skipped / 7 did not run (37.4m)` vs run 1 `495 / 61 / 4 / 58 / 5`; the 10 reds are triaged in §4.6 — none a PF regression, none fixed, candidates ⚠ §6.C 145**, Objects7 PF-9 landed + proven live 17:07–17:15 (`mvn-o7-pf9.log` `Tests run: 18, Failures: 0, Errors: 0` / `BUILD SUCCESS`, the new `TestPbRenderJob.case11` 409 `(1 reused, 0 pinned)` then forced revision 2 on `.39`, jar `416f5714…` deployed; REST-level proof on the Docker stack 20:11–20:13 — `pictureBookV3PlainPb.spec.js` `4 passed (1.1m)` as `e2etest_shared`, STORY book, un-forced 409 `(1 reused, 0 pinned)`, pinned+forced 409 `(0 reused, 1 pinned)`, forced 202 → revision 2 supersedes 1, reader shows it — §9.4.1), Stephen 17:25: three module verifiers + PF-5 security review + Objects7 quick gate (~2 h) + §4.6 re-gate (~2 h) all approved and run in sequence (§6.C 141), §9.5 proposals deferred, (B) after the launches are back; every task P1-1…P1-11 executed; phase gate `VERIFY_FAILED` on e2e 2026-10-11 22:30; P1-12 test-repair 2026-10-12 08:45 → 14:03, STOPPED at Stephen's instruction after the in-flight agents reported (§8.12; started on my misread of a Q&A remark — §6.C 126); test files only, nothing committed; the §4.6 re-gate, the verifier hand-off and the three SD-serial tests are NOT run and wait on Stephen** (started 2026-10-10 18:13 local; **P1-1…P1-9 DONE** — §8.1–§8.9, every task through planner → architect → implement → test-author → verifier, security-reviewer on every new route; P1-1 schema, P1-2 drift/stale, P1-3 executor converged with v1 + runs, P1-4 review state machine, P1-5 auto-approve, P1-6 async `pb.render` jobs + cancel + 429 cap, P1-7 restart recovery (boot sweep → INTERRUPTED, `resumable`, `POST /{book}/run/{id}/resume`), P1-8 `renderPath` switch (default v1; 13 facade gates 409; `GET /rest/config/render-path`). Objects7 quick gate of the copy: run 2 924/6/0/15 after the P1-1 fix, run 3 949/6/0/15 (§4.4) — both red only on the §4.2 baseline + the mannequin copy artefact; run 4 queued with the three new classes. Defects found by review and fixed: P1-6 verifier M1 (`workflow.lastRun` displaced by a refused run → `case10`), P1-7 test-author (`runDto` `ZonedDateTime` → empty 200 body). **P1-9 ChapBook on the Phase 1 path DONE 13:00 (§8.9) — code, JUnit, Service7 contract, new Playwright spec, suite-on-v3 run, security-reviewer PASS, test-author pass (three real gaps closed, no product defects) and an independent verifier PASS (11/11 · 6/6 · 5/5 re-run live; four non-blocking observations §6.C 104); the suite's 8 reds are classified pre-existing stale specs (§6.C 102), none v3.** **P1-10 Ux752 subset DONE 17:05 — planned + architect-corrected (§8.10, §6.C 103); S0 backend (`affected-by` route, `lastRunObjectId`, `runDto.jobId`, `nodeSummary` canvas geometry, `bookPageView` node/review fields) DONE 13:30 + security PASS-WITH-NOTES 13:42 + S0b hardening DONE 13:54 (notes 1/2/6 closed, redeployed, jar md5 `66ef41fb…`); Ux S1–S8 DONE 14:08 (6 files + new `features/pictureBookReview.js` + 6 Vitest files; suite 89/1151 green; S7 skipped §6.C 103(j); dist copied 14:08); **Playwright exit criteria 1–4 ALL GREEN 15:07** (test-author; new `pictureBookV3Ux.spec.js` + criterion 2 in `pictureBookRestartRecovery.spec.js` across a real `docker restart`; no product defects, observations §6.C 107(i)–(m)); Ux752 quick gate `VERIFY_OK` 14:17; Service7 quick gate `127/0/1` red only on §6.H 15:18; **independent verifier CHANGES-NEEDED ~15:50** — one MUST-FIX proven live over REST (the reader's "Unpin and re-render" unpins, then re-submits without `force` → 409 "(1 reused, 0 pinned)": pin lost, no render) plus two SHOULD-FIX with the same root; **fixed as the ⚠ default §6.C 109 and verified live 16:00–16:47** (explicit per-scene renders pass `force`, mirroring the ratified ChapBook pattern §6.C 98; "Render all" unchanged; pin still wins): JUnit re-homed to `TestChapBookV3Render` 1/1 live `.39` (the plain-PictureBook `case11` could never pass — `executeLandscape` never stamps `inputHash`, the §8.9 gap, left alone), Service7 contract 25/0/0, Vitest 89/1152, Playwright `pictureBookV3Ux.spec.js` `4 passed (2.2m)` with the new criterion 1b through the reader's "Scene is pinned" confirm (every PNG opened), Ux752 gate `VERIFY_OK`; **independent re-verify PASS 17:05** (every test re-run by the verifier itself, md5s matched, force-caller grep clean, three non-blocking observations §6.C 111) — **P1-10 DONE 17:05**.** **P1-11 17:09 → 22:30, CLOSED `VERIFY_FAILED`:** Objects7 gate run 5 done 19:13 (§4.4 row 5: 982/7/0/15 — the six expected reds plus one new, `TestPbRenderJob.case07`, a race in the P1-6 test's own assertion, fixed in the test ⚠ §6.C 113 and the class 10/10 green on the working tree); §6.C 76 login alignment edited in both Phase-1 specs (§8.11, ⚠ §6.C 112) and proven live 19:23–19:28 — `pictureBookV3Ux.spec.js` `4 passed (2.3m)`, `pictureBookRestartRecovery.spec.js` `2 passed (1.8m)`; **full Ux752 gate 19:33→21:42 `VERIFY_FAILED` on e2e (§4.5)** — 623 tests, `495 passed / 61 failed / 4 flaky / 58 skipped / 5 did not run`: the 28 expected §4.3 reds all present and unchanged, plus 33 unexpected = 8 stale ChapBook specs (§6.C 102), 4 gate-2 PictureBook fixture/stale reds, 1 stack-PBAC red (`apparelSequence:29`: `e2etest_shared` dropped from `Olio User` by `explorer.spec.js`; repair denied by the permission classifier → ⚠ §6.C 114, **waiting on Stephen**), 20 generic-UI reds re-run serially — **all 20 red again, deterministic, none in the Phase 1 diff, 8 already red in gate 2** (§4.5.1; couplings → ⚠ §6.C 114 (g)); **Phase 1 is NOT declared done**; no product code changed at phase end.) | `TestPbV3Schema` 5/5, `TestPbModelSchema` 19/19, `TestPbStale` 9/9, `TestPbStaleCacheEpoch` 3/3, `TestPbNodeRun` 7/7 (live `.39`), `TestPbReview` 7/7, `TestPbAutoApprove` 7/7, `TestPbRenderJob` 10/10 (live `.39`; run 2 191.8 s), `TestPbRecovery` 8/8 (live `.39`; 38.19 s verifier re-run), `TestPbRenderPath` 9/9, `TestPbCanvas#TestPortraitNodeExecution` 1/1, `TestPbNodeExecutorTypes` 2/2, `TestPbSceneGenerationGuards` 6/6, `TestPbGraph` 18/18 (§8.1–§8.8); Service7 `TestPictureBookRestContract` 17/17, `TestPbRenderPathRefusal` 6/6, `TestFeatureConfigService` 2/2, full Service7 119/0/1 (§6.H only); Vitest `renderPathConfig.test.js`; Playwright `pictureBookWorkflow.spec.js` `:615` stale / `:697` review / `:900` auto-approve / `:1094` live-SD / `:1292` leave-the-page (L4) all 1/1, `pictureBookRestartRecovery.spec.js` `1 passed (46.2s)` across a real `docker restart`, render-path spec 4/4 — all on the Docker stack; §6.F re-run still red, unchanged; P1-9: `TestChapBookV3Render` 11/11 live `.39` + LLM (241.4 s, test-author run; earlier 8/8 + tightened render-all 1/1), Service7 `TestChapBookServiceRenderPath` 6/6 (9.304 s), Playwright `chapBookRenderPathV3.spec.js` `5 passed (2.4m)` live single run (`CB_LIVE_GEN=1`), ChapBook suite on v3 `60 passed / 8 failed / 13 skipped (11.8m)` — the 8 reds pre-existing stale specs (§8.9 table) |
-| 2 — Style, model resolution, compiler core; ChapBook goes V3; Kontext Disable | **IN PROGRESS — started 2026-10-13 14:20 local (§10) on Stephen's "start (B) after the launches above" (17:25) once WSL/Docker were back (§3 14:08:33 probe); P2-1 planned + architect PASS (§10.1, §6.C 149/150), then **implemented in the working tree 14:50 → 15:30** (model, two FKs, five enums + `RENDER_PLAN`, `PbStyleUtil`, two illustration resources + two pure loaders, `TestPbModelSchema` +3, new `TestPbStyleSchema` ×8 and `TestIllustrationResources` ×17 — ⚠ defaults §6.C 151) while Objects7 gate run 7 held the Maven/DB/LLM slot on its own copy; **P2-1 tests green 16:45 (55/55, first Maven run) → test-author +3 cases 58/58 (16:54) → verifier PASS 17:04 (58/58 re-run by the verifier itself; §10.1 results)** — P2-1 is **verifier PASS, Objects7 quick gate pending** (⚠ batched with P2-2's, §6.C 153); nothing committed; P2-2 planned (§10.2, 15:45) + architect PASS WITH CORRECTIONS (16:00, all adopted, route resolved to §27's `/olio/illustration/models`; ⚠ §6.C 152), **Objects7 sources implemented 16:30 → 17:25** (`ModelResolver`, `ModelInventory`, `SwarmModelInventory`, `CheckpointNames`, `ModelTaskKeys`, `DeploymentModelDefaults`, `TestModelResolver`; `SDUtil.listModelsOrNull()`; `PbStyleUtil.readSdConfigModels`) while the P2-1 test-author/verifier held the Maven slot — compiled clean by the verifier's own javac (633 main / 322 test sources); **P2-2 finished 17:25 → 17:34** (§10.2 results): `PbServiceFacade.listModelsForTask`, new Service7 `IllustrationService` (`GET /olio/illustration/models?task=&style=`), `TestIllustrationRestContract` ×3, `TestModelResolverLive` ×11 — `TestModelResolver` **40/40** 17:27 after one product fix in `CheckpointNames` (⚠ §6.C 154 a), `TestModelResolverLive` **10 pass / 1 honest skip** 17:27 (.39 lists no Kontext checkpoint), `TestIllustrationRestContract` **3/3** 17:28; jar + class redeployed to `am7test-am7-1` (md5 equal, `javap` clean) and the route **proven live as `e2etest_shared` 17:34** (`C:/tmp/p2-2-live.log`: 403 unauthenticated, 200 with all 13 installed checkpoints, 400 `bogus`, 404 absent style) — **P2-2 is implemented and green; test-author / verifier / security-reviewer pending, Objects7 quick gate batched with P2-1's (⚠ §6.C 153 a)** | — |
+| 2 — Style, model resolution, compiler core; ChapBook goes V3; Kontext Disable | **IN PROGRESS — as of 2026-10-15 06:23 local: P2-9 (Ux752 — book style editor at `/picture-book/{book}/style`, the reader's "Plan & generate" dialog with the estimate line + `PbPlanInspector`, the same inspector on the canvas node detail and the review page, and the model-missing message in the editor's live availability column — design §26; **Ux752 only, no server code changed**) **IMPLEMENTED + DEPLOYED + TESTED 02:05 → 06:23** (§10.9): Vitest NEW `pictureBookStyle.test.js` 40 + `pictureBookPlanInspector.test.js` 20 → **60/60**, full suite **92 files / 1222 passed** (`C:/tmp/p29-vitest-full.log`); `npx vite build` exit 0, `dist` copied, md5 local == container; Playwright NEW `pictureBookV3StyleEditor.spec.js` **5 passed (10.0 m)** (`C:/tmp/pw-p29-style2.log`) + NEW `pictureBookV3PlanInspector.spec.js` **3 passed (9.3 m) + 1 SD-gated skip** (`C:/tmp/pw-p29-plan.log`), both as `e2etest_shared` against the live stack with `.39` DOWN (inventory `error` surfaced in the editor; `POST /render-plan` **503** verbatim in the dialog; the 400/409 style contracts verbatim; every screenshot opened); test-author: all four files REAL, NEW test 6 (inheritance / book override / parent lock) → style spec **6 passed (10.2 m)** (`C:/tmp/pw-p29-ta-style2.log`), Vitest 60/60 (`C:/tmp/p29-ta-vitest.log`); verifier **PASS WITH NOTES** → own-lock gap in the render-settings panel fixed (`<fieldset disabled>`, 168 ac), style spec **6 passed (10.2 m)** again (`C:/tmp/pw-p29-fix-style.log`), delta re-check **PASS**; **no security-reviewer pass for this task (no new route — the P2-10 phase pass covers the client surface)**; ⚠ §6.C 168 (defaults a–m, asks 1–14 incl. a pre-existing canvas `saveCanvas` 500, 168 z); Ux752 quick gate **`VERIFY_OK`** 06:21 (`C:/tmp/ux752-gate-p29.log`); phase quick gates ⚠ batched forward (run 11) — **not DONE (yours)**; `.39` Swarm still DOWN (host + container) — SD-gated skips are not passes; 02:01 local: P2-8 (Kontext Disable, §37.3 Disable stage — `compositeMode=kontext` refused before any LLM/SD contact at every entry point: Objects7 `PbRenderPath.requireEnabledCompositeMode` → 409 in the executor and PB1 `generateSceneImage`, `ChatService.generateScene` 400 explicit / 409 config-resolved before the session lookup, `SceneCompositeUtil.buildSceneRequest` refuses a retired mode itself; `flux2|classic` stay supported; code stays until Phase 10 Remove) **IMPLEMENTED + DEPLOYED + TESTED 00:50 → 01:58** (§10.8): first pass Objects7 **104 run / 0 fail / 10 SD-gated skips** (`TestPbKontextDisable` NEW ×3 with an SD sentinel that proves no SD call, `TestKontextDeprecation` 8, `TestFlux2Composite` 36), Service7 NEW `TestChatSceneKontextDisable` ×8 + `TestChatSceneRenderPath` 4 → **12/12**, Playwright item 14 **4 passed**, curl proof as `e2etest_shared` (400/409/404 shapes); **security-reviewer PASS** (REQUIRED) with two hardenings applied in-task (bounded, control-stripped echo of an unknown mode; builder-level refusal) → hardening pass Objects7 **47/0/0/0**, Service7 **13/13**, Playwright item 14 **5 passed**, curl proof, jar/class/dist redeployed md5-equal; **verifier PASS** (own serial runs 61/0/0/10 + 12/12; two doc findings fixed in-task, design-level finding 3 recorded as ask 167 t) and **verifier re-check of the hardening diff PASS** (test rewrite ruled not a weakening) → **Verifier PASS; quick gates ⚠ batched forward (run 11)**, not DONE (yours); ⚠ §6.C 167 (asks 167 g / r / t); `.39` Swarm still DOWN (host + container) — SD-gated skips are not passes; 00:50 local: P2-6 (ChapBook goes V3 — pages compile through TEXT_ONLY via the shared `renderPlannedScene`; `chapbook.renderPath` defaults to `v3` at every surface, `v1` is the documented rollback) is implemented, deployed, live-proven on the Docker stack (Playwright group 2 **42 passed / 4 gated skips / 0 failed**; the two SD-gated reader tests red on pre-existing locator drift → repaired → **2/2** live; §10.6; ⚠ §6.C 165; §28 verify stage started — checks 1/4/5 yours); test-author 24/24, security PASS WITH NOTES and **verifier PASS WITH NOTES** for P2-6 → **Verifier PASS; quick gates ⚠ batched forward (run 11)**, not DONE (yours); P2-7 (chat scene through the illustration service, behind a third boot-pinned `chat.renderPath`, default `v1`, test stack `v3`) **IMPLEMENTED + DEPLOYED 23:10** — every surface edited and compiling (Objects7 jar installed, Service7/Console7 compile, Vite build, Vitest 5/5), `am7test-am7-1` recreated with `CHAT_RENDER_PATH=v3` and re-seeded (jar + classes + dist + template + entrypoint, md5-equal), boot log `chat.renderPath set to v3 (was v1)`, `GET /rest/config/render-path` as `e2etest_shared` → `{picturebook:v3, chapbook:v3, chat:v3}`; **TESTS WRITTEN + RUN 23:48 → 00:33** (§10.7) — Objects7 NEW `TestChatSceneRenderUtil` **10 run / 0 fail / 1 SD-gated skip**, re-run list **101 run / 0 fail / 29 SD-outage skips** (every skip classified from the XMLs, none a pass); Service7 NEW `TestChatSceneRenderPath` **4/4** + list **45/45** after a second H2 fixture corruption → rename-aside (✓ §6.C 166 x); Vitest 5/5; Playwright `renderPath` 4/4, item 14 **2 passed / 1 skipped** (the v3 live block skips on the documented inventory-unavailable 503 only together with a failed host probe, ⚠ 166 w); light security pass **PASS** — two in-task hardenings applied + redeployed (⚠ 166 y), two asks (166 z); **verifier PASS** 00:35 (code / switch / transport; it states the v3 200 path is UNVERIFIED until `.39` answers; one spec fix ⚠ 166 aa, ask 166 ab, notes 166 ac) → **Verifier PASS; quick gates ⚠ batched forward (run 11); live render pending `.39` / 166 v**, not DONE (yours); **SD-live proof still blocked**: Swarm `.39` unreachable from host and container (ping 100 % loss) while `.42:7801` answers 302 — the stack's `/System` `sd` connection still points at `.39` and the harness refused the admin `PATCH` that would repoint it (⚠ §6.C 166 v — yours); ⚠ §6.C 166 / §10.7; P2-5 (`PbNodeExecutor` renders from the plan through TEXT_ONLY; `POST …/scene/{scene}/render-plan`) is implemented, deployed, live-proven on the Docker stack (Playwright 6/6 as `e2etest_shared` against Swarm `.39`), security PASS, test-author gap-fills green, **verifier PASS** (§10.5; ⚠ §6.C 164; Objects7/Service7 quick gates ⚠ batched forward, 163 o / 164 w); P2-4 is verifier PASS (§10.4; ⚠ §6.C 163); started 2026-10-13 14:20 local (§10) on Stephen's "start (B) after the launches above" (17:25) once WSL/Docker were back (§3 14:08:33 probe); P2-1 planned + architect PASS (§10.1, §6.C 149/150), then **implemented in the working tree 14:50 → 15:30** (model, two FKs, five enums + `RENDER_PLAN`, `PbStyleUtil`, two illustration resources + two pure loaders, `TestPbModelSchema` +3, new `TestPbStyleSchema` ×8 and `TestIllustrationResources` ×17 — ⚠ defaults §6.C 151) while Objects7 gate run 7 held the Maven/DB/LLM slot on its own copy; **P2-1 tests green 16:45 (55/55, first Maven run) → test-author +3 cases 58/58 (16:54) → verifier PASS 17:04 (58/58 re-run by the verifier itself; §10.1 results)** — P2-1 is **verifier PASS, Objects7 quick gate pending** (⚠ batched with P2-2's, §6.C 153); nothing committed; P2-2 planned (§10.2, 15:45) + architect PASS WITH CORRECTIONS (16:00, all adopted, route resolved to §27's `/olio/illustration/models`; ⚠ §6.C 152), **Objects7 sources implemented 16:30 → 17:25** (`ModelResolver`, `ModelInventory`, `SwarmModelInventory`, `CheckpointNames`, `ModelTaskKeys`, `DeploymentModelDefaults`, `TestModelResolver`; `SDUtil.listModelsOrNull()`; `PbStyleUtil.readSdConfigModels`) while the P2-1 test-author/verifier held the Maven slot — compiled clean by the verifier's own javac (633 main / 322 test sources); **P2-2 finished 17:25 → 17:34** (§10.2 results): `PbServiceFacade.listModelsForTask`, new Service7 `IllustrationService` (`GET /olio/illustration/models?task=&style=`), `TestIllustrationRestContract` ×3, `TestModelResolverLive` ×11 — `TestModelResolver` **40/40** 17:27 after one product fix in `CheckpointNames` (⚠ §6.C 154 a), `TestModelResolverLive` **10 pass / 1 honest skip** 17:27 (.39 lists no Kontext checkpoint), `TestIllustrationRestContract` **3/3** 17:28; jar + class redeployed to `am7test-am7-1` (md5 equal, `javap` clean) and the route **proven live as `e2etest_shared` 17:34** (`C:/tmp/p2-2-live.log`: 403 unauthenticated, 200 with all 13 installed checkpoints, 400 `bogus`, 404 absent style) — **P2-2 is implemented and green; test-author / verifier / security-reviewer pending, Objects7 quick gate batched with P2-1's (⚠ §6.C 153 a)** | — |
 | 3 — Locations + POI link | TODO | — |
 | 4 — Composition + wardrobe | TODO | — |
 | 5 — Multi-character strategies (spike first) | TODO | — |
@@ -2737,6 +2737,331 @@ first probe: `TestGameUtil#TestMoveTowardsPositionAcrossCells` alone against the
 red is deterministic (§6.C 162). Under the second: the Service7 quick gate, launched 01:32:59 (`C:/tmp/s7-gate-p2-3.log`, start stamp
 `C:/tmp/s7-gate-p2-3.start`; H2 fixture, no SD, no LLM). `.39` has been `000` since 19:19:56 on 2026-10-13 (§6.N).
 
+### Re-probe 2026-10-14 10:26:29 local — before the `.39` reruns of the SD-gated P2 classes (§4.4 row 10) and P2-4 — GREEN on [5]/[6] Swarm `.39`; [1] postgres3 was DOWN and was restarted
+
+`C:/tmp/probe-p24-pre.log` (verbatim):
+
+```
+--- 2026-10-14 10:26:29 ---
+[1] postgres3 :15432 tcp CLOSED
+[2] am7test setup state http=200   am7test-am7-1 Up 30 minutes;am7-pg Up 30 minutes (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  521G  424G  56% /c
+```
+Two changes since the 01:32:34 probe. (a) **Swarm `.39` answers again** — host `curl` 302, in-container 302, and
+`POST /API/GetNewSession` returns a session on `0.9.8.3.GIT-ded28b19` — first GREEN since 19:19:56 on 2026-10-13 (§6.N), so
+the brief's "if `.39` is up" branch applies: the SD-gated P2 classes are rerun class by class and recorded under §4.4 row 10
+before P2-4 starts. (b) **postgres3 (the Objects7 JUnit `am7db`, :15432) was `Exited (255) 31 minutes ago`** — every
+`am7test-*` container and `am7-pg` showed `Up 30/31 minutes`, i.e. the Docker engine itself restarted around 09:55 and the
+standalone `postgres3` container (no restart policy) stayed down. Restarted with `docker start postgres3` (a stopped-container
+start, within the brief's remit; the engine was not touched): WAL redo to `11/92195368`, "database system is ready to accept
+connections" at 15:27:25 UTC, `pg_isready` accepting. No data loss indicated (clean end-of-recovery checkpoint, 0 buffers).
+Maven slot free (`tasklist` → one `java.exe` 5880 = the VS Code `redhat.java` language server, not Maven).
+
+### Re-probes 2026-10-14 12:05:02 → 13:09:10 local — P2-4 implementation, deploy, live proof and gap-fills — GREEN throughout; Swarm `.39` UP on all five
+
+12:05:02 (before the P2-4 pure/live JUnit runs), verbatim:
+
+```
+--- 2026-10-14 12:05:02 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 2 hours;am7-pg Up 2 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  521G  423G  56% /c
+```
+12:13:55 (before the Service7 route JUnit): identical to 12:05:02 line for line. 12:30:33 (before the live render
+JUnit rerun): identical except `[2] … am7test-am7-1 Up 3 hours;am7-pg Up 3 hours (healthy)` and `C: 944G  522G  423G  56% /c`.
+12:44:41 (after the P2-4 redeploy + `docker restart am7test-am7-1`, before the live REST proof): identical except
+`[2] … am7test-am7-1 Up 2 minutes;am7-pg Up 3 hours (healthy)` and `C: 944G  522G  423G  56% /c`.
+
+13:09:10 (`C:/tmp/probe-p24-gapfill.log`, before the test-author gap-fill runs), verbatim:
+
+```
+--- 2026-10-14 13:09:10 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 26 minutes;am7-pg Up 3 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  522G  423G  56% /c
+```
+Maven slot free on every probe (`tasklist` → one `java.exe` 5880 = the VS Code `redhat.java` language server, confirmed by its
+command line; not Maven). Only one Maven run at a time all day; no Playwright beside any JUnit. Every JUnit in §10.4 printed
+`[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` — **`tier=local`
+is the in-stack Ollama container (`:11435`) reached through the LiteLLM tracing proxy, not Azure** (Azure would read
+`tier=azure`/`gpt-5.6-terra` and needs `LITELLM_LIVE`, which is unset) — and none of the P2-4 tests makes an LLM call at all;
+every SD call went to `test.swarm.server` = `http://192.168.1.39:7801` (unchanged).
+
+### Re-probes 2026-10-14 16:59:54 → 18:30:56 local — P2-5 implementation, deploy, live proof, gap-fills and verification — GREEN throughout; Swarm `.39` UP on every probe
+
+16:59:54 (`C:/tmp/p25-probe.log`, before the P2-5 Objects7 install / Service7 compile and the first JUnit runs), verbatim:
+
+```
+--- 2026-10-14 16:59:54 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up About an hour;am7-pg Up 7 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  522G  423G  56% /c
+```
+17:22:41 (before the live executor JUnit): Swarm `.39` re-checked from the host (`http://192.168.1.39:7801/` → 302) and from inside
+`am7test-am7-1` (`docker exec am7test-am7-1 curl …` → 302) — both answered. 17:53:48 (console-only, before the first Playwright run,
+after the 17:44:58 redeploy + `docker restart am7test-am7-1`): identical to 16:59:54 line for line except
+`[2] … am7test-am7-1 Up 8 minutes;am7-pg Up 8 hours (healthy)` and `C: 944G  523G  422G  56% /c`.
+
+18:16:49 (test-author, after the gap-fill Playwright run `C:/tmp/pw-p25-gap.log`), verbatim:
+
+```
+--- 2026-10-14 18:16:49 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 31 minutes;am7-pg Up 8 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  523G  422G  56% /c
+```
+18:19:41 (verifier, console-only — not appended to `p25-probe.log`; quoted verbatim from its report and consistent with the
+`[LLM-GATE]` stamp 18:20:15 at `C:/tmp/p25-verifier-o7.log:55`):
+
+```
+--- 2026-10-14 18:19:41 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 34 minutes;am7-pg Up 8 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  523G  422G  56% /c
+```
+18:30:56 (verifier, console-only, before its Playwright run): identical apart from uptimes (`am7test-am7-1 Up 45 minutes`). Vite being
+down is irrelevant to every P2-5 run — the spec is REST-only against `:9443`.
+
+Maven slot free on every probe (`tasklist` → one `java.exe` 5880 = the VS Code `redhat.java` language server, not Maven; `node.exe`
+16800 = the VS Code extension host). One Maven run at a time; no Playwright beside any JUnit (the security review ran nothing; the
+test-author's Playwright and the verifier's runs each held the SD slot alone). Every JUnit in §10.5 printed
+`[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` — **`tier=local` is the
+in-stack Ollama container (`:11435`) reached through the LiteLLM tracing proxy, not Azure** (Azure would read `tier=azure`/`gpt-5.6-terra`
+and needs `LITELLM_LIVE`, which is unset) — and none of the P2-5 tests makes an LLM call; the Playwright spec prints no `[e2e-llm]` line
+because it never calls `resolveChatRoute()` (no LLM call either). Every SD call, JUnit and Playwright alike, went to Swarm at
+`http://192.168.1.39:7801` (`test.swarm.server` for Objects7; the container's `sd.server` for the Docker stack).
+
+### Re-probes 2026-10-14 19:44:21 → 20:49:54 local — P2-6 implementation, deploy, live proof and the gated-test repair — GREEN throughout; Swarm `.39` UP on every probe
+
+19:44:21 (`C:/tmp/p26-s1-probe.log`, before the S1 Objects7 JUnit run), verbatim:
+
+```
+--- 2026-10-14 19:44:21 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 2 hours;am7-pg Up 10 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  523G  422G  56% /c
+```
+
+20:02:19 (console-only, before the S1b re-run after the three S1 fixes): identical apart from uptimes.
+
+20:22:58 (`C:/tmp/p26-s3-probe.log`, after the redeploy + `docker restart`, before the Playwright group-2 run), verbatim:
+
+```
+--- 2026-10-14 20:22:58 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 6 minutes;am7-pg Up 10 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  523G  421G  56% /c
+```
+
+20:35:38 (`C:/tmp/p26-s3b-probe.log`, before the gated `chapBook.spec.js` run): identical apart from uptimes (`am7test-am7-1 Up 19 minutes;am7-pg Up 11 hours`).
+
+20:49:54 (`C:/tmp/p26-s3c-probe.log`, before the gated re-run of the two repaired reader tests): identical apart from uptimes (`am7test-am7-1 Up 33 minutes;am7-pg Up 11 hours`).
+
+21:03:10 (`C:/tmp/p26-ta-probe.log`, before the test-author's Objects7 gap-fill run): identical apart from uptimes (`am7test-am7-1 Up 47 minutes;am7-pg Up 11 hours`).
+
+21:48:56 (`C:/tmp/p26-ver-probe.log`, the independent verifier's own probe before its re-runs): identical apart from uptimes (`am7test-am7-1 Up 2 hours;am7-pg Up 12 hours (healthy)`); `[6] in-container llm42=200 swarm39=302 litellm=200`; `C: 944G 524G 421G 56%`.
+
+Maven slot free on every probe (`tasklist` → one `java.exe` 5880 = the VS Code `redhat.java` language server, not Maven; `node.exe` 16800
+= the VS Code extension host). One Maven run at a time; no Playwright beside any JUnit; the three Playwright runs each held the LLM/SD
+slot alone. The Objects7 JUnit runs printed `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr
+server=http://127.0.0.1:4000` — **`tier=local` is the in-stack Ollama container (`:11435`) reached through the LiteLLM tracing proxy, not
+Azure** — and none of the P2-6 JUnit cases makes an LLM call. The Playwright runs printed `[e2e-llm] route=litellm
+server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr` — the same in-stack container via LiteLLM, not Azure — for the
+LLM-touching cases (ChapBook `analyze`, the per-scene landscape prompt in gap6, the bulk render's prompts in 6C / test 4). Every SD
+call, JUnit and Playwright alike, went to Swarm at `http://192.168.1.39:7801` (`test.swarm.server` for Objects7; the container's
+`sd.server` for the Docker stack).
+
+### Re-probes 2026-10-14 23:10:30 local — P2-7 deploy — stack GREEN, **Swarm `.39` DOWN** from host and container; `.42` Swarm UP
+
+23:10:30 (`C:/tmp/p27-probe-1.log`, after the container recreate + re-seed + `docker restart`, before any P2-7 test run), verbatim:
+
+```
+--- 2026-10-14 23:10:30 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up About a minute;am7-pg Up 13 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=0
+[6] in-container llm42=200 swarm39=000 litellm=200
+    container dist index.html identical to local build
+C:              944G  524G  421G  56% /c
+```
+
+Follow-up probe (console, 23:11): host `curl http://192.168.1.39:7801/` → `000` ×3, container → `000`, `ping 192.168.1.39` → 100 % loss;
+host `curl http://192.168.1.42:7801/` → `302` ×3, container → `302`, ping 0 % loss; Ollama `.42:11434` → 200, `.39:11434` → `000`.
+So `.39` is off the network entirely (not a Swarm failure), and `.42` Swarm is live with 19 checkpoints (`/API/ListModels`). The stack's
+SD URL is the `/System` `sd` connection (`.39`), not `SD_SERVER` — see §6.C 166 v for why it was not repointed.
+
+Maven slot free (`tasklist` → no `mvn`/`surefire`; `node.exe` 16800 = the VS Code Playwright extension's idle `test-server`, not a run).
+Deploy sequence 23:05 → 23:10: `docker-compose -p am7test -f docker-compose.test.yml -f docker-compose.extra-ca.yml up -d --no-deps am7`
+(a first call without `-p am7test` defaulted to project `src`, collided on `am7-pg` and created only a stray `src_am7-test-net` network,
+removed); env now `PICTUREBOOK_RENDER_PATH=v3 CHAPBOOK_RENDER_PATH=v3 CHAT_RENDER_PATH=v3`; re-seeded the recreated container with the
+Objects7 jar (`~/.m2`, md5 `8d9abd7662a2ceb55b3d036d4b9c326f` local == container), the full Service7 `target/classes` (`ChatService`,
+`FeatureConfigService`, `RestServiceEventListener` md5-equal), the full Ux752 `dist`, `docker/web.xml.template` and `docker/entrypoint.sh`
+(md5-equal); `unzip -p … | grep -c "Unresolved compilation"` = 0 for `ChatSceneRenderUtil`/`PbRenderPath`/`Chat`; ISO42001/Agent7 jars
+in `WEB-INF/lib` already equal to `~/.m2`. `docker restart` → `/rest/setup/state` 200 in ~20 s; regenerated `web.xml:89-90` carries
+`chat.renderPath` = `v3`; boot log `PbRenderPath - picturebook.renderPath set to v3 (was v1)` and `chat.renderPath set to v3 (was v1)`
+(the chapbook line is silent: explicit `v3` equals the default); `GET /rest/config/render-path` as `e2etest_shared` →
+`{"picturebook":"v3","chapbook":"v3","chat":"v3"}` (200).
+
+### Re-probes 2026-10-14 23:48:13 → 2026-10-15 00:41:16 local — P2-7 tests + verifier — stack GREEN, **Swarm `.39` still DOWN** (host `http=0`, container `000`), LiteLLM 200
+
+Test-author probes 23:48:13, 23:49:56, 23:52:58, 23:53:42, 23:54:37, 23:57:33 (`C:/tmp/p27-ta-probe-1..6.log`) and mine at 00:04:42
+(`C:/tmp/p27-probe-2.log`), 00:06:58 (`C:/tmp/p27-probe-3.log`), 00:15:58 (`C:/tmp/p27-probe-4.log`) and 00:41:16 (`C:/tmp/p27-probe-5.log`,
+before the post-verifier Playwright re-run) read identically apart from the container uptime; the 00:15:58 one:
+
+```
+--- 2026-10-15 00:15:58 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up About an hour;am7-pg Up 14 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=0
+[6] in-container llm42=200 swarm39=000 litellm=200
+    container dist index.html identical to local build
+C:              944G  524G  421G  56% /c
+```
+
+Maven slot free before every run (`tasklist` → no `mvn`/`surefire`; `java.exe` 5880 = the redhat.java language server, `node.exe` 16800 =
+the VS Code Playwright extension's idle `test-server`); one LLM/SD run at a time throughout (JUnit, then Playwright, never beside each
+other). Service7 H2 fixture `am7/` opened corrupt at 23:50:42 (`h2.trace.db`: `File corrupted while reading record` → `MVStoreException:
+File is corrupted - unable to recover a valid set of chunks [2.3.232/6]`; last written 22:03:29 at the JVM exit of a GREEN run) →
+`am7.corrupt-2026-10-14-2350/` (✓ §6.C 166 x; untracked, keep out of staging) and a fresh `am7/` self-provisioned by the 00:06 run;
+intact after the 00:30 run and after the verifier's 00:35 re-run (0 `corrupt` lines in `h2.trace.db`). 00:25 redeploy (jar + `ChatService` classes, md5-equal, §10.7) → `docker restart am7test-am7-1`, Jersey
+answers the unauthenticated `render-path` probe 403 (its `@RolesAllowed` reply) within ~2 min; `.39` unchanged.
+
+### Probe 2026-10-15 01:24:12 local — before the P2-8 test runs — stack GREEN, **Swarm `.39` still DOWN** (host `http=0`, container `000`), LiteLLM 200
+
+`bash C:/tmp/am7-services-probe.sh` at 01:24:12 (output captured in the session, not redirected to a file — the next probe is logged):
+
+```
+--- 2026-10-15 01:24:12 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up About an hour;am7-pg Up 15 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=0
+[6] in-container llm42=200 swarm39=000 litellm=200
+    container dist index.html identical to local build
+C:              944G  524G  420G  56% /c
+```
+
+Maven slot free before each run (`tasklist` → no `mvn`/`surefire`; `java.exe` 5880 = the redhat.java language server, `node.exe` 16800 = the
+VS Code Playwright extension's idle `test-server`); runs strictly serial — Objects7 01:25 → 01:27, Objects7 `install` 01:27, Service7 01:31 → 01:32,
+Playwright 01:36 (no LLM call in the item-14 block). Service7 H2 fixture `am7/` intact after the run (no `corrupt` marker in `h2.trace.db`).
+01:33 redeploy (jar `548df86432a77a0e431035bd91449fd5` + `ChatService.class` `d52e99dc879cfc88947d617ede0cb530` + `ChatService$ChainRequestException.class`,
+md5 local == container, `javap` clean) and `dist` (`index.html` `e726cba6946d6a534bbad95b84d7ad89` local == container) → `docker restart am7test-am7-1`,
+Jersey answered the unauthenticated `render-path` probe 403 within 5 s; `.39` unchanged. The verifier's own serial re-runs followed at 01:41 → 01:43
+(`C:/tmp/o7-p28-verify.log`, `C:/tmp/s7-p28-verify.log`).
+
+### Probe 2026-10-15 01:53:21 local — before the P2-8 hardening runs — stack GREEN, **Swarm `.39` still DOWN** (host `http=0`, container `000`), LiteLLM 200
+
+`bash C:/tmp/am7-services-probe.sh` → `C:/tmp/probe-p28b.log`:
+
+```
+--- 2026-10-15 01:53:22 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 19 minutes;am7-pg Up 16 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=0
+[6] in-container llm42=200 swarm39=000 litellm=200
+    container dist index.html identical to local build
+C:              944G  525G  419G  56% /c
+```
+
+Maven slot free (`tasklist` → only `java.exe` 5880 / `node.exe` 16800); serial — Objects7 `install` 01:53:54 → 01:54:02 (`C:/tmp/o7-p28b-install.log`),
+Objects7 01:54 → 01:55 (`C:/tmp/o7-p28b.log`), Service7 01:55 → 01:56 (`C:/tmp/s7-p28b.log`), Playwright 01:57 → 01:58 (`C:/tmp/pw-p28b-chat.log`), curl 01:58
+(`C:/tmp/curl-p28b.log`). 01:56 redeploy: jar `ccfba879df665789a3dfd43b5ee19b2c` → `/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/`
+(the first `docker cp` went to a wrong path, `/usr/local/tomcat/...`, and failed loudly; redone to the real path), `ChatService.class`
+`7db34537056e3590e65f84defd1ef516` + `ChatService$ChainRequestException.class`, md5 local == container, `javap` shows `boundedEcho`, 0 `Unresolved`;
+`SceneCompositeUtil.class` in the jar == `target/classes` (`6963e04a8b1dc82d127f5d3952fa5c67`); `npx vite build` exit 0 (`C:/tmp/vite-p28b.log`), `dist`
+copied (`index.html` `46e82493cad4b8fbae7f2a6fae5f1bca` local == container) → `docker restart am7test-am7-1`, unauthenticated `render-path` 403 after 15 s.
+
+### Probe 2026-10-15 03:27:49 local — before the P2-9 test runs — stack GREEN, **Swarm `.39` still DOWN** (host `http=0`, container `000`), LiteLLM 200
+
+`bash C:/tmp/am7-services-probe.sh` → `C:/tmp/probe-p29.log`:
+
+```
+--- 2026-10-15 03:27:49 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 2 hours;am7-pg Up 18 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[5] Swarm .39: http=0
+[6] in-container llm42=200 swarm39=000 litellm=200
+    container dist index.html identical to local build
+C:              944G  525G  419G  56% /c
+```
+
+Re-probed 03:55:38 (`C:/tmp/probe-p29b.log`) and 04:25:25 (`C:/tmp/probe-p29c.log`) before the later runs — identical except `C:` 526G used.
+No LLM call in any P2-9 test (the plan compiler is template-based; no `[e2e-llm]` line to quote); every SD-dependent assertion is
+either an outage-mode contract (inventory `error`, `/render-plan` 503) or an SD-gated skip. Maven slot free throughout (`tasklist` →
+only `java.exe` 5880 / `node.exe` 16800); one Playwright process at a time, serial — `npx vite build` 03:03 (`C:/tmp/p29-build1.log`),
+03:27 (`p29-build2.log`), 03:55 (`p29-build3.log`); Vitest 03:26 (`p29-vitest1.log`), 03:27 (`p29-vitest2.log`, `p29-vitest.log`
+full), 03:54 (`p29-vitest3.log`), 04:55 → 04:56 (`p29-vitest-full.log`, full); `dist` → `am7test-am7-1:/opt/ux752/dist/` after
+each build (md5 local == container, `MSYS_NO_PATHCONV=1`); Playwright style spec 04:01 → 04:08 (`C:/tmp/pw-p29-style.log`) and
+04:14 → 04:24 (`pw-p29-style2.log`); outage timing curl 04:08 → 04:12 (`p29-plan-time.sh|.log`); Playwright plan spec 04:26 → 04:30
+(`pw-p29-plan-run1.log`), 04:31 → 04:41 (`pw-p29-plan-run2.log`), 04:41 → 04:50 (`pw-p29-plan.log`); test-author: Vitest 04:58 (`p29-ta-vitest.log`), Playwright style spec 05:06 → 05:16 (`pw-p29-ta-style.log`) and 05:21 → 05:31
+(`pw-p29-ta-style2.log`); verifier: build + Vitest 05:37, Playwright plan spec 05:39 → 05:49 (`pw-p29-ver-plan.log`), style spec 05:50 → 06:00
+(`pw-p29-ver-style.log`); lock fix: Vitest 06:08 (`p29-fix-vitest.log`), build 06:08 (`p29-build4.log`), probe 06:09:09
+(`probe-p29d.log`, identical — `.39` host `0` / container `000`), Playwright style spec 06:09 → 06:19 (`pw-p29-fix-style.log`);
+verifier delta re-check 06:21 (`p29-ver-fix-vitest.log`, `p29-ver-fix-build.log`); Ux752 quick gate 06:20:51 → 06:21:15
+(`ux752-gate-p29.log`); full Vitest 06:21 → 06:22 (`p29-fix-vitest-full.log`).
+
 ## 4. Verification per phase
 
 | Phase | `verify.sh` | verifier | architect | security-reviewer |
@@ -3285,9 +3610,18 @@ Same command and rsync'd `C:/tmp/o7verify` copy as §4.1; live `am7db` on `postg
 | 7 | (A) PF-9 + PF-5b — the **same copy as run 6, unchanged** (refreshed 11:41:34, pre-P2-1: `security/WebAuthnUtil` + `TestWebAuthnUtil` ×8, `TestPbRenderJob` 11; the P2-1 classes written 14:50 → 15:30 are **not** in this run; probe 14:08:33 §3) | 2026-10-13 14:12:04 → 16:41:28 (`C:/tmp/o7verify-gate-pfA-run7.log`; start stamp `C:/tmp/o7verify-gate-pfA-run7.start`) | `PASS (build)`; `FAIL (test)`; `[ERROR] Tests run: 991, Failures: 4, Errors: 0, Skipped: 15`; `VERIFY_FAILED`; `GATE_EXIT=1` — **valid result** | **Four reds, all in the §4.2 baseline, none new:** §6.A ×3 at the baseline lines — `TestPbDeleteSeries.testStrangerDeniedThenOwnerDeletesWholeSeries:119` (`chapter 1 row`), `TestPbListSeriesBooks.testEntitledNonOwnerSeesAllChaptersStrangerSeesNone:138` (`expected:<2> but was:<0>`), `TestPbSeriesCast.testRecopyAndMergeDenyReadOnlyUserAndDoNotMutate:532` (`subject MUST be able to READ the chapter book`) — and `TestMannequinBaseImage.classpathCopiesAreByteIdenticalToUx752` (`resolveUx752MediaDir:72`: `Could not find Ux752's public/media directory` — the isolated-copy artefact; `AM7_UX752_MEDIA` not set, as in runs 5/6). **The two remaining baseline reds are green for the first time in a full gate**, confirming the P1-12 group 5 resolutions: §6.B `TestUpstreamResolution` `tests=8 failures=0 errors=0` and §6.F `TestPictureBookWorkflow` `tests=5 failures=0 errors=0`. **Run 6's pre-outage red is classified flaky, not a regression:** `olio.TestGameUtil` `tests=25 failures=0 errors=0` (`TestMoveTowardsPositionAcrossCells:964` green here as in run 5; red once, in the run the WSL update interrupted — left alone, not Phase 1 code). Watched classes: `TestWebAuthnUtil` `tests=8 failures=0 errors=0 skipped=0` (PF-5b), `TestPbRenderJob` `tests=11 failures=0 errors=0 skipped=0` (PF-9 case11 included, live `.39`). 15 skipped = run 5's 15. Surefire: 167 report files in `C:/tmp/o7verify/AccountManagerObjects7/target/surefire-reports/`. `size_vram` reading taken 14:32:39 while the gate held a model: `curl -s http://127.0.0.1:11435/api/ps` → `goekdenizguelmez/JOSIEFIED-Qwen3:8b` `size 5988784536` **`size_vram 5988784536`** (≠ 0, on the GPU). The gate is `VERIFY_FAILED` only on the four baseline reds (§6.A ×3 is Stephen's — never pursued by me; the mannequin guard needs `AM7_UX752_MEDIA` pointed at the real tree on the copy, a gate-harness setting I have not changed). **(A)'s Objects7 gate obligation is met with this run.** |
 | 8 | (B) P2-1 + P2-2 — copy refreshed 18:15:26 from the working tree (adds `olio/illustration` ×6 incl. `CheckpointNames`, `ModelResolver`, `SwarmModelInventory`, `DeploymentModelDefaults`, `ModelTaskKeys`, `ModelInventory`; `olio/picturebook/PbStyleUtil`, `PbServiceFacade.listModelsForTask`, `SDUtil.listModelsOrNull`; the `olio.pb.style` model + `style` FKs + enums; tests `TestPbStyleSchema` 9, `TestIllustrationResources` 20, `TestModelResolver` 41, `TestModelResolverLive` 16, `TestPbModelSchema` 22, `TestPbV3Schema` 5, `TestPbNodeExecutorTypes` 2; `diff -rq` 0, `cmp pom.xml` same; probe 18:15:31 §3) | 2026-10-13 18:15:58 → 20:17:01 (`C:/tmp/o7verify-gate-p2-run8.log`; start stamp `C:/tmp/o7verify-gate-p2-run8.start`) | `PASS (build)`; `FAIL (test) in AccountManagerObjects7`; `[ERROR] Tests run: 1080, Failures: 17, Errors: 5, Skipped: 17`; `VERIFY_FAILED`; `GATE_EXIT=1` — **valid for the non-SD set; the SD set is an outage, OPEN** | **+89 tests vs run 7 (991 → 1080). 22 reds = 4 baseline + 18 `.39`-outage, zero new logic reds.** The four baseline reds at run 7's lines: §6.A ×3 — `TestPbDeleteSeries` 1/1 red (`:119`), `TestPbListSeriesBooks` 1/1 red (`:138`), `TestPbSeriesCast` 7/1 red (`:532`) — and `TestMannequinBaseImage` 10/1 red (`classpathCopiesAreByteIdenticalToUx752`, `AM7_UX752_MEDIA` unset on the copy). **The 18 others, from the surefire XMLs** (every `<error>`/`<failure>` is `java.net.ConnectException: Connection timed out: getsockopt` to `192.168.1.39:7801` or the FAILED render/job/stage it caused): `TestPictureBookWorkflow` 5/err 1 (`TestStepBudgetComparison:788`; the other four green incl. §6.F's `TestFreshCharacterSubRecordsAndPortraitRender` — rendered live before the drop); `TestSDUtilCreateImage` 6/fail 1/err 2/skip 1 (`createImageSparseConfigDoesNotThrow`, `createImageHonoursWidthHeightAndSeed:208`, `createImageHiresWithoutRefinerModelSkipsRefiner:277`; the skip is `requireSwarmReachable` after the drop); `TestChapBookRenderStyle` 4/1 (`liveRenderUsesStyledPromptAndDefaultNegative`); `TestChapBookV3Render` 12/7 (`healingADanglingPageImageMarksTheNodeStale`, `bulkSubmitRunsAsOneJob` `expected:<1> but was:<0>`, `editsMarkThePageStaleAndRerenderClearsIt`, `facadeForceRerendersACurrentPageAndPinStillWins`, `forceRerendersACurrentUnpinnedPage`, `autoApproveApprovesAndPinsTheRenderedPage`, `liveRenderProducesArtifactAndReviewApplies:346`; class time 464.98 s, 14 `ConnectException` lines); `TestPbNodeRun` 7/err 1 (`case05_livePortraitRunThenCharacterEditDrifts:493`); `TestPbRecovery` 8/1 (`case07_liveCancelLeavesThePreviouslySelectedArtifactUntouched:605`); `TestPbRenderJob` 11/3 (`case06:516`, `case07:589`, `case11:1194`); `TestPbSceneGenerationGuards` 6/err 1 (`testLandscapeFailureIsNonFatal:451`). 4 + 18 = 22 ✓. **Outage window, from `TestPictureBookWorkflow`'s log in its XML:** `19:16:21.859 KI-68: generating scene with flux2Steps=4` → `19:19:07.105 KI-68 steps=4: generated in 165244ms` (a real `.39` FLUX.2 render) → `19:19:07.170 … flux2Steps=20` → `19:19:56.103 PictureBookUtil - Scene …: landscape generation FAILED (java.net.ConnectException: Connection timed out: getsockopt)` → `19:20:39.810 Scene image generation pipeline failed: java.net.ConnectException`. So `.39` was last seen answering at 19:19:07 and first failed to connect at ~19:19:35; every SD red is in a class that finished at or after 19:20:39 (XML mtimes: `TestPictureBookWorkflow` 19:20:39, `TestSDUtilCreateImage` 19:24:17, `TestChapBookRenderStyle` 19:28:01, `TestChapBookV3Render` 19:35:46, `TestPbNodeRun` 19:53:23, `TestPbRecovery` 19:55:33, `TestPbRenderJob` 20:02:11, `TestPbSceneGenerationGuards` 20:05:26). **The P2-1/P2-2 classes all finished before it:** `TestModelResolverLive` `tests=16 failures=0 errors=0 skipped=1` at 18:40:10 (its XML: `SwarmModelInventory - Installed-model inventory for http://192.168.1.39:7801: 13 checkpoints`, `BaseTest - Live inventory for http://192.168.1.39:7801: 13 checkpoints; gate model listed as 'OfficialStableDiffusion/sd_xl_base_1.0.safetensors'`; the 1 skip is case07 `SKIPPED: http://192.168.1.39:7801 lists no Kontext checkpoint. This is NOT a pass.`), `TestPbModelSchema` `tests=22 failures=0 errors=0` 18:46:15, `TestPbStyleSchema` `tests=9 failures=0 errors=0` 18:54:50, `TestPbV3Schema` `tests=5 failures=0 errors=0` 18:54:59, `TestIllustrationResources` `tests=20 failures=0 errors=0`, `TestModelResolver` `tests=41 failures=0 errors=0` (pure), `TestPbNodeExecutorTypes` 2/2. `Skipped: 17` = run 7's 15 + `TestModelResolverLive.case07` + `TestSDUtilCreateImage` ×1. No `[LLM-GATE]` line is in the quiet log or the XMLs (`-q` swallows the console line); none of the P2-1/P2-2 classes calls the LLM, and the LLM-touching classes in the run failed on SD, not LLM. `size_vram` not re-read during this run (no LLM-gated class under test). **Disposition ⚠ §6.C 159:** non-SD set = run 7's baseline exactly → the P2-1/P2-2 code gate is met on it; the 18 SD reds are §6.N's pattern (recurrence block there) and stay OPEN until re-run class by class on a reachable Swarm; P2-1/P2-2 DONE-by-gate is Stephen's call. |
 | 9 | (B) P2-3 — copy refreshed 23:25:37–23:25:40 from the working tree: the P2-3 code (22:51:03 refresh) plus the §6.C 161 lock fix (`PbServiceFacade` striped `STYLE_WRITE_LOCKS` around `putStyle`/`lockStyle`; `TestPbStyleResolver` 16 cases incl. `case15`); `diff -rq` 0, pom identical; probe 23:25:53 §3 | 2026-10-13 23:26:31 → 2026-10-14 01:25:54 (`C:/tmp/o7verify-gate-p2-run9.log`; start stamp `C:/tmp/o7verify-gate-p2-run9.start`) | `PASS (build)`; `FAIL (test) in AccountManagerObjects7`; `[ERROR] Tests run: 1118, Failures: 6, Errors: 9, Skipped: 68`; `VERIFY_FAILED`; `GATE_EXIT=1` — **non-SD set = run 8's baseline plus ONE new red (`TestGameUtil`, a pre-existing Olio defect reached by data drift, reported not fixed — ⚠ §6.C 162); the SD set is the same `.39` outage, OPEN** | **+38 tests vs run 8 (1080 → 1118 = `TestPbStyleResolver` 16 + `TestPbStyleHashStaleness` 5 + `TestIllustrationModelPolicy` 14 + `TestPb1ModelPolicySequence` 3). 15 reds = 4 baseline + 10 `.39`-outage + 1 new.** Baseline four at their usual lines: §6.A ×3 — `TestPbDeleteSeries` 1/1 (`:119`), `TestPbListSeriesBooks` 1/1 (`:138`), `TestPbSeriesCast` 7/1 (`:532`) — and `TestMannequinBaseImage` 10/1 (`classpathCopiesAreByteIdenticalToUx752`, `AM7_UX752_MEDIA` unset on the copy). **The 10 `.39` reds** — `.39` was `000` from before launch, so these are the classes with no `SdTestGate` precondition that ran and timed out; every `<error>` is `java.net.ConnectException: Connection timed out: getsockopt` via `ClientUtil.post:241` or `PictureBookUtil.generateSceneImage:10552`: `TestPbCanvas` 5/err 3 (`testLandscapeNodeExecution`, `testCompositeNodeExecution`, `TestPortraitNodeExecution`; XML 23:51:14), `TestPictureBookCustom` 7/err 2 (`TestPictureBookCustomPipeline`, `TestSceneGraphWriteFailurePlumbingArtifactsRevokeInert`; 00:11:38), `TestPictureBookWorkflow` 5/err 4 (`TestSceneGraphIsRecordedAndStructurallySound`, `TestLandscapeReferenceChangesTheComposite`, `TestFreshCharacterSubRecordsAndPortraitRender`, `TestStepBudgetComparison`; 00:30:11), `TestPbSceneGenerationGuards` 6/fail 1 (`testLandscapeFailureIsNonFatal:437` `Swarm must be reachable at http://192.168.1.39:7801`; 01:14:04). 4 + 10 + 1 = 15 ✓ (Failures 6 = `TestGameUtil`, `TestMannequinBaseImage`, §6.A ×3, `TestPbSceneGenerationGuards`; Errors 9 = 3 + 2 + 4). Run 8's other six SD-red classes **skipped at setup** this time instead of failing mid-run: `Skipped: 68` = the 15 env-flag skips of runs 7/8 (`LITELLM_LIVE` ×7, `am7test.db.url` ×2, `PICTUREBOOK_E2E` ×5, D3 ×1) + **53** `SKIPPED: test.swarm.server=http://192.168.1.39:7801 did not answer, so nothing live can be exercised here (off the LAN?). This is NOT a pass.` across 13 classes: `TestModelResolverLive` 16, `TestIllustrationModelPolicy` 10, `TestChapBookV3Render` 7, `TestChapBookRenderSignal` 4, `TestSDUtilCreateImage` 4, `TestChapBook` 3, `TestPbRenderJob` 3, and 1 each in `TestChapBookPromptLockedResolution`, `TestChapBookRenderStyle`, `TestChapBookSceneLandscapePrompt`, `TestPb1ModelPolicySequence`, `TestPbNodeRun`, `TestPbRecovery`. **The 1 new red:** `TestGameUtil` 25/fail 1 — `TestMoveTowardsPositionAcrossCells` (`TestGameUtil.java:964`) `java.lang.AssertionError: Distance should not increase significantly (was 153.0, now 1143.0)`; XML 23:31:56; no SD, no LLM; green in runs 7 and 8; rerun alone 01:31 green **from the post-wrap position** (`C:/tmp/p2-gameutil-rerun.log`). Diagnosis ⚠ §6.C 162: `GameUtil`'s `cell*100 + pos` absolute arithmetic has no feature term, so the walk's legitimate cell-eastings wrap 9 → 0 into the next 1 km feature reads as a 1000 m jump; the persisted test character drifts ~100 m east per gate run and reached the feature edge on this run. **P2-3 classes in this run:** `TestPbStyleResolver` 16/0/0/0 (00:02:51), `TestPbStyleHashStaleness` 5/0/0/0 (00:02:22), `TestPbStyleSchema` 9/0/0/0 (00:03:08), `TestPbGraph` 20/0/0/0 (23:53:01), `TestIllustrationModelPolicy` 14/0/0/10 (23:45:04), `TestModelResolverLive` 16/0/0/16 (23:46:05), `TestPb1ModelPolicySequence` 3/0/0/1 (00:39:33); P2-1/P2-2: `TestPbModelSchema` 22/0 (23:53:39), `TestPbV3Schema` 5/0 (00:03:17), `TestIllustrationResources` 20/0 + `TestModelResolver` 41/0 (00:31:58), `TestPbNodeExecutorTypes` 2/0 (00:54:16). No `[LLM-GATE]` line in the quiet log (`-q`). **Disposition ⚠ §6.C 162:** the P2-3 code gate is met on the non-SD set (its only change from run 8 is the `TestGameUtil` drift red, which is Olio movement code P2-3 never touches, reported for Stephen and not fixed); the 10 SD reds + 53 SD skips are §6.N's outage (second recurrence block there) and stay OPEN until re-run class by class on a reachable Swarm; P2-3 DONE-by-gate is Stephen's call. **Ruling 09:40: the `TestGameUtil` red is deprioritized and non-blocking (162 ruling) — non-SD baseline from here = 5.** |
+| 10 — rerun (targeted, working tree, not the copy) | the three SD-gated P2 classes that Assume-skipped on runs 8 and 9 while `.39` was down (§6.N), rerun class by class the moment the 10:26:29 probe (§3) showed `.39` GREEN and before any P2-4 work — one Maven run at a time, `postgres3` restarted first (§3) | 2026-10-14 10:28:31 → 10:30:20 (`C:/tmp/p24-rerun-TestModelResolverLive.log`, `C:/tmp/p24-rerun-TestIllustrationModelPolicy.log`, `C:/tmp/p24-rerun-TestPb1ModelPolicySequence.log`; start stamp `C:/tmp/p24-rerun-live.start`) | `TestModelResolverLive` `Tests run: 16, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 21.41 s` `BUILD SUCCESS`; `TestIllustrationModelPolicy` `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 17.76 s` `BUILD SUCCESS`; `TestPb1ModelPolicySequence` `Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.905 s` `BUILD SUCCESS` — **33 run, 32 pass, 1 skip (NOT a pass)** | Every case classified from the three `TEST-*.xml` files. `SdTestGate` resolved `test.swarm.model` from the live list as `OfficialStableDiffusion/sd_xl_base_1.0.safetensors` [olio.sd.config schema default] (13 checkpoints listed; `flux2Klein_9b` installed as `flux2Klein_9b.safetensors`); `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` in all three (the gate probe is their only LLM contact). The one skip is `TestModelResolverLive.case07_anyInstalledKontextIsFamilyDisabledEvenAsAnOverride` — `SKIPPED: http://192.168.1.39:7801 lists no Kontext checkpoint. This is NOT a pass.` — exactly the §6.C 154 c case, unchanged (no Kontext on `.39`, §36.1). The 15 other `TestModelResolverLive` cases, all 14 `TestIllustrationModelPolicy` cases (4 offline + 10 live, incl. `live07` with FLUX.2 installed → `STYLE_DEFAULT`, not the unresolved branch) and all 3 `TestPb1ModelPolicySequence` cases pass; `pb1PortraitOverrideIsNotTheLocationPick` found its two distinguishable installed checkpoints (`sd_xl_base_1.0` / `flux2Klein_9b`) and ran instead of skipping. **This is the first live-`.39` evidence for P2-2/P2-3's SD-gated cases; it does not change the DONE-by-gate call (§6.C 159 b, Stephen's) — the 10 `.39` reds + 53 SD skips of run 9 across the other 13 classes stay OPEN until a gate run under a GREEN probe.** |
 
 A **full** gate (Playwright included) runs once before Phase 1 is declared done (P1-11); its Playwright
 counts will be compared against the §4.2/§4.3 list in the brief.
+
+**P2-4 / P2-5 quick gates are ⚠ batched forward (§6.C 163 o / 164 w), 2026-10-14 18:40.** No Objects7 or Service7 quick gate has
+run with the P2-4 (`RenderPlan`, `SdxlCompiler`, `TextOnlyLayout`, `PlanCanvas*`, `PbPlanEstimate`, `TestPbRenderPlan*`,
+`TestRenderPlanLive`, `TestPictureBookPlanRoute`) or P2-5 (`PbNodeExecutor.executeRenderPlan`, `PbServiceFacade.requestRenderPlanScene`,
+`PictureBookService.renderPlanScene`, `TestPbRenderPlanExecutor`, `TestPictureBookRenderPlanRoute`) code on the copy; both tasks are
+covered by their own targeted JUnit/Playwright runs (§10.4, §10.5) and the full set runs as **run 11** once P2-6 lands, so the
+ChapBook-V3 switch and its P1-12 group 2 specs are gated in the same pass rather than three partial passes against a busy `.39`.
+Until then the §4.2 non-SD baseline stays 5 (162 ruling) and run 9's 10 `.39` reds + 53 SD skips stay OPEN.
 
 ### 4.5 Phase 1 full gate — P1-11 (2026-10-11 19:33:29 → 21:42:29 local) — `VERIFY_FAILED` on e2e
 
@@ -6598,6 +6932,810 @@ blocking item), 12, 13 and 15 are ⚠ MY JUDGMENT.
      P2-3 code gate is met on the non-SD set; DONE-by-gate on an outage run is yours.
      (e) Service7 quick gate 01:32:59 → 01:36:32 (`C:/tmp/s7-gate-p2-3.log`): `PASS (build)` / `PASS (test)` / **`VERIFY_OK`**, `GATE_EXIT=0`; surefire 24 classes, **158/0/0/0** (PF-5b's 142 + `TestPictureBookStyleRoutes` 13 + `TestIllustrationRestContract` 3 — the P2-3 and P2-2 Service7 classes). So on the Service7 side P2-3's gate is green outright; the open question is only the Objects7 run above.
      **Ruling 2026-10-14 09:40 (Stephen):** "don't worry about regression testing the game parts right now — deprioritize, it shouldn't be a blocking issue." ✓ Applied: `TestGameUtil.TestMoveTowardsPositionAcrossCells` is carried as a known, deprioritized, NON-blocking red — the non-SD baseline is now 5 (§6.A ×3 + mannequin + this) — no fix, no test re-stage, no DB write; 162 c is closed. (B) continues with P2-4.
+
+163. ⚠ **2026-10-14 11:05 → 15:50 — P2-4 (`RenderPlan` + TEXT_ONLY + `SdxlCompiler` + estimate + plan-inspector route): every default
+     taken under auto mode (planner plan `C:/tmp/p24-planner-plan.txt` 11:05; architect review `C:/tmp/p24-architect-review.txt` 11:05
+     CHANGES-NEEDED — every numbered item adopted or recorded below; §10.4).** Ratified defaults (§34, 149–161) were honoured, not re-decided.
+     (a) ⚠ **Route placement: `POST /olio/picture-book/{book}/scene/{sceneId}/plan` on `PictureBookService`, `@RolesAllowed({"admin","user"})`.**
+     Architect MEDIUM: design §27 :1310 names `POST /composition/{id}/plan`, but no composition record exists before Phase 3, and
+     `IllustrationService` is product-agnostic (150 a). A `{book}/scene/{scene}` path is the P1-6 `/render` precedent. **ASK:** keep, or
+     move to `/composition/{id}/plan` when Phase 3 lands?
+     (b) ⚠ **No SD server configured → 500 "SD server is not configured"; unrecognised API type → 500** — consistency with
+     `listModelsForTask` (architect 11). **ASK (deployment-wide, not a P2-4 fork): 503 vs 500 for "misconfigured deployment".**
+     (c) ⚠ **A pure selector/compiler never throws on a valid plan.** `StrategySelector` returns TEXT_ONLY with
+     `REASON_REFERENCES_NOT_IMPLEMENTED` and one `ACTOR_TEXT_ONLY` degradation per referenced actor instead of a 501/ISE (architect 7);
+     an unknown checkpoint family compiles with `REASON_UNKNOWN_FAMILY` and the SDXL compiler. `SdxlCompiler.compile()` for a non-BASE
+     stage (UPSCALE) returns the BASE compile verbatim — Phase 5 reshapes stages (§38.2).
+     (d) ⚠ **Prompt budget semantics.** `promptTokenBudget` per family (capabilities.json: `*xl*` 225, `flux2*` 512, `*kontext*` 225) is a
+     judgement, not a measured encoder limit, and `PromptBudget.estimateTokens` is a whitespace/punctuation approximation (no CLIP BPE
+     tokenizer in the repo) — stated in the resource `_comment`. Over budget: groups drop ELEM_LOW → ELEM_MEDIUM → PALETTE → CAMERA →
+     ACTOR_BG (one `PROMPT_TRUNCATED` degradation each), then MAIN is cut at ", " boundaries keeping its first segment (`MAIN_CUT`); if
+     still over, `OVER_BUDGET_UNCUT` records it and the prompt is sent as is. ELEM_HIGH/ACTOR_FG/STYLE/PHOTOREAL never drop. No `(term:weight)`.
+     (e) ⚠ **Estimate + calibration (§18).** `RenderCalibration` is process-global keyed `server|family` (architect 2: allowed because the SD
+     URL is /System-global), EWMA of **seconds per step per megapixel** folded with `ConcurrentHashMap.compute` (no lost samples); timed on
+     the txt2img round trip only; a sample uses the **asked** width/height; `record` refuses non-positive duration/steps/dims; the `source`
+     string carries the bound verbatim ("in-process since JVM start; other JVMs' renders not included"); `measured:false` + `source: NONE…`
+     until this JVM has rendered that family on that server. UPSCALE is counted at BASE cost (no second family measured). Persisting a
+     sample is a named follow-up and **must never be an admin write from a user render path** — its own record, as the caller (architect 2).
+     (f) ⚠ **`CanvasResolver`.** scale ≤ 0 → 1.0; CUSTOM without both dims → SQUARE; "config width/height apply on an empty style chain"
+     tests `chain().isEmpty()` because `EffectiveStyle.pageFormat()` already folds unset → SQUARE; snaps to 64 px and does not pick from
+     `nativeResolutions` (now advisory; 832×1216 / 1216×832 added to `*xl*`). Pre-existing P2-3 tension recorded, not resolved (architect 10):
+     `EffectiveStyle.qualityPreset()` folds unset → STANDARD, so `QualityPresets.defaultPreset()` (DRAFT, 149 a) is never reached from a
+     plan — the live default plan is STANDARD (proof log `:35`).
+     (g) ⚠ **Adapter contract (§15).** `RendererAdapter` returns **bytes only** (architect 6 — `SDUtil.createImage` persists, so it is not
+     wrapped); `StageRequest`/`StageResult` are builders so Phase 5's `{graph, inputs}` reshape extends them; `StageRequest` carries no init
+     image in P2-4 and reads the refiner block from the config map; `StageResult.build()` with ok and no images becomes `ERROR_NO_IMAGES`;
+     a cancelled stage is a failed result, never a throw; `cancelActive` (§15 :790-795) is **omitted** for now. `StageImage.isSeedReported`
+     distinguishes a server-reported seed from the `seed+i` inference (createImage's `:1349` fallback mirrored, reported explicitly).
+     (h) ⚠ **`SDUtil` touch-ups inside P2-4 scope.** `appendLoras` → `appendLoraTags(String, List<String>)` overload keeps
+     `DocumentUtil.replaceSmartQuotes` (architect 5; `:347` ran it before the null-config return) — consequence (verifier): smart-quote
+     normalisation now runs even with no LoRAs. `SDUtil.listModelsOrNull()`/inventory error → `INVENTORY_UNAVAILABLE`, null model pick,
+     `MODEL_SUBSTITUTED@BASE` carrying the reason, the plan still builds (§19) and the stage fails in ms with "Renderer unreachable or
+     returned no response" and no URL. `ImageDims.decode` is the one implementation; `PbPipelineUtil.decodeDimensions` delegates.
+     (i) ⚠ **Config snapshot (architect 8).** `PbConfigUtil.configSnapshot(cfg)` = `CONFIG_HASH_EXCLUDE` + identity/virtual/ephemeral +
+     `SNAPSHOT_EXCLUDE` (`groupId/groupPath/ownerId/organizationId/name` …), non-null only, non-primitive values via `toString()`; taken
+     **before** `applyForStyle` writes the pick (156 g — picks live under `models`, never hashed into `config`). Observation: the snapshot
+     can say `hires:true` while the BASE `StageRequest` asks `hires=false` — the snapshot is the config, the request is the stage. **P2-5
+     must choose one frozen source**: `olio.pb.artifact.sdConfigSnapshot` (`PbArtifactUtil.java:155-158`) or the plan's `config`.
+     (j) ⚠ **Facade in Objects7.** `PbServiceFacade.planScene(user, book, scene, Map body, sdApiType, sdServer)` parses the preset name
+     itself (400 "Unknown quality preset '<x>'"), accepts `raw` as Boolean or `"true"`, takes `model` as `PlanOptions.modelOverride` → the
+     LOCATION pick is `OVERRIDE` when installed; SCENE_DIRECT is resolved read-only on a null copy (the plan never persists config, §4.1);
+     the body reaches the facade as a `Map` (Service7 parses JSON → 400 "Malformed request body"); `:2521` parses `SDAPIEnumType` by hand,
+     mirroring `:154` (verifier note, left). The route is a dry run as the principal: 401 `requireBook` on no user (direct invocation only —
+     on the live stack an unauthenticated POST is Tomcat's 403), 404 book/scene, 400 preset/body, 409 style, 500 SD config.
+     (k) ⚠ **Partial style chain → 409.** Text: `Style chain of book <slug> is not readable at <model> <objectId>; scene <objectId> cannot
+     be planned against a partial style` (or `… cycles; …`). A style-less book plans with `revisionHash` = SHA-256 of `""`
+     (`e3b0c442…`) and `photoreal:false` — the hash of "no style" is stable and deliberate.
+     (l) ⚠ **Location text.** For a PB scene the main description is `sdPrompt` when meaningful (sceneModel.json:88 documents it "For
+     ChapBook scenes" — a stand-in, architect LOW), else setting/action/mood joined as sentences, else summary, else title, else `""`
+     (empty allowed: a plan is a read). `joinSentences` keeps a trailing `. ! ? ;` as the join (the live `hallway.. Darby` double period
+     was a product fix inside P2-4), extended 13:05 to `,` and `:` after the verifier noted them untested — pure test
+     `TestPbRenderPlanLocationText.joinSentencesHonoursEveryTerminalMark` covers all six.
+     (m) ⚠ **Actors.** `olio.pb.scene.characters` has **no writer in the product** (PB1 and ChapBook never populate it), so `sceneActors`
+     (`PbRenderPlanUtil.java:241-272`, `MemberUtil.findMembers` + `AccessPoint.list` + `populate` `:287`; mirrors `PbCastUtil.listCastMembers`)
+     is live but currently always empty, and every P2-4 plan is TEXT_ONLY "no referenced actors". An actor's text excludes
+     `narrative.sdPrompt` (that is the portrait prompt, not a scene description). The architect's HIGH ("characters not projected") is
+     thereby moot for now and reopens with whichever phase writes `characters`.
+     (n) ⚠ **Tests.** H2 plan tests pin `sd.server=http://127.0.0.1:1` (`SD_CONTEXT`, architect LOW) so inventory fails fast;
+     `TestRenderPlanLive.facadePlanAsOwner` calls the facade from Objects7 (no REST) on `am7db`; `TestRenderPlanLive.java:335` switches to
+     `127.0.0.1:1` when `.39` is unreachable — only case 1 needs SD, the others assert the no-server contract (verifier note; left);
+     `TestNoSdServerIs500` does not assert its precondition; `TestPictureBookRestContract` +4 are reflection (route shape), not behaviour;
+     `~/PbPlanRoute` / `~/PbPlanRouteStranger` groups and the `pbplanowner`/`pbplanstranger` users persist across runs in the H2 fixture
+     (`src/AccountManagerService7/am7/`); the 409 case (`TestPartialStyleChainIs409`, 13:05) reaches a truncation the way
+     `TestPbStyleResolver.case07` does — grant the stranger's style group to the owner (`MemberUtil.member` + `CacheUtil.clearCache`), PUT it
+     as the parent, plan (200, the parent's description compiled), revoke, plan again (409) — on H2 the truncation lands at the **own**
+     style (PBAC denies the child read once its parent is unreadable; the test asserts whichever hop it measured and logs it, `MEASURED:`).
+     `C:/tmp/p24-live.py:48` carries `cGFzc3dvcmQ=` (= `password`, the documented `e2etest_shared` credential) — outside the repo.
+     (o) ⚠ **Module quick gates batched forward** (153 a precedent): no Objects7 or Service7 `verify.sh --quick` was run for P2-4 alone; the
+     Objects7 gate (~2 h on `C:/tmp/o7verify`) and Service7 gate run after P2-5/P2-6 land and will say so in §4.4. Run 9's ten `.39` reds
+     + 53 SD skips stay OPEN; P2-1…P2-3 stay "verifier PASS, gate pending `.39`" (159 b).
+     (p) ⚠ **Live-proof fixture selection.** `GET /olio/picture-book/books` omits olio-principal-owned world books and PB1 note-backed books
+     list `data.note` ids from `/scenes`, so the proof picks its fixture from an owner-filtered `olio.pb.scene` `/rest/model/search`
+     (`organizationId`/`ownerId` numeric, `cache:false`, `results` envelope). A PB1 `data.note` id on the plan route is 404 "Scene <id> not
+     found in this book". **ASK: want a clearer message for PB1 note ids?**
+     (q) **Security review PASS (12:20; hardening notes, none acted on under scope discipline — your call):** (i) `PbStyleResolver.findLibraryDir`
+     `:361` is a find-only `findPath` as the org admin (same as `ChatLibraryUtil.findLibraryDir:82`, pre-existing); (ii) `sceneActors` raw
+     reads (m above); (iii) `PbConfigUtil.ensureFullSdConfig` `:247-250` raw `findRecord`; (iv) the raw user `model` string is logged
+     unescaped (`CheckpointNames.java:59`); (v) plan body size is unbounded on the route; (vi) a down SD server is never negative-cached
+     (`SwarmModelInventory.java:60-63`) — a short negative TTL suggested.
+     (r) **Verifier PASS (12:55; non-blocking, all recorded above or here):** untracked `src/AccountManagerObjects7/tmp.mp4` and
+     `src/AccountManagerService7/am7.corrupt-2026-10-12-1632/` are keep-outs, never staged; my claim named `TextOnlyStrategy` — the class
+     is `StrategySelector` (corrected here and in §10.4).
+     (s) **Architect one-liners for `architecture.md` (yours, unwritten):** `olio/illustration` is product-agnostic (no `olio.picturebook`,
+     `OlioModelNames`/`OlioFieldNames`, `PictureBookException`); a pure selector/compiler never throws on a valid plan — unsupported paths
+     are §19 degradations; process-global caches keyed by the /System-global SD server are permitted, org-derived keys are not; any
+     config snapshot hashed for identity uses `CONFIG_HASH_EXCLUDE` semantics, never raw `toFullString()`.
+
+164. ⚠ **2026-10-14 16:25 → 18:40 — P2-5 (`PbNodeExecutor` renders from the plan, TEXT_ONLY; `POST …/scene/{scene}/render-plan`):
+     every default taken under auto mode (planner plan `C:/tmp/p25-planner-plan.txt` 16:25; architect review
+     `C:/tmp/p25-architect-review.txt` 16:39 CHANGES-NEEDED, 17 findings + W1–W10 — every numbered item adopted or recorded below; §10.5).**
+     Ratified defaults (§34, 149–163) were honoured, not re-decided.
+     (a) ⚠ **Synchronous route `POST /olio/picture-book/{book}/scene/{scene}/render-plan` on `PictureBookService`,
+     `@RolesAllowed({"admin","user"})`, no body, 200 + DTO on success.** Design §27 lists no render-plan route and makes every render
+     async (`202 {jobId}`); the P1-6 `/render` + `/regenerate` precedent is sync and P2-9 needs a one-call "render this page from its plan".
+     The cancel token is therefore inert on this route (architect 16). **ASK (extends 163 a):** keep sync, or fold into §27's async job
+     shape when Phase 3's composition route lands?
+     (b) ⚠ **Refusal status vocabulary: 404 book/scene, 403 not updater, 409 v1 / pinned / in flight / no text / no installed model,
+     503 renderer inventory unavailable or renderer unreachable, 500 renderer error / no SD backend configured / unknown API type.**
+     Architect 5 asked 422 vs 409 for "no text" — zero 422 precedent in Service7, so 409. Architect 16 asked 503 for the two "the SD server
+     did not answer" cases — adopted (`unresolvedModelStatus` returns 503 iff `INVENTORY_UNAVAILABLE`; the adapter's "unreachable or
+     returned no response" stage failure maps to 503; everything else 500). **ASK (ties to 163 b):** ratify deployment-wide; the architect's
+     one-liner for `architecture.md` on the status vocabulary is yours — not written.
+     (c) ⚠ **One node per scene, RENDER_PLAN + BASE collapsed: handle `render_plan@<shortRef(scene)>`, ordinal = `sceneIndex`, scope
+     SCENE/`scene.objectId`, `scene.sceneNode` untouched, created lazily on the first call (`ensureRenderPlanNode`), re-executed on every
+     later call (live: one node, base revisions 1 → 2, plan revisions 1 → 2).** The design's "plan node feeding a base node" split is
+     Phase 3's composition graph; for P2-5 the plan is a `renderPlan` JSON artifact and the image a `base` artifact on the same node
+     (architect 3 + 9 adopted). Nit (architect 3, security e-3): no per-book lock around the first-call create — two concurrent first calls
+     on one scene both miss `findNodeByHandle` and the second `addNode` fails the unique index as a 500, not a 409. Recorded, not fixed
+     (the striped per-book lock of 158 is a Phase 3 seam).
+     (d) ⚠ **`ensureWorkflow` get-or-create instead of the planner's `requireWorkflow` 404.** The route exists precisely so a fresh V3 book
+     can render its first page from its plan, so the facade creates the workflow as the caller through PBAC (`PbGraphUtil.getCreateWorkflow`).
+     Proven live: `GET /workflow` 404 "This book has no workflow yet - generate a scene first" before the first render-plan → 200 with one
+     node after (`pw-p25-gap.log` :4, :31). Consequence: node + workflow are created **before** the SD-backend gate, so on Service7-H2
+     (no world) the no-SD case surfaces as the world-less workflow 500 (`TestWorldLessBookIsALoud500NamingTheWorkflow`). **ASK:** should the
+     SD gate precede `ensureWorkflow`?
+     (e) ⚠ **The plan is persisted before the refusals that follow it (no text, no model) and the 409/503 text names it —
+     `… (plan artifact <oid>)`; the pinned and in-flight 409s sit before the plan and persist nothing** (architect 4 adopted — the plan is
+     the evidence for "why was this refused"; live: the pinned 409 left both chains at exactly two revisions, `pw-p25-gap.log` :130). The
+     node is left FAILED with `lastError` = the refusal text (live :40); a later success never clears `lastError` (pre-existing, items 50/57).
+     (f) ⚠ **No `referenceArtifactObjectIds` entry for the plan** (architect 8, BLOCKER, adopted): that list is positional reference imagery
+     for Phase 4; the plan↔image link is structural (same node, `renderPlan` + `base` chains, `supersedes`) and the DTO carries
+     `planArtifactObjectId` + `planContentHash` beside `artifactObjectId` (= the image, architect 14). The architect's second one-liner for
+     `architecture.md` ("`referenceArtifactObjectIds` is positional") is yours — not written.
+     (g) ⚠ **Frozen config = the plan's own config snapshot re-hydrated (`PbConfigUtil.parseOverride(plan.getConfig())`) with `model := pick`,
+     `description := compiled prompt`, `negativePrompt := compiled negative or ""`, `hires := false`; sparse fallback
+     (`newInstance(MODEL_SD_CONFIG, {model, description, negativePrompt, hires})` + WARN) if re-hydration fails.** Resolves 163 i: the plan
+     config is the frozen source; architect 6 corrected description/negativePrompt (adopted). The recorded `olio.sd.config` says what was
+     sent, not what the book's sdConfig says.
+     (h) ⚠ **Artifact role `base`** (architect 9): `PbPipelineUtil.recordImage(… ROLE_BASE …)`; the bytes land in the book's `Artifacts`
+     group (`nodeGraph` passes `artifactPath` for both artifact and gallery paths), named `render_plan_<sceneIndex>_<millis>`, owned by the
+     rendering user — asserted live (`pw-p25-gap.log` :107-108, `/Olio/Universes/Books/Worlds/p25-plan-mv8qagpw/Artifacts`, ownerId 228).
+     Test-author notes, comments only, not touched: `persistBytes`' javadoc and `SceneGraph.getGalleryGroupPath()` say "the world's Gallery
+     (§2.5)", true only for `openSceneGraph`; `PbServiceFacade.nodeView`'s comment says "newest first" while `PbArtifactUtil.listChain` orders
+     ascending (live `[rev1, rev2]`). **ASK:** should render-plan bytes go to the Gallery per §2.5?
+     (i) ⚠ **`PlanOptions.NONE` inside the executor** (architect 15): the render uses the default preset and no override, so `/plan` with no
+     body and `/render-plan` build the same plan (live: plan revisions 1 and 2 share `contentHash 0540dda3…`); a preset/model override sent
+     to `/plan` is not honoured by `/render-plan` until P2-9 passes it through. Recorded divergence.
+     (j) ⚠ **`ModelPick.isResolved()` + node-aware `buildScenePlan` overload** (architect 10 adopted); `RENDER_PLAN` added to
+     `SD_BACKED_TYPES` (architect 11; `TestPbNodeExecutorTypes` 6 → 7) and `EXECUTABLE_TYPES`; builder signatures corrected to
+     `.prompt(CompiledPrompt).config(Map)` (architect 7, BLOCKER); scene projection includes `summary`/`title` (architect 13).
+     (k) ⚠ **UPSCALE is not rendered — the executor sends exactly the BASE stage** (`stagesRendered:[BASE]`, one image recorded even when the
+     preset lists two stages); a FINAL preset's UPSCALE stage is a recorded degradation, not a refusal. Phase 5.
+     (l) ⚠ **No server URL in any message or DTO** (security c); `unresolvedModelMessage` names step / requested model / reason only, e.g.
+     `No installed model for scene 0: OVERRIDE 'p25-bogus-override.safetensors' NOT_INSTALLED; DEPLOYMENT_DEFAULT '…' NOT_INSTALLED - Model
+     for LOCATION is unresolved: NO_CANDIDATE (plan artifact …)`.
+     (m) ⚠ **Test levers:** `SDUtil.setDefaultModel` is set and restored in `finally` inside `TestPbRenderPlanExecutor` (architect 12
+     caveat adopted); the unreachable case points `SDUtil` at `127.0.0.1:1`. **ASK (architect 12):** a `ModelInventory` seam for tests
+     instead of the static default-model lever?
+     (n) ⚠ **The happy-path "no `MODEL_SUBSTITUTED`" assertion relies on a fresh book with no sdConfig/style** — the deployment default
+     resolves straight to OK. On the Docker stack that default is `sd.model` = `juggernautXL_ragnarokBy.safetensors` (`sd.default.model`
+     empty → `RestServiceEventListener.java:330-337`); on Objects7 JUnit it is `test.swarm.model` =
+     `OfficialStableDiffusion/sd_xl_base_1.0.safetensors`; both installed on `.39`, both OK at step `DEPLOYMENT_DEFAULT`. The gap-fill
+     spec's header (line 36) said the Docker default is sd_xl_base — wrong (live `pw-p25-gap.log` :33
+     `model=juggernautXL_ragnarokBy.safetensors step=DEPLOYMENT_DEFAULT`); comment only, no assertion depends on it; corrected after the
+     verifier's run.
+     (o) ⚠ **Reachability of each refusal per harness:** NO_CANDIDATE 409 and INVENTORY_UNAVAILABLE 503 are proven only in Objects7
+     (`TestPbRenderPlanExecutor`: bogus override + nonexistent deployment default; unreachable server); the empty-text 409 sits after the
+     model gate and needs a reachable inventory — proven in Objects7 and live; the v1 409 is proven in Objects7 and Service7-H2 (the route
+     test pins v3 itself because the Service7 harness boots v1) and is unreachable live (`PICTUREBOOK_RENDER_PATH=v3` boot-pinned in the
+     container); the 503 is unreachable on Service7-H2 (the world-less 500 lands first). None of these is a skipped SD case.
+     (p) ⚠ **Public facade overload validates the API type (500) after the 401 check; `toSdUtil`'s unguarded `valueOf` is pre-existing**
+     (recorded, not touched).
+     (q) ⚠ **The sync route still opens and closes a run** (`runObjectId`, `runStatus COMPLETED`, `executedNodeCount 1`,
+     `failedNodeCount 0`, `autoApproveSkipped "off"`, `requestedNodeIds` = the one node) — asserted live (`pw-p25-gap.log` :70-109).
+     (r) ⚠ **Wire DTO drops empty lists** (`JSONUtil.exportObject` is `Include.NON_EMPTY`): `degradations` and `downstreamHandles` are
+     absent when empty; the node DTO uses `storedStatus`/`status` (no `nodeStatus`); the artifact DTO has no `nodeObjectId`. My first
+     Playwright assertion (`degradations is a list`, `pw-p25.log`) was wrong, not the product — fixed to absent-or-empty, re-run 3/3.
+     (s) ⚠ **Playwright is REST-level** (no UI until P2-9), serial, `PB_SD_TESTS=1`-gated (ungated = `6 skipped`, `pw-p25-gap-ungated.log`,
+     reported as skips, never as passes); each run leaves a fresh STORY book with its nodes/artifacts in place (books 973
+     `p25-plan-mv8pil69`, 974 `p25-plan-mv8pk0fk`, 975 `p25-plan-mv8qagpw`, plus the verifier's) — deleting them is yours to call.
+     (t) ⚠ **Objects7 `TestPbRenderPlanExecutor` run history:** run 1 (`p25-executor.log` 17:23) 6 run / 2 errors in my own test helper
+     `nodeCount` (404 "This book has no workflow yet" on a workflow-less book — a test bug, fixed); run 2 (`p25-executor2.log` 17:32) the
+     two fixed cases 2/2; the verifier's full-class run (§10.5 results) is the first single-run 6/6 — the doc said "4/6 + 2/2 across two
+     runs" until then.
+     (u) ⚠ **Security review PASS (18:08; read-only, nothing executed):** authorization order identical to `requestSceneRender`/
+     `requestRegenerate` (404 → 409 v1 → 403 at `PbServiceFacade.java:616` → 404 scene, every write after the 403 gate as the caller); no
+     admin/olio-principal write on the path; no URL disclosure; no injection surface (`data.data` name is `render_plan_<int>_<millis>`,
+     prompt text travels as Jackson fields). Four hardening notes, none acted on: (i) no byte cap on `SwarmRendererAdapter`/
+     `SDUtil.fetchImageBytes` reads (same as every existing `ClientUtil.get(byte[].class …)`); (ii) the sync route bypasses `PbRenderLanes`
+     exactly like `requestRegenerate` — N concurrent updater renders hold N request threads; (iii) the first-call node race of (c);
+     (iv) no reader-with-read-but-no-update → 403 test on this route (only stranger → 404).
+     (v) ⚠ **Test-author gap-fill (18:16, `pw-p25-gap.log` 6/6):** Playwright tests 4–6 added — durable run / node-view / `data.data`
+     record; a real second principal (`ensureIso42001TestUser`, `e2etest_iso42001`) → 404 "Book not found" from render-plan, `/workflow`,
+     `/workflow/node`, `/artifact`, and nothing created as checked by the owner; approve revision 2 → node pinned → render-plan 409
+     "Node render_plan@… is pinned. Unpin it first - …" in 19 ms before any render, chains/selection/status untouched → unpin restores
+     `pinned:false` with the approval retained. Deliberately not added: v1-live (unreachable, (o)) and "`lastError` cleared after success"
+     (the product never clears it).
+     (w) ⚠ **Objects7/Service7 quick gates batched forward again** (163 o): not run for P2-5; to be run after P2-6 lands (§4.4).
+     (x) ⚠ **Verifier PASS WITH NOTES (18:19 → 18:33; `C:/tmp/p25-verifier-o7.log`, `p25-verifier-types.log`, `p25-verifier-s7.log`,
+     `pw-p25-verifier.log`; §10.5 results)** — every cited line, PNG and md5 re-checked by me before recording. Seven notes, none blocking;
+     my disposition: (i) the `PbNodeExecutor.frozenConfig` comment claimed it overlays "the values this stage actually sent" while only
+     `model`/`description`/`negativePrompt`/`hires` are overlaid — `steps`/`width`/`height` stay at the effective-config snapshot while the
+     `StageRequest` (`:633-635`) sends the plan's canvas and preset steps; **comment corrected (line-count-neutral, bytecode unchanged)**;
+     `generatorRequest` remains the record of what was sent and nothing in product code reads the snapshot fields. **ASK:** overlay
+     `steps`/`width`/`height` too so the frozen `olio.sd.config` is self-describing? (ii) a blank SD server leaves the `SDUtil` null, so
+     workflow + node rows exist before the executor's 500 "no SD backend" — the (d) asymmetry with `planScene`, already an ASK there;
+     (iii) the route javadoc omitted the v1 409 and the 401 — **corrected (line-count-neutral)**; (iv) `findSceneByNodeRef` (`:1346-1376`)
+     does not constrain its direct-objectId lookup to the book — pre-existing, shared with LANDSCAPE/COMPOSITE, and the route is protected by
+     `requireSceneOfBook`; recorded, not touched; (v) lane consistency with `requestRegenerate` and untouched PORTRAIT/LANDSCAPE/COMPOSITE
+     bodies — confirmed; (vi) test quality (no loosening, no fake assertions, no admin principal) — confirmed; (vii) book 976
+     `p25-plan-mv8que7a` left in place (adds to (s)). Stated by it as not verified, and not claimed here: the other Objects7/Service7 classes,
+     the P2-4 classes `TestPbRenderPlanLocationText`/`TestRenderPlanLive`/`TestPictureBookPlanRoute` (green at 17:34-17:36 in my own runs),
+     and the cancellation path (inert on this route, (a)).
+
+165. ⚠ **2026-10-14 18:45 → 20:56 — P2-6 (ChapBook goes V3; §24, §28, §28.1): every default taken under auto mode (planner plan D1–D12; architect review PASS WITH CORRECTIONS, 8 findings — every numbered item adopted or recorded below; §10.6).**
+     Ratified defaults (§34, 149–164) were honoured, not re-decided.
+     (a) ⚠ **One shared render helper; the ChapBook page keeps its LANDSCAPE node and `landscape` role (plan D1/D2).** The core of
+     `executeRenderPlan` (`PbNodeExecutor` :577) is now package-private `renderPlannedScene(g, node, scene, sceneLabel, sdu,
+     imageNamePrefix, …)` (:678) returning a `PlannedRender` holder (:615: plan, plan artifact oid/hash, compiled prompt, pick, bytes,
+     frozen config, request JSON, duration, `degradations`, `configNotApplied`, stages); `executeRenderPlan` keeps lookup +
+     `recordImage(ROLE_BASE)` + DTO; `executeChapBookPage` (:865) keeps the scope 400, the scene projection, the no-prompt 409,
+     `recordImage(ROLE_LANDSCAPE)`, the scene `imageObjectId`/`imageStale=false` write-back and `completeNode(DONE_UNVERIFIED)`, and
+     calls the helper with `"chapbook_" + sceneOid`. No RENDER_PLAN node per page: the §10.5 **Seams** sentence that promised one is
+     corrected in place (one node type fewer in `nodeView`/review-queue role handling; the `renderPlan` artifact on the LANDSCAPE
+     node is the plan evidence either way). ASK: ratify.
+     (b) ⚠ **`SwarmRendererAdapter(SDUtil)` (:33) beside `(SDAPIEnumType, String)` (:27); the executor builds `new
+     SwarmRendererAdapter(sdu)` (D3)** so the facade's per-call `SDUtil` (per-org server, 149/164) reaches the adapter.
+     `TestChapBookV3Render.CapturingSdu extends SDUtil` (:1136; ctor `(server, delegate)`) overrides `txt2img` to capture
+     prompt / negative / model / steps and, when not delegating, returns null → `ERROR_UNREACHABLE` → 503 → node FAILED — graph-shape
+     cases therefore prove the compiled prompt reached `txt2img` without paying for a render; the failure message is asserted to contain
+     `"(plan artifact "` (`PLAN_MARKER` :82), i.e. the plan was persisted before the refusal (§12 rule 1).
+     (c) ⚠ **`configNotApplied` is reported beside, not inside, `degradations` (plan D5 + architect 2/3, corrected after S1's three reds —
+     mine).** The plan path does not apply what the v1 page path applied: the `sd.config` tier's `style` clause, `hires` (BASE only), and
+     the v1 default negative prompt. The architect asked for these as visible degradations; I first emitted them that way and
+     `TestChapBookV3Render` + `TestPbRenderPlanExecutor` went red (3 of 30) because a degradation vetoes auto-approve (§10 rule 5) and
+     every deployment-default `sd.config` carries `hires` and a `style` — auto-approve would have been unreachable on the plan path. So
+     `PlannedRender` carries both lists; `describe(out)` (:646) writes `KEY_CONFIG_NOT_APPLIED` (:652) with `NOT_APPLIED_HIRES` /
+     `NOT_APPLIED_STYLE_CLAUSE` (only when the effective config carries a user-set `style`) / `NOT_APPLIED_DEFAULT_NEGATIVE` (:769-772),
+     each with a sentence; `PbRenderJobUtil` (:684-685) copies it onto the per-node job outcome; `degradations` keeps its §10 meaning (the
+     render fell short of its own plan). Live every ChapBook render reports `HIRES` + `DEFAULT_NEGATIVE` and `degradations=[]`
+     (`C:/tmp/pw-p26.log` :64). This applies to P2-5's RENDER_PLAN node too (same helper). Design §24 as-built says so. ASK: ratify the
+     split and the names.
+     (d) ⚠ **Review queue excludes `renderPlan` artifacts.** `PbServiceFacade.listReviewQueue` (:2354) skips
+     `PbPipelineUtil.ROLE_RENDER_PLAN` (:2370-2371; the role is `"renderPlan"`, `PbPipelineUtil` :90) — a plan is the record of a render,
+     not a reviewable output; `nodeView` (:396) still groups it under `artifacts.renderPlan` so it stays REST-visible. S1's third red was
+     `TestPbRenderPlanExecutor` counting the plan in the queue. ASK: ratify.
+     (e) ⚠ **Steps are preset-governed (D6).** `TestChapBookV3Render` asserts `plan.preset.steps == captured steps` (:411/:549/:738);
+     the book-tier and scene-override `steps` are unhonoured on v3 — 164 x (i) stays open and `SdConfigPanel` still exposes a steps
+     field. ASK (carried to P2-9): hide it on v3, or overlay it into the frozen config (164 x i)?
+     (f) ⚠ **Bytes land via `persistBytes`; the artifact group is unchanged (architect 1 corrected D7)** — `nodeGraph` passes the same
+     artifact path for both roles, so nothing moved; 164 h (Artifacts vs Gallery) stays open.
+     (g) ⚠ **`PbRenderPath` carries one default per product (D10, architect 6).** `PICTUREBOOK_DEFAULT = V1` (:45), `CHAPBOOK_DEFAULT =
+     V3` (:48), `REFUSAL_PREFIX` (:51), `CHAPBOOK_ROLLBACK_WARNING` (:54); `configure(pb, cb)` (:69-75) → `resolve(key, raw, current,
+     productDefault)` (:77): absent / blank / unrecognised → the **product's** default with a WARN, so a typo can neither enable nor disable
+     a product's path; `chapbook=v1` is applied and logged at WARN `legacy ChapBook render path re-enabled (rollback)` (:73). Class and
+     `configure` javadocs and `TestPbRenderPath.case03`'s comment rewritten to say so; new `case10_chapBookV1IsRollback` (:117).
+     Sub-point: an explicit value equal to the current value emits no line, and the container pins `CHAPBOOK_RENDER_PATH=v3`, so the
+     stack's boot log shows only `picturebook.renderPath set to v3 (was v1)` — "absent → v3" is proven in JUnit only (`TestPbRenderPath`
+     case01/03, `TestChapBookRestContract.TestChapBookDefaultsToV3AndV1IsRollback`). ASK: ratify; and should `configure` log both products'
+     effective values unconditionally at boot so the rollback state is always one grep away?
+     (h) ⚠ **Every surface moved to `v3` together; no new flag (D11):** the code default, `WEB-INF/web.xml`, `docker/web.xml.template` +
+     `docker/entrypoint.sh` (`CHAPBOOK_RENDER_PATH`, default `v3`), `docker-compose.yml`, Console7 `resource.properties` + `ConsoleMain`,
+     `RestServiceEventListener`. Rollback = `chapbook.renderPath=v1` (env `CHAPBOOK_RENDER_PATH=v1`) + restart; documented in design
+     §28.1 as-built.
+     (i) ⚠ **Ux fallback `featureConfig.js` → `{picturebook:'v1', chapbook:'v3'}` when the route is absent or the body unrecognised
+     (D12)**; `renderPathConfig.test.js` 4/4. The admin "Render Path" chips read `PictureBook: v3 (graph)  ChapBook: v3 (graph)` on the
+     stack (`test-results/renderPath-admin-chips.png`, opened).
+     (j) ⚠ **`promptLocked` is not projected by `executeChapBookPage`'s scene query** (`id, objectId, name, groupId, organizationId,
+     sceneIndex, sdPrompt`): the page renders `sdPrompt` whether it is locked or not — the lock governs the composer's write, not the
+     render. ASK: confirm that reading, or project it and refuse to overwrite a locked prompt here too.
+     (k) ⚠ **`NarrativeUtil.isMeaningful(sdPrompt)` gates the no-prompt 409** (architect 8) — `Page N has no prompt; set or generate its
+     landscape prompt before rendering it` (:886) — and the style clause (:711), so whitespace-only prompts are refused rather than sent.
+     (l) ASK — architect 7: two `architecture.md` one-liners (Stage-2 gate default semantics — "a typo pins the product default"; and
+     "nothing the old path applied is dropped silently — report it") are yours; not written.
+     (m) ⚠ **Fail-not-skip SD gating (architect 5):** `SdTestGate.requireSwarmReachable(swarmServer())` at the top of every live case in
+     `TestChapBookV3Render` (:129/:241/:365/:422/:456) and `SwarmModelInventory.invalidateAll()` in `@Before` (:114), mirroring
+     `TestPbRenderPlanExecutor` :91/:480 — an unreachable `.39` is a red, never an Assume-skip. The unit-level inventory seam stays ASK 164 m.
+     (n) ASK — **the ChapBook `generate` body on v3 carries no plan keys** (`ChapBookUtil.renderResolvedSceneV3` :2165-2190 →
+     `v3PageResult` :2199-2229 — `imageObjectId, rendered, skipped, pending, llmUnavailable, llmDegraded, renderPath, jobId, runObjectId`).
+     Plan evidence over REST is `GET /rest/job/{jobId}` → `result.nodes[].configNotApplied` and `GET …/workflow/node/{oid}` →
+     `artifacts.renderPlan`. Carried to P2-9: should the plan inspector read the job/node, or should the generate body carry
+     `planArtifactObjectId` / `planContentHash` / `strategy` / `stagesPlanned` / `configNotApplied` like the PictureBook route?
+     (o) **§28 verify-stage checks — status (the row asked "list which"):** (1) Scenarios A–G on the Docker stack — **yours**; (2) every
+     existing book opens/migrates in V3 with images showing — **partial**: every book the ChapBook specs create opens and shows its images
+     (A–E, 6C, gap6, test 4), no real pre-V3 ChapBook walked yet; (3) a pre-V3 ChapBook renders a page in V3 with its locked prompt intact
+     — **mechanism proven** on a test-created book (`sdPrompt` → `location.text` verbatim, `TestChapBookV3Render`; design §24 as-built),
+     a real pre-V3 book not yet walked; (4) two weeks with no rollback — clock starts 2026-10-14; (5) sign-off — **yours**. Rollback value
+     documented in (h).
+     (p) **S1 run history:** `C:/tmp/p26-s1-o7.log` — 30 run / 3 failures, all mine ((c) ×2, (d) ×1) → fixed → `C:/tmp/p26-s1b-o7.log`
+     **31/31** (`TestChapBookV3Render` 15/0/0/0 378.4 s; `TestPbRenderPath` 10/0/0/0; `TestPbRenderPlanExecutor` 6/0/0/0 205.3 s;
+     `[LLM-GATE] route=litellm tier=local` = in-stack container, no LLM call made; SD `.39`).
+     (q) ⚠ Objects7/Service7 quick gates **batched to run 11** (163 o / 164 w): P2-4 + P2-5 + P2-6 together, after P2-6's verifier.
+     (r) ⚠ **Playwright group 2 and the two gated reds.** Group 2 (7 specs, 46 tests: `chapbook-issues` 6, `chapBook` 18,
+     `chapBookLlmUnavailable` 4, `chapBookRenderPathV3` 5, `chapBookScopingOverride` 2, `chapBookVerify` 7, `renderPath` 4) with
+     `CB_LIVE_GEN=1`: **42 passed / 4 skipped / 0 failed** (`C:/tmp/pw-p26.log`, 7.1 m); the 4 skips are `chapBook.spec.js`'s
+     `CHAPBOOK_LLM_TESTS` / `CHAPBOOK_SD_TESTS` gates (analyze, bulk render, gap6, test 4) — skips, not passes. Gated full-file re-run
+     (`C:/tmp/pw-p26-cbgated.log`, 18 tests): **16 passed / 2 failed** — analyze (LLM via LiteLLM → in-stack container) and bulk render
+     (SD `.39`, 2,295,686 image bytes, `test-results/6C-chapbook-render.png` opened: "Book chapbook-sd-mv8vbj4g Page 1 of 4", an autumn
+     oak over the "Falling Leaves" stanza) passed; **gap6** red at `chapBook.spec.js:1106` `Error: reader did not load book pages`
+     (`locator('text=/Page \d+ of \d+/').first()` not visible in 30 s) and **test 4** red at `:1276` `Error: no page elements found in
+     reader` (0 × `div.rounded-lg.overflow-hidden.border`). **Diagnosis — pre-existing test drift, not a product defect and not a P2-6
+     regression:** the reader has been the shared one-page-at-a-time `ReaderShell` opening on a Cover slot since af5e3ff5 (2026-09-06);
+     the P1-12 group-2 repair added `beginReader()` (Cover → Begin) to 6A / 6D / fixPageHeight but these two were SD-gated and never ran;
+     both `error-context.md` snapshots hold the Cover (`Begin`, `Cover` / `Page 1…N` dots) and `git diff` on `features/chapBook.js` is
+     empty. ⚠ **Repaired the two tests the same way (test-only, `e2e/chapBook.spec.js` +42/−26):** `beginReader(page)` after the hash
+     navigation; gap6 walks the pages via `getByTitle('Page N')` (as `chapBookReader.spec.js:67-74` does) and decodes the current page's
+     image on each instead of `toHaveCount(sceneCount)` on a page list the reader never renders — the reload after the per-scene loop
+     keeps the current page (`loadReaderBook`; only `oninit` :2782 resets to the Cover); test 4 takes the page count from the page dots
+     and screenshots each page after flipping to it. Every product proof is kept (per-scene `/generate` once per scene, bulk `/render`
+     never, one decoded image per scene, per-page screenshot with stanza text). Re-run (`C:/tmp/pw-p26-cbgated2.log`): **2 passed
+     (3.4 m)** — gap6: 2 per-scene calls, 0 bulk, pages 1 and 2 decoded 1024×1024 (`test-results/gap6-chapbook-perscene-reader.png`
+     opened: "Page 2 of 2", autumn forest under the second stanza, toast "Render complete: 2 scene(s) generated"); test 4: 8 scenes
+     rendered, 8 page screenshots with stanza text (`chapbook-page-1.png` … `-8.png`; 1 and 8 opened: winter landscapes, "Page 1 of 8" /
+     "Page 8 of 8"). ASK: ratify the test repair.
+     (s) Observation, not acted on: the 4-pager's page-1 and page-8 landscapes are near-identical winter compositions (same framing,
+     trees, path) — whether per-page variation is wanted (seed, or the composer's two-prompt carry-forward) is a Phase 4 composition
+     question for you.
+     (t) ⚠ **Fixtures left in place** (yours to delete): books `e2e-cb-v3-page-*`, `chapbook-sd-mv8vbj4g`, `gap6-perscene-mv8vdx81`,
+     `gap6-perscene-mv8vt6o8`, `4-pager-mv8vetwi` and this run's `4-pager-*`, `6a-docx-*`, `6d-winter-*`, `cbverify-*`,
+     `cb-llmunavail-reader-*`, `llmUnavail-*`; poems `chapbook-gap6-fallingleaves`, `chapbook-4-winter_1/2`, `chapbook-6d-*`,
+     `chapbook-real-*`; the `chapBookLlmUnavailable` fixtures it created and deleted itself (chatConfig 251/252 + connections 164/165,
+     logged deleted); `e2etest_pbdown`'s chatConfig 17 / connection 11 and the de-roled `e2etest_noau*` users from earlier runs.
+     (u) ⚠ **Live proof of the v3 ChapBook page over REST** (`C:/tmp/pw-p26.log`): A `[v3 generate] HTTP 200 in 15926ms …
+     "renderPath":"v3","jobId":…` (:61); job `configNotApplied=["HIRES: …","DEFAULT_NEGATIVE: …"]` (:64); pinned re-render `HTTP 409
+     {"error":"Node landscape@e654df39 is pinned. Unpin it first - …"}` (:68); C async bulk `HTTP 202 … "plannedNodeCount":2` → job
+     `completed 2/2` (:79-80); D sync bulk `HTTP 200 in 31194ms … "rendered":2` (:82); `renderPath.spec.js` 4/4 (`v3/v3` on the stack,
+     STORY and CHAPBOOK admitted, Feature Configuration chips read-only). Deployed jar md5 `2195ec17fb12444a079fe1f87bc5d102` local ==
+     `am7test-am7-1`, `javap` clean, Service7 classes md5-equal, `dist` copied.
+     (v) **Test-author gap-fills (21:03 → 21:44) — 3 new JUnit cases, test files only, 24/24 green** (`C:/tmp/p26-ta-o7.log`:
+     `:3429 Tests run: 17, Failures: 0, Errors: 0, Skipped: 0 … TestChapBookV3Render` 435.8 s; `:5052 Tests run: 7 … TestPbRenderPlanExecutor`
+     235.9 s; `:5056 Tests run: 24, Failures: 0`; `:5059 BUILD SUCCESS`; `:54 [LLM-GATE] route=litellm tier=local` = in-stack Ollama
+     container via LiteLLM, not Azure — no case calls the LLM; SD `http://192.168.1.39:7801` with
+     `OfficialStableDiffusion/sd_xl_base_1.0.safetensors` per `SdTestGate`, `:1577`/`:3869`). Gaps filled: (1) `configNotApplied` was
+     asserted nowhere in JUnit (only in `chapBookRenderPathV3.spec.js:194-198`) → `TestChapBookV3Render#pageRenderReportsConfigNotAppliedThroughTheJobOutcome`
+     (:688; two real renders through `requestChapBookPageRender` + the `pb.render` job: page 0 no tier → outcome codes exactly
+     `{HIRES, DEFAULT_NEGATIVE}`, `degradations` absent/empty, captured `SWTxt2Img` has no refiner and a blank negative; page 1 with a scene
+     override `hires=false, style=photograph, negativePrompt="blurry, low quality, text"` mirrored onto the node → exactly `{STYLE_CLAUSE}`
+     naming `'photograph'`, the override negative sent; each set equals the §24 iff-rule computed from the node's persisted plan; `:1751`,
+     `:1890`) and `TestPbRenderPlanExecutor#configNotAppliedReportsWhatThePlanPathDropsAndReviewQueueOmitsThePlan` (:709; same two
+     renders on the RENDER_PLAN path, `generatorRequest` checked for `refinermodel`/`negativeprompt`; `:4011`, `:4179`); (2) job-outcome
+     propagation (`PbRenderJobUtil` :684-685) — same ChapBook case; (3) review queue lists exactly the `base` artifact, never `renderPlan`,
+     while `nodeView.artifacts.renderPlan` carries the plan (both revisions after the second render) — plan-executor case (`:4022`); the
+     ChapBook-side queue count was already covered by `liveRenderProducesArtifactAndReviewApplies`; (4) whitespace-only `sdPrompt`
+     (`"   "`, patched directly because `setSceneLandscapePrompt` trims blank to null; re-read proves the stored value) → 409 with the exact
+     message `Page 1 has no prompt; set or generate its landscape prompt before rendering it`, no txt2img, no node, scene unlinked
+     (`#whitespaceOnlyPromptIsRefusedWithTheExactNoPromptMessage` :247; `:3307`). Both render cases carry an explicit precondition that
+     `PbStyleResolver.resolve(book).isEmpty()` so a leftover `/Library/PictureBookStyles` style fails as environment, not as a product
+     defect. Files: `TestChapBookV3Render.java` (cumulative `git diff --numstat` 474/45; ~205 lines are the gap-fills),
+     `TestPbRenderPlanExecutor.java` (untracked; 815 lines); 0 CR (`tr -cd '\r' | wc -c`). The 60 `[ERROR]` lines in the log are
+     application logs (24 × `OlioContext - Root Epoch is null` / `Failed to find root location` on the test org, the deliberate
+     `SDUtil - No images returned` of the non-delegating case, AccessPoint denies-as-miss) — the same shapes as `p26-s1b-o7.log`. No
+     product defect surfaced.
+     (w) **Security review (read-only, 21:43 → 21:48) — PASS WITH NOTES; no BLOCKER / SHOULD-FIX; no code change.** Verified clean, each
+     point spot-checked against the code at 21:55: the render-path switch is deployment-global (`PbRenderPath.java:56-57` `static volatile`
+     with the product defaults; `configure()` called from main code only at `RestServiceEventListener.java:364` and `ConsoleMain.java:137`,
+     no per-request/per-org writer; unrecognised values pin the product default `:88-91`; the WARN echoes operator config only); the 409
+     refusal is not reachable pre-auth (`requireV3` always follows `requireBook`'s 401; the message `:142-146` names config keys / env-var
+     names only); `GET /rest/config/render-path` is `@RolesAllowed({"user"})` + `getPrincipalUser` (`FeatureConfigService.java:161-169`), no
+     PUT; ChapBook page execution gate order `requireBook → requireV3 → requireChapBook → requireBookUpdate → requireSceneOfBook`, the
+     executor re-reads the scene via `AccessPoint.find(user, …)` with `organizationId` and the no-prompt 409 carries only the page index;
+     every write is as the requesting user (`PbArtifactUtil.persistArtifact` → `AccessPoint.create(user, …)`, `persistBytes` →
+     `AccessPoint.create(g.user, data)`, scene write-back `AccessPoint.update(user, patch)` reported in `degradations`, never thrown; no
+     `getAdminUser` / `RecordUtil.createRecord` in any P2-6 hunk); the SD transport is per call (`toSdUtil` → `new SDUtil(...)`,
+     `SwarmRendererAdapter` holds it as an instance field; `RenderPlan` carries no server/url/key; `requestJson` exported before the Swarm
+     session is minted); job outcomes are keyed `ownerOf(user) + jobId` so another user's id resolves null; `listReviewQueue` /
+     `nodeView` add no unauthorised read; `ChapBookService.java` has zero diff vs `11edfb7b` (`git diff` 0 lines), the two `PictureBookService`
+     routes in the diff are P2-4/P2-5 with `@RolesAllowed({"admin","user"})`; `featureConfig.js` chips are read-only; asserting principals
+     in every test are non-admin (`getAdminUser` only in `getCreateUser` / role-membership fixtures); no `isReset` / `DROP` /
+     `releaseCustomSchema`; `olio/llm` prompt resources untouched (`git status --short` empty). NOTES (commit hygiene, not P2-6 code; all
+     already on the keep-out list): `Console7/tmp.bat` (tracked, modified, carries a password) and the untracked `am7.corrupt-2026-10-12-1632/h2.mv.db`,
+     Agent7 `logs/` + `plan.json`, `tmp.mp4`, `media/*.doc(x)`, `test-results/` are in the same working tree — stage by name, never
+     `git add -A`; the reviewer's `.gitignore` suggestion (`**/am7.corrupt-*/`, `**/logs/`, `test-results/`) is **recorded as an ASK, not
+     applied** (yours). Nothing moved a default.
+     (x) **Independent verifier (21:48 → 22:07) — PASS WITH NOTES; no code change; nothing moved a default.** Every cited line re-read by
+     me at 22:10 (agent reports are model output): probe 21:48:56 green (§3); Objects7 `C:/tmp/p26-ver-o7.log` `:54 [LLM-GATE] route=litellm
+     tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` = in-stack Ollama container via LiteLLM, not Azure
+     (no case calls the LLM); `:3429 Tests run: 17, Failures: 0, Errors: 0, Skipped: 0 … TestChapBookV3Render` 476.7 s; `:18688 … 10 … TestPbRenderPath`
+     38.63 s; `:20311 … 7 … TestPbRenderPlanExecutor` 248.2 s; `:20315 Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`; `:20318 BUILD SUCCESS`;
+     12 `SdTestGate … 'OfficialStableDiffusion/sd_xl_base_1.0.safetensors' on http://192.168.1.39:7801` lines (SD = Swarm `.39`); Service7
+     `C:/tmp/p26-ver-svc.log` (H2 fixture, no gate line) `:1209 TestChapBookRestContract` 9/0/0/0, `:2197 TestChapBookServiceRenderPath` 6/0/0/0,
+     `:3850 TestFeatureConfigService` 12/0/0/0, `:4829 TestPbRenderPathRefusal` 7/0/0/0, `:4833 Tests run: 34, Failures: 0, Errors: 0, Skipped: 0`,
+     `:4836 BUILD SUCCESS`; Vitest `C:/tmp/p26-ver-vitest.log` `Tests 4 passed (4)`; Playwright `C:/tmp/pw-p26-ver.log` **9 passed (2.5m)** —
+     `chapBookRenderPathV3.spec.js` A `:162` 47.0 s / B `:334` 20.8 s / C `:371` 37.8 s / D `:420` 34.6 s / E `:454` 4.5 s and `renderPath.spec.js`
+     `:109`/`:127`/`:154`/`:171`; `[v3 generate] HTTP 200`, `[v3 bulk async] HTTP 202 … "renderPath":"v3"`, `[v3 bulk sync] HTTP 200 … "rendered":2`;
+     no `[e2e-llm]` line because neither spec calls `resolveChatRoute` (no LLM call; SD `.39`). Screenshots opened with Read before citing:
+     `test-results/chapbook-render-path-v3.png` (22:05:04 — reader page 1 of 10 of `e2e-cb-v3-page-…` as `e2etest_shared`, a rendered meadow
+     with the stanza overlaid), `test-results/renderPath-admin-chips.png` (22:06:43 — `PictureBook: v3 (graph)` / `ChapBook: v3 (graph)` with the
+     "not editable here" text), `Objects7/target/chapbook-v3-p1-9-render.png` (21:56:07 — a 1024² alpine lake render from the JUnit page path).
+     Deploy parity: jar md5 `2195ec17fb12444a079fe1f87bc5d102` local `~/.m2` == container; container `web.xml` `picturebook.renderPath=v3`,
+     `chapbook.renderPath=v3`; env `PICTUREBOOK_RENDER_PATH=v3 CHAPBOOK_RENDER_PATH=v3`; last boot logged only `picturebook.renderPath set
+     to v3 (was v1)`; `docker logs` show `SwarmRendererAdapter - Stage BASE rendered 1 image(s)` 7× during the verifier's window. NOTES, all
+     non-blocking, recorded not acted on: (i) `SdTestGate.requireSwarmReachable` / `requireRenderConfig` use `Assume`, so an unreachable
+     Swarm shows as **Skipped, not RED** — moot here (Skipped 0 everywhere) but every future run must read the Skipped column, never just
+     `BUILD SUCCESS`; (ii) ASK — `chapBookRenderPathV3.spec.js:458` `test.skip(probe.status() === 409, …)` would hide a v1-pinned deployment
+     as a skip rather than a failure (did not fire); hardening it to a hard assertion on the test stack is yours to call (test file, P2-6's);
+     (iii) the test stack pins both products `v3`, so Playwright proves v3/v3 only — the product defaults (PB `v1`, ChapBook `v3`) are proven
+     by the resolver tests and `TestChapBookRestContract#TestChapBookDefaultsToV3AndV1IsRollback`; (iv) the verifier deliberately did **not**
+     run `.claude/loop/verify.sh` (it would run every class including the forbidden `TestAuthorization`, and 4-worker Playwright) — the
+     module quick gates stay ⚠ batched to run 11 (165 q); (v) working-tree noise (`tmp.bat`, `vectorEnv.bat`, the `speaker_0.mp3` deletion,
+     `test-results/`) is the keep-out list, untouched. Row status → **Verifier PASS; quick gates ⚠ batched forward (run 11)** — not DONE
+     (yours, as 159 b / 163 / 164).
+
+166. ⚠ **2026-10-14 21:52 → 22:35 — P2-7 (chat scene renders through the illustration service; §24.1): every default taken under auto
+     mode (planner plan D1–D7, `C:/tmp/p27-plan.md`; architect review PASS WITH CORRECTIONS, 9 findings — every item adopted or
+     recorded below, each cited line re-read against the code before adoption; §10.7).**
+     (a) **D1 adopted — a third boot-pinned key `chat.renderPath`** on `PbRenderPath` (`CHAT_CONFIG_KEY = "chat.renderPath"`,
+     `CHAT_DEFAULT = V1`, 3-arg `configure(pb, cb, chat)`, `chat()`, `isChatV3()`); product default **`v1`** (v3 is an identity
+     regression until Phase 4: Phase 2 strategy is TEXT_ONLY only, no portrait references, with honest `ACTOR_TEXT_ONLY` degradations);
+     test stacks pin **`v3`** via env `CHAT_RENDER_PATH`. Rejected: riding `picturebook.renderPath` (couples chat Stage 2 to PB Phase 7
+     and flipping PB silently moves chat) and unconditional v3 with an in-call fallback (silent). The 2-arg `configure` overload stays
+     and delegates with `null` → pins `CHAT_DEFAULT`, so `TestPbRenderPathRefusal.java:67-73`'s save/restore keeps compiling and pins
+     chat to `v1` on restore — acceptable for that class; the new Service7 chat test saves/restores all three values. Surfaces (15):
+     `PbRenderPath` (LF); `RestServiceEventListener.java:364-366` (CRLF); `ConsoleMain.java:137-139` (CRLF); `FeatureConfigService.java:171-172`
+     (`chat` key); `WEB-INF/web.xml:84-87` (CRLF); `docker/web.xml.template:82-85`; `docker/entrypoint.sh:50/:75/:115`; `docker-compose.yml:60`
+     (CRLF, `:-v1`); `docker-compose.test.yml:270` (`:-v3`); Objects7 test `resource.properties:52` (CRLF, `v3`); Console7
+     `resource.properties:63` (CRLF, `v1`); Ux752 `src/features/featureConfig.js` (`RENDER_PATH_DEFAULT.chat`, `normalizeRenderPath`,
+     chip `render-path-chat` — the file is under `src/features/`, not `src/core/` as an earlier note said); `src/test/renderPathConfig.test.js`
+     (the exact-object `toEqual`s gain `chat`); `e2e/renderPath.spec.js:114` + a chip assertion; `TestFeatureConfigService` additive `chat`
+     assertion. No second recording flag; env-flag consolidation stays yours.
+     (b) **D2 corrected (architect finding 1) — the new util lives in `olio/llm/ChatSceneRenderUtil`, not `olio/illustration`.** My own
+     earlier note that "illustration imports picturebook" was **wrong** — re-verified 22:00: `olio/illustration/` imports nothing from
+     `olio.picturebook`, `olio.llm`, `OlioFieldNames` or `OlioModelNames` (only `olio.sd.SDUtil`/`SDAPIEnumType`/`swarm.*` at the adapter
+     seam, `NarrativeUtil`, `DocumentUtil`, and the four `Pb*EnumType`s under `schema.type`); the planner's D2 inherited that premise and
+     would have made the product-agnostic package (design §2 :86, §24.1 :1263) depend on `Chat.ScenePromptResult` + `PbRenderPlanUtil`.
+     Instead the shared helpers move **down** into illustration and the PictureBook callers delegate with no behaviour change:
+     `PbRenderPlanUtil.pickOf` :191-208 / `addModelDegradation` :210-222 → `ModelResolver.pickOf(res)` / `ModelResolver.addDegradation(res, out)`;
+     `PbNodeExecutor.unresolvedModelStatus` :776 / `unresolvedModelMessage` :781 → `ModelResolver.unresolvedStatus(pick)` /
+     `unresolvedMessage(label, pick, plan, planOid)`; `PbConfigUtil.configSnapshot` :620-652 → `illustration/ConfigSnapshot.of(cfg)`
+     (schema from `cfg.getSchema()`, plain-string excludes; `PbConfigUtil.java` is CRLF 659/659 — the edit preserves it);
+     `KEY_CONFIG_NOT_APPLIED` + the three `NOT_APPLIED_*` strings (`PbNodeExecutor.java:768-772`) → `illustration/ConfigNotApplied`, with
+     `PbNodeExecutor`'s constants aliased to it. `actorDescription` is not needed by chat (dropped from the plan). The graph-free core
+     extraction from `renderPlannedScene` (so chat and PB share one render loop) is recorded as **Phase 2 close-out debt**, not done here —
+     P2-6's verifier had just passed on `PbNodeExecutor` and the chat loop is a single BASE stage.
+     (c) **D3 adopted + a `"random"` guard** (architect): the chat plan is transient (§24.1 :1264-1265) — `RenderPlan.builder().purpose(PURPOSE_SCENE)`;
+     two `Actor(charPerson.objectId, firstName, ROLE_FOREGROUND, desc, referenced = portrait bytes exist)` with `desc` = the
+     `sysCharDesc`/`usrCharDesc` that `Chat.generateScenePrompt` :2207-2295 already computes (`NarrativeUtil.getSDMinPrompt` else
+     `buildMinimalCharDesc`); `Location(null, setting [+ ", <terrain> terrain"])`, **empty when the chatConfig's setting is `random`** (the
+     same guard as `Chat.java:2250`); `Intent(sceneDesc, raw=false)` from the LLM scene description; `Style(null, null, sdConfig.style, [],
+     null, false, [])` — "its style comes from the chat's saved SD config" (§24.1 :1276); no landscape stage, TEXT_ONLY, one BASE stage.
+     Consequences, verified in `SdxlCompiler.compile` :53-199: `STYLE_CLAUSE` can never fire on the chat path (the config style *is* the
+     plan's style), and `DEFAULT_NEGATIVE` fires only when the compiled negative is empty, because `negative(style.getExclusions(),
+     config.negativePrompt)` applies the config's `negativePrompt` on the plan path — what is not applied is v1's hard-coded default
+     negative (`Chat.java` `negPrompt`).
+     (d) **D4 adjusted — `IllustrationModelPolicy.apply(LOCATION, cfgCopy, clientModel, null, null, null, apiType, server, false)`
+     directly** (exactly what `PbModelPolicy.applyWithoutBook` :61-64 forwards to), so `olio/llm` depends on illustration, not on
+     picturebook; canvas `CanvasResolver.resolve(UNKNOWN, 0, 0, preset.getResolutionScale(), cfg.width, cfg.height)` (config dims when
+     both > 0 else 1024², 64-snapped); preset `QualityPresets.resolve(STANDARD)`, steps via `RendererCapabilities.forModel(pick).recommendedSteps(stepsMode)`
+     else the config's `steps` (default 20); `seed(SEED_RANDOM)`, `images(1)`, `hires(false)`.
+     (e) **D5 corrected (architect) — the v3 fields are nested under one additive `render` key, not merged top-level into the `data.data`
+     JSON**, and degradations are `"CODE: message"` strings exactly as P2-6's `PlannedRender.describe`, so P2-9 reads one vocabulary:
+     `render:{renderPath, strategy, compiledPrompt, compiledNegative, model, canvas:{width,height}, planContentHash, degradations:[…],
+     configNotApplied:[…]}`; v1 → `render:{renderPath:"v1"}`. `data.data` has no `render` field (own field `dimensions`; parents
+     `data.directory`, `crypto.cryptoByteStore`, `common.description`, `common.dateTime`, `data.streamExt`) and `SceneGenerator.js:252-287`
+     / `page.imageGallery` read only the image keys, so the key is harmless to the Ux. Chat-only codes `COMPOSITE_MODE`, `SKIP_LANDSCAPE`,
+     `SCENE_CREATIVITY` live on the shared `ConfigNotApplied` holder (b), not on the chat util.
+     (f) **D6 adopted — no fallback on v3**: `RendererAdapter.ERROR_UNREACHABLE` → 503, any other adapter error → 500 with the adapter's
+     text (never the server URL); synchronous, `CancelToken.NONE`; the v1 classic fallback `ChatService.java:1598-1608` is untouched.
+     (g) **D7 adopted — per-call `SDUtil`** (`ChatService.java:1480-1488` kept: `sd.server.apiType`, `ServerConfigUtil.getServerUrl`,
+     `setDeferRemote`, `setImageAccessUser(user)`), `new SwarmRendererAdapter(sdu)` is the transport; nothing touches `IOContext`.
+     (h) **Persistence as the requesting user** mirrors `SDUtil.createSceneImage` :1394-1433 (`makePath(user, MODEL_GROUP,
+     "~/Gallery/Scenes/" + label, "DATA", orgId)`, `getFactory().newInstance(MODEL_DATA, user, null, clist)`, `image/png`,
+     `ByteModelUtil.setValue`, attributes `seed`, `imageType=scene`, `systemCharacter`, `userCharacter`, `AccessPoint.create(user, data)`),
+     name `label + " - scene - 1 - " + rando + " - " + seed`; the `s2i` attribute is replaced by `renderPlan` (plan JSON) and
+     `stageRequest` (the adapter's `requestJson`, exported before the Swarm session is minted).
+     (i) ⚠ **Security:** P2-7 adds no REST route, so "security-reviewer on every new route" does not strictly apply; the architect
+     recommended a light pass on the new branch (writes as the user, no URL in bodies, `@RolesAllowed` unchanged, no `IOContext` write) —
+     MY JUDGMENT to run it after implementation; outcome under a later letter.
+     (j) **Test principal** (architect): the Objects7 test uses an explicit non-admin user (`getCreateUser(ctx.getAdminUser(),
+     "chatSceneTestUser", orgId)` as `TestChapBookV3Render.java:116-117`), never `BaseTest`'s admin; Service7 `TestChatSceneRenderPath`
+     on H2 saves/restores all three `PbRenderPath` values; Playwright as `e2etest_shared`.
+     (k) The v1 inline composite in `ChatService.generateScene` :1491-1613 is **retained debt** under §28.1 (Stage 1 coexist) — Stage 4
+     removal only after chat parity (Phase 4/5); recorded, not scheduled.
+     (l) ASK — the architect's `architecture.md` one-liner ("`olio/illustration/` is product-agnostic: it never imports `olio/picturebook`
+     or `olio/llm`; `olio/sd` only at the adapter seam") is recorded here, not applied (rules files are yours).
+     (m) Noted, out of scope: `Chat.getPortraitBytes` :2389-2392 reads `FIELD_BYTE_STORE` raw (`objects7-reference.md` says
+     `ByteModelUtil.getValue`); `OlioUtil.getFullRecord` reads on the chat path bypass `AccessPoint`. v3 only needs "a portrait exists", so
+     neither is touched.
+     (n) **Corrections to earlier notes:** the planner's verification step 3 ("the template/entrypoint change needs an image rebuild") is
+     wrong — `Dockerfile:126`/`:141` copy them to `$CATALINA_HOME/webapps/AccountManagerService7/WEB-INF/web.xml.template` and
+     `/usr/local/bin/entrypoint.sh`, so `docker cp` of both + `docker-compose -f docker-compose.test.yml up -d` (to carry the new env var)
+     + `docker restart am7test-am7-1` suffice; and the two seam notes in §10.5/§10.6 that said "P2-7 reuses `renderPlannedScene` (or the
+     facade's package-private overload)" are rewritten in place — P2-7 builds its own graph-free plan over the illustration seams (b).
+     (o) ⚠ **Style and the character negative (implementation, 22:35 → 23:00):** the saved SD config's style clause is the plan's
+     `Style.description`, built with `SDUtil.getSDConfigPrompt(cfgCopy)` on a `copyRecord()` of the config (the model policy and the
+     style defaults write into the copy, never the chat's saved record; a null config is safe — `ConfigSnapshot.of(null)` is an empty
+     map); the LLM/character SD negative (`ScenePromptResult.charNegativePrompt`) rides as the `Style.exclusions`, so the compiled negative
+     carries it and `ConfigNotApplied.STYLE_CLAUSE` can never fire on this path (the doc comment says so).
+     (p) ⚠ **Intent vs Location:** `SdxlCompiler` uses `Intent.promptOverride` *instead of* the Location text and trims the main text
+     from the right under budget, so the plan's intent is `sceneDesc + ", " + settingDesc` (the setting is the first thing trimmed) and
+     `Location(null, settingDesc)` is kept for the record, not for the prompt. Setting falls back to the v1 terrain text when the LLM gave
+     none (`settingDesc` is null → intent is the scene description alone; the default scene text is "two people facing each other").
+     (q) ⚠ **Actors:** two FOREGROUND actors, `name` = the character's first name, description = the v1 character description +
+     " on the left" / " on the right" (the v1 composite's placement cue), `referenced` = "portrait bytes exist" — so `StrategySelector`
+     reports `ACTOR_TEXT_ONLY` for each portrait-bearing actor instead of silently dropping the portrait (D3's rule).
+     (r) ⚠ **HIGH element** `TWO_PEOPLE_CUE = "two people in scene"` — the v1 prompt's two-figure cue carried as a HIGH-priority element so a
+     two-actor TEXT_ONLY render keeps both figures under the compiler's budget.
+     (s) ⚠ **`Chat.ScenePromptResult` gains four additive fields** (`sysFirstName`, `usrFirstName`, `sysPortraitBytes`,
+     `usrPortraitBytes`) filled by `generateScenePrompt` from what it already loads; the v1 composite ignores them. No existing field
+     changed shape.
+     (t) ⚠ **Transport contract details:** `RenderFailure(status, message)` (RuntimeException) is the util's only error channel — 401 no
+     principal, 500 no transport / empty prompt-less scene, 409/503 unresolved model (`ModelResolver.unresolvedStatus`), 409 empty compiled
+     prompt, 503 `ERROR_UNREACHABLE`, 500 any other adapter or persistence error; messages never carry the server URL. `describe()` adds
+     `seed` and `durationMs` to the planned keys; `describeV1()` returns `{renderPath:"v1"}` so the client reads one key on either path.
+     `configNotApplied` also reports the three informational v1 composite knobs (`COMPOSITE_MODE`, `SKIP_LANDSCAPE`, `SCENE_CREATIVITY`)
+     alongside `HIRES`/`DEFAULT_NEGATIVE`; an UPSCALE stage planned by the preset but not rendered is listed under `degradations`. The
+     persisted `data.data` carries `renderPlan` (plan JSON) and `stageRequest` (the adapter's request JSON) attributes in place of v1's
+     `s2i`. `ChatService.withRender` merges the `render` block with a plain Jackson `ObjectMapper`/`ObjectNode` because
+     `JSONUtil.exportObject` is `Include.NON_EMPTY` and would drop the empty `degradations`/`configNotApplied` lists; on any parse failure it
+     falls back to the bare record JSON with a WARN (the image is never lost to the description).
+     (u) ⚠ **`PbRenderPath.configure(pb, cb)` (two-value form) now leaves chat untouched** (passes the current `chat` through) instead of
+     delegating with `null` (which would reset chat to the product default). ~40 Objects7/Service7 test sites save and restore only the
+     PictureBook/ChapBook pair with this form; a reset-to-v1 on every restore would silently move chat off whatever the fixture pinned.
+     Every start-up caller (`RestServiceEventListener`, `ConsoleMain`, Objects7 test `BaseTest`) uses the three-value form.
+     `TestFeatureConfigService.TestRenderPathReportsBothProducts` asserts the two-value form leaves chat where it was.
+     (v) ASK — **the stack's SD server while `.39` is down.** At 23:10 Swarm `.39` was unreachable from the host and from inside
+     `am7test-am7-1` (ping 100 % loss; `:7801` and `:11434` both `000` on three tries each) while Swarm `.42:7801` answered 302 from both
+     and lists 19 checkpoints (incl. `juggernautXL_ragnarokBy`, `dreamshaperXL_v21TurboDPMSDE`, `flux2Klein_9b`). The Docker stack resolves
+     its SD URL from the `/System` `system.connection` named `sd` (id 1, `http://192.168.1.39:7801`; `ServerConfigUtil`, 30 s cache) —
+     the env `SD_SERVER` is only the fallback, so recreating the container would not help. I tried the application path — login as the
+     `/System` admin and `PATCH /rest/model {"schema":"system.connection","id":1,"objectId":…,"serverUrl":"http://192.168.1.42:7801"}`
+     (fixture repair of the test stack; you named `.42` Swarm as a live endpoint) — and the harness refused it as a shared-resource
+     modification, so it was NOT run and the connection still points at `.39`. `test.swarm.server` (Objects7 JUnit) is yours and was not
+     touched either, so every SD-gated JUnit case skips (reported as skips). Until `.39` is back or you repoint the `sd` connection (the
+     revert is the same PATCH with `http://192.168.1.39:7801`), the P2-7 live render proof — Playwright 14-live (c) and the Objects7 live
+     BASE render — is **pending**, carried exactly as P2-1…P2-3's "gate pending `.39`".
+     (w) ⚠ MY JUDGMENT — **Playwright item-14 live outage skip widened and gated on an independent probe.** The spec's v3 branch skipped
+     only on a 503 whose body said `Renderer unreachable`; the stack refuses one step earlier when the inventory read fails
+     (`Renderer inventory unavailable; … INVENTORY_UNAVAILABLE`), so the ungated run FAILED `Expected: 200 Received: 503`
+     (`C:/tmp/pw-p27-chat-live.log`) on the outage instead of skipping. `isSdOutage(status, text, hostProbeFailed)` now accepts that
+     body too, and only when the spec's own 5-s probe of `http://192.168.1.39:7801/` from the host also failed — a 503 of either shape
+     while the SD server answers still fails the test, so a product defect cannot hide behind the skip; the skip reason says "NOT a
+     pass". Revert by dropping the second clause if you would rather the case fail loudly during an outage.
+     (x) ✓ FOLLOWING INSTRUCTIONS (§6.C 117 / §6.H) — **Service7 H2 fixture corrupt again.** The first `TestChatSceneRenderPath` run
+     (23:50:42) hit `MVStoreException: File is corrupted - unable to recover a valid set of chunks [2.3.232/6]` on `am7/h2.mv.db` (last
+     written 22:03:29 at the JVM exit of a GREEN run — the shutdown-hook compaction again; no lingering JVM), 4 errors at
+     `BaseTest.resetIO:82`. Repaired by the recorded reversible route: `mv am7 am7.corrupt-2026-10-14-2350` (kept, untracked — keep out
+     of staging alongside `am7.corrupt-2026-10-12-1632`), `BaseTest` self-provisioned a fresh fixture and the list went 45/45. The
+     `;MAX_COMPACT_TIME=0` mitigation on the `BaseTest` H2 URL (§9.5) is still yours; this is the third corruption in three days.
+     (y) ⚠ MY JUDGMENT — **two security-pass hardenings applied inside P2-7's own code after the test-author had run**, then
+     redeployed and the affected suites re-run (§10.7): `ChatSceneRenderUtil.persist` returned `… : <e.getMessage()>` in the 500 body
+     (Factory/ByteModel/writer detail to a `user`-role caller) → fixed message, the stack trace stays in the ERROR log;
+     `ChatService.generateSceneV3` caught only `RenderFailure`, so any other `RuntimeException` from `buildPlan`/the adapter left the
+     `bgActivity` chirp set and the client with an unstructured 500 → `catch (RuntimeException)` placed after the `RenderFailure` catch
+     clears the chirp and answers `{"error":"Scene render failed"}`. No test contract changed (no test asserted either text).
+     (z) ASK — **two security-pass findings NOT acted on** (cross-cutting or pre-existing): (i) v3 echoes the Swarm backend error text to
+     the client (`ChatSceneRenderUtil` `Render of <label> failed: Renderer error: <swarm text>` → 500) where v1 answers a fixed
+     `No images generated` (`ChatService.java:1623`); the PB3 node path does the same as v3 (`PbNodeExecutor.java:742` stores the full
+     adapter error on the node), so returning only the `RendererAdapter.ERROR_*` category and logging the text is a one-line change in
+     both places or neither — your call. (ii) The chat label (`firstName`) is spliced unsanitised into `~/Gallery/Scenes/<label>` on
+     BOTH paths (v1 `ChatService`, v3 `ChatSceneRenderUtil`); `makePath` splits on `/` and the path stays rooted in the user's own home
+     with each segment policy-checked, so no escape — a `/` in a first name only nests folders; replacing `/` in the label is
+     pre-existing v1 territory. Non-security note from the same pass: v1 `createSceneImage` refuses a non-SWARM `apiType`
+     (`SDUtil.java:1389`) while v3 sends a Swarm-shaped request regardless — the adapter is Swarm-only by design (§34); recorded for when
+     a second renderer lands.
+     (aa) ⚠ MY JUDGMENT — **item-14 live host probe URL made overridable (verifier finding).** The outage skip in 166 w relied on a
+     probe hardcoded to `http://192.168.1.39:7801/`; once you repoint the stack's `sd` connection (166 v) a genuine 503 from the new
+     server would have skipped (because `.39` still fails the probe) instead of failing. `SD_PROBE_URL` now reads `E2E_SD_SERVER`
+     (default `.39`) and the log line names the URL probed; the shared user cannot read the `/System` connection, so the mirror is
+     manual — set `E2E_SD_SERVER` beside `E2E_SD_LIVE=1` after a repoint. Re-run recorded in §10.7 (8 passed / 1 skipped / 1 `.39` red).
+     (ab) ASK — **posted `sdConfig.steps` is ignored on chat v3 whenever capabilities resolve, with no `configNotApplied` entry.**
+     `ChatSceneRenderUtil.java:182`: `steps = caps != null ? caps.recommendedSteps(STANDARD mode) : snapshot.steps`, so the value
+     `sdConfigPanel.js:336-337` exposes reaches the plan only when the inventory is unavailable. This matches ChapBook (design :1226),
+     but §24.1 :1276 says the chat style "comes from the chat's saved SD config" and :1271 promises transparent degradations. Options:
+     (i) add a `configNotApplied` code (e.g. `STEPS`) so the UI (P2-9) can say so, (ii) honour a posted `steps` over the preset on the
+     chat path only, (iii) leave as is. Not acted on — it is a design call and P2-9 reads `configNotApplied`.
+     (ac) NOTE, no action — (i) `generateSceneV3` calls `chat.generateScenePrompt` before the `try` (`ChatService.java:1644`), so an
+     uncaught RuntimeException there leaves the `bgActivity` chirp set — the identical exposure v1 has had since before P2-7, and
+     `generateScenePrompt` already returns null on its own failures; (ii) `Chat.java:2276-2277` loads both portrait byte arrays inside
+     `generateScenePrompt` although the v3 TEXT_ONLY plan never consumes them — wasted I/O only; (iii) the full-file Playwright run
+     surfaced **item 15 (`charPerson reimage`) red on the `.39` outage** — `OlioService.reimageWithConfig` → `SDUtil.getOrCreateSession`
+     `ConnectException` → 500; a pre-existing live-gated test with no outage guard, outside P2-7, carried as a `.39` red for P2-10.
+
+167. ⚠ **2026-10-15 00:50 → 01:58 — P2-8 (Kontext Disable, design §37.3 Disable stage; §10.8): every default taken under auto mode
+     (planner + architect PASS WITH CORRECTIONS, each item adopted or recorded; security-reviewer REQUIRED and run — see §10.8).**
+     Line numbers below are the post-hardening ones (the `boundedEcho` helper added 10 lines above the route, and one inside it).
+     (a) **Two status codes, one message.** An explicit `compositeMode=kontext` in a request body is invalid content → **400**; a body that
+     only *resolves* to kontext (legacy `useKontext=true` with a blank/null `compositeMode`) is refused by state → **409**; both carry the one
+     constant `SceneCompositeUtil.KONTEXT_RETIRED_MESSAGE` (`ChatService.java:1436-1439` / `:1459-1462`). The Objects7 gates are always 409
+     (`PbRenderPath.requireEnabledCompositeMode` → `PictureBookException(409, …)`) because by then the mode is a resolved state, not a request
+     field. Alternative rejected: a single 400 everywhere (hides whether the client sent the value or the saved config carries it).
+     (b) **PB1 `generateSceneImage` is gated at the top of its `try`** (`PictureBookUtil.java:9705`), before the inventory/model policy and
+     before any SD contact — not inside the `useKontext` branch — so the refusal is the first thing the caller sees; the hoisted
+     `useFlux2`/`useKontext` booleans replace the inline parse (j).
+     (c) **One ASCII constant.** The message says "design section 37.3", not "§37.3", so the JSON error body and the `olio.pb.run.error`
+     column stay plain ASCII; it names the replacement (`compositeMode=flux2`), the stage (disabled in Phase 2) and the end (removed in
+     Phase 10). `TestKontextDeprecation.kontextIsRetiredNotSupported` pins the text's three load-bearing phrases, not the whole string.
+     (d) **Both `ChatService` gates sit before the chat lookup and before the v1/v3 branch** (`:1430-1462`; `objectId` is first consulted at
+     `:1475`), i.e. before any PBAC read, LLM call or SD contact; the responses depend on the caller's own body only. Alternative rejected:
+     gating inside `generateSceneV3` (would leave v1 running Kontext).
+     (e) **The refusal helper lives in `PbRenderPath`** (same class as the other render-path switches) and calls down into
+     `olio.sd.SceneCompositeUtil` for the predicate and message — `olio.picturebook` → `olio.sd` is the existing dependency direction
+     (`PbNodeExecutor` already imports `SceneCompositeUtil`); no new package edge.
+     (f) **Deviation from 148 (iv):** that note predicted P2-8 would flip `TestKontextDeprecation`'s two "…StillResolvesToKontext" cases to
+     refusal. As built, `resolveMode` still *returns* `kontext` (the resolver is the one place that knows a legacy config is Kontext; the
+     callers refuse) — so those cases became `explicitUseKontextResolvesToKontextWhichIsRetired` / `explicitCompositeModeKontextResolvesToKontextWhichIsRetired`,
+     asserting the resolution AND `isRetiredMode(result)`, and a new `kontextIsRetiredNotSupported` pins `SUPPORTED_MODES == "flux2|classic"`.
+     The refusal itself is tested where it happens (`TestPbKontextDisable`, `TestChatSceneKontextDisable`).
+     (g) ASK — **the architect's `architecture.md` one-liner** (status codes: 400 = invalid request content, 409 = refused by resolved/persisted
+     state, 404 = absent) — a rules-file edit on a subagent's recommendation, so yours.
+     (h) NOTE — `ModelResolver.java:35` still carries its own `MODE_KONTEXT` constant (model-policy vocabulary, not the composite-mode gate);
+     left for the Remove stage (Phase 10), listed in the §37.3 as-built marker so it is not forgotten.
+     (i) **The executor refusal opens a run row and closes it FAILED** (measured, `TestPbKontextDisable.case01`: node `lastError` and
+     `olio.pb.run.error` both carry the message, `completedAt` set) — `executeNodeRun` opens the run before `executeComposite` resolves the
+     mode. Alternative rejected: pre-checking the override before the run row (would duplicate the resolution and lose P0-8 visibility of
+     the refusal in the run history).
+     (j) **PB1 inline parse replaced** by `SceneCompositeUtil.resolveMode` + two booleans — same result for flux2/classic, confirmed by
+     `TestFlux2Composite` 36/36.
+     (k) **Finding, not a defect: `BaseRecord.get` materialises a declared-but-absent field at its schema default.** `RecordDeserializer`
+     keeps only the JSON-present fields (`:378`), but `BaseRecord.get("compositeMode")` on a sparse `olio.sd.config` runs `checkField`
+     (`BaseRecord.java:422-443` → `RecordFactory.newFieldInstance`) and returns `"flux2"`. Consequence: `{"useKontext":true}` alone resolves
+     flux2 and passes every gate (REST → 404 "Chat request not found", the session lookup); Kontext is reachable through the boolean only
+     when the body also carries `"compositeMode":""` or `null` (the shape a client posts when round-tripping a pre-`compositeMode` saved
+     config whose column is SQL NULL) → 409. The Service7 and Playwright tests pin exactly those shapes and document the alone-case as 404
+     (javadoc on `TestUseKontextAloneMaterialisesTheFlux2DefaultAndPasses`; spec comment). My first test expected 409 for the alone-case and
+     was wrong — corrected to the measured behaviour, product code unchanged (the 409 gate is the real defence for round-tripped configs).
+     (l) **The executor's legacy-boolean case is not buildable**: `SDUtil.applyOverrides` skips null/empty values, so a node `configOverride`
+     cannot clear the schema-default `compositeMode=flux2` to let `useKontext` speak; covered instead at the transport (k). Executor cases
+     use an explicit `compositeMode=kontext` override (case01/02) and a flux2 control (case03).
+     (m) ⚠ minor — **design §37.3 Disable row got an `[2026-10-15 (P2-8) — as built: …]` marker** (the Deprecate row has none); it names the
+     gates, codes, tests and the Phase-10 leftovers (h). Remove it if you prefer the retirement table to stay prose-only.
+     (n) **Service7 test pattern** — `TestChatSceneKontextDisable` calls `new ChatService().generateScene(json, randomOid,
+     HttpServletRequestMock(non-admin user))` directly on the H2 fixture, the P2-7 `TestChatSceneRenderPath` precedent: it tests the
+     transport gates (what Service7 owns), not business logic; every body carries `refinerModel` because `@Context ServletContext` is not
+     injected in a direct call. The HTTP surface is pinned separately by the Playwright item-14 block and the curl proof.
+     (o) ⚠ **Stale comment corrected in product code** (`ChatService.java:1621-1623`: "only yields the three supported modes" → the two
+     supported pass, the retired result is 409'd above) — comment-only, same line count, the compiled class was byte-identical to the
+     deployed one at the time (md5 `d52e99dc…` before and after; superseded by the hardening build `7db34537…`).
+     (p) **Security hardening 1 applied in-task** (`ChatService.boundedEcho`, :1032-1037): the unsupported-mode branch's WARN line and 400 body
+     now carry the caller's `compositeMode` trimmed, control characters replaced by `?`, capped at 32 characters + `...` — a request body
+     could otherwise forge a log line (CR/LF) or reflect an unbounded value. Pinned by `TestChatSceneKontextDisable.TestUnknownModeEchoIsSanitisedAndCapped`
+     (`a\nb` + 40×`x` → `a?b` + 29×`x` + `...`), the Playwright item-14 case of the same name, and the live curl proof. Alternative rejected:
+     dropping the echo entirely (a client posting a typo then gets no hint of what was rejected).
+     (q) **Security hardening 2 applied in-task** (`SceneCompositeUtil.buildSceneRequest` :218-221): the builder itself refuses a retired mode
+     (ERROR log + null), so a future caller that bypasses the three entry-point gates still gets no Kontext request; the kontext branch (:282)
+     stays in the source, unreachable, until Phase 10. Callers' existing null paths apply (`PbNodeExecutor` :1144-1149 → 500 "Could not build a
+     composite scene request", `ChatService` :1621 → 500 "No scene pipeline"). ⚠ **test rewritten, not deleted:** `TestFlux2Composite.promptOverrideReplacesKontextComposedPrompt`
+     built a Kontext request and asserted non-null, which the refusal makes impossible; it became `builderRefusesTheRetiredKontextMode` (:634,
+     `kontext` and `" Kontext "` → null). The contract it carried (prompt override replaces the composed prompt) stays pinned on flux2 at :612.
+     The verifier was asked explicitly whether this is a weakening and ruled it is not (§10.8 re-check).
+     (r) ASK — `params.compositeSdConfig.compositeMode` is parsed into the sd.config but never consulted as a mode anywhere (pre-existing, not a
+     P2-8 bypass): document that the per-request `compositeSdConfig` carries SD parameters only, or reject a `compositeMode` key inside it?
+     Default taken: left as is.
+     (s) **Verifier findings 1 and 2 fixed in-task**: the spec comment (`chatChainSceneReimageRoutes.spec.js:261-264`) and the design §37.3
+     marker said `useKontext=true` with "no `compositeMode`" → 409; the measured behaviour (k) is 409 only for a blank/null value and 404 for
+     an absent key — both reworded; the `kontextModel` descriptions in `configModel.json:393` and `modelDef.js:10388` no longer invite
+     "opting into compositeMode=kontext" and say nothing reads the field until Phase 10.
+     (t) ASK — **verifier finding 3, recorded, not acted on** (design decisions): (a) the PB1 `promptOverride` branch (`PictureBookUtil.java:9650-9689`)
+     returns before the :9705 gate — a kontext-configured book with a prompt override renders a direct txt2img rather than being refused (no
+     retired code runs, but the refusal is not uniform across PB1 branches); (b) there is no write-time validation of `compositeMode=kontext`
+     on `PATCH /rest/model olio.sd.config` or a node `configOverride` — the value can be persisted and is refused only when a render resolves
+     it (render-time refusal is what §37.3 Disable specifies; write-time rejection would be a Phase-10 or separate decision); (c)
+     `executeComposite` reads the binding artifact bytes (:1083-1130) before the :1135 gate — wasted reads on a refused run, not a bypass.
+     Default taken: none of the three changed.
+     (u) NOTE — count reconciliation: my first-pass "104 run / 10 skipped" selected six classes (adds `TestModelResolver` 41 +
+     `TestPbNodeExecutorTypes` 2 as regression controls); the verifier's four-class selection is 61 run / 10 skipped. Both are 0 failures; the
+     ten skips are the same `TestIllustrationModelPolicy` SD-gated set in both.
+     (v) NOTE — residual edges of `boundedEcho` the verifier recorded as non-breaking: `\p{Cntrl}` is ASCII-only in Java, so C1 controls
+     (U+0085) and U+2028/U+2029 reach the WARN line raw (line terminators for some log viewers; legal raw inside a JSON string), and
+     `substring(0, 32)` can split a surrogate pair (Jersey's UTF-8 encoder emits `?`; the body stays valid JSON). `user.get("name")` on the
+     same WARN line is pre-existing and constrained at user creation. Left as is; widen the class to `[\p{Cntrl}\u0085\u2028\u2029]` and cut
+     on a code-point boundary if you want the log line fully clean.
+168. ⚠ **2026-10-15 02:05 → 06:23 — P2-9 (Ux752 style editor, estimate display, plan inspector, model-missing message; design §26;
+     §10.9): every default taken under auto mode (planner + architect PASS WITH CORRECTIONS, each item adopted or recorded). No server
+     code changed — the new screens consume only the P2-2 (`GET /olio/illustration/models`), P2-4 (`/style`, `/style/lock`, `/plan`,
+     `/artifact/{oid}`) and P2-5 (`/render-plan`) routes already reviewed — so no security-reviewer pass was run for this task; the
+     phase-level security pass in P2-10 covers the new client surface.**
+     Live measurements the editor is built on (as `e2etest_shared`, `C:/tmp/p29-probe*.sh|.log`, `p29-put-tm.json`, `p29-put-null.json`,
+     `p29-put-sd.json`, `p29-plan2.json`, `p29-plan-time.log`): a fresh book's `GET /{book}/style` is `{bookObjectId, effective{qualityPreset:
+     STANDARD, pageFormat:SQUARE}, cycleDetected:false, complete:true}` with no `own` and no `chain`; after any `PUT` it carries `own{objectId,
+     name:"<slug>-style", scope:BOOK, locked, fields{…set keys only; sdConfig is a bare objectId}}`, `effective{fields, taskModels?,
+     taskModelSources, qualityPreset, pageFormat, sdConfigName?, sources}`, `chain[{objectId,name,scope,locked}]` ascending, and `lockedBy`
+     only when locked — **`lockedBy` is the objectId of the locking style hop (`PbServiceFacade.java:3043`), not a user**. `PUT` accepts
+     exactly `[sdConfig, description, exclusions, palette, taskModels, pageFormat, customWidth, customHeight, qualityPreset, photoreal,
+     parent]`; unknown key → 400 `Unknown style field 'name'; accepted: […]`; `pageFormat` outside `PORTRAIT_PAGE, LANDSCAPE_PAGE, SQUARE,
+     CUSTOM` → 400 verbatim; a `taskModels` key outside the six model tasks → 400 (`:2839`); JSON null clears; the lock 409 (`:2553-2555`)
+     is `Style '<name>' (<SCOPE>, <oid>) is locked - unlock it before editing` + ` (POST /{book}/style/lock {"locked":false})` only when
+     the own style is the locked one; `POST /style/lock` with no own style → 404. `POST /rest/model` for an `olio.sd.config` only succeeds
+     from the `GET /olio/randomImageConfig` template (a hand-rolled body → HTTP 200 + empty body — ask (8)); sparse `PATCH /rest/model
+     {schema,id,objectId,seed}` → `true`; by-id `GET /rest/model/olio.sd.config/{oid}` is minimal — `/full` for `seed`/`name`/`groupId`.
+     `POST /{book}/scene/{s}/plan {}` → `{planVersion, purpose, canvas, preset, style, location, intent, strategy{name,stages,reason},
+     models{task:{task,reason,degraded,model?}}, compiled{BASE{prompt,estimatedTokens}}, degradations[{code,message,stage}],
+     configNotApplied:null, estimate{scenes,stages,variants,steps,measured,source}, contentHash, config{44 keys}}`; it echoes the style's
+     sdConfig (`config.seed` 4242 after the test's PATCH) and the style's `qualityPreset` (DRAFT → `preset.steps` 20 / `variants` 1 /
+     `qa` OFF); `{preset:"draft"}` is honoured; malformed body → 400 `Malformed request body`. With `.39` down `POST /render-plan` → 503
+     `{"error":"Renderer inventory unavailable; cannot verify a model for scene <sceneIndex> before rendering - Model for LOCATION is unresolved:
+     INVENTORY_UNAVAILABLE (…) (plan artifact <oid>)"}` and persists a `renderPlan` artifact (`GET /{book}/artifact/{oid}` →
+     `artifactText` = the plan, `revision` 1, `reviewStatus` GENERATED) on a per-scene `RENDER_PLAN` node (`scopeRef` = scene oid);
+     `listReviewQueue` (`:2354`) skips `renderPlan` (`:2371`) and `continue`s on an otherwise-empty node, so such a node is **not** on the
+     review page (ask (11)). **Timing under the outage** (`p29-plan-time.log`): one `GET /olio/illustration/models?task=…` blocks
+     **42 s** (75 s on one run) before answering `inventory.error`, `POST /plan` blocks **84 → 460 s** (211.8 s by curl; 84.2 s, 118 s,
+     121 s and 459.5 s inside the specs — several inventory reads per plan, each `Connection refused` yet each tens of seconds; failed
+     reads are not cached — ask (10)). The REST facts above are verified by the Playwright specs, not only by the probes.
+     (a) **Availability column probes `portrait` first; when the answer carries `inventory.error` the five other rows reuse it
+     (`resolution:null`) and send no request** (`pictureBookStyle.js loadTaskInfo` :241-276) — six 42-second probes would otherwise block the
+     screen for minutes while the SD server is down; when the inventory answers, the other five are requested in parallel. Proven live:
+     exactly `['/rest/olio/illustration/models?task=portrait']` sent (`pw-p29-style*.log` `[p29-style-1]`). Alternative rejected: a server
+     `?task=all` route (server change, out of P2-9).
+     (b) **Lock button disabled with the reason as its title while the book has no style of its own** (`The book has no style of its own to
+     lock; save a field first` — the server's 404 text in UI words); **locked → every input, clear link, Save and Render-settings create are
+     disabled and a banner says so**; the header badge reads **`Locked by <hop name>`** resolved through `hopName(style, lockedBy)` from the
+     chain (falls back to the raw objectId when the hop is not in the chain), because `lockedBy` on the wire is the locking *style's*
+     objectId (ask (12) for a name/user on the DTO). Caught by cross-checking `PbServiceFacade.java:3043` before the first live run: the
+     first draft of the Vitest fixture and the Playwright assertion assumed a user name.
+     (c) **Render settings (sdConfig) section has four modes** — own (editable `SdConfigPanel` with `hideFields:['steps']`, Save PATCHes only
+     the changed fields + identity, never `name`; Unlink PUTs `{sdConfig:null}`), inherited (read-only, "Override for this book" creates a
+     copy), book (the V1 book-level sdConfig, "Use for this style" links it), none ("Create render settings"). A created config is named
+     `(book.slug || book.name || own.name || bookObjectId) + '-style-sd-' | '-style-override-' + Date.now().toString(36)` in the book's
+     group and is built from the `randomImageConfig` template (the only body the server accepts — see the measured fact). `steps` is hidden
+     because the preset owns it (166 ab). No server route creates a style-owned sdConfig (ask (5)).
+     (d) **Reference images: an honest placeholder** (`pb2-style-reference-images`: "no style-level reference-image routes exist yet (Phase
+     4)") rather than a UI over routes that do not exist (ask (2)).
+     (e) `normalizeStyle` upper-cases `qualityPreset`/`pageFormat`/`scope` (enums arrive lowercase from list projections, UPPERCASE
+     elsewhere); `normalizePlan` turns `configNotApplied:null` into `[]` and defaults every nested object so the inspector never tests for a
+     missing array.
+     (f) **The reader's "Plan & generate" dialog previews with a preset selector that is preview-only**: `POST /plan {preset}` is a preview;
+     `POST /render-plan` takes no body (`PbServiceFacade` :2969) so Generate always uses the book style's quality preset — the dialog says so
+     under the selector whenever a preset is chosen (ask (1)). Generate is a live dialog action (`actions` as a `{view}` component so the
+     label flips to "Generating…" and disables while the request runs); there is **no client-side deadline** — the dialog says "this waits
+     for the renderer"; the server's `(status) message` is shown verbatim in the dialog while it is open and as an error toast when it was
+     closed; success closes the dialog, toasts `Scene rendered (artifact <oid>)` and refreshes the pages.
+     (g) **Review page reads the plan through `nodeView`** (`GET /{book}/node/{oid}` → `artifacts.renderPlan[]`) and offers "Plan" on every
+     listed node; the live review test is therefore SD-gated (k) — a plan-only node is never listed (measured fact; ask (11)).
+     (h) **Canvas node detail shows "View plan" only when `nodeDetails.artifacts.renderPlan` is non-empty** (`pictureBookWorkflow.js:888`),
+     loads the newest revision's artifact on demand and labels it `rev N · <oid>`.
+     (i) The canvas test seam (`__setWorkflowStateForTest`) was extended for Vitest only (`nodeDetails`, `planView`); production reads
+     nothing from it.
+     (j) Vitest reaches the dialog body/actions through `vi.spyOn(Dialog, 'open')` and renders the captured `content`/`actions` components
+     directly; `fetch` is stubbed per test (the `renderPlanScene` call has **no body**, so stubs must guard `o && o.body`).
+     (k) **SD-gated live cases, skipped and reported as skips, not passes**: the review-page "Plan" (needs a rendered `base` artifact for the
+     node to be listed) and the Generate-success path (`pictureBookV3PlanInspector.spec.js` test 4, `PB_SD_TESTS=1` + inventory
+     available); the model-missing hint (`Not in the installed-model list`) needs a non-empty `models[]` and so is Vitest-only on this run
+     (`[p29-style-2]` line). The 400 (enum / unknown field / taskModels key) and 409 (lock) contracts are proven at the REST level inside
+     the Playwright spec because the editor cannot produce them.
+     (l) **Test budgets are generous on purpose, timings logged and never asserted** (standing rule): the first live run failed only on my
+     30-second wait for the availability cell (the server's inventory read took 42 s) and the second on the 300-second test budget around
+     `POST /plan` (212 s) — both were test defects, fixed by raising the budgets (`timeout: 1200000` / `2400000` per describe,
+     `900000` on the plan waits), not by touching product code. The plan spec's first two runs were likewise red on test defects only:
+     a strict-mode locator (the reader prints `Page 1 of N` twice — header span and footer; `.first()` as the parity spec does) and
+     a hard-coded `scene 1` in the expected 503 text where the server names the scene by its `sceneIndex` (the fixture's is 0).
+     The test-author's added test 6 (inheritance) was red once on its own test defect — it expected the `(POST /{book}/style/lock
+     {"locked":false})` hint on a 409 raised by a lock on the PARENT, but `PbServiceFacade.putStyle` (`:2555`) appends that hint only
+     when the locking hop is the book's own style; the assertion now expects the parent form verbatim (`C:/tmp/pw-p29-ta-style.log`).
+     (m) NOTE — the style route initialises the editor component twice on entry (two simultaneous `GET /{book}/style` in the trace, as
+     the reader fires two `/model/search`); the `loadSeq` guard discards the first result, so exactly one inventory probe runs. Pre-existing
+     layout/route behaviour, outside P2-9, left alone.
+     (n) ASK (1) — should `POST /render-plan` accept `{preset}` so the dialog's preview preset can also drive the render? Default taken:
+     preview-only, labelled.
+     (o) ASK (2) — style-level reference-image routes: Phase 4 as the design says, or sooner? Default taken: placeholder.
+     (p) ASK (3) — 166 ab: the `STEPS` `configNotApplied` code — confirm `steps` stays preset-owned (the editor hides it on that basis).
+     (q) ASK (4) — D3 confirm: the editor treats `effective.sources[field]` as the resolution source for the "inherited from <hop>" marker.
+     (r) ASK (5) — no server route creates a style-owned `olio.sd.config`; the client composes it from `randomImageConfig` + `POST /rest/model`
+     + `PUT /style {sdConfig}`. Fine as three calls, or do you want `POST /{book}/style/sd-config`?
+     (s) ASK (6) — architect's architecture.md one-liner: "V3 books resolve sdConfig only through `/style`" — yours to add or not.
+     (t) ASK (7) — `PbServiceFacade.java:409` comment says the chain is "newest first"; `listChain` returns it ascending (book → parents).
+     (u) ASK (8) — `POST /rest/model` on an invalid `olio.sd.config` body returns HTTP 200 with an empty body (`page.createObject` → null)
+     rather than a 4xx; the editor reports "Could not create the render settings" on null. Server-side 422 would be clearer.
+     (v) ASK (9) — `GET /rest/model/olio.pb.book/{oid}/full` logs an audit-row validation line (description > 2048) on each read — noise only.
+     (w) ASK (10) — **a failed inventory read is not cached server-side and blocks ~42 s per attempt (`p29-plan-time.log`): one
+     `GET /olio/illustration/models` = 42-75 s, one `POST /plan` = 212 s while `.39` is down.** A short negative cache (or one inventory
+     read per plan) would make the outage mode usable; Objects7 `ModelResolver`/`SwarmModelInventory`, outside P2-9, not touched.
+     (x) ASK (11) — `listReviewQueue` hides a `RENDER_PLAN` node whose render failed before producing a `base` artifact; should such nodes be
+     listed (with their plan and the failure) so the reviewer can see what was attempted?
+     (y) ASK (12) — should the style DTO carry `lockedByName` (and/or the user who locked it) beside the hop objectId?
+     (z) ASK (13) — **pre-existing canvas defect, found while screenshotting P2-9 test 3 (`03-canvas-plan.png`), not touched:** clicking a
+     node on the canvas (`PUT /{book}/node/{node}/canvas`, `workflows/pictureBookWorkflow.js:585` sends `{x,y,w,h}`) returns HTTP 500 and
+     the toast `Save position failed: saveCanvas failed: 500`. Server log 09:50:09 UTC: `RecordDeserializer - Invalid field:
+     olio.pictureBookRequest.x null` (and `.y`, `.w`, `.h`) — `PictureBookService.saveCanvas` (`:2171-2175`) parses the body as
+     `olio.pictureBookRequest`, which declares no `x/y/w/h`, so all four arrive null; `PbServiceFacade.saveCanvas` (`:3104-3110`) then
+     materialises `canvasX/Y/W/H` on the patch and sets each to null, and `AccessPoint.update` (`:3115`) dies in
+     `RecordValidator.validate(RecordValidator.java:88)`: `NullPointerException: Cannot invoke "java.lang.Integer.intValue()" because the
+     return value of "FieldType.getValue()" is null` (`MemoryWriter.write:42` ← `DBWriter.write:174/407` ← `RecordUtil.createRecord:634/613`
+     ← `updateRecord:606` ← `AccessPoint.update:308`). Two layers: the request-model/body key mismatch, and the facade's documented
+     "null clears the position" path NPEs in the validator even when the keys do arrive. Canvas positions are therefore never saved on
+     the Docker stack. Not P2-9 (the canvas "View plan" surface is read-only and unaffected); yours to route.
+     (aa) ASK (14) — the **persisted** `renderPlan` artifact written by `POST /render-plan` carries no `estimate` (the canvas and review
+     inspectors print `No estimate` for it — `03-canvas-plan.png`), while the `POST /plan` preview of the same scene carries
+     `{"scenes":1,"stages":1,"variants":2,"steps":20,"measured":false,"source":"NONE: …"}`. Should the render path persist the
+     estimate it computed (or the inspector recompute it client-side from preset × stages)? Default taken: show `No estimate`.
+     (ab) Note — `olio.pb.artifact.byteLength` is `0` for the text `renderPlan` artifact (`[p29-plan-2] plan artifact … (0 bytes)`) while
+     `artifactText` carries the full plan JSON; the inspector reads `artifactText` and ignores `byteLength`, so no client impact — recorded
+     so nobody reads `0 bytes` as an empty artifact.
+     (ac) ⚠ MY JUDGMENT — **verifier finding (Low-Med), fixed inside the task:** in the `own` render-settings mode the `SdConfigPanel`
+     and `pb2-style-sd-save` ignored the own-style lock (`pictureBookStyle.js:574-576`) while every other control honoured it, so a
+     locked style's `olio.sd.config` stayed PATCHable from the editor (the server lock guards `PUT /{book}/style` only; the sdConfig
+     record goes through the generic `PATCH /rest/model`, which knows nothing of the lock). Design §26 does not carve render settings
+     out of the lock, so I treated it as a P2-9 defect in my own file and fixed it rather than filing an ask: the panel is wrapped in a
+     native `<fieldset disabled>` (`pb2-style-sd-fields`, every input/select/button inside is disabled by the browser — no
+     `SdConfigPanel` change), `Save render settings` adds `|| locked`, and the header `Save` adds `|| locked` too (the verifier's second
+     finding: a draft typed before the lock kept Save enabled — the server 409 was surfaced verbatim, so it was safe, but inconsistent
+     with "every input disabled"). Covered by the extended Vitest locked case (`pictureBookStyle.test.js:314-336` — own mode with
+     pending changes: fieldset / Save render settings / Unlink disabled; a pre-lock draft keeps its dirty mark but Save is disabled;
+     unlocked re-enables) and live by the extension of Playwright test 6 (after the detach, in own mode: Lock → `pb2-style-sd-fields`
+     has `disabled`, the Seed input `toBeDisabled()`, Save render settings + Unlink disabled, screenshot `06-own-locked-sd.png`; Unlock →
+     enabled again, `own.locked` false over REST). Runs after the fix: Vitest `pictureBookStyle.test.js` + `pictureBookPlanInspector.test.js` **2 files / 60 passed, exit 0**
+     (`C:/tmp/p29-fix-vitest.log`, 06:08); `npx vite build` exit 0 (`C:/tmp/p29-build4.log`), `dist` copied, md5 local == container;
+     Playwright style spec **6 passed (10.2 m), exit 0** (`C:/tmp/pw-p29-fix-style.log`, 06:09 → 06:19; `.39` still DOWN, probe
+     `C:/tmp/probe-p29d.log` 06:09:09). `06-own-locked-sd.png` opened: badge, banner, lock glyph on the own hop and a greyed Save are
+     visible; the render-settings section is below the inner scroll fold (as in the other 06 shots), so the fieldset checks are DOM
+     assertions, not the picture. If a locked style's render settings should
+     stay editable after all, say so and I will drop the fieldset (one line).
+     (ad) Verifier (Low) — no Vitest proves an older `/plan` response cannot overtake a newer preset in the reader dialog; the seq guard
+     is there by inspection (`pictureBook.js` `pb2LoadPlan`) and Generate is disabled while a load is in flight (Vitest
+     `pictureBookPlanInspector.test.js:365`). Default taken: not added (a deferred-fetch race test is more harness than value here);
+     tell me if you want it.
+     (ae) Verifier (Info) — the working tree also carries the uncommitted P2-4…P2-8 changes (`modelDef.js`, `featureConfig.js`,
+     `renderPathConfig.test.js`, several e2e specs, untracked `pictureBookV3RenderPlan.spec.js`); expected — nothing since 11edfb7b is
+     committed (yours).
 
 ### 6.G Found in Slice C transport (P0-10c), left alone under scope discipline — your call on each
 
@@ -11473,12 +12611,12 @@ redeploy + prove live after each Service7/Objects7 slice; tracking doc after eve
 | P2-1 | Schema — `olio.pb.style` (+ inheritance/lock fields: `scope`, `locked`, parent/inherits ref as §4.1 specifies), `olio.pb.book.style` FK, `olio.pb.renderPlan` or the plan-on-node field §12 specifies, capability/preset resource files (`olio/illustration/capabilities.json`, `qualityPresets.json`), `PbStrategyEnumType` / `PbModelTaskEnumType` (+ `PbPageFormatEnumType`, `PbQualityPresetEnumType`, style-scope enum) as §4/§13/§16 name them; additive, column-backed, boot-patch, no JSON defaults; JUnit round-trip via `AccessPoint` as `e2etest_shared`'s JUnit equivalent | §4, §4.1, §12, §13, §16, §18 | §10.1 | IMPLEMENTED 15:30; TESTS GREEN 16:45 — 55/55 on the first Maven run (`C:/tmp/p2-1-tests.log`; boot patch added both `style` columns and the `olio.pb.style` table on `am7db`); **test-author 16:54 — +3 real cases, 58/58** (`C:/tmp/p2-1-ta-run.log`); **verifier 17:04 — PASS, 58/58 on its own run** (`C:/tmp/p2-1-verifier-run.log`; no BLOCKER/SHOULD-FIX, four NOTEs recorded in §10.1 results); **Objects7 quick gate run 8 RUNNING since 18:15:58 — batched with P2-2's** (⚠ §6.C 153 a; §4.4 row 8); DONE when it ends with only the four §4.2 baseline reds (planned + architect PASS 14:45, §6.C 150; ⚠ §6.C 151) | `TestPbModelSchema` 22/22, `TestPbStyleSchema` 9/9, `TestIllustrationResources` 20/20, `TestPbNodeExecutorTypes` 2/2, `TestPbV3Schema` 5/5 — `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` (same line on all three runs) | gate run 8 20:17 — `1080/17/5/17`, `VERIFY_FAILED`: the 4 baseline reds + 18 `.39`-outage reds, every P2 class green before the drop (§4.4 row 8); DONE-by-gate is ⚠ §6.C 159 (Stephen's call) | 2026-10-13 |
 | P2-2 | `ModelResolver` + capabilities/presets resources + `GET /olio/illustration/models?task=` (models-by-task) — pure functions at the seams, unit-testable without SD (§31), plus a live JUnit against `.39`'s real inventory (`SdTestGate`) | §15, §16, §18, §27 | §10.2 | PLANNED 15:45 + architect PASS WITH CORRECTIONS 16:00, all adopted (⚠ §6.C 152); **IMPLEMENTED 16:30 → 17:25** (Objects7 `olio/illustration` ×6 + `PbServiceFacade.listModelsForTask` + `PbStyleUtil.readSdConfigModels` + `SDUtil.listModelsOrNull()`; Service7 `IllustrationService`); **TESTS GREEN 17:27–17:28** (`C:/tmp/p2-2-unit.log`, `C:/tmp/p2-2-live-junit.log`, `C:/tmp/p2-2-s7.log`; one product fix in `CheckpointNames` driven by the pure test, ⚠ §6.C 154 a); **DEPLOYED + PROVEN LIVE 17:34** on `am7test-am7-1` as `e2etest_shared` (`C:/tmp/p2-2-live.log`); **test-author 17:59 (+3 cases → `TestModelResolver` 41, `TestModelResolverLive` 16), security review 17:43 CHANGES-NEEDED → fixed + redeployed 18:05 (⚠ §6.C 155), verifier 18:14 — PASS, notes only** (`C:/tmp/p2-2-verifier-o7.log` 57 run / 0 fail / 1 skip, `-s7.log` 3/3; §10.2 results); **Objects7 quick gate run 8 RUNNING since 18:15:58 — batched with P2-1's** (⚠ §6.C 153 a; §4.4 row 8); DONE when it ends with only the four §4.2 baseline reds | `TestModelResolver` 40/40 (pure), `TestModelResolverLive` 11 run / 0 fail / 1 skipped (case07, no Kontext checkpoint on .39 — a skip, not a pass), `TestIllustrationRestContract` 3/3 — `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000`; SdTestGate `Live SD checkpoint for http://192.168.1.39:7801 = 'OfficialStableDiffusion/sd_xl_base_1.0.safetensors'` | gate run 8 20:17 — `1080/17/5/17`, `VERIFY_FAILED`: the 4 baseline reds + 18 `.39`-outage reds, every P2 class green before the drop (§4.4 row 8); DONE-by-gate is ⚠ §6.C 159 (Stephen's call) | 2026-10-13 |
 | P2-3 | Style inheritance + lock resolution util + `GET/PUT /{book}/style`, `POST /{book}/style/lock`; "one model policy across reimage/PB/ChapBook/chat" — `OlioService` reimage, `ChatService` image requests and both PB paths resolve through the same resolver, one JUnit per caller | §4.1, §16, §27 | — | PLANNED 18:00 + architect PASS WITH CORRECTIONS 18:10, all adopted (⚠ §6.C 156; §10.3); **IMPLEMENTED 19:50** (IDE + `javap` clean, nothing run; ⚠ §6.C 157); **REVIEWED 20:10** — security PASS WITH NOTES (finding 2 fixed), architect CHANGES-NEEDED (BLOCKER fixed, SHOULD-FIX → description corrected + ASK; ⚠ §6.C 158); gate run 8 done 20:17 (§4.4 row 8); **TEST PHASE started 20:40** on the §3 20:30:53 probe (`.39` http=0 — SD-gated cases Assume-skip, reported as skips, re-run when a Swarm is reachable; ⚠ §6.C 159 c); **test-author hand-back 22:20 — 8 classes, 2 reds** (§10.3 results): red #1 = my wrong 159 g premise (`case14` rewritten to the measured contract + hash signal, product unchanged; ⚠ §6.C 160 a–c), red #2 = real product defect (`createOwnStyle` name collision with the orphan of a cleared `book.style` → `PbStyleUtil.findStyleByName` + `<slug>-style-<8 hex>`; ⚠ §6.C 160 d–f); **reruns green 22:46** (`TestPbStyleResolver` 15/0/0/0, `TestPictureBookStyleRoutes` 13/0/0/0 after jar install); **redeployed + live-proven 22:54** (jar + `PictureBookService`/`ChatService`/`OlioService`/`IllustrationService` md5-equal in `am7test-am7-1`, restart 22:52:54 → 200 at 22:53:16; `C:/tmp/p2-3-live.log` as `e2etest_shared`: 403 unauth / 200 GET / 404 absent / 200 PUT creates `<slug>-style` / 400 bad preset / lock 200 → PUT 409 → unlock 200); **verifier PASS WITH NOTES 23:07** (Objects7 `C:/tmp/p2-3-verifier-o7.log` 82/0/0/27, Service7 `-s7.log` 35/0/0/0; ⚠ §6.C 161); **finding 1 (TOCTOU in `createOwnStyle`) fixed 23:13** — per-book striped write lock around `putStyle`/`lockStyle`, proven by `TestPbStyleResolver.case15` (two threads, 4 rounds) → `TestPbStyleResolver` **16/0/0/0 23:23** (`…-161b.log`; the first run `…-161.log` was red on my group-wide count, not the lock), `TestPictureBookStyleRoutes` **13/0/0/0 23:24** on jar `064e6aea…`; **redeployed + live re-proven 23:25** (`C:/tmp/p2-3-live-161.log`: 403/200/200/200/404/200 update path/400/200/409/200/200/200); gate copy refreshed 23:25:40; 27 SD-gated skips open (NOT a pass); **Objects7 gate run 9 01:25:54 `1118/6/9/68` `VERIFY_FAILED`** (§4.4 row 9: 4 baseline + 10 `.39`-outage reds + 53 SD skips — all P2-3/P2-1/P2-2 classes green — **plus one NEW non-SD red, `TestGameUtil.TestMoveTowardsPositionAcrossCells:964`, a pre-existing `GameUtil` feature-boundary defect reached by data drift, STOPPED and reported ⚠ §6.C 162, not fixed**); **Service7 quick gate `VERIFY_OK` 158/0/0/0 01:36:32** (24 classes, `C:/tmp/s7-gate-p2-3.log`); DONE-by-gate is Stephen's call (159 b; 162 ruled non-blocking 09:40) | — | — | — |
-| P2-4 | `RenderPlan` + TEXT_ONLY strategy + `SdxlCompiler` + estimate — golden-string unit tests for the compiler, a live render JUnit on `.39`, a plan-inspector read route | §12, §13, §14, §15, §18, §19 | — | TODO | — | — | — |
-| P2-5 | `PbNodeExecutor` renders from the plan (TEXT_ONLY only; PORTRAIT/LANDSCAPE keep Phase 1 behaviour); "a missing model is reported before rendering" = a 4xx with the resolver's reason — JUnit + Playwright | §12, §16, §20 | — | TODO | — | — | — |
-| P2-6 | ChapBook goes V3 (§24): pages compile through TEXT_ONLY with the continuity composer up front; old ChapBook path disabled (§28.1 Stage 2) with the rollback value documented; ChapBook verify checks start (§28 — list which); every ChapBook Playwright spec repaired in P1-12 group 2 stays green | §24, §28, §28.1 | — | TODO | — | — | — |
-| P2-7 | Chat scene renders through the illustration service (§24.1) — `ChatService` image path, one JUnit + one Playwright | §24.1 | — | TODO | — | — | — |
-| P2-8 | Kontext Disable (§37.3) — `SceneCompositeUtil.isSupportedMode` rejects `kontext` with a clear error (`legacyKontextDefault` survives for Remove); `TestKontextDeprecation` extended to assert the refusal; the `ChatService.java:1492` flip gets the Service7-level test §6.C 14 asked for | §37.3, §37.4 | — | TODO | — | — | — |
-| P2-9 | Ux752 — style editor, estimate display, plan inspector, model-missing message (§26); read `features/chapBook.js`, `workflows/pictureBook.js`, `features/pictureBookReview.js` before writing; Vitest + Playwright per screen | §26 | — | TODO | — | — | — |
+| P2-4 | `RenderPlan` + TEXT_ONLY strategy + `SdxlCompiler` + estimate — golden-string unit tests for the compiler, a live render JUnit on `.39`, a plan-inspector read route | §12, §13, §14, §15, §18, §19 | §10.4 | PLANNED 11:05 + architect CHANGES-NEEDED 11:05, every item adopted or recorded (⚠ §6.C 163; §10.4); **IMPLEMENTED 11:20 → 12:40** (Objects7 `olio/illustration` ×16 new + `PbRenderPlanUtil` + `PbServiceFacade.planScene` + `PbConfigUtil.configSnapshot` + `SDUtil`/`RendererCapabilities`/`capabilities.json`/`PbPipelineUtil` edits; Service7 `PictureBookService.planScene`); **TESTS GREEN 12:41 → 12:47** (pure 39/0/0/0 `C:/tmp/p24-pure-6.log`; Service7 route 11/0/0/0 + contract 19/0/0/0 `p24-s7-2.log`; live `.39` 4/0/0/0 `p24-live-2.log`); **redeployed + live-proven 12:43** (jar md5 `45b8b1ab…` equal in `am7test-am7-1`; `p24-live-proof.log` as `e2etest_shared`: 403 unauth / 404 / 404 / 400 / 400 / 200 default STANDARD TEXT_ONLY / 200 FINAL override); **security PASS 12:20** (notes 163 q); **test-author review 12:50** (two gaps + record-only notes, 163 n); **verifier PASS 12:55** (163 r); **gap-fills green 13:09 → 13:13** (`TestPartialStyleChainIs409` → route 12/0/0/0 `p24-s7-3.log`; facade `model` override + measured estimate → live 4/0/0/0 `p24-live-3.log`; `joinSentences` `,`/`:` → pure 7/0/0/0 `p24-pure-7.log`); **redeployed 15:46** (md5 `545beb4c…` equal, 0 stub classes, startup 9 s) + **live re-proof 15:46:50 → 15:46:59** (`p24-live-proof-2.log`, exit 0, same contract). **Verifier PASS; Objects7/Service7 quick gates ⚠ batched forward (163 o)** — DONE-by-gate is yours (159 b). | `TestRenderPlan` 7, `TestSdxlCompiler` 12, `TestStrategySelector` 5, `TestCanvasResolver` 5, `TestRenderEstimate` 3, `TestPbRenderPlanLocationText` 7 (pure); `TestRenderPlanLive` 4 (live `.39` + `am7db`); `TestPictureBookPlanRoute` 12 (H2), `TestPictureBookRestContract` 19 (+4) | `C:/tmp/p24-pure-7.log`, `p24-s7-3.log`, `p24-live-3.log`, `p24-live-proof-2.log` | 2026-10-14 |
+| P2-5 | `PbNodeExecutor` renders from the plan (TEXT_ONLY only; PORTRAIT/LANDSCAPE keep Phase 1 behaviour); "a missing model is reported before rendering" = a 4xx with the resolver's reason — JUnit + Playwright | §12, §16, §20 | §10.5 | PLANNED 16:25 + architect CHANGES-NEEDED 16:39 (17 findings, every item adopted or recorded — ⚠ §6.C 164; §10.5); **IMPLEMENTED 16:40 → 17:22** (Objects7 `PbNodeExecutor.executeRenderPlan` + `frozenConfig` + `unresolvedModelStatus/Message`, `PbServiceFacade.requestRenderPlanScene` ×2 + `ensureWorkflow`/`ensureRenderPlanNode`; Service7 `PictureBookService.renderPlanScene`); **TESTS GREEN 17:23 → 17:44** (Objects7 live `.39`: `TestPbRenderPlanExecutor` 4/6 + 2/2 across two runs `C:/tmp/p25-executor.log` / `p25-executor2.log` — my test-helper bug, 164 t; `TestPbNodeExecutorTypes` 2/0/0/0 `p25-types.log`; regressions `TestRenderPlanLive` 4/0/0/0 `p25-planlive.log` + `TestPbNodeRun` 7/0/0/0 `p25-noderun.log`; Service7 H2 `TestPictureBookRenderPlanRoute` 7/0/0/0 + `TestPictureBookRestContract` 20/0/0/0 `p25-s7-route.log`); **redeployed 17:44:58** (jar md5 `18188e97…` + `PictureBookService.class` `a5f0a447…` local == `am7test-am7-1`, 0 stub classes, `setup/state` 200 at 17:45:22); **Playwright live 3/3 17:55** (`pw-p25-2.log`; run 1 failed on my own assertion, 164 r); **security PASS 18:08** (164 u); **test-author gap-fill 6/6 18:16** (`pw-p25-gap.log`, 164 v); **verifier PASS 18:19 → 18:33** (164 x). Every PNG the runs wrote was opened — all genuine lighthouse renders (§10.5). **Verifier PASS; Objects7/Service7 quick gates ⚠ batched forward (163 o / 164 w)** — DONE-by-gate is yours (159 b). | `TestPbRenderPlanExecutor` 6 (live `.39` + `am7db`), `TestPbNodeExecutorTypes` 2 (edited); `TestPictureBookRenderPlanRoute` 7 (H2), `TestPictureBookRestContract` 20 (+1); Playwright `pictureBookV3RenderPlan.spec.js` 6 (live Docker; `e2etest_shared` owner, `e2etest_iso42001` stranger) | `C:/tmp/p25-executor.log`, `p25-executor2.log`, `p25-types.log`, `p25-planlive.log`, `p25-noderun.log`, `p25-s7-route.log`, `pw-p25-2.log`, `pw-p25-gap.log`, `p25-verifier-o7.log`, `p25-verifier-types.log`, `p25-verifier-s7.log`, `pw-p25-verifier.log` | 2026-10-14 |
+| P2-6 | ChapBook goes V3 (§24): pages compile through TEXT_ONLY with the continuity composer up front; old ChapBook path disabled (§28.1 Stage 2) with the rollback value documented; ChapBook verify checks start (§28 — list which); every ChapBook Playwright spec repaired in P1-12 group 2 stays green | §24, §28, §28.1 | Objects7 `PbNodeExecutor` (`renderPlannedScene` :678 shared by `executeRenderPlan` :577 and `executeChapBookPage` :865; `PlannedRender.configNotApplied` :615/:652), `PbRenderPath` (`PICTUREBOOK_DEFAULT=V1` :45, `CHAPBOOK_DEFAULT=V3` :48, rollback WARN :54/:73), `PbRenderJobUtil` :684-685, `PbServiceFacade.listReviewQueue` :2370-2371, `SwarmRendererAdapter(SDUtil)` :33; Service7 `RestServiceEventListener`, `WEB-INF/web.xml`; `docker/web.xml.template`, `docker/entrypoint.sh`, `docker-compose.yml`; Console7 `resource.properties`, `ConsoleMain`; Ux752 `featureConfig.js`; tests `TestChapBookV3Render` ×15, `TestPbRenderPath` ×10 (+`case10`), `TestPbRenderPlanExecutor` ×6, `TestChapBookRestContract` (+`TestChapBookDefaultsToV3AndV1IsRollback`), `TestChapBookServiceRenderPath`, `TestFeatureConfigService`, `renderPathConfig.test.js`, `chapBookRenderPathV3.spec.js`, `chapBook.spec.js` (gap6 / test 4 reader repair) | **Verifier PASS; quick gates ⚠ batched forward (run 11)** — implemented, deployed, live-proven; test-author 24/24, security PASS WITH NOTES (§6.C 165 v/w), verifier PASS WITH NOTES (165 x); not DONE (yours); Objects7/Service7 quick gates ⚠ batched to run 11 | Objects7 31/31 (`C:/tmp/p26-s1b-o7.log`: `TestChapBookV3Render` 15/0/0/0 378.4 s, `TestPbRenderPath` 10/0/0/0, `TestPbRenderPlanExecutor` 6/0/0/0; `[LLM-GATE] route=litellm tier=local` = in-stack Ollama container via LiteLLM, no LLM call made; SD = Swarm `http://192.168.1.39:7801`) + test-author gap-fills 24/24 (`p26-ta-o7.log`: `TestChapBookV3Render` 17/0/0/0, `TestPbRenderPlanExecutor` 7/0/0/0; same gate line; SD `.39`); Service7 34/0/0/0 (`p26-s2-svc.log`: `TestChapBookRestContract` 9, `TestChapBookServiceRenderPath` 6, `TestFeatureConfigService` 12, `TestPbRenderPathRefusal` 7; H2); Vitest 4/4 (`p26-s2-vitest-rp.log`) + 90 files / 1161 (`p26-s2-vitest-all.log`); Vite build (`p26-s2-vite.log`); Playwright group 2 42 passed / 4 gated skips / 0 failed (`pw-p26.log`); gated re-run 16/18 → the 2 reds repaired (test-only, pre-existing Cover-slot drift) → 2/2 (`pw-p26-cbgated2.log`) | 2026-10-14 20:53 | 2026-10-14 |
+| P2-7 | Chat scene renders through the illustration service (§24.1) — `ChatService` image path, one JUnit + one Playwright | §24.1 | NEW Objects7 `olio/llm/ChatSceneRenderUtil` (graph-free plan over the illustration seams); `illustration/ModelResolver` + NEW `ConfigSnapshot`/`ConfigNotApplied` (helpers moved down from `PbRenderPlanUtil`/`PbConfigUtil`/`PbNodeExecutor`, which delegate); `PbRenderPath` third key `chat.renderPath`; Service7 `ChatService.generateScene` branch after :1488 + the 15 switch surfaces (§6.C 166 a) | **IMPLEMENTED + DEPLOYED 23:10** (planner D1–D7 + architect PASS WITH CORRECTIONS, every item adopted or recorded — ⚠ §6.C 166; §10.7); all surfaces compile, container recreated with `CHAT_RENDER_PATH=v3`, live `render-path` reports chat `v3`; tests written + run (Objects7 10 run / 1 SD skip, list 101 run / 0 fail / 29 SD skips; Service7 4/4, list 45/45; Vitest 5/5; Playwright `renderPath` 4/4 + item 14 2 passed / 1 outage skip), security PASS (⚠ 166 w/y, asks 166 z), **verifier PASS** 00:35 (code / switch / transport; it states the v3 200 path is UNVERIFIED until `.39` answers; one spec fix ⚠ 166 aa, ask 166 ab, notes 166 ac) → **Verifier PASS; quick gates ⚠ batched forward (run 11); live render pending `.39` / 166 v**, not DONE (yours) — live render still pending Swarm `.39` or your `sd` repoint (166 v) | — | — | — |
+| P2-8 | Kontext Disable (§37.3) — `SceneCompositeUtil.isSupportedMode` rejects `kontext` with a clear error (`legacyKontextDefault` survives for Remove); `TestKontextDeprecation` extended to assert the refusal; the `ChatService.java:1492` flip gets the Service7-level test §6.C 14 asked for | §37.3, §37.4 | Objects7 `olio/sd/SceneCompositeUtil` (`SUPPORTED_MODES` :41, `isSupportedMode` :62, `isRetiredMode` :71, `KONTEXT_RETIRED_MESSAGE` :46, `buildSceneRequest` refuses a retired mode :218), `olio/picturebook/PbRenderPath.requireEnabledCompositeMode` :189, `PbNodeExecutor.executeComposite` :1135, `PictureBookUtil.generateSceneImage` :9705, `models/olio/sd/configModel.json` (`compositeMode` + `kontextModel` descriptions); Service7 `ChatService.generateScene` :1430-1462 + `boundedEcho` :1032-1037; Ux752 `modelDef.js` :10324/:10388, `e2e/chatChainSceneReimageRoutes.spec.js` item 14 (+3 tests); NEW Objects7 `olio/picturebook/TestPbKontextDisable` ×3, NEW Service7 `TestChatSceneKontextDisable` ×9; `TestKontextDeprecation` 8, `TestFlux2Composite` 36 (kontext prompt-override case → `builderRefusesTheRetiredKontextMode`); design §37.3 Disable row as-built marker | **Verifier PASS (first pass + hardening re-check); security-reviewer PASS, both in-task hardenings applied, redeployed and re-proven live; quick gates ⚠ batched forward (run 11)** — not DONE (yours, as for P2-1…P2-7); SD-gated cases skipped on the `.39` outage, not counted | §10.8 | 2026-10-15 01:25 → 01:58 — first pass: Objects7 104 run / 0 fail / 10 SD skips `C:/tmp/o7-p28.log`, Service7 12/12 `C:/tmp/s7-p28.log`, Playwright item 14 4/4 `C:/tmp/pw-p28-chat.log`; hardening pass: Objects7 47/0/0/0 `C:/tmp/o7-p28b.log`, Service7 13/13 `C:/tmp/s7-p28b.log`, Playwright item 14 5/5 `C:/tmp/pw-p28b-chat.log`, curl proof as `e2etest_shared` `C:/tmp/curl-p28b.log` | 2026-10-15 |
+| P2-9 | Ux752 — style editor, estimate display, plan inspector, model-missing message (§26); read `features/chapBook.js`, `workflows/pictureBook.js`, `features/pictureBookReview.js` before writing; Vitest + Playwright per screen | §26 | Ux752 only — NEW `features/pictureBookStyle.js` (route `/picture-book/:bookObjectId/style`, 728 lines), NEW `components/PbPlanInspector.js` (150), `workflows/pictureBookWorkflow.js` (`nodeView` :69, `STYLE_*` :626-629, `getStyle`/`putStyle`/`lockStyle`/`planScene`/`renderPlanScene`/`getArtifact` :632-660, `listModelsForTask` :665, `loadNodePlan` :743), `features/pictureBook.js` (plan dialog :1497-1611, `pb2-plan-render` :1992, `pb2-style-link` :2070), `features/pictureBookWorkflow.js` (canvas "View plan" :438, :889-896), `features/pictureBookReview.js` (:30-41, :252-260), `components/SdConfigPanel.js` (`hideFields` :242-252); NEW Vitest `src/test/pictureBookStyle.test.js` ×40 + `src/test/pictureBookPlanInspector.test.js` ×20; NEW Playwright `e2e/pictureBookV3StyleEditor.spec.js` ×6 (test 6 by the test-author) + `e2e/pictureBookV3PlanInspector.spec.js` ×4 (test 4 SD-gated) | **Verifier PASS (+ delta PASS after fixing its own-lock finding, 168 ac); test-author test 6 added; Ux752 quick gate `VERIFY_OK` 06:21; phase quick gates ⚠ batched forward (run 11)** — not DONE (yours, as for P2-1…P2-8); no server change → no task-level security pass (P2-10 phase pass); SD-gated case skipped on the `.39` outage, not counted | §10.9 | 2026-10-15 02:05 → 06:23 — Vitest 60/60 + full 1222/1222 `C:/tmp/p29-vitest-full.log`; Playwright style 5/5 `C:/tmp/pw-p29-style2.log`, plan 3 passed + 1 SD skip `C:/tmp/pw-p29-plan.log`, test-author test 6 → style 6/6 `C:/tmp/pw-p29-ta-style2.log` (run 4 red on its own expectation `C:/tmp/pw-p29-ta-style.log`), Vitest 60/60 `C:/tmp/p29-ta-vitest.log`; `npx vite build` exit 0 `C:/tmp/p29-build3.log`; post-fix: Vitest full 1222/1222 `C:/tmp/p29-fix-vitest-full.log`, style spec 6/6 `C:/tmp/pw-p29-fix-style.log`; Ux752 quick gate `VERIFY_OK` `C:/tmp/ux752-gate-p29.log` | 2026-10-15 |
 | P2-10 | Phase gate: module quick gates, architect + security-reviewer on every new route/model, independent verifier per task and for the phase, full Ux752 gate — then STOP | §30, loop-engineering | — | TODO | — | — | — |
 
 ### 10.1 P2-1 plan — `olio.pb.style`, enums, illustration resources (planned 2026-10-13 14:35; Objects7 only)
@@ -12381,3 +13519,848 @@ read by me 18:20 and hold.
 - *09:40 — ruling.* Stephen: "don't worry about regression testing the game parts right now — deprioritize, it shouldn't be a
   blocking issue." Recorded in §6.C 162 and §4.4 row 9; the `TestGameUtil` red joins the known non-SD baseline (now 5). Unblocked: P2-4 planning begins (§10.4).
 
+
+### 10.4 P2-4 plan — `RenderPlan`, TEXT_ONLY strategy, `SdxlCompiler`, estimate, plan-inspector route (planned 2026-10-14 11:05; Objects7 + Service7)
+
+**Scope.** One `RenderPlan` per scene built exactly as a render would build it (§12): intent → canvas (§16 page format × preset
+scale) → style snapshot (P2-3 `PbStyleResolver`) → model picks per task through `PbModelPolicy` (P2-3, LOCATION + SCENE_DIRECT,
+read-only copy) → strategy (§13; TEXT_ONLY is the only strategy this phase renders — references are a later phase, so a
+referenced actor is a §19 degradation, never a refusal) → one `CompiledPrompt` per stage from `SdxlCompiler` (§14; grouped,
+budgeted, "the prompt shown is the prompt sent") → `RenderEstimate` (§18; measured per `server|family` or honestly `NONE`) →
+`contentHash`. The plan persists as a `renderPlan` JSON artifact on the node as the owner. A read route exposes the plan with
+no server URL anywhere in it. `SwarmRendererAdapter` renders one `StageRequest` to bytes (§15; Swarm parameters, not a Comfy
+graph — §38/§38.1). Design §12–§15, §18–§20, §27, §31; every ⚠ is **§6.C 163**. Out: PORTRAIT/LANDSCAPE on the plan (P2-5),
+ChapBook (P2-6), chat (P2-7), Kontext (P2-8), Ux (P2-9), a `renderPlan` model (149 — none), persistence of calibration (163 e).
+
+**Files.**
+- NEW Objects7 `olio/illustration/`: `RenderPlan` (intent, canvas, style, models, strategy, location, actors, elements, compiled,
+  degradations, estimate, config, `contentHash`, `PLAN_VERSION = illustration/1`, `toJson`/`fromMap`), `CompiledPrompt`,
+  `PromptCompiler` + `SdxlCompiler`, `PromptBudget`, `StrategySelector`, `CanvasResolver`, `ImageDims`, `RenderCalibration`,
+  `RenderEstimate`, `RendererAdapter` + `SwarmRendererAdapter`, `StageRequest`, `StageResult`, `StageImage`, `CancelToken`.
+- NEW Objects7 `olio/picturebook/PbRenderPlanUtil` — `buildScenePlan(user, book, scene, PlanOptions, SDAPIEnumType, server)`,
+  `PlanOptions(promptOverride, raw, presetOverride, modelOverride)`, `locationText`/`joinSentences`, `sceneActors`,
+  `persistPlanArtifact`/`readPlanArtifact`.
+- EDITED Objects7: `PbServiceFacade.planScene` (`:2512-2555`); `PbConfigUtil.configSnapshot` + `SNAPSHOT_EXCLUDE`;
+  `RendererCapabilities` (+`promptTokenBudget`, constructor + `FALLBACK`); `capabilities.json` (budgets, `*xl*` page buckets,
+  `_comment`); `SDUtil` (`appendLoraTags` overload, `listModelsOrNull`); `PbPipelineUtil.decodeDimensions` → `ImageDims.decode`.
+- EDITED Service7: `PictureBookService.planScene` — `POST /{book}/scene/{scene}/plan`, `@RolesAllowed({"admin","user"})`, JSON body
+  → `Map`, errors via `handlePictureBookException`; `TestPictureBookRestContract` +4 (route shape, roles, media types).
+- NEW tests: Objects7 `TestRenderPlan` ×7, `TestSdxlCompiler` ×12 (golden strings), `TestStrategySelector` ×5, `TestCanvasResolver` ×5,
+  `TestRenderEstimate` ×3, `TestPbRenderPlanLocationText` ×7 (all pure, no DB/SD), `TestRenderPlanLive` ×4 (`.39` + `am7db`, non-admin
+  owner `pbPlanOwner`); Service7 `TestPictureBookPlanRoute` ×12 (H2, `pbplanowner`/`pbplanstranger`, `sd.server` pinned to `127.0.0.1:1`).
+
+**Decisions.** All in §6.C 163: route on `PictureBookService` (a, ASK), 500 for misconfiguration (b, ASK 503), selector/compiler never
+throw (c), budget semantics (d), calibration keyed `server|family` in-process (e), canvas folds (f), bytes-only adapter without
+`cancelActive` (g), `SDUtil` touch-ups (h), config snapshot before the pick (i), facade shape (j), 409 text (k), `sdPrompt` stand-in +
+`joinSentences` (l), actors always empty for now (m), test fixtures (n), gates batched (o), live-proof fixture (p, ASK).
+
+**Tests (all `-DskipTests=false`; one Maven at a time; probes §3 12:05:02 → 13:09:10).**
+- Pure, `C:/tmp/p24-pure-6.log` 12:41: `TestCanvasResolver` 5/0/0/0, `TestRenderEstimate` 3/0/0/0, `TestRenderPlan` 7/0/0/0, `TestSdxlCompiler`
+  12/0/0/0, `TestStrategySelector` 5/0/0/0, `TestPbRenderPlanLocationText` 7/0/0/0; `:121 Tests run: 39, Failures: 0, Errors: 0, Skipped: 0`;
+  `:124 BUILD SUCCESS`. (Earlier iterations `-2` 19/19, `-3/-4/-5` 32/32 as classes were added.)
+- Service7 H2, `C:/tmp/p24-s7-2.log` 12:44: `:1713 … TestPictureBookPlanRoute` 11/0/0/0, `:4154 … TestPictureBookRestContract` 19/0/0/0,
+  `:4161 BUILD SUCCESS`, zero `cleanup:` warnings.
+- Live, `C:/tmp/p24-live-2.log` 12:47 (`[LLM-GATE] route=litellm tier=local …` `:55` — the in-stack Ollama container, not Azure; no LLM
+  call is made): `:474 MEASURED: TEXT_ONLY BASE on http://192.168.1.39:7801 model=OfficialStableDiffusion/sd_xl_base_1.0.safetensors
+  family=*xl* canvas=512x512 steps=12 durationMs=8770 bytes=317998 seed=738714927 (reported) png=…\target\p24-live-render-p24r03d7242c.png`;
+  estimate `MEASURED *xl* n=1 … in-process since JVM start; other JVMs' renders not included`; unreachable inventory → `INVENTORY_UNAVAILABLE`,
+  stage failed in 6 ms "Renderer unreachable or returned no response"; four `deleteBookComplete … fully removed`; `:665` 4/0/0/0; `:672 BUILD
+  SUCCESS`; 119.3 s. The PNG was opened and is a lighthouse on a headland at dusk at 512×512.
+- Live REST proof as `e2etest_shared`, `C:/tmp/p24-live-proof.log` 12:43:52 → 12:44:01, exit 0: 403 unauthenticated / 200 login / 200 books
+  / 200 principal / 200 scene search; 404 "Book not found" / 404 "Scene … not found in this book" / 400 "Unknown quality preset 'ULTRA'" /
+  400 "Malformed request body" / 200 default plan (TEXT_ONLY BASE, canvas 1024×1024, STANDARD, LOCATION `juggernautXL_ragnarokBy.safetensors`
+  `*xl*` DEPLOYMENT_DEFAULT OK, SCENE_DIRECT `flux2Klein_9b.safetensors` `flux2*`, description "…apartment hallway. Darby picks up
+  suitcases…", 45 tokens, estimate `measured:false source: NONE…`, `contentHash aee0f635…`, style `revisionHash e3b0c442…` photoreal false,
+  no URL leak, config keys 39 forbidden []) / 200 FINAL + override (stages [BASE, UPSCALE], variants 4, steps 30, hash differs) / 200 logout.
+
+**Seams.** P2-5 reads `RenderPlan` from `PbRenderPlanUtil.buildScenePlan` inside `PbNodeExecutor` for TEXT_ONLY, renders through
+`SwarmRendererAdapter`, persists bytes via `PbPipelineUtil.persistBytes` and the plan via `persistPlanArtifact`, and turns an unresolved
+LOCATION pick (`!isResolved()`, reason) into the facade's 4xx before rendering; it must choose the frozen-config source (163 i). P2-6 feeds
+ChapBook pages through the same `buildScenePlan` with the continuity composer. P2-9 reads `estimate`, `degradations`, `models` and
+`compiled` from the plan route.
+
+**Architect review (11:05; `C:/tmp/p24-architect-review.txt`) — CHANGES-NEEDED, no layering violation; disposition:** 1 ADOPT (dependency
+direction); 2 ADOPT + both corrections (compute-fold, s/step/megapixel, bound in `source`; persistence never as admin); 3 ADOPT (in-memory
+derived value); 4 ADOPT (+401 in the contract); 5 ADOPT + correction (`replaceSmartQuotes` kept; one `ImageDims.decode`); 6 ADOPT bytes-only
+(+ no init image, seed reported/inferred); 7 CORRECT → degradation not ISE; 8 CORRECT → `configSnapshot` on `CONFIG_HASH_EXCLUDE`, taken
+before the pick; 9 ADOPT (constructor + FALLBACK + `_comment`); 10 ADOPT (+ page buckets; preset tension recorded); 11 ADOPT 500 (503 ASK);
+12 none. HIGH `characters` not projected → 163 m (no writer exists; `sceneActors` reads participation directly); MEDIUM route placement →
+163 a (ASK); LOW `cancelActive` omitted, builders added; LOW H2 pin; LOW `sdPrompt` ⚠.
+
+**Results.**
+- *11:05 — planner + architect delivered;* implementation 11:20 → 12:40 against the probes above.
+- *12:20 — security review PASS* (`@RolesAllowed` present, reads through `requireBook`/`requireSceneOfBook` as the principal, no URL in
+  any response, no model JSON, no PBAC bypass); hardening notes **163 q**, none acted on.
+- *12:41 → 12:47 — green:* pure 39/39, Service7 11 + 19, live 4/4 (logs above).
+- *12:43 — deployed:* `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` (`C:/tmp/p24-o7-install-2.log` exit 0), `docker cp` jar →
+  `am7test-am7-1:/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/`, md5 `45b8b1abf5359e16f1a4f29d003e063d` local == container,
+  `docker restart`, 0 "Unresolved compilation" in `docker logs`; proof 12:43:52 → 12:44:01 above.
+- *12:50 — test-author review:* two gaps — (1) the 409 partial-chain refusal had no test (my own javadoc wrongly said it was unreachable
+  without a world), (2) the facade's `model` key and a `measured:true` estimate through the facade were untested — plus record-only notes
+  (163 n). Both gaps closed below.
+- *12:55 — verifier PASS* (review-only; non-blocking observations → 163 j/l/n/r).
+- *13:05 — gap-fills written:* `TestPictureBookPlanRoute.TestPartialStyleChainIs409` (+ `createStrangerStyle`, `grantStrangerGroupRead`;
+  12 cases); `TestRenderPlanLive.textOnlyRenderOnLiveSwarm` + facade block (`model`=installed → `models.location.step=OVERRIDE`,
+  `models.location.model`=installed, `estimate.measured=true`, seconds > 0); `PbRenderPlanUtil.joinSentences` `,`/`:` (163 l) +
+  `TestPbRenderPlanLocationText` extended.
+- *13:09 — probe (§3 13:09:10) GREEN; Maven slot free.* **`C:/tmp/p24-pure-7.log`** 13:09: `:48 … TestPbRenderPlanLocationText` 7/0/0/0,
+  `:52 Tests run: 7, Failures: 0, Errors: 0, Skipped: 0`, `:55 BUILD SUCCESS`. **`C:/tmp/p24-o7-install-3.log`** exit 0 (jar md5
+  `545beb4cfaa80d4df8c6d64339ff957a`). **`C:/tmp/p24-s7-3.log`** 13:10: `:1593 MEASURED: after the revoke the own style is unreadable too;
+  truncation at the own style 724b16d0-…` (the 409 text asserted against that hop), `:1925 … TestPictureBookPlanRoute` **12/0/0/0** 10.20 s,
+  `:1929 Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`, `:1932 BUILD SUCCESS`, zero `cleanup:` warnings (the owner's style, book and
+  scene and the stranger's style all PERMIT-deleted). **`C:/tmp/p24-live-3.log`** 13:11:12 → 13:13:07: `:55 [LLM-GATE] route=litellm
+  tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` (local container; no LLM call made);
+  `:474 MEASURED: TEXT_ONLY BASE on http://192.168.1.39:7801 model=OfficialStableDiffusion/sd_xl_base_1.0.safetensors family=*xl*
+  canvas=512x512 steps=12 durationMs=6058 bytes=408098 seed=1622256068 (reported) png=…\target\p24-live-render-p24rda069d4e.png`;
+  `:475-483` estimate `measured:true`, `source: MEASURED *xl* n=1 at 2026-10-14T18:12:29Z; in-process since JVM start; other JVMs'
+  renders not included`; **`:488-496 MEASURED: facade estimate with model override = {… measured:true …}`**; `:616` unreachable →
+  `INVENTORY_UNAVAILABLE`, `:618` stage failed in 5 ms; four `fully removed` (`:174`, `:427`, `:569`, `:676`); `:678 … TestRenderPlanLive`
+  **4/0/0/0** 116.0 s; `:682 Tests run: 4, Failures: 0, Errors: 0, Skipped: 0`; `:685 BUILD SUCCESS`. No SD-gated case skipped on this run.
+- *15:46 — redeployed (product code changed: `joinSentences`):* `unzip -p … PbRenderPlanUtil.class | grep -c "Unresolved compilation"` = 0,
+  `javap` shows `locationText`/`joinSentences`; `docker cp`; md5 `545beb4cfaa80d4df8c6d64339ff957a` local == `am7test-am7-1`; `docker restart
+  am7test-am7-1` → `setup/state` 200, 0 "Unresolved compilation", `Server startup in [9048] milliseconds` (20:46:33 UTC); the only SEVERE is
+  Tomcat's standing ThreadLocal-leak warning on undeploy (a `system.audit` `LooseRecord`), pre-existing.
+- *15:46:50 → 15:46:59 — live re-proof* **`C:/tmp/p24-live-proof-2.log`** exit 0: 403 / 200 / 200 / 200 / 200; 404 / 404 / 400 / 400 / 200
+  default (`:34-47`: `illustration/1`, SCENE, 1024×1024, STANDARD 20 steps 2 variants, TEXT_ONLY BASE "no referenced actors", location
+  "A foggy morning … hallway. Darby picks up suitcases, … vehicle. Cool, foggy air; dim lighting from early morning", estimate
+  `measured:false source: NONE…` (a fresh JVM — the calibration is in-process by design, 163 e), no URL leak, config keys 39 forbidden [])
+  / 200 FINAL override (`:50-54`: stages 2, variants 4, steps 30, `a lantern-lit harbour at midnight`, hash differs) / 200 logout.
+- *15:50 — status.* P2-4 is **verifier PASS**, security PASS, test-author gaps closed, deployed and live-proven; Objects7/Service7 quick
+  gates ⚠ batched forward (163 o). Open asks: 163 a (route placement), b (503 vs 500), p (PB1 note-id message), q (i)–(vi), s (one-liners).
+  Next: P2-5 planning (planner → architect → implement → test-author → verifier; security-reviewer on the executor change).
+
+### 10.5 P2-5 plan — `PbNodeExecutor` renders from the plan (TEXT_ONLY), `POST …/scene/{scene}/render-plan` (planned 2026-10-14 16:25; Objects7 + Service7 + Playwright)
+
+**Scope.** A STORY scene renders **from its `RenderPlan`** (§12, §16, §20): the executor builds the plan node-aware
+(`PbRenderPlanUtil.buildScenePlan`, `PlanOptions.NONE`), persists it as the node's `renderPlan` JSON artifact **before anything is sent**,
+refuses with a 4xx/503 carrying the resolver's reason when the LOCATION pick is unresolved or the compiled prompt is empty, otherwise sends
+exactly the BASE stage to Swarm through `SwarmRendererAdapter` and records the image as the node's `base` artifact with a frozen config that
+says what was sent. One `RENDER_PLAN` node per scene (`render_plan@<shortRef>`), created lazily with the workflow; PORTRAIT/LANDSCAPE/COMPOSITE
+keep their Phase 1 executors untouched. A sync REST route exposes it. Every ⚠ is **§6.C 164**. Out: UPSCALE/FINAL stages (Phase 5), references
+(Phase 4), the composition graph (Phase 3), ChapBook (P2-6), chat (P2-7), Kontext (P2-8), Ux (P2-9), preset/model overrides on the render route.
+
+**Files.**
+- EDITED Objects7 `olio/picturebook/PbNodeExecutor` (+204): `RENDER_PLAN` in `EXECUTABLE_TYPES` (`:94`) and `SD_BACKED_TYPES` (`:102`),
+  dispatch `:445`, `executeRenderPlan` `:577-685` (plan → persist → `pick == null || !pick.isResolved()` → `unresolvedModelStatus`
+  503/409 + `unresolvedModelMessage` → empty prompt 409 → `StageRequest` BASE → adapter → `recordImage(… ROLE_BASE … frozenConfig …)` →
+  `completeNode(DONE_UNVERIFIED)`), `frozenConfig` `:723-743`.
+- EDITED Objects7 `olio/picturebook/PbServiceFacade` (+171): public `requestRenderPlanScene(user, book, scene, sdApiType, sdServer)` `:591`
+  (401 → blank server = null SDUtil → unknown API type 500) → package-private overload `:612-645` (`requireBook` 404 → `requireV3` 409 →
+  `requireBookUpdate` 403 → `requireSceneOfBook` 404 → `ensureWorkflow` → `ensureRenderPlanNode` → pinned 409 → `PbNodeInflight.tryClaim`
+  409 → `executeNodeRun` → DTO); `ensureWorkflow`/`ensureRenderPlanNode` `:946-984`.
+- EDITED Service7 `PictureBookService.renderPlanScene` `:1456-1484` — `POST /{book}/scene/{scene}/render-plan`,
+  `@RolesAllowed({"admin","user"})`, no body, SD api type/server from the ServletContext, errors via `handlePictureBookException`;
+  javadoc carries the status map of 164 b.
+- EDITED tests: Objects7 `TestPbNodeExecutorTypes` (SD-backed 6 → 7); Service7 `TestPictureBookRestContract` +1
+  (`TestRenderPlanRouteIsPostJsonWithRolesAllowedAndNoBody`; 20 cases).
+- NEW tests: Objects7 `TestPbRenderPlanExecutor` ×6 (live `.39` + `am7db`, non-admin owner + stranger, `SDUtil.setDefaultModel` lever
+  restored in `finally`): `renderPlanCreatesNodeAndBaseArtifact`, `degradedOverrideStillRendersWithSubstitutedModel`,
+  `noInstalledModelIsReportedBeforeRendering`, `unreachableRendererIsA503BeforeRendering`, `sceneWithoutTextIsA409BeforeRendering`,
+  `strangerAndV1AreRefusedBeforeAnyWork`; Service7 `TestPictureBookRenderPlanRoute` ×7 (H2; `TestAnonymousIs401`, `TestUnknownBookIs404`,
+  `TestUnknownSceneIs404`, `TestStrangerIs404`, `TestV1IsRefusedBeforeAnyGraphWork`, `TestUnrecognisedApiTypeIs500`,
+  `TestWorldLessBookIsALoud500NamingTheWorkflow`); Playwright `e2e/pictureBookV3RenderPlan.spec.js` ×6 serial, `PB_SD_TESTS=1`-gated,
+  REST-level as `e2etest_shared` (+ `e2etest_iso42001` as the stranger): (1) first render on a fresh STORY scene — 200, `executed:true`,
+  `renderPath:v3`, TEXT_ONLY, `stagesRendered:[BASE]`, node DONE_UNVERIFIED, `base` rev 1 fetched + byte-checked + written to
+  `test-results/p25-render-plan/r1-base.png`, `renderPlan` JSON names the checkpoint and the compiled prompt, `GET /workflow` 404 → 200
+  with one RENDER_PLAN node, page `sceneNodeObjectId` null; (2) refusals — unknown scene 404, unknown book 404, textless scene 409 naming
+  the persisted plan artifact, node FAILED; (3) second render re-executes the same node, `base` rev 2 supersedes rev 1 (`r2-base.png`);
+  (4) run records COMPLETED 1/0 naming the node, `GET /run/<nil>` 404, node view chains ascending `[rev1, rev2]`, `data.data` under
+  `…/Artifacts` owned by the user; (5) stranger 404 everywhere, nothing created; (6) approve rev 2 → pinned → 409 before any render →
+  unpin, approval retained.
+
+**Decisions.** All in §6.C 164: sync route (a, ASK), status vocabulary 409/503/500 (b, ASK), one collapsed node per scene + first-call
+race (c), `ensureWorkflow` get-or-create + gate order (d, ASK), plan persisted before the later refusals (e), no
+`referenceArtifactObjectIds` (f), frozen config from the plan snapshot (g — resolves 163 i), role `base` + Artifacts group (h, ASK),
+`PlanOptions.NONE` (i), type sets + builder fixes (j), BASE only (k), no URL (l), test levers (m, ASK), deployment-default dependence (n),
+refusal reachability per harness (o), facade API-type check (p), run record (q), wire DTO shape (r), Playwright scope + fixtures (s),
+executor run history (t), security notes (u), gap-fills (v), gates batched (w), verifier (x).
+
+**Tests (all `-DskipTests=false`; one Maven at a time; probes §3 16:59:54 → 18:30:56).**
+- Objects7 live, **`C:/tmp/p25-executor.log`** 17:23 → 17:26 (`:60 [LLM-GATE] route=litellm tier=local …` — the in-stack Ollama container,
+  not Azure; no LLM call): `:129 MEASURED: empty-scene refusal: 409 Scene 0 has no text to render: set its setting/action or sdPrompt (plan
+  artifact 5cadf965-…)`; `:288 MEASURED: NO_CANDIDATE refusal: 409 No installed model for scene 0: OVERRIDE 'p25-bogus-override.safetensors'
+  NOT_INSTALLED; DEPLOYMENT_DEFAULT 'p25-nonexistent-deployment.safetensors' NOT_INSTALLED - Model for LOCATION is unresolved: NO_CANDIDATE
+  (plan artifact 8c29ab2e-…)`; `:559 MEASURED: unreachable refusal in 345 ms: 503 Renderer inventory unavailable; cannot verify a model for
+  scene 0 before rendering - Model for LOCATION is unresolved: INVENTORY_UNAVAILABLE (Could not read the installed-model list from the SD
+  server) (plan artifact 505855cd-…)`; `:881 MEASURED: P2-5 degraded on http://192.168.1.39:7801
+  model=OfficialStableDiffusion/sd_xl_base_1.0.safetensors canvas=1024x1024 durationMs=23655 bytes=1611313 seed=920505182
+  png=…\target\p25-render-plan-p25dca1b6028-degraded.png`; `:883 degraded pick trail=[{OVERRIDE p25-bogus-override NOT_INSTALLED},
+  {DEPLOYMENT_DEFAULT sd_xl_base OK}] degradations=[MODEL_SUBSTITUTED: …]`; `:947 Tests run: 6, Failures: 0, Errors: 2` — both errors in
+  my test helper `nodeCount:234` (404 "This book has no workflow yet" on a workflow-less book; `renderPlanCreatesNodeAndBaseArtifact:388`,
+  `strangerAndV1AreRefusedBeforeAnyWork:596`), `:1050 BUILD FAILURE`; six `fully removed`. Helper fixed (164 t).
+- Objects7 live re-run of the two fixed cases, **`C:/tmp/p25-executor2.log`** 17:32 → 17:33 (`:55 [LLM-GATE] … tier=local`): `:243 Stage BASE
+  rendered 1 image(s) in 16830 ms`; `:313 MEASURED: P2-5 first on http://192.168.1.39:7801 model=OfficialStableDiffusion/sd_xl_base_1.0.safetensors
+  canvas=1024x1024 durationMs=16830 bytes=1670658 seed=432517460 png=…\target\p25-render-plan-p25hb2560a7d-first.png`; `:434 MEASURED: P2-5
+  second … durationMs=15018 bytes=1698323 seed=524656161 png=…-second.png`; `:525 Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time
+  elapsed: 89.66 s`; `:532 BUILD SUCCESS`; two `fully removed` (`:170`, `:523`). All three PNGs opened: "first" = a lighthouse with a lit
+  lantern on a stone breakwater, second tower, gulls, sunset sky; "second" = a monochrome lighthouse on a stone breakwater, gulls, breaking
+  waves; "degraded" = a white lighthouse with a lit lantern at sunset under a large gull flock. Genuine 1024×1024 renders of the scene text.
+- Objects7 pure + regressions: **`p25-types.log`** 17:34 `:337 TestPbNodeExecutorTypes` 2/0/0/0, `:344 BUILD SUCCESS`; **`p25-planlive.log`**
+  17:34 → 17:36 `:678 TestRenderPlanLive` 4/0/0/0 108.1 s, `:685 BUILD SUCCESS`; **`p25-noderun.log`** 17:36 → 17:37 `:14877 TestPbNodeRun`
+  7/0/0/0 64.50 s, `:14884 BUILD SUCCESS` (each `:55 [LLM-GATE] … tier=local`).
+- Service7 H2, **`C:/tmp/p25-s7-route.log`** 17:44: `:1146 TestPictureBookRenderPlanRoute` 7/0/0/0 8.496 s, `:3715 TestPictureBookRestContract`
+  20/0/0/0 9.343 s, `:3719 Tests run: 27, Failures: 0, Errors: 0, Skipped: 0`, `:3722 BUILD SUCCESS`.
+- Playwright live (Docker `https://127.0.0.1:9443`, `--workers=1 --project=chromium --retries=0`, no `[e2e-llm]` line — the spec makes no
+  LLM call; SD = Swarm `http://192.168.1.39:7801`): **`pw-p25.log`** 17:54 run 1 — test 1 failed on my assertion `degradations is a list`
+  (the route had returned 200 in 29255 ms; 164 r), tests 2-3 did not run; **`pw-p25-2.log`** 17:55 run 2 — `[p25-seed] GET /workflow before
+  the first render-plan: HTTP 404 {"error":"This book has no workflow yet - generate a scene first"}`, `[p25-r1] HTTP 200 in 15222ms`,
+  `ok 1 … (15.6s)`; `[p25-404-scene] HTTP 404 {"error":"Scene 00000000-0000-0000-0000-000000000000 not found in this book"}`,
+  `[p25-404-book] HTTP 404 {"error":"Book not found"}`, `[p25-409-empty] HTTP 409 {"error":"Scene 1 has no text to render: set its
+  setting/action or sdPrompt (plan artifact 54e896d7-…)"}`, `ok 2 … (256ms)`; `[p25-r2] HTTP 200 in 15005ms`, `ok 3 … (15.2s)`;
+  **`3 passed (37.4s)`**. Live plan: `juggernautXL_ragnarokBy.safetensors` at DEPLOYMENT_DEFAULT, canvas 1024×1024, STANDARD 20 steps
+  2 variants, qa CANONICAL, not degraded. Both PNGs opened — lighthouse on a rocky headland at dusk, lit lamp, gulls, breaking waves.
+- Test-author gap-fill, **`C:/tmp/pw-p25-gap.log`** 18:16 (book 975 `p25-plan-mv8qagpw`): `:35 ok 1 … (18.6s)`, `:41 ok 2 … (228ms)`,
+  `:69 ok 3 … (15.2s)`, `:109 ok 4 … (158ms)` (runs `65eafe5d-…`/`162988b1-…` COMPLETED 1/0; node view base `[rev1, rev2]` ascending,
+  rev 2 selected + supersedes rev 1, both GENERATED; `:107-108` `data.data … groupPath=/Olio/Universes/Books/Worlds/p25-plan-mv8qagpw/Artifacts
+  name=render_plan_0_… contentType=image/png ownerId=228`), `:110 [p25-stranger-render-plan] HTTP 404 in 22ms: {"error":"Book not found"}`,
+  `:111 [p25-stranger-workflow] HTTP 404 …`, `:112 ok 5 … (197ms)`, `:129 [p25-pinned-409] HTTP 409 in 19ms … {"error":"Node
+  render_plan@d16d7dbc is pinned. Unpin it first - pinning means do not replace this artifact."}`, `:137 ok 6 … (227ms)`,
+  **`:139 6 passed (40.9s)`**; ungated `pw-p25-gap-ungated.log` → `6 skipped` (skips, not passes). Its two PNGs (overwriting run 2's)
+  opened — lit lighthouse on storm-washed rocks at dusk with gulls; genuine.
+- Verifier (18:19 → 18:33, sequential, one Maven at a time, probes 18:19:41 / 18:30:56 in §3; its process check saw only the VS Code
+  language server and extension host): **`C:/tmp/p25-verifier-o7.log`** `:55 [LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr
+  pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` (the in-stack Ollama container via LiteLLM — not Azure; no LLM call is made),
+  `:124` empty-scene 409, `:286` NO_CANDIDATE 409, `:565` unreachable 503 in 460 ms, `:796 MEASURED: P2-5 first on http://192.168.1.39:7801
+  model=OfficialStableDiffusion/sd_xl_base_1.0.safetensors canvas=1024x1024 durationMs=49498 bytes=1713478 seed=605867138
+  png=…\target\p25-render-plan-p25h4d2ef009-first.png`, `:917 … second … durationMs=39698 bytes=1705640 seed=357602572 png=…-second.png`,
+  `:1152 … degraded … durationMs=40068 bytes=1644264 seed=2076817149 png=…-p25dcc5b6235-degraded.png`, `:1154 degraded pick
+  trail=[{OVERRIDE p25-bogus-override NOT_INSTALLED}, {DEPLOYMENT_DEFAULT sd_xl_base OK}] degradations=[MODEL_SUBSTITUTED …]`,
+  **`:1218 Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 282.2 s`**, `:1225 BUILD SUCCESS` — **the first single-run 6/6
+  of `TestPbRenderPlanExecutor`** (164 t closed). **`p25-verifier-types.log`** `:55 [LLM-GATE] … tier=local`, `:337 TestPbNodeExecutorTypes`
+  2/0/0/0 29.98 s, `:344 BUILD SUCCESS`. **`p25-verifier-s7.log`** `:1146 TestPictureBookRenderPlanRoute` 7/0/0/0 9.506 s,
+  `:3715 TestPictureBookRestContract` 20/0/0/0 10.38 s, `:3719 Tests run: 27, Failures: 0, Errors: 0, Skipped: 0`, `:3722 BUILD SUCCESS`
+  (H2; no gate line — expected, no `BaseTest`). **`pw-p25-verifier.log`** (book 976 `p25-plan-mv8que7a`, scene 3008, handle
+  `render_plan@3b32a26e`): `:4` `GET /workflow` 404 before the first render, `:6 [p25-r1] HTTP 200 in 50457ms`, `:34 r1-base.png 1024x1024
+  (1470765 bytes) … seed=992496564 durationMs=49936`, `:35 ok 1 (50.7s)`, `:41 ok 2 (237ms)`, `:42 [p25-r2] HTTP 200 in 40568ms`, `:67
+  r2-base.png … revision=2 supersedes=511c3d3b-… seed=1118522482 durationMs=40174`, `:69 ok 3 (40.7s)`, `:106` node view base `[rev1, rev2]`
+  ascending + renderPlan `[rev1, rev2]` (same `contentHash b9c8e9b1…`), `:109 ok 4 (198ms)`, `:110 [p25-stranger-render-plan] HTTP 404 in
+  19ms: {"error":"Book not found"}`, `:112 ok 5 (244ms)`, `:129 [p25-pinned-409] HTTP 409 in 17ms … "Node render_plan@3b32a26e is pinned.
+  Unpin it first - …"`, `:130` rev 2 APPROVED `approvedBy 97f13143-…` `approvedAt 2026-10-14T23:32:56Z`, `:137 ok 6 (219ms)`,
+  **`:139 6 passed (1.6m)`**; no `[e2e-llm]` line (no LLM call). Durations logged, never asserted — the `.39` renders took 40-50 s this
+  hour against 15-24 s earlier (Swarm busier); no threshold anywhere. Its five new PNGs opened by me (timestamps 18:22:58 / 18:23:39 /
+  18:24:44 / 18:32:15 / 18:32:56): Objects7 "first" = a dark stone lighthouse on a basalt headland at pink dusk under a dense gull flock
+  with a wave bursting on the rocks; "second" = a white lighthouse on a stone breakwater at orange dusk, gulls, snow-capped hills behind;
+  "degraded" = a lit white lighthouse on a cliff-top sea wall at twilight under a large gull flock; Ux752 `r1-base.png` / `r2-base.png` = a
+  lit stone lighthouse on a rocky headland at blue dusk, gulls, surf bursting on the rocks (two different compositions; r2 supersedes r1).
+  Container md5s re-checked by it and by me: jar `18188e976aa96938dbf3eda80686ae5f`, `PictureBookService.class`
+  `a5f0a4470ef97d3f134c4065694daa54`, both local == `am7test-am7-1` (no redeploy needed or done).
+
+**Seams.** P2-6 feeds ChapBook pages through the same render core (`renderPlannedScene`, shared with `executeRenderPlan`; the page keeps
+its LANDSCAPE node and `landscape` role — **corrected 2026-10-14 20:56, §6.C 165 a**: no RENDER_PLAN node per page; continuity composer in
+front of `buildScenePlan`); P2-7 builds its own graph-free plan in `olio/llm/ChatSceneRenderUtil` over the illustration seams
+(**corrected 2026-10-14 22:35, §6.C 166 b** — it does not reuse the facade overload); P2-9 reads the DTO
+(`artifactObjectId`, `planArtifactObjectId`, `planContentHash`, `degradations` absent-or-list, `stagesRendered`) and must pass preset/model
+overrides through if `/render-plan` is to honour what `/plan` previewed (164 i). Phase 3 splits the collapsed node into plan → base
+(164 c) and may move the route under `/composition/{id}` (164 a).
+
+**Architect review (16:39; `C:/tmp/p25-architect-review.txt`) — CHANGES-NEEDED, no layering violation; disposition of the 17 findings:**
+1 ADOPT (layering: executor in Objects7, route transport-only); 2 ADOPT + ASK (sync route → 164 a); 3 ADOPT (lazy node; race nit → 164 c);
+4 ADOPT (plan persisted before refusal → 164 e); 5 ASK (422 vs 409 → 409, 164 b); 6 ADOPT + CORRECT (frozen config description/negative →
+164 g); 7 BLOCKER fixed (builder signatures → 164 j); 8 BLOCKER adopted (no `referenceArtifactObjectIds` → 164 f); 9 ASK → `base` (164 h);
+10 ADOPT (node-aware overload + `isResolved()` → 164 j); 11 ADOPT (`SD_BACKED_TYPES` → 164 j); 12 ADOPT with caveat + ASK (test lever /
+inventory seam → 164 m); 13 CORRECT (scene projection → 164 j); 14 CORRECT (DTO `artifactObjectId` = image → 164 f); 15 NIT (preview/render
+divergence → 164 i); 16 ASK adopted (503 for UNREACHABLE/INVENTORY_UNAVAILABLE, cancel token inert → 164 a/b); 17 ADOPT (§20 coverage →
+the six executor cases). Two `architecture.md` one-liners asked for (status vocabulary; `referenceArtifactObjectIds` positional) — yours,
+not written (164 b/f).
+
+**Results.**
+- *16:25 — planner; 16:39 — architect delivered;* implementation 16:40 → 17:22 against the §3 16:59:54 probe.
+- *16:59 — Objects7 installed + Service7 compiled* (`C:/tmp/p25-o7-install.log`, `p25-s7-compile.log`, exit 0); re-installed/compiled 17:37
+  → 17:38 (`p25-o7-install2.log`, `p25-s7-compile2.log`) before the Service7 route run.
+- *17:23 → 17:37 — Objects7 green* across the two executor runs + types + two regression classes (logs above).
+- *17:44 — Service7 green* 7 + 20 (`p25-s7-route.log`).
+- *17:44:58 — deployed:* `MSYS_NO_PATHCONV=1 docker cp` of the Objects7 jar → `am7test-am7-1:/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/`
+  and `PictureBookService.class` + `$1.class` → `WEB-INF/classes/org/cote/rest/services/`; md5 jar `18188e976aa96938dbf3eda80686ae5f`,
+  class `a5f0a4470ef97d3f134c4065694daa54`, `$1` `3b3cd6fe42ed59356844dbd6c1e15143`, each local == container; `unzip -p … | grep -c
+  "Unresolved compilation"` = 0; `docker restart am7test-am7-1`; `setup/state` 200 at 17:45:22.
+- *17:54 → 17:55 — Playwright live* run 1 red on my assertion (164 r), run 2 **3/3** (`pw-p25-2.log`).
+- *18:08 — security review PASS* (164 u); *18:16 — test-author gap-fill 6/6* (164 v; `pw-p25-gap.log`), both verified against the logs
+  and the diff, all seven PNGs opened.
+- *18:19 → 18:33 — verifier PASS WITH NOTES* (164 x): all four runs green on the first attempt, the first single-run 6/6 of the executor
+  class, container current (md5 equal), no code edited by it, no admin principal, no DB reset. Every claim re-checked against the logs,
+  the PNGs and the container before this entry was written.
+- *18:36 → 18:40 — three comment-only corrections* from its notes and mine: `frozenConfig`'s comment (164 x i) and the route javadoc's
+  status list (164 x iii), both line-count-neutral so the compiled classes and the container md5s are unchanged; the spec header's
+  sd_xl_base claim (164 n). No re-run needed and none run.
+- *Status 18:40:* **P2-5 implemented, deployed, live-proven, security PASS, test-author gap-fills green, verifier PASS; Objects7/Service7
+  quick gates ⚠ batched forward (163 o / 164 w)** — DONE-by-gate is yours (159 b). Open asks: 164 a (sync route), b (status vocabulary +
+  one-liner), d (SD gate before `ensureWorkflow`), f (one-liner), h (Artifacts vs Gallery), m (inventory seam), x (i) (overlay
+  steps/canvas into the frozen config); fixtures 973-976 yours to delete (164 s).
+  Next: P2-6 planning (planner → architect → implement → test-author → verifier; security-reviewer on P2-6).
+
+### 10.6 P2-6 plan — ChapBook goes V3 (planned 2026-10-14 18:45; Objects7 + Service7 + Console7 + docker + Ux752 + Playwright)
+
+**Scope.** Design §24 (ChapBook pages compile through TEXT_ONLY on the plan path, continuity composer up front — the composer already
+runs at create time and in the pre-step, unchanged), §28 (verify-stage checks started — status in §6.C 165 o), §28.1 Stage 2 for
+ChapBook (`chapbook.renderPath` defaults to `v3` at every surface; `v1` is the documented rollback, applied with a WARN). PictureBook
+stays Stage 1 (`v1` live and default). Planner D1–D12 and the architect's 8 findings are summarised in `C:/tmp/p26-plan-and-architect-summary.txt`;
+every decision is in §6.C 165.
+
+**Files.** The `git diff --stat` below is cumulative against 11edfb7b (P2-4 + P2-5 + P2-6 share files); P2-6's own edits are named.
+- EDITED Objects7 `PbNodeExecutor.java` (cumulative 370): `renderPlannedScene` :678 extracted from `executeRenderPlan` :577;
+  `executeChapBookPage` :865 rewritten onto it (scope 400, scene projection, `isMeaningful` no-prompt 409 :886, `recordImage(ROLE_LANDSCAPE)`,
+  scene write-back, `completeNode(DONE_UNVERIFIED)`, DTO + plan keys); `PlannedRender` :615 with `degradations` + `configNotApplied`;
+  `describe` :646/:652; constants :769-772.
+- EDITED Objects7 `PbRenderPath.java` (46): per-product defaults :45/:48, `REFUSAL_PREFIX` :51, `CHAPBOOK_ROLLBACK_WARNING` :54,
+  `configure` :69-75 → `resolve` :77; javadocs rewritten.
+- EDITED Objects7 `PbRenderJobUtil.java` (+3): `configNotApplied` onto the per-node job outcome :684-685.
+- EDITED Objects7 `PbServiceFacade.java` (cumulative 178): `listReviewQueue` skips `ROLE_RENDER_PLAN` :2370-2371.
+- EDITED Objects7 `PbPipelineUtil.java` (cumulative 23): `ROLE_RENDER_PLAN` :90 (P2-5) used by the exclusion.
+- EDITED Objects7 `SwarmRendererAdapter.java` (untracked, so absent from the stat): `(SDUtil)` ctor :33.
+- EDITED Objects7 tests: `TestChapBookV3Render.java` (cumulative 307; 15 cases, `CapturingSdu` :1136, `PLAN_MARKER` :82, fail-not-skip
+  gating, preset-steps assertions), `TestPbRenderPath.java` (66; `case10_chapBookV1IsRollback` :117), `TestPbNodeExecutorTypes.java` (10).
+- EDITED Service7 `RestServiceEventListener.java` (5), `WEB-INF/web.xml` (7); tests `TestChapBookRestContract.java` (+83,
+  `TestChapBookDefaultsToV3AndV1IsRollback` + `configure(null,"graph")` → `v3`, `@After` restore), `TestChapBookServiceRenderPath.java` (18,
+  explicit-`v1` cases kept), `TestFeatureConfigService.java` (9).
+- EDITED Console7 `ConsoleMain.java` (3), `resource.properties` (6); `docker-compose.yml` (7), `docker/entrypoint.sh` (6),
+  `docker/web.xml.template` (11).
+- EDITED Ux752 `src/features/featureConfig.js` (10; fallback `chapbook:'v3'`), `src/test/renderPathConfig.test.js` (28),
+  `e2e/chapBookRenderPathV3.spec.js` (22), `e2e/chapBook.spec.js` (+42/−26; gap6 / test 4 reader repair — §6.C 165 r).
+- Design doc: §24 and §28.1 as-built blocks (`C:/tmp/p26-design-asbuilt.py`).
+- No new model, route or flag.
+
+**Decisions.** All in §6.C 165: (a) shared helper + LANDSCAPE node, (b) `SwarmRendererAdapter(SDUtil)` + `CapturingSdu`, (c)
+`configNotApplied` beside `degradations`, (d) review-queue exclusion, (e) preset steps, (f) `persistBytes`, (g) per-product
+`PbRenderPath` defaults + rollback WARN, (h) every surface to `v3`, (i) Ux fallback, (j) `promptLocked` not projected, (k) `isMeaningful`,
+(l) rules one-liners → yours, (m) fail-not-skip gating, (n) no plan keys on the ChapBook `generate` body, (o) §28 check status, (q) gates
+batched to run 11, (r) the gated-test repair.
+
+**Tests (all `-DskipTests=false`; one Maven at a time; probes §3 19:44:21 → 20:49:54).**
+- Objects7 `TestChapBookV3Render` ×15, `TestPbRenderPath` ×10, `TestPbRenderPlanExecutor` ×6 — **S1 30 run / 3 red (mine)** →
+  **S1b 31/31** (`C:/tmp/p26-s1b-o7.log` :3053/:18312/:19479/:19483, BUILD SUCCESS :19486; gate line :54 `route=litellm tier=local` =
+  in-stack Ollama container via LiteLLM, not Azure — no LLM call made; SD = Swarm `http://192.168.1.39:7801`).
+- Service7 `TestChapBookRestContract` 9, `TestChapBookServiceRenderPath` 6, `TestFeatureConfigService` 12, `TestPbRenderPathRefusal` 7 —
+  **34/0/0/0** (`C:/tmp/p26-s2-svc.log` :4833, BUILD SUCCESS :4836; H2 fixture, no gate line expected).
+- Ux752 `renderPathConfig.test.js` **4/4** (`C:/tmp/p26-s2-vitest-rp.log`); full Vitest **90 files / 1161 passed** (`p26-s2-vitest-all.log`);
+  `npx vite build` **built in 6.56 s** (`p26-s2-vite.log` :146).
+- Playwright group 2 (7 specs, 46 tests) **42 passed / 4 gated skips / 0 failed** (`C:/tmp/pw-p26.log`, 7.1 m; 13 screenshots opened —
+  §6.C 165 i/u); gated `chapBook.spec.js` **16/18** (`C:/tmp/pw-p26-cbgated.log`) → the two reds diagnosed as pre-existing Cover-slot
+  drift and repaired → **2/2** (`C:/tmp/pw-p26-cbgated2.log`, 3.4 m; `[e2e-llm] route=litellm server=http://litellm:4000` = in-stack
+  container via LiteLLM, not Azure; SD `.39`). §6.C 165 r.
+- Quiet installs/compiles (`p26-s1-compile`, `p26-s1b-compile`, `p26-o7-install`, `p26-s7-compile`): 0 `[ERROR]` lines each.
+
+**Seams.** P2-7 builds its own graph-free plan in `olio/llm/ChatSceneRenderUtil` over the illustration seams, with the chat's per-call
+`SDUtil` as the transport (**corrected 2026-10-14 22:35, §6.C 166 b** — it does not reuse `renderPlannedScene`); P2-8 touches none of
+this; P2-9 reads `configNotApplied` from the job outcome / `nodeView` (165 n) and must decide what to do with the `SdConfigPanel` steps
+field (165 e); Phase 4's composition model takes over `settingText`/`mood`/`cameraText` and the `promptOverride`/`promptLocked` rename
+(design §24 as-built).
+
+**Architect review (≈19:20; summarised in `C:/tmp/p26-plan-and-architect-summary.txt`) — PASS WITH CORRECTIONS, all 12 decisions
+ADOPT; disposition of the 8 findings:** 1 adopted (D7 corrected — group unchanged, 165 f); 2 adopted then corrected by S1's reds
+(165 c); 3 adopted (hires reported, 165 c); 4 adopted (preset steps stated, 165 e); 5 adopted (fail-not-skip gating, 165 m); 6 adopted
+(javadocs + named constants, 165 g); 7 recorded as your ask (165 l); 8 adopted (`isMeaningful`, 165 k).
+
+**Results.**
+- *19:44 → 19:55 — S1 (Objects7).* Compile clean; first JUnit run `C:/tmp/p26-s1-o7.log` **30 run / 3 failures** (:3029/:3045/:19341;
+  :19394) — two cases expecting `configNotApplied` and finding degradations, one review-queue count including the plan — all mine.
+- *19:55 → 20:14 — fixes + S1b.* `configNotApplied` split (165 c) + `ROLE_RENDER_PLAN` exclusion (165 d); `C:/tmp/p26-s1b-o7.log`
+  **31/31**, BUILD SUCCESS; jar installed (`p26-o7-install.log`, 0 errors).
+- *20:14 → 20:16 — S2 (Service7 + Ux).* Service7 compile clean; `p26-s2-svc.log` **34/34**; Vitest 4/4 and 90/1161; Vite build.
+- *20:16 → 20:23 — deploy.* Objects7 jar → `WEB-INF/lib` (md5 `2195ec17fb12444a079fe1f87bc5d102` local == container; `unzip -p … |
+  grep -c "Unresolved compilation"` = 0), Service7 classes → `WEB-INF/classes` (md5-equal), `vite build` → `/opt/ux752/dist/`;
+  `docker restart am7test-am7-1`; `/rest/setup/state` 200; boot log `picturebook.renderPath set to v3 (was v1)` (the chapbook line is
+  silent because the container's explicit `v3` equals the new default — 165 g).
+- *20:23 → 20:30 — S3 group 2.* `C:/tmp/pw-p26.log` **42 passed / 4 skipped / 0 failed**; `chapBookRenderPathV3.spec.js` A–E live on
+  `.39` (165 u); all 13 screenshots opened and consistent with the log.
+- *20:36 → 20:42 — gated run.* `C:/tmp/pw-p26-cbgated.log` **16 passed / 2 failed** (gap6 `:1106`, test 4 `:1276`).
+- *20:42 → 20:50 — diagnosis.* Both `test-failed-1.png` (poem library in the viewport, reader Cover below the fold) and both
+  `error-context.md` snapshots (Cover + `Begin` + `Page 1…N` dots) read; `features/chapBook.js` reader (`renderReaderCover` :2640,
+  `renderReaderPage` :2672, `oninit` reset :2782) and `components/readerShell.js` (one page at a time, dots `title="Page N"` :246) read;
+  `git diff` on `chapBook.js` and `chapBook.spec.js` empty before the repair; the Cover slot dates from af5e3ff5 (2026-09-06). Verdict:
+  pre-existing test drift in two SD-gated tests; product untouched.
+- *20:50 → 20:54 — repair + re-run.* `e2e/chapBook.spec.js` +42/−26 (165 r); probe 20:49:54; `C:/tmp/pw-p26-cbgated2.log` **2 passed
+  (3.4 m)**; `gap6-chapbook-perscene-reader.png`, `chapbook-page-1.png`, `chapbook-page-8.png` opened.
+- *21:03 → 21:44 — test-author gap-fills (§6.C 165 v).* Probe 21:03:10 green; `test-compile` clean (`C:/tmp/p26-ta-o7-compile.log`);
+  `C:/tmp/p26-ta-o7.log` `TestChapBookV3Render` **17/0/0/0** (435.8 s), `TestPbRenderPlanExecutor` **7/0/0/0** (235.9 s), `:5056 Tests run:
+  24, Failures: 0, Errors: 0, Skipped: 0`, `:5059 BUILD SUCCESS`, exit 0; `[LLM-GATE] route=litellm tier=local` = in-stack container via
+  LiteLLM, not Azure (no LLM call); SD `.39`, checkpoint `sd_xl_base_1.0`. Three new cases (two with two live renders each, one no-GPU);
+  test files only; verified against the log lines, `git diff --numstat` and the test code (real facade + job + captured `SWTxt2Img`).
+- *21:43 → 21:48 — security review (§6.C 165 w).* Read-only (no Maven / Playwright / LLM / SD). **PASS WITH NOTES** — no BLOCKER or
+  SHOULD-FIX; the notes are commit hygiene on files already on the keep-out list (`tmp.bat`, the untracked H2 corrupt dir, Agent7 logs,
+  manuscripts, `test-results/`), plus a `.gitignore` ask recorded for Stephen. Evidence lines spot-checked at 21:55 (`PbRenderPath.java:56-57`,
+  `:88-91`, `:142-146`; `RestServiceEventListener.java:364`; `ConsoleMain.java:137`; `FeatureConfigService.java:161-169`; `ChapBookService`
+  diff 0 lines; `olio/llm` untouched). No code change.
+- *21:48 → 22:07 — independent verifier (§6.C 165 x).* Probe 21:48:56 green; re-ran the three Objects7 classes (`C:/tmp/p26-ver-o7.log`
+  **34/0/0/0**, `BUILD SUCCESS`; `[LLM-GATE] route=litellm tier=local` = in-stack container via LiteLLM, not Azure, no LLM call; SD `.39`
+  `sd_xl_base_1.0`), the four Service7 classes (`C:/tmp/p26-ver-svc.log` **34/0/0/0**, H2), Vitest (`C:/tmp/p26-ver-vitest.log` 4/4) and
+  `chapBookRenderPathV3` + `renderPath` live as `e2etest_shared` (`C:/tmp/pw-p26-ver.log` **9 passed**, 2.5 m); jar md5 parity and container
+  `web.xml`/env parity confirmed. **PASS WITH NOTES** — five notes, none blocking, none a code change (Assume-based SD gating reads as
+  Skipped; a conditional skip at `chapBookRenderPathV3.spec.js:458`; v3/v3 test stack vs product defaults; `verify.sh` not run by design;
+  keep-out noise). Three screenshots opened and described in 165 x.
+- *Status 22:16:* **P2-6 — Verifier PASS; quick gates ⚠ batched forward (run 11).** Implemented, deployed, live-proven; Objects7 34/34
+  (31 + 3 gap-fills, re-run 34/34), Service7 34/34 (re-run 34/34), Vitest 4/4 + 1161, Playwright group 2 42/0 with the 4 gated cases 4/4
+  live, verifier 9/9 live; security PASS WITH NOTES; verifier PASS WITH NOTES. Not DONE — yours. Open asks: 165 a, c, d, e, g, j, l, n, r,
+  w (.gitignore), x (ii); fixtures 165 t yours to delete.
+  Next: P2-7 — planner done, architect review received 22:12 → verify its findings against the code → §6.C 166 → §10.7 → implement.
+
+### 10.7 P2-7 plan — chat scene through the illustration service (planned 2026-10-14 21:52 → 22:35; Objects7 + Service7 + Console7 + docker + Ux752 + Playwright)
+
+**Scope.** Design §24.1 (:1238-1282): `POST /rest/chat/{objectId}/generateScene` renders through `RenderPlan → StrategySelector →
+SdxlCompiler → SwarmRendererAdapter` behind a boot-pinned `chat.renderPath` (§28.1 Stage 1 coexist; product default `v1`, test stacks
+`v3`); the compiled prompt/negative, strategy, model pick, canvas, plan hash, degradations and `configNotApplied` ride back under one
+additive `render` key on the existing `data.data` response. Chat is a consumer of the shared illustration service, not of the PictureBook
+domain (§24.1 :1263), so the util lives in `olio/llm` and the helpers it shares with PictureBook move down into `olio/illustration`. The
+v1 inline composite stays (Stage 4 removal after chat parity, Phase 4/5). KI-64/KI-65 were already RESOLVED 2026-10-07, so the §24.1
+"resolve KI-65 in the same change" item is satisfied. Plan `C:/tmp/p27-plan.md`; every decision in §6.C 166.
+
+**Files.** (planned; line endings measured with `tr -cd '\r' | wc -c` — preserve each)
+- Objects7 `illustration/`: `ModelResolver` gains `pickOf(Resolution)`, `addDegradation(Resolution, List<Degradation>)`,
+  `unresolvedStatus(ModelPick)`, `unresolvedMessage(label, ModelPick, RenderPlan, planOid)`; NEW `ConfigSnapshot` (`of(BaseRecord)`);
+  NEW `ConfigNotApplied` (`KEY`, `HIRES`, `STYLE_CLAUSE`, `DEFAULT_NEGATIVE`, `COMPOSITE_MODE`, `SKIP_LANDSCAPE`, `SCENE_CREATIVITY`).
+- Objects7 `picturebook/`: `PbRenderPlanUtil` (LF) `pickOf`/`addModelDegradation` delegate; `PbConfigUtil` (CRLF) `configSnapshot`
+  delegates; `PbNodeExecutor` (LF) constants alias + the two unresolved helpers delegate — no behaviour change; `PbRenderPath` (LF)
+  third key.
+- NEW Objects7 `olio/llm/ChatSceneRenderUtil` (`render(user, sdu, sdConfig, chatConfig, systemChar, userChar, ScenePromptResult,
+  clientModel) → ChatSceneRender` with `describe()`; unresolved model → `IllegalStateException`-free: returns status + message for the
+  transport to map); NEW test `olio/llm/TestChatSceneRenderUtil`.
+- Service7 `ChatService.generateScene` (CRLF) branch after :1488; `RestServiceEventListener.java:364-366` (CRLF) 3-arg configure;
+  `FeatureConfigService.java:171-172` `chat`; `WEB-INF/web.xml:84-87` (CRLF); NEW test `TestChatSceneRenderPath`; `TestFeatureConfigService`
+  additive assertion.
+- Console7 `ConsoleMain.java:137-139` (CRLF), `resource.properties:63` (CRLF, `chat.renderPath=v1`); docker `web.xml.template:82-85`,
+  `entrypoint.sh:50/:75/:115` (`: "${CHAT_RENDER_PATH:=v1}"`), `docker-compose.yml:60` (CRLF, `:-v1`), `docker-compose.test.yml:270`
+  (`:-v3`); Objects7 test `resource.properties:52` (CRLF, `chat.renderPath=v3`).
+- Ux752 `src/features/featureConfig.js` (default + normalise + chip `render-path-chat`), `src/test/renderPathConfig.test.js`,
+  `e2e/renderPath.spec.js:114` + chip, `e2e/chatChainSceneReimageRoutes.spec.js` item 14-live new case (c) + `GET /rest/config/render-path`
+  guards. `src/chat/SceneGenerator.js`: no functional change (image keys unchanged).
+
+**Decisions.** §6.C 166 a–n (switch, package placement, transient composition with the `random` guard, model/canvas/preset, nested
+`render` key with string degradations, no fallback, per-call SDUtil, persistence as the user, light security pass, non-admin test
+principal, retained v1 debt, architecture.md ask, out-of-scope notes, corrections).
+
+**Tests.** NEW Objects7 `TestChatSceneRenderUtil` (real DB + Swarm `.39` via `SdTestGate.requireSwarmReachable`/`requireRenderConfig`
+— skip is reported as a skip, never a pass; a capturing `SDUtil` subclass that delegates to the real `txt2img`; asserts plan shape
+(PURPOSE_SCENE, two foreground actors, location/intent/style from the inputs, TEXT_ONLY, one BASE stage), compiled prompt contains the
+scene description, both character descriptions, the setting and the config style, `configNotApplied` per the iff-rule, a persisted
+`data.data` under `~/Gallery/Scenes/<label>` readable by the non-admin user with the `seed`/`imageType`/`renderPlan`/`stageRequest`
+attributes, and the `describe()` keys); NEW Service7 `TestChatSceneRenderPath` (H2; save/restore all three values; `v1` body carries
+`render.renderPath == "v1"` and nothing else under `render`; `v3` body shape; bogus `compositeMode` still 400 first; `kontext` still
+passes the gate — P2-8 flips it); Playwright `chatChainSceneReimageRoutes.spec.js` item 14-live case (c) as `e2etest_shared` (stack pins
+`CHAT_RENDER_PATH=v3`: 200, `schema == "data.data"`, PNG bytes decode, `render.renderPath == "v3"`, `render.strategy == "TEXT_ONLY"`,
+`render.compiledPrompt` names both characters, `render.degradations` lists `ACTOR_TEXT_ONLY` for each portrait-bearing actor) + guards
+on `GET /rest/config/render-path` (`chat` present, `"v3"` on the test stack); Vitest `renderPathConfig.test.js` third key. Re-run list
+(§24.1 :1281-1282 — every `SceneCompositeUtil`/`SWUtil`/`SDUtil` touch re-runs chat + PB + ChapBook): Objects7 `TestKontextDeprecation`,
+`TestFlux2Composite`, `TestIllustrationModelPolicy`, `TestChapBookV3Render`, `TestPbRenderPath`, `TestPbRenderPlanExecutor`; Service7
+`TestFeatureConfigService`, `TestPbRenderPathRefusal`, `TestPictureBookRenderPlanRoute`, `TestChapBookRestContract`,
+`TestChapBookServiceRenderPath`; Playwright `chatChainSceneReimageRoutes`, `chapBookRenderPathV3`, `renderPath`, `pictureBookV3RenderPlan`.
+Live proof: the v3 call logs `SwarmRendererAdapter - Stage BASE rendered 1 image(s)` and no `Scene composite [`.
+
+**Seams.** P2-8 keeps the :1422-1426 `compositeMode` gate (reached before the branch) and `resolveMode` :1500 (v1 only); P2-9 reads
+`render.degradations`/`render.configNotApplied`/`render.compiledPrompt` from this response; Phase 4 (`Flux2Compiler`/DIRECT_REFERENCE)
+returns portrait identity to chat and is the precondition for chat Stage 2; the graph-free render-core extraction is Phase 2 close-out
+debt (166 b).
+
+**Architect review** (received 22:12, read-only) — **PASS WITH CORRECTIONS**, 9 findings: package placement (`olio/llm`, not
+`olio/illustration`; helpers move down — adopted, 166 b), `IllustrationModelPolicy` over `PbModelPolicy` (adopted, 166 d), the `random`
+setting guard (adopted, 166 c), the nested `render` key + string degradations + shared constants holder (adopted, 166 e), light security
+pass (166 i), non-admin test principal (166 j), v1 branch as retained debt (166 k), the architecture.md one-liner (ASK, 166 l), and the
+raw `FIELD_BYTE_STORE` / `getFullRecord` notes (166 m). My wrong "illustration imports picturebook" premise, which the planner inherited,
+is corrected in 166 b; the planner's "image rebuild" step in 166 n.
+
+**Results.**
+- *Status 22:35:* **P2-7 PLANNED**; implementation starting with the Objects7 illustration moves (`ModelResolver` helpers,
+  `ConfigSnapshot`, `ConfigNotApplied`), `PbRenderPath` third key, then `olio/llm/ChatSceneRenderUtil`.
+  Next: implement Objects7 → install jar → Service7/Console7/docker/Ux edits → redeploy with `CHAT_RENDER_PATH=v3` → prove live →
+  test-author → re-run lists → light security pass → verifier → record.
+- *22:35 → 23:00 — implementation.* Objects7: `illustration/ModelResolver` helpers, NEW `ConfigSnapshot`, NEW `ConfigNotApplied`,
+  `PbRenderPlanUtil`/`PbConfigUtil`/`PbNodeExecutor` delegate, `PbRenderPath` third key (+ 166 u), `Chat.ScenePromptResult` four additive
+  fields (166 s), NEW `olio/llm/ChatSceneRenderUtil` (166 o–t); `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` exit 0 / 0
+  `[ERROR]` (`C:/tmp/p27-o7-install2.log`). Service7: `ChatService` v3 branch at the top of the image path + `render` block on both paths
+  (`withRender`), `RestServiceEventListener`/`FeatureConfigService`/`web.xml`; `test-compile` exit 0 (`C:/tmp/p27-s7-compile.log`).
+  Console7 `ConsoleMain` + `resource.properties`; `compile` exit 0 (`C:/tmp/p27-c7-compile.log`). Docker `web.xml.template`,
+  `entrypoint.sh` (`CHAT_RENDER_PATH:=v1`, export, envsubst list), `docker-compose.yml` (`:-v1`), `docker-compose.test.yml` (`:-v3`).
+  Objects7 test `resource.properties` `chat.renderPath=v3` + `BaseTest` three-value configure. Ux752 `featureConfig.js` (default,
+  normalise, third chip `render-path-chat`), `renderPathConfig.test.js` (**5 passed**, `C:/tmp/p27-vitest-rp.log`), `e2e/renderPath.spec.js`
+  (three-key body + chip), `TestFeatureConfigService` (chat echo, two-value form leaves chat, bogus → v1, null → v1); `npx vite build`
+  ✓ 5.40 s (`C:/tmp/p27-vite.log`). Line endings preserved per file (CRLF: `ChatService` 1684/1684, `RestServiceEventListener`,
+  `web.xml`, `ConsoleMain`, both `resource.properties`, `docker-compose.yml`; LF: the rest).
+- *23:05 → 23:10 — deploy + live proof of the switch* (§3 23:10:30 block): container recreated with `CHAT_RENDER_PATH=v3`, re-seeded
+  (md5-equal ×7, no stub classes), boot log `chat.renderPath set to v3 (was v1)`, `GET /rest/config/render-path` as `e2etest_shared` →
+  `{"picturebook":"v3","chapbook":"v3","chat":"v3"}`.
+- *23:10 — SD status.* Swarm `.39` is off the network (host + container; ping 100 % loss); `.42:7801` answers 302 with 19 checkpoints.
+  The stack's SD URL is the `/System` `sd` connection (`.39`); the admin PATCH to repoint it at `.42` was refused by the harness and NOT
+  run (⚠ §6.C 166 v — yours). Consequence: the P2-7 **live render** (Playwright 14-live (c), the Objects7 live BASE render) is pending
+  `.39` or your repoint; everything that needs no SD (plan shape, `configNotApplied`, `RenderFailure` statuses, the H2 branch test, the
+  `renderPath` Playwright + Vitest, the LLM-only part of the v3 branch) proceeds now.
+  Next: test-author (SD cases gated through `SdTestGate` and reported as skips; Playwright 14-live (c) written and run — its SD step is
+  expected to surface as a 503 `RenderFailure`, reported verbatim, never weakened) → re-run lists → light security pass → verifier →
+  record.
+- *23:48 → 23:58 — test-author (real tests, live stack; §3 block).* NEW Objects7 `olio/llm/TestChatSceneRenderUtil` (10 cases; user
+  `chatSceneTestUser` under `/Development/ChapBook Tests`, admin used only to create it; `SwarmModelInventory.invalidateAll()` per case):
+  plan shape text-only without portrait bytes (TEXT_ONLY + `REASON_NO_REFERENCED_ACTORS`, one BASE stage, STANDARD 12 steps, 768×512,
+  both actors positioned "on the left"/"on the right", HIGH `two people in scene`, Location = setting, style clause
+  `(ink wash illustration).`, character exclusions = negative, unresolved BASE pick `INVENTORY_UNAVAILABLE` + exactly one
+  `MODEL_SUBSTITUTED`, JSON round-trip keeps the content hash); referenced-only-when-bytes-supplied (exactly one `ACTOR_TEXT_ONLY`,
+  naming Mira); blank scene/setting defaults; null config → `(professional photograph).` + 1024² / 20 steps; `configNotApplied` each
+  code once and never `STYLE_CLAUSE` (sparse and schema-default config; no literal `null`); the documented `RenderFailure` statuses
+  401/500/500 and the 503 `Renderer inventory unavailable; cannot verify a model for Mira and Theo before rendering - Model for
+  LOCATION is unresolved: INVENTORY_UNAVAILABLE …` (blank label → `chat scene`); `buildPlan` leaves the sdConfig unmutated; and the
+  SD-gated live persist (`SdTestGate.requireRenderConfig`, 20-min timeout, `~/Gallery/Scenes/<label>` found as the user, PNG magic,
+  seed/imageType/systemCharacter/userCharacter/renderPlan/stageRequest attributes, re-read with `setCache(false)`, PNG written to
+  `java.io.tmpdir`). `Tests run: 10, Failures: 0, Errors: 0, Skipped: 1` (`C:/tmp/p27-ta-o7.log`; the skip reads `test.swarm.server=
+  http://192.168.1.39:7801 did not answer … This is NOT a pass`); `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr
+  pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` = the in-stack Ollama container through LiteLLM, not Azure. NEW Service7
+  `TestChatSceneRenderPath` (4 cases, reader `chatrenderpathreader`; three-value configure incl. `" V3 "` → v3, `"v2"` → v1, null → v1;
+  two-value configure leaves chat; `describeV1()` serialises to exactly `{"renderPath":"v1"}`; `GET render-path` echoes chat for both
+  values with exactly three keys, 401 anonymous) — first run **4 errors** at `BaseTest.resetIO:82` (`C:/tmp/p27-ta-s7-csrp.log`): the
+  H2 fixture was corrupt again, the test-author stopped and reported it (✓ 166 x). Playwright `chatChainSceneReimageRoutes.spec.js`
+  item-14 live block rewritten to follow the pinned chat path (`readRenderPath`, `hasPortrait`, `probeSwarmFromHost`,
+  `generateSceneV3` asserting the `render` block: `renderPath=v3`, `strategy=TEXT_ONLY`, compiled prompt names Mira/Theo with
+  positions and the two-people cue, model non-empty, canvas = decoded PNG dimensions, `planContentHash`, one `ACTOR_TEXT_ONLY` per
+  portrait-bearing actor (computed from the fixture records), `configNotApplied` carries SKIP_LANDSCAPE/COMPOSITE_MODE/SCENE_CREATIVITY
+  and never HIRES/STYLE_CLAUSE, log has `Stage BASE rendered 1 image(s)` and no `Scene composite [`): default run **2 passed /
+  1 skipped** (`C:/tmp/pw-p27-chat.log`, `E2E_SD_LIVE` gate); the ungated run **FAILED** `Expected: 200 Received: 503`
+  (`C:/tmp/pw-p27-chat-live.log`): the stack refuses at the inventory read, not at the adapter, so the spec's outage skip (written for
+  `Renderer unreachable`) did not match (→ ⚠ 166 w). `renderPath.spec.js` **4 passed** (`C:/tmp/pw-p27-renderpath.log`); Vitest
+  `renderPathConfig.test.js` **5 passed** (`C:/tmp/p27-ta-vitest.log`).
+- *23:50 → 00:12 — fixture repair + re-run lists.* `mv am7 am7.corrupt-2026-10-14-2350` (✓ 166 x). Service7 list `TestChapBookRestContract`
+  9/9, `TestChapBookServiceRenderPath` 6/6, `TestChatSceneRenderPath` **4/4**, `TestFeatureConfigService` 12/12, `TestPbRenderPathRefusal`
+  7/7, `TestPictureBookRenderPlanRoute` 7/7 → **45/45**, BUILD SUCCESS (`C:/tmp/p27-s7-rerun.log`, fresh self-provisioned fixture).
+  Objects7 list `TestFlux2Composite` 36/36, `TestIllustrationModelPolicy` 14 run / 10 skipped, `TestKontextDeprecation` 7/7,
+  `TestChatSceneRenderUtil` 10 run / 1 skipped, `TestChapBookV3Render` 17 run / 13 skipped, `TestPbRenderPath` 10/10,
+  `TestPbRenderPlanExecutor` 7 run / 5 skipped → **`Tests run: 101, Failures: 0, Errors: 0, Skipped: 29`, BUILD SUCCESS**
+  (`C:/tmp/p27-o7-rerun.log`; same `[LLM-GATE] route=litellm tier=local` = container Ollama via LiteLLM). All 29 skips read from
+  `target/surefire-reports/TEST-*.xml` carry the `test.swarm.server=http://192.168.1.39:7801 did not answer … NOT a pass` message —
+  the SD outage set, none counted as a pass.
+- *00:06 → 00:17 — outage-skip fix (⚠ 166 w).* `isSdOutage(status, text, hostProbeFailed)` also accepts the 503 `Renderer inventory
+  unavailable … INVENTORY_UNAVAILABLE` body, and only when the spec's own host probe of `http://192.168.1.39:7801/` failed; the stale
+  comment claiming the SceneE2E fixtures carry no portraits corrected (both do: `a4af6f7c…`, `ee5a0967…`). `node --check` OK, CR count 0.
+  Re-run `E2E_SD_LIVE=1 … -g "item 14"` → **2 passed / 1 skipped** (`C:/tmp/pw-p27-chat-live-2.log`): `[e2e-llm] route=litellm
+  server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr` = the in-stack Ollama container via LiteLLM (not Azure); chat
+  turns 200 in 14.0 s / 11.3 s; the LLM wrote the scene description (`Theo and Mira ascend a weathered lighthouse staircase…`); then
+  `generateScene` → **503 after 48 s** with the container log `SDUtil - Could not list models from SD server http://192.168.1.39:7801:
+  java.net.ConnectException: Connection refused` → `ChatService - generateScene(v3): 503 Renderer inventory unavailable…`, host probe
+  `AbortError` → skipped as the SD outage, reported as NOT a pass.
+- *~00:08 → 00:19 — light security pass (⚠ 166 i) → PASS, no blocking issue.* Confirmed: every v1 check (principal, compositeMode 400,
+  `AccessPoint.find` with explicit `organizationId`, config/character presence, `ChatUtil.getChat`) precedes the branch; persist is
+  `makePath(user)` + `AccessPoint.create(user)` — no admin, no `RecordUtil`; no server URL, portrait bytes or Swarm session id in
+  `RenderFailure` texts, the `render` block or logs (`stageRequest` is exported before `txt2img` mints the session — stricter than v1's
+  `s2i` attribute); `withRender` has no injection surface (server-built inputs, Jackson-encoded values); `getRenderPath` keeps
+  `@RolesAllowed` + 401; the config plumbing introduces no credential; no prompt file in the diff; tests use admin only to create their
+  users. Four non-blocking hardenings: two applied (⚠ 166 y), two recorded as asks (166 z).
+- *00:22 → 00:33 — hardenings applied, redeployed, re-verified (⚠ 166 y).* `ChatSceneRenderUtil.persist` 500 no longer appends
+  `e.getMessage()`; `ChatService.generateSceneV3` gains `catch (RuntimeException)` after the `RenderFailure` catch (clears the
+  `bgActivity` chirp, fixed `{"error":"Scene render failed"}`). Objects7 `install` exit 0 (`C:/tmp/p27-fix-o7-install.log`), Service7
+  `compile` exit 0 (`C:/tmp/p27-fix-s7-compile.log`); jar + `ChatService.class` + `ChatService$ChainRequestException.class` `docker cp`'d,
+  md5 `96a6e5fce99825bad7ccfdcf2457b4a7` (jar) / `9cc46c52ec57e254b7544941c265ac6d` (`ChatService.class`) local == container; `javap`
+  shows the new strings and no `Unresolved compilation` (the `ChatService.class` on disk was Eclipse's on-save compile — checked for
+  that reason); `docker restart`, stack back in ~2 min. Re-runs: `TestChatSceneRenderUtil` **10 run / 0 fail / 1 SD skip**
+  (`C:/tmp/p27-fix-o7-test.log`, `[LLM-GATE] route=litellm tier=local` = container Ollama via LiteLLM); `TestChatSceneRenderPath` **4/4**
+  (`C:/tmp/p27-fix-s7-test.log`, fixture intact afterwards — no `corrupted` line in `h2.trace.db`); Playwright item 14 **2 passed /
+  1 skipped** (`C:/tmp/pw-p27-chat-live-3.log`, same outage shape; chat turns 200 in 12.0 s / 8.9 s via LiteLLM → container Ollama);
+  `renderPath` **4 passed** (`C:/tmp/pw-p27-renderPath-2.log`); `chapBookRenderPathV3` **1 passed / 4 skipped** (`CB_LIVE_GEN` gate,
+  `C:/tmp/pw-p27-chapBookRenderPathV3-2.log`); `pictureBookV3RenderPlan` **6 skipped** (`PB_SD_TESTS` gate,
+  `C:/tmp/pw-p27-pictureBookV3RenderPlan-2.log`) — both carried as "gate pending `.39`", not passes.
+- *00:27 → 00:35 — verifier (independent; read-only review + two re-runs) → PASS on the code / switch / transport, with the v3 200 path
+  stated UNVERIFIED end-to-end* — "the gate is green only because the v3 200 path has no coverage": no successful `generateSceneV3`
+  (render block on a 200 body, persisted `~/Gallery/Scenes/<label>` record, `renderPlan`/`stageRequest` attributes) has ever executed,
+  so P2-7 is NOT "proven live". Its re-runs: Objects7 `TestChatSceneRenderUtil` `Tests run: 10, Failures: 0, Errors: 0, Skipped: 1`,
+  BUILD SUCCESS (`C:/tmp/verify-p27-o7.log`; `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr
+  server=http://127.0.0.1:4000` = the in-stack Ollama container through LiteLLM, not Azure; the skip is the SD-gated persist,
+  `test.swarm.server=http://192.168.1.39:7801 did not answer … This is NOT a pass`); Service7 `TestChatSceneRenderPath` **4/4**,
+  BUILD SUCCESS (`C:/tmp/verify-p27-s7.log`; the fixture was intact afterwards — 0 `corrupt` lines in `h2.trace.db`; the H2 `Unknown
+  data type: "VECTOR"` ERROR lines are the known fixture noise). Confirmed clean: `RenderFailure` catch precedes the `RuntimeException`
+  catch; two-value `configure` passes the current `chat`; `describeV1()` is exactly `{renderPath:"v1"}`; the `render` block carries no
+  SD URL or portrait bytes; persist is `PathUtil.makePath(user)` + `AccessPoint.create(user)` (no admin, no `RecordUtil`); no per-org
+  state in process-global singletons; business logic in Objects7, `ChatService` transport only; v1 unchanged except the additive
+  `render:{"renderPath":"v1"}`; non-admin asserting principals throughout; no fake assertions; `TestChatSceneRenderPath`'s Javadoc
+  states what it does not cover. Findings, each checked against source before being recorded: (1) the spec's host probe URL was
+  hardcoded to `.39`, so a genuine 503 from a repointed stack while `.39` stayed off would skip instead of fail → fixed 00:38
+  (⚠ 166 aa); (2) the render-time 500 echoes Swarm's backend text — already ask 166 z (i); (3) `ChatSceneRenderUtil.java:182` takes
+  `steps` from the STANDARD preset whenever capabilities resolve, silently ignoring the posted `sdConfig.steps` with no
+  `configNotApplied` entry → ask 166 ab; (4) `chat.generateScenePrompt` runs outside the `try` in `generateSceneV3` (an uncaught
+  RuntimeException there leaves the `bgActivity` chirp set — the same exposure v1 has) and (5) `Chat.java:2276-2277` still loads portrait
+  bytes v3's TEXT_ONLY plan never uses → both noted, no action (166 ac). Not run by it: full gates, Playwright SD specs. Its honest
+  uncovered list: the v3 200 body / `withRender` re-parse / persisted record over REST; 409 NO_CANDIDATE and 409 empty-prompt through
+  `render()`; the render-time and persist-failure 500s; `withRender`'s fallback; a null body on v3; `generateScenePrompt` returning
+  null on v3; `renderPlan`/`stageRequest` attribute persistence; posted `steps`/`seed` precedence over the preset.
+- *00:38 → 00:45 — probe-URL fix + full-spec re-run (⚠ 166 aa).* `chatChainSceneReimageRoutes.spec.js`: `SD_PROBE_URL =
+  (process.env.E2E_SD_SERVER || 'http://192.168.1.39:7801')` + `/`, used by the item-14 live probe, and the log line now names the URL
+  it hit. Probe 00:41:16 (`C:/tmp/p27-probe-5.log`, §3) unchanged. Re-run `E2E_SD_LIVE=1 … chatChainSceneReimageRoutes.spec.js`
+  (whole file, no `-g`) → **8 passed / 1 skipped / 1 failed** (`C:/tmp/pw-p27-chat-live-4.log`). The skip is item 14 live on the outage,
+  now logging `swarm host probe http://192.168.1.39:7801/=AbortError (unreachable from the host)`, chat turns 200 in 13.4 s / 8.2 s via
+  `[e2e-llm] route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr` (= the in-stack Ollama container
+  through LiteLLM, not Azure), `generateScene` 503 after 48.3 s. **The 1 failed is item 15** (`charPerson reimage without the deprecated
+  prompt argument … returns a new portrait`, `Expected: 200 Received: 500` at `:304`) — the pre-existing `E2E_SD_LIVE`-gated reimage
+  test, which has no outage guard and was not in the earlier `-g "item 14"` runs; container log: `SDUtil - Could not list models from SD
+  server http://192.168.1.39:7801: Connection refused` then `SDUtil.getOrCreateSession(SDUtil.java:160)` ← `OlioService.reimageWithConfig
+  (OlioService.java:273)` → `jakarta.ws.rs.ProcessingException: java.net.ConnectException: Connection refused`. A Swarm `.39` outage red
+  outside P2-7 — left as is (widening its skip would be scope creep); carried with run 9's `.39` reds for P2-10 (166 ac).
+- **Still open for P2-7:** the live render proof — Playwright item-14 live (the 200 path with the PNG + `render` block) and the
+  Objects7 live persist — pending Swarm `.39` or your `sd` repoint (166 v); module quick gates batched forward to run 11 (P2-10).
+  Next: P2-8 (Kontext Disable §37.3; `SceneCompositeUtil.isSupportedMode` rejects `kontext`; `TestKontextDeprecation` extended;
+  Service7-level test for the `ChatService` `resolveMode(sdConfig, false)` flip; ⚠ §6.C 167; security-reviewer required).
+
+### 10.8 P2-8 — Kontext Disable (§37.3) — 2026-10-15 00:50 → 01:58 local
+
+**Scope.** Design §37.3 Deprecate (Phase 0: WARN, still runs) → **Disable** (Phase 2, this task): every entry point refuses
+`compositeMode=kontext` before any LLM or SD contact; `flux2` and `classic` stay the supported composite modes; the code stays until
+Remove (Phase 10). Security-reviewer REQUIRED (per the task brief) and run; its two in-task hardenings applied (⚠ §6.C 167 p/q) and
+re-verified. Line numbers are the post-hardening ones.
+
+**Changes.**
+- Objects7 `olio/sd/SceneCompositeUtil`: `SUPPORTED_MODES = "flux2|classic"` (:41), `isSupportedMode` no longer accepts kontext (:62),
+  new `isRetiredMode(String)` — case/whitespace-insensitive (:71), new `KONTEXT_RETIRED_MESSAGE` (:46); `resolveMode` still returns
+  `kontext` for an explicit value or legacy `useKontext=true` with blank/null `compositeMode`, WARN reworded to "retired" (:102-127);
+  **`buildSceneRequest` refuses a retired mode itself** (:218-221, ERROR log + null; the kontext branch at :276 stays, unreachable, for Phase 10).
+- Objects7 `olio/picturebook/PbRenderPath.requireEnabledCompositeMode(mode, scopeLabel)` (:189) → `PictureBookException(409,
+  KONTEXT_RETIRED_MESSAGE + " (scope)")`; called from `PbNodeExecutor.executeComposite` (:1135, after mode resolution, before model
+  policy/SD) and the PB1 `PictureBookUtil.generateSceneImage` (:9705, top of the `try`; inline parse replaced by `resolveMode` + booleans).
+- Service7 `ChatService.generateScene` (:1430-1462): explicit retired mode → **400** `{"error": KONTEXT_RETIRED_MESSAGE}`; non-blank unknown
+  → generic 400 `Unsupported composite mode 'x'; expected flux2|classic` where `x` is `boundedEcho(requestedMode)` (:1032-1037: trimmed,
+  control characters → `?`, capped at 32 chars + `...`) in both the WARN line and the body; `refinerModel` default;
+  `compositeMode = resolveMode(sdConfig,false)`; resolved retired → **409** same message; then the unchanged v1/v3 flow. Both gates
+  precede the chat lookup. Stale comment at :1621-1623 fixed (⚠ 167 o).
+- `models/olio/sd/configModel.json` `compositeMode` description (kontext retired, flux2|classic) and `kontextModel` description (no longer
+  invites "opting into compositeMode=kontext"), mirrored in Ux752 `modelDef.js:10324` / `:10388`.
+- Design §37.3 Disable row: `[2026-10-15 (P2-8) — as built: …]` marker (⚠ 167 m), wording corrected to "blank or null `compositeMode`" and
+  extended with the builder refusal and the echo cap after the verifier's finding.
+- Tests: NEW Objects7 `olio/picturebook/TestPbKontextDisable` ×3 (anonymous `SDUtil` sentinel records and throws if `createImage`/`createSceneImage`
+  is ever reached; case01 asserts 409 + message + `(scene <oid>)` + node FAILED + the newest `olio.pb.run` FAILED with the message and no SD call;
+  case02 `" KONTEXT "`; case03 flux2 control — the sentinel IS reached, no retirement text anywhere); `TestKontextDeprecation` 7 → 8
+  (⚠ 167 f); `TestFlux2Composite` `isSupportedMode` case flipped and `promptOverrideReplacesKontextComposedPrompt` →
+  `builderRefusesTheRetiredKontextMode` (⚠ 167 q); NEW Service7 `TestChatSceneKontextDisable` ×9 (⚠ 167 n; the ninth is the sanitised-echo
+  case, 167 p); Playwright `chatChainSceneReimageRoutes.spec.js` item 14: expectation `flux2|classic`, supported loop `flux2/classic/FLUX2`,
+  +3 tests (kontext any case → 400; `""`/`null` + `useKontext:true` → 409, `useKontext:true` alone → 404 with the 167 k comment, `""` +
+  `useKontext:false` → 404; `a\nb`+40×`x` → 400 echoed as `a?b`+29×`x`+`...`).
+
+**Results, first pass (verbatim counts, log paths).**
+- *01:25 → 01:27 Objects7* `mvn -o -pl AccountManagerObjects7 -Dtest=TestPbKontextDisable,TestKontextDeprecation,TestFlux2Composite,TestIllustrationModelPolicy,TestModelResolver,TestPbNodeExecutorTypes -DskipTests=false test`
+  → **`Tests run: 104, Failures: 0, Errors: 0, Skipped: 10`, BUILD SUCCESS** (`C:/tmp/o7-p28.log`): `TestPbKontextDisable` 3/3 (48.4 s),
+  `TestKontextDeprecation` 8/8, `TestFlux2Composite` 36/36, `TestModelResolver` 41/41, `TestPbNodeExecutorTypes` 2/2,
+  `TestIllustrationModelPolicy` 14 run / **10 skipped** — the SD-gated set (`test.swarm.server=http://192.168.1.39:7801 did not answer … NOT a pass`),
+  not counted as passes. `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` =
+  the in-stack Ollama container through LiteLLM, not Azure (no case in this run called the LLM). case01 log: `status=409 message=compositeMode=kontext
+  has been replaced by V3 (design section 37.3): FLUX.2 (compositeMode=flux2) is the supported composite path; Kontext is disabled in Phase 2 and
+  removed in Phase 10 (scene 73a068ae-…) sdCalls=[]`; case03 control: `Scene composite [flux2]` after `INVENTORY_UNAVAILABLE` (the `.39` connect
+  timeout, ~42 s) then `thrown=RuntimeException: P2-8 sentinel: SD createSceneImage reached` — the gate is specific to kontext; this is NOT an SD proof.
+- *01:27 Objects7 `install`* exit 0 (`C:/tmp/o7-p28-install.log`), jar md5 `548df86432a77a0e431035bd91449fd5`; `javap` on the jar classes shows
+  `KONTEXT_RETIRED_MESSAGE`, `isRetiredMode`, `requireEnabledCompositeMode`, `flux2|classic`, 0 `Unresolved compilation`.
+- *01:31 → 01:32 Service7* `mvn -o -pl AccountManagerService7 -Dtest=TestChatSceneKontextDisable,TestChatSceneRenderPath -DskipTests=false test`
+  → **`Tests run: 12, Failures: 0, Errors: 0, Skipped: 0`, BUILD SUCCESS** (`C:/tmp/s7-p28.log`): `TestChatSceneKontextDisable` 8/8,
+  `TestChatSceneRenderPath` 4/4; the log shows the 400 gate ×3 and the 409 gate ×4; H2 fixture intact (no `corrupt` marker). First run had one
+  red — `…UseKontextResolvesToRetired…` expected 409, got 404 → the 167 k finding; test shapes corrected, product unchanged.
+- *01:33 deploy.* jar + `ChatService.class` (`d52e99dc879cfc88947d617ede0cb530`, the IDE's on-save compile — `javap`: 2 retired refs, `expected
+  flux2|classic`, 0 Unresolved) + `ChatService$ChainRequestException.class` `docker cp`'d, md5 local == container; `npx vite build` exit 0
+  (`C:/tmp/vite-p28.log`), `dist` copied (`index.html` md5 equal); `docker restart am7test-am7-1` → unauthenticated `render-path` 403 in 5 s.
+- *01:36 Playwright* `PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/chatChainSceneReimageRoutes.spec.js -g "composite mode
+  validation" --workers=1 --project=chromium --retries=0` → **4 passed (2.6 s)** (`C:/tmp/pw-p28-chat.log`): unsupported → 400 `flux2|classic`;
+  each supported mode → 404 session lookup; kontext/KONTEXT/` Kontext ` → 400 replaced-by-V3; `""`/`null` + `useKontext:true` → 409,
+  `useKontext:true` alone → 404, `""` + `useKontext:false` → 404. No `[e2e-llm]` line: the block makes no LLM call. Items 15 and "14 live"
+  stay `E2E_SD_LIVE`-gated and were not run (skips, not passes).
+- *01:37 curl proof as `e2etest_shared`* (login 200 → `POST /rest/chat/<random>/generateScene`): `{"compositeMode":"kontext"}` → **400**,
+  `" KONTEXT "` → **400**, `{"compositeMode":"","useKontext":true}` → **409**, `{"compositeMode":null,"useKontext":true}` → **409** — all four
+  bodies `{"error":"compositeMode=kontext has been replaced by V3 (design section 37.3): FLUX.2 (compositeMode=flux2) is the supported composite
+  path; Kontext is disabled in Phase 2 and removed in Phase 10"}`; `{"useKontext":true}` → **404** `Chat request not found`; `bogus` → **400**
+  `Unsupported composite mode 'bogus'; expected flux2|classic`; `flux2` / `classic` → **404**; logout 200.
+
+**Results, hardening pass (after the security-reviewer's notes; verbatim counts, log paths).**
+- *01:53:54 → 01:54:02 Objects7 `install`* exit 0 (`C:/tmp/o7-p28b-install.log`), jar md5 `ccfba879df665789a3dfd43b5ee19b2c`.
+- *01:54 → 01:55 Objects7* `mvn -o -pl AccountManagerObjects7 -Dtest=TestFlux2Composite,TestKontextDeprecation,TestPbKontextDisable -DskipTests=false test`
+  → **`Tests run: 47, Failures: 0, Errors: 0, Skipped: 0`, BUILD SUCCESS** (`C:/tmp/o7-p28b.log`): `TestFlux2Composite` 36/36 (the new
+  `builderRefusesTheRetiredKontextMode` logged the builder's refusal twice — `kontext` and `" Kontext "`), `TestKontextDeprecation` 8/8,
+  `TestPbKontextDisable` 3/3 (72.3 s; the `.39` inventory timeout in the flux2 control). Same `[LLM-GATE] route=litellm tier=local …
+  server=http://127.0.0.1:4000` line = the in-stack Ollama container through LiteLLM, not Azure; no case called the LLM.
+- *01:55 → 01:56 Service7* `mvn -o -pl AccountManagerService7 -Dtest=TestChatSceneKontextDisable,TestChatSceneRenderPath -DskipTests=false test`
+  → **`Tests run: 13, Failures: 0, Errors: 0, Skipped: 0`, BUILD SUCCESS** (`C:/tmp/s7-p28b.log`): `TestChatSceneKontextDisable` 9/9,
+  `TestChatSceneRenderPath` 4/4; the WARN line now reads `unsupported compositeMode 'a?bxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...' requested by chatkontextuser`.
+- *01:56 deploy* — see the §3 probe block (jar `ccfba879…`, `ChatService.class` `7db34537…`, `dist` `46e82493…`, all md5 local == container,
+  `javap` shows `boundedEcho`, 0 Unresolved; `docker restart` → 403 probe after 15 s).
+- *01:57 → 01:58 Playwright* same command, `-g "item 14\)"` → **5 passed (2.9 s)** (`C:/tmp/pw-p28b-chat.log`): the four above plus
+  `unsupported compositeMode is echoed sanitised and capped`. No `[e2e-llm]` line (no LLM call). SD-gated items still not run.
+- *01:58 curl proof as `e2etest_shared`* (`C:/tmp/curl-p28b.log`, login 200): `kontext` → **400** retired message; `""` + `useKontext:true` →
+  **409** retired message; `"a\nb"+40×x` → **400** `Unsupported composite mode 'a?bxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...'; expected flux2|classic`;
+  `flux2` → **404** `Chat request not found`; logout 200.
+
+**Reviews.**
+- *01:38 → 01:43 — security-reviewer (REQUIRED; read-only) → PASS, no blocking finding; three non-blocking hardening notes.* Confirmed, each
+  re-read against the source before recording (line numbers are the post-hardening ones): `@RolesAllowed({"admin","user"})` at
+  `ChatService.java:1417` unchanged; both gates (:1436 → 400, :1459 → 409) read only the parsed body and `user.name` for logging — `objectId`
+  is first consulted at :1475 inside `AccessPoint.find` with the org condition, and a kontext body answers 400/409 for every objectId owned or
+  not, so the pre-lookup reply is no oracle; `escJson` (:1043) is the pre-existing helper (escapes `\`, `"`, CR/LF/tab, <0x20) and
+  `KONTEXT_RETIRED_MESSAGE` is fixed ASCII; the `scopeLabel` appended by `PbRenderPath.requireEnabledCompositeMode` is the stored node
+  `scopeRef` (executor) or a `sceneObjectId` constrained by the route regex `[0-9A-Za-z\-]+` (`PictureBookService.java:712`) and already
+  resolved to an existing scene (PB1) — nothing new reflected unescaped; PB1 throws before Stage 0 and the existing catch stamps the scene via
+  `updateSceneStatus(user, …)`, the executor's run row is closed FAILED by `executeNodeRun`'s existing catch, no new write path, no admin/olio
+  principal, and the gate runs on the post-override config (`applyOverrides` :9618 precedes :9705); `resources/olio/llm/` clean (no prompt
+  file in the diff); no URL/key/token added; tests act as non-admin users (`org.getAdminUser()` only as the creating principal in the standard
+  `getCreateUser` idiom). **Residual Kontext-path callers, every one with a verdict:** `buildSceneRequest(` — `PbNodeExecutor.java:1144`
+  gated (:1135), `ChatService.java:1615` gated (:1436/:1459), `:1637` literal CLASSIC, `PictureBookUtil.java:10295` literal FLUX2;
+  `SWUtil.newKontextSceneTxt2Img` — `SceneCompositeUtil.java:282` (inside the kontext branch, now behind the builder's own refusal at :218)
+  and `PictureBookUtil.java:10348` inside `if (useKontext)` whose mode was gated at :9705 → unreachable; `SDUtil.stitchSceneImages` at
+  `PbNodeExecutor.java:1014` is pure Java2D (IMAGE_STRIP artifact, no SD call); `ModelResolver.MODE_KONTEXT` (:35) → `strategyForMode`
+  UNKNOWN and the Kontext checkpoint family is `enabled=false` (`RendererCapabilities.java:42`) → FAMILY_DISABLED refuses;
+  `SWUtil.defaultKontextModel()` only from `newKontextSceneTxt2Img`; Agent7 and Console7 — no matches; no main-code setter of
+  `compositeMode`/`useKontext`. Hardenings: (1) the unsupported-mode branch logged the raw user-supplied `requestedMode` unbounded (CR/LF
+  could forge a log line) and reflected it untruncated → **applied** as `boundedEcho` (:1032-1037; ⚠ 167 p); (2) the three gates were
+  load-bearing — `buildSceneRequest("kontext", …)` stayed public with no internal refusal, so a future caller could re-enable Kontext silently →
+  **applied**: `buildSceneRequest` itself now refuses a retired mode (:218-221; ⚠ 167 q); (3) `params.compositeSdConfig.compositeMode` is
+  never consulted as a mode (pre-existing, not a bypass) → ask 167 r.
+- *01:38 → 01:43 — verifier (read-only; its own serial Maven runs) → PASS, two doc findings fixed in-task, one design-level finding
+  recorded.* Ran `mvn -o -pl AccountManagerObjects7 -Dtest=TestPbKontextDisable,TestKontextDeprecation,TestFlux2Composite,TestIllustrationModelPolicy
+  -DskipTests=false test` → **61 run / 0 fail / 0 err / 10 SD skips** (`C:/tmp/o7-p28-verify.log`; surefire XML stamps 01:41-01:43; the same
+  `[LLM-GATE] route=litellm tier=local …` line = the in-stack Ollama container through LiteLLM, not Azure) and `mvn -o -pl AccountManagerService7
+  -Dtest=TestChatSceneKontextDisable,TestChatSceneRenderPath -DskipTests=false test` → **12 run / 0 fail / 0 err** (`C:/tmp/s7-p28-verify.log`).
+  It proved the `TestPbKontextDisable` sentinel reachable (case03 log `thrown=RuntimeException: P2-8 sentinel: SD createSceneImage reached`;
+  case01 `status=409 … sdCalls=[]`), confirmed the 167 k mechanism from the source (`BaseRecord.checkField` :422-443 →
+  `RecordFactory.newFieldInstance`; `configModel.json:321 "default":"flux2"`), and resolved the count discrepancy (⚠ 167 u: my "104" included
+  `TestModelResolver` 41 + `TestPbNodeExecutorTypes` 2; its four-class selection is 61). Findings: (1) the spec comment and design marker
+  said `useKontext=true` with "no `compositeMode`" → 409, but an absent key passes (404) — corrected to "blank or null" in both; (2) the two
+  `kontextModel` descriptions still invited "opting into compositeMode=kontext" — reworded (`configModel.json:393`, `modelDef.js:10388`);
+  → ⚠ 167 s. (3) design-level, recorded not fixed (⚠ 167 t): (a) the PB1 `promptOverride` branch (`PictureBookUtil.java:9650-9689`) returns
+  before the :9705 gate, so a kontext-configured book with an override renders a direct txt2img (not Kontext — no retired path runs, but the
+  refusal is not uniform); (b) `compositeMode=kontext` is refused only at render time — a `PATCH olio.sd.config` or a node `configOverride`
+  can still persist it; (c) `executeComposite` reads the binding artifact bytes before the :1135 gate (cost, not a bypass).
+- *01:59 → 02:01 — verifier re-check of the hardening diff (source + logs; no new Maven/Playwright run of its own) → PASS.* Logs re-read:
+  `C:/tmp/o7-p28b.log` 47/0/0/0 (36+8+3) BUILD SUCCESS with the same `tier=local` line (in-stack container via LiteLLM); `C:/tmp/s7-p28b.log`
+  13/0/0 (9+4) BUILD SUCCESS; `C:/tmp/pw-p28b-chat.log` 5 passed; `C:/tmp/curl-p28b.log` shows the capped echo live. (a) `boundedEcho` +
+  `escJson`: ASCII controls 0x00-0x1F/0x7F become `?`, `\` and `"` are still escaped, nothing < 0x20 survives — the JSON body cannot be
+  broken; the Java test literal `"a\\nb"` reaches the route as a real newline through the deserializer, and 3 + 29 = 32 pins the cap. Two
+  residual, non-breaking edges recorded as notes (⚠ 167 v): `\p{Cntrl}` is ASCII-only, so C1 controls (U+0085) and U+2028/U+2029 reach the
+  WARN line raw (line terminators for some log viewers; legal raw inside a JSON string), and `substring(0, 32)` can split a surrogate pair
+  (Jersey's UTF-8 encoder replaces the lone surrogate with `?`; body stays valid). `user.get("name")` on the same WARN line is unsanitised
+  but pre-existing and constrained at user creation. (b) the `TestFlux2Composite` rewrite is **not a weakening**: `builderRefusesTheRetiredKontextMode`
+  (:634) drives the real builder with the fixture bytes for `MODE_KONTEXT` and `" Kontext "` and asserts null; the prompt-override contract it
+  used to carry stays pinned on flux2 (:612); no other test called `buildSceneRequest` with kontext; zero coverage of the kontext branch is
+  the correct state for an unreachable path until Phase 10 deletes it. (c) no flux2/classic regression: `:218-221` matches only the
+  trimmed, lower-cased `kontext`; null/flux2/classic fall through unchanged; the ChatService classic fallback (:1637) and the executor
+  (:1144) pass gated `resolveMode` results, so the builder refusal is defence in depth only — it now also refuses `" Kontext "`, which
+  previously fell to classic (harmless; callers pass normalised modes). Doc fixes (spec, design :2040, `configModel.json:393`,
+  `modelDef.js:10388`) match its findings 1-2.
+
+**Status.** P2-8 is **Verifier PASS (twice) + security-reviewer PASS, hardenings applied, redeployed and re-proven live; quick gates ⚠
+batched forward (run 11)** — not DONE (yours, as for P2-1…P2-7). SD-gated cases (`TestIllustrationModelPolicy` ×10, Playwright items 15 and
+"14 live") were skipped on the `.39` outage and are not counted as passes. Next: P2-9 (Ux752 style editor, estimate display, plan inspector,
+model-missing message — §26; ⚠ §6.C 168; carry asks 165 e / 165 n / 166 ab).
+
+### 10.9 P2-9 — Ux752 style editor, estimate display, plan inspector, model-missing message (§26) — 2026-10-15 02:00 → 06:23 local
+
+**Scope.** Design §26's four Phase-2 screens over routes that already exist (P2-2 `GET /olio/illustration/models`, P2-4 `/style`,
+`/style/lock`, `/scene/{s}/plan`, `/artifact/{oid}`, P2-5 `/scene/{s}/render-plan`): a book style editor, the estimate display + plan
+inspector in the reader's "Plan & generate" dialog, the same inspector on the canvas node detail and the review page, and the
+model-missing message in the style editor's availability column. **No server code changed** (Objects7/Service7 untouched; no new REST
+route → no security-reviewer pass for this task; the phase pass in P2-10 covers the new client surface). Planner (`C:/tmp/p29-plan.md`)
+→ architect PASS WITH CORRECTIONS (folded; ⚠ §6.C 168) → implement → live probes as `e2etest_shared` → Vitest → Playwright →
+test-author / verifier. Reference UI read first: `features/chapBook.js`, `workflows/pictureBook.js`, `features/pictureBookReview.js`,
+`components/SdConfigPanel.js`, `features/pictureBook.js` (reader header + V3 controls), `features/pictureBookWorkflow.js` (canvas).
+
+**Changes (Ux752 only).**
+- NEW `features/pictureBookStyle.js` (728 lines): route `/picture-book/:bookObjectId/style` (spread into `pictureBook.js` routes :30;
+  reached from the reader header's new `pb2-style-link`, :2070). Header (back, book slug, own-style name, `Locked by <hop>` badge,
+  Lock/Unlock, Save, refresh); inheritance chain strip; fields description / exclusions / palette / page format (+ custom W×H) / quality
+  preset / photoreal, each with an "inherited from <hop>" marker from `effective.sources`, a clear link (PUT `null`) and a sparse PUT of
+  only the dirty keys; six-row task-model table (`STYLE_TASKS`) with the live availability column (`pb2-style-task-availability-<task>`:
+  `checking…` → resolved model / `installed-model list unavailable: …` / **`Not in the installed-model list`** when the chosen model is
+  absent from a non-empty inventory) and per-task model override; render settings (sdConfig) section in four modes (own / inherited /
+  book / none — ⚠ 168 c); reference-images placeholder (⚠ 168 d); locked state disables everything and shows a banner (⚠ 168 b —
+  the own render-settings panel included since the verifier round: `<fieldset disabled>` `pb2-style-sd-fields`, 168 ac).
+  `loadStyle` → `loadBook` + `loadTaskInfo` (seq-guarded; one `portrait` probe first, reused for the other five rows when the inventory
+  is unavailable — ⚠ 168 a). Testids `pb2-style-*`.
+- NEW `components/PbPlanInspector.js` (150 lines): `estimateText(e)` (`N scene(s) · S stage(s) · V variant(s) · K steps` + `~time` when
+  measured, else the server's `source`), strategy line (name, stages `A → B`, planVersion, purpose, reason), kv rows (preset, steps,
+  variants, upscale, QA, canvas, config model/sampler/CFG/seed), models table (`tr[data-task][data-degraded]`, model or `unresolved`,
+  reason, `degraded` badge), compiled stages (`pb2-plan-stage[data-stage]`: `~N tokens`, prompt `pre`, negative), degradations
+  (`li[data-code]`: code badge + `[stage] message`, else `None.`), `configNotApplied`, style / revision hash / photoreal / location /
+  raw intent / content hash. Testids `pb2-plan-*`.
+- `workflows/pictureBookWorkflow.js`: `nodeView` (:69), `STYLE_FIELD_KEYS` / `STYLE_PAGE_FORMATS` / `STYLE_QUALITY_PRESETS` /
+  `STYLE_TASKS` (:626-629), `getStyle` / `putStyle` / `lockStyle` / `planScene(book, scene, body)` / `renderPlanScene(book, scene)` (no
+  body) / `getArtifact` (:632-660), `listModelsForTask(task)` (:665, `GET /rest/olio/illustration/models?task=`), `loadNodePlan(book,
+  artifacts)` (:743: newest `renderPlan` revision → `GET /artifact` → parsed plan). Errors keep the server text: `(status) body.error`.
+- `features/pictureBook.js` (:1497-1611): the reader's V3 "Plan & generate" control (`pb2-plan-render`, :1992) opens a dialog
+  (`pb2-plan-dialog`) that POSTs `/plan` (body `{preset}` only when a preview preset is chosen — preview-only, labelled; ⚠ 168 f), shows
+  scene title, strategy, preset, canvas, `Estimate: …`, degradations (`code: message`), "View plan" → `PbPlanInspector`, and a live
+  Generate action (`pb2-plan-generate` → `/render-plan`; `Generating…` while in flight; the server's `(status) message` verbatim in
+  `pb2-plan-error` while the dialog is open / as a toast when closed; success → close, toast `Scene rendered (artifact <oid>)`, pages
+  refreshed). `pb2LoadPlan` is seq-guarded so a preset change discards a slower earlier plan.
+- `features/pictureBookWorkflow.js` (canvas, :438, :889-896): node detail shows "View plan" (`pbwf-node-plan-toggle`) only when
+  `nodeDetails.artifacts.renderPlan` is non-empty (⚠ 168 h); loads on demand; `rev N · <oid>` label; `pbwf-node-plan-error`.
+  Test seam `__setWorkflowStateForTest` extended (Vitest only; ⚠ 168 i).
+- `features/pictureBookReview.js` (:30-41, :252-260): per-node "Plan" expander (`pb2-review-plan-toggle` → `nodeView` → newest
+  `renderPlan` → `GET /artifact` → inspector in `pb2-review-plan`; lazy, once per node; ⚠ 168 g).
+- `components/SdConfigPanel.js` (:242-252): new `hideFields` attr (the style editor hides `steps` because the quality preset owns it —
+  166 ab).
+- Tests: NEW Vitest `src/test/pictureBookStyle.test.js` (578 lines, 40) + `src/test/pictureBookPlanInspector.test.js` (456 lines, 20);
+  NEW Playwright `e2e/pictureBookV3StyleEditor.spec.js` (690 lines, 6 tests — tests 1-5 mine, test 6 inheritance/override/parent-lock
+  added by the test-author, its own-lock render-settings tail mine after the verifier round) + `e2e/pictureBookV3PlanInspector.spec.js` (377 lines, 4 tests, test 4 SD-gated). Vitest reaches the dialog
+  through `vi.spyOn(Dialog, 'open')` (⚠ 168 j).
+
+**Live measurements** (before coding; as `e2etest_shared`; `C:/tmp/p29-probe.sh|.log`, `p29-probe2.sh|.log`, `p29-probe3.sh|.log`,
+`p29-put-*.json`, `p29-sdcreate.json`, `p29-sdfull*.json`, `p29-template.json`, `p29-plan2.json`, `p29-wf.json`, `p29-art.json`): the full
+style / sdConfig / plan / render-plan / artifact / workflow contract is in ⚠ §6.C 168's measured-facts paragraph. Outage timing
+(`C:/tmp/p29-plan-time.sh|.log|.json`, 04:08 → 04:12): `POST /plan` **211.8 s**, `GET /olio/illustration/models?task=sceneDirect`
+**42.1 s** — both HTTP 200, both correct; the time is the server's uncached inventory read against the unreachable `.39` (ask 168 w).
+
+**Results.**
+- Vitest: first run **7 failed / 53 passed** (`C:/tmp/p29-vitest1.log`) — a test-harness defect only (the assertions read `vnode.children`
+  as a string; Mithril normalises a string child into a `#` text vnode) → `textOf()` helper (`C:/tmp/p29-fixtext.py`) → **60/60**
+  (`C:/tmp/p29-vitest2.log`); full suite **92 files / 1222 tests passed** (`C:/tmp/p29-vitest.log`, 03:27); after the one-line
+  `lockedBy` badge fix (⚠ 168 b) **60/60** again (`C:/tmp/p29-vitest3.log`, 03:54); full suite re-run after that edit **92 files /
+  1222 tests passed, exit 0** (`C:/tmp/p29-vitest-full.log`, 04:55 → 04:56).
+- `npx vite build` exit 0 (`C:/tmp/p29-build1.log` 03:03, `p29-build2.log` 03:27, `p29-build3.log` 03:55 — `✓ built in 5.57s`); dist
+  copied to `am7test-am7-1:/opt/ux752/dist/`, md5 local == container for `index.html`, `pictureBook-CUrLAuN4.js`,
+  `routes-DFKyNu-_.js` (the first md5 check printed MISMATCH because Git Bash rewrote `/opt/...` into a Windows path; redone with
+  `MSYS_NO_PATHCONV=1`).
+- Playwright `pictureBookV3StyleEditor.spec.js` (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 … --workers=1 --project=chromium
+  --retries=0`): run 1 red on test 1 — my 30 s wait for the availability cell while the server's inventory read took 42 s (test
+  defect); run 2 (`C:/tmp/pw-p29-style.log`, 04:01 → 04:08) **4 passed, 1 failed** — test 5 hit the 300 s test budget inside the direct
+  `POST /plan` (211.8 s measured; test defect); budgets raised (describe 1200 s, plan request 900 s, elapsed logged); run 3
+  (`C:/tmp/pw-p29-style2.log`, 04:14 → 04:24) **5 passed (10.0 m), exit 0**: `[p29-style-1] portrait availability answered after 74752 ms`,
+  `probes sent: ["/rest/olio/illustration/models?task=portrait"]` (one probe, ⚠ 168 a proven); `[p29-style-2] live inventory models
+  listed: 0 — the model-missing hint is Vitest-only on this run`; `[p29-style-3]` the three 400 texts verbatim (`pageFormat must be one
+  of PORTRAIT_PAGE, LANDSCAPE_PAGE, SQUARE, CUSTOM`; `Unknown style field 'name'; accepted: [sdConfig, description, exclusions,
+  palette, taskModels, pageFormat, customWidth, customHeight, qualityPreset, photoreal, parent]`; `taskModels key 'banner' is not a
+  model task; accepted: portrait, location, sceneDirect, inpaint, harmonize, upscale`); test 4 lock → badge names the hop, 409
+  verbatim, unlock restores; `[p29-style-5] created olio.sd.config 31a6f0c9-… p29-style-mv9bnrae-style-sd-mv9bqnwg …
+  model=juggernautXL_ragnarokBy.safetensors`, `POST /plan answered in 459518 ms`, `/plan canvas={"width":512,"height":512}
+  preset={"preset":"DRAFT","steps":20,"variants":1,"upscale":false,"qa":"OFF"} estimate={…,"steps":20,"measured":false,"source":"NONE: no
+  measurement for this server/family yet"} config.model=juggernautXL_ragnarokBy.safetensors` (seed 4242 echoed; Unlink clears).
+  Screenshots `test-results/p29-style/01-fresh.png`, `02-dirty.png`, `02-saved.png`, `04-locked.png`, `05-sd-own.png` opened and
+  checked (05: own render settings linked, seed 4242, `steps` hidden, Save disabled after save, Unlink present).
+- Playwright `pictureBookV3PlanInspector.spec.js`: run 1 (`C:/tmp/pw-p29-plan-run1.log`, 04:25 → 04:29) red on test 1 — strict-mode
+  violation, `getByText(/^Page 1 of \d+$/)` matched the reader's header span and page footer (test defect; `.first()` as in
+  `pictureBookReaderParity.spec.js:63`); the direct `POST /plan` in that run answered in 84216 ms. Run 2 (`C:/tmp/pw-p29-plan-run2.log`,
+  04:31 → 04:41) **1 passed, 1 failed, 2 skipped (9.4 m)** — test 1 green (`[p29-plan] dialog planned in 118274 ms`), test 2 red on my
+  expected 503 text: `Expected pattern: /^\(503\) Renderer inventory unavailable; cannot verify a model for scene 1 before rendering - /`
+  vs `Received string: "(503) … for scene 0 before rendering - Model for LOCATION is unresolved: INVENTORY_UNAVAILABLE (Could not read the
+  installed-model list from the SD server) (plan artifact 5486c6…)"` — the server names the scene by its `sceneIndex` (the fixture's is 0),
+  not by its 1-based page number (test defect; assertion now built from `fx.scene.sceneIndex`). Run 3 (`C:/tmp/pw-p29-plan.log`, 04:41 →
+  04:50) **3 passed (9.3 m), 1 skipped, exit 0**: `[p29-plan-1] direct POST /plan in 84200 ms: strategy={"name":"TEXT_ONLY","stages":
+  ["BASE"],"reason":"TEXT_ONLY: no referenced actors"} estimate={"scenes":1,"stages":1,"variants":2,"steps":20,"measured":false,…}`,
+  `[p29-plan] dialog planned in 118317 ms` / `118185 ms` (STANDARD, then DRAFT re-plan — 512×512, preview-only note), `[p29-plan-2]
+  render-plan answered in 84699 ms`, `[p29-plan-2] dialog error: (503) Renderer inventory unavailable; cannot verify a model for scene 0
+  before rendering - Model for LOCATION is unresolved: INVENTORY_UNAVAILABLE (Could not read the installed-model list from the SD server)
+  (plan artifact 7b1239e0-1991-4601-ab24-896db391c4eb)` — dialog stays open, Generate re-enabled; `[p29-plan-2] plan artifact
+  7b1239e0-… (0 bytes) on node bd06098a-…` (`artifactText` parses, `role === 'renderPlan'`; `byteLength` 0 — 168 ab); test 3 canvas
+  "View plan" on the FAILED `render_plan@10b9b999` node → `rev 1 · 7b1239e0-…` + inspector; test 4 SD-gated **skip**. Book
+  `p29-plan-mv9cma7y` (id 1021 / `7f0c6035-…`) left in place as the record. Screenshots `test-results/p29-plan/01-dialog-inspector.png`
+  (STANDARD 1024×1024, `Estimate: 1 scene · 1 stage · 2 variants · 20 steps · NONE: no measurement…`, `MODEL_SUBSTITUTED` degradation,
+  inspector open, Model (config) `OfficialStableDiffusion/sd_xl_base_1.0.safetensors`), `01-dialog-draft.png` (DRAFT 512×512),
+  `02-generate-503.png` (503 verbatim inside the dialog), `03-canvas-plan.png` (node detail, `Hide plan`, inspector) all opened and
+  checked. The last screenshot also shows two things outside P2-9, recorded not fixed: the toast `Save position failed: saveCanvas
+  failed: 500` on the node click (pre-existing canvas defect — 168 z, ask 13) and `No estimate` for the persisted plan (168 aa, ask 14).
+- No LLM call in any P2-9 test (the plan compiler is template-based; no `[e2e-llm]` line); SD = `.39` DOWN throughout (host `http=0`,
+  in-container `000`) so test 4 of the plan spec (Generate success + review "Plan") is an SD-gated **skip, not a pass**.
+- test-author: **all four files REAL** (Vitest mocks only the fetch/toast/generic-model seams and drives the real renderers via the
+  test seams; both Playwright specs mock nothing); one live coverage gap found and closed with `.39` down — the inherited/multi-hop
+  path (`Inherited from <hop>` tags, inherited render settings read-only + "Create book override", lock glyph on an ancestor hop, back
+  arrow) was Vitest-only → NEW **test 6** in `pictureBookV3StyleEditor.spec.js` (seeds a second STORY book as the parent over REST,
+  `PUT {parent:{objectId}}`, asserts both hops and the tags only on parent-sourced fields, the override copies the record (seed 4242)
+  into this book's group and `PUT {sdConfig}`, a parent lock → REST 409 + editor toast verbatim with the draft kept and nothing
+  persisted, unlock + `PUT {parent:null}` detaches, back arrow returns to the reader). Runs (serial, one Playwright process):
+  `npx vitest run src/test/pictureBookStyle.test.js src/test/pictureBookPlanInspector.test.js` → `Test Files 2 passed (2)`, `Tests 60
+  passed (60)` (`C:/tmp/p29-ta-vitest.log`, 04:58); style spec run 4 (`C:/tmp/pw-p29-ta-style.log`, 05:06 → 05:16) **5 passed, 1 failed
+  (10.1 m)** — test 6 red on the test-author's own expectation (`Expected: "…is locked - unlock it before editing (POST /{book}/style/lock
+  {\"locked\":false})"` vs `Received: "Style 'p29-parent-mv9dvnp1-style' (BOOK, b1fcb935-…) is locked - unlock it before editing"` — the hint
+  is own-lock only, `PbServiceFacade.putStyle:2555`; test defect, assertion fixed; the aborted run's parent lock/link released over REST as
+  `e2etest_shared`); run 5 (`C:/tmp/pw-p29-ta-style2.log`, 05:21 → 05:31) **6 passed (10.2 m), exit 0** (`[p29-style-1] portrait
+  availability answered after 74877 ms`, `[p29-style-6] override olio.sd.config 56a9bc5c-… p29-style-mv9e20oj-style-override-mv9eew64
+  seed=4242 model=juggernautXL_ragnarokBy.safetensors`). Screenshots `test-results/p29-style/06-inherited.png` (two hops, `Inherited
+  from p29-parent-…-style` on Exclusions / Palette / location only) and `06-parent-locked.png` (lock glyph on hop 2, dirty `child
+  palette`, toast `(409) Style 'p29-parent-mv9eesbm-style' (BOOK, ad810a98-…) is locked - unlock it before editing`) opened and checked —
+  both are clipped at the inner scroll container, so the render-settings section is below the fold; the assertions are DOM-based.
+  Still not coverable live: the model-missing hint (inventory count 0), Generate success + review "Plan" (SD-gated), the `book`
+  sdConfig mode (needs the book FK). No product defect found; I corrected one stale route reference in the spec header (`P2-4`, not
+  `P2-7/P2-8`).
+- verifier: **PASS WITH NOTES** (05:33 → 06:00), then **PASS** on the delta re-check (06:21). Independent runs: `npx vite build` `✓ built in 5.56s` exit 0 (`C:/tmp/p29-ver-build.log`); full Vitest **92 files / 1222 passed, exit 0, no `Errors` line** (`C:/tmp/p29-ver-vitest.log`); Playwright plan spec **3 passed (9.3 m), 1 skipped** (SD-gated test 4, a skip not a pass) exit 0 (`C:/tmp/pw-p29-ver-plan.log`, 05:39 → 05:49; direct `POST /plan` 84 s, dialog plan 117–119 s, `/render-plan` 503 after 85 s — timings, not thresholds); Playwright style spec **6 passed (10.3 m)** exit 0 (`C:/tmp/pw-p29-ver-style.log`, 05:50 → 06:00; test 5's `/plan` took 459 s). Re-read every claimed log verbatim (match). Screenshots `02-generate-503.png` (dialog kept open with the verbatim `(503) Renderer inventory unavailable; cannot verify a model for scene 0 …`) and `06-parent-locked.png` (two hops, parent lock glyph, inherited tags on exclusions/palette/location only, toast `(409) Style 'p29-parent-…-style' (BOOK, …) is locked - unlock it before editing`) opened and described correctly. Diff review: no regression to the V1/V2 reader paths (additions only, `v3`-gated), sparse PUT confirmed (`buildStylePut` + exact-body asserts), seq guard + Generate-disabled-while-loading confirmed, server messages compared verbatim, no `test.only`/`fixme`, `test.skip` only on the documented gates, no admin use, no test-only product code. Findings: (1) Low-Med — own-mode `SdConfigPanel` + `Save render settings` not disabled under the own lock (`pictureBookStyle.js:574-576`); (2) Low — header Save gated on `dirty` only (pre-lock draft stays saveable; 409 verbatim, so safe); (3) Low — no Vitest for a stale `/plan` overtaking a newer preset; (4) Info — the tree carries the uncommitted P2-4…P2-8 changes. **(1) and (2) fixed inside the task (⚠ 168 ac): `<fieldset disabled>` `pb2-style-sd-fields` + `|| locked` on both Save buttons; Vitest `pictureBookStyle.test.js:314-336` extended, Playwright test 6 extended (own lock → fieldset / Seed / Save render settings / Unlink disabled, `06-own-locked-sd.png`; Unlock restores).** Post-fix runs: Vitest 2 files / 60 (`C:/tmp/p29-fix-vitest.log`), full **92 / 1222, exit 0** (`C:/tmp/p29-fix-vitest-full.log`, 06:21 → 06:22), build exit 0 (`C:/tmp/p29-build4.log`, `dist` md5 local == container), style spec **6 passed (10.2 m), exit 0** (`C:/tmp/pw-p29-fix-style.log`, 06:09 → 06:19). Delta re-check by the verifier: PASS — fieldset wraps only the own branch, the other SD modes untouched, `SdConfigPanel` change tracking unaffected, the new assertions fail if the fieldset is not disabled; its own re-runs `pictureBookStyle.test.js` 40/40 (`C:/tmp/p29-ver-fix-vitest.log`), build `✓ built in 6.49s` (`C:/tmp/p29-ver-fix-build.log`). (3) recorded as a default (168 ad), (4) expected (168 ae).
+- Ux752 quick gate: `LOOP_MODULE=AccountManagerUx752 bash .claude/loop/verify.sh --quick` → build PASS, test PASS, lint PASS, **`VERIFY_OK`**, exit 0 (`C:/tmp/ux752-gate-p29.log`, 06:20:51 → 06:21:15, after the lock fix; the gate discards its per-step output, so the Vitest count is from the separate full run `C:/tmp/p29-fix-vitest-full.log` 92 / 1222). Playwright is not part of `--quick`; the P2-10 full Ux752 gate covers it.
+
+**Status.** P2-9 is **Verifier PASS (+ PASS on the lock-fix delta); Ux752 quick gate `VERIFY_OK` (06:21); quick gates for the phase ⚠ batched forward (run 11)** — **not DONE (yours, as for P2-1…P2-8)**. Ux752 only — no server code, no new route, no model change — so no task-level architect/security pass (the P2-10 phase passes cover the client surface). Live coverage as `e2etest_shared` against the Docker stack with `.39` DOWN throughout: style spec 6/6 (incl. inheritance / override / parent lock / own lock on render settings), plan spec 3/3 + the SD-gated Generate-success case **skipped, not passed**; `Not in the installed-model list` and the `book` sdConfig mode are Vitest-only until `.39` is back / a book carries its own sdConfig. ⚠ §6.C 168 (defaults a–m + ac–ae; asks (1)–(14) incl. the pre-existing canvas `saveCanvas` 500 (168 z) and the persisted plan's missing `estimate` (168 aa)). Next: P2-10 (phase gate run 11 — Objects7 on `C:/tmp/o7verify`, Service7, full Ux752 gate incl. Playwright; architect + security phase passes; phase verifier; end-of-phase report → STOP).

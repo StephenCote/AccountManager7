@@ -87,6 +87,9 @@ public class PbPipelineUtil {
 	public static final String ROLE_COMPOSITE = "composite";
 	public static final String ROLE_CHARACTER = "character";
 	public static final String ROLE_SOURCE_TEXT = "sourceText";
+	public static final String ROLE_RENDER_PLAN = "renderPlan";
+	/** The image a RENDER_PLAN node's BASE stage produced (V3 §11, P2-5); same node as its {@code renderPlan} JSON. */
+	public static final String ROLE_BASE = "base";
 
 	private PbPipelineUtil() {
 		/// static utility
@@ -687,20 +690,7 @@ public class PbPipelineUtil {
 	 * pass that silently returns a different size is exactly the class of defect this catches.
 	 */
 	public static int[] decodeDimensions(byte[] bytes) {
-		if(bytes == null || bytes.length == 0) {
-			return new int[] {0, 0};
-		}
-		try {
-			java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(bytes));
-			if(img == null) {
-				return new int[] {0, 0};
-			}
-			return new int[] {img.getWidth(), img.getHeight()};
-		}
-		catch(Exception e) {
-			logger.warn("Could not decode image bytes to measure them: " + e.getMessage());
-			return new int[] {0, 0};
-		}
+		return org.cote.accountmanager.olio.illustration.ImageDims.decode(bytes);
 	}
 
 	// ─────────────────────────────── node completion ───────────────────────────────
@@ -936,6 +926,11 @@ public class PbPipelineUtil {
 
 	public static String compositeHandle(String sceneObjectId) {
 		return "composite@" + shortRef(sceneObjectId);
+	}
+
+	/** The scene's RENDER_PLAN node (V3 §12, P2-5): one per scene, beside its landscape/composite nodes, never {@code scene.sceneNode}. */
+	public static String renderPlanHandle(String sceneObjectId) {
+		return "render_plan@" + shortRef(sceneObjectId);
 	}
 
 	/**

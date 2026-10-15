@@ -50,13 +50,15 @@ public class TestPbNodeExecutorTypes extends BaseTest {
 		OlioModelNames.use();
 		EnumSet<PbNodeTypeEnumType> expectedExecutable = EnumSet.of(
 			PbNodeTypeEnumType.PORTRAIT, PbNodeTypeEnumType.LANDSCAPE, PbNodeTypeEnumType.SCENE_PROMPT,
-			PbNodeTypeEnumType.LANDSCAPE_PROMPT, PbNodeTypeEnumType.REFERENCE_STRIP, PbNodeTypeEnumType.COMPOSITE);
-		assertEquals("the declared executable set is exactly the six implemented stages", expectedExecutable, PbNodeExecutor.EXECUTABLE_TYPES);
+			PbNodeTypeEnumType.LANDSCAPE_PROMPT, PbNodeTypeEnumType.REFERENCE_STRIP, PbNodeTypeEnumType.COMPOSITE,
+			PbNodeTypeEnumType.RENDER_PLAN);
+		assertEquals("the declared executable set is exactly the seven implemented stages", expectedExecutable, PbNodeExecutor.EXECUTABLE_TYPES);
 		assertFalse("null is never executable", PbNodeExecutor.isExecutable((PbNodeTypeEnumType) null));
 		assertFalse("a null node is never executable", PbNodeExecutor.isExecutable((BaseRecord) null));
 		List<String> names = PbNodeExecutor.executableTypeNames();
-		assertEquals(6, names.size());
+		assertEquals(7, names.size());
 		assertTrue(names.contains("PORTRAIT"));
+		assertTrue(names.contains("RENDER_PLAN"));
 
 		for(PbNodeTypeEnumType t : PbNodeTypeEnumType.values()) {
 			BaseRecord node = RecordFactory.newInstance(OlioModelNames.MODEL_PB_NODE);
@@ -148,7 +150,7 @@ public class TestPbNodeExecutorTypes extends BaseTest {
 					}
 				}
 			}
-			assertEquals("six executable types", PbNodeExecutor.EXECUTABLE_TYPES.size(), executableCount);
+			assertEquals("seven executable types", PbNodeExecutor.EXECUTABLE_TYPES.size(), executableCount);
 		}
 		finally {
 			DeleteResult res = PbDeleteUtil.deleteBookComplete(owner, bookOid);

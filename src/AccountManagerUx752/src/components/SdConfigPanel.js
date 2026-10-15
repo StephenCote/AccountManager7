@@ -239,6 +239,8 @@ function instConfig(inst) {
  *   models  — array of SD model names/objects (from /rest/olio/sdModels)
  *   loras   — optional array of LoRA names
  *   onChange — callback after any field changes
+ *   hideFields — optional array of core field names to omit (e.g. ['steps'] where the V3 quality
+ *             preset owns the step count and a visible slider would be a second, ignored source)
  *   compact — kept for back-compat; layout is identical (single source of truth)
  */
 const SdConfigPanel = {
@@ -247,6 +249,7 @@ const SdConfigPanel = {
         let models = vnode.attrs.models || [];
         let loraList = vnode.attrs.loras || [];
         let onChange = vnode.attrs.onChange;
+        let hidden = new Set(Array.isArray(vnode.attrs.hideFields) ? vnode.attrs.hideFields : []);
 
         if (!config) return null;
 
@@ -333,7 +336,7 @@ const SdConfigPanel = {
             field("Model", modelSelectInput(config, "model", modelNames, onChange)),
             field("Refiner Model", modelSelectInput(config, "refinerModel", modelNames, onChange)),
 
-            field("Steps: " + rangeValue(config, "steps", 1),
+            hidden.has("steps") ? null : field("Steps: " + rangeValue(config, "steps", 1),
                 rangeInput(config, "steps", 1, 100, 1, onChange, 20)),
             field("Refiner Steps: " + rangeValue(config, "refinerSteps", 1),
                 rangeInput(config, "refinerSteps", 1, 100, 1, onChange, RANGE_DEFAULTS.refinerSteps)),
@@ -408,7 +411,7 @@ const SdConfigPanel = {
                     m("span", "Skip landscape")
                 ])
             ])
-        ];
+        ].filter(Boolean);
         sections.push(m("div", { class: "grid grid-cols-2 gap-3" }, coreFields));
 
         /// LoRA section — checkbox per LoRA + per-LoRA weight + free-form add.

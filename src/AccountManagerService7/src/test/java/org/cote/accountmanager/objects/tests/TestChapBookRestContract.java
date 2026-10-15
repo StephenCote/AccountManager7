@@ -5,19 +5,29 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
+import java.io.File;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.olio.picturebook.PbRenderPath;
+import org.cote.accountmanager.olio.picturebook.PictureBookException;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.rest.services.ChapBookService;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import jakarta.annotation.security.RolesAllowed;
@@ -45,6 +55,21 @@ public class TestChapBookRestContract extends BaseTest {
 	public static final Logger logger = LogManager.getLogger(TestChapBookRestContract.class);
 
 	private static final String REQUEST_MODEL = "olio.pictureBookRequest";
+
+	private String pb0;
+	private String cb0;
+
+	@Before
+	public void rememberRenderPath() {
+		pb0 = PbRenderPath.pictureBook();
+		cb0 = PbRenderPath.chapBook();
+	}
+
+	/// The switch is process-global and other classes in this JVM depend on it: always restored.
+	@After
+	public void restoreRenderPath() {
+		PbRenderPath.configure(pb0, cb0);
+	}
 
 	private static final List<Class<? extends java.lang.annotation.Annotation>> VERBS = Arrays.asList(
 		GET.class, POST.class, PUT.class, DELETE.class, HEAD.class, OPTIONS.class);
@@ -239,6 +264,64 @@ public class TestChapBookRestContract extends BaseTest {
 		assertNotNull(r);
 		assertFalse("An omitted sdConfig must be reported absent", r.hasField("sdConfig"));
 		assertFalse("An omitted sdConfig must not read back as a record", r.get("sdConfig") instanceof BaseRecord);
+	}
+
+	/// P2-6 (design §28.1 Stage 2): a ChapBook deployment lands on v3 with NO configuration, and
+	/// chapbook.renderPath=v1 is the rollback. Pinned at every surface a Service7 deployment reads: the
+	/// resolver's product default (absent and unrecognised both land on v3, so a typo cannot roll back);
+	/// this module's shipped WEB-INF/web.xml, whose chapbook.renderPath param-value is fed through the
+	/// REAL resolver and must land on v3; and the Docker entrypoint, whose CHAPBOOK_RENDER_PATH default is
+	/// the only value that survives a container restart (web.xml is regenerated from the template on
+	/// every boot). PictureBook stays on its Stage 1 default, v1, at the same surfaces.
+	@Test
+	public void TestChapBookDefaultsToV3AndV1IsRollback() throws Exception {
+		assertEquals(PbRenderPath.V3, PbRenderPath.CHAPBOOK_DEFAULT);
+		assertEquals("PictureBook stays on its Stage 1 default", PbRenderPath.V1, PbRenderPath.PICTUREBOOK_DEFAULT);
+		OlioModelNames.use();
+		BaseRecord chap = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK);
+		chap.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.CHAPBOOK.toString());
+
+		PbRenderPath.configure(null, "graph");
+		assertEquals("absent / unrecognised must land ChapBook on v3", PbRenderPath.V3, PbRenderPath.chapBook());
+		assertEquals("absent must land PictureBook on v1", PbRenderPath.V1, PbRenderPath.pictureBook());
+		PbRenderPath.requireV3(chap);
+
+		File base = new File(System.getProperty("basedir", "."));
+		String webXml = Files.readString(new File(base, "src/main/webapp/WEB-INF/web.xml").toPath(), StandardCharsets.UTF_8);
+		String shipped = paramValue(webXml, PbRenderPath.CHAPBOOK_CONFIG_KEY);
+		assertNotNull("WEB-INF/web.xml must declare " + PbRenderPath.CHAPBOOK_CONFIG_KEY, shipped);
+		PbRenderPath.configure(paramValue(webXml, PbRenderPath.PICTUREBOOK_CONFIG_KEY), shipped);
+		assertEquals("the shipped web.xml value '" + shipped + "' must land ChapBook on v3", PbRenderPath.V3, PbRenderPath.chapBook());
+		assertEquals("the shipped web.xml keeps PictureBook on v1", PbRenderPath.V1, PbRenderPath.pictureBook());
+
+		String entrypoint = Files.readString(new File(base, "../docker/entrypoint.sh").toPath(), StandardCharsets.UTF_8);
+		assertTrue("the Docker entrypoint must default CHAPBOOK_RENDER_PATH to v3", entrypoint.contains(": \"${CHAPBOOK_RENDER_PATH:=v3}\""));
+		assertTrue("the Docker entrypoint keeps PICTUREBOOK_RENDER_PATH on v1", entrypoint.contains(": \"${PICTUREBOOK_RENDER_PATH:=v1}\""));
+
+		PbRenderPath.configure(null, PbRenderPath.V1);
+		assertEquals("v1 is honoured as the rollback", PbRenderPath.V1, PbRenderPath.chapBook());
+		try {
+			PbRenderPath.requireV3(chap);
+			fail("a CHAPBOOK book under the rollback value must be refused");
+		}
+		catch(PictureBookException e) {
+			assertEquals(409, e.getStatus());
+			assertTrue(e.getMessage(), e.getMessage().startsWith(PbRenderPath.REFUSAL_PREFIX));
+			assertTrue("the refusal tells the operator how to leave the rollback: " + e.getMessage(),
+				e.getMessage().contains(PbRenderPath.CHAPBOOK_CONFIG_KEY + "=" + PbRenderPath.V3) && e.getMessage().contains("CHAPBOOK_RENDER_PATH"));
+		}
+	}
+
+	/// The <param-value> of a <context-param> in a web.xml, or null when the param is not declared.
+	private static String paramValue(String webXml, String paramName) {
+		int at = webXml.indexOf("<param-name>" + paramName + "</param-name>");
+		if(at < 0) {
+			return null;
+		}
+		int open = webXml.indexOf("<param-value>", at);
+		int close = webXml.indexOf("</param-value>", open);
+		assertTrue("malformed context-param for " + paramName, open > at && close > open);
+		return webXml.substring(open + "<param-value>".length(), close).trim();
 	}
 
 	@Test

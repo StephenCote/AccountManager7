@@ -9697,6 +9697,13 @@ public class PictureBookUtil {
         BaseRecord currentNode = null;
         String lastErrorMessage = "generateSceneImage aborted";
         try {
+            // V3 §37.3 Disable (Phase 2): resolve the composite mode ONCE from the final config (after
+            // the override overlay) and refuse the retired Kontext pipeline here, before Stage 0 spends
+            // an LLM call or Stage 1 touches SD. The PictureBookException catch below stamps the scene
+            // "error" with this message; no run row exists yet, so there is nothing to close.
+            String compositeMode = SceneCompositeUtil.resolveMode(common, false);
+            PbRenderPath.requireEnabledCompositeMode(compositeMode, "scene " + sceneObjectId);
+
             // Stage 0: Resolve (and cache) the landscape prompt AND the scene-image (composite)
             // prompt BEFORE any SD calls — keeps every LLM call ahead of every GPU-heavy SD call
             // so the model can be unloaded once instead of sitting loaded in VRAM across the whole
@@ -10181,21 +10188,13 @@ public class PictureBookUtil {
             byte[] leftBytes   = !portraitBytesList.isEmpty() ? portraitBytesList.get(0) : null;
             byte[] centerBytes = portraitBytesList.size() > 1  ? portraitBytesList.get(1) : null;
 
-            // compositeMode supersedes the legacy useKontext boolean. When unset we fall back to it,
-            // so existing book configs behave exactly as before.
-            String compositeMode = common.get("compositeMode");
-            Boolean useKontextV = common.get("useKontext");
-            boolean useKontext = (useKontextV != null) ? useKontextV.booleanValue() : false;
-            boolean useFlux2 = false;
-            if (compositeMode != null && !compositeMode.isBlank()) {
-                String mode = compositeMode.trim().toLowerCase();
-                useFlux2 = "flux2".equals(mode);
-                useKontext = "kontext".equals(mode);
-                if (!useFlux2 && !useKontext && !"classic".equals(mode)) {
-                    logger.warn("generateSceneImage: unrecognized compositeMode '" + compositeMode
-                        + "' — expected flux2|kontext|classic; falling back to classic");
-                }
-            }
+            // One mode decision for the whole call: compositeMode was resolved at the top of the try
+            // (SceneCompositeUtil.resolveMode — compositeMode wins, the legacy useKontext boolean is
+            // the fallback, an unrecognized value WARNs and falls back to classic) and a kontext
+            // result was already refused there, so useKontext can only be false here until Phase 10
+            // removes the branch.
+            boolean useFlux2 = SceneCompositeUtil.MODE_FLUX2.equals(compositeMode);
+            boolean useKontext = SceneCompositeUtil.MODE_KONTEXT.equals(compositeMode);
             /// KONTEXT stitches the landscape into its panel strip and CLASSIC draws the portraits
             /// on top of it, so for those two modes a skipped landscape is a real capability loss,
             /// not a saving. landscapeEnabled never auto-skips them — this can only be reached by an

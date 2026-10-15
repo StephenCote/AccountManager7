@@ -1198,6 +1198,43 @@ Verified by `TestChapBookV3Render` (8 cases, SD-live on `.39`), `TestChapBookSer
 H2 contract) and `e2e/chapBookRenderPathV3.spec.js` (Docker stack) — `PictureBookV3Implementation.md`
 §5.5 items 43–47, §6.C 85–99, §8.9.]**
 
+**[2026-10-14 (P2-6), as built — ChapBook goes V3.** `chapbook.renderPath` now defaults to `v3` at every
+surface (§28.1 Stage 2 block); `v1` is the rollback. What changed on the v3 path since P1-9:
+- **Pages compile through TEXT_ONLY.** `PbNodeExecutor.executeChapBookPage` no longer runs the v1 SD block;
+  it shares `renderPlannedScene` with the RENDER_PLAN node. `PbRenderPlanUtil.buildScenePlan` builds the
+  page's `RenderPlan` as a zero-actor scene (strategy `TEXT_ONLY`, the book's `olio.pb.style` chain, the
+  `ModelResolver` pick, the preset's steps); the plan is persisted as the node's `renderPlan` artifact
+  **before** anything is checked (§12 rule 1 — a refused page still leaves its plan); an unresolved BASE
+  model is a 409 (nothing installed matches) or 503 (inventory unreadable) naming the resolver's reason;
+  `SwarmRendererAdapter` sends exactly the BASE stage. The page's `sdPrompt` is the plan's `location.text`,
+  compiled verbatim (whitespace-trimmed) as the MAIN clause — the prompt shown is the prompt sent. The image
+  lands under role `landscape` on the page's LANDSCAPE node (node type and role unchanged from P1-9;
+  `CHAPBOOK_PAGE` above is the Phase 4 composition kind, not a node type); the scene's
+  `imageObjectId`/`imageStale` write-back and the DONE_UNVERIFIED close are as before; the result adds the
+  plan keys (`planArtifactObjectId`, `planContentHash`, `strategy`, `stagesPlanned`, `stagesRendered=[BASE]`).
+- **Composer up front, unchanged.** The continuity composer (`chapBook.landscape-prompt`: theme/mood/keywords
+  plus the prior two prompts) still runs in order at create time (§9.1) and still writes `sdPrompt`; the
+  `settingText`/`mood`/`cameraText` mapping above arrives with the composition model (Phase 4), as does the
+  `promptOverride`/`promptLocked` rename — `sdPrompt`/`promptLocked` remain the fields.
+- **What the v1 page path applied and the plan path does not** is reported per render under
+  `configNotApplied` (`HIRES`, `STYLE_CLAUSE`, `DEFAULT_NEGATIVE`), never dropped silently: the `sd.config`
+  tier's `style` clause (the compiled style is the book's `olio.pb.style` chain only), `hires` (BASE only, no
+  refiner pass) and the v1 default negative prompt (the negative is the style's exclusions plus the config's
+  `negativePrompt`; a book with neither sends none). These are *not* degradations: a degradation is the
+  render falling short of its own plan (a substituted model, a planned stage not rendered) and vetoes
+  auto-approve (§10 rule 5), and every deployment-default `sd.config` carries `hires` and a `style`, so
+  counting them would leave auto-approve unreachable on the plan path. Steps come from the preset, not from
+  the book-tier or scene-override `steps` (`PictureBookV3Implementation.md` §6.C 164 x / 165). The
+  per-request client `sdConfig` overlay stays dropped (P1-9).
+- **Review queue:** the `renderPlan` artifact every plan-driven node carries is excluded from
+  `listReviewQueue` — a plan is the record of a render, not a reviewable output.
+- **Rollback proof:** `TestChapBookRenderStyle` pins `chapbook.renderPath=v1` (`:79`) and asserts the v1 SD
+  block byte-for-byte; `PbRenderPath.configure` logs `legacy ChapBook render path re-enabled (rollback)` at
+  WARN whenever `v1` is applied.
+Verified by `TestChapBookV3Render`, `TestPbRenderPlanExecutor`, `TestPbRenderPath` (Objects7, SD-live on
+`.39`), `TestChapBookRestContract` / `TestChapBookServiceRenderPath` / `TestFeatureConfigService` (Service7
+H2) and the ChapBook Playwright group (Docker stack) — `PictureBookV3Implementation.md` §10.6, §6.C 165.]**
+
 ### 24.1 Chat scene renderer: a third consumer of the same code
 
 Chat's scene generator also renders through this code:
@@ -1400,6 +1437,19 @@ render path.
   is read by `PbRenderPath.isV3(book)` per call on a `bookType=CHAPBOOK` book; `v1` keeps
   `renderResolvedScene` / `renderChapBookSummary` byte-for-byte. So "Disable" for ChapBook means the
   v1 branch inside those routes goes unreachable, not that the routes return "replaced by V3".]**
+- **[2026-10-14 (P2-6), Stage 2 for ChapBook — as built:** `PbRenderPath` carries one default per product,
+  `PICTUREBOOK_DEFAULT=v1` (Stage 1 continues: PB1 live and default) and `CHAPBOOK_DEFAULT=v3`. Every surface
+  moved together: the code default, `WEB-INF/web.xml`, `docker/web.xml.template` + `entrypoint.sh`
+  (`CHAPBOOK_RENDER_PATH`, default `v3`), `docker-compose.yml` / `docker-compose.test.yml`, Console7
+  `resource.properties`, and the Ux fallback in `featureConfig.js` (`{picturebook:'v1', chapbook:'v3'}` when
+  the route is absent or the body unrecognised). An absent/blank/unrecognised value pins the **product**
+  default, so a typo cannot move ChapBook back to v1; `chapbook.renderPath=v1` is the documented **rollback**
+  value — honoured, logged at WARN (`legacy ChapBook render path re-enabled (rollback)`), applied by a
+  restart. The ChapBook routes remain the v3 front door as in the P1-9 bullet; under the rollback value they
+  run the v1 branch byte-for-byte (`TestChapBookRenderStyle`). The Objects7 test properties still pin
+  `v3`/`v3`. **The verify stage (3) started for ChapBook on 2026-10-14**; check status is tracked in
+  `PictureBookV3Implementation.md` §10.6 (checks 1, 4 and 5 are Stephen's). Contract:
+  `TestChapBookRestContract.TestChapBookDefaultsToV3AndV1IsRollback`, `TestPbRenderPath` cases 01/03/10.]**
 
 **Verify-stage exit checks** (all with real tests and visual inspection):
 1. Scenarios A–G (notes §70) pass on the Docker stack.
@@ -1987,7 +2037,7 @@ rollback to `v1` still has a working composite path and nothing is removed befor
 | Stage | When | What happens to Kontext |
 |---|---|---|
 | **Deprecate** | Phase 0 (hygiene) | Mark `useKontext`, `kontextModel`, `kontextSteps/Cfg/Sampler/Scheduler` as deprecated in `configModel.json` descriptions and the `modelDef.js` mirror. Change `ChatService.java:1490` to `resolveMode(sdConfig, false)` so chat's absent-field fallback is classic like everything else (also closes Q4's second half). Log a WARN when `resolveMode` returns `kontext`. Delete the `kontext-test-output/` scratch dir and its tracked `kontext-request.json`; point `TestPictureBookFull.java:3128-3130` at `target/`. **No behaviour change for a config that explicitly asks for Kontext** |
-| **Disable** | Phase 2 (compilers land; `SceneCompositeUtil` is superseded by `RenderPlan` + compilers) | `compositeMode=kontext` is rejected with the same "replaced by V3" response PB1 entry points return at §28.1 Stage 2; `isSupportedMode` drops it from `SUPPORTED_MODES`. V3 ships no `KontextCompiler`. Code kept in the build |
+| **Disable** | Phase 2 (compilers land; `SceneCompositeUtil` is superseded by `RenderPlan` + compilers) | `compositeMode=kontext` is rejected with the same "replaced by V3" response PB1 entry points return at §28.1 Stage 2; `isSupportedMode` drops it from `SUPPORTED_MODES`. V3 ships no `KontextCompiler`. Code kept in the build. **[2026-10-15 (P2-8) — as built:** `SceneCompositeUtil.isSupportedMode` accepts `flux2|classic`; `isRetiredMode` + `KONTEXT_RETIRED_MESSAGE` (ASCII, "replaced by V3 (design section 37.3)") name the refusal once; `resolveMode` stays pure and every entry point refuses its `kontext` result: `PbRenderPath.requireEnabledCompositeMode` → `PictureBookException` 409 in `PbNodeExecutor.executeComposite` (before the model policy and any SD contact; the run row already opened closes FAILED with the message, P0-8 visibility) and at the top of `PictureBookUtil.generateSceneImage` (after the override overlay, before Stage 0); `ChatService.generateScene` answers 400 for an explicit `compositeMode=kontext` (invalid content) and 409 when the body only resolves to it (`useKontext=true` with a blank or null `compositeMode`; an absent key materialises the `flux2` schema default on read, so the boolean alone passes), on both chat render paths, before the session lookup. `SceneCompositeUtil.buildSceneRequest` also refuses a retired mode itself (returns null; defence in depth), and the chat route echoes an unknown mode only control-stripped and capped at 32 characters. Tests: `TestKontextDeprecation`, `TestFlux2Composite`, `TestPbKontextDisable` (Objects7), `TestChatSceneKontextDisable` (Service7), `chatChainSceneReimageRoutes.spec.js` item 14. `ModelResolver.MODE_KONTEXT` (a second constant) is untouched until Remove.]** |
 | **Verify** | §28.1 Stage 3 | Nothing extra: the verify checks already cover every composite path |
 | **Remove** | Phase 10, with PB1 | Delete the code and tests in §37.4; drop the six fields through the off-by-default column-drop property only; remove `pom.xml:154` and `resource.properties:115-119` |
 

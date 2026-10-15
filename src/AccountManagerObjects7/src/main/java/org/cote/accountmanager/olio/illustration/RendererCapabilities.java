@@ -29,15 +29,18 @@ public final class RendererCapabilities {
 	public static final String PATTERN_SDXL = "*xl*";
 	public static final String PATTERN_KONTEXT = "*kontext*";
 
+	/// Prompt token budget when a family declares none (three CLIP chunks, the SDXL figure).
+	public static final int DEFAULT_PROMPT_TOKEN_BUDGET = 225;
+
 	private static final List<RendererCapabilities> FALLBACK;
 	static {
 		List<RendererCapabilities> l = new ArrayList<>();
 		l.add(new RendererCapabilities(PATTERN_FLUX2, true, 3, true, true, true, false, false, true, true, true,
-			4, 4, 24, 1.0, 3.5, Collections.unmodifiableList(List.of(new int[] {1024, 768}, new int[] {768, 1024}, new int[] {1024, 1024})), null));
+			4, 4, 24, 1.0, 3.5, Collections.unmodifiableList(List.of(new int[] {1024, 768}, new int[] {768, 1024}, new int[] {1024, 1024})), null, 512));
 		l.add(new RendererCapabilities(PATTERN_SDXL, true, 0, false, false, true, true, false, true, true, true,
-			12, 20, 30, 5.0, 7.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024}, new int[] {1024, 768}, new int[] {768, 1024})), null));
+			12, 20, 30, 5.0, 7.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024}, new int[] {1024, 768}, new int[] {768, 1024}, new int[] {832, 1216}, new int[] {1216, 832})), null, 225));
 		l.add(new RendererCapabilities(PATTERN_KONTEXT, false, 1, true, false, true, false, false, true, true, false,
-			20, 28, 28, 1.0, 1.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024})), null));
+			20, 28, 28, 1.0, 1.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024})), null, 225));
 		FALLBACK = Collections.unmodifiableList(l);
 	}
 
@@ -63,11 +66,13 @@ public final class RendererCapabilities {
 	private final double cfgMax;
 	private final List<int[]> nativeResolutions;
 	private final Double secondsPerStepPerReference;
+	private final int promptTokenBudget;
 
 	private RendererCapabilities(String pattern, boolean enabled, int maxReferences, boolean supportsReferences,
 			boolean supportsStyleReferences, boolean supportsInitImage, boolean supportsMasks, boolean supportsRegionalPrompt,
 			boolean supportsSeedReplay, boolean supportsCancel, boolean supportsBatch, int stepsLow, int stepsDefault,
-			int stepsHigh, double cfgMin, double cfgMax, List<int[]> nativeResolutions, Double secondsPerStepPerReference) {
+			int stepsHigh, double cfgMin, double cfgMax, List<int[]> nativeResolutions, Double secondsPerStepPerReference,
+			int promptTokenBudget) {
 		this.pattern = pattern;
 		this.regex = globToRegex(pattern);
 		this.enabled = enabled;
@@ -87,6 +92,7 @@ public final class RendererCapabilities {
 		this.cfgMax = cfgMax;
 		this.nativeResolutions = nativeResolutions;
 		this.secondsPerStepPerReference = secondsPerStepPerReference;
+		this.promptTokenBudget = (promptTokenBudget > 0 ? promptTokenBudget : DEFAULT_PROMPT_TOKEN_BUDGET);
 	}
 
 	public String getPattern() { return pattern; }
@@ -109,6 +115,9 @@ public final class RendererCapabilities {
 	public List<int[]> getNativeResolutions() { return nativeResolutions; }
 	/// null until measured on the target server (§15/§18) - an estimate with no figure must say so.
 	public Double getSecondsPerStepPerReference() { return secondsPerStepPerReference; }
+	/// Positive-prompt token budget the compiler truncates to (§14); a static family property, a
+	/// judgement rather than a measured encoder limit - see the resource's _comment.
+	public int getPromptTokenBudget() { return promptTokenBudget; }
 
 	/// The step count for a preset's stepsMode ("low" | "default" | "high"); anything else is default.
 	public int recommendedSteps(String stepsMode) {
@@ -136,7 +145,8 @@ public final class RendererCapabilities {
 	public String toString() {
 		return "RendererCapabilities{" + pattern + ", enabled=" + enabled + ", maxReferences=" + maxReferences
 			+ ", steps=" + recommendedStepsLow + "/" + recommendedStepsDefault + "/" + recommendedStepsHigh
-			+ ", cfg=[" + cfgMin + "," + cfgMax + "], secondsPerStepPerReference=" + secondsPerStepPerReference + "}";
+			+ ", cfg=[" + cfgMin + "," + cfgMax + "], promptTokenBudget=" + promptTokenBudget
+			+ ", secondsPerStepPerReference=" + secondsPerStepPerReference + "}";
 	}
 
 	// ─────────────────────────────── static access ───────────────────────────────
@@ -257,7 +267,8 @@ public final class RendererCapabilities {
 			(cfg.size() == 2 && cfg.get(0) instanceof Number) ? ((Number) cfg.get(0)).doubleValue() : 1.0,
 			(cfg.size() == 2 && cfg.get(1) instanceof Number) ? ((Number) cfg.get(1)).doubleValue() : 1.0,
 			Collections.unmodifiableList(res),
-			seconds
+			seconds,
+			num(m.get("promptTokenBudget"), DEFAULT_PROMPT_TOKEN_BUDGET)
 		);
 	}
 

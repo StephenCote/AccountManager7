@@ -1098,10 +1098,12 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         console.log('[gap6] book has ' + sceneCount + ' scene(s)');
         await request.get(REST + '/logout');
 
-        // 4. Open the reader in the browser (stanzas render immediately — 6D). Wait for the
-        //    "Page N of M" footer so the book has loaded before we touch Render.
+        // 4. Open the reader in the browser (stanzas render immediately — 6D). The reader opens on
+        //    the Cover slot (af5e3ff5): Begin → page 1, then wait for the "Page N of M" footer so the
+        //    book has loaded before we touch Render.
         await loginAsSharedUser(page);
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
+        await beginReader(page);
         await expect(page.locator('text=/Page \\d+ of \\d+/').first(),
             'reader did not load book pages').toBeVisible({ timeout: 30000 });
 
@@ -1150,12 +1152,14 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
             page.locator('button.bg-orange-600').filter({ hasText: /Rendering/ }),
             'render loop did not finish (button still shows "Rendering N/M...")'
         ).toHaveCount(0, { timeout: 180000 });
-        // One decoded MediaServlet image per scene must be present after the reload.
-        // Wide window (180s): the reload resolving the final scene's /media/ image can lag on a saturated host.
+        // The ReaderShell shows ONE page at a time (the reload after the loop keeps the current page;
+        // only oninit resets to the Cover), so the current page's decoded MediaServlet image must be
+        // present after the reload. Wide window (180s): the reload resolving the final scene's /media/
+        // image can lag on a saturated host.
         await expect(
-            page.locator('img[src*="/media/"][src*="data.data"]'),
-            'reader did not show one rendered image per scene after the per-scene render'
-        ).toHaveCount(sceneCount, { timeout: 180000 });
+            page.locator('img[src*="/media/"][src*="data.data"]').first(),
+            'reader did not show a rendered image on the current page after the per-scene render'
+        ).toBeVisible({ timeout: 180000 });
         await page.waitForTimeout(2000); // let images finish decoding
 
         // 9. PROOF #1 — the client drove the per-scene endpoint once per scene, and NEVER the bulk one.
@@ -1167,19 +1171,24 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         expect(bulkRenderCalls.length,
             'bulk /chap-book/render/{bookObjectId} must NEVER be called by the new client loop').toBe(0);
 
-        // 10. PROOF #2 — each rendered reader page carries a real, browser-DECODED image.
-        const imgs = page.locator('img[src*="/media/"][src*="data.data"]');
-        const imgCount = await imgs.count();
-        expect(imgCount, 'no decoded MediaServlet images in reader').toBeGreaterThan(0);
-        for (let i = 0; i < imgCount; i++) {
-            const img = imgs.nth(i);
-            await img.scrollIntoViewIfNeeded();
+        // 10. PROOF #2 — EVERY rendered page carries a real, browser-DECODED image. Walk the pages via
+        //     the ReaderShell page dots (title="Page N"), as chapBookReader.spec.js does, and decode the
+        //     current page's image on each.
+        let imgCount = 0;
+        for (let n = 1; n <= sceneCount; n++) {
+            await page.getByTitle('Page ' + n, { exact: true }).click();
+            await expect(page.getByText('Page ' + n + ' of ' + sceneCount, { exact: true }).first(),
+                'page ' + n + ' footer not visible').toBeVisible({ timeout: 15000 });
+            const img = page.locator('img[src*="/media/"][src*="data.data"]').first();
+            await expect(img, 'page ' + n + ' has no rendered MediaServlet image').toBeVisible({ timeout: 30000 });
             await page.waitForTimeout(300);
             const dims = await img.evaluate(el => ({ w: el.naturalWidth, h: el.naturalHeight }));
-            console.log('[gap6] image ' + (i + 1) + ' decoded ' + dims.w + 'x' + dims.h);
-            expect(dims.w, 'image ' + (i + 1) + ' did not decode (naturalWidth=0)').toBeGreaterThan(0);
-            expect(dims.h, 'image ' + (i + 1) + ' did not decode (naturalHeight=0)').toBeGreaterThan(0);
+            console.log('[gap6] page ' + n + ' image decoded ' + dims.w + 'x' + dims.h);
+            expect(dims.w, 'page ' + n + ' image did not decode (naturalWidth=0)').toBeGreaterThan(0);
+            expect(dims.h, 'page ' + n + ' image did not decode (naturalHeight=0)').toBeGreaterThan(0);
+            imgCount++;
         }
+        expect(imgCount, 'reader did not show one rendered image per scene').toBe(sceneCount);
 
         // 11. Full-page visual proof.
         const outDir = path.resolve(SPEC_DIR, '../test-results');
@@ -1256,25 +1265,29 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         const renderedCount = renderResult.rendered;
         console.log('[4] rendered ' + renderedCount + ' scenes');
 
-        // Open the ChapBook reader — it shows ALL pages in a scrollable list.
+        // Open the ChapBook reader — a ReaderShell that opens on the Cover slot and shows ONE page at
+        // a time (af5e3ff5); Begin → page 1, then walk the pages via the page dots (title="Page N").
         await request.get(REST + '/logout');
         await loginAsSharedUser(page);
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
+        await beginReader(page);
 
-        // Wait until at least one rendered MediaServlet image is visible in the reader.
+        // Wait until page 1's rendered MediaServlet image is visible in the reader.
         await expect(
             page.locator('img[src*="/media/"][src*="data.data"]').first(),
             'no rendered image appeared in ChapBook reader'
         ).toBeVisible({ timeout: 30000 });
 
-        // Allow remaining images to decode.
+        // Allow the image to decode.
         await page.waitForTimeout(2000);
 
-        // Each page is a div.rounded-lg.overflow-hidden.border (one per scene in the reader).
+        // The current page is the one div.rounded-lg.overflow-hidden.border (renderReaderPage); the
+        // page count comes from the shell's page dots.
         const pageEls = page.locator('div.rounded-lg.overflow-hidden.border');
-        const pageCount = await pageEls.count();
-        expect(pageCount, 'no page elements found in reader').toBeGreaterThan(0);
-        console.log('[4] found ' + pageCount + ' page element(s) in reader');
+        expect(await pageEls.count(), 'no page element found in reader').toBeGreaterThan(0);
+        const pageCount = await page.locator('button[title^="Page "]').count();
+        expect(pageCount, 'no page dots found in reader').toBeGreaterThan(0);
+        console.log('[4] found ' + pageCount + ' page(s) in reader');
 
         const outDir = path.resolve(SPEC_DIR, '../test-results');
         fs.mkdirSync(outDir, { recursive: true });
@@ -1282,9 +1295,12 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         // Screenshot each rendered page to disk.
         const toShot = Math.min(pageCount, renderedCount);
         for (let i = 0; i < toShot; i++) {
-            const el = pageEls.nth(i);
+            await page.getByTitle('Page ' + (i + 1), { exact: true }).click();
+            await expect(page.getByText('Page ' + (i + 1) + ' of ' + pageCount, { exact: true }).first(),
+                'page ' + (i + 1) + ' footer not visible').toBeVisible({ timeout: 15000 });
+            const el = pageEls.first();
             await el.scrollIntoViewIfNeeded();
-            await page.waitForTimeout(500); // allow image decode after scroll
+            await page.waitForTimeout(500); // allow image decode after the page flip
 
             const outPath = path.join(outDir, 'chapbook-page-' + (i + 1) + '.png');
             await el.screenshot({ path: outPath });

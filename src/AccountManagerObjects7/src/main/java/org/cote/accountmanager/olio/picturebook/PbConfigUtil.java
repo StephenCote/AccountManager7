@@ -7,11 +7,10 @@ import java.security.NoSuchAlgorithmException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
@@ -21,6 +20,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.illustration.ConfigSnapshot;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.Flux2Defaults;
@@ -108,11 +108,10 @@ public class PbConfigUtil {
 	 * <li>{@code description} / {@code shared} - metadata about the config record itself.</li>
 	 * </ul>
 	 * Note what is deliberately NOT excluded: {@code seed} is an input (pinning a seed must invalidate),
-	 * and so is {@code referenceImageId}.
+	 * and so is {@code referenceImageId}. The list itself lives with the shared illustration service
+	 * ({@link ConfigSnapshot#HASH_EXCLUDE}) so every consumer of a plan snapshots the same fields.
 	 */
-	public static final List<String> CONFIG_HASH_EXCLUDE = Collections.unmodifiableList(Arrays.asList(
-		"imagePath", "imageName", FieldNames.FIELD_DESCRIPTION, "shared"
-	));
+	public static final List<String> CONFIG_HASH_EXCLUDE = ConfigSnapshot.HASH_EXCLUDE;
 
 	/**
 	 * The six FLUX.2 knobs {@code flux2Defaults.json} governs, paired with their resource key. The five
@@ -601,6 +600,16 @@ public class PbConfigUtil {
 			sb.append(Character.forDigit(b & 0xF, 16));
 		}
 		return sb.toString();
+	}
+
+	/**
+	 * The effective config as the {@code RenderPlan.config} snapshot (design §12), taken by the shared
+	 * illustration service ({@link ConfigSnapshot#of}) so PictureBook, ChapBook and chat snapshot the same
+	 * fields: same skip set as {@link #canonicalConfig} plus referenced/foreign fields and the inherited
+	 * ownership fields; {@code List} values are copied so the snapshot never aliases the record.
+	 */
+	public static Map<String, Object> configSnapshot(BaseRecord cfg) {
+		return ConfigSnapshot.of(cfg);
 	}
 
 	/** Field type of a declared {@code olio.sd.config} field, for callers assembling an override. */

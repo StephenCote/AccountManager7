@@ -32,19 +32,29 @@ public class SceneCompositeUtil {
 	private static final Logger logger = LogManager.getLogger(SceneCompositeUtil.class);
 
 	public static final String MODE_FLUX2 = "flux2";
+	/// Retired (V3 design §37.3 Disable, Phase 2): never accepted by isSupportedMode; resolveMode still
+	/// names it so callers can refuse it with KONTEXT_RETIRED_MESSAGE. Removed in Phase 10.
 	public static final String MODE_KONTEXT = "kontext";
 	public static final String MODE_CLASSIC = "classic";
 
-	/// The accepted compositeMode vocabulary, for error messages ("expected flux2|kontext|classic").
-	public static final String SUPPORTED_MODES = MODE_FLUX2 + "|" + MODE_KONTEXT + "|" + MODE_CLASSIC;
+	/// The accepted compositeMode vocabulary, for error messages ("expected flux2|classic").
+	public static final String SUPPORTED_MODES = MODE_FLUX2 + "|" + MODE_CLASSIC;
+
+	/// The refusal every entry point returns for a config that resolves to Kontext — the same "replaced by
+	/// V3" shape the PB1 entry points use at §28.1 Stage 2. ASCII only: it travels on the wire as a JSON
+	/// error body. Callers may append a scope ("(scene X)"), so match with startsWith.
+	public static final String KONTEXT_RETIRED_MESSAGE = "compositeMode=kontext has been replaced by V3 (design section 37.3): "
+		+ "FLUX.2 (compositeMode=flux2) is the supported composite path; Kontext is disabled in Phase 2 and removed in Phase 10";
 
 	/// Panel size for the KONTEXT stitched strip. Unchanged from both original call sites.
 	private static final int KONTEXT_PANEL_SIZE = 1024;
 
 	private SceneCompositeUtil() { }
 
-	/// Is {@code mode} (case-insensitive, trimmed) one of the three pipelines buildSceneRequest can
-	/// build? Null/blank is NOT supported here — "absent" is resolveMode's business, not a mode.
+	/// Is {@code mode} (case-insensitive, trimmed) one of the pipelines a caller may still ask for?
+	/// Null/blank is NOT supported here — "absent" is resolveMode's business, not a mode. Since the
+	/// V3 §37.3 Disable stage (Phase 2) "kontext" is NOT supported: buildSceneRequest can still build
+	/// it (the code stays until Phase 10), but no entry point accepts it — see isRetiredMode.
 	///
 	/// Exists so a transport boundary can reject an unknown compositeMode with a clear 400 BEFORE
 	/// resolveMode silently downgrades it to classic. resolveMode keeps that fallback on purpose for
@@ -52,7 +62,14 @@ public class SceneCompositeUtil {
 	public static boolean isSupportedMode(String mode) {
 		if (mode == null) return false;
 		String m = mode.trim().toLowerCase();
-		return MODE_FLUX2.equals(m) || MODE_KONTEXT.equals(m) || MODE_CLASSIC.equals(m);
+		return MODE_FLUX2.equals(m) || MODE_CLASSIC.equals(m);
+	}
+
+	/// Is {@code mode} (case-insensitive, trimmed) the retired Kontext pipeline? Distinct from
+	/// "unsupported": a typo is a 400 with the SUPPORTED_MODES hint, a retired mode gets
+	/// KONTEXT_RETIRED_MESSAGE. Works on both a raw request value and a resolveMode result.
+	public static boolean isRetiredMode(String mode) {
+		return mode != null && MODE_KONTEXT.equals(mode.trim().toLowerCase());
 	}
 
 	/// Resolve the composite pipeline for a config.
@@ -78,17 +95,20 @@ public class SceneCompositeUtil {
 	/// (Same schema-default trap as `steps`/`width`/`height`, which is why the flux2 params use
 	/// dedicated fields.)
 	///
-	/// DEPRECATED PATH (V3 design §37.3, Phase 0): Kontext is retired on the §28.1 lifecycle. Every
-	/// resolution that lands on KONTEXT — explicit compositeMode, useKontext=true, or the caller's
-	/// legacyKontextDefault — still returns it unchanged, but logs ONE WARN. No caller passes
-	/// legacyKontextDefault=true any more (ChatService flipped to false in Phase 0).
+	/// RETIRED PATH (V3 design §37.3; Deprecate in Phase 0, Disable in Phase 2): Kontext is retired on
+	/// the §28.1 lifecycle. Resolution stays pure — every resolution that lands on KONTEXT (explicit
+	/// compositeMode, useKontext=true, or the caller's legacyKontextDefault) still RETURNS kontext and
+	/// logs ONE WARN, so a caller can tell "this config asks for Kontext" apart from a typo. Since
+	/// Phase 2 every entry point then refuses that result (isRetiredMode → KONTEXT_RETIRED_MESSAGE,
+	/// via PbRenderPath.requireEnabledCompositeMode or the ChatService gates) before any LLM or SD
+	/// work. No caller passes legacyKontextDefault=true any more (ChatService flipped to false in Phase 0).
 	///
 	/// @param legacyKontextDefault what useKontext means when the field is genuinely absent
 	public static String resolveMode(BaseRecord sdConfig, boolean legacyKontextDefault) {
 		String result = resolveModeValue(sdConfig, legacyKontextDefault);
 		if (MODE_KONTEXT.equals(result)) {
-			logger.warn("compositeMode=kontext is deprecated (V3 design §37.3): FLUX.2 is the supported composite path; "
-				+ "Kontext is disabled in Phase 2 and removed in Phase 10");
+			logger.warn("compositeMode=kontext is deprecated and disabled (V3 design §37.3): FLUX.2 is the supported composite path; "
+				+ "callers refuse it in Phase 2 and it is removed in Phase 10");
 		}
 		return result;
 	}
@@ -104,7 +124,7 @@ public class SceneCompositeUtil {
 					return m;
 				}
 				logger.warn("Unrecognized compositeMode '" + mode + "' - expected "
-					+ MODE_FLUX2 + "|" + MODE_KONTEXT + "|" + MODE_CLASSIC + "; falling back to classic");
+					+ SUPPORTED_MODES + "; falling back to classic");
 				return MODE_CLASSIC;
 			}
 			try {
@@ -171,8 +191,11 @@ public class SceneCompositeUtil {
 
 	/// Build the fully-configured request for a composite scene, including its reference/init imagery.
 	///
-	/// Returns null only when the mode is unknown; every mode produces a usable request even with no
-	/// reference bytes at all (it degrades to text-only rather than failing the scene).
+	/// Returns null when the mode is unknown or retired; every supported mode produces a usable request
+	/// even with no reference bytes at all (it degrades to text-only rather than failing the scene).
+	/// The retired-mode refusal is defence in depth for the V3 §37.3 Disable stage: every entry point
+	/// already refuses Kontext before reaching here, and this keeps a future caller from re-enabling
+	/// it by passing the constant. The Kontext branch below stays, unreachable, until Phase 10 Remove.
 	///
 	/// @param mode        one of MODE_*, from resolveMode
 	/// @param leftDesc    appearance description of the first character
@@ -191,6 +214,11 @@ public class SceneCompositeUtil {
 			String action, String setting, String mood, String classicPrompt, String classicNegative,
 			byte[] leftBytes, byte[] rightBytes, byte[] landscapeBytes, double creativity,
 			BaseRecord sdConfig) {
+
+		if (isRetiredMode(mode)) {
+			logger.error(KONTEXT_RETIRED_MESSAGE + " (buildSceneRequest)");
+			return null;
+		}
 
 		if (MODE_FLUX2.equals(mode)) {
 			Integer refSizeV = null;

@@ -37,10 +37,11 @@ import org.junit.Test;
 import jakarta.servlet.ServletContext;
 import jakarta.ws.rs.core.Response;
 
-/// P1-9 (design §24, §28.1 Stage 1): the two ChapBook render routes - POST /chapbook/scene/{id}/generate
-/// and POST /chapbook/render/{book}[?async=true] - keep one request/response contract on both render
-/// paths: the v1 default stays on the direct SD path with the legacy bodies, and v3 refuses or skips
-/// before any graph work exactly where v1 would.
+/// P1-9 (design §24, §28.1 Stage 1) and P2-6 (§28.1 Stage 2): the two ChapBook render routes - POST
+/// /chapbook/scene/{id}/generate and POST /chapbook/render/{book}[?async=true] - keep one request/response
+/// contract on both render paths: v3 (the ChapBook default since P2-6) refuses or skips before any graph
+/// work exactly where v1 would, and the explicit v1 cases below are the ROLLBACK proof - with
+/// chapbook.renderPath=v1 the routes still answer on the direct SD path with the legacy bodies.
 ///
 /// Exercised through the real ChapBookService methods -> ChapBookUtil -> PbServiceFacade -> SDUtil, the
 /// real AsyncJobRegistry and the real (H2) database, with Service7's own HttpServletRequestMock +
@@ -258,8 +259,9 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 		}
 	}
 
-	/// On v1 the same route stays on the direct SD path: no job, no run, no node, and the scene row is
-	/// never linked to a graph node. The refused SD call is reported as rendered=false with the v1 shape.
+	/// Rollback (chapbook.renderPath=v1, §28.1 Stage 2): the same route stays on the direct SD path: no job,
+	/// no run, no node, and the scene row is never linked to a graph node. The refused SD call is reported
+	/// as rendered=false with the v1 shape.
 	@Test
 	public void TestPageRenderOnV1StaysOnTheDirectPath() throws Exception {
 		BaseRecord book = createChapBook();
@@ -314,8 +316,8 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 		}
 	}
 
-	/// On v1 the bulk route with ?async=true keeps the legacy cb.render wrapper job and its legacy body
-	/// ({jobId, status}); after it settles no page has a graph node.
+	/// Rollback (chapbook.renderPath=v1): the bulk route with ?async=true keeps the legacy cb.render wrapper
+	/// job and its legacy body ({jobId, status}); after it settles no page has a graph node.
 	@Test
 	public void TestBulkAsyncOnV1IsTheLegacyWrapperJob() throws Exception {
 		BaseRecord book = createChapBook();

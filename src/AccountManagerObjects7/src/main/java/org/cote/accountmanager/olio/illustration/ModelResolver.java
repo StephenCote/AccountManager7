@@ -316,6 +316,81 @@ public final class ModelResolver {
 		return PbStrategyEnumType.UNKNOWN;
 	}
 
+	/// A Resolution as the plan's ModelPick (§12): the walk's candidates as plain string maps so the
+	/// pick round-trips through RenderPlan.toJson/fromJson unchanged.
+	public static RenderPlan.ModelPick pickOf(Resolution res) {
+		List<Map<String, String>> cands = new ArrayList<>();
+		if(res.getCandidates() != null) {
+			for(Candidate c : res.getCandidates()) {
+				Map<String, String> m = new LinkedHashMap<>();
+				m.put("step", c.getStep() != null ? c.getStep().name() : null);
+				m.put("requested", c.getRequested());
+				m.put("listedName", c.getListedName());
+				m.put("family", c.getFamily());
+				m.put("reason", c.getReason() != null ? c.getReason().name() : null);
+				cands.add(m);
+			}
+		}
+		return new RenderPlan.ModelPick(res.getTask(), res.getModel(), res.getFamily(),
+			res.getStep() != null ? res.getStep().name() : null,
+			res.getReason() != null ? res.getReason().name() : null,
+			res.isDegraded(), cands);
+	}
+
+	/// Adds the MODEL_SUBSTITUTED degradation a resolution earns: the §16 sentence when it substituted,
+	/// the reason (and inventory error) when it is unresolved, nothing when it resolved cleanly.
+	public static void addDegradation(Resolution res, List<RenderPlan.Degradation> out) {
+		String message = null;
+		if(res.isResolved() && res.isDegraded()) {
+			message = degradationText(res);
+		}
+		else if(!res.isResolved()) {
+			message = "Model for " + res.getTask() + " is unresolved: " + res.getReason()
+				+ (res.getInventoryError() != null ? " (" + res.getInventoryError() + ")" : "");
+		}
+		if(message != null) {
+			out.add(new RenderPlan.Degradation(RenderPlan.Degradation.MODEL_SUBSTITUTED, message, null, RenderPlan.STAGE_BASE));
+		}
+	}
+
+	/// 503 when the refusal is the renderer's (its inventory could not be read), 409 when it is the plan's
+	/// (nothing installed matches the request); both are "reported before rendering" (§12).
+	public static int unresolvedStatus(RenderPlan.ModelPick pick) {
+		return (pick != null && Reason.INVENTORY_UNAVAILABLE.name().equals(pick.getReason())) ? 503 : 409;
+	}
+
+	/// The resolver's reason, never the server URL or API type (those stay in the log, as the inventory
+	/// does). planOid names the persisted plan artifact when there is one; null for a transient plan.
+	public static String unresolvedMessage(String label, RenderPlan.ModelPick pick, RenderPlan plan, String planOid) {
+		StringBuilder sb = new StringBuilder();
+		if(pick == null) {
+			sb.append("No model pick for the BASE stage of ").append(label);
+		}
+		else if(Reason.INVENTORY_UNAVAILABLE.name().equals(pick.getReason())) {
+			sb.append("Renderer inventory unavailable; cannot verify a model for ").append(label).append(" before rendering");
+		}
+		else {
+			sb.append("No installed model for ").append(label).append(": ");
+			List<String> parts = new ArrayList<>();
+			for(Map<String, String> c : pick.getCandidates()) {
+				parts.add(c.get("step") + " '" + c.get("requested") + "' " + c.get("reason"));
+			}
+			sb.append(parts.isEmpty() ? String.valueOf(pick.getReason()) : String.join("; ", parts));
+		}
+		if(plan != null) {
+			for(RenderPlan.Degradation d : plan.getDegradations()) {
+				if(RenderPlan.Degradation.MODEL_SUBSTITUTED.equals(d.getCode())) {
+					sb.append(" - ").append(d.getMessage());
+					break;
+				}
+			}
+		}
+		if(planOid != null) {
+			sb.append(" (plan artifact ").append(planOid).append(")");
+		}
+		return sb.toString();
+	}
+
 	/// §16's degradation sentence for a resolution that substituted: every rejected candidate with
 	/// its reason, then the step and listed name that was used. Null when nothing was substituted.
 	public static String degradationText(Resolution r) {

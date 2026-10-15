@@ -7,6 +7,10 @@
  *       produce an unparseable body.
  *   14. POST /rest/chat/{objectId}/generateScene — an unrecognized compositeMode is rejected with
  *       400 BEFORE any session/config lookup (previously silently downgraded to "classic").
+ *       P2-8 (2026-10-15, V3 design §37.3 Disable): the accepted vocabulary is flux2|classic;
+ *       compositeMode:'kontext' (any case) is 400 and useKontext:true with a blank/null compositeMode
+ *       is 409, both carrying the shared "replaced by V3" message, on both chat render paths, before
+ *       the session lookup (useKontext:true ALONE materialises the flux2 default and passes).
  *   15. POST /rest/olio/olio.charPerson/{objectId}/reimage — the literal "((DEPRECATED))" prompt
  *       argument was removed end-to-end (OlioService → SDUtil → SWUtil → NarrativeUtil). This hits
  *       the live Swarm SD server configured on the stack and is gated behind E2E_SD_LIVE=1 because
@@ -23,6 +27,14 @@
  *             at the flux2Defaults.json size (1024x768), not classic. The Phase 0
  *             legacyKontextDefault=false flip (V3 design §37.3) is only reachable for hand-built
  *             configs with a null compositeMode; a REST body is never one (design §1709-1716).
+ *         (c) P2-7 (2026-10-14): the block first reads GET /rest/config/render-path and branches on
+ *             `chat`. (a)+(b) describe the v1 (inline composite) product; when the stack is pinned
+ *             chat.renderPath=v3 the ONE render goes through the shared illustration service
+ *             (ChatSceneRenderUtil): 200 + data.data + a `render` block (renderPath v3, TEXT_ONLY,
+ *             compiled prompt naming both characters, model, canvas, planContentHash, degradations,
+ *             configNotApplied), the log shows `Stage BASE rendered 1 image(s)` and NO `Scene composite [`.
+ *             A missing `chat` key fails (Service7 predates P2-7). The only skip the v3 case takes is
+ *             the honest SD outage: HTTP 503 whose body error contains "Renderer unreachable".
  *       Gated behind E2E_SD_LIVE=1 like item 15.
  *       Two turns, not one: Chat.generateSceneDescription formats history from index pruneSkip+2 = 3
  *       (the assist-template layout: system, user-template, assistant-template). The chatConfig
@@ -203,7 +215,25 @@ test.describe('generateScene composite mode validation (item 14)', () => {
             });
             expect(resp.status()).toBe(400);
             const body = await resp.json();
-            expect(body.error).toBe("Unsupported composite mode 'bogus'; expected flux2|kontext|classic");
+            expect(body.error).toBe("Unsupported composite mode 'bogus'; expected flux2|classic");
+        } finally {
+            await apiLogout(ctx);
+            await ctx.dispose();
+        }
+    });
+
+    // P2-8 hardening: the unknown mode is echoed only after control characters are replaced and the
+    // length is capped at 32 (+ "..."), so a request body can neither forge a log line nor reflect an
+    // unbounded value through the error body.
+    test('unsupported compositeMode is echoed sanitised and capped', async ({ request }) => {
+        const { ctx } = await userContext(request);
+        try {
+            const resp = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
+                data: { schema: 'olio.sd.config', compositeMode: 'a\nb' + 'x'.repeat(40) }
+            });
+            expect(resp.status()).toBe(400);
+            const body = await resp.json();
+            expect(body.error).toBe("Unsupported composite mode 'a?b" + 'x'.repeat(29) + "...'; expected flux2|classic");
         } finally {
             await apiLogout(ctx);
             await ctx.dispose();
@@ -213,7 +243,7 @@ test.describe('generateScene composite mode validation (item 14)', () => {
     test('each supported compositeMode passes validation and reaches the session lookup', async ({ request }) => {
         const { ctx } = await userContext(request);
         try {
-            for (const mode of ['flux2', 'kontext', 'classic', 'KONTEXT']) {
+            for (const mode of ['flux2', 'classic', 'FLUX2']) {
                 const resp = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
                     data: { schema: 'olio.sd.config', compositeMode: mode }
                 });
@@ -221,6 +251,66 @@ test.describe('generateScene composite mode validation (item 14)', () => {
                 const body = await resp.json();
                 expect(body.error).toBe('Chat request not found');
             }
+        } finally {
+            await apiLogout(ctx);
+            await ctx.dispose();
+        }
+    });
+
+    // P2-8 (V3 design §37.3 Disable): the retired Kontext pipeline is refused at route entry, before the
+    // session lookup, with the shared "replaced by V3" message. An explicit compositeMode=kontext is
+    // invalid content (400); a body that only RESOLVES to kontext - the legacy useKontext=true with a
+    // blank or null compositeMode (an absent key materialises the flux2 default; see below) - is refused
+    // by state (409).
+    test('compositeMode kontext is retired: 400 with the replaced-by-V3 message, any case', async ({ request }) => {
+        const { ctx } = await userContext(request);
+        try {
+            for (const mode of ['kontext', 'KONTEXT', ' Kontext ']) {
+                const resp = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
+                    data: { schema: 'olio.sd.config', compositeMode: mode }
+                });
+                expect(resp.status(), 'mode ' + JSON.stringify(mode) + ' is retired').toBe(400);
+                const body = await resp.json();
+                expect(body.error, 'mode ' + JSON.stringify(mode)).toContain('replaced by V3');
+                expect(body.error).toContain('37.3');
+                expect(body.error).toContain('compositeMode=flux2');
+                expect(body.error).not.toContain('Unsupported composite mode');
+            }
+        } finally {
+            await apiLogout(ctx);
+            await ctx.dispose();
+        }
+    });
+
+    test('legacy useKontext:true with a blank or null compositeMode resolves to the retired mode: 409 replaced by V3', async ({ request }) => {
+        const { ctx } = await userContext(request);
+        try {
+            for (const compositeMode of ['', null]) {
+                const resp = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
+                    data: { schema: 'olio.sd.config', compositeMode, useKontext: true }
+                });
+                expect(resp.status(), 'compositeMode ' + JSON.stringify(compositeMode) + ' + useKontext:true').toBe(409);
+                const body = await resp.json();
+                expect(body.error).toContain('replaced by V3');
+                expect(body.error).toContain('37.3');
+            }
+
+            // Measured 2026-10-15: with the compositeMode KEY ABSENT the schema default (flux2) is
+            // materialised when the route reads the field (BaseRecord.get of a declared-but-absent field),
+            // so useKontext:true alone is never consulted and the route proceeds (404 = session lookup
+            // reached). Kontext is unreachable by the boolean alone; the 409 above is the only way in.
+            const alone = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
+                data: { schema: 'olio.sd.config', useKontext: true }
+            });
+            expect(alone.status()).toBe(404);
+            expect((await alone.json()).error).toBe('Chat request not found');
+
+            // the boolean's other value is classic and passes the gates
+            const classic = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
+                data: { schema: 'olio.sd.config', compositeMode: '', useKontext: false }
+            });
+            expect(classic.status()).toBe(404);
+            expect((await classic.json()).error).toBe('Chat request not found');
         } finally {
             await apiLogout(ctx);
             await ctx.dispose();
@@ -394,7 +484,9 @@ function dockerLogsSince(sinceIso) {
         { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 
-async function generateScene(ctx, session, sdConfig, tag) {
+/// POST the scene and isolate this request's container log lines; asserts nothing about the status so
+/// the v1 and v3 wrappers below can apply their own contracts (and the v3 one its honest SD-outage skip).
+async function postScene(ctx, session, sdConfig, tag) {
     /// Isolate this request's log lines by snapshotting the container log before and after with the
     /// SAME absolute --since, then taking the suffix. A host-clock "--since now-5s" window is not
     /// reliable here: the Docker VM clock is skewed from the host, so the previous render's lines leaked
@@ -409,14 +501,6 @@ async function generateScene(ctx, session, sdConfig, tag) {
     const durationMs = Date.now() - started;
     const text = await resp.text();
     console.log('[item14-live] ' + tag + ' generateScene HTTP ' + resp.status() + ' durationMs=' + durationMs + ' body chars=' + text.length);
-    expect(resp.status(), tag + ' generateScene: ' + text.slice(0, 300)).toBe(200);
-    const image = JSON.parse(text);
-    expect(image.schema).toBe('data.data');
-    expect(image.objectId).toBeTruthy();
-    expect(image.contentType).toContain('image');
-    expect(image.name, 'scene label is "<system firstName> and <user firstName>"').toContain('Mira and Theo');
-    console.log('[item14-live] ' + tag + ' scene objectId=' + image.objectId + ' name=' + image.name + ' group=' + image.groupPath);
-    const png = await capturePng(image, 'scene-' + tag + '.png', '[item14-live]');
     /// The pipeline choice is only visible in the server log.
     const after = dockerLogsSince(sinceAbs);
     expect(after.startsWith(before), tag + ': container log snapshot is a prefix of the later snapshot').toBe(true);
@@ -425,13 +509,170 @@ async function generateScene(ctx, session, sdConfig, tag) {
     console.log('[item14-live] ' + tag + ' ' + (compositeLine ? compositeLine.trim() : 'NO "Scene composite [" line found'));
     const sceneDescLine = log.split('\n').find(l => l.includes('Scene description:'));
     console.log('[item14-live] ' + tag + ' ' + (sceneDescLine ? sceneDescLine.trim() : 'NO scene description line found'));
-    return { image, raw: png.raw, dims: png.dims, log, compositeLine, sceneDescLine, durationMs };
+    return { status: resp.status(), text, log, compositeLine, sceneDescLine, durationMs };
+}
+
+/// The v1 (inline composite) contract: 200 + a data.data record + the composite line in the log.
+async function generateScene(ctx, session, sdConfig, tag) {
+    const r = await postScene(ctx, session, sdConfig, tag);
+    expect(r.status, tag + ' generateScene: ' + r.text.slice(0, 300)).toBe(200);
+    const image = JSON.parse(r.text);
+    expect(image.schema).toBe('data.data');
+    expect(image.objectId).toBeTruthy();
+    expect(image.contentType).toContain('image');
+    expect(image.name, 'scene label is "<system firstName> and <user firstName>"').toContain('Mira and Theo');
+    console.log('[item14-live] ' + tag + ' scene objectId=' + image.objectId + ' name=' + image.name + ' group=' + image.groupPath);
+    const png = await capturePng(image, 'scene-' + tag + '.png', '[item14-live]');
+    return { image, raw: png.raw, dims: png.dims, log: r.log, compositeLine: r.compositeLine, sceneDescLine: r.sceneDescLine, durationMs: r.durationMs };
+}
+
+/// The ONLY environmental skip the v3 case takes: the stack's SD server is down. Two shapes, both the
+/// illustration service's 503 for an unreachable renderer, and ONLY when the independent host-side
+/// probe of that server also failed (hostProbeFailed) so a misconfiguration while SD is up still fails:
+///   - the inventory read fails first (ModelResolver INVENTORY_UNAVAILABLE -> "Renderer inventory
+///     unavailable; cannot verify a model for <label> before rendering - ... INVENTORY_UNAVAILABLE"),
+///     which is where the route stops when the server is off the network (measured 2026-10-14);
+///   - the inventory answered but the render did not (RendererAdapter.ERROR_UNREACHABLE ->
+///     "Render of <label> failed: Renderer unreachable or returned no response").
+/// Any other non-200, and either shape while the host probe succeeded, is a failure with the body quoted.
+function isSdOutage(status, text, hostProbeFailed) {
+    if (status !== 503 || !hostProbeFailed) return false;
+    try {
+        const body = JSON.parse(text);
+        if (typeof body.error !== 'string') return false;
+        return body.error.includes('Renderer unreachable')
+            || (body.error.startsWith('Renderer inventory unavailable') && body.error.includes('INVENTORY_UNAVAILABLE'));
+    } catch (e) {
+        return false;
+    }
+}
+
+/// The v3 (shared illustration service, P2-7) contract: 200 + a data.data record + a `render` block
+/// describing the plan, and the BASE stage line in the log with NO composite line.
+async function generateSceneV3(ctx, session, sdConfig, tag, expectTextOnlyFor, hostProbeFailed) {
+    const r = await postScene(ctx, session, sdConfig, tag);
+    if (isSdOutage(r.status, r.text, hostProbeFailed)) {
+        const outageLines = r.log.split('\n').filter(l => /Could not list models|Renderer unreachable|generateScene\(v3\)/.test(l)).map(l => l.trim());
+        console.log('[item14-live] ' + tag + ' SD outage lines: ' + JSON.stringify(outageLines.slice(0, 5)));
+        test.skip(true, 'SKIPPED (not a pass): the stack SD server is unreachable, so the v3 scene could not render. '
+            + 'generateScene returned HTTP 503 with body ' + r.text.slice(0, 300));
+    }
+    expect(r.status, tag + ' generateScene(v3): ' + r.text.slice(0, 300)).toBe(200);
+    const image = JSON.parse(r.text);
+    expect(image.schema).toBe('data.data');
+    expect(image.objectId).toBeTruthy();
+    expect(image.contentType).toContain('image');
+    expect(image.name, 'scene label is "<system firstName> and <user firstName>"').toContain('Mira and Theo');
+    console.log('[item14-live] ' + tag + ' scene objectId=' + image.objectId + ' name=' + image.name + ' group=' + image.groupPath);
+    const png = await capturePng(image, 'scene-' + tag + '.png', '[item14-live]');
+
+    const render = image.render;
+    expect(render && typeof render === 'object', 'v3 response carries a render block: ' + r.text.slice(0, 300)).toBe(true);
+    console.log('[item14-live] ' + tag + ' render=' + JSON.stringify(render));
+    expect(render.renderPath).toBe('v3');
+    expect(render.strategy, 'Phase 2 chat scenes are TEXT_ONLY').toBe('TEXT_ONLY');
+    expect(typeof render.compiledPrompt === 'string' && render.compiledPrompt.length > 0, 'compiledPrompt is non-empty').toBe(true);
+    expect(render.compiledPrompt, 'the system character is named in the compiled prompt').toContain('Mira');
+    expect(render.compiledPrompt, 'the user character is named in the compiled prompt').toContain('Theo');
+    expect(render.compiledPrompt, 'the system character is positioned on the left').toContain('on the left');
+    expect(render.compiledPrompt, 'the user character is positioned on the right').toContain('on the right');
+    expect(render.compiledPrompt, 'the two-figure cue rides as a HIGH element').toContain('two people in scene');
+    expect(typeof render.model === 'string' && render.model.length > 0, 'model is non-empty').toBe(true);
+    expect(render.canvas && render.canvas.width > 0 && render.canvas.height > 0, 'canvas has positive dimensions: ' + JSON.stringify(render.canvas)).toBe(true);
+    expect([render.canvas.width, render.canvas.height], 'the plan canvas honors the posted 512x512').toEqual([512, 512]);
+    expect(png.dims, 'the rendered PNG is the plan canvas').toEqual([render.canvas.width, render.canvas.height]);
+    expect(typeof render.planContentHash === 'string' && render.planContentHash.length > 0, 'planContentHash is non-empty').toBe(true);
+    expect(Array.isArray(render.degradations), 'degradations is an array').toBe(true);
+    expect(Array.isArray(render.configNotApplied), 'configNotApplied is an array').toBe(true);
+
+    /// ACTOR_TEXT_ONLY is reported once per PORTRAIT-BEARING actor. expectTextOnlyFor is computed from
+    /// the fixture records (both SceneE2E persons carried a portrait on 2026-10-14), never assumed.
+    const textOnly = render.degradations.filter(d => typeof d === 'string' && d.startsWith('ACTOR_TEXT_ONLY: '));
+    console.log('[item14-live] ' + tag + ' ACTOR_TEXT_ONLY entries=' + JSON.stringify(textOnly) + ' expected for=' + JSON.stringify(expectTextOnlyFor));
+    expect(textOnly.length, 'one ACTOR_TEXT_ONLY per portrait-bearing actor (' + JSON.stringify(expectTextOnlyFor) + ')').toBe(expectTextOnlyFor.length);
+    for (const nm of expectTextOnlyFor) {
+        expect(textOnly.some(d => d.includes(nm)), 'ACTOR_TEXT_ONLY names ' + nm).toBe(true);
+    }
+
+    /// The posted config's v1 composite knobs are reported, never silently honoured or dropped; the style
+    /// clause IS applied on this path so STYLE_CLAUSE never appears.
+    const codes = render.configNotApplied.map(s => String(s).split(':')[0]);
+    expect(codes, 'skipLandscape=true posted -> SKIP_LANDSCAPE reported').toContain('SKIP_LANDSCAPE');
+    expect(codes, 'compositeMode materialised to the schema default -> COMPOSITE_MODE reported').toContain('COMPOSITE_MODE');
+    expect(codes, 'sceneCreativity materialised to the schema default -> SCENE_CREATIVITY reported').toContain('SCENE_CREATIVITY');
+    expect(codes, 'hires=false posted -> no HIRES entry').not.toContain('HIRES');
+    expect(codes, 'the style clause is applied on the plan path').not.toContain('STYLE_CLAUSE');
+
+    /// Server side: one BASE stage through the renderer adapter; no v1 composite.
+    const stageLine = r.log.split('\n').find(l => l.includes('Stage BASE rendered 1 image(s)'));
+    console.log('[item14-live] ' + tag + ' ' + (stageLine ? stageLine.trim() : 'NO "Stage BASE rendered 1 image(s)" line found'));
+    expect(stageLine, 'the illustration service rendered the BASE stage').toBeTruthy();
+    expect(r.compositeLine, 'no v1 composite ran on the v3 path').toBeFalsy();
+    expect(r.log, 'no v1 composite ran on the v3 path').not.toContain('Scene composite [');
+    return { image, render, raw: png.raw, dims: png.dims, log: r.log, sceneDescLine: r.sceneDescLine, durationMs: r.durationMs };
+}
+
+/// GET /rest/config/render-path as the shared user; the chat key decides which contract applies below.
+async function readRenderPath(ctx) {
+    const resp = await ctx.get(REST + '/config/render-path');
+    const text = await resp.text();
+    expect(resp.status(), 'GET /rest/config/render-path: ' + text.slice(0, 200)).toBe(200);
+    const body = JSON.parse(text);
+    expect(body && Object.prototype.hasOwnProperty.call(body, 'chat'),
+        'GET /rest/config/render-path must carry a chat key (P2-7); body=' + text.slice(0, 200)).toBe(true);
+    expect(['v1', 'v3'], 'chat render path is v1 or v3').toContain(body.chat);
+    console.log('[item14-live] render-path ' + text.replace(/\s+/g, ' '));
+    return body;
+}
+
+/// Whether a charPerson carries a portrait (profile.portrait), which is what makes its plan actor
+/// `referenced` and earns an ACTOR_TEXT_ONLY degradation on the Phase 2 text-only path.
+async function hasPortrait(ctx, charRec, organizationId) {
+    const resp = await ctx.post(REST + '/model/search', {
+        data: {
+            schema: 'io.query', type: 'olio.charPerson',
+            fields: [
+                { name: 'objectId', comparator: 'equals', value: charRec.objectId },
+                { name: 'organizationId', comparator: 'equals', value: organizationId }
+            ],
+            request: ['id', 'objectId', 'name', 'profile.portrait'],
+            recordCount: 1, cache: false
+        }
+    });
+    expect(resp.ok(), 'search olio.charPerson ' + charRec.objectId + ' HTTP ' + resp.status()).toBe(true);
+    const found = (await resp.json()).results || [];
+    const rec = found.length ? found[0] : null;
+    const portrait = rec && rec.profile && rec.profile.portrait;
+    const has = !!(portrait && (portrait.id || portrait.objectId));
+    console.log('[item14-live] ' + charRec.name + ' portrait=' + (has ? (portrait.objectId || portrait.id) : 'none'));
+    return has;
+}
+
+/// The SD server the stack's /System `sd` connection points at (.39 on the test stack). The shared user
+/// cannot read that connection, so the stack repoint has to be mirrored here: E2E_SD_SERVER overrides it.
+const SD_PROBE_URL = (process.env.E2E_SD_SERVER || 'http://192.168.1.39:7801').replace(/\/?$/, '/');
+
+/// One host-side probe of the SD server the stack is configured against, logged for the report.
+async function probeSwarmFromHost(url) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 5000);
+    try {
+        const resp = await fetch(url, { signal: ac.signal });
+        console.log('[item14-live] host probe ' + url + ' -> HTTP ' + resp.status);
+        return 'HTTP ' + resp.status;
+    } catch (e) {
+        const msg = (e && (e.cause && e.cause.code || e.name || e.message)) || String(e);
+        console.log('[item14-live] host probe ' + url + ' -> ' + msg);
+        return msg;
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 test.describe('generateScene live composite modes (item 14 live)', () => {
     test.skip(!process.env.E2E_SD_LIVE, 'set E2E_SD_LIVE=1 to generate a real scene on the stack SD server');
 
-    test('explicit classic honors the posted size; absent compositeMode resolves to the schema default flux2', async ({ request }) => {
+    test('scene render follows the pinned chat render path: v1 classic honors the posted size and absent compositeMode resolves to flux2; v3 renders one BASE stage through the illustration service', async ({ request }) => {
         /// Two real chat turns + two scene-description LLM calls + two SD renders. The container Ollama
         /// may be CPU-only; timings are recorded, never asserted.
         test.setTimeout(1500000);
@@ -446,6 +687,17 @@ test.describe('generateScene live composite modes (item 14 live)', () => {
             const route = await resolveChatRoute();
             console.log('[item14-live] [e2e-llm] route=' + route.route + ' server=' + route.serverUrl
                 + ' analysis=' + route.analysisModel + ' pb=' + route.pbModel);
+
+            /// P2-7: the boot-pinned chat.renderPath decides which contract the scene call honours below.
+            /// A body without a chat key means the Service7 under test predates P2-7 (readRenderPath fails
+            /// with that message). The host-side probe of the stack's SD server (the /System `sd`
+            /// connection, .39 on the test stack) is the independent evidence a v3 outage skip requires.
+            const renderPath = await readRenderPath(ctx);
+            const chatPath = renderPath.chat;
+            const swarmProbe = await probeSwarmFromHost(SD_PROBE_URL);
+            const swarmHostProbeFailed = !/^HTTP \d+$/.test(swarmProbe);
+            console.log('[item14-live] chat renderPath=' + chatPath + ' swarm host probe ' + SD_PROBE_URL + '=' + swarmProbe
+                + (swarmHostProbeFailed ? ' (unreachable from the host)' : ''));
 
             /// A connection + chatConfig the shared user OWNS. generateScene reads the chatRequest's own
             /// chatConfig for the scene-description call (Chat.generateSceneDescription), so the library
@@ -528,6 +780,27 @@ test.describe('generateScene live composite modes (item 14 live)', () => {
             template.height = 512;
             template.seed = -1;
             template.skipLandscape = true;
+
+            if (chatPath === 'v3') {
+                /// (c) chat.renderPath=v3 (P2-7): the scene renders through the shared illustration service
+                /// as one text-only BASE stage; the v1 composite pipeline must not run. The posted
+                /// compositeMode is still validated (item 14) but only reported in configNotApplied here.
+                /// ACTOR_TEXT_ONLY is expected only for portrait-bearing actors - computed from the
+                /// fixture records, not assumed.
+                const expectTextOnlyFor = [];
+                if (await hasPortrait(ctx, sysChar, orgId)) expectTextOnlyFor.push('Mira');
+                if (await hasPortrait(ctx, usrChar, orgId)) expectTextOnlyFor.push('Theo');
+                console.log('[item14-live] v3: portrait-bearing fixtures=' + JSON.stringify(expectTextOnlyFor)
+                    + (expectTextOnlyFor.length ? '' : ' (none: the fixtures carry no portraits, so ACTOR_TEXT_ONLY must be absent)'));
+                const v3 = await generateSceneV3(ctx, session, Object.assign({}, template, { compositeMode: 'classic' }), 'v3', expectTextOnlyFor, swarmHostProbeFailed);
+                expect(v3.sceneDescLine, 'scene description was produced').toBeTruthy();
+                expect(v3.sceneDescLine, 'scene description came from the LLM, not the no-history fallback')
+                    .not.toContain('two people facing each other');
+                expect(v3.log, 'the v1 landscape stage never runs on the v3 path').not.toContain('generateScene Stage 2:');
+                console.log('[item14-live] v3 scene ' + v3.image.objectId + ' ' + v3.dims.join('x') + ' model=' + v3.render.model
+                    + ' hash=' + v3.render.planContentHash + ' durationMs=' + v3.durationMs);
+                return;
+            }
 
             /// (a) explicit classic: img2img over a composited canvas; honors the posted width/height.
             const classic = await generateScene(ctx, session, Object.assign({}, template, { compositeMode: 'classic' }), 'classic');

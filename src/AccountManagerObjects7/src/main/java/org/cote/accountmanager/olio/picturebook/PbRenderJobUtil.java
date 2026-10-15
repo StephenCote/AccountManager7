@@ -681,6 +681,9 @@ public final class PbRenderJobUtil {
 						if(out.get("degradations") != null) {
 							outcome.put("degradations", out.get("degradations"));
 						}
+						if(out.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED) != null) {
+							outcome.put(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED, out.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED));
+						}
 					}
 					catch(PbStageCancelledException e) {
 						revertAfterCancel(node, outcome, e.getMessage());

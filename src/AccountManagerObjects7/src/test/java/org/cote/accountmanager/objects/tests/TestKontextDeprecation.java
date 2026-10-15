@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -26,16 +27,28 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-/// Kontext deprecation (PictureBook V3 design §37.3, Phase 0 "Deprecate" row, task P0-11).
+/// Kontext deprecation and disablement (PictureBook V3 design §37.3: Phase 0 "Deprecate" row, task
+/// P0-11; Phase 2 "Disable" row, task P2-8).
 ///
-/// What Phase 0 changes, and what this test pins:
-///   - ChatService.generateScene now calls resolveMode(sdConfig, false) like every other caller, so a
+/// What Phase 0 changed, and what this test pins:
+///   - ChatService.generateScene calls resolveMode(sdConfig, false) like every other caller, so a
 ///     config carrying NEITHER compositeMode NOR useKontext resolves to CLASSIC, not Kontext. (a)
-///   - A config that EXPLICITLY asks for Kontext — useKontext=true with compositeMode cleared, or
-///     compositeMode="kontext" — still gets it. No behaviour change for explicit opt-in. (b)(c)
 ///   - resolveMode emits ONE WARN whenever it returns kontext, and none when it returns classic or
 ///     flux2. Captured with a programmatic log4j2 appender on the SceneCompositeUtil logger. (d)
 ///   - The six legacy fields are marked deprecated in configModel.json descriptions. (e)
+///
+/// What Phase 2 (Disable) changed, and what this test pins:
+///   - Resolution stays PURE: a config that explicitly asks for Kontext — useKontext=true with
+///     compositeMode cleared, or compositeMode="kontext" — still RESOLVES to kontext, so a caller can
+///     tell "this config asks for Kontext" apart from a typo; but that result is now RETIRED
+///     (isRetiredMode true) and every entry point refuses it. Phase 0's "no behaviour change for
+///     explicit opt-in" is therefore no longer true. (b)(c)
+///   - isSupportedMode no longer accepts "kontext"; SUPPORTED_MODES is "flux2|classic"; the shared
+///     refusal text KONTEXT_RETIRED_MESSAGE says "replaced by V3" and cites §37.3. (f)
+///
+/// The refusal itself (409 from PbRenderPath.requireEnabledCompositeMode, the executor failing the
+/// node and run, the ChatService 400/409 envelopes) is exercised against the DB in
+/// TestPbKontextDisable (Objects7) and TestChatSceneKontextDisable (Service7), not here.
 ///
 /// Like TestFlux2Composite this does NOT extend BaseTest: resolveMode and the schema read are pure,
 /// and RecordFactory falls back to the resource schema when IOSystem is not initialised, so no DB
@@ -134,28 +147,64 @@ public class TestKontextDeprecation {
 		assertEquals("classic must not emit the Kontext deprecation WARN", 0L, appender.deprecationCount());
 	}
 
-	// ── Behavioural: explicit opt-in is unchanged ───────────────────────────────
+	// ── Behavioural: explicit opt-in still resolves to kontext, and that result is retired ──────
 
 	/// (b) useKontext=true with compositeMode cleared — a saved pre-compositeMode config that opted
-	/// in — still resolves to Kontext. "No behaviour change for a config that explicitly asks for
-	/// Kontext."
+	/// in — is still IDENTIFIED as Kontext by resolveMode (resolution is pure; the legacy boolean
+	/// survives until Phase 10 Remove), and that result is retired: every entry point refuses it.
 	@Test
-	public void explicitUseKontextStillResolvesToKontext() throws Exception {
+	public void explicitUseKontextResolvesToKontextWhichIsRetired() throws Exception {
 		BaseRecord cfg = sdConfig();
 		cfg.set("compositeMode", null);
 		cfg.set("useKontext", true);
-		assertEquals(SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.resolveMode(cfg, false));
+		String mode = SceneCompositeUtil.resolveMode(cfg, false);
+		assertEquals(SceneCompositeUtil.MODE_KONTEXT, mode);
+		assertTrue("the resolved kontext result must be reported as retired so the caller refuses it",
+			SceneCompositeUtil.isRetiredMode(mode));
 	}
 
-	/// (c) compositeMode="kontext" still resolves to Kontext, regardless of the legacy default.
+	/// (c) compositeMode="kontext" is still IDENTIFIED as Kontext regardless of the legacy default —
+	/// not downgraded to classic like a typo, so the caller can refuse it with the retirement message
+	/// rather than the "unsupported" hint — and that result is retired.
 	@Test
-	public void explicitCompositeModeKontextStillResolvesToKontext() throws Exception {
+	public void explicitCompositeModeKontextResolvesToKontextWhichIsRetired() throws Exception {
 		BaseRecord cfg = sdConfig();
 		cfg.set("compositeMode", "kontext");
-		assertEquals(SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.resolveMode(cfg, false));
+		String mode = SceneCompositeUtil.resolveMode(cfg, false);
+		assertEquals(SceneCompositeUtil.MODE_KONTEXT, mode);
+		assertTrue(SceneCompositeUtil.isRetiredMode(mode));
 		cfg.set("compositeMode", " KONTEXT ");
 		assertEquals("case/whitespace handling is unchanged",
 			SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.resolveMode(cfg, true));
+	}
+
+	// ── Phase 2 Disable: the retirement surface ─────────────────────────────────
+
+	/// (f) The vocabulary a caller may still ask for no longer contains kontext, the retired check
+	/// recognises it (raw request value or resolveMode result, case/whitespace-insensitive) and
+	/// nothing else, and the shared refusal text is the "replaced by V3" shape citing §37.3.
+	@Test
+	public void kontextIsRetiredNotSupported() {
+		assertFalse("kontext must no longer be a supported mode", SceneCompositeUtil.isSupportedMode("kontext"));
+		assertFalse(SceneCompositeUtil.isSupportedMode(" KONTEXT "));
+		assertTrue(SceneCompositeUtil.isSupportedMode("flux2"));
+		assertTrue(SceneCompositeUtil.isSupportedMode("classic"));
+		assertEquals("flux2|classic", SceneCompositeUtil.SUPPORTED_MODES);
+
+		assertTrue(SceneCompositeUtil.isRetiredMode("kontext"));
+		assertTrue("retired check must be case/whitespace-insensitive like resolveMode", SceneCompositeUtil.isRetiredMode(" KONTEXT "));
+		assertFalse(SceneCompositeUtil.isRetiredMode("flux2"));
+		assertFalse(SceneCompositeUtil.isRetiredMode("classic"));
+		assertFalse(SceneCompositeUtil.isRetiredMode("bogus"));
+		assertFalse(SceneCompositeUtil.isRetiredMode(""));
+		assertFalse(SceneCompositeUtil.isRetiredMode(null));
+
+		String msg = SceneCompositeUtil.KONTEXT_RETIRED_MESSAGE;
+		assertTrue("the refusal must be the 'replaced by V3' shape: " + msg, msg.contains("replaced by V3"));
+		assertTrue("the refusal must cite the design section: " + msg, msg.contains("37.3"));
+		assertTrue("the refusal must name the supported path: " + msg, msg.contains("flux2"));
+		assertTrue("the refusal travels on the wire as JSON and must be plain ASCII: " + msg,
+			msg.chars().allMatch(c -> c < 128));
 	}
 
 	// ── Behavioural: the deprecation WARN ───────────────────────────────────────

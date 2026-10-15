@@ -362,14 +362,15 @@ public class TestFeatureConfigService extends BaseTest {
 			service.getRenderPath(new HttpServletRequestMock()).getStatus());
 	}
 
-	/// P1-8: GET /render-path reports the process-global switch for BOTH products, as the resolver holds
+	/// P1-8: GET /render-path reports the process-global switch for every product, as the resolver holds
 	/// it - a plain (non-admin) user may read it, and the body follows the resolver when it changes.
 	/// The switch is restored in finally because it is process-global and other classes in this JVM
-	/// (TestPbRenderPathRefusal) depend on it.
+	/// (TestPbRenderPathRefusal) depend on it. P2-7 adds the chat value (default v1).
 	@Test
 	public void TestRenderPathReportsBothProducts() {
 		String pb0 = PbRenderPath.pictureBook();
 		String cb0 = PbRenderPath.chapBook();
+		String ch0 = PbRenderPath.chat();
 		try {
 			Response r = service.getRenderPath(requestAs(reader));
 			assertEquals(200, r.getStatus());
@@ -378,19 +379,36 @@ public class TestFeatureConfigService extends BaseTest {
 			assertEquals("chapbook must echo the resolver", cb0, b.get("chapbook"));
 			assertTrue("picturebook must be v1 or v3", PbRenderPath.V1.equals(b.get("picturebook")) || PbRenderPath.V3.equals(b.get("picturebook")));
 			assertTrue("chapbook must be v1 or v3", PbRenderPath.V1.equals(b.get("chapbook")) || PbRenderPath.V3.equals(b.get("chapbook")));
+			assertEquals("chat must echo the resolver", ch0, b.get("chat"));
+			assertTrue("chat must be v1 or v3", PbRenderPath.V1.equals(b.get("chat")) || PbRenderPath.V3.equals(b.get("chat")));
 
 			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
 			Map<String, Object> b2 = body(service.getRenderPath(requestAs(reader)));
 			assertEquals(PbRenderPath.V3, b2.get("picturebook"));
 			assertEquals(PbRenderPath.V1, b2.get("chapbook"));
+			assertEquals("the two-value configure must leave chat untouched", ch0, b2.get("chat"));
 
+			/// P2-7: the chat value is its own product; absent / unrecognised pin ITS default, v1.
+			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3, PbRenderPath.V3);
+			assertEquals(PbRenderPath.V3, body(service.getRenderPath(requestAs(reader))).get("chat"));
+			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3, "bogus");
+			assertEquals("unrecognised chat must read back as its default v1", PbRenderPath.V1, body(service.getRenderPath(requestAs(reader))).get("chat"));
+			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3, PbRenderPath.V3);
+			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3, null);
+			assertEquals("absent chat must read back as its default v1", PbRenderPath.V1, body(service.getRenderPath(requestAs(reader))).get("chat"));
+
+			/// P2-6 (§28.1 Stage 2): absent / unrecognised pin the PRODUCT default - v1 for PictureBook, v3 for ChapBook.
 			PbRenderPath.configure(null, "bogus");
 			Map<String, Object> b3 = body(service.getRenderPath(requestAs(reader)));
-			assertEquals("absent must read back as v1", PbRenderPath.V1, b3.get("picturebook"));
-			assertEquals("unrecognised must read back as v1", PbRenderPath.V1, b3.get("chapbook"));
+			assertEquals("absent picturebook must read back as its default v1", PbRenderPath.V1, b3.get("picturebook"));
+			assertEquals("unrecognised chapbook must read back as its default v3", PbRenderPath.V3, b3.get("chapbook"));
+			PbRenderPath.configure("bogus", null);
+			Map<String, Object> b4 = body(service.getRenderPath(requestAs(reader)));
+			assertEquals("unrecognised picturebook must read back as its default v1", PbRenderPath.V1, b4.get("picturebook"));
+			assertEquals("absent chapbook must read back as its default v3", PbRenderPath.V3, b4.get("chapbook"));
 		}
 		finally {
-			PbRenderPath.configure(pb0, cb0);
+			PbRenderPath.configure(pb0, cb0, ch0);
 		}
 	}
 

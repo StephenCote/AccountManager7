@@ -3,7 +3,9 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -600,5 +602,103 @@ public class TestPictureBookRestContract extends BaseTest {
 		BaseRecord stub = (BaseRecord) chars.get(0);
 		assertEquals("Jideon de Rosa", stub.get("name"));
 		assertEquals("father", stub.get("role"));
+	}
+
+	/**
+	 * The plan inspector (V3 §12-§15, §18; P2-4): {@code POST /{book}/scene/{scene}/plan} exists under that
+	 * name, is JSON in and out, carries {@code @RolesAllowed} with both roles, and takes exactly the two path
+	 * ids, the JSON body and the two injected contexts - never a query parameter, so the SD server and the
+	 * API type can only come from the deployment, as the render routes already pin.
+	 */
+	@Test
+	public void TestPlanRouteIsPostJsonWithRolesAllowed() {
+		Method m = null;
+		for(Method c : PictureBookService.class.getDeclaredMethods()) {
+			if(c.getName().equals("planScene")) {
+				m = c;
+				break;
+			}
+		}
+		assertNotNull("POST /{book}/scene/{scene}/plan must be implemented by planScene", m);
+		assertTrue("planScene must be @POST", m.isAnnotationPresent(POST.class));
+		assertEquals("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/plan", pathOf(m));
+		jakarta.ws.rs.Produces produces = m.getAnnotation(jakarta.ws.rs.Produces.class);
+		assertNotNull("planScene must declare @Produces", produces);
+		assertEquals(Arrays.asList(jakarta.ws.rs.core.MediaType.APPLICATION_JSON), Arrays.asList(produces.value()));
+		jakarta.ws.rs.Consumes consumes = m.getAnnotation(jakarta.ws.rs.Consumes.class);
+		assertNotNull("planScene must declare @Consumes", consumes);
+		assertEquals(Arrays.asList(jakarta.ws.rs.core.MediaType.APPLICATION_JSON), Arrays.asList(consumes.value()));
+		RolesAllowed ra = m.getAnnotation(RolesAllowed.class);
+		assertNotNull("planScene must carry @RolesAllowed", ra);
+		List<String> roles = Arrays.asList(ra.value());
+		assertTrue("planScene @RolesAllowed must include admin and user (got " + roles + ")", roles.contains("admin") && roles.contains("user"));
+		assertEquals("planScene must return a jakarta.ws.rs.core.Response", jakarta.ws.rs.core.Response.class, m.getReturnType());
+
+		int pathParams = 0;
+		int contexts = 0;
+		int bodies = 0;
+		for(java.lang.reflect.Parameter p : m.getParameters()) {
+			assertNull("planScene must not read a @QueryParam (got '" + p.getName() + "'): the SD server and API type"
+				+ " come from the deployment, never the caller", p.getAnnotation(jakarta.ws.rs.QueryParam.class));
+			if(p.getAnnotation(jakarta.ws.rs.PathParam.class) != null) {
+				pathParams++;
+			}
+			else if(p.getAnnotation(jakarta.ws.rs.core.Context.class) != null) {
+				contexts++;
+			}
+			else {
+				assertEquals("the only un-annotated parameter is the String JSON body", String.class, p.getType());
+				bodies++;
+			}
+		}
+		assertEquals("bookObjectId + sceneObjectId", 2, pathParams);
+		assertEquals("HttpServletRequest + ServletContext", 2, contexts);
+		assertEquals("one JSON body", 1, bodies);
+	}
+
+	/**
+	 * The plan executor (V3 §12, §16, §20; P2-5): {@code POST /{book}/scene/{scene}/render-plan} exists under
+	 * that name, produces JSON, carries {@code @RolesAllowed} with both roles, and takes exactly the two path
+	 * ids and the two injected contexts - no body (the scene's persisted text is the input) and never a query
+	 * parameter, so the SD server and the API type can only come from the deployment.
+	 */
+	@Test
+	public void TestRenderPlanRouteIsPostJsonWithRolesAllowedAndNoBody() {
+		Method m = null;
+		for(Method c : PictureBookService.class.getDeclaredMethods()) {
+			if(c.getName().equals("renderPlanScene")) {
+				m = c;
+				break;
+			}
+		}
+		assertNotNull("POST /{book}/scene/{scene}/render-plan must be implemented by renderPlanScene", m);
+		assertTrue("renderPlanScene must be @POST", m.isAnnotationPresent(POST.class));
+		assertEquals("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/render-plan", pathOf(m));
+		jakarta.ws.rs.Produces produces = m.getAnnotation(jakarta.ws.rs.Produces.class);
+		assertNotNull("renderPlanScene must declare @Produces", produces);
+		assertEquals(Arrays.asList(jakarta.ws.rs.core.MediaType.APPLICATION_JSON), Arrays.asList(produces.value()));
+		RolesAllowed ra = m.getAnnotation(RolesAllowed.class);
+		assertNotNull("renderPlanScene must carry @RolesAllowed", ra);
+		List<String> roles = Arrays.asList(ra.value());
+		assertTrue("renderPlanScene @RolesAllowed must include admin and user (got " + roles + ")", roles.contains("admin") && roles.contains("user"));
+		assertEquals("renderPlanScene must return a jakarta.ws.rs.core.Response", jakarta.ws.rs.core.Response.class, m.getReturnType());
+
+		int pathParams = 0;
+		int contexts = 0;
+		for(java.lang.reflect.Parameter p : m.getParameters()) {
+			assertNull("renderPlanScene must not read a @QueryParam (got '" + p.getName() + "'): the SD server and API type"
+				+ " come from the deployment, never the caller", p.getAnnotation(jakarta.ws.rs.QueryParam.class));
+			if(p.getAnnotation(jakarta.ws.rs.PathParam.class) != null) {
+				pathParams++;
+			}
+			else if(p.getAnnotation(jakarta.ws.rs.core.Context.class) != null) {
+				contexts++;
+			}
+			else {
+				fail("renderPlanScene takes no body: unexpected parameter '" + p.getName() + "' of " + p.getType());
+			}
+		}
+		assertEquals("bookObjectId + sceneObjectId", 2, pathParams);
+		assertEquals("HttpServletRequest + ServletContext", 2, contexts);
 	}
 }

@@ -68,11 +68,14 @@
 		<param-value>${PB_RENDER_SD_PERMITS}</param-value>
 	</context-param>
 	<!--
-		PictureBook V3 render-path switch, one per product: v1 | v3. Empty = v1 (the legacy render
-		path). With v1 the V3 graph routes refuse with 409 "render path is v1". Set via the
-		PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH environment variables - this file is regenerated
-		from the template on every boot, so an edit here is lost on restart. Rollback = v1 + restart.
-		Applied at startup only.
+		PictureBook V3 render-path switch, one per product: v1 | v3. Empty = the product default:
+		picturebook v1 (the legacy render path stays live, Stage 1), chapbook v3 (the old ChapBook path
+		is disabled, Stage 2; chapbook v1 is the rollback and is logged at WARN), chat v1 (the inline
+		scene composite stays live; chat v3 renders the scene through the shared illustration service
+		and never refuses). With v1 the V3 graph routes refuse with 409 "render path is v1". Set via the
+		PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH / CHAT_RENDER_PATH environment variables - this
+		file is regenerated from the template on every boot, so an edit here is lost on restart.
+		Rollback = v1 + restart. Applied at startup only.
 	-->
 	<context-param>
 		<param-name>picturebook.renderPath</param-name>
@@ -81,6 +84,10 @@
 	<context-param>
 		<param-name>chapbook.renderPath</param-name>
 		<param-value>${CHAPBOOK_RENDER_PATH}</param-value>
+	</context-param>
+	<context-param>
+		<param-name>chat.renderPath</param-name>
+		<param-value>${CHAT_RENDER_PATH}</param-value>
 	</context-param>
 	<!--
 		LLM emulator (system.connection.dialect = emulator, serverUrl = emulator://<set>). Directory that

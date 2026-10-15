@@ -619,3 +619,131 @@ export async function deleteBinding(pb2BookObjectId, bindingObjectId) {
     if (!resp.ok) throw new Error('deleteBinding failed: ' + resp.status);
     return resp.json();
 }
+
+// ── V3 style, plan and illustration-model routes (P2-9) ──────────────────────
+
+/** Style field keys PUT /{book}/style accepts (PbServiceFacade.putStyle); anything else is a 400. */
+export const STYLE_FIELD_KEYS = ['sdConfig', 'description', 'exclusions', 'palette', 'taskModels', 'pageFormat', 'customWidth', 'customHeight', 'qualityPreset', 'photoreal', 'parent'];
+export const STYLE_PAGE_FORMATS = ['PORTRAIT_PAGE', 'LANDSCAPE_PAGE', 'SQUARE', 'CUSTOM'];
+export const STYLE_QUALITY_PRESETS = ['DRAFT', 'STANDARD', 'FINAL'];
+export const STYLE_TASKS = ['portrait', 'location', 'sceneDirect', 'inpaint', 'harmonize', 'upscale'];
+
+/** GET /{book}/style → the style DTO (own + effective + chain). */
+export function getStyle(pb2BookObjectId) {
+    return wfFetch('/' + pb2BookObjectId + '/style', { method: 'GET' }, 'Could not load the book style');
+}
+
+/** PUT /{book}/style with a SPARSE body (only the keys being changed; JSON null clears a field). */
+export function putStyle(pb2BookObjectId, body) {
+    return wfFetch('/' + pb2BookObjectId + '/style', { method: 'PUT', body: body || {} }, 'Could not save the book style');
+}
+
+/** POST /{book}/style/lock {locked} — 404 when the book has no style of its own yet. */
+export function lockStyle(pb2BookObjectId, locked) {
+    return wfFetch('/' + pb2BookObjectId + '/style/lock', { method: 'POST', body: { locked: !!locked } }, 'Could not change the style lock');
+}
+
+/** POST /{book}/scene/{scene}/plan {preset?, promptOverride?, raw?, model?} → the illustration plan (not persisted). */
+export function planScene(pb2BookObjectId, sceneObjectId, body) {
+    return wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/plan', { method: 'POST', body: body || {} }, 'Could not plan the scene');
+}
+
+/** POST /{book}/scene/{scene}/render-plan — synchronous: plan, verify the model, render. No body. */
+export function renderPlanScene(pb2BookObjectId, sceneObjectId) {
+    return wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/render-plan', { method: 'POST' }, 'Could not render the scene');
+}
+
+/** GET /{book}/artifact/{oid} → one artifact record (a renderPlan artifact carries the plan JSON in artifactText). */
+export function getArtifact(pb2BookObjectId, artifactObjectId) {
+    return wfFetch('/' + pb2BookObjectId + '/artifact/' + artifactObjectId, { method: 'GET' }, 'Could not load the artifact');
+}
+
+/**
+ * GET /rest/olio/illustration/models?task=… → {task, inventory{fetchedAt,error,count}, deploymentDefault{model,flux2Model},
+ * resolution{reason,degraded,…}, models?}. Not under the picture-book base, so it has its own fetch.
+ */
+export async function listModelsForTask(task) {
+    let resp = await fetch(applicationPath + '/rest/olio/illustration/models?task=' + encodeURIComponent(task || ''), { credentials: 'include' });
+    if (!resp.ok) await throwNon2xx(resp, 'Could not list the installed models');
+    if (resp.status === 204) return null;
+    return resp.json();
+}
+
+/**
+ * Normalize the /style DTO so every consumer can index without null checks. `own` stays null when
+ * the book has no style of its own (fresh book: effective carries only the two defaults). Pure.
+ */
+export function normalizeStyle(dto) {
+    let d = dto && typeof dto === 'object' ? dto : {};
+    let eff = d.effective && typeof d.effective === 'object' ? d.effective : {};
+    let own = d.own && typeof d.own === 'object' ? d.own : null;
+    return {
+        bookObjectId: d.bookObjectId || null,
+        own: own ? Object.assign({}, own, { fields: own.fields && typeof own.fields === 'object' ? own.fields : {} }) : null,
+        effective: {
+            fields: eff.fields && typeof eff.fields === 'object' ? eff.fields : {},
+            taskModels: eff.taskModels && typeof eff.taskModels === 'object' ? eff.taskModels : {},
+            taskModelSources: eff.taskModelSources && typeof eff.taskModelSources === 'object' ? eff.taskModelSources : {},
+            sources: eff.sources && typeof eff.sources === 'object' ? eff.sources : {},
+            sdConfigName: eff.sdConfigName || null,
+            qualityPreset: eff.qualityPreset ? String(eff.qualityPreset).toUpperCase() : null,
+            pageFormat: eff.pageFormat ? String(eff.pageFormat).toUpperCase() : null
+        },
+        chain: Array.isArray(d.chain) ? d.chain : [],
+        lockedBy: d.lockedBy || null,
+        truncatedAt: d.truncatedAt != null ? d.truncatedAt : null,
+        truncatedModel: d.truncatedModel || null,
+        cycleDetected: !!d.cycleDetected,
+        complete: d.complete !== false
+    };
+}
+
+/** Normalize a plan body (from /plan or a renderPlan artifact's artifactText) so arrays/objects are always present. Pure. */
+export function normalizePlan(plan) {
+    let p = plan && typeof plan === 'object' ? plan : {};
+    let strategy = p.strategy && typeof p.strategy === 'object' ? p.strategy : {};
+    return Object.assign({}, p, {
+        canvas: p.canvas && typeof p.canvas === 'object' ? p.canvas : {},
+        preset: p.preset && typeof p.preset === 'object' ? p.preset : {},
+        style: p.style && typeof p.style === 'object' ? p.style : {},
+        config: p.config && typeof p.config === 'object' ? p.config : {},
+        strategy: Object.assign({}, strategy, { stages: Array.isArray(strategy.stages) ? strategy.stages : [] }),
+        models: p.models && typeof p.models === 'object' ? p.models : {},
+        compiled: p.compiled && typeof p.compiled === 'object' ? p.compiled : {},
+        degradations: Array.isArray(p.degradations) ? p.degradations : [],
+        configNotApplied: Array.isArray(p.configNotApplied) ? p.configNotApplied : [],
+        estimate: p.estimate && typeof p.estimate === 'object' ? p.estimate : {}
+    });
+}
+
+/** Parse a renderPlan artifact's artifactText into a normalized plan; null when it is not plan JSON. Pure. */
+export function planFromArtifact(artifact) {
+    if (!artifact || typeof artifact.artifactText !== 'string' || !artifact.artifactText.trim()) return null;
+    let parsed;
+    try { parsed = JSON.parse(artifact.artifactText); } catch (_) { return null; }
+    if (!parsed || typeof parsed !== 'object') return null;
+    return normalizePlan(parsed);
+}
+
+/** The newest artifact of a chain = highest revision (the server lists chains ascending; do not trust order). Pure. */
+export function latestArtifact(chain) {
+    if (!Array.isArray(chain) || !chain.length) return null;
+    return chain.reduce(function (best, a) {
+        if (!a) return best;
+        if (!best) return a;
+        return (Number(a.revision) || 0) > (Number(best.revision) || 0) ? a : best;
+    }, null);
+}
+
+/**
+ * The newest renderPlan artifact of a node, read in full: {artifact, plan} or null when the node has
+ * no renderPlan chain. `artifacts` is the nodeView `artifacts` map ({role: [summary…]}); the text is
+ * fetched through GET /{book}/artifact/{oid} (summaries never carry artifactText).
+ */
+export async function loadNodePlan(pb2BookObjectId, artifacts) {
+    let chain = artifacts && artifacts.renderPlan;
+    let latest = latestArtifact(chain);
+    if (!latest || !latest.objectId) return null;
+    let artifact = await getArtifact(pb2BookObjectId, latest.objectId);
+    return { artifact: artifact, plan: planFromArtifact(artifact) };
+}

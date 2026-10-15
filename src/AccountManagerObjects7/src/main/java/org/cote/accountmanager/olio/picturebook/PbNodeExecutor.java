@@ -19,6 +19,15 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.illustration.CompiledPrompt;
+import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
+import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
+import org.cote.accountmanager.olio.illustration.RendererAdapter;
+import org.cote.accountmanager.olio.illustration.StageImage;
+import org.cote.accountmanager.olio.illustration.StageRequest;
+import org.cote.accountmanager.olio.illustration.StageResult;
+import org.cote.accountmanager.olio.illustration.SwarmRendererAdapter;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil.SceneGraph;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.ResolvedCharacter;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -29,6 +38,7 @@ import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
@@ -44,9 +54,9 @@ import org.cote.accountmanager.util.JSONUtil;
  * Single-node executor for the PB2 canvas. Drives one node synchronously, persists a new artifact
  * revision, marks it selected, and propagates staleness downstream.
  * <p>
- * PORTRAIT, LANDSCAPE, SCENE_PROMPT, LANDSCAPE_PROMPT, REFERENCE_STRIP, and COMPOSITE are
- * implemented. Callers discover unsupported types via a 501 {@link PictureBookException} so the
- * API can be extended incrementally without silent no-ops.
+ * PORTRAIT, LANDSCAPE, SCENE_PROMPT, LANDSCAPE_PROMPT, REFERENCE_STRIP, COMPOSITE and (V3 P2-5)
+ * RENDER_PLAN are implemented. Callers discover unsupported types via a 501 {@link PictureBookException}
+ * so the API can be extended incrementally without silent no-ops.
  * <p>
  * Two entry points (V3 P1-3):
  * <ul>
@@ -81,14 +91,16 @@ public class PbNodeExecutor {
 		PbNodeTypeEnumType.SCENE_PROMPT,
 		PbNodeTypeEnumType.LANDSCAPE_PROMPT,
 		PbNodeTypeEnumType.REFERENCE_STRIP,
-		PbNodeTypeEnumType.COMPOSITE
+		PbNodeTypeEnumType.COMPOSITE,
+		PbNodeTypeEnumType.RENDER_PLAN
 	));
 
 	/** The subset of {@link #EXECUTABLE_TYPES} that needs an SD backend; the rest are pure Java / DB work. */
 	public static final Set<PbNodeTypeEnumType> SD_BACKED_TYPES = Collections.unmodifiableSet(EnumSet.of(
 		PbNodeTypeEnumType.PORTRAIT,
 		PbNodeTypeEnumType.LANDSCAPE,
-		PbNodeTypeEnumType.COMPOSITE
+		PbNodeTypeEnumType.COMPOSITE,
+		PbNodeTypeEnumType.RENDER_PLAN
 	));
 
 	private PbNodeExecutor() {
@@ -431,6 +443,8 @@ public class PbNodeExecutor {
 				return executeReferenceStrip(g, node);
 			case COMPOSITE:
 				return executeComposite(g, node, sdu);
+			case RENDER_PLAN:
+				return executeRenderPlan(g, node, sdu);
 			default:
 				throw new PictureBookException(501,
 					"Single-node execution is not yet implemented for node type " + nodeType);
@@ -548,6 +562,253 @@ public class PbNodeExecutor {
 		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), downstream, degradations);
 	}
 
+	// ─── render plan (RENDER_PLAN node; V3 §12, §16, §20, P2-5) ──────────────────
+
+	/**
+	 * Render a scene from its {@link RenderPlan} (V3 §12): build the plan for this node, persist it as the
+	 * node's {@code renderPlan} artifact BEFORE anything is checked (§12 rule 1 - the plan is the record of
+	 * what was decided, including a refusal), refuse with the resolver's reason when the BASE stage has no
+	 * resolved model, then send exactly the BASE stage through the renderer adapter and record the image as
+	 * the node's {@code base} artifact.
+	 * <p>
+	 * Phase 2 scope: the strategy is always TEXT_ONLY, only the BASE stage is rendered (an UPSCALE stage the
+	 * preset planned is reported as a degradation, never silently dropped) and one image is produced
+	 * regardless of the preset's variant count.
+	 */
+	private static Map<String, Object> executeRenderPlan(SceneGraph g, BaseRecord node, SDUtil sdu) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
+		String handle = node.get(OlioFieldNames.FIELD_PB_HANDLE);
+		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+		if(scopeRef == null || scopeRef.trim().isEmpty()) {
+			throw new PictureBookException(400, "Render-plan node " + handle + " carries no scopeRef (scene objectId)");
+		}
+
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		BaseRecord scene = findSceneByNodeRef(user, book, node, orgId, new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
+			OlioFieldNames.FIELD_PB_SCENE_INDEX, OlioFieldNames.FIELD_PB_TITLE, "summary",
+			OlioFieldNames.FIELD_PB_SETTING, OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_MOOD,
+			OlioFieldNames.FIELD_CB_SD_PROMPT
+		});
+		if(scene == null) {
+			throw new PictureBookException(404, "Scene " + scopeRef + " not found");
+		}
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		String sceneLabel = "scene " + (sceneIndex != null ? sceneIndex.toString() : scopeRef);
+
+		PlannedRender r = renderPlannedScene(g, node, scene, sceneLabel, sdu,
+			"render_plan_" + (sceneIndex != null ? sceneIndex : "x"),
+			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt");
+		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
+			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
+
+		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
+		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+
+		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(r.bytes.length), downstream, r.degradations);
+		r.describe(out);
+		return out;
+	}
+
+	/** What one plan-driven BASE render produced, before the caller records it under its node's role. */
+	static final class PlannedRender {
+		final RenderPlan plan;
+		final String planOid;
+		final CompiledPrompt compiled;
+		final byte[] bytes;
+		final BaseRecord data;
+		final BaseRecord frozen;
+		final Long seed;
+		final String requestJson;
+		final long durationMs;
+		final List<String> degradations;
+		final List<String> configNotApplied;
+
+		private PlannedRender(RenderPlan plan, String planOid, CompiledPrompt compiled, byte[] bytes, BaseRecord data,
+				BaseRecord frozen, Long seed, String requestJson, long durationMs, List<String> degradations,
+				List<String> configNotApplied) {
+			this.plan = plan;
+			this.planOid = planOid;
+			this.compiled = compiled;
+			this.bytes = bytes;
+			this.data = data;
+			this.frozen = frozen;
+			this.seed = seed;
+			this.requestJson = requestJson;
+			this.durationMs = durationMs;
+			this.degradations = degradations;
+			this.configNotApplied = configNotApplied;
+		}
+
+		/// The plan keys every plan-driven node reports (§12): which plan, its hash, the strategy and stages,
+		/// and the effective-config values a plan never carries ({@link #KEY_CONFIG_NOT_APPLIED}).
+		void describe(Map<String, Object> out) {
+			out.put("planArtifactObjectId", planOid);
+			out.put("planContentHash", plan.contentHash());
+			out.put("strategy", plan.getStrategy().getName().name());
+			out.put("stagesPlanned", plan.getStrategy().getStages());
+			out.put("stagesRendered", List.of(RenderPlan.STAGE_BASE));
+			out.put(KEY_CONFIG_NOT_APPLIED, configNotApplied);
+		}
+	}
+
+	/**
+	 * The plan-driven render both the RENDER_PLAN node and the ChapBook page share (V3 §12, §24): build the
+	 * plan for {@code node}, persist it as the node's {@code renderPlan} artifact BEFORE anything is checked
+	 * (§12 rule 1 - the plan is the record of what was decided, including a refusal), refuse with the
+	 * resolver's reason when the BASE stage has no resolved model, send exactly the BASE stage through the
+	 * renderer adapter on {@code sdu}, and persist the bytes. The caller records the image under its own
+	 * role and closes the node.
+	 * <p>
+	 * Nothing the plan does not carry reaches the renderer, and nothing is dropped silently: the
+	 * {@code sd.config} tier's {@code style} clause, {@code hires} and the v1 default negative prompt are
+	 * not part of a plan (the compiler takes style from {@code olio.pb.style} and the negative from the
+	 * style's exclusions plus the config's {@code negativePrompt}), so each is reported under
+	 * {@link #KEY_CONFIG_NOT_APPLIED} when the effective config asked for it. They are <b>not</b>
+	 * degradations: a degradation is the render falling short of its own plan (§19 - a substituted model,
+	 * a planned stage not rendered) and vetoes auto-approve (§10 rule 5), whereas these are v1 knobs the
+	 * plan path governs by preset and style instead; every deployment-default {@code sd.config} carries
+	 * {@code hires} and a {@code style}, so counting them would leave auto-approve unreachable on the plan
+	 * path. A planned UPSCALE stage is a degradation: reported, not rendered (Phase 2 renders BASE only,
+	 * one image regardless of the preset's variants).
+	 *
+	 * @param noTextMessage the 409 message when the compiled BASE prompt is blank; the plan artifact id is appended
+	 */
+	static PlannedRender renderPlannedScene(SceneGraph g, BaseRecord node, BaseRecord scene, String sceneLabel, SDUtil sdu,
+			String imageNamePrefix, String noTextMessage) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
+
+		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(user, book, scene, node, PbRenderPlanUtil.PlanOptions.NONE,
+			sdu.getApiType(), sdu.getServer());
+		BaseRecord planArtifact = PbRenderPlanUtil.persistPlanArtifact(user, node, g.getArtifactGroupPath(), plan);
+		String planOid = planArtifact.get(FieldNames.FIELD_OBJECT_ID);
+
+		RenderPlan.ModelPick pick = plan.pickForStage(RenderPlan.STAGE_BASE);
+		if(pick == null || !pick.isResolved()) {
+			throw new PictureBookException(unresolvedModelStatus(pick), unresolvedModelMessage(sceneLabel, pick, plan, planOid));
+		}
+		CompiledPrompt compiled = plan.getCompiled().get(RenderPlan.STAGE_BASE);
+		if(compiled == null || compiled.getPrompt() == null || compiled.getPrompt().isBlank()) {
+			throw new PictureBookException(409, noTextMessage + " (plan artifact " + planOid + ")");
+		}
+
+		List<String> degradations = new ArrayList<>();
+		for(RenderPlan.Degradation d : plan.getDegradations()) {
+			degradations.add(d.getCode() + ": " + d.getMessage());
+		}
+		List<String> stagesPlanned = plan.getStrategy().getStages();
+		if(stagesPlanned.contains(RenderPlan.STAGE_UPSCALE)) {
+			degradations.add("upscale: UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)");
+		}
+		Map<String, Object> cfg = plan.getConfig();
+		List<String> configNotApplied = new ArrayList<>();
+		if(Boolean.TRUE.equals(cfg.get("hires"))) {
+			configNotApplied.add(NOT_APPLIED_HIRES + ": the effective config asks for hires but the plan renders the BASE stage only; no refiner pass was sent");
+		}
+		Object styleClause = cfg.get("style");
+		if(styleClause instanceof String && NarrativeUtil.isMeaningful((String) styleClause)) {
+			configNotApplied.add(NOT_APPLIED_STYLE_CLAUSE + ": the effective config's style '" + styleClause
+				+ "' is not applied on the plan path; the compiled style comes from the book's olio.pb.style chain only");
+		}
+		if(compiled.getNegative() == null || compiled.getNegative().isBlank()) {
+			configNotApplied.add(NOT_APPLIED_DEFAULT_NEGATIVE + ": no negative prompt compiled (the style names no exclusions and the config carries no negativePrompt); the v1 default negative is not applied on the plan path");
+		}
+
+		Object cfgVal = cfg.get("cfg");
+		double cfgScale = (cfgVal instanceof Number ? ((Number) cfgVal).doubleValue() : 7.0);
+		StageRequest req = StageRequest.builder()
+			.plan(plan)
+			.stage(RenderPlan.STAGE_BASE)
+			.prompt(compiled)
+			.model(pick.getModel())
+			.width(plan.getCanvas().getWidth())
+			.height(plan.getCanvas().getHeight())
+			.steps(plan.getPreset().getSteps())
+			.cfg(cfgScale)
+			.sampler((String) cfg.get("sampler"))
+			.scheduler((String) cfg.get("scheduler"))
+			.seed(StageRequest.SEED_RANDOM)
+			.images(1)
+			.hires(false)
+			.config(cfg)
+			.build();
+
+		RendererAdapter adapter = new SwarmRendererAdapter(sdu);
+		StageResult result = adapter.execute(req, g::isCancelRequested);
+		if(!result.isOk()) {
+			String error = (result.getError() != null ? result.getError() : RendererAdapter.ERROR_NO_IMAGES);
+			if(RendererAdapter.ERROR_CANCELLED.equals(error) || g.isCancelRequested()) {
+				throw new PbStageCancelledException("Cancelled render of " + sceneLabel + "; nothing recorded");
+			}
+			int status = (RendererAdapter.ERROR_UNREACHABLE.equals(error) ? 503 : 500);
+			throw new PictureBookException(status, "Render of " + sceneLabel + " failed: " + error
+				+ " (plan artifact " + planOid + ")");
+		}
+		if(g.isCancelRequested()) {
+			throw new PbStageCancelledException("Cancelled render of " + sceneLabel + " after the renderer answered; image discarded");
+		}
+
+		StageImage img = result.getImages().get(0);
+		byte[] bytes = img.getBytes();
+		if(bytes == null || bytes.length == 0) {
+			throw new PictureBookException(500, "Rendered image for " + sceneLabel + " decoded to empty bytes (plan artifact " + planOid + ")");
+		}
+		BaseRecord data = PbPipelineUtil.persistBytes(g, imageNamePrefix + "_" + System.currentTimeMillis(), bytes, "image/png");
+		if(data == null) {
+			throw new PictureBookException(500, "Failed to persist the rendered bytes for " + sceneLabel);
+		}
+		BaseRecord frozen = frozenConfig(plan, pick, compiled);
+		return new PlannedRender(plan, planOid, compiled, bytes, data, frozen,
+			(img.isSeedReported() ? Long.valueOf(img.getSeed()) : null), result.getRequestJson(), result.getDurationMs(),
+			degradations, configNotApplied);
+	}
+
+	/// DTO key: effective sd.config values the plan path never applies (§24 as-built), each "CODE: text".
+	/// The vocabulary is the illustration service's ({@link ConfigNotApplied}) so chat reports the same codes.
+	public static final String KEY_CONFIG_NOT_APPLIED = ConfigNotApplied.KEY;
+	public static final String NOT_APPLIED_HIRES = ConfigNotApplied.HIRES;
+	public static final String NOT_APPLIED_STYLE_CLAUSE = ConfigNotApplied.STYLE_CLAUSE;
+	public static final String NOT_APPLIED_DEFAULT_NEGATIVE = ConfigNotApplied.DEFAULT_NEGATIVE;
+
+	/// 503 when the refusal is the renderer's (its inventory could not be read), 409 when it is the plan's
+	/// (nothing installed matches the request); both are "reported before rendering" (§12).
+	private static int unresolvedModelStatus(RenderPlan.ModelPick pick) {
+		return ModelResolver.unresolvedStatus(pick);
+	}
+
+	/// The resolver's reason, never the server URL or API type (those stay in the log, as the inventory does).
+	private static String unresolvedModelMessage(String sceneLabel, RenderPlan.ModelPick pick, RenderPlan plan, String planOid) {
+		return ModelResolver.unresolvedMessage(sceneLabel, pick, plan, planOid);
+	}
+
+	/// The sd.config the artifact's snapshot freezes: the plan's config values (already a schema-ordered
+	/// snapshot of the effective config) re-hydrated through the same path a node override takes, with the
+	/// model, prompt and negative this stage sent on top; steps/canvas stay as snapshotted (generatorRequest is the record).
+	private static BaseRecord frozenConfig(RenderPlan plan, RenderPlan.ModelPick pick, CompiledPrompt compiled) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("schema", OlioModelNames.MODEL_SD_CONFIG);
+		m.putAll(plan.getConfig());
+		BaseRecord cfg = PbConfigUtil.parseOverride(JSONUtil.exportObject(m));
+		try {
+			if(cfg == null) {
+				logger.warn("Plan config did not re-hydrate as " + OlioModelNames.MODEL_SD_CONFIG + "; freezing the stage values only");
+				cfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG,
+					new String[] {"model", "description", "negativePrompt", "hires"});
+			}
+			cfg.set("model", pick.getModel());
+			cfg.set("description", compiled.getPrompt());
+			cfg.set("negativePrompt", compiled.getNegative() != null ? compiled.getNegative() : "");
+			cfg.set("hires", false);
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to freeze the render config: " + e.getMessage());
+		}
+		return cfg;
+	}
+
 	// ─── ChapBook page (LANDSCAPE node of a CHAPBOOK book; V3 §24, P1-9) ─────────
 
 	/** True when {@code book.bookType} is CHAPBOOK (enum compared case-insensitively: lowercase on the wire, UPPERCASE in Java). */
@@ -560,14 +821,15 @@ public class PbNodeExecutor {
 	}
 
 	/**
-	 * Render one ChapBook page as a LANDSCAPE node. Same artifact, metrics, downstream-stale and
-	 * DONE_UNVERIFIED closing as {@link #executeLandscape}, with the v1
-	 * ({@code ChapBookUtil.renderResolvedScene}) differences the page path needs:
+	 * Render one ChapBook page as a LANDSCAPE node, plan-driven (V3 §24, P2-6): the page is a TEXT_ONLY
+	 * scene with zero actors, so its {@link RenderPlan} is built exactly as a RENDER_PLAN node's is
+	 * ({@link #renderPlannedScene}) and the page's {@code sdPrompt} - the prompt the continuity composer
+	 * produced up front and the user may have locked - is the plan's {@code location.text}, sent verbatim
+	 * as the MAIN clause (the compiler trims whitespace, nothing else). Same artifact, metrics, downstream-stale
+	 * and DONE_UNVERIFIED closing as {@link #executeLandscape}, with the page-path specifics:
 	 * <ul>
 	 * <li>no generic fallback prompt - the facade refuses an un-prompted page before a node exists, so a
-	 *     blank {@code sdPrompt} here is a 409, not a degraded render;</li>
-	 * <li>the style tier is applied exactly as v1 does (G-25): {@link SDUtil#fillStyleDefaults},
-	 *     {@link SDUtil#applyConfigStyle} on the positive prompt, default negative prompt when none;</li>
+	 *     page whose {@code sdPrompt} is not meaningful here is a 409, not a degraded render;</li>
 	 * <li>the image is named {@code chapbook_<sceneOid>_<ts>} and, after the artifact exists, the page's
 	 *     {@code imageObjectId} is pointed at it and {@code imageStale} cleared, as the requesting user. A
 	 *     refused or failed scene write-back is logged and reported in {@code degradations}; it never fails
@@ -575,10 +837,10 @@ public class PbNodeExecutor {
 	 *     reads the selected artifact first.</li>
 	 * </ul>
 	 * The node is the config-override carrier: {@code PbServiceFacade.ensureChapBookPageNode} mirrors the
-	 * scene's {@code configOverride} and {@code sdPrompt} onto it before every submit, so
-	 * {@link PbConfigUtil#resolveEffectiveConfig(BaseRecord, BaseRecord, boolean)} with the node is the
-	 * same precedence v1 resolves with the scene - minus the per-request client overlay, which the v3 path
-	 * drops by design (§24).
+	 * scene's {@code configOverride} and {@code sdPrompt} onto it before every submit, so the plan's node
+	 * tier is the scene's override - minus the per-request client overlay, which the v3 path drops by
+	 * design (§24). The v1 page path's {@code fillStyleDefaults} / {@code applyConfigStyle} / default
+	 * negative are not applied here; see {@link #renderPlannedScene} for how each is reported instead.
 	 */
 	private static Map<String, Object> executeChapBookPage(SceneGraph g, BaseRecord node, SDUtil sdu) {
 		BaseRecord user = g.getUser();
@@ -599,59 +861,24 @@ public class PbNodeExecutor {
 			throw new PictureBookException(404, "Page " + scopeRef + " not found");
 		}
 		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
 		String sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-		if(sdPrompt == null || sdPrompt.trim().isEmpty()) {
-			throw new PictureBookException(409, "Page " + scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX)
+		if(!NarrativeUtil.isMeaningful(sdPrompt)) {
+			throw new PictureBookException(409, "Page " + sceneIndex
 				+ " has no prompt; set or generate its landscape prompt before rendering it");
 		}
-		sdPrompt = sdPrompt.trim();
+		String sceneLabel = "page " + (sceneIndex != null ? sceneIndex.toString() : sceneOid);
 
-		List<String> degradations = new ArrayList<>();
-		PbStyleResolver.EffectiveStyle style = styleFor(g, node);
-		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, false, null, style);
-		applyModelPolicy(g, node, false, style, PbModelTaskEnumType.LOCATION, effectiveConfig, sdu, false);
-		try {
-			SDUtil.fillStyleDefaults(effectiveConfig);
-			effectiveConfig.set("description", SDUtil.applyConfigStyle(sdPrompt, effectiveConfig));
-			String negative = effectiveConfig.get("negativePrompt");
-			if(negative == null || negative.isBlank()) {
-				effectiveConfig.set("negativePrompt", NarrativeUtil.getDefaultNegativePrompt());
-			}
-		}
-		catch(FieldException | ValueException | ModelNotFoundException e) {
-			throw new PictureBookException(500, "Failed to set description on effective page config: " + e.getMessage());
-		}
-
-		String artifactPath = g.getArtifactGroupPath();
-		String imageName = "chapbook_" + sceneOid + "_" + System.currentTimeMillis();
-
-		long callStarted = System.currentTimeMillis();
-		List<BaseRecord> images = sdu.createImage(user, artifactPath, effectiveConfig, imageName, 1, SDUtil.hiresOf(effectiveConfig), -1);
-		long callMs = System.currentTimeMillis() - callStarted;
-		discardIfCancelled(g, images, "page " + sceneOid);
-		if(images == null || images.isEmpty()) {
-			throw new PictureBookException(500, "SD backend returned no images for page " + sceneOid);
-		}
-		BaseRecord image = images.get(0);
-		byte[] bytes;
-		try {
-			bytes = ByteModelUtil.getValue(image);
-		}
-		catch(FieldException | ValueException e) {
-			throw new PictureBookException(500, "Failed to read page image bytes for " + sceneOid + ": " + e.getMessage());
-		}
-		if(bytes == null || bytes.length == 0) {
-			throw new PictureBookException(500, "Page image for " + sceneOid + " decoded to empty bytes");
-		}
-
-		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_LANDSCAPE,
-			PbArtifactTypeEnumType.IMAGE, artifactPath, image, null, effectiveConfig, null);
-		int[] wh = PbPipelineUtil.decodeDimensions(bytes);
-		PbArtifactUtil.recordImageMetrics(user, artifact, bytes, "image/png", wh[0], wh[1], null, sdu.getApiType(), callMs);
+		PlannedRender r = renderPlannedScene(g, node, scene, sceneLabel, sdu, "chapbook_" + sceneOid,
+			"Page " + sceneIndex + " has no text to render: set or generate its landscape prompt");
+		List<String> degradations = r.degradations;
+		byte[] bytes = r.bytes;
+		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE,
+			r.data, bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
 
 		/// The scene keeps pointing at the newest image so the v1 readers (bookPageView's fallback, the
 		/// health scan's SCENE_IMAGE_* findings) stay coherent; the artifact chain is what review acts on.
-		String imageOid = image.get(FieldNames.FIELD_OBJECT_ID);
+		String imageOid = r.data.get(FieldNames.FIELD_OBJECT_ID);
 		try {
 			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
 				OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID, OlioFieldNames.FIELD_PB_IMAGE_STALE);
@@ -675,6 +902,7 @@ public class PbNodeExecutor {
 		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), downstream, degradations);
 		out.put("sceneObjectId", sceneOid);
 		out.put("imageObjectId", imageOid);
+		r.describe(out);
 		return out;
 	}
 
@@ -902,6 +1130,9 @@ public class PbNodeExecutor {
 		PbStyleResolver.EffectiveStyle style = styleFor(g, node);
 		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, true, null, style);
 		String mode = SceneCompositeUtil.resolveMode(effectiveConfig, false);
+		/// V3 §37.3 Disable: a retired mode fails the node (and the run, via executeNodeRun's catch)
+		/// before the model policy and before any SD contact.
+		PbRenderPath.requireEnabledCompositeMode(mode, "scene " + scopeRef);
 		boolean flux2 = SceneCompositeUtil.MODE_FLUX2.equals(mode);
 		boolean hasRefs = (leftBytes != null || centerBytes != null || landscapeBytes != null);
 		applyModelPolicy(g, node, true, style, (flux2 ? PbModelTaskEnumType.SCENE_DIRECT : PbModelTaskEnumType.LOCATION),

@@ -10321,7 +10321,7 @@
 			"type": "string",
 			"maxLength": 16,
 			"default": "flux2",
-			"description": "Scene composite pipeline: 'flux2' (default), 'kontext', or 'classic'."
+			"description": "Scene composite pipeline: 'flux2' (default) or 'classic'. 'kontext' is retired (V3 design section 37.3; disabled in Phase 2, removed in Phase 10) and is refused by every entry point."
 		},
 		{
 			"name": "flux2Model",
@@ -10385,7 +10385,7 @@
 		{
 			"name": "kontextModel",
 			"type": "string",
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE; set explicitly when opting into compositeMode=kontext."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE; since Phase 2 compositeMode=kontext is refused at every entry point, so nothing reads this field until Phase 10 removes it."
 		},
 		{
 			"name": "kontextSteps",

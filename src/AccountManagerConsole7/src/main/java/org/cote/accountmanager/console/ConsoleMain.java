@@ -132,10 +132,12 @@ public class ConsoleMain {
 		/// image list), so prefer setting this over relying on the olio.sd.config schema default.
 		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(
 			properties.getProperty(org.cote.accountmanager.olio.sd.SDUtil.DEFAULT_MODEL_CONFIG_KEY));
-		/// PictureBook V3 render-path switch per product (v1 | v3, default v1). Boot-pinned, read once.
+		/// PictureBook V3 render-path switch per product (v1 | v3; defaults picturebook v1, chapbook v3 -
+		/// chapbook v1 is the rollback, logged at WARN - and chat v1). Boot-pinned, read once.
 		org.cote.accountmanager.olio.picturebook.PbRenderPath.configure(
 			properties.getProperty(org.cote.accountmanager.olio.picturebook.PbRenderPath.PICTUREBOOK_CONFIG_KEY),
-			properties.getProperty(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAPBOOK_CONFIG_KEY));
+			properties.getProperty(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAPBOOK_CONFIG_KEY),
+			properties.getProperty(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAT_CONFIG_KEY));
 		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")), Boolean.parseBoolean(properties.getProperty("db.schema.dropColumns")));
 		if(ioContext != null) {
 			VectorUtil vectorUtil = new VectorUtil(LLMServiceEnumType.valueOf(properties.getProperty("test.embedding.type").toUpperCase()), properties.getProperty("test.embedding.server"), properties.getProperty("test.embedding.authorizationToken"));

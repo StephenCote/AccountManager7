@@ -26,6 +26,9 @@ import org.cote.accountmanager.olio.illustration.DeploymentModelDefaults;
 import org.cote.accountmanager.olio.illustration.ModelInventory;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
+import org.cote.accountmanager.olio.illustration.RenderCalibration;
+import org.cote.accountmanager.olio.illustration.RenderEstimate;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -574,6 +577,75 @@ public class PbServiceFacade {
 	}
 
 	/**
+	 * Render one scene from its render plan, synchronously (V3 §12, §16, §20, P2-5): the scene's RENDER_PLAN
+	 * node is created on first use (one per scene, beside its landscape / composite nodes; {@code scene.sceneNode}
+	 * is not touched), then executed exactly as {@link #requestRegenerate} executes a node - same pin check,
+	 * same in-flight claim, same executor. The plan is persisted as the node's {@code renderPlan} artifact
+	 * before anything is sent; a scene whose BASE stage has no installed model is refused with the resolver's
+	 * reason (409, or 503 when the renderer's inventory could not be read) and no render happens.
+	 *
+	 * @return the executor's artifact + run DTO (plus {@code planArtifactObjectId}, {@code planContentHash},
+	 *         {@code strategy}, {@code stagesPlanned}, {@code stagesRendered}), {@code sceneObjectId},
+	 *         {@code sceneIndex}, {@code renderPath=v3} and {@code executed=true}
+	 */
+	public static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String sdApiType, String sdServer) {
+		if(user == null) {
+			throw new PictureBookException(401, "No authenticated principal");
+		}
+		org.cote.accountmanager.olio.sd.SDUtil sdu = null;
+		if(sdServer != null && !sdServer.isBlank()) {
+			/// Same refusal planScene gives a misconfigured backend; a blank server stays null so the executor's
+			/// own gate answers 500 "SD server not configured" for this SD-backed node type.
+			try {
+				sdu = new org.cote.accountmanager.olio.sd.SDUtil(SDAPIEnumType.valueOf(sdApiType == null ? "" : sdApiType.trim().toUpperCase()), sdServer);
+			}
+			catch(IllegalArgumentException e) {
+				logger.error("SD server API type '" + sdApiType + "' is not recognised");
+				throw new PictureBookException(500, "SD server API type is not recognised");
+			}
+		}
+		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu);
+	}
+
+	/** {@link #requestRenderPlanScene} over an {@link org.cote.accountmanager.olio.sd.SDUtil} the caller built (test seam). */
+	static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			org.cote.accountmanager.olio.sd.SDUtil sdu) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "render a scene plan");
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		BaseRecord workflow = ensureWorkflow(user, book);
+		BaseRecord node = ensureRenderPlanNode(user, book, workflow, scene);
+
+		Boolean pinned = node.get(OlioFieldNames.FIELD_PB_PINNED);
+		if(pinned != null && pinned.booleanValue()) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is pinned. Unpin it first - pinning means do not replace this artifact.");
+		}
+
+		List<Long> nodeIds = List.of((Long) node.get(FieldNames.FIELD_ID));
+		String claimKey = "sync:" + UUID.randomUUID();
+		Long conflict = PbNodeInflight.tryClaim(nodeIds, claimKey);
+		if(conflict != null) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is being rendered by run " + PbNodeInflight.runOf(conflict.longValue()));
+		}
+		try {
+			Map<String, Object> out = new LinkedHashMap<>();
+			out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+			out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+			out.put("renderPath", "v3");
+			out.putAll(PbNodeExecutor.executeNodeRun(user, book, workflow, node, sdu));
+			out.put("executed", Boolean.TRUE);
+			return out;
+		}
+		finally {
+			PbNodeInflight.release(nodeIds, claimKey);
+		}
+	}
+
+	/**
 	 * Submit an asynchronous render of one scene (V3 §21, P1-6): the scene's graph node is the terminal,
 	 * its upstream closure the plan, and the request returns as soon as the run is opened and the job
 	 * queued. See {@link PbRenderJobUtil#submit} for what is planned, executed, reused and refused.
@@ -862,6 +934,51 @@ public class PbServiceFacade {
 			}
 		}
 		/// Re-read so the caller sees the mirrored fields and the current status / pin, not the pre-patch copy.
+		BaseRecord fresh = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(node));
+		return (fresh != null ? fresh : node);
+	}
+
+	/**
+	 * The book's workflow, created on first use (P2-5): a plain PictureBook whose scenes were planned but never
+	 * generated has none, and the first render-plan execution is the natural moment to add it. Reached only
+	 * after the gates, so the create is an authorized write by the book's updater.
+	 */
+	private static BaseRecord ensureWorkflow(BaseRecord user, BaseRecord book) {
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		if(slug == null || slug.isBlank()) {
+			throw new PictureBookException(500, "Book " + book.get(FieldNames.FIELD_OBJECT_ID) + " carries no slug");
+		}
+		BaseRecord workflow = PbGraphUtil.getCreateWorkflow(user, book, PbBookUtil.workflowGroupPath(slug));
+		if(workflow == null) {
+			throw new PictureBookException(500, "Failed to create the workflow for book " + slug);
+		}
+		return workflow;
+	}
+
+	/**
+	 * The scene's RENDER_PLAN node (V3 §12, P2-5), created on first use: found by handle
+	 * ({@link PbPipelineUtil#renderPlanHandle} of the scene objectId - deterministic, so this is idempotent) or
+	 * created with {@code scope=scene}, {@code scopeRef=} the scene objectId and {@code sceneIndex} / ordinal =
+	 * the scene index. Unlike {@link #ensureChapBookPageNode} nothing is mirrored onto it and
+	 * {@code scene.sceneNode} is left alone: the executor reads the scene and the plan is the record.
+	 */
+	private static BaseRecord ensureRenderPlanNode(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord scene) {
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
+		String handle = PbPipelineUtil.renderPlanHandle(sceneOid);
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
+		if(node == null) {
+			String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+			node = PbGraphUtil.addNode(user, workflow, handle, PbNodeTypeEnumType.RENDER_PLAN,
+				PbBookUtil.workflowGroupPath(slug), idx);
+			if(node == null) {
+				throw new PictureBookException(500, "Failed to create the render-plan node " + handle);
+			}
+			if(!PbPipelineUtil.patchNodeScope(user, workflow, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx)) {
+				throw new PictureBookException(500, "Failed to record the scene scope on node " + handle);
+			}
+		}
 		BaseRecord fresh = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(node));
 		return (fresh != null ? fresh : node);
 	}
@@ -2230,7 +2347,9 @@ public class PbServiceFacade {
 	 * {@code filter} is {@code all} (default; GENERATED, IN_REVIEW, APPROVED and REJECTED - ARCHIVED is
 	 * history and is left out) or {@code auto-approved} (only artifacts whose {@code approvedBy} is
 	 * {@link PbArtifactUtil#APPROVED_BY_AUTO}); anything else is a 400 here, so REST and MCP share one
-	 * validation. Nodes with no artifacts are omitted. One uncached chain read per (node, role).
+	 * validation. Nodes with no artifacts are omitted. One uncached chain read per (node, role). The
+	 * {@code renderPlan} role is left out: a plan artifact is the record of what a render decided (§12),
+	 * not an output anyone reviews, and a plan-driven node always carries one beside its image.
 	 */
 	public static Map<String, Object> listReviewQueue(BaseRecord user, String bookObjectId, String filter) {
 		String f = (filter == null || filter.trim().length() == 0 ? REVIEW_FILTER_ALL : filter.trim().toLowerCase());
@@ -2249,6 +2368,9 @@ public class PbServiceFacade {
 		for(BaseRecord node : PbGraphUtil.listNodes(user, workflow)) {
 			List<Map<String, Object>> arts = new ArrayList<>();
 			for(String role : artifactRoles(user, node)) {
+				if(PbPipelineUtil.ROLE_RENDER_PLAN.equals(role)) {
+					continue;
+				}
 				for(BaseRecord a : PbArtifactUtil.listChain(user, node, role)) {
 					PbReviewStatusEnumType rs = PbArtifactUtil.reviewStatusOf(a);
 					if(rs == PbReviewStatusEnumType.ARCHIVED) {
@@ -2495,6 +2617,60 @@ public class PbServiceFacade {
 				+ " - AccessPoint.update returned null (PBAC denial or validation failure; check the audit log)");
 		}
 		return styleDto(user, book, PbStyleResolver.resolve(user, book));
+	}
+
+	// ─── render plan (V3 §12-§15, §18; P2-4 plan inspector) ─────────────────────
+
+	/**
+	 * The RenderPlan for one scene as the caller would render it, plus the estimate and the plan's
+	 * content hash. A READ: nothing is persisted and nothing is sent to the renderer. Body keys (all
+	 * optional): {@code promptOverride}, {@code raw}, {@code preset} (DRAFT/STANDARD/FINAL), {@code model}.
+	 * Gate order: book 401/400/404 → scene 400/404 → SD server unconfigured 500 → API type 500 → preset 400
+	 * → style chain partial 409. The SD server URL is never part of the response.
+	 */
+	public static Map<String, Object> planScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			Map<String, Object> body, String sdApiType, String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		if(sdServer == null || sdServer.isBlank()) {
+			throw new PictureBookException(500, "SD server is not configured");
+		}
+		SDAPIEnumType apiType;
+		try {
+			apiType = SDAPIEnumType.valueOf(sdApiType == null ? "" : sdApiType.trim().toUpperCase());
+		}
+		catch(IllegalArgumentException e) {
+			logger.error("SD server API type '" + sdApiType + "' is not recognised");
+			throw new PictureBookException(500, "SD server API type is not recognised");
+		}
+		Map<String, Object> in = (body != null ? body : Collections.emptyMap());
+		Object presetIn = in.get("preset");
+		PbQualityPresetEnumType preset = null;
+		if(presetIn != null && !presetIn.toString().isBlank()) {
+			for(PbQualityPresetEnumType p : PbQualityPresetEnumType.values()) {
+				if(p != PbQualityPresetEnumType.UNKNOWN && p.name().equalsIgnoreCase(presetIn.toString().trim())) {
+					preset = p;
+					break;
+				}
+			}
+			if(preset == null) {
+				throw new PictureBookException(400, "Unknown quality preset '" + presetIn + "'");
+			}
+		}
+		Object promptIn = in.get("promptOverride");
+		Object modelIn = in.get("model");
+		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(
+			promptIn == null || promptIn.toString().isBlank() ? null : promptIn.toString(),
+			Boolean.TRUE.equals(in.get("raw")) || "true".equalsIgnoreCase(String.valueOf(in.get("raw"))),
+			preset,
+			modelIn == null || modelIn.toString().isBlank() ? null : modelIn.toString());
+
+		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(user, book, scene, opts, apiType, sdServer);
+		Map<String, Object> out = new LinkedHashMap<>(plan.toMap());
+		RenderPlan.ModelPick base = plan.pickForStage(RenderPlan.STAGE_BASE);
+		out.put("estimate", RenderEstimate.estimate(plan, RenderCalibration.sample(sdServer, base != null ? base.getFamily() : null)));
+		out.put("contentHash", plan.contentHash());
+		return out;
 	}
 
 	/**

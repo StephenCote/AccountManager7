@@ -8,6 +8,7 @@
  *   /picture-book/:bookObjectId          — PB1 book viewer (bookObjectId = PB1 book group objectId)
  *   /picture-book/v2/:pb2BookObjectId    — PB2 scene page reader (pb2BookObjectId = olio.pb.book objectId)
  *   /picture-book/:bookObjectId/review   — V3 review queue (features/pictureBookReview.js; spread in below)
+ *   /picture-book/:bookObjectId/style    — V3 book style editor (features/pictureBookStyle.js; spread in below)
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -26,13 +27,16 @@ import { pictureBookFromId, describeCheckpointRow } from '../workflows/pictureBo
 import { openCharacterManager } from '../workflows/pictureBookCharacters.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { routes as reviewRoutes } from './pictureBookReview.js';
+import { routes as styleRoutes } from './pictureBookStyle.js';
 import {
     listPb2Books, listSeriesBooks, bookPages,
     bookHealth, healBook, orgHealth, healOrg, summarizeHealth,
     listOrphans, purgeOrphans, countOrphans,
     workflowView, renderScene, renderAll, getRun, resumeRun, cancelRun,
-    getAutoApprove, setAutoApprove, unpinNode, isPinnedRefusal
+    getAutoApprove, setAutoApprove, unpinNode, isPinnedRefusal,
+    planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS
 } from '../workflows/pictureBookWorkflow.js';
+import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { am7olio } from '../components/olio.js';
 import { ReaderShell } from '../components/readerShell.js';
@@ -1490,6 +1494,122 @@ function pb2OpenRenderDialog() {
     });
 }
 
+// ── V3 "Plan & generate" dialog (design §26, P2-9) ────────────────────
+// POST /{book}/scene/{s}/plan previews the plan (estimate, strategy, models, compiled prompts);
+// POST /{book}/scene/{s}/render-plan renders it synchronously — no client-side deadline, the
+// server's status/message is shown verbatim (a 503 carries the persisted plan artifact id).
+let pb2Plan = { bookId: null, sceneOid: null, sceneTitle: '', preset: '', loading: false, plan: null, error: null, inspect: false, rendering: false, open: false, seq: 0 };
+
+export function __pb2PlanStateForTest() { return pb2Plan; }
+export function __setPb2PlanStateForTest(patch) { pb2Plan = Object.assign({}, pb2Plan, patch || {}); }
+
+async function pb2LoadPlan() {
+    let seq = ++pb2Plan.seq;
+    let bookId = pb2Plan.bookId;
+    let sceneOid = pb2Plan.sceneOid;
+    pb2Plan.loading = true;
+    pb2Plan.error = null;
+    m.redraw();
+    try {
+        let body = pb2Plan.preset ? { preset: pb2Plan.preset } : {};
+        let plan = await planScene(bookId, sceneOid, body);
+        if (seq !== pb2Plan.seq) return;
+        pb2Plan.plan = normalizePlan(plan);
+    } catch (e) {
+        if (seq !== pb2Plan.seq) return;
+        pb2Plan.plan = null;
+        pb2Plan.error = (e && e.message) || 'Could not plan the scene';
+    }
+    pb2Plan.loading = false;
+    m.redraw();
+}
+
+async function pb2GenerateFromPlan() {
+    if (pb2Plan.rendering || pb2Plan.loading || !pb2Plan.bookId || !pb2Plan.sceneOid) return;
+    let bookId = pb2Plan.bookId;
+    pb2Plan.rendering = true;
+    pb2Plan.error = null;
+    m.redraw();
+    try {
+        let r = await renderPlanScene(bookId, pb2Plan.sceneOid);
+        pb2Plan.rendering = false;
+        if (pb2Plan.open) Dialog.close();
+        page.toast('success', 'Scene rendered' + (r && r.artifactObjectId ? ' (artifact ' + r.artifactObjectId + ')' : ''));
+        await pb2RefreshPages(bookId);
+    } catch (e) {
+        pb2Plan.rendering = false;
+        pb2Plan.error = (e && e.message) || 'Could not render the scene';
+        if (!pb2Plan.open) page.toast('error', pb2Plan.error);
+        m.redraw();
+    }
+}
+
+const pb2PlanDialogBody = {
+    view: function () {
+        let p = pb2Plan;
+        let plan = p.plan;
+        return m('div', { 'data-testid': 'pb2-plan-dialog', class: 'space-y-3 text-sm' }, [
+            m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+                m('span', { class: 'text-xs text-gray-500' }, p.sceneTitle || 'Scene'),
+                m('span', { class: 'flex-1' }),
+                m('label', { class: 'flex items-center gap-1 text-xs' }, ['Preview preset',
+                    m('select', {
+                        'data-testid': 'pb2-plan-preset',
+                        class: 'text-xs px-1 py-0.5 rounded border dark:border-gray-600 bg-white dark:bg-gray-800',
+                        disabled: p.loading || p.rendering,
+                        value: p.preset,
+                        onchange: function (e) { pb2Plan.preset = e.target.value; pb2LoadPlan(); }
+                    }, [m('option', { value: '' }, 'style default')].concat(STYLE_QUALITY_PRESETS.map(function (q) { return m('option', { value: q, selected: q === p.preset }, q); })))
+                ])
+            ]),
+            p.loading ? m('div', { 'data-testid': 'pb2-plan-loading', class: 'text-xs text-gray-500 flex items-center gap-2' }, [
+                m('span', { class: 'material-symbols-outlined text-sm animate-spin' }, 'progress_activity'), 'Planning…']) : null,
+            !p.loading && plan ? m('div', { class: 'space-y-1' }, [
+                m('div', { class: 'flex items-center gap-2 flex-wrap text-xs' }, [
+                    m('span', { 'data-testid': 'pb2-plan-dialog-strategy', class: 'px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200' }, plan.strategy.name || 'strategy ?'),
+                    plan.preset.preset ? m('span', { class: 'text-gray-500' }, plan.preset.preset) : null,
+                    plan.canvas.width != null ? m('span', { class: 'text-gray-500' }, plan.canvas.width + ' × ' + plan.canvas.height) : null
+                ]),
+                m('div', { 'data-testid': 'pb2-plan-dialog-estimate', class: 'text-xs' }, ['Estimate: ', estimateText(plan.estimate)]),
+                plan.degradations.length ? m('div', { 'data-testid': 'pb2-plan-dialog-degradations', class: 'text-xs text-amber-700 dark:text-amber-400' },
+                    plan.degradations.map(function (d) { return m('div', (d && d.code ? d.code + ': ' : '') + ((d && d.message) || '')); })) : null,
+                p.preset ? m('div', { class: 'text-[11px] text-gray-400' }, 'The preset above only changes this preview; Generate uses the book style\'s quality preset.') : null,
+                m('button', {
+                    'data-testid': 'pb2-plan-inspect-toggle',
+                    class: 'text-xs text-purple-700 dark:text-purple-300 hover:underline',
+                    onclick: function () { pb2Plan.inspect = !pb2Plan.inspect; }
+                }, p.inspect ? 'Hide plan' : 'View plan'),
+                p.inspect ? m('div', { class: 'max-h-80 overflow-y-auto border rounded dark:border-gray-700 p-2' }, m(PbPlanInspector, { plan: plan })) : null
+            ]) : null,
+            p.rendering ? m('div', { 'data-testid': 'pb2-plan-rendering', class: 'text-xs text-gray-600 dark:text-gray-300 flex items-center gap-2' }, [
+                m('span', { class: 'material-symbols-outlined text-sm animate-spin' }, 'progress_activity'), 'Generating — this waits for the renderer; there is no client-side deadline.']) : null,
+            p.error ? m('div', { 'data-testid': 'pb2-plan-error', class: 'text-xs text-red-600 dark:text-red-400 whitespace-pre-wrap break-words' }, p.error) : null
+        ]);
+    }
+};
+
+const pb2PlanDialogActions = {
+    view: function () {
+        return [
+            { label: 'Close', icon: 'close', attrs: { 'data-testid': 'pb2-plan-dialog-close' }, onclick: function () { Dialog.close(); } },
+            { label: pb2Plan.rendering ? 'Generating…' : 'Generate', icon: 'brush', primary: true, disabled: pb2Plan.rendering || pb2Plan.loading || !pb2Plan.plan, attrs: { 'data-testid': 'pb2-plan-generate' }, onclick: pb2GenerateFromPlan }
+        ];
+    }
+};
+
+function pb2OpenPlanDialog(scene) {
+    if (!pb2BookObjectId || !scene || !scene.objectId) return;
+    pb2Plan = { bookId: pb2BookObjectId, sceneOid: scene.objectId, sceneTitle: scene.title || ('Scene ' + pb2CurrentPage), preset: '', loading: false, plan: null, error: null, inspect: false, rendering: false, open: true, seq: pb2Plan.seq };
+    Dialog.open({
+        title: 'Plan & generate',
+        size: 'md',
+        content: pb2PlanDialogBody,
+        actions: pb2PlanDialogActions,
+        onClose: function () { pb2Plan.open = false; pb2Plan.seq++; }
+    });
+    pb2LoadPlan();
+}
+
 export function renderPb2ResumeBanner() {
     let s = resumeBannerState(pb2ResumeRun);
     if (!s.show) return null;
@@ -1867,7 +1987,14 @@ export function renderPb2ScenePage() {
                 disabled: pb2Submitting || watching,
                 title: watching ? 'A render is already running' : (chip === 'stale' ? 'Re-render this scene' : 'Render this scene'),
                 onclick: function () { pb2SubmitRenderScene(scene); }
-            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'brush'), chip === 'stale' || imgUrl ? 'Re-render' : 'Render']) : null
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'brush'), chip === 'stale' || imgUrl ? 'Re-render' : 'Render']) : null,
+            v3 ? m('button', {
+                'data-testid': 'pb2-plan-render',
+                class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
+                disabled: pb2Submitting || watching,
+                title: watching ? 'A render is already running' : 'Preview the illustration plan and estimate, then generate',
+                onclick: function () { pb2OpenPlanDialog(scene); }
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'route'), 'Plan & generate']) : null
         ]),
 
         m('div', { class: 'max-w-2xl w-full px-4' },
@@ -1939,6 +2066,12 @@ export function renderPb2Header() {
             title: 'Review queue',
             onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/review'); }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'rate_review')) : null,
+        v3 ? m('button', {
+            'data-testid': 'pb2-style-link',
+            class: 'text-gray-500 hover:text-purple-600',
+            title: 'Book style (render settings, page format, models)',
+            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/style'); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'palette')) : null,
 
         // Edit (wizard) and Characters — same pair the book list rows offer.
         pb2BookObjectId ? renderPb2EditButton(
@@ -2144,6 +2277,7 @@ var pb2PageReaderView = {
 export const routes = {
     ...wfRoutes,
     ...reviewRoutes,
+    ...styleRoutes,
     '/picture-book': {
         oninit: function () { workSelectorView.oninit(); },
         view: function () { return layout(pageLayout(workSelectorView.view())); }

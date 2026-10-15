@@ -105,12 +105,13 @@ public class BaseTest {
 		/// the fallback checkpoint so nothing drifts from what this node actually has (KI-39).
 		SdTestGate.resolveInstalledCheckpoints(testProperties);
 		org.cote.accountmanager.olio.sd.SDUtil.setDefaultModel(testProperties.getProperty(SdTestGate.PROP_SWARM_MODEL));
-		/// V3 render-path switch (P1-8): the test properties pin both products to v3 so every Phase 1
-		/// JUnit exercises the graph path. Re-pinned on every @Before, so a test that flips it and dies
-		/// before its finally cannot leak v1 into the next class.
+		/// V3 render-path switch (P1-8, P2-7 chat): the test properties pin all three products to v3 so
+		/// every Phase 1/2 JUnit exercises the graph path. Re-pinned on every @Before, so a test that
+		/// flips it and dies before its finally cannot leak v1 into the next class.
 		org.cote.accountmanager.olio.picturebook.PbRenderPath.configure(
 			testProperties.getProperty(org.cote.accountmanager.olio.picturebook.PbRenderPath.PICTUREBOOK_CONFIG_KEY),
-			testProperties.getProperty(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAPBOOK_CONFIG_KEY));
+			testProperties.getProperty(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAPBOOK_CONFIG_KEY),
+			testProperties.getProperty(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAT_CONFIG_KEY));
 		/// LLM route/tier: local Ollama container first, then Azure via LiteLLM (LITELLM_LIVE only), then
 		/// the LAN Spark. Resolved once per JVM; rewrites test.llm.ollama.server to the tier's direct URL
 		/// and adds test.llm.route / test.llm.resolvedTier / test.llm.connection.* / test.llm.model.*.

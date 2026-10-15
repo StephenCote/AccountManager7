@@ -19,8 +19,9 @@ import {
     getBookInfo, workflowView, nodeView, listStale,
     regenerateNode, pinNode, addMembers, createChapter, testNode,
     saveCanvas, addBinding, deleteBinding, detectBoundaries,
-    listSeriesBooks, listPb2Books
+    listSeriesBooks, listPb2Books, loadNodePlan
 } from '../workflows/pictureBookWorkflow.js';
+import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { loadPictureBook } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId } from '../workflows/pictureBook.js';
@@ -96,6 +97,7 @@ let emptyState = null;
 let selectedNodeId = null;
 let nodeDetails = null;
 let nodeDetailsLoading = false;
+let nodePlan = { nodeId: null, loading: false, open: false, plan: null, artifact: null, error: null };
 
 let pinLoading = {};
 let regenLoading = {};
@@ -412,6 +414,7 @@ async function selectNode(nodeOid) {
     selectedNodeId = nodeOid;
     nodeDetails = null;
     nodeDetailsLoading = true;
+    nodePlan = { nodeId: nodeOid, loading: false, open: false, plan: null, artifact: null, error: null };
     m.redraw();
     try {
         nodeDetails = await nodeView(pb2BookObjectId, nodeOid);
@@ -419,6 +422,30 @@ async function selectNode(nodeOid) {
         page.toast('error', 'Failed to load node detail');
     }
     nodeDetailsLoading = false;
+    m.redraw();
+}
+
+/** "View plan" on the node detail panel: newest renderPlan artifact → GET /artifact → inspector. */
+async function toggleNodePlan() {
+    if (nodePlan.open) { nodePlan.open = false; m.redraw(); return; }
+    nodePlan.open = true;
+    if (nodePlan.plan || nodePlan.loading) { m.redraw(); return; }
+    let nodeId = selectedNodeId;
+    nodePlan.loading = true;
+    nodePlan.error = null;
+    m.redraw();
+    try {
+        let r = await loadNodePlan(pb2BookObjectId, nodeDetails && nodeDetails.artifacts);
+        if (nodeId !== selectedNodeId) return;
+        if (!r) throw new Error('This node has no render-plan artifact');
+        if (!r.plan) throw new Error('The render-plan artifact ' + (r.artifact && r.artifact.objectId) + ' does not carry plan JSON');
+        nodePlan.plan = r.plan;
+        nodePlan.artifact = r.artifact;
+    } catch (e) {
+        if (nodeId !== selectedNodeId) return;
+        nodePlan.error = (e && e.message) || 'Could not load the plan';
+    }
+    nodePlan.loading = false;
     m.redraw();
 }
 
@@ -854,6 +881,23 @@ function renderNodeDetailPanel() {
                 Object.keys(nodeDetails.artifacts).map(function (role) {
                     return renderArtifactHistory(role, nodeDetails.artifacts[role]);
                 }),
+            ])
+            : null,
+
+        // V3 (P2-9): the newest renderPlan artifact, read in full and shown through the shared inspector.
+        nodeDetails && nodeDetails.artifacts && Array.isArray(nodeDetails.artifacts.renderPlan) && nodeDetails.artifacts.renderPlan.length
+            ? m('div', { 'data-testid': 'pbwf-node-plan', style: 'margin-top:8px;' }, [
+                m('button', {
+                    'data-testid': 'pbwf-node-plan-toggle',
+                    style: 'border:1px solid #6366f1;border-radius:4px;padding:1px 6px;cursor:pointer;font-size:11px;color:#6366f1;background:none;',
+                    disabled: nodePlan.loading,
+                    onclick: function (e) { e.stopPropagation(); toggleNodePlan(); }
+                }, nodePlan.loading ? 'Loading plan…' : (nodePlan.open ? 'Hide plan' : 'View plan')),
+                nodePlan.open && nodePlan.error ? m('div', { 'data-testid': 'pbwf-node-plan-error', style: 'font-size:11px;color:#dc2626;margin-top:4px;word-break:break-word;' }, nodePlan.error) : null,
+                nodePlan.open && nodePlan.plan ? m('div', { style: 'margin-top:6px;' }, [
+                    nodePlan.artifact ? m('div', { style: 'font-size:10px;color:#64748b;margin-bottom:4px;' }, 'rev ' + (nodePlan.artifact.revision != null ? nodePlan.artifact.revision : '?') + ' · ' + (nodePlan.artifact.objectId || '')) : null,
+                    m(PbPlanInspector, { plan: nodePlan.plan })
+                ]) : null
             ])
             : null,
 
@@ -1506,10 +1550,10 @@ var pictureBookWorkflowView = {
 export { openMemberDialog, openChapterDialog };
 
 // Exported for Vitest (P1-10 S6): pure layout/colour helpers plus a seam for the drag-drop save.
-export { computePositions, storedPosition, pickThumbArtifact, statusColor, STATUS_COLOR, onCanvasMouseUp };
+export { computePositions, storedPosition, pickThumbArtifact, statusColor, STATUS_COLOR, onCanvasMouseUp, renderNodeDetailPanel, toggleNodePlan };
 export const CANVAS_GEOMETRY = { CARD_W, CARD_H, COL_GAP, ROW_GAP, CANVAS_PAD };
 export function __canvasStateForTest() {
-    return { graphData, positions, draggingNodeId, pb2BookObjectId };
+    return { graphData, positions, draggingNodeId, pb2BookObjectId, selectedNodeId, nodeDetails, nodePlan };
 }
 export function __setCanvasStateForTest(patch) {
     patch = patch || {};
@@ -1517,6 +1561,10 @@ export function __setCanvasStateForTest(patch) {
     if ('positions' in patch) positions = patch.positions;
     if ('draggingNodeId' in patch) draggingNodeId = patch.draggingNodeId;
     if ('pb2BookObjectId' in patch) pb2BookObjectId = patch.pb2BookObjectId;
+    if ('selectedNodeId' in patch) selectedNodeId = patch.selectedNodeId;
+    if ('nodeDetails' in patch) nodeDetails = patch.nodeDetails;
+    if ('nodeDetailsLoading' in patch) nodeDetailsLoading = !!patch.nodeDetailsLoading;
+    if ('nodePlan' in patch) nodePlan = Object.assign({ nodeId: null, loading: false, open: false, plan: null, artifact: null, error: null }, patch.nodePlan || {});
 }
 
 // ── Routes ────────────────────────────────────────────────────────────
