@@ -148,7 +148,7 @@ public class TestIllustrationResources {
 		assertEquals(30, jug.getRecommendedStepsHigh());
 		assertEquals(5.0, jug.getCfgMin(), EPS);
 		assertEquals(7.0, jug.getCfgMax(), EPS);
-		assertResolutions(jug, new int[][] {{1024, 1024}, {1024, 768}, {768, 1024}});
+		assertResolutions(jug, new int[][] {{1024, 1024}, {1024, 768}, {768, 1024}, {832, 1216}, {1216, 832}});
 	}
 
 	@Test

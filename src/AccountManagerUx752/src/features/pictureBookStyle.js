@@ -515,7 +515,7 @@ function renderTaskModels() {
                 let info = taskInfo[task];
                 let av = taskAvailability(info);
                 let dirty = draft.taskModels && Object.prototype.hasOwnProperty.call(draft.taskModels, task);
-                let listed = av.models && av.models.length ? av.models.map(function (x) { return typeof x === 'string' ? x : (x && (x.name || x.title)) || ''; }).filter(Boolean) : [];
+                let listed = av.models && av.models.length ? av.models.map(function (x) { return typeof x === 'string' ? x : (x && x.listedName) || ''; }).filter(Boolean) : [];
                 return m('tr', { 'data-task': task, class: 'border-t border-gray-100 dark:border-gray-700 align-top' }, [
                     m('td', { class: 'py-1 pr-2 font-medium whitespace-nowrap' }, [task, dirty ? m('span', { 'data-testid': 'pb2-style-dirty-taskModels-' + task, class: 'ml-1 text-amber-600' }, '•') : null,
                         inheritedTag(taskModelInheritedFrom(style, task), 'pb2-style-inherited-taskModels-' + task)]),

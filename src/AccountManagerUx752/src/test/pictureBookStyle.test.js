@@ -64,7 +64,10 @@ const INV_DOWN = { task: 'portrait', inventory: { fetchedAt: '2026-10-15T07:00:0
     deploymentDefault: { model: 'juggernautXL_v9.safetensors', flux2Model: null },
     resolution: { reason: 'INVENTORY_UNAVAILABLE', degraded: true, degradationText: 'x' } };
 const INV_OK = { task: 'portrait', inventory: { fetchedAt: '2026-10-15T07:00:00Z', error: null, count: 2 },
-    deploymentDefault: { model: 'juggernautXL_v9.safetensors' }, models: ['juggernautXL_v9.safetensors', 'flux1-dev.safetensors'],
+    deploymentDefault: { model: 'juggernautXL_v9.safetensors' },
+    // the server shape (PbServiceFacade.listModelsForTask): entries keyed listedName, never plain strings or name/title
+    models: [{ listedName: 'juggernautXL_v9.safetensors', family: '*juggernaut*', enabled: true, supportedForTask: true, reason: 'OK' },
+             { listedName: 'flux1-dev.safetensors', family: '*flux1*', enabled: true, supportedForTask: false, reason: 'UNSUPPORTED_TASK' }],
     resolution: { reason: 'STYLE', degraded: false, model: 'x.safetensors' } };
 
 let origFetch;
@@ -218,7 +221,7 @@ describe('taskAvailability', () => {
         let av = taskAvailability({ data: INV_OK });
         expect(av.unavailable).toBe(false);
         expect(av.text).toBe('2 installed · STYLE → x.safetensors');
-        expect(av.models).toEqual(['juggernautXL_v9.safetensors', 'flux1-dev.safetensors']);
+        expect(av.models.map(x => x.listedName)).toEqual(['juggernautXL_v9.safetensors', 'flux1-dev.safetensors']);
     });
 });
 

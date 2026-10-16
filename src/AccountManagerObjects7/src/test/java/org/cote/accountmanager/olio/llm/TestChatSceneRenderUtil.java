@@ -439,7 +439,14 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, oid);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		q.planMost(true);
+		/// planMost(true) filters `attributes` out (RecordUtil.getMostRequestFields); project them explicitly
+		q.setRequest(new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ATTRIBUTES,
+			FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_DATA_HASH, FieldNames.FIELD_SIZE,
+			FieldNames.FIELD_COMPRESSION_TYPE, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_ENCIPHERED,
+			FieldNames.FIELD_VAULTED, FieldNames.FIELD_KEY_ID, FieldNames.FIELD_VAULT_ID
+		});
 		q.setCache(false);
 		BaseRecord full = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
 		assertNotNull("the user must be able to read the scene record back", full);
