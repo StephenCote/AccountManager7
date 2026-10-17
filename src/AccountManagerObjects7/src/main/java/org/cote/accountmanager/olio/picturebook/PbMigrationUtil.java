@@ -23,6 +23,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
@@ -48,6 +49,13 @@ public class PbMigrationUtil {
 	/** PB1 meta note name — a string literal in {@code PictureBookUtil}, named here for migration use. */
 	public static final String V1_META_NOTE_NAME = ".pictureBookMeta";
 
+	/**
+	 * PB1 scene-note JSON key holding the {@code objectId} of the {@code data.data} that carries the
+	 * scene's rendered landscape ({@code PictureBookUtil.updateSceneLandscapeId}). A note key, not a
+	 * model field — PB1 scenes are untyped JSON.
+	 */
+	static final String V1_LANDSCAPE_KEY = "landscapeObjectId";
+
 	private PbMigrationUtil() {
 		// static utility
 	}
@@ -60,21 +68,40 @@ public class PbMigrationUtil {
 		public final String bookObjectId;
 		public final int scenesImported;
 		public final int scenesFailed;
+		/** PB1 landscape images imported as unapproved {@code landscape} artifacts (V3 §28 step 3). */
+		public final int landscapesImported;
+		/** The whole-book location pass that ran after import, or null when no scene was imported or the pass threw. */
+		public final PbLocationUtil.LocationPassResult locationPass;
 		public final List<String> warnings;
 
 		ImportResult(String slug, String bookObjectId, int scenesImported, int scenesFailed,
-				List<String> warnings) {
+				int landscapesImported, PbLocationUtil.LocationPassResult locationPass, List<String> warnings) {
 			this.slug = slug;
 			this.bookObjectId = bookObjectId;
 			this.scenesImported = scenesImported;
 			this.scenesFailed = scenesFailed;
+			this.landscapesImported = landscapesImported;
+			this.locationPass = locationPass;
 			this.warnings = Collections.unmodifiableList(warnings);
 		}
 
 		@Override
 		public String toString() {
 			return "ImportResult{slug='" + slug + "', scenes=" + scenesImported + "/"
-				+ (scenesImported + scenesFailed) + ", warnings=" + warnings.size() + "}";
+				+ (scenesImported + scenesFailed) + ", landscapes=" + landscapesImported
+				+ ", locationProposals=" + (locationPass != null ? locationPass.proposals.size() : "n/a")
+				+ ", warnings=" + warnings.size() + "}";
+		}
+	}
+
+	/** One imported scene plus the PB1 landscape reference found in its note, if any. */
+	private static final class SceneImport {
+		final BaseRecord scene;
+		final String landscapeObjectId;
+
+		SceneImport(BaseRecord scene, String landscapeObjectId) {
+			this.scene = scene;
+			this.landscapeObjectId = landscapeObjectId;
 		}
 	}
 
@@ -162,13 +189,12 @@ public class PbMigrationUtil {
 		// 9. Import scenes
 		String sceneGroupPath = PbBookUtil.bookGroupPath(slug);
 		List<BaseRecord> sceneList = extractMetaScenes(meta);
-		int imported = 0;
+		List<SceneImport> imports = new ArrayList<>();
 		int failed = 0;
 		for(int i = 0; i < sceneList.size(); i++) {
 			BaseRecord pbScene = sceneList.get(i);
 			try {
-				importScene(user, book, sceneGroupPath, i, pbScene, orgId, warnings);
-				imported++;
+				imports.add(importScene(user, book, sceneGroupPath, i, pbScene, orgId, warnings));
 			}
 			catch(Exception e) {
 				String msg = "Scene " + i + " (" + pbScene.get(FieldNames.FIELD_OBJECT_ID) + "): "
@@ -178,11 +204,15 @@ public class PbMigrationUtil {
 				failed++;
 			}
 		}
+		int imported = imports.size();
 
 		// 10. Create one SCENE node per imported scene, marked DONE_UNVERIFIED:
 		// honest labelling that PB1 had output for each scene but its provenance is unknown to PB2.
+		// Then (V3 §28 step 3) carry each PB1 landscape image over as an unapproved landscape artifact.
+		int landscapes = 0;
 		if(imported > 0) {
 			createMigrationNodes(user, book, slug, imported, warnings);
+			landscapes = importLandscapes(user, book, slug, orgId, imports, warnings);
 		}
 
 		// 11. Mark the book extracted (content ready, generation pending)
@@ -190,9 +220,17 @@ public class PbMigrationUtil {
 			PbBookUtil.setBookStatus(user, book, PbBookStatusEnumType.EXTRACTED);
 		}
 
-		logger.info("PB1 migration complete: '{}' → slug '{}': {}/{} scenes, {} warning(s)",
-			groupName, slug, imported, sceneList.size(), warnings.size());
-		return new ImportResult(slug, bookObjectId, imported, failed, warnings);
+		// 12. Whole-book location pass (V3 §7.1 / §28 step 3): proposals only, reviewed later.
+		// Never fatal - a location failure must not fail the migration (§30 row 3 exit criterion).
+		PbLocationUtil.LocationPassResult locationPass = null;
+		if(imported > 0) {
+			locationPass = proposeLocations(user, book, slug, warnings);
+		}
+
+		logger.info("PB1 migration complete: '{}' → slug '{}': {}/{} scenes, {} landscape(s), {} proposal(s), {} warning(s)",
+			groupName, slug, imported, sceneList.size(), landscapes,
+			(locationPass != null ? locationPass.proposals.size() : 0), warnings.size());
+		return new ImportResult(slug, bookObjectId, imported, failed, landscapes, locationPass, warnings);
 	}
 
 	// ─────────────────────────────── private helpers ───────────────────────────────
@@ -303,8 +341,10 @@ public class PbMigrationUtil {
 	 * <p>
 	 * The {@code olio.pictureBookScene} from the meta list carries the scene note's
 	 * {@code objectId}; the note's {@code text} JSON carries the actual content fields.
+	 *
+	 * @return the created PB2 scene plus the PB1 {@code landscapeObjectId} from its note (null when absent)
 	 */
-	private static void importScene(BaseRecord user, BaseRecord book, String sceneGroupPath,
+	private static SceneImport importScene(BaseRecord user, BaseRecord book, String sceneGroupPath,
 			int sceneIndex, BaseRecord pbScene, long orgId, List<String> warnings) {
 		String sceneNoteOid = pbScene.get(FieldNames.FIELD_OBJECT_ID);
 		if(sceneNoteOid == null || sceneNoteOid.isBlank()) {
@@ -342,8 +382,143 @@ public class PbMigrationUtil {
 		BaseRecord scene = PbBookUtil.createScene(user, book, sceneIndex, title, sceneGroupPath);
 
 		// Patch the text fields from the PB1 scene data
+		String landscapeOid = null;
 		if(sceneData != null) {
 			patchSceneTextFields(user, scene, sceneData, warnings);
+			Object l = sceneData.get(V1_LANDSCAPE_KEY);
+			if(l instanceof String && !((String) l).isBlank()) {
+				landscapeOid = ((String) l).trim();
+			}
+		}
+		return new SceneImport(scene, landscapeOid);
+	}
+
+	/**
+	 * V3 §28 step 3: carry every PB1 landscape image over as an <b>unapproved</b> {@code landscape}
+	 * artifact on the scene's canonical LANDSCAPE node, so the V3 review views and the Phase 3/4
+	 * location seeding see it without re-rendering.
+	 * <p>
+	 * Per imported scene with a {@code landscapeObjectId}:
+	 * <ol>
+	 * <li>the PB1 {@code data.data} is read as the request user (find-only; a miss or a denial is a
+	 *     warning, never a failure - PB1 is never written);</li>
+	 * <li>the node is found by {@link PbPipelineUtil#landscapeHandle} or created with {@code scope=scene}
+	 *     / {@code scopeRef=} the scene objectId - the same get-or-create {@code PbServiceFacade} uses
+	 *     for ChapBook pages, so a later render lands on the same node;</li>
+	 * <li>when the node's {@code landscape} chain is empty, one IMAGE artifact referencing that
+	 *     {@code data.data} is persisted (GENERATED, selected, never APPROVED - the user approves) and
+	 *     the node is marked {@code DONE_UNVERIFIED}; a non-empty chain means a prior run already did
+	 *     this, so the step is idempotent.</li>
+	 * </ol>
+	 * The bytes are referenced, not copied: the artifact's {@code data} points at the PB1 record.
+	 *
+	 * @return the number of landscape artifacts created by this call
+	 */
+	private static int importLandscapes(BaseRecord user, BaseRecord book, String slug, long orgId,
+			List<SceneImport> imports, List<String> warnings) {
+		int created = 0;
+		List<SceneImport> withLandscape = new ArrayList<>();
+		for(SceneImport si : imports) {
+			if(si.landscapeObjectId != null) {
+				withLandscape.add(si);
+			}
+		}
+		if(withLandscape.isEmpty()) {
+			return 0;
+		}
+		String workflowPath = PbBookUtil.workflowGroupPath(slug);
+		BaseRecord workflow;
+		try {
+			workflow = PbGraphUtil.getCreateWorkflow(user, book, workflowPath);
+		}
+		catch(Exception e) {
+			warnings.add("Landscape import skipped - workflow unavailable: " + e.getMessage());
+			return 0;
+		}
+		if(workflow == null) {
+			warnings.add("Landscape import skipped - workflow was null");
+			return 0;
+		}
+		String artifactPath = PbBookUtil.artifactGroupPath(slug);
+		for(SceneImport si : withLandscape) {
+			String sceneOid = si.scene.get(FieldNames.FIELD_OBJECT_ID);
+			String sceneName = si.scene.get(FieldNames.FIELD_NAME);
+			try {
+				BaseRecord data = findData(user, si.landscapeObjectId, orgId);
+				if(data == null) {
+					warnings.add("Scene '" + sceneName + "': PB1 landscape " + si.landscapeObjectId
+						+ " not found or not accessible - not imported");
+					continue;
+				}
+				Integer idxObj = si.scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+				int idx = (idxObj != null ? idxObj.intValue() : 0);
+				String handle = PbPipelineUtil.landscapeHandle(sceneOid);
+				BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
+				if(node == null) {
+					node = PbGraphUtil.addNode(user, workflow, handle, PbNodeTypeEnumType.LANDSCAPE, workflowPath, idx);
+					if(node == null) {
+						warnings.add("Scene '" + sceneName + "': could not create landscape node " + handle);
+						continue;
+					}
+					if(!PbPipelineUtil.patchNodeScope(user, workflow, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx)) {
+						warnings.add("Scene '" + sceneName + "': could not record the scene scope on node " + handle);
+						continue;
+					}
+				}
+				if(!PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_LANDSCAPE).isEmpty()) {
+					logger.info("PB1 migration: node {} already carries a landscape chain - not re-imported", handle);
+					continue;
+				}
+				PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_LANDSCAPE,
+					PbArtifactTypeEnumType.IMAGE, artifactPath, data, null, null, null);
+				if(!PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.DONE_UNVERIFIED)) {
+					warnings.add("Scene '" + sceneName + "': could not mark node " + handle + " as DONE_UNVERIFIED");
+				}
+				created++;
+			}
+			catch(Exception e) {
+				String msg = "Scene '" + sceneName + "': landscape " + si.landscapeObjectId + " not imported - " + e.getMessage();
+				logger.warn("PB1 migration: {}", msg);
+				warnings.add(msg);
+			}
+		}
+		return created;
+	}
+
+	/** Find-only read of a {@code data.data} by objectId as the request user; identity + descriptor fields only. */
+	private static BaseRecord findData(BaseRecord user, String objectId, long orgId) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_URN,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_CONTENT_TYPE
+		});
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/**
+	 * Run {@link PbLocationUtil#proposeLocations(BaseRecord, BaseRecord, BaseRecord)} against the
+	 * user's default chat configuration. Proposals only - nothing is bound to the graph until the
+	 * user accepts them - and never fatal: an LLM or persistence failure becomes a warning.
+	 */
+	private static PbLocationUtil.LocationPassResult proposeLocations(BaseRecord user, BaseRecord book, String slug,
+			List<String> warnings) {
+		try {
+			PbLocationUtil.LocationPassResult pass = PbLocationUtil.proposeLocations(user, book, (BaseRecord) null);
+			if(pass != null) {
+				warnings.addAll(pass.warnings);
+				if(pass.hardFailure) {
+					warnings.add("Location pass for '" + slug + "' did not complete - review the warnings above and re-run it");
+				}
+			}
+			return pass;
+		}
+		catch(PictureBookException e) {
+			String msg = "Location pass for '" + slug + "' failed (" + e.getStatus() + "): " + e.getMessage();
+			logger.warn("PB1 migration: {}", msg);
+			warnings.add(msg);
+			return null;
 		}
 	}
 

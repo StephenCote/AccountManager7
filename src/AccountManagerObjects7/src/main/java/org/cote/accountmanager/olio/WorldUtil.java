@@ -520,6 +520,10 @@ public class WorldUtil {
 		IOSystem.getActiveContext().getReader().populate(world, 2);
 		long start = System.currentTimeMillis();
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_GEO_LOCATION, (long)world.get(OlioFieldNames.FIELD_LOCATIONS_ID), orgId);
+		/// PictureBook V3 locations share the Locations group. They are swept here, not by cleanupOrphans
+		/// below: that runs before deleteGroupTree removes the group, so the rows are not yet orphans.
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_PB_LOCATION_VARIANT, (long)world.get(OlioFieldNames.FIELD_LOCATIONS_ID), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_PB_LOCATION, (long)world.get(OlioFieldNames.FIELD_LOCATIONS_ID), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_EVENT, (long)world.get(OlioFieldNames.FIELD_EVENTS_ID), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_CHAR_PERSON, (long)world.get(OlioFieldNames.FIELD_POPULATION_ID), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_GROUP, (long)world.get(OlioFieldNames.FIELD_POPULATION_ID), orgId);

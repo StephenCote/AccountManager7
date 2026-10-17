@@ -1,8 +1,10 @@
 package org.cote.accountmanager.olio.picturebook;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -120,6 +122,10 @@ public class PbDeleteUtil {
 		BaseRecord sourceRange = book.hasField(OlioFieldNames.FIELD_PB_SOURCE_RANGE) ? book.get(OlioFieldNames.FIELD_PB_SOURCE_RANGE) : null;
 		BaseRecord sourceData = book.hasField(OlioFieldNames.FIELD_PB_SOURCE_DATA) ? book.get(OlioFieldNames.FIELD_PB_SOURCE_DATA) : null;
 
+		// 0. Locations/variants of the world pinned to one of this book's renders lose the pin first, so a shared
+		// series world never keeps an approvedRender FK to an artifact deleted in step 1.
+		clearApprovedRendersOfBook(book, orgId, res);
+
 		// 1. Rows that point at this book by FK, wherever they were grouped. The group walk below also
 		// catches the normally-placed ones; this is what reaches a stale graph left under another container.
 		deleteGraphByBook(olioUser, book, orgId, res);
@@ -171,7 +177,7 @@ public class PbDeleteUtil {
 	}
 
 	/**
-	 * Delete every graph row that references {@code book} by FK — scenes, cast groups, and each workflow
+	 * Delete every graph row that references {@code book} by FK — scenes, cast groups, location proposals, and each workflow
 	 * with its bindings, artifacts, runs and nodes (child→parent). Shared with the health check's stale-graph
 	 * purge, which hands it a dead book stand-in carrying only {@code id}.
 	 *
@@ -181,6 +187,7 @@ public class PbDeleteUtil {
 		int total = 0;
 		total += deleteByFk(actor, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_BOOK, book, orgId, res, "scenesByBook");
 		total += deleteByFk(actor, OlioModelNames.MODEL_PB_CAST_GROUP, OlioFieldNames.FIELD_PB_BOOK, book, orgId, res, "castGroupsByBook");
+		total += deleteByFk(actor, OlioModelNames.MODEL_PB_LOCATION_PROPOSAL, OlioFieldNames.FIELD_PB_BOOK, book, orgId, res, "locationProposalsByBook");
 		for (BaseRecord wf : findByFk(OlioModelNames.MODEL_PB_WORKFLOW, OlioFieldNames.FIELD_PB_BOOK, book, orgId)) {
 			total += deleteWorkflowGraph(actor, wf, orgId, res);
 		}
@@ -212,6 +219,110 @@ public class PbDeleteUtil {
 		res.step("workflow", OlioModelNames.MODEL_PB_WORKFLOW, wfOk ? 1 : 0, wfOk, wfOk ? null : "workflow row was not deleted");
 		if (wfOk) total++;
 		return total;
+	}
+
+	/**
+	 * Delete one node and everything hanging off it - bindings (by node and by sourceNode), artifacts (by
+	 * producedByNode), then the node row - as {@code actor}, PBAC-checked per row. The per-node counterpart of
+	 * {@link #deleteWorkflowGraph}; {@code PbLocationUtil.deleteLocation} uses it for this book's LOCATION nodes.
+	 *
+	 * @return the number of rows deleted
+	 */
+	static int deleteNodeGraph(BaseRecord actor, BaseRecord node, long orgId, DeleteResult res) {
+		int total = 0;
+		total += deleteByFk(actor, OlioModelNames.MODEL_PB_BINDING, OlioFieldNames.FIELD_PB_NODE, node, orgId, res, "bindingsByNode");
+		total += deleteByFk(actor, OlioModelNames.MODEL_PB_BINDING, OlioFieldNames.FIELD_PB_SOURCE_NODE, node, orgId, res, "bindingsBySourceNode");
+		total += deleteByFk(actor, OlioModelNames.MODEL_PB_ARTIFACT, OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE, node, orgId, res, "artifactsByNode");
+		boolean ok = deleteOne(actor, node, res);
+		res.step("node", OlioModelNames.MODEL_PB_NODE, ok ? 1 : 0, ok, ok ? null : "node row was not deleted");
+		if (ok) total++;
+		return total;
+	}
+
+	/**
+	 * Un-pin every location or variant of the book's world whose {@code approvedRender} is an artifact produced by
+	 * one of this book's workflows (V3 §7, P3-4). Runs before the graph is deleted so a shared series world never
+	 * keeps a dangling FK to a render that is about to go; for a standalone book the world follows anyway. Written
+	 * as the olio principal through {@code PbLocationUtil.writeApprovedRender}, which also touches the record so
+	 * other chapters' graphs re-evaluate staleness.
+	 *
+	 * @return the number of records cleared
+	 */
+	static int clearApprovedRendersOfBook(BaseRecord book, long orgId, DeleteResult res) {
+		BaseRecord worldRef = (book.hasField(OlioFieldNames.FIELD_PB_WORLD) ? book.get(OlioFieldNames.FIELD_PB_WORLD) : null);
+		if (worldRef == null || PbHealthUtil.idOf(worldRef) <= 0L) {
+			return 0;
+		}
+		Set<Long> workflowIds = new HashSet<>();
+		for (BaseRecord wf : findByFk(OlioModelNames.MODEL_PB_WORKFLOW, OlioFieldNames.FIELD_PB_BOOK, book, orgId)) {
+			workflowIds.add(Long.valueOf(PbHealthUtil.idOf(wf)));
+		}
+		if (workflowIds.isEmpty()) {
+			return 0;
+		}
+		int cleared = 0;
+		boolean ok = true;
+		Query lq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_LOCATION, OlioFieldNames.FIELD_PB_WORLD, worldRef);
+		lq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		lq.setRequest(PbBookUtil.locationRequest());
+		lq.setCache(false);
+		BaseRecord[] locs = IOSystem.getActiveContext().getSearch().findRecords(lq);
+		if (locs == null) {
+			return 0;
+		}
+		for (BaseRecord loc : locs) {
+			if (loc.getSchema() == null) {
+				loc.setSchema(OlioModelNames.MODEL_PB_LOCATION);
+			}
+			List<PbLocationUtil.NodeSubject> subjects = new ArrayList<>();
+			subjects.add(new PbLocationUtil.NodeSubject(loc, null));
+			for (BaseRecord v : PbLocationUtil.variantsOf(loc, orgId)) {
+				subjects.add(new PbLocationUtil.NodeSubject(loc, v));
+			}
+			for (PbLocationUtil.NodeSubject s : subjects) {
+				long artId = PbHealthUtil.fkId(s.target(), OlioFieldNames.FIELD_PB_APPROVED_RENDER);
+				if (artId <= 0L || !artifactOfWorkflows(artId, workflowIds, orgId)) {
+					continue;
+				}
+				try {
+					if (PbLocationUtil.writeApprovedRender(null, s, null)) {
+						cleared++;
+					}
+				} catch (PictureBookException e) {
+					ok = false;
+					fail(res, "approvedRender of " + s.label() + " could not be cleared: " + e.getMessage());
+				}
+			}
+		}
+		res.step("approvedRendersCleared", OlioModelNames.MODEL_PB_LOCATION, cleared, ok, ok ? null : "see reason");
+		return cleared;
+	}
+
+	/// artifact -> producedByNode -> workflow, raw reads by id; false when any hop is missing.
+	private static boolean artifactOfWorkflows(long artifactId, Set<Long> workflowIds, long orgId) {
+		BaseRecord art = rawById(OlioModelNames.MODEL_PB_ARTIFACT, artifactId, orgId, OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE);
+		long nodeId = (art != null ? PbHealthUtil.fkId(art, OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE) : -1L);
+		if (nodeId <= 0L) {
+			return false;
+		}
+		BaseRecord node = rawById(OlioModelNames.MODEL_PB_NODE, nodeId, orgId, OlioFieldNames.FIELD_PB_WORKFLOW);
+		long wfId = (node != null ? PbHealthUtil.fkId(node, OlioFieldNames.FIELD_PB_WORKFLOW) : -1L);
+		return wfId > 0L && workflowIds.contains(Long.valueOf(wfId));
+	}
+
+	private static BaseRecord rawById(String model, long id, long orgId, String... extraFields) {
+		try {
+			Query q = QueryUtil.createQuery(model, FieldNames.FIELD_ID, id);
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			List<String> req = new ArrayList<>(List.of(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID));
+			req.addAll(List.of(extraFields));
+			q.setRequest(req.toArray(new String[0]));
+			q.setCache(false);
+			return IOSystem.getActiveContext().getSearch().findRecord(q);
+		} catch (Exception e) {
+			logger.warn("rawById " + model + " " + id + " failed: " + e.getMessage());
+			return null;
+		}
 	}
 
 	/** Raw (unauthorized, find-only) lookup of rows whose {@code fkField} points at {@code target}, org-scoped. */

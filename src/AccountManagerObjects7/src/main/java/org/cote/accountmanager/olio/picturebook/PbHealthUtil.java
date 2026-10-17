@@ -39,6 +39,7 @@ import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
@@ -93,6 +94,14 @@ public class PbHealthUtil {
 	public static final String PROMPT_TEMPLATE_MISSING = "PROMPT_TEMPLATE_MISSING";
 	public static final String PROMPT_TEMPLATE_DRIFT = "PROMPT_TEMPLATE_DRIFT";
 	public static final String PROMPT_TEMPLATE_OVERRIDE = "PROMPT_TEMPLATE_OVERRIDE";
+	/** V3 §7.2 rule 5: an {@code olio.pb.location} in the book world with no (or a dangling) {@code poi}; healed by re-running the POI link. */
+	public static final String LOCATION_POI_MISSING = "LOCATION_POI_MISSING";
+	/**
+	 * V3 §7 (P3-4): a live {@code LOCATION} node whose {@code scopeRef} names a location or variant that no longer
+	 * exists - deleted or merged away from another chapter of a shared series world, since a single-book route
+	 * removes only its own book's nodes. Healed by removing the node with its bindings and candidate artifacts.
+	 */
+	public static final String LOCATION_NODE_DANGLING = "LOCATION_NODE_DANGLING";
 
 	private static final String[] PROMPT_TEMPLATE_PREFIXES = new String[] {"pictureBook.", "chapBook."};
 
@@ -375,6 +384,8 @@ public class PbHealthUtil {
 		BaseRecord metaRec;
 		Map<String, Object> metaMap;
 		boolean metaLinkBroken;
+		final List<BaseRecord> locationsNeedingPoi = new ArrayList<>();
+		final List<BaseRecord> danglingLocationNodes = new ArrayList<>();
 	}
 
 	private static final class StaleScan {
@@ -383,6 +394,8 @@ public class PbHealthUtil {
 		final Set<Long> liveWorkflowIds = new HashSet<>();
 		final Set<Long> liveNodeIds = new HashSet<>();
 		final List<BaseRecord> liveWorkflows = new ArrayList<>();
+		/** Live {@code LOCATION} nodes with {@code scope}/{@code scopeRef}/{@code handle} projected, for {@link #auditLocationNodes}. */
+		final List<BaseRecord> liveLocationNodes = new ArrayList<>();
 	}
 
 	// ─────────────────────────────── audit ───────────────────────────────
@@ -436,6 +449,10 @@ public class PbHealthUtil {
 		auditContainerGroups(a);
 		auditGraph(a);
 		auditScenes(a);
+		if(a.world != null && a.bctx != null) {
+			auditLocations(a);
+		}
+		auditLocationNodes(a);
 		if(a.world != null) {
 			auditGrants(a);
 		}
@@ -443,6 +460,65 @@ public class PbHealthUtil {
 			auditMeta(a);
 		}
 		return a;
+	}
+
+	/// Listed as the olio principal, which owns the world's Locations group, so the audit sees every location
+	/// regardless of the caller's own read view; the heal writes as that same principal. A never-linked poi and a
+	/// dangling one (the row deleted, the FK still set) are the same finding: both are reported, both are healed.
+	private static void auditLocations(BookAudit a) {
+		List<BaseRecord> locs;
+		try {
+			locs = PbLocationUtil.listLocations(a.olioUser, a.bctx);
+		}
+		catch(PictureBookException e) {
+			locs = new ArrayList<>();
+		}
+		if(locs.isEmpty()) {
+			return;
+		}
+		boolean bookWorld = PbLocationUtil.isBookWorld(a.olioUser, a.world);
+		for(BaseRecord loc : locs) {
+			BaseRecord poi = loc.get(OlioFieldNames.FIELD_PB_POI);
+			if(PbLocationUtil.poiExists(poi, a.orgId)) {
+				continue;
+			}
+			String state = (poi != null && idOf(poi) > 0L ? "references point of interest #" + idOf(poi) + " which no longer exists" : "has no point of interest");
+			if(bookWorld) {
+				a.locationsNeedingPoi.add(loc);
+				a.findings.add(new Finding(LOCATION_POI_MISSING, SEV_WARN,
+					"Location '" + loc.get(FieldNames.FIELD_NAME) + "' " + state + "; one is re-created on heal (§7.2 rule 1)", true)
+					.rec(loc));
+			}
+			else {
+				a.findings.add(new Finding(LOCATION_POI_MISSING, SEV_INFO,
+					"Location '" + loc.get(FieldNames.FIELD_NAME) + "' " + state + " in game world '"
+					+ a.world.get(FieldNames.FIELD_NAME) + "'; a POI of that name must exist on the map to link (§7.2 rule 2)", false)
+					.rec(loc));
+			}
+		}
+	}
+
+	/// The existence test runs as the olio principal (PbLocationUtil.subjectExists), so a location this caller
+	/// merely cannot read is not reported as gone; the heal then deletes the node as the caller, PBAC-checked.
+	private static void auditLocationNodes(BookAudit a) {
+		if(a.stale == null) {
+			return;
+		}
+		for(BaseRecord node : a.stale.liveLocationNodes) {
+			String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
+			if(scopeRef == null || scopeRef.trim().isEmpty()) {
+				continue;
+			}
+			if(PbLocationUtil.subjectExists(node)) {
+				continue;
+			}
+			String scope = node.get(OlioFieldNames.FIELD_PB_SCOPE);
+			a.danglingLocationNodes.add(node);
+			a.findings.add(new Finding(LOCATION_NODE_DANGLING, SEV_WARN,
+				"LOCATION node '" + node.get(OlioFieldNames.FIELD_PB_HANDLE) + "' renders " + scope + " " + scopeRef
+				+ " which no longer exists (deleted or merged away in another chapter); it is removed with its bindings and candidate renders on heal", true)
+				.rec(node).ref("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE)).ref("scope", scope).ref("scopeRef", scopeRef));
+		}
 	}
 
 	private static void auditWorld(BookAudit a) {
@@ -852,6 +928,38 @@ public class PbHealthUtil {
 				skipped.add(skipRaw(META_LINK_BROKEN, a.metaRec, "meta patch was not persisted"));
 			}
 		}
+
+		/// 11. locations without a point of interest (book worlds only - the audit marks game-world ones non-healable)
+		if(has(a, LOCATION_POI_MISSING, codes)) {
+			for(BaseRecord loc : a.locationsNeedingPoi) {
+				if(PbLocationUtil.linkPoi(a.olioUser, a.world, loc)) {
+					BaseRecord poi = loc.get(OlioFieldNames.FIELD_PB_POI);
+					healed.add(done(LOCATION_POI_MISSING, loc, "point of interest " + (poi != null ? poi.get(FieldNames.FIELD_OBJECT_ID) : "?") + " created and linked"));
+				}
+				else {
+					skipped.add(skipRaw(LOCATION_POI_MISSING, loc, "POI link was not persisted"));
+				}
+			}
+		}
+
+		/// 12. LOCATION nodes whose scopeRef no longer resolves - removed as the caller with their bindings and artifacts
+		if(has(a, LOCATION_NODE_DANGLING, codes)) {
+			Set<Long> touched = new HashSet<>();
+			for(BaseRecord node : a.danglingLocationNodes) {
+				DeleteResult res = DeleteResult.ok();
+				int rows = PbDeleteUtil.deleteNodeGraph(a.user, node, a.orgId, res);
+				if(res.deleted) {
+					touched.add(fkId(node, OlioFieldNames.FIELD_PB_WORKFLOW));
+					healed.add(done(LOCATION_NODE_DANGLING, node, "node removed with " + (rows - 1) + " binding/artifact row(s)"));
+				}
+				else {
+					skipped.add(skipRaw(LOCATION_NODE_DANGLING, node, res.reason != null ? res.reason : "node graph was not deleted"));
+				}
+			}
+			for(Long wfId : touched) {
+				PbStaleUtil.invalidate(wfId);
+			}
+		}
 	}
 
 	private static void healGrants(BookAudit a, String dataPath, List<Map<String, Object>> healed, List<Map<String, Object>> skipped) {
@@ -1191,9 +1299,13 @@ public class PbHealthUtil {
 			}
 		}
 		List<BaseRecord> staleNodes = new ArrayList<>();
-		for(BaseRecord node : rowsInGroups(OlioModelNames.MODEL_PB_NODE, allGroups, orgId, OlioFieldNames.FIELD_PB_WORKFLOW)) {
+		for(BaseRecord node : rowsInGroups(OlioModelNames.MODEL_PB_NODE, allGroups, orgId, OlioFieldNames.FIELD_PB_WORKFLOW,
+			OlioFieldNames.FIELD_PB_NODE_TYPE, OlioFieldNames.FIELD_PB_SCOPE, OlioFieldNames.FIELD_PB_SCOPE_REF, OlioFieldNames.FIELD_PB_HANDLE, FieldNames.FIELD_ORGANIZATION_ID)) {
 			if(scan.liveWorkflowIds.contains(fkId(node, OlioFieldNames.FIELD_PB_WORKFLOW))) {
 				scan.liveNodeIds.add(idOf(node));
+				if(node.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE) && node.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE) == PbNodeTypeEnumType.LOCATION) {
+					scan.liveLocationNodes.add(node);
+				}
 			}
 			else {
 				staleNodes.add(node);

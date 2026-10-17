@@ -48,17 +48,21 @@ public class TestPbNodeExecutorTypes extends BaseTest {
 	@Test
 	public void TestEveryNodeTypeIsEitherExecutableOrA501BeforeAnyIO() throws Exception {
 		OlioModelNames.use();
+		/// V3 Phase 3 (P3-4) added LOCATION as the eighth single-node stage (SD-backed: it renders a location
+		/// or variant through the render plan).
 		EnumSet<PbNodeTypeEnumType> expectedExecutable = EnumSet.of(
 			PbNodeTypeEnumType.PORTRAIT, PbNodeTypeEnumType.LANDSCAPE, PbNodeTypeEnumType.SCENE_PROMPT,
 			PbNodeTypeEnumType.LANDSCAPE_PROMPT, PbNodeTypeEnumType.REFERENCE_STRIP, PbNodeTypeEnumType.COMPOSITE,
-			PbNodeTypeEnumType.RENDER_PLAN);
-		assertEquals("the declared executable set is exactly the seven implemented stages", expectedExecutable, PbNodeExecutor.EXECUTABLE_TYPES);
+			PbNodeTypeEnumType.RENDER_PLAN, PbNodeTypeEnumType.LOCATION);
+		assertEquals("the declared executable set is exactly the eight implemented stages", expectedExecutable, PbNodeExecutor.EXECUTABLE_TYPES);
+		assertTrue("LOCATION needs an SD backend", PbNodeExecutor.SD_BACKED_TYPES.contains(PbNodeTypeEnumType.LOCATION));
 		assertFalse("null is never executable", PbNodeExecutor.isExecutable((PbNodeTypeEnumType) null));
 		assertFalse("a null node is never executable", PbNodeExecutor.isExecutable((BaseRecord) null));
 		List<String> names = PbNodeExecutor.executableTypeNames();
-		assertEquals(7, names.size());
+		assertEquals(8, names.size());
 		assertTrue(names.contains("PORTRAIT"));
 		assertTrue(names.contains("RENDER_PLAN"));
+		assertTrue(names.contains("LOCATION"));
 
 		for(PbNodeTypeEnumType t : PbNodeTypeEnumType.values()) {
 			BaseRecord node = RecordFactory.newInstance(OlioModelNames.MODEL_PB_NODE);

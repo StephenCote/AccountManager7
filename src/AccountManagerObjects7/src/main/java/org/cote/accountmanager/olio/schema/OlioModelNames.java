@@ -104,6 +104,12 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_PB_CAST_GROUP = "olio.pb.castGroup";
 	/// V3 §4 book style: the single declaration of a book's look, inherited book.style -> style.parent -> series.style (§4.1)
 	public static final String MODEL_PB_STYLE = "olio.pb.style";
+	/// V3 §7 location identity: a world asset in the world's Locations group, found by the world FK; carries the POI link and the approved render
+	public static final String MODEL_PB_LOCATION = "olio.pb.location";
+	/// V3 §7 location realization key (timeOfDay/weather/season/viewpoint/extra deltas) with its own approved render
+	public static final String MODEL_PB_LOCATION_VARIANT = "olio.pb.locationVariant";
+	/// V3 §7.1 / §28 step 3 reviewable item from the whole-book location pass; lives in the book's group, resolved to a location on accept
+	public static final String MODEL_PB_LOCATION_PROPOSAL = "olio.pb.locationProposal";
 
 	/// ChapBook models — poem library, sets, and the ChapBook variant of olio.pb.book
 	public static final String MODEL_CB_POEM = "olio.cb.poem";
@@ -140,6 +146,9 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PB_SCENE,
 		MODEL_PB_CAST_GROUP,
 		MODEL_PB_STYLE,
+		MODEL_PB_LOCATION,
+		MODEL_PB_LOCATION_VARIANT,
+		MODEL_PB_LOCATION_PROPOSAL,
 		MODEL_CB_POEM,
 		MODEL_CB_SET
 		/// MODEL_CB_BOOK (olio.cb.book) removed from registration — superseded by olio.pb.book

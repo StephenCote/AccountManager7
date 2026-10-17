@@ -270,6 +270,14 @@ produced in one chapter must be reusable by the others. To make that work:
   (new set `watched/v3`).
 - **Location workflow:** generate → preview → edit description/prompt → regenerate → approve →
   lock. This is the same review state machine as scenes (§10).
+  **[2026-10-16 (P3-4), as built:** one LOCATION node per (location, variant) with `scope=location|locationVariant` and
+  `scopeRef` the record's objectId; the node is materialized on the first render / approve / proposal-accept, never on a read;
+  its artifacts carry role `landscape` and go through the §10 review; approve promotes the artifact to the record's
+  `approvedRender`, reject clears it; the lock is a facade-only flag that refuses every facade write (edits, approve,
+  reject-the-approved, render, new variants, delete, merge) with 409 and is not consulted by generic `PATCH /rest/model`;
+  render is async (202 job) and refuses before planning when the subject is locked, pinned or in flight — `force` bypasses
+  none of them. The binding that makes dependent scenes STALE is written by the RENDER_PLAN node on every execution
+  (location ordinal 0, variant ordinal 1); other chapters see STALE on their next scan after the TTL or a forced read.**]**
 - **Extraction.** The composition step (§9) proposes a location name per scene. The location
   resolver matches it against existing names/aliases; the LLM may return `sameAs: "<existing>"`.
   New locations are created unapproved. Scenes 3, 7 and 12 in "the tavern" all point to one record
@@ -302,7 +310,7 @@ How it works without a map — the facts that make it possible:
 |---|---|
 | `pointOfInterest.location` is **nullable** (no `allowNull:false`), and `east`/`north` default to **−1 = unplaced**. A POI with no cell is a valid record; only `PointOfInterestUtil.listPointsOfInterest`/`getPointOfInterest` assume a cell, because they are cell-keyed queries | `pointOfInterestModel.json:39-72`, `PointOfInterestUtil.java:128-164` |
 | **Every** world — book and series worlds included — gets `Points of Interest`, `Stores`, `Items` and `Builders` groups from `WorldFactory`; `BookWorldInitializationRule` adds `Book`/`Workflow`/`Artifacts` on top and forbids only the **map** (`prepareMapGrid`/`prepareCells`/`newLocation`), not POIs | `WorldFactory.java:64-78`, `BookWorldInitializationRule.java:32-38, 97-103` |
-| `WorldUtil.deleteWorld` already cleans the world's POI and store groups, so book deletion needs nothing new | `WorldUtil.java:551, 563` |
+| `WorldUtil.deleteWorld` already cleans the world's POI and store groups, so book deletion needs nothing new | `WorldUtil.java:555, 567` (cite moved 2026-10-16: P3-1 added two `cleanupLocation` sweeps above these lines; was `:551, 563`) |
 | `PointOfInterestEnumType` has values that fit illustrated places: STRUCTURE, LANDMARK, RUIN, COMMERCIAL, RECREATIONAL, ENCAMPMENT, LAIR (plus the resource types the simulation paints) | `PointOfInterestEnumType.java` |
 
 **V3 rules for the link:**
@@ -1338,8 +1346,8 @@ Ux implementation follows Ux752 patterns. Read `features/pictureBook.js`,
 | Method + path (under `/olio/picture-book`) | Purpose |
 |---|---|
 | `GET/PUT /{book}/style`, `POST /{book}/style/lock` | Style CRUD/lock |
-| `GET/POST /{book}/locations`, `PATCH/DELETE /location/{id}`, `POST /location/{id}/variants` | Location library |
-| `POST /location/{id}/render?variant=` (async) | Render a location |
+| `GET/POST /{book}/locations`, `PATCH/DELETE /location/{id}`, `POST /location/{id}/variants` | Location library. **[2026-10-16 (P3-4), as built: every location route is book-scoped — `GET|POST /{book}/locations`, `GET|PATCH|DELETE /{book}/location/{id}`, `POST /{book}/location/{id}/variants`, `POST /{book}/location/{id}/lock`, `POST /{book}/locations/propose` (synchronous), `GET /{book}/locations/proposed`, `POST /{book}/locations/proposed/{pid}/accept|reject`, `POST /{book}/locations/merge`; the book is the authorization anchor and the world is derived from it. Bare-path aliases are an open ask (Implementation ⚠ 175 a).]** |
+| `POST /location/{id}/render?variant=` (async) | Render a location. **[2026-10-16 (P3-4), as built: `POST /{book}/location/{id}/render` with `variant` in the body → `202 {jobId}`; 409 when locked, pinned (an approved render on the subject) or in flight.]** |
 | `POST /{book}/compose` → 202, `POST /{book}/scene/{id}/compose` | Whole-book, in-order composition job (§9.1); single-scene re-compose. Both respect `userEdited` |
 | `GET/POST /character/{id}/wardrobe`, `PATCH /scene-actor/{id}/apparel` | Wardrobe alternates; per-scene outfit (§6) |
 | `GET/PUT /{book}/settings/auto-approve` | Auto-approve toggle (§10 rule 5) |
@@ -1349,7 +1357,7 @@ Ux implementation follows Ux752 patterns. Read `features/pictureBook.js`,
 | `POST /{book}/render-all` → 202 | Render all stale/unrendered compositions **[2026-10-11 (P1-6): built on `PictureBookService` — terminals are every scene's `sceneNode`; `scenesWithoutNode` lists the skipped ones; 409 when no scene has a node]** |
 | `POST /{book}/scene/{sceneId}/render` → 202 `{jobId, runObjectId}` | **[2026-10-11 (P1-6): the Phase 1 stand-in for `/composition/{id}/render` until compositions exist (Phase 4) — the scene's `sceneNode` is the terminal; same plan/claim/lane/cancel semantics]** |
 | `POST /{book}/run/{runId}/resume`, `/cancel` | Durable run control **[2026-10-11 (P1-6): `/cancel` built — 200 `{runObjectId, runStatus, cancelRequested}`; 404 unless the run is of the book's workflow; 409 when terminal, already cancelling, or no job in this JVM. `/resume` is P1-7]** |
-| `PUT /artifact/{id}/select`, `/approve`, `/reject` | Review |
+| `PUT /artifact/{id}/select`, `/approve`, `/reject` | Review. **[2026-10-16 (P3-4): approving a LOCATION node's `landscape` artifact promotes it to the location's or variant's `approvedRender`; rejecting the approved artifact clears it; both 409 when the location is locked and 404 when the subject is outside the book's world or unreadable.]** |
 | `GET /{book}/stale` (with live drift), `GET /{book}/review-queue` | Staleness / review |
 | `POST /character/{id}/portrait/render` (async), `PUT .../portrait/{artifact}/select` | Book portraits |
 | `GET /olio/illustration/models?task=` | Availability-checked models |
@@ -1375,6 +1383,30 @@ first V3 open, plus an optional batch admin route.
 3. **Locations:** cluster scene `setting` strings with an LLM pass (`pictureBook.cluster-locations`:
    "which of these settings are the same place?"). It is offered as a reviewable suggestion, not
    applied blindly. Existing landscape images are imported as unapproved renders.
+
+   > **As built (P3-3, 2026-10-16).** `PbMigrationUtil.importBook` does step 3 in two sub-steps,
+   > both non-fatal (every failure is a warning on `ImportResult`, never an exception): (a) each PB1
+   > scene note's `landscapeObjectId` becomes one `landscape` IMAGE artifact on the scene's canonical
+   > LANDSCAPE node (`PbPipelineUtil.landscapeHandle(sceneOid)`, created `scope=scene` when absent),
+   > `GENERATED` + `selected`, **never APPROVED**, node `DONE_UNVERIFIED`; the bytes are referenced
+   > (`artifact.data` → the PB1 `data.data`), not copied, and a node whose chain is already non-empty
+   > is skipped — a defensive guard, not re-import idempotence: `importV1Book` refuses an existing slug
+   > with 409 before this step, so the skip is only reachable when something else already filled the
+   > chain (wording corrected 2026-10-16, P3-3 verifier). (b) `PbLocationUtil.proposeLocations(user, book, null)`
+   > runs the `pictureBook.cluster-locations` pass over the imported scenes as the request user with
+   > their default chat configuration, writing `olio.pb.locationProposal` rows (`PROPOSED`, no
+   > `location`, no binding); it is a suggestion the user accepts or ignores, exactly as this step
+   > says. The pass is also exposed on its own, so a re-run never needs a re-import. **Deferred to
+   > P3-4:** no LOCATION node is created by migration; when P3-4 first materializes the LOCATION node
+   > for an accepted location L, it seeds L's chain with the selected `landscape` artifact of every
+   > scene that references L (found at `landscapeHandle(sceneOid)`, role `landscape`), unapproved,
+   > so the imported images arrive on the location without a render.
+   > **Built (P3-4, 2026-10-16):** `PbServiceFacade.seedLocationNode` runs when the LOCATION node is materialized
+   > (first render / approve / proposal-accept). For each scene of **this book** referencing the location it takes the
+   > scene's *selected* `landscape` artifact and creates a new `olio.pb.artifact` on the LOCATION node pointing at the
+   > **same** `data.data` row (`refModel` / `refObjectId` provenance; no bytes copied), as the request user through
+   > `AccessPoint`; scenes without a selected landscape are skipped and counted (`seeded` / `seedSkipped`). Seeds are
+   > PENDING, unselected, unbound, never auto-approved; variants are not seeded.
 4. **Compositions:** one per scene.
    - Actors come from `scene.characters` in order: first HERO, second SUPPORTING, rest SUPPORTING.
      Placement is defaulted by `PbLayoutUtil`.

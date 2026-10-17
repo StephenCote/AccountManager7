@@ -97,11 +97,60 @@ public final class PbRenderPlanUtil {
 		PlanOptions opts = (options != null ? options : PlanOptions.NONE);
 		String sceneObjectId = scene.get(FieldNames.FIELD_OBJECT_ID);
 
+		Scaffold s = scaffold(user, book, node, opts, apiType, sdServer, "scene " + sceneObjectId);
+		s.builder
+			.purpose(RenderPlan.PURPOSE_SCENE)
+			.location(new RenderPlan.Location(sceneObjectId, locationText(scene)))
+			.actors(sceneActors(user, scene));
+		return finish(s);
+	}
+
+	/**
+	 * The plan for one {@code olio.pb.location} (optionally one of its {@code olio.pb.locationVariant}s) of
+	 * {@code book} as {@code user} sees it (V3 §7, §7.1, P3-4). Same style chain, config tiers, model policy,
+	 * preset and canvas as a scene plan - the location pick is the one a LOCATION node renders with - but
+	 * purpose {@code location}, no actors (so the selector lands on TEXT_ONLY) and the subject text is the
+	 * location's description followed by the variant's time-of-day / weather / season / viewpoint / extra.
+	 * The {@code Location.locationId} is the location record's objectId, never a scene's. 400 when the
+	 * location carries no description at all: a location is rendered from its identity, not from a scene.
+	 */
+	public static RenderPlan buildLocationPlan(BaseRecord user, BaseRecord book, BaseRecord location, BaseRecord variant,
+			BaseRecord node, PlanOptions options, SDAPIEnumType apiType, String sdServer) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		if(book == null) throw new PictureBookException(400, "A book is required");
+		if(location == null) throw new PictureBookException(400, "A location is required");
+		PlanOptions opts = (options != null ? options : PlanOptions.NONE);
+		String locationObjectId = location.get(FieldNames.FIELD_OBJECT_ID);
+		String text = locationSubjectText(location, variant);
+		if(text.isEmpty() && !NarrativeUtil.isMeaningful(opts.getPromptOverride())) {
+			throw new PictureBookException(400, "Location " + locationObjectId + " has no description to render from");
+		}
+		Scaffold s = scaffold(user, book, node, opts, apiType, sdServer, "location " + locationObjectId);
+		s.builder
+			.purpose(RenderPlan.PURPOSE_LOCATION)
+			.location(new RenderPlan.Location(locationObjectId, text));
+		return finish(s);
+	}
+
+	/// The builder every plan shares before its subject is set, plus the capabilities the strategy needs.
+	private static final class Scaffold {
+		final RenderPlan.Builder builder;
+		final RendererCapabilities caps;
+		Scaffold(RenderPlan.Builder builder, RendererCapabilities caps) {
+			this.builder = builder;
+			this.caps = caps;
+		}
+	}
+
+	/// Style chain -> effective config snapshot -> model policy -> preset -> canvas -> style, with the
+	/// resolver's degradations already on the builder. {@code subject} names the plan in the 409 message.
+	private static Scaffold scaffold(BaseRecord user, BaseRecord book, BaseRecord node, PlanOptions opts,
+			SDAPIEnumType apiType, String sdServer, String subject) {
 		PbStyleResolver.EffectiveStyle style = PbStyleResolver.resolve(user, book);
 		if(!style.isComplete()) {
 			throw new PictureBookException(409, "Style chain of book " + book.get(OlioFieldNames.FIELD_PB_SLUG)
 				+ (style.cycleDetected() ? " cycles" : " is not readable at " + style.truncatedModel() + " " + style.truncatedAt())
-				+ "; scene " + sceneObjectId + " cannot be planned against a partial style");
+				+ "; " + subject + " cannot be planned against a partial style");
 		}
 
 		BaseRecord effective = PbConfigUtil.resolveEffectiveConfig(book, node, false, null, style);
@@ -143,23 +192,24 @@ public final class PbRenderPlanUtil {
 			Collections.emptyList());
 
 		RenderPlan.Builder b = RenderPlan.builder()
-			.purpose(RenderPlan.PURPOSE_SCENE)
 			.canvas(canvas)
 			.preset(presetValues)
 			.style(planStyle)
 			.config(snapshot)
-			.location(new RenderPlan.Location(sceneObjectId, locationText(scene)))
 			.intent(new RenderPlan.Intent(opts.getPromptOverride(), opts.isRaw()))
 			.model(locPick)
-			.model(directPick)
-			.actors(sceneActors(user, scene));
+			.model(directPick);
 		for(RenderPlan.Degradation d : degradations) {
 			b.degradation(d);
 		}
-		RenderPlan plan = b.build();
+		return new Scaffold(b, caps);
+	}
 
+	/// Strategy selection and per-stage compilation, identical for every purpose.
+	private static RenderPlan finish(Scaffold s) {
+		RenderPlan plan = s.builder.build();
 		List<RenderPlan.Degradation> out = new ArrayList<>();
-		RenderPlan.Strategy strategy = StrategySelector.select(plan, caps, false, out);
+		RenderPlan.Strategy strategy = StrategySelector.select(plan, s.caps, false, out);
 		plan = plan.withStrategy(strategy, out);
 
 		out = new ArrayList<>();
@@ -169,6 +219,25 @@ public final class PbRenderPlanUtil {
 			compiled.put(stage, compiler.compile(plan, stage, out));
 		}
 		return plan.withCompiled(compiled, out);
+	}
+
+	/**
+	 * The location's own description, then the variant's qualifiers in a fixed order (time of day, weather,
+	 * season, viewpoint, extra), each only when meaningful. Empty when the location carries no description;
+	 * the caller decides whether that is a refusal.
+	 */
+	static String locationSubjectText(BaseRecord location, BaseRecord variant) {
+		List<String> parts = new ArrayList<>();
+		String desc = strField(location, FieldNames.FIELD_DESCRIPTION);
+		if(NarrativeUtil.isMeaningful(desc)) parts.add(desc.trim());
+		if(variant != null) {
+			for(String f : new String[] { OlioFieldNames.FIELD_PB_TIME_OF_DAY, OlioFieldNames.FIELD_PB_WEATHER,
+					OlioFieldNames.FIELD_PB_SEASON, OlioFieldNames.FIELD_PB_VIEWPOINT, OlioFieldNames.FIELD_PB_EXTRA }) {
+				String v = strField(variant, f);
+				if(NarrativeUtil.isMeaningful(v)) parts.add(v.trim());
+			}
+		}
+		return (parts.isEmpty() ? "" : joinSentences(parts));
 	}
 
 	/// Persist {@code plan} as the node's {@code renderPlan} JSON artifact, as {@code user} through PBAC.

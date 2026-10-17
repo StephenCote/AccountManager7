@@ -1,0 +1,67 @@
+{
+	"name": "olio.pb.location",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "place",
+	"label": "Location",
+	"group": "Locations",
+	"dedicatedParticipation": false,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["world", "poi"],
+	"description": "PictureBook V3 §7 location: one place a book (or a series of chapter books) returns to, held as a world asset in the world's Locations group so that scenes 3, 7 and 12 share one approved render rather than three unrelated backgrounds. The POI link (§7.2) is the 'poi' reference: in a book world it is a map-free olio.pointOfInterest (location null, east/north -1) with its own olio.store; in a game world it is the placed POI matched by name. V3 never writes a data.geoLocation for a location. 'approvedRender' is the artifact pinned by approve or auto-approve (§10); 'locked' freezes the whole asset (edits, approve/clear of the render, new renders, variants, delete) until unlocked. No field carries a schema default (PB2 convention rule 3, TestPbModelSchema): the enum column reads NULL as UNKNOWN, the boolean materialises false.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "description",
+			"type": "string",
+			"description": "The place as the text describes it - the base of every LOCATION render and of the scene plan's location text."
+		},
+		{
+			"name": "kind",
+			"baseClass": "org.cote.accountmanager.schema.type.PbLocationKindEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "world",
+			"baseModel": "olio.world",
+			"type": "model",
+			"foreign": true,
+			"description": "The Olio world the location belongs to: the book's own world for a standalone book, the shared series world for a chapter."
+		},
+		{
+			"name": "aliases",
+			"type": "list",
+			"baseType": "string",
+			"description": "Other names the text uses for the same place ('the inn', 'the Prancing Pony'). A non-foreign list, persisted as serialized text; findByNameOrAlias matches these case-insensitively."
+		},
+		{
+			"name": "poi",
+			"baseModel": "olio.pointOfInterest",
+			"type": "model",
+			"foreign": true,
+			"description": "§7.2 POI link. Nullable; a dangling reference is a repairable health finding, never a failed scene."
+		},
+		{
+			"name": "approvedRender",
+			"baseModel": "olio.pb.artifact",
+			"type": "model",
+			"foreign": true,
+			"description": "The approved LOCATION artifact (§10). Promoted by approve/auto-approve, carried by the scene plan as the background-first input; null until something is approved."
+		},
+		{
+			"name": "locked",
+			"type": "boolean",
+			"description": "When true the whole asset is frozen until unlocked: description/kind/alias edits, approving or rejecting-the-approved render of the location or of any of its variants (a variant has no lock of its own and inherits this one), new renders of either, new variants and delete are all refused (409). Approving a render does not lock the location; the lock is a separate, explicit act. Enforced by the PictureBook facade (PbLocationUtil/PbArtifactUtil) only - generic PATCH /rest/model does not consult it."
+		}
+	]
+}

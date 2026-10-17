@@ -115,6 +115,37 @@ public class JSONUtil {
 		return null;
 	}
 
+	/**
+	 * Lenient {@link #getList(String, Class, SimpleModule)} for an array produced by an LLM — the
+	 * list-side twin of {@link #getLenientMap(byte[], Class, Class, String[])}, enabling the same
+	 * read features for the same reason: a raw newline inside a long description, a trailing comma or a
+	 * single-quoted string is a routine artifact of generated text, not a reason to discard the reply.
+	 * Kept separate from {@link #getList} so model/schema resources stay strictly validated.
+	 *
+	 * @param data raw LLM output, already sliced to the array by the caller
+	 * @param errorOut optional single-element array; receives the parser's own message on failure
+	 * @return the parsed list, or null when the text could not be parsed even leniently
+	 */
+	public static <T> List<T> getLenientList(String data, Class<?> itemClass, String[] errorOut){
+		ObjectMapper mapper = new ObjectMapper();
+		mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_TRAILING_COMMA.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_SINGLE_QUOTES.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_UNESCAPED_CONTROL_CHARS.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_JAVA_COMMENTS.mappedFeature());
+		mapper.enable(JsonReadFeature.ALLOW_MISSING_VALUES.mappedFeature());
+		CollectionType listType = mapper.getTypeFactory().constructCollectionType(ArrayList.class, itemClass);
+		try {
+			return mapper.readValue(data, listType);
+		} catch (IOException e) {
+			if (errorOut != null && errorOut.length > 0) {
+				errorOut[0] = e.getMessage();
+			}
+			logger.debug("Lenient JSON array parse failed: " + e.getMessage());
+		}
+		return null;
+	}
+
 	public static <T> Map<String,T> getMap(String path, Class<?> keyClass,Class<?> mapClass){
 		return getMap(FileUtil.getFile(path),keyClass,mapClass);
 	}

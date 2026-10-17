@@ -48,7 +48,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | **0 — Hygiene + Kontext Deprecate** | **AT PHASE END — gate red only on Stephen's items** (started 2026-10-09; all 15 task rows DONE except P0-12, the gate itself; every review verdict in incl. the phase-level verifier pass, every cheap finding fixed and re-proven with logs; first full `verify.sh` 2026-10-10 01:50–04:23 `VERIFY_FAILED` on environmental causes (§4.1) that Stephen's 2026-10-10 instructions then had me fix — §6.I/§6.J/§6.K RESOLVED, fixture repaired, named Postgres volume, chromium-only gate + `chromium-vite` project; **second full gate 12:38–16:22 `VERIFY_FAILED`** (§4.2): backend red only on the pre-existing §6.A ×3 / §6.B / §6.F / §6.H, e2e 75 failed → §4.3 triage finds one environmental cause (hardcoded `:8899` fixture base, fixed §6.C item 20) and 16 + 6 + 3 residuals, all environmental / missing fixture / stale tests / "any record" fixture picks, **none a Phase 0 regression**; Ux752 quick gate after the fix `VERIFY_OK`; §6.M SDXL model-ref defect fixed and proven live) | 136 green in the task runs (Slice A 6 + Slice B 30 + P0-5's `TestFlux2Composite` 36 / `TestPbConfigPrecedence` 2 + Slice C backend 8 + Slice C transport `TestChapBookRestContract` 8 + P0-10d Vitest 13 + Playwright `chapBookBookSettings` 8 (3 REST + 5 UI) + P0-11 `TestKontextDeprecation` 7 + Playwright `chatChainSceneReimageRoutes` 8 regression + 2 live (§2.8) — `TestFlux2Composite` counted once, regression specs of other features not counted); module gates: Objects7 RED on §6.A/B/F, Service7 `108 run, 1 error` on the §6.H fixture (§4.1); Ux752 e2e re-verified serially after the environment fixes (§4.2) |
 | 1 — Graph-first rendering + review | **IN PROGRESS — end-of-(A) verifiers 2026-10-13 11:39 → 11:48: three PASS-WITH-NOTES, PF-1 / PF-9 / PF-15b DONE (§9.3.6 / §9.4.2 / §9.2.3), Objects7 quick gate run 6 11:47:25 → 12:23:01 **VOID** (§4.4 row 6: Docker Desktop's engine stopped 12:05:14 under the WSL 3.0.3.0 update mid-run — 991/589/1/5 is the outage, not a result; one real pre-outage red `TestGameUtil:964` to classify; restart denied to me ⚠ §6.C 148; Stephen restarted WSL/Docker ~13:57, `postgres3` started by me 14:08, **run 7 14:12:04 → 16:41:28 VALID** (§4.4 row 7): `Tests run: 991, Failures: 4, Errors: 0, Skipped: 15` — the four reds are §6.A ×3 + the mannequin copy artefact, all baseline; §6.B and §6.F green for the first time in a full gate; `TestGameUtil` 25/25 (run-6 red = flaky); `TestWebAuthnUtil` 8/8, `TestPbRenderJob` 11/11 — **(A)'s gate obligation met**) · PF-5b/PF-5c LANDED (live) 2026-10-13 11:14: passkey assertion verification + list cache, JUnit 8/8 + 10/10 (both red → green), `webauthn.spec.js` `16 passed`, Service7 gate `VERIFY_OK` 142/0/0/0, verifier PASS, security PASS (§9.3.5, §6.C 146); follow-up product fixes (A) under way 2026-10-12 from 14:40 (§9): Ux752 batch PF-2/3/4/6/7/15a/15b/15d landed + proven live (Vitest 89/1156 green, 7 Playwright specs green, PF-7 gated `.42` run `1 passed (12.5m)` with the new PF-15d teardown proven), Service7 PF-1/5/8 landed + proven live 16:05–16:50 (JUnit 18/18 on H2 incl. the two new contract classes, `worldDeleteBreadcrumb` `3 passed`, `webauthn` `13 passed`, `bugfix3-live:211` `1 passed (1.6m)` with a real `.39` render, Service7 quick gate `VERIFY_OK` after the H2 fixture repair §6.C 137) — **but PF-5 is BLOCKED by the 20:27 security review FAIL: the parse fix makes the never-verified passkey login reachable (sign-in as any passkey user without the key; §6.C 142, §9.3.1) — decision asked, nothing changed, the test stack still runs the PF-5 bytes**, **2026-10-13 08:40 Stephen: implement assertion verification → PF-5b IN PROGRESS; 09:25: PF-15b hardening landed + proven (Vitest `sdConfigSavePlacement.test.js` `3 failed` → `13 passed (13)`, built, container md5 equal), PF-1 re-find fix landed (`OlioService.java:786`, both-principals recheck) + new H2 JUnit `TestOlioServiceDeleteWorld` red `{deleted=false}` → 4/4, Service7 H2 suites 16/16 — redeploy + Playwright re-proof waited for the §4.6 re-gate (§6.C 144, §9.2.2, §9.3.3); **§4.6 run 2 is back (08:48:11 → 09:26:03): `VERIFY_FAILED` on e2e only — `518 passed / 10 failed / 3 flaky / 92 skipped / 7 did not run (37.4m)` vs run 1 `495 / 61 / 4 / 58 / 5`; the 10 reds are triaged in §4.6 — none a PF regression, none fixed, candidates ⚠ §6.C 145**, Objects7 PF-9 landed + proven live 17:07–17:15 (`mvn-o7-pf9.log` `Tests run: 18, Failures: 0, Errors: 0` / `BUILD SUCCESS`, the new `TestPbRenderJob.case11` 409 `(1 reused, 0 pinned)` then forced revision 2 on `.39`, jar `416f5714…` deployed; REST-level proof on the Docker stack 20:11–20:13 — `pictureBookV3PlainPb.spec.js` `4 passed (1.1m)` as `e2etest_shared`, STORY book, un-forced 409 `(1 reused, 0 pinned)`, pinned+forced 409 `(0 reused, 1 pinned)`, forced 202 → revision 2 supersedes 1, reader shows it — §9.4.1), Stephen 17:25: three module verifiers + PF-5 security review + Objects7 quick gate (~2 h) + §4.6 re-gate (~2 h) all approved and run in sequence (§6.C 141), §9.5 proposals deferred, (B) after the launches are back; every task P1-1…P1-11 executed; phase gate `VERIFY_FAILED` on e2e 2026-10-11 22:30; P1-12 test-repair 2026-10-12 08:45 → 14:03, STOPPED at Stephen's instruction after the in-flight agents reported (§8.12; started on my misread of a Q&A remark — §6.C 126); test files only, nothing committed; the §4.6 re-gate, the verifier hand-off and the three SD-serial tests are NOT run and wait on Stephen** (started 2026-10-10 18:13 local; **P1-1…P1-9 DONE** — §8.1–§8.9, every task through planner → architect → implement → test-author → verifier, security-reviewer on every new route; P1-1 schema, P1-2 drift/stale, P1-3 executor converged with v1 + runs, P1-4 review state machine, P1-5 auto-approve, P1-6 async `pb.render` jobs + cancel + 429 cap, P1-7 restart recovery (boot sweep → INTERRUPTED, `resumable`, `POST /{book}/run/{id}/resume`), P1-8 `renderPath` switch (default v1; 13 facade gates 409; `GET /rest/config/render-path`). Objects7 quick gate of the copy: run 2 924/6/0/15 after the P1-1 fix, run 3 949/6/0/15 (§4.4) — both red only on the §4.2 baseline + the mannequin copy artefact; run 4 queued with the three new classes. Defects found by review and fixed: P1-6 verifier M1 (`workflow.lastRun` displaced by a refused run → `case10`), P1-7 test-author (`runDto` `ZonedDateTime` → empty 200 body). **P1-9 ChapBook on the Phase 1 path DONE 13:00 (§8.9) — code, JUnit, Service7 contract, new Playwright spec, suite-on-v3 run, security-reviewer PASS, test-author pass (three real gaps closed, no product defects) and an independent verifier PASS (11/11 · 6/6 · 5/5 re-run live; four non-blocking observations §6.C 104); the suite's 8 reds are classified pre-existing stale specs (§6.C 102), none v3.** **P1-10 Ux752 subset DONE 17:05 — planned + architect-corrected (§8.10, §6.C 103); S0 backend (`affected-by` route, `lastRunObjectId`, `runDto.jobId`, `nodeSummary` canvas geometry, `bookPageView` node/review fields) DONE 13:30 + security PASS-WITH-NOTES 13:42 + S0b hardening DONE 13:54 (notes 1/2/6 closed, redeployed, jar md5 `66ef41fb…`); Ux S1–S8 DONE 14:08 (6 files + new `features/pictureBookReview.js` + 6 Vitest files; suite 89/1151 green; S7 skipped §6.C 103(j); dist copied 14:08); **Playwright exit criteria 1–4 ALL GREEN 15:07** (test-author; new `pictureBookV3Ux.spec.js` + criterion 2 in `pictureBookRestartRecovery.spec.js` across a real `docker restart`; no product defects, observations §6.C 107(i)–(m)); Ux752 quick gate `VERIFY_OK` 14:17; Service7 quick gate `127/0/1` red only on §6.H 15:18; **independent verifier CHANGES-NEEDED ~15:50** — one MUST-FIX proven live over REST (the reader's "Unpin and re-render" unpins, then re-submits without `force` → 409 "(1 reused, 0 pinned)": pin lost, no render) plus two SHOULD-FIX with the same root; **fixed as the ⚠ default §6.C 109 and verified live 16:00–16:47** (explicit per-scene renders pass `force`, mirroring the ratified ChapBook pattern §6.C 98; "Render all" unchanged; pin still wins): JUnit re-homed to `TestChapBookV3Render` 1/1 live `.39` (the plain-PictureBook `case11` could never pass — `executeLandscape` never stamps `inputHash`, the §8.9 gap, left alone), Service7 contract 25/0/0, Vitest 89/1152, Playwright `pictureBookV3Ux.spec.js` `4 passed (2.2m)` with the new criterion 1b through the reader's "Scene is pinned" confirm (every PNG opened), Ux752 gate `VERIFY_OK`; **independent re-verify PASS 17:05** (every test re-run by the verifier itself, md5s matched, force-caller grep clean, three non-blocking observations §6.C 111) — **P1-10 DONE 17:05**.** **P1-11 17:09 → 22:30, CLOSED `VERIFY_FAILED`:** Objects7 gate run 5 done 19:13 (§4.4 row 5: 982/7/0/15 — the six expected reds plus one new, `TestPbRenderJob.case07`, a race in the P1-6 test's own assertion, fixed in the test ⚠ §6.C 113 and the class 10/10 green on the working tree); §6.C 76 login alignment edited in both Phase-1 specs (§8.11, ⚠ §6.C 112) and proven live 19:23–19:28 — `pictureBookV3Ux.spec.js` `4 passed (2.3m)`, `pictureBookRestartRecovery.spec.js` `2 passed (1.8m)`; **full Ux752 gate 19:33→21:42 `VERIFY_FAILED` on e2e (§4.5)** — 623 tests, `495 passed / 61 failed / 4 flaky / 58 skipped / 5 did not run`: the 28 expected §4.3 reds all present and unchanged, plus 33 unexpected = 8 stale ChapBook specs (§6.C 102), 4 gate-2 PictureBook fixture/stale reds, 1 stack-PBAC red (`apparelSequence:29`: `e2etest_shared` dropped from `Olio User` by `explorer.spec.js`; repair denied by the permission classifier → ⚠ §6.C 114, **waiting on Stephen**), 20 generic-UI reds re-run serially — **all 20 red again, deterministic, none in the Phase 1 diff, 8 already red in gate 2** (§4.5.1; couplings → ⚠ §6.C 114 (g)); **Phase 1 is NOT declared done**; no product code changed at phase end.) | `TestPbV3Schema` 5/5, `TestPbModelSchema` 19/19, `TestPbStale` 9/9, `TestPbStaleCacheEpoch` 3/3, `TestPbNodeRun` 7/7 (live `.39`), `TestPbReview` 7/7, `TestPbAutoApprove` 7/7, `TestPbRenderJob` 10/10 (live `.39`; run 2 191.8 s), `TestPbRecovery` 8/8 (live `.39`; 38.19 s verifier re-run), `TestPbRenderPath` 9/9, `TestPbCanvas#TestPortraitNodeExecution` 1/1, `TestPbNodeExecutorTypes` 2/2, `TestPbSceneGenerationGuards` 6/6, `TestPbGraph` 18/18 (§8.1–§8.8); Service7 `TestPictureBookRestContract` 17/17, `TestPbRenderPathRefusal` 6/6, `TestFeatureConfigService` 2/2, full Service7 119/0/1 (§6.H only); Vitest `renderPathConfig.test.js`; Playwright `pictureBookWorkflow.spec.js` `:615` stale / `:697` review / `:900` auto-approve / `:1094` live-SD / `:1292` leave-the-page (L4) all 1/1, `pictureBookRestartRecovery.spec.js` `1 passed (46.2s)` across a real `docker restart`, render-path spec 4/4 — all on the Docker stack; §6.F re-run still red, unchanged; P1-9: `TestChapBookV3Render` 11/11 live `.39` + LLM (241.4 s, test-author run; earlier 8/8 + tightened render-all 1/1), Service7 `TestChapBookServiceRenderPath` 6/6 (9.304 s), Playwright `chapBookRenderPathV3.spec.js` `5 passed (2.4m)` live single run (`CB_LIVE_GEN=1`), ChapBook suite on v3 `60 passed / 8 failed / 13 skipped (11.8m)` — the 8 reds pre-existing stale specs (§8.9 table) |
 | 2 — Style, model resolution, compiler core; ChapBook goes V3; Kontext Disable | **GREEN PASS COMPLETE — phase exit is yours (159 b) — as of 2026-10-15 19:45 local: P2-10 (phase gate) run under `.39 http=200` probes (§3 16:04:44 / 19:00:19 / 19:05:49 / 19:42:28 / 19:45:10): Objects7 run 13 (§4.4 row 13) `Tests run: 1188, Failures: 4, Errors: 0, Skipped: 16` — §6.A ×3 + 1 new red `TestChatSceneRenderUtil:459` (my test's read used `planMost`, which filters `attributes`; projection fixed test-only, class re-run **10/0/0/0** under the same probe, ⚠ 169 n); every `.39` outage red cleared and every SD-gated case executed on `http://192.168.1.39:7801` (`sd_xl_base_1.0`, 29 renders; 0 SD skips; the 1 Kontext-not-installed skip is NOT a pass); Service7 **`VERIFY_OK` 193/0/0/0**; Ux752 full gate run 4 (§4.7.2) **`VERIFY_FAILED` — 9 failed / 3 flaky / 101 skipped / 10 did not run / 529 passed (31.8 m)**: 8 reds are the §4.6 run-2 set (pre-Phase-2), 1 NEW and real — `pictureBookV3StyleEditor:260` (test 2, first execution of its live-inventory branch): my P2-9 editor read `models[].name` where the server sends `listedName` (`PbServiceFacade.listModelsForTask :195`), so the installed-model datalist and the "Not in the installed-model list" hint never rendered against a live inventory; **fixed** (`pictureBookStyle.js:518`, one expression) + the Vitest fixture that carried the wrong shape (`pictureBookStyle.test.js:66-70,224`; the corrected fixture fails against the old code), dist rebuilt + copied (md5 local == container), style spec **6 passed (41.6 s)** under `.39` UP (`[p29-style-2] live inventory models listed: 13`; hint visible in `02-dirty.png`), Ux752 quick gate **`VERIFY_OK`** 19:44 — ⚠ 169 o (product fix inside the phase without asking) / 169 p (no second full Ux752 gate after the fix). Architect **PASS WITH NOTES**, security **PASS WITH NOTES**, phase verifier **PASS WITH NOTES** — three SHOULD-FIX asks + coverage ask recorded, none acted on (§6.C 169 (1)–(8)). **P2-1…P2-9 stay "Verifier PASS; gate run GREEN" — DONE is yours (§6.C 159 b).** Working tree = 5d60177a + two test-only fixes (`TestIllustrationResources:151`, `TestChatSceneRenderUtil:439-447`) + the P2-9 Ux752 fix (`pictureBookStyle.js:518`, `pictureBookStyle.test.js`), all uncommitted. Previously, as of 06:23: P2-9 (Ux752 — book style editor at `/picture-book/{book}/style`, the reader's "Plan & generate" dialog with the estimate line + `PbPlanInspector`, the same inspector on the canvas node detail and the review page, and the model-missing message in the editor's live availability column — design §26; **Ux752 only, no server code changed**) **IMPLEMENTED + DEPLOYED + TESTED 02:05 → 06:23** (§10.9): Vitest NEW `pictureBookStyle.test.js` 40 + `pictureBookPlanInspector.test.js` 20 → **60/60**, full suite **92 files / 1222 passed** (`C:/tmp/p29-vitest-full.log`); `npx vite build` exit 0, `dist` copied, md5 local == container; Playwright NEW `pictureBookV3StyleEditor.spec.js` **5 passed (10.0 m)** (`C:/tmp/pw-p29-style2.log`) + NEW `pictureBookV3PlanInspector.spec.js` **3 passed (9.3 m) + 1 SD-gated skip** (`C:/tmp/pw-p29-plan.log`), both as `e2etest_shared` against the live stack with `.39` DOWN (inventory `error` surfaced in the editor; `POST /render-plan` **503** verbatim in the dialog; the 400/409 style contracts verbatim; every screenshot opened); test-author: all four files REAL, NEW test 6 (inheritance / book override / parent lock) → style spec **6 passed (10.2 m)** (`C:/tmp/pw-p29-ta-style2.log`), Vitest 60/60 (`C:/tmp/p29-ta-vitest.log`); verifier **PASS WITH NOTES** → own-lock gap in the render-settings panel fixed (`<fieldset disabled>`, 168 ac), style spec **6 passed (10.2 m)** again (`C:/tmp/pw-p29-fix-style.log`), delta re-check **PASS**; **no security-reviewer pass for this task (no new route — the P2-10 phase pass covers the client surface)**; ⚠ §6.C 168 (defaults a–m, asks 1–14 incl. a pre-existing canvas `saveCanvas` 500, 168 z); Ux752 quick gate **`VERIFY_OK`** 06:21 (`C:/tmp/ux752-gate-p29.log`); phase quick gates ⚠ batched forward (run 11) — **not DONE (yours)**; `.39` Swarm still DOWN (host + container) — SD-gated skips are not passes; 02:01 local: P2-8 (Kontext Disable, §37.3 Disable stage — `compositeMode=kontext` refused before any LLM/SD contact at every entry point: Objects7 `PbRenderPath.requireEnabledCompositeMode` → 409 in the executor and PB1 `generateSceneImage`, `ChatService.generateScene` 400 explicit / 409 config-resolved before the session lookup, `SceneCompositeUtil.buildSceneRequest` refuses a retired mode itself; `flux2|classic` stay supported; code stays until Phase 10 Remove) **IMPLEMENTED + DEPLOYED + TESTED 00:50 → 01:58** (§10.8): first pass Objects7 **104 run / 0 fail / 10 SD-gated skips** (`TestPbKontextDisable` NEW ×3 with an SD sentinel that proves no SD call, `TestKontextDeprecation` 8, `TestFlux2Composite` 36), Service7 NEW `TestChatSceneKontextDisable` ×8 + `TestChatSceneRenderPath` 4 → **12/12**, Playwright item 14 **4 passed**, curl proof as `e2etest_shared` (400/409/404 shapes); **security-reviewer PASS** (REQUIRED) with two hardenings applied in-task (bounded, control-stripped echo of an unknown mode; builder-level refusal) → hardening pass Objects7 **47/0/0/0**, Service7 **13/13**, Playwright item 14 **5 passed**, curl proof, jar/class/dist redeployed md5-equal; **verifier PASS** (own serial runs 61/0/0/10 + 12/12; two doc findings fixed in-task, design-level finding 3 recorded as ask 167 t) and **verifier re-check of the hardening diff PASS** (test rewrite ruled not a weakening) → **Verifier PASS; quick gates ⚠ batched forward (run 11)**, not DONE (yours); ⚠ §6.C 167 (asks 167 g / r / t); `.39` Swarm still DOWN (host + container) — SD-gated skips are not passes; 00:50 local: P2-6 (ChapBook goes V3 — pages compile through TEXT_ONLY via the shared `renderPlannedScene`; `chapbook.renderPath` defaults to `v3` at every surface, `v1` is the documented rollback) is implemented, deployed, live-proven on the Docker stack (Playwright group 2 **42 passed / 4 gated skips / 0 failed**; the two SD-gated reader tests red on pre-existing locator drift → repaired → **2/2** live; §10.6; ⚠ §6.C 165; §28 verify stage started — checks 1/4/5 yours); test-author 24/24, security PASS WITH NOTES and **verifier PASS WITH NOTES** for P2-6 → **Verifier PASS; quick gates ⚠ batched forward (run 11)**, not DONE (yours); P2-7 (chat scene through the illustration service, behind a third boot-pinned `chat.renderPath`, default `v1`, test stack `v3`) **IMPLEMENTED + DEPLOYED 23:10** — every surface edited and compiling (Objects7 jar installed, Service7/Console7 compile, Vite build, Vitest 5/5), `am7test-am7-1` recreated with `CHAT_RENDER_PATH=v3` and re-seeded (jar + classes + dist + template + entrypoint, md5-equal), boot log `chat.renderPath set to v3 (was v1)`, `GET /rest/config/render-path` as `e2etest_shared` → `{picturebook:v3, chapbook:v3, chat:v3}`; **TESTS WRITTEN + RUN 23:48 → 00:33** (§10.7) — Objects7 NEW `TestChatSceneRenderUtil` **10 run / 0 fail / 1 SD-gated skip**, re-run list **101 run / 0 fail / 29 SD-outage skips** (every skip classified from the XMLs, none a pass); Service7 NEW `TestChatSceneRenderPath` **4/4** + list **45/45** after a second H2 fixture corruption → rename-aside (✓ §6.C 166 x); Vitest 5/5; Playwright `renderPath` 4/4, item 14 **2 passed / 1 skipped** (the v3 live block skips on the documented inventory-unavailable 503 only together with a failed host probe, ⚠ 166 w); light security pass **PASS** — two in-task hardenings applied + redeployed (⚠ 166 y), two asks (166 z); **verifier PASS** 00:35 (code / switch / transport; it states the v3 200 path is UNVERIFIED until `.39` answers; one spec fix ⚠ 166 aa, ask 166 ab, notes 166 ac) → **Verifier PASS; quick gates ⚠ batched forward (run 11); live render pending `.39` / 166 v**, not DONE (yours); **SD-live proof still blocked**: Swarm `.39` unreachable from host and container (ping 100 % loss) while `.42:7801` answers 302 — the stack's `/System` `sd` connection still points at `.39` and the harness refused the admin `PATCH` that would repoint it (⚠ §6.C 166 v — yours); ⚠ §6.C 166 / §10.7; P2-5 (`PbNodeExecutor` renders from the plan through TEXT_ONLY; `POST …/scene/{scene}/render-plan`) is implemented, deployed, live-proven on the Docker stack (Playwright 6/6 as `e2etest_shared` against Swarm `.39`), security PASS, test-author gap-fills green, **verifier PASS** (§10.5; ⚠ §6.C 164; Objects7/Service7 quick gates ⚠ batched forward, 163 o / 164 w); P2-4 is verifier PASS (§10.4; ⚠ §6.C 163); started 2026-10-13 14:20 local (§10) on Stephen's "start (B) after the launches above" (17:25) once WSL/Docker were back (§3 14:08:33 probe); P2-1 planned + architect PASS (§10.1, §6.C 149/150), then **implemented in the working tree 14:50 → 15:30** (model, two FKs, five enums + `RENDER_PLAN`, `PbStyleUtil`, two illustration resources + two pure loaders, `TestPbModelSchema` +3, new `TestPbStyleSchema` ×8 and `TestIllustrationResources` ×17 — ⚠ defaults §6.C 151) while Objects7 gate run 7 held the Maven/DB/LLM slot on its own copy; **P2-1 tests green 16:45 (55/55, first Maven run) → test-author +3 cases 58/58 (16:54) → verifier PASS 17:04 (58/58 re-run by the verifier itself; §10.1 results)** — P2-1 is **verifier PASS, Objects7 quick gate pending** (⚠ batched with P2-2's, §6.C 153); nothing committed; P2-2 planned (§10.2, 15:45) + architect PASS WITH CORRECTIONS (16:00, all adopted, route resolved to §27's `/olio/illustration/models`; ⚠ §6.C 152), **Objects7 sources implemented 16:30 → 17:25** (`ModelResolver`, `ModelInventory`, `SwarmModelInventory`, `CheckpointNames`, `ModelTaskKeys`, `DeploymentModelDefaults`, `TestModelResolver`; `SDUtil.listModelsOrNull()`; `PbStyleUtil.readSdConfigModels`) while the P2-1 test-author/verifier held the Maven slot — compiled clean by the verifier's own javac (633 main / 322 test sources); **P2-2 finished 17:25 → 17:34** (§10.2 results): `PbServiceFacade.listModelsForTask`, new Service7 `IllustrationService` (`GET /olio/illustration/models?task=&style=`), `TestIllustrationRestContract` ×3, `TestModelResolverLive` ×11 — `TestModelResolver` **40/40** 17:27 after one product fix in `CheckpointNames` (⚠ §6.C 154 a), `TestModelResolverLive` **10 pass / 1 honest skip** 17:27 (.39 lists no Kontext checkpoint), `TestIllustrationRestContract` **3/3** 17:28; jar + class redeployed to `am7test-am7-1` (md5 equal, `javap` clean) and the route **proven live as `e2etest_shared` 17:34** (`C:/tmp/p2-2-live.log`: 403 unauthenticated, 200 with all 13 installed checkpoints, 400 `bogus`, 404 absent style) — **P2-2 is implemented and green; test-author / verifier / security-reviewer pending, Objects7 quick gate batched with P2-1's (⚠ §6.C 153 a)** | — |
-| 3 — Locations + POI link | TODO | — |
+| 3 — Locations + POI link | **IN PROGRESS** — started 2026-10-16 09:43 local (§3 probe GREEN). **P3-1 (schema) IMPLEMENTED + TESTS GREEN 10:18** (`TestPbModelSchema` 22/0/0/0, `TestPbLocationSchema` 3/0/0/0, `TestPbGraph` 20/0/0/0, all `BUILD SUCCESS`, zero `AUDIT DENY`, §11.1); jar installed 10:22 + deployed to `am7test-am7-1` 10:23 (md5 local == container, the scene-column DDL applied in the container, both location tables in the stack DB); REST-proven read-only as `e2etest_shared` 10:28; Objects7 quick gate run 14 (10:29:42 → 10:43:35) **VOID — 815/1191 failed in `BaseTest.resetIO` because the copy I recreated lacked the gitignored `am7/` key stores; mine, not a test or DB result** (§4.4 row 14, ⚠ §6.C 170 h); junctions restored, **run 15 GREEN 10:51:15 → 13:49:05: `1191/3/0/16`, reds = §6.A ×3 only (zero new), +3 tests, skips identical to run 13 (§4.4 row 15)**; `TestPbLocationSchema` cleanup re-run 3/0/0/0 10:50; security-reviewer PASS + verifier PASS 10:40 (⚠ 170 k–n). **P3-2** (`PbLocationUtil` resolver + POI link, `PbHealthUtil` `LOCATION_POI_MISSING`) and **P3-3** (`pictureBook.cluster-locations` pass, `olio.pb.locationProposal`, `PbMigrationUtil` landscapes + pass) code WRITTEN. **P3-2 TESTS GREEN 14:07** — `TestPbLocationUtil` 5/0/0/0 (after one test fix and one product fix, §11.2), regression 31/0/0/0 14:17; **P3-3 TESTS GREEN 15:38** — `TestPbLocationProposal` 4/0/0/0 (emulator), **`TestPbLocationPassLive` 1/0/0/0 live** (red once at 15:23 on a malformed model reply, parser hardened, green 15:37 — scenes 3/7/12 share one tavern proposal, accept creates one location + POI + store and re-points 3), `TestPbMigration` 4/0/0/0 (+landscapes + pass), `TestLlmJsonArraySalvage` 14/0/0/0 (§11.3); jar installed + deployed 15:40 (md5 local == container), live proof 15:41 (`/rest/model/search` 200 on all three location models as `e2etest_shared`); architect + security-reviewer PASS WITH NOTES (adopted as code edits, **compiled/run pending** — ⚠ §6.C 173 t); verifier PASS (record corrections applied); test-author added `TestPbLocationUtil` case06–09 — **run GREEN 19:31** (`TestPbLocationUtil` 9/0/0/0, `p32-locutil4.log`); **Objects7 quick gate run 16 (15:47:13 → 18:58:02) `1205/4/0/16`: reds = §6.A ×3 + `TestPbLocationPassLive:334` (the model split the tavern from its taproom — product-fixed by `PbLocationUtil.foldSubPlaces` + a prompt rule, assertion untouched, re-run GREEN 1/0/0/0 19:22 `p33-live3.log` with `folded=0` — fold proven by emulator case05, ⚠ 174 a, g), +14 tests, skips identical to run 15 (§4.4 row 16)**; the five P3-3 review edits compiled + run GREEN 19:16 → 19:31 (`TestLlmJsonArraySalvage` 15/0/0/0, `TestPbLocationProposal` 5/0/0/0 then 1/0/0/0, §11.3 addendum); fold security review PASS, two hardening notes adopted + re-run GREEN 20:48 (`TestPbLocationProposal` 6/0/0/0, `p33-proposal6.log`); post-review jar installed 21:29 + deployed 21:41 together with P3-4 (md5 `56785b40…` local == container). **P3-4 (LOCATION node, render, approve/lock) IMPLEMENTED + TESTS GREEN** — `TestPbLocationNode` 8/0/0/0 20:37 (`p34-locnode.log`), regression 48 tests 21:07 (`p34-regress.log`; one red = `TestPbNodeExecutorTypes` seven→eight-stage mirror, re-run 2/0/0/0 21:08), Service7 `TestPictureBookLocationRoutes` 8/0/0/0 21:40 (`p34-s7routes2.log`), Playwright `pictureBookLocations.spec.js` `17 passed (1.3m)` `EXIT=0` 22:22 (`pw-p34.log`; live location render on `.39`, PNGs opened); security-reviewer PASS WITH NOTES → hardening slice landed (`cleanText`, no input echo, variant cap 32, facade `sameWorld` on approve/reject) and re-run GREEN 23:41 (`TestPbLocationNode` 11/0/0/0 `p34-locnode3.log`; `TestPbLocationProposal` 7/0 `p34-proposal2.log`; `TestPbLocationUtil` 9/0 `p34-locutil5.log`; `TestPbRenderPath` 10/0 + `TestPbReview` 7/0 `p34-review-renderpath.log`; Service7 8/0 `p34-s7routes3.log`); test-author added case09/case10/proposal case07 (case10 red → product fix → green); jar + `PictureBookService.class` redeployed 23:53 (md5 `5e2863…` / `a4993a…` local == container, restart `[9691] ms`); Playwright re-run `17 passed (1.2m)` 23:56 (`pw-p34b.log`, all three env gates on, live render on `.39`, PNGs opened); architect plan review CHANGES-NEEDED → every adoption landed; verifier PASS WITH NOTES ("ship after deciding on 1 and 2") → fix slice (`subjectExists` 404-for-unreadable + health check 12 `LOCATION_NODE_DANGLING`, case11 (e) + case12) **written, compile-clean, UNRUN**; **Objects7 quick gate run 17 launched 2026-10-17 00:01:39 on the 00:01:29 copy (covers P3-4 through the 23:53 deploy, not the fix slice — ⚠ 175 x), in flight** — §11.4 written, ⚠ 175 a–y | §11 |
 | 4 — Composition + wardrobe | TODO | — |
 | 5 — Multi-character strategies (spike first) | TODO | — |
 | 6 — Variants | TODO | — |
@@ -3117,6 +3117,202 @@ C:              944G  534G  411G  57% /c
 
 Process: `tasklist` before every launch (only the IDE's `java.exe` 33848 / `node.exe` 40644 present, plus the two `:8898` Vite node processes from 19:03); one Maven at a time (run 13 → class re-run → Service7), the Ux752 gate alone afterwards; no probe and no other LLM/SD call beside a run (run-13 progress was read from surefire XML timestamps, `pg_stat_activity` and one read-only `jstack`). The `:8898` Vite was stopped after run 4.
 
+### Probes 2026-10-16 09:43:24 and 10:14:40 local — Phase 3 start (P3-1 schema): before the first edit and before the P3-1 test runs — GREEN
+
+`bash C:/tmp/am7-services-probe.sh > C:/tmp/probe-p3-1.log` (09:43:24, before any Phase 3 edit) and `> C:/tmp/probe-p3-1b.log`
+(10:14:40, before `TestPbModelSchema` / `TestPbLocationSchema` / `TestPbGraph`). Both identical in shape:
+
+```
+--- 2026-10-16 10:14:40 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 25 hours;am7-pg Up 25 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  533G  411G  57% /c
+```
+
+No Vite on `:8898` yet (P3-1 is Objects7 only; the second Vite is started for the P3-7 Playwright runs and the P3-8 phase gate). LLM tier
+seen by every P3-1 Maven run: `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000`
+— the in-stack Ollama container through LiteLLM, not Azure, not `.42` (no P3-1 test calls an LLM; the gate line is `BaseTest.setup()`'s).
+Process: `tasklist` before each launch — only the IDE's `java.exe` 33848 / `node.exe` 40644; one Maven at a time (schema → location → graph →
+install → gate run 14); no probe beside a run. The 10:23 Docker redeploy was followed by a `/rest/setup/state` 200 and the container log's
+`Server startup in [16952] milliseconds` (15:23:17 UTC) rather than a full re-probe (same stack, 9 min after the 10:14:40 probe).
+
+**Probe 2026-10-16 10:49:25 local (`C:/tmp/probe-p3-1c.log`) — before the `TestPbLocationSchema` re-run and gate run 15, nothing else
+running — GREEN:** `[1] postgres3 :15432 tcp open` · `[2] am7test setup state http=200   am7test-am7-1 Up 26 minutes;am7-pg Up 26 hours
+(healthy)` · `[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0` (no Vite needed yet) · `[4] LLM .42: 14 models; qwen3:8b
+True ; dryad3-vision True` · `[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']`
+· `[4c] … none loaded (GPU use measured on first call)` · `[5] Swarm .39: http=200` · `[6] in-container llm42=200 swarm39=302
+litellm=200` · `container dist index.html identical to local build` · `C: 944G 534G 411G 57%`. Gate run 14's failure (§4.4 row 14) was
+**not** an environment event — `postgres3`, `.39` and `.42` were up throughout; the copy was missing its `am7/` key stores (mine).
+
+### Probe 2026-10-16 13:56:41 local (`C:/tmp/probe-p3-2.log`) — before the P3-2 / P3-3 test runs, after gate run 15 ended — GREEN
+
+```
+--- 2026-10-16 13:56:41 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 4 hours;am7-pg Up 29 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  536G  408G  57% /c
+```
+
+No Vite needed (Objects7 only). Five Maven runs followed, strictly serial, each started after the previous `Finished at`: `TestPbLocationUtil`
+13:57:33 → 13:59:52 (`C:/tmp/p32-locutil.log`), 14:01:13 → 14:03:42 (`p32-locutil2.log`), 14:04:51 → 14:07:36 (`p32-locutil3.log`); the six-class
+regression 14:08:29 → 14:17:16 (`p32-regress.log`); `TestPbLocationProposal` 14:17:34 → 14:20:04 (`p33-proposal.log`). No probe and no other
+LLM/SD call beside a run. LLM tier seen by every run: `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr
+server=http://127.0.0.1:4000` — the in-stack Ollama container through LiteLLM, not Azure, not `.42`; **no P3-2 test calls an LLM and
+`TestPbLocationProposal` drives the deterministic `LlmEmulator` (`emulator://` connections), so no model answered in any of the five runs** —
+the gate line is `BaseTest.setup()`'s probe. No SD call, so no SD-gated skip to report (`Skipped: 0` in all five).
+
+### Probes 2026-10-16 14:52:52 → 15:46:35 local (`C:/tmp/probe-p3-3.log` … `probe-p3-3e.log`) — the P3-3 test / deploy / gate-16 slice — GREEN
+
+Five probes, each before a Maven run or the deploy, none beside a run. Lines [1]–[3], [4b], [4c], [5], [6] and the dist check were identical
+in all five; only the lines that changed are quoted after the first block.
+
+```
+--- 2026-10-16 14:52:52 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 5 hours;am7-pg Up 30 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  532G  412G  57% /c
+```
+
+- `probe-p3-3b.log` 15:02:43 and `probe-p3-3c.log` 15:12:53 — same, `C: … 413G` free.
+- `probe-p3-3d.log` 15:33:41 — `[4] LLM .42: 0 models; qwen3:8b False ; dryad3-vision False` while `[6] … llm42=200`; a re-check a few
+  seconds later listed 14 models with `qwen3:8b True` — a first-contact artefact of the probe's `/api/tags` read, not an outage (`.42` was
+  not the tier any run used; every run routed to the in-stack container).
+- `probe-p3-3e.log` 15:46:35 — `[2] … am7test-am7-1 Up 6 minutes` (the 15:40 restart after the jar deploy); `[4]` showed the same `0 models`
+  artefact and the 15:47:06 re-check listed 14 models, `qwen3:8b True`.
+
+Maven runs in this slice, strictly serial (each after the previous `Finished at`), all `MAVEN_ARGS=-o`, `-DskipTests=false`:
+`TestPbMigration` 15:13:23 → 15:14:17 (`C:/tmp/p33-migration.log`); test-compile 15:19:48 (`p33-compile.log`); `TestLlmJsonArraySalvage` +
+`TestPbLocationProposal` 15:20:04 → 15:22:26 (`p33-salvage-proposal.log`); `TestPbLocationPassLive` 15:22:40 → 15:23:43 (`p33-passlive.log`,
+**RED**); test-compile 15:33:19 (`p33-compile2.log`); `TestLlmJsonArraySalvage` 15:33:32 (`p33-salvage2.log`); `TestPbLocationPassLive` +
+`TestPbLocationProposal` 15:34:29 → 15:37:36 (`p33-passlive2.log`); `TestPbMigration` 15:38:08 → 15:38:54 (`p33-migration2.log`); jar install
+15:40 (`p33-install.log`, `-q`, no exit marker — ⚠ 173 w). Two scratch runs of a throwaway `TestScratchCfgDeny` (deleted, not in the tree)
+at 15:03 / 15:05 reproduced the PBAC query-authorization finding (⚠ 173 h). Redeploy 15:40: `docker cp` of
+`AccountManagerObjects7-7.0.0-SNAPSHOT.jar` (3,303,461 bytes, md5 `2e03a66103a54feee242737cca489a86` local == container) +
+`docker restart am7test-am7-1` → `Server startup in [14131] milliseconds` (20:40:50 UTC = 15:40:50 local); live proof 15:41:47
+(`p33-live.log`). Objects7 quick gate run 16 launched 15:47:13 on the copy refreshed 15:46:31 (`C:/tmp/o7verify-gate-p33.log`).
+
+LLM tier seen by every run: `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` — the
+in-stack Ollama container through LiteLLM (every call a Langfuse trace), **not Azure, not `.42`**. The runs that actually exercised that
+model: `TestPbLocationPassLive` (both runs) and `TestPbMigration#testImportV1BookLandscapesAndLocationPass` (both runs); `TestPbLocationProposal`
+drives the deterministic `LlmEmulator`; `TestLlmJsonArraySalvage` is pure-Java. No SD call, no SD-gated skip, `Skipped: 0` in every run.
+
+### Probes 2026-10-16 19:12:32 → 22:17:54 local (`C:/tmp/probe-p3-3f.log`, `probe-p3-4.log` … `probe-p3-4d.log`) — the P3-3 post-review re-runs and the P3-4 test / deploy / live-proof slice — GREEN
+
+Five probes, each before a Maven run, the deploy or the Playwright run, none beside a run. Lines [1], [3], [4], [4b], [5], [6] and the
+dist check were identical in all five; only the lines that changed are quoted after the first block.
+
+```
+--- 2026-10-16 19:12:32 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 4 hours;am7-pg Up 34 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  538G  407G  57% /c
+```
+
+- `probe-p3-4.log` 20:31:23 — `[2] … am7test-am7-1 Up 5 hours;am7-pg Up 35 hours (healthy)`, `C: … 406G` free.
+- `probe-p3-4b.log` 20:44:12 — `[2] … Up 5 hours;am7-pg Up 36 hours (healthy)`, `C: … 407G` free.
+- `probe-p3-4c.log` 21:45:37 — `[2] … am7test-am7-1 Up 4 minutes` (the 21:41 restart after the jar + class deploy);
+  `[4c] … loaded (name,size,size_vram): [('nomic-embed-text:latest', 323150151, 323150151)]` — the embedding model resident in VRAM
+  (`size == size_vram`, GPU), `C: … 539G 406G 58%`.
+- `probe-p3-4d.log` 22:17:54 — `[2] … am7test-am7-1 Up 36 minutes;am7-pg Up 37 hours (healthy)`, `[4c]` back to `none loaded`,
+  `C: … 406G` free.
+
+Maven runs in this slice, strictly serial (each after the previous `Finished at`), all `MAVEN_ARGS=-o`, `-DskipTests=false` (gate run 16 on
+the `C:/tmp/o7verify` copy was the only run between 15:47:13 and 18:58:02, nothing beside it): test-compile 19:12 (`o7-compile-p34.log`,
+`-q`, no exit marker — ⚠ 173 w); `TestLlmJsonArraySalvage` + `TestPbLocationProposal` 19:13 → 19:16:33 (`p33-proposal5.log`);
+`TestPbLocationPassLive` 19:16 → 19:17:36 (`p33-live2.log`, **RED** `:334`); `TestPbLocationProposal#case05` 19:20 → 19:21:26
+(`p33-proposal5b.log`); `TestPbLocationPassLive` 19:21 → 19:22:40 (`p33-live3.log`, GREEN); `TestPbLocationUtil` + `TestPbLocationProposal`
+19:22 → 19:31:22 (`p32-locutil4.log`); test-compile 19:43 (`o7-compile-p34b.log`); test-compile 20:31 (`o7-compile-p34c.log`);
+`TestPbLocationNode` 20:31 → 20:37:13 (`p34-locnode.log`); test-compile 20:44 (`o7-compile-p34d.log`); `TestPbLocationProposal` 20:44 →
+20:48:17 (`p33-proposal6.log`); P3-4 regression set 20:48 → 21:07:50 (`p34-regress.log`); `TestPbNodeExecutorTypes` 21:08 → 21:08:46
+(`p34-nodetypes.log`); jar install 21:29 (`o7-install-p34e.log`, `-q`, no exit marker; jar stamped 21:29:37); Service7
+`TestPictureBookLocationRoutes` 21:29 → 21:30:11 (`p34-s7routes.log`, 8/3), a diagnostic re-run 21:37 (`p34-s7diag.log`), fixture fixed,
+21:39 → 21:40:05 (`p34-s7routes2.log`, 8/0/0/0). Redeploy 21:41: `docker cp` of `AccountManagerObjects7-7.0.0-SNAPSHOT.jar` (md5
+`56785b40ab4a4adc0e1f6e579d06a2c0` local == container) + `PictureBookService.class` / `PictureBookService$1.class` (md5
+`a4993a27e97630e0b181692d91a407ea` local == container) + `docker restart am7test-am7-1` → `Server startup in [11919] milliseconds`
+(02:41:32 UTC = 21:41:32 local). Playwright `e2e/pictureBookLocations.spec.js` 22:18 → 22:22 (`pw-p34.log`, `--workers=1
+--project=chromium --retries=0`, `PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443`). `tasklist` before every launch: only the IDE's `java.exe`
+33848 / `node.exe` 40644.
+
+LLM tier seen by every JUnit run: `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000`
+— the in-stack Ollama container through LiteLLM (every call a Langfuse trace), **not Azure, not `.42`**. The runs that actually exercised
+that model: `TestPbLocationPassLive` (`p33-live2`, `p33-live3`); `TestPbLocationProposal` and `TestPbLocationNode` drive the deterministic
+`LlmEmulator`; `TestLlmJsonArraySalvage` is pure-Java. SD: `SdTestGate - http://192.168.1.39:7801 answered HTTP 302` in every JUnit run;
+`TestPbLocationNode` **renders live on `.39` in every run** — `case08LiveRenderBindsAndApprovePins` submits a real location render and a
+real variant render to `http://192.168.1.39:7801` (checkpoint `OfficialStableDiffusion/sd_xl_base_1.0.safetensors`, chosen by `SdTestGate`;
+`wallMs=25283`/`16308` in `p34-locnode.log`, `22586`/`16589` in `p34-locnode2.log`, `19934`/`16310` in `p34-locnode3.log`). Only
+`case07DeadRendererRefusesBeforeRenderingAndSeedsFromSceneLandscapes` and `case09ForceNeverBypassesLockOrPin` point at `DEAD_SERVER`
+(`http://127.0.0.1:1`), because they prove the 409 / seed / `force` paths that must fail *before* a renderer is contacted. **[Corrected
+2026-10-17 00:50: an earlier revision of this sentence said `TestPbLocationNode` renders against `DEAD_SERVER` "by design" — wrong for
+case08; recorded as ⚠ 175 (u).]** `Skipped: 0` in every targeted run.
+
+### Probes 2026-10-16 22:50:09 → 2026-10-17 00:01:03 local (`C:/tmp/probe-p3-4-ta1.log`, `probe-p3-4-ta2.log`, `probe-p3-4e.log` … `probe-p3-4k.log`) — P3-4 test-author runs, hardening slice, redeploy, Playwright re-run, gate-17 launch — GREEN
+
+Nine probes (`-ta1` 22:50:09, `-ta2` 22:57:20, `e` 23:22:11, `f` 23:34:31, `g` 23:41:42, `h` 23:45:51, `i` 23:50:27, `j` 23:54:44,
+`k` 2026-10-17 00:01:03), each before a Maven run, the deploy, the Playwright run or the gate launch, none beside a run. First block verbatim:
+
+```
+--- 2026-10-16 22:50:09 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up About an hour;am7-pg Up 38 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  539G  406G  58% /c
+```
+
+The only lines that change across the nine: `[2] … am7test-am7-1 Up About an hour` → `Up About a minute` (`j`, after the 23:53 restart) →
+`Up 7 minutes` (`k`); `am7-pg Up 38 hours` → `Up 39 hours (healthy)`; `[4c]` reports `[('nomic-embed-text:latest', 323150151, 323150151)]`
+from `j` on (the embedding model resident on the GPU, `size == size_vram`). `[3]` stays `Vite 8899 http=0  Vite 8898 http=0  8898-proxy
+setup/state=0` — no Vite was needed (the P3-4 Playwright spec is an API spec against `:9443`; the second Vite is a phase-gate requirement
+only). Maven timeline, strictly serial (`tasklist` before every launch showed only the IDE's `java.exe` / `node.exe`): test-author
+`TestPbLocationNode` 22:50 → 22:56 (`p34-ta-locnode.log`), `TestPbLocationProposal` 22:57 → 23:01 (`p34-ta-proposal.log`); hardening
+`TestPbLocationNode` 23:22 → 23:29 (`p34-locnode2.log`) and 23:34 → 23:41 (`p34-locnode3.log`), `TestPbLocationProposal` 23:41 → 23:45
+(`p34-proposal2.log`), `TestPbLocationUtil` 23:46 → 23:49 (`p34-locutil5.log`), `TestPbReview` + `TestPbRenderPath` 23:50 → 23:52
+(`p34-review-renderpath.log`), `install` 23:52:26 → 23:52:30 (`o7-install-p34f.log`), Service7 `TestPictureBookLocationRoutes` 23:52 → 23:53
+(`p34-s7routes3.log`); deploy 23:53 (`docker cp` jar + `PictureBookService.class`, `docker restart am7test-am7-1`; md5
+`5e2863439ad72992c42948850f114818` jar and `a4993a27e97630e0b181692d91a407ea` class, local == container; catalina
+`17-Oct-2026 04:53:46.698 … Server startup in [9691] milliseconds` = 23:53:46 local); Playwright 23:55 → 23:56 (`pw-p34b.log`); gate run 17
+`src` copy 00:01:29, launch 00:01:39 (§4.4 row 17, pending at the time of this entry).
+
+LLM tier seen by every JUnit run in this window: `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr
+server=http://127.0.0.1:4000` — the in-stack Ollama container through LiteLLM, **not Azure, not `.42`**; the Playwright run's `[e2e-llm]
+route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr` is the same tier reached from inside the stack. The one
+live LLM call in this window is the Playwright `propose` (12 s, 4 proposals); every JUnit class here drives `LlmEmulator` or no LLM at all.
+SD: `.39` answered `302` to every `SdTestGate` and `200` to every probe `[5]`; the hits are case08 (two renders per run) and the Playwright
+`PB_SD_TESTS=1` group (location render 24 s, variant render 15 s — §11.4).
+
 ## 4. Verification per phase
 
 | Phase | `verify.sh` | verifier | architect | security-reviewer |
@@ -3669,6 +3865,9 @@ Same command and rsync'd `C:/tmp/o7verify` copy as §4.1; live `am7db` on `postg
 | 11 — **VOID** (reboot) | P2-4…P2-9 (P2-10 phase gate, first attempt) — copy refreshed 06:25 from the working tree (the P2-4…P2-9 code and tests, later committed unchanged by Stephen as 5d60177a; `diff -rq` 0, pom identical; probe 06:28:59 §3 — `.39` DOWN host `http=0` / container `000`, `.42` UP 14 models) | 2026-10-15 06:30:06 → killed ~08:07 by the host reboot (no `GATE_EXIT`; `C:/tmp/o7verify-gate-p2-run11.log` stops after `PASS (build)` + the test-step header; partial classification `C:/tmp/o7-run11-classify-partial.txt` from the 164 surefire XMLs newer than the 06:30:06 stamp) | **VOID — partial only:** 164 classes, 1092 tests / 4 failures / 9 errors / 71 skipped (57 SD-gated across 13 classes, 14 env-flag); `TestPbSeriesCast`, `TestPbSceneGenerationGuards` and every later class not reached | 13 reds in the partial: the 9 `.39` outage errors (`TestPbCanvas` :131/:285/:372, `TestPictureBookCustom` :1412/:1618, `TestPictureBookWorkflow` :217/:425/:677/:788 — all `java.net.ConnectException: Connection timed out: getsockopt` to `192.168.1.39:7801`); §6.A ×2 reached (`TestPbDeleteSeries:119`, `TestPbListSeriesBooks:138`); `TestMannequinBaseImage.classpathCopiesAreByteIdenticalToUx752` (copy artefact — `AM7_UX752_MEDIA` unset on the copy, as run 9; cleared on run 12 by exporting it, §6.C 169 g); and **one NEW non-SD red — `TestIllustrationResources.sdxlFamilyMatchesBothInstalledSdxlNames`: `*xl* nativeResolutions count expected:<3> but was:<5>` (`assertResolutions` `TestIllustrationResources.java:354`, called from `:151`).** Cause: my P2-4 slice grew `capabilities.json`'s `*xl*` `nativeResolutions` from 3 to 5 entries (the SDXL 832×1216 / 1216×832 page buckets) and left this test's hard-coded expectation stale — not caught at P2-4 because the P2-4…P2-9 quick gates were ⚠ batched forward (§6.C 163 o / 164 w). The test expectation at `:151` was corrected to the five entries (test-only; `capabilities.json` and the loader untouched — the sibling `capabilitiesResourceIsOnTheClasspathAndIsWhatTheLoaderServes` was already green); class re-run `Tests run: 20, Failures: 0, Errors: 0, Skipped: 0` (`C:/tmp/o7-TestIllustrationResources-p210.log`). The only product-tree edit of P2-10, uncommitted (§6.C 169 f). |
 | 12 — **invalid as a gate** (`.39` + `.42` DOWN) | P2-4…P2-9 (P2-10 phase gate, second attempt) — copy refreshed 09:14 after the reboot from the working tree (= 5d60177a + the `TestIllustrationResources:151` fix; `diff -rq` 0, pom identical); `postgres3` restarted (it had exited on the reboot — probe 09:12:27 `:15432 tcp CLOSED` → 09:15:58 `open`, §3); **`.39` Swarm DOWN and `.42` Ollama DOWN** on both probes; launched with `AM7_UX752_MEDIA=C:/Projects/GitHub/AccountManager7/src/AccountManagerUx752/public/media` so the mannequin drift guard runs on the copy (169 g) | 2026-10-15 09:16:47 → 11:36:19 (`C:/tmp/o7verify-gate-p2-run12.log`; stamp `C:/tmp/o7verify-gate-p2-run12.start`; classification `C:/tmp/o7-run12-classify.txt` from the 185 XMLs newer than the stamp) | `VERIFY_FAILED`, `GATE_EXIT=1` — `[ERROR] Tests run: 1188, Failures: 4, Errors: 9, Skipped: 81` (185 classes — the whole module incl. every P2-4…P2-9 class: `TestPbRenderPlan*`, `TestRenderPlanLive`, `TestPbRenderPlanExecutor`, `TestChapBookV3Render`, `TestChatSceneRenderUtil`, the extended `TestKontextDeprecation`, …). **NOT a phase-gate result — Stephen, before it finished: "I don't want you marking it green or skipping due to this"; recorded as non-SD regression evidence only; superseded by run 13 (next row).** | **13 reds, every one in the two known sets — zero new non-SD reds:** (i) the 10 `.39` outage reds exactly as run 9 — `TestPbCanvas` :131/:285/:372, `TestPictureBookCustom` :1412/:1618, `TestPictureBookWorkflow` :217/:425/:677/:788 (9 × `java.net.ConnectException: Connection timed out: getsockopt` to `192.168.1.39:7801`) + `TestPbSceneGenerationGuards.testLandscapeFailureIsNonFatal:437` `Swarm must be reachable at http://192.168.1.39:7801`; (ii) §6.A ×3 — `TestPbDeleteSeries:119` `chapter 1 row`, `TestPbListSeriesBooks:138` `entitled non-owner must see BOTH chapters expected:<2> but was:<0>`, `TestPbSeriesCast:532` `subject MUST be able to READ the chapter book` (yours, pre-Phase-2). The rest of the run-9 non-SD baseline did **not** recur: `TestMannequinBaseImage` `tests=10 failures=0 errors=0 skipped=0` (the drift guard really ran — `classpathCopiesAreByteIdenticalToUx752` green), `TestGameUtil` 25/0/0/0 (the 162 drift absent this run), `TestIllustrationResources` 20/0/0/0 after the `:151` fix. **Skipped 81 = 66 SD-gated Assume-skips (NOT passes):** `TestModelResolverLive` 16, `TestChapBookV3Render` 13, `TestIllustrationModelPolicy` 10, `TestPbRenderPlanExecutor` 5, `TestChapBookRenderSignal` 4, `TestSDUtilCreateImage` 4, `TestChapBook` 3, `TestPbRenderJob` 3, and 1 each `TestChapBookPromptLockedResolution`, `TestChapBookRenderStyle`, `TestChapBookSceneLandscapePrompt`, `TestChatSceneRenderUtil`, `TestPb1ModelPolicySequence`, `TestPbNodeRun`, `TestPbRecovery`, `TestRenderPlanLive` — + 15 env-flag skips (`LITELLM_LIVE` 7, `PICTUREBOOK_E2E` 5, `am7test.db.url` 2, D3 part 2 1; unchanged policy). No LLM call in the run (`.42` DOWN, every LLM case env-gated) — no `[LLM-GATE]` line exists to quote. |
 | 13 — **GREEN** (`.39` UP) | P2-4…P2-9 (P2-10 phase gate, GREEN pass) — copy = working tree (5d60177a + `TestIllustrationResources:151`; `diff -rq` 0 before launch, pom identical); `AM7_UX752_MEDIA` exported (169 g); probe 16:04:44 §3 GREEN | 2026-10-15 16:09:23 → 18:58:01 (`C:/tmp/o7verify-gate-p2-run13.log`, stamp `.start`; classification `C:/tmp/o7-run13-classify.txt`, 185 XMLs newer than the stamp) | `VERIFY_FAILED`, `GATE_EXIT=1` — `[ERROR] Tests run: 1188, Failures: 4, Errors: 0, Skipped: 16` | **4 reds = §6.A ×3 (`TestPbDeleteSeries:119`, `TestPbListSeriesBooks:138`, `TestPbSeriesCast:532`, yours) + 1 new: `TestChatSceneRenderUtil.renderPersistsTheSceneUnderTheGalleryAsTheUser:459 seed attribute`** — first-ever execution of this SD-gated P2-7 case (skipped in every earlier run). Render succeeded (`sd_xl_base_1.0` on `.39`, 7.2 s, PNG persisted, name/group/contentType asserts passed); the record read back with `planMost(true)` carries no attributes because `RecordUtil.getMostRequestFields` (`:326-331`) filters `attributes`/`tags`/`controls` out of every MOST plan. `ChatSceneRenderUtil.persist :326-347` is the v1 `SDUtil.createSceneImage :1422-1433` shape and the v1 `TestSDUtilCreateImage` (explicit `attributes` projection) passed 6/0 in this run → **my test defect, not the product.** Fixed test-only (`:439-447` project the `freshRead` field set incl. `attributes`); class re-run 19:00 under the same GREEN probe: `Tests run: 10, Failures: 0, Errors: 0, Skipped: 0` (`C:/tmp/o7-tcsru-rerun.log`; render 8.8 s on `http://192.168.1.39:7801`). ⚠ 169 n — a class re-run, not a module re-run; your call whether run 13 + re-run counts (my default: yes — the fix touches one test's read). **All 10 `.39` outage reds cleared:** `TestPbCanvas` 5/0/0/0, `TestPictureBookCustom` 7/0/0/0, `TestPictureBookWorkflow` 5/0/0/0 (2415.8 s), `TestPbSceneGenerationGuards` 6/0/0/0. **All 66 SD-gated skips of run 12 executed green, 0 SD skips:** `TestModelResolverLive` 16 (1 skip: "`http://192.168.1.39:7801` lists no Kontext checkpoint. This is NOT a pass"), `TestChapBookV3Render` 17/0/0/0, `TestIllustrationModelPolicy` 14/0, `TestPbRenderPlanExecutor` 7/0, `TestChapBookRenderSignal` 4/0, `TestSDUtilCreateImage` 6/0, `TestChapBook` 13/0, `TestPbRenderJob` 11/0, `TestRenderPlanLive` 4/0, `TestPbNodeRun` 7/0, `TestPbRecovery` 8/0, `TestPb1ModelPolicySequence` 3/0; `TestMannequinBaseImage` 10/0 (guard ran), `TestGameUtil` 25/0, `TestIllustrationResources` 20/0. Skipped 16 = the 15 policy env-flag skips (`LITELLM_LIVE` 7, `PICTUREBOOK_E2E` 5, `am7test.db.url` 2, D3 part 2 1) + the Kontext one; none counted as a pass. |
+| 14 — **VOID** (copy defect, mine) | P3-1 (schema slice) — `C:/tmp/o7verify` had been deleted and I recreated it 10:29 from `AccountManagerObjects7/src/.` + `pom.xml` **only**: the gitignored `am7/` (per-org key stores `am7/.jks/<orgId>/{keystore,truststore}.jks`, H2, `.vault`, `.streams`) and `media/` that every earlier copy carried as symlinks (rows 5, 6, 11–13: "`am7`/`media` symlinks kept") were not re-created; `diff -rq src` 0 and `POM_SAME` could not see it. `AM7_UX752_MEDIA` exported; probe 10:14:40 §3 GREEN | 2026-10-16 10:29:42 → 10:43:35 (`C:/tmp/o7verify-gate-p31.log`, stamp `C:/tmp/o7verify-gate-p31.start`/`.end`; 186 XMLs newer than the stamp, moved aside to `target/surefire-reports.run14-void/`) | `VERIFY_FAILED`, `GATE_EXIT=1` — `[ERROR] Tests run: 1191, Failures: 815, Errors: 0, Skipped: 6` | **Not a test result.** Every DB-backed class (148 of 186) failed in `BaseTest.setup:142 → resetIO:180 → resetIO:217 Error encountered`; the surefire console of the first one (`org.cote.accountmanager.io.db.TestCleanupOrphansTemplate.txt`) has the cause: `[ERROR] KeyStoreUtil - Key store does not exist at ./am7/.jks/1/keystore.jks` / `…truststore.jks` → `OrganizationContext - Failed to initialize key stores` → `IOSystem - SystemException: Organization already exists` (`OrganizationContext.createOrganization:205` ← `IOSystem.open:233` ← `BaseTest.resetIO:189`) for orgs 1, 2, 3 in turn. The 38 green classes are the DB-less ones (`TestRenderPlan`, `TestSdxlCompiler`, `TestPbRenderPlanLocationText`, `TestPbStaleCacheEpoch`, `TestLlmTestGate`, …). No P3-1 class reached its tests. The `-q` gate log carries no stack trace — the diagnosis is from the per-class `.txt` files. **Caused by me** (incomplete copy), not by `am7db`, `postgres3` or any test; nothing in the product or test tree was changed to fix it. Fix: two NTFS junctions `C:/tmp/o7verify/AccountManagerObjects7/{am7,media}` → the working tree's `AccountManagerObjects7/{am7,media}` (PowerShell `New-Item -ItemType Junction`; Git Bash `cmd /c mklink` mangled the switch), verified `am7/.jks/1/{keystore,truststore}.jks` and `media/AIME.pdf` resolve through them. **Not recorded as "expected reds".** |
+| 15 — **GREEN** (`.39` UP) | P3-1 (schema slice), re-run of 14 on the repaired copy — `src` re-copied 10:50 from the working tree (now includes the `TestPbLocationSchema.case02` `finally` cleanup edit of 10:48, ⚠ 170 n); `diff -rq` 0, `POM_SAME`; `target/classes`, `test-classes`, `maven-status` removed; `am7`/`media` junctions in place; `AM7_UX752_MEDIA` exported (169 g); probe 10:49:25 §3 GREEN; `tasklist` before launch: only the IDE's `java.exe` 33848 (Red Hat Java LS) / `node.exe` 40644 (VS Code Playwright test-server) | 2026-10-16 10:51:15 → 13:49:05 (`C:/tmp/o7verify-gate-p31b.log`, stamps `C:/tmp/o7verify-gate-p31b.start` / `.end`; classification `C:/tmp/o7-run15-classify.txt`, 186 XMLs newer than the stamp) | `PASS (build)` 10:52; `VERIFY_FAILED`, `GATE_EXIT=1` — `[ERROR] Tests run: 1191, Failures: 3, Errors: 0, Skipped: 16` | **3 reds = §6.A ×3 exactly (`TestPbDeleteSeries:119 chapter 1 row`, `TestPbListSeriesBooks:138 entitled non-owner must see BOTH chapters expected:<2> but was:<0>`, `TestPbSeriesCast:532 subject MUST be able to READ the chapter book`, yours) — zero new reds.** vs row 13 (`1188/4/0/16`): **+3 tests = `TestPbLocationSchema` 3/0/0/0 (7.5 s)**; the P3-1 edits ride green inside the module run — `TestPbModelSchema` 22/0/0/0 (20.6 s, both new models in `PB_MODELS`, no-defaults rule), `TestPbGraph` 20/0/0/0 (143.5 s, `watched/v3` canonical strings); **row 13's 4th red is gone**: `TestChatSceneRenderUtil` 10/0/0/0 (19.1 s) in a **module** run, so the ⚠ 169 n "class re-run, not a module re-run" caveat on run 13 is closed by this run. **Skipped 16 = the identical list to row 13**: 15 policy env-flag skips (`TestLiteLLMOllamaProxy` ×4 + `TestLiteLLMRoundTrip` ×3 `LITELLM_LIVE=1 … not set`; `PICTUREBOOK_E2E` ×5 — `TestPictureBookListCharactersIdor`, `TestPictureBookListCharactersPb2`, `TestPictureBookLandscapePromptLiveE2E`, `TestPbChapterBookApparelRenderE2E`, `TestPbSeriesMergeImagePrompt`; `TestSetupMarkerGuard` ×2 `-Dam7test.db.url` not supplied; `TestPathUtilBehavior` D3 part 2) + `TestModelResolverLive.case07` "`http://192.168.1.39:7801` lists no Kontext checkpoint. This is NOT a pass" — an SD-gated skip under a GREEN probe, reported as a skip, install is yours; **none counted as a pass**. 0 SD-connectivity reds, 0 `Key store does not exist` lines (the run 14 defect is gone). Slowest: `TestPictureBookWorkflow` 2464.0 s, `TestBookWorld` 684.7, `TestPictureBookCustom` 527.3, `TestChapBookV3Render` 503.2, `TestPbRenderJob` 463.0, `TestPbStale` 352.1, `TestPbSecurity` 339.5 (timings recorded, not asserted). Wall 2 h 58 m vs run 13's 2 h 49 m. |
+| 16 — **GREEN** (`.39` UP) | P3-2 + P3-3 batched (`PbLocationUtil` resolver + POI link, `pictureBook.cluster-locations` pass + `olio.pb.locationProposal` + `PbMigrationUtil` landscapes/pass) — `src` re-copied 15:46:31 from the working tree, so the copy **predates the 16:00 P3-3 review edits and everything after** (⚠ 172 c / 173 t); `diff -rq` 0, `POM_SAME`; `target/classes`, `test-classes`, `maven-status` removed; `am7`/`media` junctions in place; `AM7_UX752_MEDIA` exported (169 g); probe 15:46:35 §3 GREEN; `tasklist` before launch: only the IDE's `java.exe` 33848 / `node.exe` 40644 | 2026-10-16 15:47:13 → 18:58:02 (`C:/tmp/o7verify-gate-p33.log`, stamps `C:/tmp/o7verify-gate-p33.start` / `.end`; classification `C:/tmp/o7-run16-classify.txt`, 189 XMLs newer than the stamp) | `VERIFY_FAILED`, `GATE_EXIT=1` — `[ERROR] Tests run: 1205, Failures: 4, Errors: 0, Skipped: 16` | **4 reds = §6.A ×3 exactly as row 15 (`TestPbDeleteSeries:119 chapter 1 row`, `TestPbListSeriesBooks:138 entitled non-owner must see BOTH chapters expected:<2> but was:<0>`, `TestPbSeriesCast:532 subject MUST be able to READ the chapter book`, yours) + ONE new red, mine: `TestPbLocationPassLive:334 the tavern scenes must share exactly one proposal: Scene p33livec75a71ca 3=[proposal-gilded-tankard] Scene p33livec75a71ca 7=[proposal-gilded-tankard-taproom] Scene p33livec75a71ca 12=[proposal-gilded-tankard-taproom] expected:<1> but was:<0>`** — the live model split the tavern from its taproom (two clusters for one place; the 19:17 `p33-live2.log` run split the scriptorium from its night variant the same way). **Product-fixed, assertion untouched**: `PbLocationUtil.foldSubPlaces` (name-shape fold of a sub-place / inside-outside / time-of-day, weather, season qualifier into its base place, model-independent) + the prompt rule "never split a place by room, floor, inside/outside, time of day, weather or season" (⚠ 174 a–c); re-run **GREEN 1/0/0/0 (62.92 s) 19:22 (`C:/tmp/p33-live3.log`)** — that run logged `folded=0 proposed=4` (the model clustered correctly by itself; the fold is proven by the emulator `TestPbLocationProposal#case05`, ⚠ 174 g) — then the security review of the fold adopted as two edits and re-run GREEN 20:48 (`TestPbLocationProposal` 6/0/0/0, `p33-proposal6.log`). vs row 15 (`1191/3/0/16`): **+14 tests, 189 vs 186 XMLs** — three new classes `TestPbLocationUtil` 5/0/0/0 (176.6 s), `TestPbLocationProposal` 4/0/0/0 (162.2 s), `TestPbLocationPassLive` 1/1/0/0 (50.6 s) = 10, the other 4 are cases added to existing classes during P3-2/P3-3 (`TestPbMigration` 4/0/0/0, 53.3 s, now carries `+landscapes + pass`); also in the run: `TestLlmJsonArraySalvage` 14/0/0/0 (the copy predates case 15), `TestPbLocationSchema` 3/0/0/0 (8.6 s), `TestPbModelSchema` 22/0/0/0 (21.7 s), `TestPbGraph` 20/0/0/0 (198.3 s), `TestChatSceneRenderUtil` 10/0/0/0 (17.0 s), `TestGameUtil` 25/0/0/0 (259.9 s), `TestPbNodeExecutorTypes` 2/0/0/0 (30.4 s, pre-P3-4 seven-stage), `TestPbStale` 10/0/0/0 (457.6 s), `TestPbSecurity` 10/0/0/0 (507.3 s), `TestPbRenderJob` 11/0/0/0 (457.0 s), `TestPbAutoApprove` 7/0/0/0 (174.6 s), `TestPbReview` 7/0/0/0 (31.4 s), `TestPbHealthGrants` 2/0/0/0, `TestPbHealthOrgScan` 1/0/0/0, `TestPbHealthStaleGraph` 2/0/0/0. **Skipped 16 = the identical list to rows 13 and 15** (15 policy env-flag skips + `TestModelResolverLive.case07` "`http://192.168.1.39:7801` lists no Kontext checkpoint. This is NOT a pass" — an SD-gated skip under a GREEN probe, reported as a skip, install is yours); **none counted as a pass**. 0 SD-connectivity reds, 0 `Key store does not exist` lines. Slowest: `TestPictureBookWorkflow` 2476.3 s, `TestBookWorld` 651.8, `TestPictureBookCustom` 531.8, `TestPbSecurity` 507.3, `TestPbStale` 457.6, `TestPbRenderJob` 457.0, `TestChapBookV3Render` 443.7 (timings recorded, not asserted). Wall 3 h 11 m vs run 15's 2 h 58 m. **Everything after the 15:46 copy (the five P3-3 review edits, the fold, P3-4) is NOT covered by this run** — it is covered by the targeted re-runs in §11.3 / §11.4 and by the next gate run. |
 
 A **full** gate (Playwright included) runs once before Phase 1 is declared done (P1-11); its Playwright
 counts will be compared against the §4.2/§4.3 list in the brief.
@@ -4650,6 +4849,162 @@ deviations from the brief's wording and the facts behind them:**
     `e2etest_explorer`** (`ensureSharedTestUser(request, { name: 'e2etest_explorer' })`) instead of revoking/re-adding the shared
     user's `Olio User` membership. Why: §6.C 114 — the shared user's revocation was left behind by this spec and broke every
     Olio-grid spec. The shared user's re-enrolment itself is still Stephen's (one role-member add in `/Development` on the Docker stack).
+
+### 5.6 Phase 3 recorded facts (2026-10-16) — P3-1, P3-2, P3-3, P3-4
+
+Facts, not design changes; design §7 / §7.1 / §7.2 are implemented as written. One dated in-place design edit (P3-2): the §7.2
+facts-table cite `WorldUtil.java:551, 563` → `:555, :567` — P3-1's two `cleanupLocation` sweeps sit above the store/POI lines
+(design line 305; §6.C 171 r).
+
+P3-1:
+
+- `PbLocationKindEnumType` carries `UNKNOWN` in addition to §7's INTERIOR / EXTERIOR / MIXED / ABSTRACT. The brief lists it and
+  `objects7-reference.md` requires it: a nullable enum column added by the boot DDL patch reads SQL `NULL` back through
+  `EnumValueType.setValue(null)`, which rewrites null to the literal `UNKNOWN` — without the constant every sparse row throws.
+  `TestPbLocationSchema.case03` proves a location created without `kind` reads `UNKNOWN`.
+- `watched/v3` = `watched/v2` + `olio.pb.location` {name, description, kind, approvedRender} + `olio.pb.locationVariant` {timeOfDay,
+  weather, season, viewpoint, extra, approvedRender} — exactly §7's list ("name, description, kind, approvedRender, plus the variant
+  deltas"). The `olio.charPerson` set is unchanged (§6.C 25 is still Stephen's open question); the variant `name` is not watched (it is
+  a label, not a render input). The version bump invalidates every stored `refHash` on purpose (`PbWatchedFields` javadoc) — the first
+  `recomputeStatus` after the deploy reports `refDrift` on every binding once and re-binds (⚠ §6.C 170 a).
+- `PbWatchedFields.canonicalRef` renders a foreign `olio.pb.artifact` by **`objectId`**, every other foreign record by `name`
+  (the pre-existing `data.color` rule). Artifact names (`Artifact <handle> <role> r<revision>`) repeat across per-chapter `Artifacts`
+  groups, so a name-keyed hash could not tell chapter 3's approved render from chapter 9's (architect BLOCKER, ⚠ §6.C 170 b).
+- `WorldUtil.cleanupWorld` sweeps `olio.pb.locationVariant` then `olio.pb.location` from the world's `Locations` group before
+  `deleteGroupTree` (two `cleanupLocation` lines after the `data.geoLocation` one). This is how §30 row 3's exit criterion "deleting the
+  world removes both" holds for the location rows themselves; `RecordFactory.cleanupOrphans` runs before the group is removed, so the
+  rows are not yet orphans at that point and would otherwise survive the delete. Proof of "POI + store gone too" is P3-2's test.
+- `olio.pb.scene.location` / `olio.pb.scene.locationVariant` are nullable FKs with no `hint` (index). Whether the boot DDL patch creates
+  an index for a hint added to an existing table is not established (⚠ §6.C 170 d, ask (1)).
+- Both new models are directory-derived in the world's existing `Locations` sub-group — no new group, `WorldFactory` and
+  `BookWorldInitializationRule` untouched; the boot patch created the tables in `am7db` and the Docker stack's `am72db` on first start.
+
+P3-2:
+
+- §7.2 rule 1 as written: `PbLocationUtil.createMapFreePoi` writes the `olio.store` into the world's `Stores` group first, then the
+  `olio.pointOfInterest` into `Points of Interest` with `store` set, `location` **unset** (SQL NULL), `east`/`north` at the model's −1,
+  `concealed=false`. No `data.geoLocation` is created or read; `BookWorldInitializationRule` is unchanged. Both rows are written by
+  the olio principal (`PointOfInterestUtil.newPointOfInterest(olioUser, world, type, name)`, a new map-free overload that sets `name`
+  explicitly) behind a strict `canUpdate(user, user, book)` PERMIT gate on the book, after re-reading the book by objectId as the
+  request user (§6.C 171 a). POI `type` is a heuristic on `kind` + the words of the location's **name and description** (`poiTypeFor(kind, name,
+  description)`: INTERIOR → COMMERCIAL when either names a tavern/inn/shop/market/bar/store/brothel/stall, else STRUCTURE;
+  EXTERIOR/MIXED → RUIN / LANDMARK / STRUCTURE by keyword; ABSTRACT/UNKNOWN → UNKNOWN). The first run of `TestPbLocationUtil.case04`
+  (`"Old Mill Ruin"` / "the burnt-out mill above the weir") came back STRUCTURE because the first cut matched the description only;
+  widened to name + description (§6.C 172 a). POI `name` = the location name truncated to the model's 128.
+- §7.2 rule 2 as written, with one pre-existing gap: `PointOfInterestUtil.findByName(world, name)` links the one placed POI carrying
+  the name (0 or 2+ hits → `poi` stays null, never a create; §6.C 171 g). The simulation's painter
+  (`newPointOfInterest(ctx, type, cell, name, x, y)` / `paintPointsOfInterest`) never sets `name` — `olio.pointOfInterest` declares
+  `name` itself rather than inheriting `common.name`, so `RecordUtil.applyNameGroupOwnership` (`:761-763`) skips it — so every painted
+  POI is nameless and the name-link is dormant for painted POIs until the painter is fixed (§6.C 171 h, ask (2)).
+  `TestPbLocationUtil.case02` names its planted POI explicitly to exercise the link path.
+- §7.2 rule 3: `PointOfInterestUtil.findByName(ctx, name)` added as the design names it (delegates to the world overload).
+- §7.2 rule 5: `PbHealthUtil.auditLocations` lists the world's locations as the olio principal and reports `LOCATION_POI_MISSING`
+  (WARN) when `poi` is unset **or** its row is gone (a deleted FK target reads back as an id-only stub — `poiExists` is a row lookup);
+  `healBook` re-runs `linkPoi`. Reported **and** repaired, not silently repaired as §7.2 rule 5's text says (§6.C 171 f).
+- `isBookWorld(olioUser, world)` = the world's `groupId` resolves to `/Olio/Universes/Books/Worlds` (`PbOlioContextUtil.bookWorldPath()`);
+  path only, so standalone and shared series worlds classify alike and a map-less game world does not (§6.C 171 c).
+- §7.1 "sameAs" is `mergeLocations(user, book, duplicate, survivor)`: scenes and variants re-pointed as the request user (each scene
+  `canUpdate`-checked before any write), survivor aliases appended as the olio principal (409 over `MAX_ALIASES` before any write),
+  the duplicate's map-free POI + store deleted only when unreferenced by any other location (D4 guard), the duplicate deleted via
+  `PictureBookUtil.deleteRecordExplained`; `PbStaleUtil.touchBook` + `touch(dup)` in `finally` (§6.C 171 d, e, j, k, n).
+- Design §7.2's "`WorldUtil.deleteWorld` already cleans the world's POI and store groups, so book deletion needs nothing new" holds:
+  no cleanup code was added; `TestPbLocationUtil.case03` is the proof (location, variant, POI and store rows all gone after
+  `PictureBookUtil.deleteBookComplete`).
+
+P3-3 (one dated in-place design edit: the §28 step 3 "As built" blockquote, added 15:45 and corrected 16:10 — the non-empty-chain skip in
+`importLandscapes` is a defensive guard, not re-import idempotence, because `importV1Book` 409s on an existing slug before the step;
+verifier finding, ⚠ 173 v):
+
+- **The whole-book location pass is a proposal pass, never a resolver.** `PbLocationUtil.proposeLocations(user, book, chatConfigName | chatConfig)`
+  writes `olio.pb.locationProposal` rows (`PROPOSED`, `location` null, no scene binding) in the book's group; nothing on `olio.pb.scene`
+  changes until `acceptProposal`, which calls P3-2's `getCreateLocation` + `linkPoi` (olio principal, POI + store) and re-points the
+  scenes listed in `sceneObjectIds` as the request user (`canUpdate` per scene; a scene already bound is skipped unless
+  `overwriteSceneLocation`). Design §28 step 3's "offered as a reviewable suggestion, not applied blindly" is therefore literal.
+- **One LLM call per chunk, chunked by scene count**, prompt `pictureBook.cluster-locations` (`resources/olio/llm/prompts/`, `/no_think`,
+  a literal JSON skeleton in the user prompt, `{knownLocations}` / `{scenes}` placeholders, `UNSUBSTITUTED_PLACEHOLDER` guard). Scenes
+  without a meaningful `setting` are skipped and counted (`scenesSkipped`); known locations are passed in so the model can say `sameAs`.
+- **Retire rule.** Stale `PROPOSED` rows (not re-proposed by this pass) retire only when every chunk parsed (`chunksParsed == chunks`); an
+  empty-array chunk counts as parsed; a hard LLM failure stops the pass (`HARD-FAILURE`) and retires nothing; `ACCEPTED` / `REJECTED` rows
+  are never touched by a pass.
+- **`sameAs` folding respects `locked`**: a proposal naming a known location folds its aliases into it unless the location is locked
+  (warning on the result, nothing written); an unknown `sameAs` is dropped with a warning and the cluster proposed on its own.
+- **Migration (`PbMigrationUtil.importV1Book`)** adds two non-fatal sub-steps after the scene import: `importLandscapes` (one `landscape`
+  IMAGE artifact per PB1 `landscapeObjectId`, on the scene's canonical LANDSCAPE node at `PbPipelineUtil.landscapeHandle(sceneOid)`,
+  `scope=scene`, `GENERATED` + `selected`, node `DONE_UNVERIFIED`, bytes referenced not copied) and the location pass with the user's
+  default (`generalChat`) config; both report through `ImportResult.landscapesImported` / `locationPass` / `locationProposals` and
+  `warnings`, never an exception. No LOCATION node is created by migration (P3-4 seeds it — design §28 step 3 note).
+- **Parser hardening, forced by the live model.** `PictureBookUtil.parseLlmJsonArray` now reads an LLM array leniently
+  (`JSONUtil.getLenientList`: unquoted names, trailing commas, single quotes, raw control chars, comments, missing values — empty/null
+  elements dropped), repairs a missing colon after a key (`repairMissingColons`, grammar walk), and only then salvages element by element
+  (the original and, when repairs were made, the repaired text — the larger wins). `extractSingleShot` gains an `okOut` so a caller that
+  gates on "every chunk parsed" keeps the signal through the corrective retry. Pure-Java coverage: `TestLlmJsonArraySalvage` (15 cases
+  after the review edits).
+- **Fixture honesty.** `TestPbLocationPassLive` proves the exit criterion "scenes 3/7/12 share one approved tavern" on **8 synthetic scenes**
+  (one shared tavern, one shared scriptorium, singles, one setting-less), not on AIME.pdf / Harlot's Eight as the P3-3 row's test column
+  said; the real-manuscript run is recorded as an ask (⚠ 173 s).
+**P3-4 (LOCATION node, render, approve/lock), as built 2026-10-16 19:12 → 2026-10-17 00:01 — facts, plus three dated in-place design edits
+(§7.1 "Location workflow" bullet, §27 rows for the location routes, §28 step 3 "Built" block):**
+
+- **Routes are book-scoped, not bare.** Design §27 listed `PATCH/DELETE /location/{id}`, `POST /location/{id}/variants`,
+  `POST /location/{id}/render?variant=`; as built every one of the 13 location routes hangs under `/rest/pictureBook/{book}/…`
+  (`PictureBookService.java:2369-2657`): `GET|POST /{book}/locations`, `GET|PATCH|DELETE /{book}/location/{id}`,
+  `POST /{book}/location/{id}/variants`, `POST /{book}/location/{id}/render` (202 job; `variant` in the body), `POST /{book}/location/{id}/lock`,
+  `POST /{book}/locations/propose` (synchronous), `GET /{book}/locations/proposed`, `POST /{book}/locations/proposed/{pid}/accept|reject`,
+  `POST /{book}/locations/merge`. The book is the authorization anchor (`requireBook` → 404 for a stranger, `requireBookUpdate` for every
+  write) and the world is derived from it; a location is only ever reachable through a book that shares its world
+  (`PbServiceFacade.requireLocationOfBook` / `requireVariantOfBook` / `sameWorld`, 404 "Location not found in this book's world"). Approve /
+  reject / select stay on the P1-4 artifact routes (`PUT /{book}/artifact/{id}/approve|reject|select`). Ask ⚠ 175 (a): accept the
+  book-scoped shape or add bare-path aliases.
+- **Node scope is `location` / `locationVariant`, not `scope="book"`** (`PbPipelineUtil.SCOPE_LOCATION`, `SCOPE_LOCATION_VARIANT`,
+  handles `location@<8>` / `location_variant@<8>` from `locationHandle`), following the architect's ruling that every executor resolves
+  its subject from `scopeRef` and binds **after** render so the `refHash` matches what was rendered (`PbNodeExecutor` LOCATION section,
+  `bindRecord` at :682/:684). The P3-4 task row's original `scope="book"` wording is superseded (⚠ 175 b).
+- **Artifact role stays `landscape`; `location` is a binding role only.** Chains key on (producedByNode, role, revision), so a LOCATION
+  node's `landscape` chain cannot collide with a scene's; the §28 seeds are already role `landscape`; the node type is the discriminator.
+  `ROLE_LOCATION` names the binding on consumer (RENDER_PLAN) nodes — ordinal 0 the location record, ordinal 1 the variant — written by
+  `PbNodeExecutor.bindSceneLocation` on **every** RENDER_PLAN execution (:630-635), which is also what carries approve-staleness into every
+  chapter of a series (`PbWatchedFields` `watched/v3` puts `approvedRender` in the location and variant watched sets).
+- **The lock is facade-only and broader than the model description originally said.** `locked=true` refuses, with 409, every facade
+  write: description / kind / alias edits, approve, reject-the-approved-render, new renders, new variants, delete and merge (either side);
+  the variant inherits the location's lock; approving never locks. `locationModel.json`'s `locked` description was rewritten to say exactly
+  this and to say that generic `PATCH /rest/model` does not consult it — `TestPbLocationNode.case02LockRefusesEveryFacadeWriteButNotGenericPatch`
+  is the bypass **demonstration** the architect asked for (owner `AccessPoint.update` of a locked location's description returns true and the
+  `setCache(false)` re-read shows the edit). When server-side enforcement lands (§6.C 169 (3) / 170 e), that case flips red by design.
+- **Render is async and refuses before planning.** `POST /{book}/location/{id}/render` → `renderLocation`: `requireUnlocked` → `ensureWorkflow`
+  → `ensureLocationNode` (write path only; `GET /{book}/locations` never materializes) → `requireNotPinned` (an approved render on the
+  subject is a 409 until rejected or a fresh variant is used) → `PbNodeInflight.tryClaim` (409 "is being rendered by run …") → 202 `{jobId}`;
+  `force` bypasses neither the lock nor the pin (case09). `PbModelTaskEnumType.LOCATION` goes through `applyModelPolicy` exactly like the
+  Phase 2 scene path (TEXT_ONLY, `SdxlCompiler`); HIRES and DEFAULT_NEGATIVE are reported in `configNotApplied` as they are for scenes.
+- **Seeding is by reference, this book only, unselected, unapproved.** Materializing a LOCATION node copies, for each scene of **this** book
+  that references the location, the scene's *selected* `landscape` artifact as a new `olio.pb.artifact` on the LOCATION node pointing at the
+  **same** `data.data` row (`refModel/refObjectId` provenance; no bytes copied), written as the request user through `AccessPoint`; scenes
+  without a selected landscape are skipped and counted (`seeded` / `seedSkipped` in the response — live `seeded:0, seedSkipped:3`). Seeds
+  are PENDING review, not selected, not bound, never approved; variants are not seeded.
+- **Chapter delete un-pins.** `PbDeleteUtil.deleteBookComplete` clears `approvedRender` on every location / variant of the world whose
+  approved artifact was produced by the book being deleted (olio principal, `patchOf` naming the field so the null is written,
+  `PbStaleUtil.touch`) — step `approvedRendersCleared` in the delete report; `TestPbLocationNode.case01` proves it. World delete still
+  removes the location, its variants, the POI and the store (P3-2).
+- **Merge and delete are world-wide for records, book-wide for nodes.** `mergeLocations` re-points scenes, variants and bindings across
+  the whole world (bindings in a workflow the user may not update are skipped and **counted**, never failed — `[updated, skipped]`), deletes
+  the duplicate's node graph in this book, then the duplicate row. Another chapter's `location@<dup>` node is left dangling by design of the
+  single-book route and is caught by health check 12 `LOCATION_NODE_DANGLING` (audit + heal, both the delete and the merge legs —
+  `case12`; ⚠ 175 j). The same check is what makes "a dangling `location` node never breaks the canvas" true.
+- **Hardening (security review).** Names and aliases pass `cleanText` (`\p{Cntrl}` stripped); no caller input is echoed in any 4xx; the
+  cross-chapter delete 409 says "another chapter" without a count; `MAX_VARIANTS_PER_LOCATION = 32` (409 on the 33rd); approve / reject
+  of an artifact whose subject exists outside the book's world is 404 at the facade; an artifact whose subject **exists but is unreadable** is
+  404 too (`PbLocationUtil.subjectExists` as the olio principal distinguishes "gone" from "hidden"), so a reduced read view never buys a
+  write (verifier finding 1 — `case11 (e)`); a truly dangling subject lets reject proceed with a WARN and approve 404.
+- **Proposal accept materializes a node only when a workflow exists and the location is unlocked** (`case06`); `stripRaw` drops `rawReply`
+  from every proposal body at the transport (`TestPbLocationProposal.case07`).
+- **Health.** `PbHealthUtil` check 12 `LOCATION_NODE_DANGLING` (WARN; heal = `PbDeleteUtil.deleteNodeGraph` + `PbStaleUtil.invalidate`) joins
+  `LOCATION_POI_MISSING` (P3-2). Not covered: `approvedRender → REJECTED` and a seed whose shared `data` row is deleted with its source
+  chapter (`ARTIFACT_DATA_DANGLING` report-only) — asks ⚠ 175 (e), (j).
+- **The plan does not yet carry the approved render.** `PbRenderPlanUtil.buildScenePlan` still emits `RenderPlan.Location(sceneObjectId,
+  locationText(scene))`; filling §12's `{objectId, variant, revisionHash, renderArtifactId | null, text}` from `scene.location` /
+  `locationVariant.approvedRender` and emitting `LOCATION_TEXT_ONLY` when absent is **P3-5**. Consequence to expect when it lands: a
+  degradation vetoes auto-approve (§10 rule 5), so scenes whose location has no approved render stop auto-approving (⚠ 175 l).
+- **`renderPath` unchanged.** No `requireV3` on the location routes (a v1 PictureBook may build its library) but `approveArtifact` requires
+  v3, so on a v1 deployment a location render can be made but not approved — ask ⚠ 175 (c). The test stack runs `PICTUREBOOK_RENDER_PATH=v3`.
 
 ## 6. Blocked / waiting on Stephen
 
@@ -8073,6 +8428,437 @@ blocking item), 12, 13 and 15 are ⚠ MY JUDGMENT.
      returned HTTP 401 … No api key passed in` (§6.G 4) and 399 `PictureBookUtil - Null LLM response`. Two asks: (a) whether the
      per-denied-record ERROR dump should be a single WARN per request; (b) whether `/Development`'s leftover e2e worlds should be
      swept (fixture accumulation makes every PB list/health scan slower run over run). Both yours.
+
+170. ⚠ **2026-10-16 09:43 → (open) — P3-1 (schema: `olio.pb.location` + `olio.pb.locationVariant`, `PbLocationKindEnumType`,
+     `PbNodeTypeEnumType.LOCATION`, scene FKs, `watched/v3`; §11.1): every default taken under auto mode.** Asks follow the defaults.
+     (a) `watched/v3` = v2 + the two location models only; the `olio.charPerson` set is **not** widened (§6.C 25 stays yours; a
+     charPerson widening would be `watched/v4`). Consequence you should know: the bump is folded into every `refHash`, so after
+     this deploy the first `recomputeStatus` of every existing book reports `refDrift` on every binding once and re-binds — the
+     documented, intended behaviour of the version constant, not a defect, but it will show up as a one-time "everything stale"
+     on first open. **The verifier is right to make this explicit:** §6.C 25 deferred "widen to `watched/v3` and re-bind every
+     stored refHash" to you; the brief's P3-1 names `watched/v3` for the location models, so the bump — and the one-time re-bind
+     per existing book it causes — is now happening under ✓ FOLLOWING INSTRUCTIONS, and the jar is already in `am7test-am7-1`,
+     so the Docker stack's `am72db` books will re-bind on their next scan too. Monotone (`PbStaleUtil.scan` writes STALE only),
+     no data loss, `persistRefHashes` re-captures on the next run. Say so if you want the first scan after this deploy to be a
+     dry one.
+     (b) `PbWatchedFields.canonicalRef` renders a foreign `olio.pb.artifact` by `objectId` instead of `name` (architect BLOCKER:
+     artifact names repeat across per-chapter `Artifacts` groups, so `approvedRender` hashed by name could not distinguish two
+     chapters' renders). Proven by `TestPbLocationSchema.case02` (same-named artifact in another group → different hash). Other
+     foreign fields keep the by-name rule, so no existing charPerson/apparel hash changes for that reason (they all change once
+     for (a) anyway).
+     (c) `WorldUtil.cleanupWorld` now references two PB models — the first PB reference in `WorldUtil` (architect SHOULD). Taken
+     because `DELETE /rest/olio/world/{id}` reaches `deleteWorld` without `PictureBookUtil`, and `cleanupOrphans` runs before the
+     `Locations` group is removed, so the rows would survive. Alternative not taken: a PB-side hook on world delete (more code, same
+     result). The throwaway-world proof is folded into P3-2's "delete world → all gone" test (location + variant + POI + store).
+     (d) No `hint` (index) declared on `olio.pb.scene.location` / `locationVariant`. P3-4's cross-chapter stale marking will query
+     scenes by `location`; the tables are small today. **Ask (1):** does the boot DDL patch create an index for a hint added to an
+     existing table (I did not find the path and did not want to find out on `am72db`)? If an index is wanted, say so and I add
+     the hint; if the patch does not index existing tables, the index is yours to add. **Ask (2):** the architect recommended a line
+     in `.claude/rules/objects7-reference.md` recording the answer — not done (rules files are not edited on a subagent's
+     recommendation); your call.
+     (e) The JUnit creates location / variant / scene FKs **as `testUser1` through `AccessPoint`** in the world's `Locations` group,
+     not as the olio principal — `OlioContext.scanNestedWorldGroups` grants the effective user CRUD on world child groups, and the
+     run shows zero `AUDIT DENY`. This is deliberate: it proves the PBAC path P3-4's routes will take for a plain user. The product
+     util (P3-2 `PbLocationUtil`) writes world sub-records as the olio principal per the brief (`PbBookUtil` pattern); the test for
+     that is P3-2's.
+     (f) Fact for P3-4's unlink: a field-name `newInstance` patch carrying a **present-but-null** FK writes `NULL`
+     (`ModelValueType.setValue(null)` accepts it) — proven in `case01` for `scene.location` / `scene.locationVariant`.
+     (g) `pictureBookCharacters.js:89` still says `watched/v2` in a comment about the charPerson set (semantically still true; the
+     label is stale). Left — Ux is P3-7's scope; noted here so it is not lost.
+     (h) **Objects7 quick gate run per slice, not batched** — ✓ FOLLOWING INSTRUCTIONS ("quick gate after each backend slice"),
+     reversing Phase 2's batching (163 o / 164 w / 165 q). `C:/tmp/o7verify` had been deleted; recreated 10:29 from the working tree
+     (`AccountManagerObjects7/src/.` + `pom.xml`; `diff -rq` 0, `POM_SAME`) and run 14 launched 10:29:42 with `AM7_UX752_MEDIA`
+     exported (169 g) — §4.4 row 14. Cost: the Maven slot for ~2 h per backend slice; P3-2 planning / architect, this doc and the
+     read-only reviews overlap it; no other Maven or `am7db` test until it finishes. If you would rather batch (one gate per two or
+     three slices), say so and I switch back. **Run 14 is VOID and the defect is mine** (§4.4 row 14): the recreated copy had no
+     `am7/` (gitignored key stores) and no `media/` — every earlier copy carried both as symlinks and I did not re-create them, so
+     `IOSystem.open` failed for every org (`Key store does not exist at ./am7/.jks/1/keystore.jks` → `Organization already exists`)
+     and 815 of 1191 tests failed in `BaseTest.resetIO:217` before any test body ran. Not a DB, Swarm or test defect; nothing in
+     the tree changed to fix it — two junctions restored (`am7`, `media` → the working tree), copy refreshed, run 15 launched 10:52
+     (§4.4 row 15). ~25 min of `am7db` time lost; no other work was displaced (the reviews were read-only beside it).
+     (i) Live REST proof for P3-1 is **read-only** as `e2etest_shared`: `GET /rest/schema` lists both models with every field and the
+     two scene FKs (`C:/tmp/p31-schema-all.json`); `POST /rest/model/search` on `olio.pb.location` → 200 `succeeded`, container audit
+     `AUDIT PERMIT system.user e2etest_shared to READ … olio.pb.location … (organizationId = 2)` (0 rows — the table is new). No
+     record was created over REST: the generic `POST /rest/model` is not the Phase 3 surface, P3-4's routes are, and they get the
+     create proof. (`GET /rest/schema/{type}` is `@RolesAllowed admin` — 403 for the shared user, by design; the unfiltered list is not.)
+     (j) Review passes (security-reviewer on the new models/PBAC path; verifier on the diff + logs) launched **read-only** beside
+     gate run 14 (instructed: no Maven, no JVM). Both **PASS** (§11.1 "Reviews"); the items below are what they surfaced.
+     (k) ⚠ **`olio.pb.locationVariant`'s unique key is `name, groupId, organizationId`** (the PB sibling convention I copied),
+     i.e. a variant name is unique across the **whole world's `Locations` group**, not per location: "night" can exist once per
+     world, not once per location (verifier NOTE). Design §7 does not specify. Changing the constraint now would leave the
+     already-created UNIQUE index in `am7db` and the stack's `am72db` in place (the boot patch adds columns, not indexes), so it
+     needs a table drop — yours, never mine. **Default taken for P3-2 / P3-4:** keep the constraint; variant records created by
+     `PbLocationUtil` / `POST /location/{id}/variants` store `name` as `<location name> — <label>` (label = the user's or the
+     clusterer's short name), so same-label variants of different locations never collide, and the Ux shows the label.
+     **Ask (3):** if you would rather have a per-location key (`name, location, organizationId`), say so before P3-4 and drop the
+     two tables on `am7db` + the stack DB yourself (both are empty); I change the JSON and the naming default goes away.
+     (l) **Pre-existing, outside P3-1, not fixed:** `OlioService.deleteWorld` (`OlioService.java:728, 749-755, 799`) gates on
+     `AccessPoint.find` (READ) and then elevates to the olio principal for the sweep, with no `canDelete(user, world)` — a
+     reader-role collaborator can wipe a world, and my two `cleanupLocation` lines now ride that path (security SHOULD).
+     `PbSeriesUtil.java:401-405` already does the per-chapter `canDelete` the reviewer suggests. **Ask (4):** may P3-2's
+     "delete world → all gone" slice add `AuthorizationUtil.canDelete(user, user, world)` before the elevation in
+     `OlioService.deleteWorld` (one check, 403 on false), or do you want it left as is? Not touched until you answer.
+     (m) **Inputs carried to P3-4 from the reviews** (recorded here so they are not re-derived): (i) `AccessPoint.update` gates a
+     foreign field only on the actor being able to **READ** the target (`PolicyUtil.getForeignPatterns`, condition `all`), and
+     nothing checks `location.world == scene.book.world` (or the series universe) or `locationVariant.location ==
+     scene.location` — P3-4's routes must enforce both same-world checks explicitly and `TestPbLocationSchema` gains a
+     **stranger test** (`TestPbStyleSchema:472` is the pattern); (ii) `location.locked` is a flag the generic `PATCH /rest/model`
+     does not see (`AccessPoint.isLocked` is `FieldLockUtil`, like `style.locked`) — exactly §6.C 169 (3)'s facade-vs-server
+     question, now with two models behind it; (iii) `aliases` / `description` / `extra` are unbounded `text` — the P3-2/P3-4
+     write path caps alias count and length, and `findByNameOrAlias` queries through `Query.field` comparators, never a
+     concatenated `LIKE`; (iv) in a series every chapter writer holds CRUD on the shared `Locations` group
+     (`OlioContext.scanNestedWorldGroups`), so one chapter can edit or delete a location another chapter's scenes bind — the
+     same model as `olio.charPerson` in `Population`, by design, to be stated in P3-4's docs; (v) a scene in another book that
+     bound a deleted location keeps a dangling bigint FK (no DB constraint) — P3-2's `PbHealthUtil` check covers `pb.location.poi`
+     per the brief; a `scene.location` dangling check is **ask (5)**: add it to the same health pass in P3-2, or leave it?
+     (n) Verifier minor items acted on: `TestPbLocationSchema.case02` deleted its LOCATION node + artifact A only on the success
+     path (a red assertion would have leaked both into the shared `pb2c-graph` workflow `TestPbGraph` also uses) → both moved
+     into `finally` (edit made 10:48; **re-run 10:49:56 → 10:50:17 after the 10:49:25 probe, before gate run 15:
+     `C:/tmp/p31-location2.log` `[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 14.36 s -- in
+     org.cote.accountmanager.objects.tests.TestPbLocationSchema` / `BUILD SUCCESS`, zero `AUDIT … admin`, zero `DENY`; `[LLM-GATE]`
+     `http://127.0.0.1:4000/health/liveliness answered HTTP 200` = LiteLLM → in-stack Ollama container, not Azure, not `.42`, though no
+     case in this class calls an LLM; SD gate `.39` answered 302, checkpoint `OfficialStableDiffusion/sd_xl_base_1.0.safetensors`,
+     no case renders. Gate run 15's copy includes this edit.**); `C:/tmp/p31-cookies.txt` (a live `JSESSIONID`) and the three 403-page `p31-schema-{location,variant,
+     scene}.json` scratch files deleted; `p31-install.log` carries only JVM warnings (`-q`), so "exit 0" rests on the shell
+     status plus the md5 chain `target/` == `~/.m2` == container, not on the log. Not acted on: `case03:519`
+     (`aliases == null || isEmpty()`) is a weak assertion — I do not know whether an unset `list<string>` column reads back
+     null or empty and did not want to assert a guess; P3-2's tests will pin it.
+
+171. ⚠ **2026-10-16 10:55 → (open) — P3-2 (location resolver + POI link: `PbLocationUtil`, `PbHealthUtil` `LOCATION_POI_MISSING`,
+     `PointOfInterestUtil` map-free overload + `findByName`; §11.2): every default taken under auto mode.** Asks follow the defaults.
+     (a) **Who writes.** Locations, POIs and stores are created as the olio principal (`Factory.findUser(OLIO_USER_NAME, orgId)`, the
+     `PbBookUtil` pattern the brief names), behind a **strict** `AuthorizationUtil.canUpdate(user, user, book)` PERMIT gate on the
+     book — the `PbServiceFacade.requireBookUpdate` shape, deliberately *not* `PbHealthUtil.canHeal`'s creator fallback (§6.C 169
+     (8) territory: a creator who lost update rights can still heal, but may not create world records through this util). The book
+     is **re-read by objectId as the user** before the gate (`PbBookUtil.readBook`), so the world written into is the persisted one,
+     never a `world` FK carried on a caller-supplied record (security-reviewer, medium) — consequence: a stranger who cannot read the
+     book is refused **404** before 403 (the facade's `requireBook` → `requireBookUpdate` order), which `TestPbLocationUtil.case01`
+     asserts. The result is re-read as the request user, so a caller who may not read the `Locations` group gets 403, not a record.
+     (b) **No repair on a hit.** `getCreateLocation` returns an existing name/alias match as it is — no description/kind/alias
+     refresh — so a second mention (or the clusterer) never overwrites what the first mention or the user established. Alias edits
+     are P3-4's `PATCH /location/{id}`; merging is `mergeLocations`.
+     (c) **`isBookWorld` is path-only**: any world whose `groupId` is `/Olio/Universes/Books/Worlds` (`PbOlioContextUtil.bookWorldPath()`)
+     is a book world — standalone and shared series worlds alike. "Has a map" was rejected as the test because it is a state, not an
+     identity (a game world with no features yet would be mis-classified).
+     (d) **Merge POI delete guard (D4).** `mergeLocations` deletes the duplicate's POI + store only when all of: book world, POI in
+     *this* world's `Points of Interest` group, `location` null (map-free), no other `olio.pb.location` references it. Otherwise it is
+     left alone and logged. A game-world POI is never deleted by a merge.
+     (e) **Authorize before write.** Every scene re-point is `canUpdate`-checked as the request user before any write; one denial
+     refuses the whole merge (returns false, nothing written). The alias overflow check (k) also runs before any write.
+     (f) **Never-linked and dangling are both healed.** `linkPoi` treats `poi` as present only when the row exists
+     (`poiExists` row lookup — a deleted FK target reads back as an id-only stub, the `SCENE_NODE_DANGLING` lesson), so
+     `LOCATION_POI_MISSING` covers both a location whose POI was deleted and one that never got one (e.g. a game-world location whose
+     name matched 0 or 2+ POIs at creation). Heal = re-run `linkPoi` as the olio principal (rule 1 in a book world, rule 2 in a game
+     world); design §7.2 rule 5 says "repaired by re-creating it (rule 1), not reported" — it is **both** reported (as a finding, so
+     `checkBook` shows it) **and** repaired by `healBook`, because a report-less repair would be a read-path write (architecture rule).
+     (g) **Game-world miss leaves `poi` null.** Rule 2 links only when exactly one placed POI carries the name; 0 or several → unlinked,
+     INFO-logged, never a create (a game world's POIs are the map's, not the book's). **Ask (1):** should 2+ hits pick the nearest to
+     the book's cast, the first, or stay unlinked (default)?
+     (h) **Pre-existing, found, not fixed (yours):** the original `PointOfInterestUtil.newPointOfInterest(ctx, …)` and
+     `paintPointsOfInterest` never set the POI's `name` (the model declares `name` itself, no `common.name`, so
+     `applyNameGroupOwnership` leaves it unset) — every painted game-world POI has a null name, so rule 2's name-link **cannot match a
+     painted POI** until that is fixed. `case02` paints its own named POI to prove the link path. The new map-free overload sets `name`
+     explicitly. **Ask (2):** fix the painter to set `name` (one line), or leave game-world name-links dormant?
+     (i) **Caps.** Aliases: ≤ 32 entries × ≤ 128 chars, trimmed, de-duplicated case-insensitively, never the location's own name,
+     `NarrativeUtil.isMeaningful`-filtered (drops `"null"`/`"n/a"`); `description` ≤ 4096 chars → 400; name ≤ 256 (model) → 400;
+     POI `name` truncated to the model's 128 while the location keeps 256. The model columns stay unbounded `text` (170 m iii) — the
+     cap is the write path's.
+     (j) **Merge alias overflow → 409 before any write** instead of silently dropping entries: a dropped duplicate name would let the
+     next mention of it recreate the location the merge just removed.
+     (k) **`mergeLocations` re-points variants too** (`locationVariant.location` → survivor) — not in the brief's text ("aliases
+     appended, scenes re-pointed, duplicate deleted") but a variant left pointing at a deleted location would be a dangling FK with
+     no DB constraint (170 m v).
+     (l) **Existence oracle closed:** a duplicate/survivor that exists in the organization but in another world is 404 "not found in
+     this book's world", same as a non-existent id (security-reviewer). Self-merge stays 400.
+     (m) **Client-facing errors are generic** (500 "Failed to persist the location record", "The merge could not be written"); the
+     group path and `e.getMessage()` go to the log only (security-reviewer).
+     (n) **Staleness after a merge:** `PbStaleUtil.touchBook(user, book)` + `touch(dup)` in `finally`, not `clear()`. **Carried to
+     P3-4:** a binding on the duplicate location (there are none yet — LOCATION nodes are P3-4) must be re-pointed to the survivor
+     and its `refHash` recomputed; recorded so P3-4 does it in the executor, not here.
+     (o) `PbSubRecordUtil :178-180`'s comment "always denied" (why sub-records are written as the olio principal) overstates it —
+     `TestPbLocationSchema` wrote into `Locations` as `testUser1` with zero DENY (170 e). Left as is (comment, not code).
+     (p) **`auditLocations` lists as the olio principal** (`AccessPoint.list`, world-scoped, uncached) so a reader whose view is
+     narrower than the group does not produce a false "0 locations"; the *findings* carry location objectIds, so a reader of one
+     chapter sees the identities (name, objectId) of every location in a shared series world — the same visibility `listLocations`
+     gives through the shared `Locations` group (170 m iv). Low; recorded, not changed.
+     (q) **Security-reviewer PASS (read-only beside gate run 15) — recorded-only items, not acted on:** (i) `mergeLocations` writes
+     the survivor's aliases without checking `survivor.locked` — that is §6.C 169 (3) / 170 (m ii) lock enforcement, decided in P3-4
+     with the architect (facade-only vs server-side), so the merge inherits whatever P3-4 decides; (ii) `canHeal`'s creator fallback
+     lets a creator who lost update rights trigger POI+store creation via heal — standing heal policy (169 (8)); (iii) a persistence
+     failure mid-merge leaves a partial, re-runnable state (some scenes re-pointed, duplicate intact) — the merge is idempotent, so
+     re-running completes it; no transaction layer exists to wrap it; (iv) ERROR/INFO lines include user-supplied names unsanitized
+     (log injection, low) — consistent with every other PB log line.
+     (r) Design §7.2 cites `WorldUtil.java:551, :563` for the store/POI group cleanup; the lines are now `:555` / `:567` after P3-1's
+     two `cleanupLocation` sweeps. Dated in-place cite touch made (§5.6).
+     (s) `PbBookUtil.locationVariantRequest()` added beside `locationRequest()` (P3-1) — the projection `variantsOf` and P3-4's
+     variant routes read.
+     (t) **Ask (3)** (= 170 (l) ask (4), still open): `OlioService.deleteWorld` has no `canDelete(user, world)` before elevating to the
+     olio principal; `case03` proves the *sweep* (location + variant + POI + store gone) through `PictureBookUtil.deleteBookComplete`
+     → `WorldUtil.deleteWorld`, not through the REST route. Not touched.
+     (u) **Ask (4)** (= 170 (m v) ask (5), still open): a `scene.location` dangling check is **not** added — only `pb.location.poi`
+     per the brief. Say so and it joins the same `auditLocations` pass (one more code, scene FK nulled on heal).
+
+172. ⚠ **2026-10-16 13:57 → 14:20 — P3-2 test slice (`TestPbLocationUtil` 5/0/0/0, regression 31/0/0/0) and the first P3-3 test run
+     (`TestPbLocationProposal` 4/0/0/0); §11.2.** Defaults taken under auto mode; asks follow.
+     (a) **`poiTypeFor` now reads the location's name as well as its description.** The first cut matched keywords in the description only,
+     so `case04`'s `"Old Mill Ruin <id>"` / "the burnt-out mill above the weir" mapped to STRUCTURE (`p32-locutil2.log:540`). In-scope
+     P3-2 product code, changed during the test run: `poiTypeFor(kind, name, description)` matches on `name + " " + description`
+     (`PbLocationUtil.java:~300`; one caller, `createMapFreePoi`). Checked that the other fixtures keep their expectations ("The Gilded
+     Tankard" / "A low-beamed tavern by the quay" → COMMERCIAL; "Harbour Steps" / "Weed-slick stone steps down to the water" →
+     STRUCTURE). **Ask (1):** keep the keyword heuristic, or let the clusterer (P3-3's `cluster-locations` prompt) emit the POI type
+     explicitly and make the heuristic the fallback only?
+     (b) **Test-only defect, mine, fixed before the green run:** `String.valueOf(rec.get(FieldNames.FIELD_TYPE))` on a `BaseRecord` binds to
+     `String.valueOf(char[])` through the generic `get` and throws `ClassCastException: String cannot be cast to [C` (3 errors,
+     `p32-locutil.log:481,524,567`). Fixed at 5 sites (`:264,277,290,443,486`) with the codebase idiom `String.valueOf((Object) rec.get(…))`
+     (`PbServiceFacade.java:861`, `TestFeatureConfigUtil.java:161`). Grepped the P3-2/P3-3 product code — clean (`PbLocationUtil` already
+     used the cast at its one site); other hits in the tree are `Map.get` (returns `Object`, unaffected) — not touched.
+     (c) **Gate batching, P3-2 + P3-3 → one Objects7 quick gate** after P3-3's remaining tests (`TestPbMigration` extension,
+     `TestPbLocationPassLive`), on the §6.C 163 o / 164 w reasoning: one Maven at a time and ~3 h per gate, with the architect /
+     security-reviewer / verifier passes read-only beside it (as accepted at ⚠ 170 j). The brief's "quick gate after each backend slice"
+     is honoured per *backend slice* (P3-2 + P3-3 are both Objects7, no Service7 change yet); the jar install / deploy / live proof is
+     batched the same way. **Ask (2):** acceptable, or one gate per task from here?
+     (d) **`AUDIT DENY … READ data.note (name = ".pictureBookMeta" … text LIKE "%<bookOid>%")` ×8 per book delete is deny-as-miss, not a
+     permission failure** (the `troubleshooting.md` "DENY can mean no such record" pattern): `PbDeleteUtil.deleteBookComplete`'s cleanup
+     lookup for the legacy PB1 meta note queries a `data.directory`-derived model without `groupId`, so a miss on a V3 book that never had
+     one logs DENY + the ERROR-level `could not be authorized` / `policy.policyResponse` dump. 8 lines in `p32-locutil3.log` (`testUser1`),
+     62 of the 65 in `p32-regress.log` (`pbHealthScan` 32 / `pbHealthOwner` 30, the pre-existing health classes); the remaining DENYs are
+     the asserted stranger refusals (`p32Stranger` ×1, `pbHealthStranger` ×2, `p33Stranger` ×3) and one `pbHealthOwner MODIFY
+     olio.pb.workflow` inside `TestPbHealthStaleGraph`'s dead-row scenario (`Urn could not be found`, the condition that test constructs).
+     Pre-existing, not P3-2's; the dumps are 169 (8) territory. **Ask (3):** scope the meta-note lookup by the book's group (or skip it for
+     `renderPath=v3` books) to silence the false DENY, or leave it?
+     (e) **`TestPbLocationProposal` is emulator-driven, not a live-LLM test.** Its four cases prove the pass mechanics (chunking, parse,
+     proposal rows, idempotence, accept → resolve/re-point/settle, `sameAs` fold vs `locked`, retire-only-after-complete-pass, hard-failure
+     stop) against `LlmEmulator`'s `cluster-locations` synthesizer and fault manifest (`http500` occurrence 1 → `hard LLM failure on
+     chunk 1 … pass stopped`, `chunks=0/1 … HARD-FAILURE`; `empty` → `retired=1`), through the real `callLlmForChapBook` → `resolvePrompt`
+     path with persisted `system.connection` rows (`emulator://p33-<hex>`, `dialect=EMULATOR`, 6 created = 6 deleted). The design row's
+     "JUnit vs live LLM on a real manuscript — same-place scenes land on one location" is **`TestPbLocationPassLive`, not yet written**;
+     the `[LLM-GATE]` line in its log is `BaseTest`'s probe and is **not** evidence that a model was exercised. Recorded so the P3-3 row
+     cannot be read as live-proven.
+     (f) Found while auditing the green run, left alone (scope discipline): `TestPbLocationUtil` runs 5 cases in 166.6 s with ~29 s per
+     case spent in `BaseTest` org/user setup and `deleteBookComplete` — timings recorded, not asserted.
+     (g) **Coverage gaps in `TestPbLocationUtil`, found re-reading the class against §11.2 before recording it (not claimed as proven):**
+     `mergeLocations` re-pointing a `locationVariant` (⚠ 171 k) and the 409-before-write alias overflow (⚠ 171 j) have no case; the
+     stranger refusal is proven for `getCreateLocation` (`case01`, 404) but not for `mergeLocations`; `linkPoi`'s 2+-hits branch (⚠ 171 g)
+     has no case. Handed to the test-author pass for P3-2 (beside the batched gate) rather than written now, so the pass has something
+     real to add instead of re-running what is green.
+
+173. ⚠ **2026-10-16 14:52 → 16:10 — P3-3 implementation, tests, deploy, reviews (`TestPbLocationPassLive` 1/0/0/0 live, `TestPbMigration`
+     4/0/0/0, `TestLlmJsonArraySalvage` 14/0/0/0, `TestPbLocationProposal` 4/0/0/0); §11.3.** Defaults taken under auto mode; asks follow.
+     (a) **Landscape bytes are referenced, not copied.** `importLandscapes` sets `artifact.data` to the PB1 `data.data` record; the row stays
+     in its PB1 group/owner, so deleting the V3 book leaves the PB1 image and deleting the PB1 book leaves a dangling `artifact.data`
+     (`PbHealthUtil` has no code for it). Default: reference (no duplicate blobs). **Ask (1):** a report-only `ARTIFACT_DATA_DANGLING`
+     health code (architect note) — add in P3-4, or leave?
+     (b) The imported LANDSCAPE node is found by handle only; migration does not set a `sceneNode` link and reaches the workflow through
+     `PbPipelineUtil.getCreateWorkflow`. Default kept; P3-4 binds through the same handle.
+     (c) **Location pass in migration uses the request user's `generalChat`** (`proposeLocations(user, book, null)`); no `generalChat` → the
+     pass is skipped with a warning on `ImportResult`, never fatal. A named config that does not exist → `404 Chat config '<name>' not found`
+     from the named overload. **Ask (2):** should the migration route accept a `chatConfig` name (P3-4 transport) rather than default?
+     (d) `proposeLocations` does **not** `touchBook` — proposals are not graph inputs and `PbWatchedFields` does not watch them. Default.
+     **Ask (3):** agree?
+     (e) Proposal rows are named `proposal-<slug>` (`proposalName`, sanitized, 256 cap), one per cluster, stamped `passRun`; a re-proposed
+     cluster updates the existing row in place (`updated=`), a cluster matching an `ACCEPTED` row is `settled`. Default.
+     (f) **Retire-rule defect caught by `case04` during the emulator run, fixed before the first green run:** the first cut retired stale
+     `PROPOSED` rows after a hard-failed pass; now retire happens only when `chunksParsed == chunks` and an empty-array chunk counts as
+     parsed (`:736 … chunks=0/1 … HARD-FAILURE`, `:784 … retired=1`, `:828 (empty array) … retired=1` in `p33-passlive2.log`). Mine.
+     (g) **Test provisioning.** `TestPbLocationProposal` persists `emulator://p33-<hex>` `system.connection` rows (`dialect=EMULATOR`, deleted
+     in `finally`); `TestPbLocationPassLive` creates `P33 Live Cfg` (`OlioTestUtil.getOllamaOpenAIConfig`, model `test.llm.model.analysis`) +
+     its connection in `/Development/World Building` as `testUser1`, and `TestPbMigration` a migration config the same way; all deleted in
+     `finally`, each followed by `ChatUtil.clearCache()` because of (h). Your `generalChat` records are not touched.
+     (h) **New finding, product, not fixed (yours): `AccessPoint.find` → `authorizeQuery` (`AccessPoint.java:694`) →
+     `PolicyUtil.evaluateQueryToReadPolicyResponses` (`PolicyUtil.java:250`) scans the indexed `name` with no organization / owner
+     narrowing**, so a same-named record in a *foreign* org contributes a DENY policy response to a query that names it; `CacheDBSearch`
+     caches the non-empty scan and `DBWriter` does not invalidate it on CREATE, so a config created *after* a miss keeps denying until the
+     cache clears; and `CachePolicyUtil.evaluateResourcePolicy` (`:125-138`) calls `resource.get(FieldNames.FIELD_URN)` without assigning
+     it (`recU` stays null → `resource.hash()` keys the cache). Reproduced twice with a throwaway class (`p33-scratch-deny.log` 2/0/0/0
+     15:03, `p33-scratch-deny2.log` 1/0/0/0 15:05; class deleted). This **reinterprets** `troubleshooting.md`'s 2026-09-13 `generalChat`
+     DENY note: a DENY on a by-name config lookup can be a miss *or* a cached cross-org name hit. Test-side remedy only
+     (`ChatUtil.clearCache()` after provisioning). **Ask (4):** narrow the scan by `organizationId`, invalidate on create, assign `recU` —
+     yours; I did not touch `PolicyUtil` / `CachePolicyUtil` / `AccessPoint`.
+     (i) **No cross-cluster scene dedupe.** A scene the model lists in two clusters gets two proposals; accepting the second re-points it only
+     with `overwriteSceneLocation`. Default (the reviewer sees both). **Ask (5):** dedupe at propose time (first cluster wins) instead?
+     (j) **Test-side mistake, mine:** the first `testImportV1BookLandscapesAndLocationPass` run asserted the scene **name** against the PB1
+     title (`expected:<[Arrival at the Lantern Inn]> but was:<[Scene testmigrationlandscapee69a6a56 0]>`, `TestPbMigration.java:367`);
+     `PbBookUtil.createScene` names scenes `Scene <slug> <idx>` and keeps the title in `title`. Fixed in the test; the red run's log was
+     overwritten by the green run at the same path (`p33-migration.log` is 4/0/0/0) — recorded from the transcript, no log survives
+     (verifier finding 1).
+     (k) `extractSingleShot` generalized: 7-arg overload `(llm, vars, hintVar, context, failedExtractions, cancelToken, okOut)`; the 5-arg
+     delegates with `"text"` / null `okOut`; `extractScenesOnly` (`PictureBookUtil.java:8891`) unchanged in behaviour. Additive.
+     (l) **Prompt edit after the live red run:** the user prompt now carries a literal JSON skeleton (`[{"name":"...","kind":"INTERIOR",…,
+     "scenes":[1,4],"sameAs":null}]`, "every key followed by a colon") because the model emitted `"scenes",[1]` (`p33-passlive.log:323`).
+     The system prompt is unchanged apart from `/no_think`.
+     (m) **Parser hardening with live evidence (product, in scope — the pass is P3-3's):** `p33-passlive.log` RED (`:327 Failed to parse LLM
+     JSON array: JSON array parse returned null`, `:368 … Illegal unquoted character ((CTRL-CHAR, code 10))`, `:371 Salvaged 5 element(s)`,
+     `:512 …:187 expected:<1> but was:<0>` — `chunksParsed` 0 because salvage is not a whole parse) → `JSONUtil.getLenientList` (new, CRLF
+     splice `C:/tmp/p33-jsonutil.py`), `repairMissingColons`, salvage-both; `p33-passlive2.log` GREEN. `TestLlmJsonArraySalvage` 11 → 14
+     (`p33-salvage2.log`) → 15 after the review edit (t). The assertion at `:187` is intact (verifier).
+     (n) **Model variance is not asserted.** The tavern came back `kind=EXTERIOR` on the green run (`p33-passlive2.log:247`); the live test
+     asserts counts, membership and that the shared proposal mentions "tankard" / "tavern" — never `kind` or a proposal's exact name.
+     (o) Pass 2 of the live run warned `an item without a name was dropped` (the model emitted a nameless element) — a warning on the
+     result, not a failure; counted in `warnings`, not in `proposed`.
+     (p) **Timings recorded, never asserted:** location pass 1 15677 / 12368 ms, pass 2 14676 / 7527 ms (red / green runs); migration import
+     20679 / 16205 ms; `TestPbLocationProposal` 151.7 / 143.4 / 135.0 s; `TestPbLocationPassLive` 63.73 (red) / 53.38 s; `TestPbMigration`
+     55.40 / 47.42 s.
+     (q) Plan-stage architect corrections B1, C1–C8 adopted (§11.3 lists each with its line); the as-built architect pass (PASS WITH NOTES)
+     confirmed all nine and added findings 1, 2, 4 (adopted, see t) and 3, 5–7 (recorded: (a), "resolve `generalChat` once per pass" —
+     optional, left; info).
+     (r) Gate batching P3-2 + P3-3 → Objects7 quick gate run 16 (172 c's default, taken); the test-author's `TestPbLocationUtil` case06–09
+     were written beside the gate and are run after it (one Maven at a time).
+     (s) **Fixture deviation from the P3-3 row:** `TestPbLocationPassLive` runs on 8 synthetic scenes, not AIME.pdf / Harlot's Eight. The
+     exit-criterion shape (3/7/12 share one tavern; a second shared pair; singles; a setting-less scene) is proven; the model's behaviour on
+     a real manuscript's settings is not. **Ask (6):** run the pass on AIME.pdf (via `importV1Book` on the PB1 book, or `proposeLocations` on a
+     V3 book after P3-7) as a P3-8 phase-gate item, or accept the synthetic proof?
+     (t) **Post-review code edits made while gate run 16 ran on the 15:46 copy (the gate predates them):** `PbLocationUtil` ×4 sites
+     (`rereadAs` → generic `403 Location is not readable`, user name logged not echoed; `writeProposal` / `rejectProposal` → generic 500s,
+     `e.getMessage()` logged not echoed — security 1–2, the 171 m standard; `listProposals` re-reads the book through `PbBookUtil.readBook`
+     when the stub carries no `groupId` and returns empty rather than widening to the org — architect 4); `PictureBookUtil`
+     (`dropEmptyElements` after both lenient parses — architect 1, `ALLOW_MISSING_VALUES` could bind a null element that
+     `extractScenesOnly` dereferences; salvage the original *and* the repaired text, keep the larger — architect 2, the repair walker does
+     not model single-quoted strings); `TestLlmJsonArraySalvage` +`TestMissingAndEmptyElementsAreDroppedFromAWholeParse` (15). Default:
+     targeted re-runs (`TestLlmJsonArraySalvage`, `TestPbLocationProposal`, `TestPbLocationPassLive`, `TestPbLocationUtil` 9 cases) + jar
+     redeploy right after the gate, full coverage at the P3-8 phase gate. **Ask (7):** or a second quick gate before P3-4?
+     (u) **Security notes recorded, not adopted:** prompt-injection surface of scene settings (mitigated — only whitelisted keys are read,
+     names sanitized, 256 cap); `rawResponse` in pass warnings — strip at the transport boundary in P3-4; `PROPOSED` rows editable through
+     generic `PATCH /rest/model` (no escalation — a proposal carries no binding and accept re-checks everything); the EMULATOR dialect gate
+     is deployment-global (`llm.emulator.fixtureRoot` boot-pinned) — a `dockerDevSetup.md` line is yours; pre-existing and left alone:
+     `**** SCENE CALL` INFO dump of the system prompt (`PictureBookUtil.java:4890`), `stripThink` regex cost (`:4048`), PB1 meta note read
+     with `getUnfilteredModule()` (`PbMigrationUtil.java:160`).
+     (v) Verifier finding 3 adopted as a dated design edit: §28 step 3's "so the step is idempotent" → defensive guard (`importV1Book` 409s
+     on an existing slug first). Verifier findings 1 (j above) and 2 (coverage, now case06–09) adopted in the record.
+     (w) `p33-install.log` carries no exit marker (`-q`; verifier finding 4) — the md5 / `javap` evidence in §11.3 stands in; later installs
+     echo `MVN_EXIT`.
+
+174. ⚠ **2026-10-16 16:10 → 21:41 — P3-3 post-review: the five review edits compiled + run, gate run 16's new red product-fixed by a
+     sub-place fold, the fold security-reviewed and hardened, post-review jar deployed with P3-4; §11.3 addendum.** Defaults taken under
+     auto mode; asks follow.
+     (a) **Gate run 16 red `TestPbLocationPassLive:334` (and the same test red again at 19:17 in `p33-live2.log`, splitting the scriptorium
+     from "Abbey Scriptorium Night" instead of the tavern from "Gilded Tankard Taproom") is the live model splitting ONE place into a base
+     cluster and a sub-place / variant cluster.** Fixed in the product, not the test: `PbLocationUtil.foldSubPlaces` (`:1553`) folds, until
+     nothing folds, every cluster whose `placeKey` (lower-case alphanumeric words, leading "the" dropped, `:1593`) is another cluster's key
+     plus (i) a trailing qualifier made only of `SUB_PLACE_WORDS` (taproom, cellar, courtyard, …) and/or `VARIANT_WORDS` (night, dawn, rain,
+     winter, …, `:1533`) after `QUALIFIER_FILLER_WORDS` ("at", "in", "by", "and", …) are stripped, or (ii) a leading `SUB_PLACE_PREFIXES`
+     view ("inside", "outside", "in front", …), or (iii) the same key; scenes unioned, the folded name + aliases kept as aliases, descriptions
+     joined, kind → MIXED when they disagree, the shorter (base) name survives, one warning per fold naming why (`:1581`). Name shape only —
+     no model call, no setting text — so it is identical for every LLM and under the emulator. The assertion (`:334`, scenes 3/7/12 share
+     exactly one proposal) is untouched; `TestPbLocationProposal#case05` (`p33-proposal5b.log` 1/0/0/0) drives the fold with an emulator
+     reply that splits deliberately. **Default taken:** suffix-only variant words — a leading one ("Winter Palace", "Night Market") is more
+     often a proper name and is left alone; "spring" and "fall" omitted (water, waterfall); an unknown trailing word ("inn", "road") is a
+     place of its own and never folds. Ask: whether the word lists should be a resource the book/org can extend, and whether a fold should
+     be a reviewable proposal of its own rather than silent-with-warning.
+     (b) **The prompt was edited in the same slice** (`resources/olio/llm/prompts/pictureBook.cluster-locations.json`, system text): a named
+     place and its rooms / yard / doorstep / street outside are ONE location; the same place at another time of day, weather or season is
+     the SAME location; "never split a place by room, floor, inside/outside, time of day, weather or season; those belong in the
+     description". The fold is the deterministic backstop for the model ignoring that rule (it did so twice in two runs); the prompt is
+     the first line. Neither carries a bias directive (memory `bias-policy-prompt-vs-detection`: directives removed from runtime prompts,
+     detection stays in code) — security-reviewer reported, not a finding.
+     (c) **Security review of the fold + prompt: PASS**, two hardening notes adopted as edits and re-run GREEN (`p33-proposal6.log`,
+     `TestPbLocationProposal` 6/0/0/0, 220.8 s, `BUILD SUCCESS`): (i) a structural termination guard — the fold removes the part by its
+     own key `proposalName(part.proposedName)` and **stops with an ERROR log if the removal misses** (`:1570-1575`), so the `while(changed)`
+     loop's bound no longer depends on the "keys never change" invariant; (ii) when base and part both carry a `sameAs` that disagree, a
+     warning names both known locations and asks for review of the merge (`:1576-1579`) rather than silently keeping the base's. Recorded,
+     not changed: the fold is O(N³) worst case over the cluster count N (every pass is O(N²) and at most N−1 passes fold); N is the number
+     of DISTINCT proposed places in one book (tens, not thousands) and the pass is already an LLM round-trip per chunk, so no cap was added;
+     and `placeKey` is `NON_SLUG` → ASCII-ish, so a non-Latin place name folds only on exact equality (never wrongly, possibly less often).
+     (d) **The five 16:00 review edits (173 t) compiled and ran GREEN**: `TestLlmJsonArraySalvage` 15/0/0/0 (0.56 s — one case added for
+     the architect's finding 1, `dropEmptyElements` after both lenient parses), `TestPbLocationProposal` 5/0/0/0 (206.8 s) in
+     `p33-proposal5.log` (`Tests run: 20, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`, 19:16); `TestPbLocationUtil` 9/0/0/0
+     (313.2 s — the test-author's case06–09 now RUN) + `TestPbLocationProposal` 5/0/0/0 (189.3 s) in `p32-locutil4.log` (`Tests run: 14,
+     Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`, 19:31). All under `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr
+     pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` — the in-stack Ollama container via LiteLLM, not Azure, not `.42` — and `SdTestGate -
+     http://192.168.1.39:7801 answered HTTP 302`; only `TestPbLocationPassLive` actually called the model.
+     (e) **The post-review jar was not deployed on its own.** The 15:40 jar (`2e03a661…`) stayed in the container until the P3-4 deploy at
+     21:41 (`56785b40ab4a4adc0e1f6e579d06a2c0`, which carries the review edits, the fold and P3-4 together); the P3-3 live proof of 15:41
+     therefore stands for the pre-review code only, and the P3-4 Playwright spec (§11.4) is the first live exercise of the post-review
+     P3-3 code (its propose step ran the pass through the deployed jar: `chunksParsed:1, folded:0, proposed:5`). Default taken: one
+     deploy for both (one restart, one probe); ask: none.
+     (g) **The green live re-run does not exercise the fold.** `p33-live3.log:242` reads `proposeLocations(p33live1b082d8e): scenes=7
+     skipped=1 chunks=1/1 folded=0 proposed=4` — on that run the model clustered the tavern and the scriptorium correctly by itself (one
+     reply was malformed, salvaged, and re-asked once — `:327-329`, the 173 parser path), so `foldSubPlaces` had nothing to fold. The fold
+     is therefore proven by `TestPbLocationProposal#case05` (emulator, deterministic split) and stands as the backstop; whether the 19:22
+     green came from the prompt rule (b) or from sampling variance cannot be told from one run, and one green after two reds is not a
+     rate. Ask: whether to run `TestPbLocationPassLive` several times in a row (serial, ~1 min each) to observe the split rate with and
+     without the fold — I did not, to keep one Maven run at a time and the gate's single run the record of truth.
+     (f) **Gate run 16 is the P3-2/P3-3 gate as of the 15:46 copy and nothing later.** Its one new red is (a); its +14 tests are the three
+     new classes + four added cases; its skips are run 15's sixteen; the five review edits, the fold and all of P3-4 are covered by the
+     targeted runs in (c)–(d) and §11.4, and by the next gate run (planned after the P3-4 hardening slice, before P3-5). P3-3's status
+     stays **not DONE (yours, 159 b)**.
+
+175. ⚠ **2026-10-16 19:12 → 2026-10-17 00:01 — P3-4 LOCATION node, render, approve/lock.** Defaults taken under auto mode; asks follow.
+     (a) **Book-scoped routes (deviation from design §27).** Design §27 listed bare `PATCH/DELETE /location/{id}`, `POST /location/{id}/variants`,
+     `POST /location/{id}/render?variant=`; built as `/{book}/location/{id}/…` (13 routes, §5.6) so that `requireBook` / `requireBookUpdate`
+     stay the single authorization anchor and the world is derived, never named by the caller; §27 edited in place with the as-built paths
+     (dated). Approve / reject / select stay on the P1-4 artifact routes. **Ask:** accept the book-scoped shape, or add bare-path aliases
+     (which would need a world → entitled-book resolution of their own).
+     (b) **Node scope `location` / `locationVariant` + `scopeRef`, handles `location@<8>` / `location_variant@<8>` — not `scope="book"`** as the
+     task row said. Architect ruling 3 (every executor resolves from `scopeRef`, binds after render); the row is updated.
+     (c) **No `requireV3` on the location routes, but `approveArtifact` requires v3.** Default: a v1 PictureBook may build and render its
+     library (the library is a world asset, useful to ChapBook on v3), but promotion to `approvedRender` is a v3 review act. On a v1 deployment
+     the approve route 409s. **Ask:** keep, or gate the location routes on v3 too, or let approve through on v1.
+     (d) **`POST /{book}/locations/propose` is synchronous** (12 s live for 7 scenes / 1 chunk; nginx `proxy_read_timeout` is 3600 s). Default
+     kept from P3-3. **Ask:** make it a job (`202 {jobId}` + `GET /rest/job/{id}`) before the Locations tab (P3-7) exposes it on real books.
+     (e) **Seeding semantics.** Seeds share the scene landscape's `data.data` row (no bytes copied; `refModel/refObjectId` provenance), are
+     PENDING, unselected, unbound, never auto-approved; only this book's scenes; only a scene's *selected* landscape; variants never seeded;
+     skipped scenes counted (`seedSkipped`). Live run: `seeded:0, seedSkipped:3` (the e2e scenes had no rendered landscape). **Asks:** (i)
+     whether the first seed should be auto-selected so the node shows something before its first render; (ii) a seed whose shared `data`
+     row goes away with its source chapter is only visible through the report-only `ARTIFACT_DATA_DANGLING` — a heal (drop the seed) is one
+     line if you want it.
+     (f) **Render refuses before planning.** 409 for locked, 409 for pinned (an approved render on the subject), 409 for in-flight
+     (`PbNodeInflight`); `force` bypasses none of them (case09). Default: a pinned subject must be rejected or a new variant made first.
+     (g) **`GET /{book}/locations` and `GET /{book}/locations/proposed` are read-only** — no node materialization on a read (architecture.md
+     "read paths must not create"); the node appears on first render / approve / proposal-accept.
+     (h) **Proposal accept materializes a node only when the book already has a workflow and the location is unlocked** (case06); otherwise
+     the location + POI + store are created and the node waits for the first render.
+     (i) **`stripRaw` at the transport** removes `rawReply` from every proposal body (`TestPbLocationProposal.case07`); the raw reply stays on
+     the record for debugging.
+     (j) **Health check 12 `LOCATION_NODE_DANGLING`** (audit + heal; delete and merge legs, case12) closes verifier finding 2. Not covered, by
+     default report-only: `approvedRender → REJECTED` (a rejected artifact still pinned as the approved render — reachable only through
+     generic PATCH or a race). **Ask:** add `LOCATION_APPROVED_RENDER_REJECTED` with heal = clear + touch.
+     (k) **STALE propagation bound.** Approve calls `PbStaleUtil.touch` / `touchBook`; `touch` is one-JVM and `REF_INDEX` covers cached scans
+     only, so another chapter sees STALE on its next `listStale` after the 30 s TTL or a forced read — never "immediately", and never across
+     JVMs (Console7) until that JVM's next scan.
+     (l) **TEXT_ONLY + auto-approve.** Scenes still render TEXT_ONLY in Phase 3; when P3-5 fills `RenderPlan.Location` from the approved render,
+     a scene whose location has no approved render is a degradation and stops auto-approving (§10 rule 5). Default: accept that consequence
+     in P3-5 and say so in its row. **Ask:** or exempt `LOCATION_TEXT_ONLY` from the veto.
+     (m) **Generic-PATCH lock bypass is documented, not fixed.** `case02` demonstrates the bypass (architect ruling 1); the model description
+     says it. Folded into §6.C 169 (3) / 170 e — now backed by two models (`olio.pb.style.locked`, `olio.pb.location.locked`).
+     (n) **H2 fixture for the Service7 route tests is a hand-built world** (`TestPictureBookLocationRoutes` creates the world tree directly), which
+     surfaced that a reader needs the **whole world sub-tree** readable, not only `Locations`, to list — recorded, not changed. The render-202
+     seam is proven live only (Playwright), the H2 run never reaches a renderer.
+     (o) **Live proof is a Playwright API spec** (`e2e/pictureBookLocations.spec.js`, 17 tests): 10 CRUD tests always; 3 under `PB_LLM_TESTS=1`;
+     3 under `PB_SD_TESTS=1`; 1 under `PB_LOC_DB_PROOF=1` (READ-only `psql` through `execSync docker exec`, proving the `olio.pointOfInterest`
+     + `olio.store` rows). Scenes are created through generic `POST /rest/model` and read back via `GET /{book}/pages` because `GET /{book}/scenes`
+     is PB1-only. Every `test.skip` message says "a skip, not a pass"; the recorded run had all three flags on and `Skipped: 0`.
+     (p) **`TestPbNodeExecutorTypes` is now the eight-stage mirror** (LOCATION added to `SD_BACKED_TYPES`); its :57 wording updated from
+     "seven". The 21:07 regression red was this mirror, fixed by the test, not the product.
+     (q) **`-q` install logs carry no exit marker** (`o7-install-p34e.log`, `o7-install-p34f.log` hold only plexus warnings; the `MVN_EXIT=` echo
+     went to the console). The jar's 23:52:30 stamp and the local == container md5 are the record; from the next install on, the echo is
+     appended **into** the log.
+     (r) **`aliasesFolded:1` at accept in the live proof is the `sameAs` fold** (P3-2), not `foldSubPlaces` (P3-3) — recorded so the Playwright
+     line is not read as fold coverage.
+     (s) **Security review (PASS WITH NOTES) dispositions:** (1) cross-chapter delete 409 no longer leaks an org-wide count — FIXED; (2)
+     control characters stripped from names / aliases — FIXED, error bodies still hand-escaped (`escapeJson`), not `JSONUtil.exportObject`;
+     (3) caller input no longer echoed in 4xx — FIXED; (4) `MAX_VARIANTS_PER_LOCATION = 32` — FIXED; locations-per-world cap, seed re-copy
+     on every materialization and the `listLocations` N+1 (one `approvedRender` read per row) — **asks**; (5) facade `sameWorld` on
+     approve / reject — FIXED; (6) policy: unlock needs only book-update, and any chapter Writer of a shared series world may edit / lock /
+     delete / merge a location other chapters use — **ask** (a series-level lock owner, or lock = owner-only); (7) the cluster prompt carries
+     no bias directive — report only, per llm-conduct; (8) test safety fine.
+     (t) **Verifier finding 1 fixed:** `PbLocationUtil.subjectExists(node)` (olio principal) + `PbArtifactUtil.subjectOrNullWhenDangling`
+     rethrows when the subject exists, `PbServiceFacade.requireSubjectInBookWorld` 404s — a user with book-update but no read on the
+     world's `Locations` group can no longer reject a locked location's approved render (`case11 (e)`).
+     (u) **§3 honesty correction.** The P3-4 §3 paragraph said `TestPbLocationNode` renders against `DEAD_SERVER` by design. Wrong: case08 renders
+     live on `.39` in every run (`wallMs` 25283/16308, 22586/16589, 19934/16310); only case07 / case09 use `DEAD_SERVER`. Corrected in place,
+     dated.
+     (v) **Test authorship.** test-author: `case09ForceNeverBypassesLockOrPin`, `case10MergeWithAMaterializedNodeOnTheDuplicate` (red once on
+     a product gap — merge did not delete the duplicate's node graph — product-fixed, assertion untouched), `TestPbLocationProposal.case07`;
+     mine: `case11HardeningMessagesCleanTextVariantCapAndForeignWorldSubject` (red once at 23:29 on `(e)`'s fixture — the grant was on the
+     wrong group — test-fixed), `case12HealthFindsAndHealsNodeDanglingAfterCrossChapterDelete` (written after the verifier, with the fix slice).
+     (w) **Verifier verdict** PASS WITH NOTES — "ship after deciding on 1 and 2". 1 → (t); 2 → (j); notes 3–7 recorded in §11.4.
+     (x) **Gate coverage.** Gate run 17 (`src` copied 00:01:29) covers everything through the 23:53 deploy — **not** the fix slice (`subjectExists`,
+     check 12, case11 (e), case12), which was written after the copy and is compile-clean but **unrun** at the time of this entry. It is run
+     targeted first (§11.4 addendum), then covered by the next quick gate before P3-5's backend slice is declared green.
+     (y) **Architect rule-gap recommendations not acted on.** The P3-4 plan review asked for two additions to `.claude/rules/architecture.md`
+     — (a) cross-book writes in a shared series world are forbidden from a single-book route; (b) a plain boolean "lock" field is not an
+     authorization boundary. Rules files are not edited on a subagent's recommendation; both are recorded here as asks. The code follows
+     both (merge counts PBAC-skipped re-points instead of forcing them; the lock is documented as facade-only).
 
 ### 6.G Found in Slice C transport (P0-10c), left alone under scope discipline — your call on each
 
@@ -14730,3 +15516,555 @@ second full Ux752 gate (169 p). Whether that closes P2-10, and DONE for P2-1…P
 **Yours:** DONE for P2-1…P2-9 (159 b); commit of the three uncommitted fixes (169 f, n, o); asks 169 (1)–(8); the pre-Phase-2 Ux752 reds in
 §4.7.2; a run 5 if (p) is not enough.
 Next: Phase 3 — Locations + POI link (design §30 row 3); the start prompt is in the end-of-phase report.
+
+---
+
+## 11. Phase 3 — tasks
+
+Scope: design §30 row 3, verbatim: "Location/variant models, LOCATION nodes, `approvedRender`, library Ux, approve/lock, clustering
+migration, background-first for TEXT_ONLY/DIRECT; POI link (§7.2 rules 1–3, 5): map-free `olio.pointOfInterest` + `olio.store` per
+resolved location in book worlds, name-match in game worlds, `PointOfInterestUtil.findByName`, `PbOrphanUtil`/`PbHealthUtil` repair of a
+dangling `poi`." ChapBook impact: "Optional locations on ChapBook pages." Exit (§30 row 3, verbatim): "Scenes 3/7/12 share one approved
+tavern; series chapters share it; a location failure doesn't fail scenes; every resolved location has a POI with a store, and deleting
+the world removes both." — plus the three module gates green in one pass under a GREEN §3 probe and this doc current (P3-8), then STOP.
+Started 2026-10-16 09:43 local from the §3 09:43:24 probe (GREEN), on the Phase 2 state of §10.10 (P2 code committed `11edfb7b`,
+`5d60177a`, `2f1452be`; ChapBook on `v3`, PictureBook on `v1`; `renderPlan`/TEXT_ONLY/`SdxlCompiler` the only render path a LOCATION node
+may use).
+
+Decided defaults honoured (brief): location scope = the book's Olio world (§7.1); POI link used — map-free in book worlds (`location`
+null, `east`/`north` −1, **no `data.geoLocation` ever created**, `BookWorldInitializationRule` untouched), name-link in game worlds, V3
+never writes `location`/`east`/`north`; approved renders are world assets on the location/variant record; book graphs bind to the
+location **record** with `approvedRender` in the watched set; approve pins and auto-approve pins (`olio.pb.book.autoApprove` the one
+switch); `renderPath` keeps PictureBook on `v1`, ChapBook on `v3`; PB-model fields carry **no JSON defaults**; world sub-records written
+by the olio principal via the `PbBookUtil` pattern, never the request user, never org admin; no `KontextCompiler`; no second recording
+flag; timings never thresholds. Out of scope: composition/actor/element models, `sceneElement.item`, `pb.compose`, layout, board Ux,
+`Flux2Compiler`, wardrobe (Phase 4); DIRECT_REFERENCE/inpaint/regional strategies and the Comfy graph compiler (Phase 5 — "background-first
+for DIRECT" means the plan **carries** the approved render); variants batches/retention (6); book workspace (7); QA (8); covers (9);
+PB1/Kontext removal (10); metre grid, `Look`/`Gather`, cells (never). Phase 4 seam: `olio.pb.scene.location` / `locationVariant` and
+`RenderPlan.Location` — not renamed. Per task: planner → architect → implement → test-author → verifier, security-reviewer on every new
+route / model / PBAC path / LLM prompt; Objects7/Service7 quick gate after each backend slice (⚠ §6.C 170 h); redeploy + prove live after
+each Service7/Objects7 slice; this doc after every slice; DONE for P3-n is Stephen's call (159 b pattern) — rows say IMPLEMENTED / TESTS
+GREEN / reviewed.
+
+| Id | Task | Design § | Files | Status | Tests | Last run | Date |
+|---|---|---|---|---|---|---|---|
+| P3-1 | Schema — `olio.pb.location` (name, description, `kind`, `world`, `aliases`, `poi`, `approvedRender`, `locked`) + `olio.pb.locationVariant` (`location`, name, timeOfDay, weather, season, viewpoint, extra, `approvedRender`), directory-derived in the world's existing `Locations` sub-group; `PbLocationKindEnumType` {UNKNOWN, INTERIOR, EXTERIOR, MIXED, ABSTRACT}; `PbNodeTypeEnumType.LOCATION` (`LANDSCAPE` stays); `olio.pb.scene.location` + `.locationVariant` nullable FKs (Phase 4 seam); `PbWatchedFields` `watched/v3`; both models in `OlioModelNames` | §7, §7.1, §11.1, §30 row 3 | Objects7 only — NEW `schema/type/PbLocationKindEnumType`, `models/olio/pb/locationModel.json`, `locationVariantModel.json`, test `TestPbLocationSchema`; EDIT `PbNodeTypeEnumType` (+`LOCATION`), `sceneModel.json` (+2 FKs), `OlioModelNames` (+2), `OlioFieldNames` (+10 constants), `PbWatchedFields` (`watched/v3`, two sets, `canonicalRef` artifact-by-objectId), `PbBookUtil.sceneRequest()` (+2 projections), `WorldUtil.cleanupWorld` (+2 `cleanupLocation` sweeps), `TestPbModelSchema.PB_MODELS` (+2) | **IMPLEMENTED 09:50 → 10:12; TESTS GREEN 10:15 → 10:21; jar installed 10:22, deployed 10:23 (md5 `b44efa8ba7faaaced97606ef1560ac59` local == container), REST-proven 10:28; architect PASS WITH CORRECTIONS (BLOCKER + 2 SHOULD adopted, ⚠ §6.C 170 b/c/e); security-reviewer PASS + verifier PASS 10:40 (⚠ 170 k–n, asks (3)–(5)); `case02` cleanup moved to `finally` 10:48, re-run 10:50 3/0/0/0 (`C:/tmp/p31-location2.log`); Objects7 quick gate run 14 **VOID** (copy lacked `am7/` key stores — mine, §4.4 row 14); **run 15 GREEN 10:51:15 → 13:49:05 — `Tests run: 1191, Failures: 3, Errors: 0, Skipped: 16`, reds = §6.A ×3 only, zero new; +3 tests vs run 13; skips identical to run 13 (§4.4 row 15)** | `TestPbModelSchema` 22/0/0/0 (`C:/tmp/p31-schema.log`), `TestPbLocationSchema` 3/0/0/0 (`C:/tmp/p31-location.log`), `TestPbGraph` 20/0/0/0 (`C:/tmp/p31-graph.log`) — all `BUILD SUCCESS`, zero `AUDIT DENY`; live `am7db`; in run 15 (module run): 22/0, 3/0, 20/0 (`C:/tmp/o7-run15-classify.txt`); §11.1 | 13:49 | 2026-10-16 |
+| P3-2 | Location resolver + POI link — Objects7 `olio/picturebook/PbLocationUtil`: `findByNameOrAlias(world, name)`, `getCreateLocation(...)` (olio principal, `Locations` group), `sameAs` merge (aliases appended, scenes re-pointed, duplicate deleted); POI rule 1 (map-free `olio.pointOfInterest` in `Points of Interest` + fresh `olio.store` in `Stores`), rule 2 (game world: name-match the placed POI, write nothing else), rule 3 `PointOfInterestUtil.findByName(ctx, name)`, rule 5 dangling `poi` repaired by `PbOrphanUtil`/`PbHealthUtil` (one new check code); `WorldUtil.deleteWorld` proven, not extended | §7.1, §7.2 rules 1–3, 5 | Objects7 only — NEW `olio/picturebook/PbLocationUtil` (resolver, `getCreateLocation`, `findByNameOrAlias`, `linkPoi` rules 1/2, `createMapFreePoi`, `poiTypeFor`, `isBookWorld`, `mergeLocations`, `deleteOrphanPoi`, `variantsOf`, `scenesReferencing`), test `objects/tests/TestPbLocationUtil` (5 cases); EDIT `PointOfInterestUtil` (+`newPointOfInterest(olioUser, world, type, name)` map-free overload, +`findByName(world, name)` / `findByName(ctx, name)`), `PbHealthUtil` (+`LOCATION_POI_MISSING` check + heal via `linkPoi`), `PbBookUtil` (+`locationVariantRequest()`), `PbDeleteUtil` (proposal sweep shared with P3-3) | **IMPLEMENTED (code written 10:55 → 13:50, security-hardened per ⚠ §6.C 171 a/l/m); TESTS GREEN 14:07** — `TestPbLocationUtil` run 1 13:57 → 13:59 `5/0/3/0` (test defect, mine: `String.valueOf(rec.get(…))` binds `valueOf(char[])` → `ClassCastException … cannot be cast to class [C` at `:264/:443/:486`; fixed at 5 sites with the codebase's `(Object)` cast), run 2 14:01 → 14:03 `5/1/0/0` (product defect, mine: `case04:486 MIXED + 'ruin' is a RUIN expected:<[RUIN]> but was:<[STRUCTURE]>` — `poiTypeFor` read the description only; now name + description, ⚠ §6.C 172 a), run 3 14:04 → 14:07 **5/0/0/0 `BUILD SUCCESS`**; regression 14:08 → 14:17 **31/0/0/0 `BUILD SUCCESS`**; security-reviewer PASS (read-only, ⚠ 171 q); jar install / deploy / live proof and the Objects7 quick gate **batched with P3-3** (⚠ 172 c); test-author + verifier passes pending | `TestPbLocationUtil` **`Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 166.6 s`** (`C:/tmp/p32-locutil3.log:24937`, `BUILD SUCCESS` `:24944`, `Finished at: 2026-10-16T14:07:36-05:00`; red runs `C:/tmp/p32-locutil.log:479`, `C:/tmp/p32-locutil2.log:491,540`); regression `TestPbLocationSchema` 3/0/0/0 (11.49 s), `TestPbModelSchema` 22/0/0/0 (19.74 s), `TestPbHealthGrants` 2/0/0/0 (124.0 s), `TestPbHealthOrgScan` 1/0/0/0 (153.6 s), `TestPbHealthStaleGraph` 2/0/0/0 (136.7 s), `TestPbOrphanScan` 1/0/0/0 (82.45 s) = **`Tests run: 31, Failures: 0, Errors: 0, Skipped: 0`** (`C:/tmp/p32-regress.log:190782`, `BUILD SUCCESS` `:190785`, `Total time: 08:51 min`); live `am7db`; no LLM, no SD call; §11.2 | 14:17 | 2026-10-16 |
+| P3-3 | Whole-book location pass + clustering migration — `pictureBook.cluster-locations` (one LLM pass per book over `olio.pb.scene.setting`, prompt template in Objects7 `resources/olio/llm/`), reviewable proposal list (`GET /{book}/locations/proposed`, accept per item), `PbMigrationUtil` (same pass + existing landscape images imported as unapproved renders, §28 step 3, idempotent, non-destructive), every LLM field through `NarrativeUtil.isMeaningful` | §7, §9 (read-only), §28 step 3 | Objects7 only — NEW `olio/picturebook/PbLocationUtil` pass half (`proposeLocations` ×2, `sanitizeForPrompt`, `proposalName`, `normalizeCluster`, `mergeCluster`, `kindOf`, `createProposal`, `writeProposal`, `applyCluster`, `statusOf`, `proposalRequest`, `listProposals`, `readProposal`, `requireProposal`, `acceptProposal`, `foldAliases`, `rejectProposal`, `normalizeAliases`), `schema/type/PbProposalStatusEnumType`, `models/olio/pb/locationProposalModel.json`, prompt `resources/olio/llm/prompts/pictureBook.cluster-locations.json`; EDIT `PbMigrationUtil` (+`importLandscapes`, +location pass, `ImportResult.landscapesImported` / `locationPass` / `locationProposals`), `PictureBookUtil` (`parseLlmJsonArray` lenient + repair + salvage, `dropEmptyElements`, `repairMissingColons`, `extractSingleShot` 7-arg), `util/JSONUtil` (+`getLenientList`), `LlmEmulator` (+`clusterLocations`), `OlioModelNames` / `OlioFieldNames`, `PbDeleteUtil` (proposal sweep), `TestPbModelSchema` (+proposal model); tests `objects/tests/TestPbMigration` (+`testImportV1BookLandscapesAndLocationPass`), NEW `objects/tests/TestPbLocationProposal` (4 cases, emulator), NEW `olio/picturebook/TestPbLocationPassLive` (1 case, live LLM), `olio/picturebook/TestLlmJsonArraySalvage` (11 → 15) | **IMPLEMENTED (code 14:20 → 15:33, parser hardened after the live red run); TESTS GREEN 15:38** — `TestPbLocationProposal` `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` (`p33-proposal.log:1153`, again `p33-salvage-proposal.log:1193`, `p33-passlive2.log:1515`); `TestPbLocationPassLive` **RED** 15:23 `Tests run: 1, Failures: 1, Errors: 0, Skipped: 0` (`p33-passlive.log:460`, `:512 …:187 expected:<1> but was:<0>` — the model's `"scenes",[1]` reply, ⚠ 173 l–m) → **GREEN** 15:37 `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 53.38 s` (`p33-passlive2.log:415`), `BUILD SUCCESS` (`:1522`); `TestPbMigration` `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0` (`p33-migration.log:744`, `p33-migration2.log:744`; one earlier red on a test-side title-vs-name assertion, ⚠ 173 j); `TestLlmJsonArraySalvage` `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0` (`p33-salvage2.log:91`). Live tier: `[LLM-GATE] route=litellm tier=local …` = the in-stack Ollama container via LiteLLM, not Azure, not `.42`. Fixture: 8 synthetic scenes, **not** AIME.pdf / Harlot's Eight (⚠ 173 s). Jar installed + deployed 15:40 (md5 `2e03a661…` local == container), live proof 15:41 (`p33-live.log`, 3 × http=200). Reviews: architect PASS WITH NOTES, security-reviewer PASS WITH NOTES (findings adopted as edits, compiled + run GREEN 19:16 → 19:31 — `TestLlmJsonArraySalvage` 15/0/0/0, `TestPbLocationProposal` 5/0/0/0, `TestPbLocationUtil` 9/0/0/0, ⚠ 174 d), verifier PASS (record corrections applied); **quick gate run 16 (15:47:13 → 18:58:02, copy of 15:46) `1205/4/0/16` = §6.A ×3 + `TestPbLocationPassLive:334`** (the model split the tavern from its taproom; product-fixed by `foldSubPlaces` + prompt rule, assertion untouched, re-run GREEN 1/0/0/0 19:22 `p33-live3.log`; fold security review PASS, two hardening edits re-run GREEN 20:48 `TestPbLocationProposal` 6/0/0/0, ⚠ 174 a–c, §4.4 row 16); post-review jar deployed 21:41 with P3-4 (md5 `56785b40…`, ⚠ 174 e) — not DONE (yours) | JUnit vs live LLM — `TestPbLocationPassLive` (synthetic 8-scene book; scenes 3/7/12 share one tavern proposal, accept → one location + POI + store, 3 scenes re-pointed, pass 2 settles it), `TestPbMigration` (+landscapes + pass, live), `TestPbLocationProposal` (emulator mechanics), `TestLlmJsonArraySalvage` (parser); `[LLM-GATE]` quoted in words in §11.3 | 15:38 (`p33-migration2.log`) | 2026-10-16 |
+| P3-4 | LOCATION node, render, approve/lock — `PbNodeExecutor` `LOCATION` per (location, variant), `scope=location|locationVariant` + `scopeRef` (handles `location@<8>` / `location_variant@<8>`; the original `scope="book"` wording superseded, ⚠ 175 b), Phase 2 plan path with `PbModelTaskEnumType.LOCATION` + TEXT_ONLY via `SdxlCompiler`; binds the location record + variant **after** render (`PbWatchedFields` `watched/v3`, `approvedRender` watched); RENDER_PLAN nodes bind their scene's location on every execution (`bindSceneLocation`), so approve stales dependent scenes in every chapter after `touch` / TTL (⚠ 175 k); artifacts (role `landscape`) in P1-4 review; approve promotes to `approvedRender`, reject clears it; `locked` (facade-only, broad: edits / approve / reject-approved / render / variants / delete / merge, 409; generic PATCH bypass demonstrated by case02, ⚠ 175 m) + `lock` route; seeding by reference from this book's selected scene landscapes (unselected, PENDING, ⚠ 175 e); chapter delete clears a dangling `approvedRender`; merge re-points world-wide with skipped-count; health check 12 `LOCATION_NODE_DANGLING`; 13 **book-scoped** routes `GET|POST /{book}/locations`, `GET|PATCH|DELETE /{book}/location/{id}`, `POST …/variants`, `POST …/render` → 202 job, `POST …/lock`, `POST /{book}/locations/propose`, `GET /{book}/locations/proposed` + `…/{pid}/accept|reject`, `POST /{book}/locations/merge` (deviation from §27's bare paths, ⚠ 175 a; §27 edited in place); `LOCATION_TEXT_ONLY` degradation and the plan's approved-render carry → P3-5 (⚠ 175 l) | §7, §7.1, §10, §11.1, §19, §27, §28, §29 | Objects7 `olio/picturebook/PbLocationUtil` (node subject, lock, variants, delete, merge, `subjectExists`), `PbServiceFacade` (location routes, `seedLocationNode`, `renderLocation`, approve/reject promotion), `PbArtifactUtil`, `PbNodeExecutor`, `PbPipelineUtil`, `PbWatchedFields`, `PbDeleteUtil`, `PbHealthUtil`, `PbNodeTypeEnumType`, `PbModelTaskEnumType`, `resources/models/olio/pb/locationModel.json`; Service7 `PictureBookService` :2369-2657; tests `TestPbLocationNode` (12), `TestPbLocationProposal` case07, `TestPbNodeExecutorTypes`, Service7 `TestPictureBookLocationRoutes` (8), Ux752 `e2e/pictureBookLocations.spec.js` (17) | **IMPLEMENTED + TESTS GREEN** (architect CHANGES-NEEDED → adopted; security-reviewer PASS WITH NOTES → hardened; verifier PASS WITH NOTES → fix slice written, **unrun**; gate run 17 in flight; ⚠ 175 a–y) — not DONE (yours) | `TestPbLocationNode` `Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 379.8 s` (`C:/tmp/p34-locnode3.log`, 23:41; case01 = "approve in chapter B stales chapter A's scene + chapter delete clears the pin", case08 live on `.39` `wallMs=19934`/`16310`, case07/09 `DEAD_SERVER`); `TestPbLocationProposal` 7/0/0/0 210.7 s (`p34-proposal2.log`); `TestPbLocationUtil` 9/0/0/0 222.1 s (`p34-locutil5.log`); `TestPbRenderPath` 10/0 + `TestPbReview` 7/0 (`p34-review-renderpath.log`); `TestPbNodeExecutorTypes` 2/0/0/0 (`p34-nodetypes.log`); Service7 `TestPictureBookLocationRoutes` `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 14.45 s` (`p34-s7routes3.log`, 23:53; owner / reader / stranger 403-404 legs); Playwright `pictureBookLocations.spec.js` `17 passed (1.2m)` (`pw-p34b.log`, 23:56; `PB_LLM_TESTS=1 PB_SD_TESTS=1 PB_LOC_DB_PROOF=1`, `[e2e-llm] route=litellm server=http://litellm:4000` = in-stack Ollama via LiteLLM, not Azure; SD `http://192.168.1.39:7801` SWARM `juggernautXL_ragnarokBy.safetensors`, location render 24 s / variant 15 s, `seeded:0, seedSkipped:3`; PNGs `test-results/p34-location-render.png` 1752848 B + `p34-location-variant-render.png` 1846078 B opened); every JUnit run `[LLM-GATE] route=litellm tier=local` + `SdTestGate` checkpoint `OfficialStableDiffusion/sd_xl_base_1.0.safetensors`; fix slice (case11 (e), case12) **not yet run** | 2026-10-16 23:56 (`pw-p34b.log`); gate run 17 pending | 2026-10-16 → 2026-10-17 |
+| P3-5 | Background-first in the plan — `PbRenderPlanUtil` fills §12's `RenderPlan.Location` {objectId, variant, revisionHash, renderArtifactId | null, text} from the scene's resolved location/variant (fallback `scene.setting`); location `revisionHash` in plan `inputs`; TEXT_ONLY with an approved render → init image at low creativity (⚠ architect: now, or Phase 5 `SEQUENTIAL_INPAINT`); DIRECT: plan field only | §12, §13, §19, §6.C 169 (2) | — | TODO | golden plan JSON with/without approved render; live scene render on `.39` from an approved location, PNG opened | — | — |
+| P3-6 | ChapBook optional locations — page may reference `olio.pb.scene.location`; set → TEXT_ONLY page compile appends location text + approved render as P3-5; unset → unchanged; v1 rollback untouched | §24 | — | TODO | one JUnit page render with location; ChapBook Playwright suite on `chapbook.renderPath=v3`; `TestChapBookRestContract` | — | — |
+| P3-7 | Ux752 location library (§26) — Locations tab: grid per location (description, kind, aliases, variants, render chain reusing P1-10 Use this/Approve/Reject), approve/lock, "used by scenes 3, 7, 12", proposed-locations review (accept / merge `sameAs` / dismiss), Render → async job with P1-10 stage progress; canvas shows LOCATION nodes | §26 | — | TODO | Vitest per component; Playwright exit criterion through the Ux (chromium, `--workers=1` for render) | — | — |
+| P3-8 | Phase gate and STOP — Objects7 (copy), Service7 (`MAVEN_ARGS=-o`), full Ux752 (chromium + chromium-vite, `:8898` Vite up) in one pass under a GREEN §3 probe; architect + security phase passes; independent phase verifier; §11.n closeout | §30, loop-engineering | — | TODO | expected pre-existing reds only (§6.A ×3; the 8 Ux752 reds of §4.7 run 4); `pictureBookV3StyleEditor` green; SD-gated skip under a GREEN probe = defect | — | — |
+
+### 11.1 P3-1 results — schema (2026-10-16, 09:43 → 13:49 local; gate run 14 VOID, run 15 GREEN)
+
+**Read-first (all done before the first edit):** `llm-conduct.md`, `architecture.md`, `model-api.md`, `troubleshooting.md`,
+`objects7-reference.md` (Path 1: a column-backed field is JSON + restart; a nullable enum column must declare `UNKNOWN`), this doc §1 / §5 /
+§6 (every open item, 169 in full) / §10.10, design §7, §7.1, §7.2, §8, §9 (read-only), §10, §11, §11.1, §12, §13, §19, §24, §26, §27, §28
+step 3, §29, §31, §32, §34; then `PbWatchedFields`, `PbBookUtil` (`findBookBySlug` / `openBookContext` / `createScene` / `sceneRequest`),
+`BookContext`, `WorldFactory` (group list — `Locations` already on every world), `WorldUtil.cleanupWorld` / `deleteWorld`,
+`BookWorldInitializationRule` (untouched), `TestPbStyleSchema` / `TestPbV3Schema` / `TestPbModelSchema` for the test idiom.
+
+**Plan → architect (09:45 → 09:50).** Planner: additive, column-backed, boot-patched; both models shaped like `olio.pb.style`
+(`likeInherits data.directory`, `inherits common.groupExt / common.baseLight / common.urn`, the PB `query` list, `constraints [name,
+groupId, organizationId]`, `hints` on the FKs, no `dedicatedParticipation`, no JSON `default`); `aliases` a non-foreign `list<string>`
+(persists as `text`); scene FKs nullable, no hint. Architect: **PASS WITH CORRECTIONS**, all adopted — BLOCKER: `canonicalRef` must not
+hash an `olio.pb.artifact` by `name` (names collide across per-chapter `Artifacts` groups) → by `objectId` (⚠ 170 b); SHOULD: location rows
+in the `Locations` group survive `deleteWorld` because `cleanupOrphans` runs before `deleteGroupTree` → two `cleanupLocation` sweeps in
+`WorldUtil.cleanupWorld` (⚠ 170 c); SHOULD: the JUnit creates through `AccessPoint` as a plain user with `name` set explicitly (PB models
+do not inherit `common.name`) and treats a null create as a finding, not a skip (⚠ 170 e). NOTE (not acted on): an index on
+`scene.location` (⚠ 170 d, ask (1)).
+
+**Implemented (09:50 → 10:12).** Files in the P3-1 row. `OlioFieldNames` gained `FIELD_PB_KIND`, `FIELD_PB_ALIASES`, `FIELD_PB_POI`,
+`FIELD_PB_APPROVED_RENDER`, `FIELD_PB_LOCATION_VARIANT`, `FIELD_PB_TIME_OF_DAY`, `FIELD_PB_WEATHER`, `FIELD_PB_SEASON`, `FIELD_PB_VIEWPOINT`,
+`FIELD_PB_EXTRA` (`FIELD_PB_WORLD` / `FIELD_PB_LOCKED` reused). `PbWatchedFields`: `WATCHED_SET_VERSION = "watched/v3"`, `PB_LOCATION`
+{name, description, kind, approvedRender}, `PB_LOCATION_VARIANT` {timeOfDay, weather, season, viewpoint, extra, approvedRender},
+`canonicalRef` artifact-by-objectId; `projection(model)` logs ERROR and skips a watched field missing from the schema (none is).
+Compiled clean (IDE diagnostics 0 after the missing `OlioFieldNames` import was added; `javap` on the installed jar shows the five enum
+constants and no "Unresolved compilation" stub in `PbWatchedFields` / `WorldUtil`).
+
+**Tests (10:15 → 10:21, live `am7db` on `postgres3:15432`, one Maven at a time, probe 10:14:40 GREEN):**
+```
+C:/tmp/p31-schema.log    [INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 29.78 s -- in org.cote.accountmanager.objects.tests.TestPbModelSchema   BUILD SUCCESS (01:06 min)
+C:/tmp/p31-location.log  [INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 16.00 s -- in org.cote.accountmanager.objects.tests.TestPbLocationSchema   BUILD SUCCESS (20.570 s)
+C:/tmp/p31-graph.log     [INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 169.6 s -- in org.cote.accountmanager.objects.tests.TestPbGraph   BUILD SUCCESS (02:54 min)
+```
+`AUDIT DENY` count 0 in all three logs. `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr
+server=http://127.0.0.1:4000` on each (the in-stack Ollama container via LiteLLM — no P3-1 test calls it). Path 1 observed in
+`p31-schema.log`: `Schema patch: ALTER TABLE A7_olio_pb_scene_0_1 ADD COLUMN location bigint;` / `… ADD COLUMN locationVariant bigint;`
+and `A7_olio_pb_location_0_1 -> [[id], UNIQUE [name, groupid, organizationid], [world], [poi], [objectid], [urn]]`,
+`A7_olio_pb_locationVariant_0_1 -> [[id], UNIQUE [name, groupid, organizationid], [location], [objectid], [urn]]`. The two
+`[ERROR] DBWriter … duplicate key … a7_olio_pb_book_0_1_sg_od_1_idx` lines in the schema log are `TestPbModelSchema`'s expected
+duplicate-slug case. The first `TestPbLocationSchema` run (10:16) was red on my test bug — `assertEquals(bc.getWorld().get(FIELD_ID),
+worldRef.get(FIELD_ID))` resolved to the `Object[]` overload (`ClassCastException` at `:254`); fixed with explicit `(Long)` casts, re-run
+3/3 (the log above is the re-run).
+
+What the three cases prove (`TestPbLocationSchema`, `testUser1` in `/Development/World Building`, book `pb2c-graph`, every create through
+`AccessPoint.create` as that user, every read fresh with `setCache(false)`, every patch via the field-name `newInstance` idiom):
+- `case01_locationVariantAndSceneFksRoundTrip` — location created in the world's `Locations` group (`groupId` == `BookContext.getGroup
+  (locations).id`) with name / description / `kind=INTERIOR` / two aliases / `world` FK; all read back (`getEnum` INTERIOR, aliases equal,
+  world id equal, `locked` FALSE, `poi` / `approvedRender` null); variant with `location` FK + five deltas read back; patch `kind→MIXED`,
+  `locked→TRUE` leaves the other fields intact; a scene created by `PbBookUtil.createScene` projects both FKs null, a patch sets them,
+  `readScene` resolves both by `objectId`; list by (name, groupId, organizationId) → exactly 1; a null-carrying patch clears both FKs
+  (⚠ 170 f); delete variant then location → both re-reads null.
+- `case02_watchedSetDetectsTheEditsItDeclares` — `WATCHED_SET_VERSION == "watched/v3"`, both models in `watchedModels()`, exact watched
+  lists, every watched field on the schema and in `projection()`; `computeRefHash` deterministic; an `aliases` patch (unwatched) leaves
+  the hash unchanged; `kind` and `description` patches change it; `approvedRender` = artifact A (persisted by `PbArtifactUtil.persistArtifact`
+  under a real `LOCATION` node of the book's workflow) → canonical contains `approvedRender=<A.objectId>` and not the name, hash changes;
+  `approvedRender` = artifact B (same name, built in `~/PbLocationRefs`) → hash differs from A's; the variant's `weather` and
+  `approvedRender` patches change the variant hash.
+- `case03_sparseLocationReadsUnknownKindAndEnumsHaveThePhase3Shape` — `PbLocationKindEnumType.values()` == [UNKNOWN, INTERIOR, EXTERIOR,
+  MIXED, ABSTRACT], `PbNodeTypeEnumType` has LOCATION and LANDSCAPE; a location created without `kind`/`world` reads `kind=UNKNOWN`,
+  `world`/`poi`/`approvedRender` null, `locked` FALSE.
+All fixtures deleted in `finally`.
+
+**Install + deploy (10:22 → 10:23).** `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` exit 0 in the shell (`-q`: the log
+`C:/tmp/p31-install.log` carries only JVM warnings, so the evidence is the md5 chain below, not the log — verifier §5; jar
+3,249,495 bytes 10:22, `target/` == `~/.m2`). `javap` on the jar: `PbLocationKindEnumType` ×5 constants, `PbWatchedFields.WATCHED_SET_VERSION` / `canonicalRef`,
+0 "Unresolved compilation"; both location JSONs and the `locationVariant`-bearing `sceneModel.json` present. `docker cp` →
+`am7test-am7-1:/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/`, `docker restart am7test-am7-1`; md5 local == container
+`b44efa8ba7faaaced97606ef1560ac59`. Container log (UTC): `15:23:10 Schema patch: ALTER TABLE A7_olio_pb_scene_0_1 ADD COLUMN location
+bigint;` + `locationVariant bigint;`, `15:23:17 Server startup in [16952] milliseconds`; `/rest/setup/state` → 200; `am7-pg`'s `am72db`
+now has `a7_olio_pb_location_0_1`, `a7_olio_pb_locationvariant_0_1` and scene columns `location`, `locationvariant` (read-only check).
+
+**Live REST proof (10:27 → 10:28, as `e2etest_shared`, read-only — ⚠ 170 i).** `POST /rest/login` 200; `GET /rest/schema` 200 (232 models,
+`C:/tmp/p31-schema-all.json`): `olio.pb.location` lists name / description / kind (`PbLocationKindEnumType`) / world (`olio.world`, foreign) /
+aliases (list string) / poi (`olio.pointOfInterest`, foreign) / approvedRender (`olio.pb.artifact`, foreign) / locked; `olio.pb.locationVariant`
+lists name / location / timeOfDay / weather / season / viewpoint / extra / approvedRender; `olio.pb.scene` lists `location` + `locationVariant`.
+`POST /rest/model/search` `{type: olio.pb.location, organizationId 2 (number), cache:false}` → 200 `"response":"succeeded"`
+(`C:/tmp/p31-search-location.json`); container log: `AUDIT PERMIT system.user e2etest_shared to READ 000-olio.pb.location--id-unk-0-5 [*]
+[id, objectId, name, kind, locked] [*] [*] (organizationId = 2)`. (`GET /rest/schema/{type}` is admin-only → 403 for the shared user, by design.)
+
+**Quick gate (⚠ 170 h).** `C:/tmp/o7verify` recreated 10:29 (`src/.` + `pom.xml`; `diff -rq` 0; `POM_SAME`); run 14 launched 10:29:42
+(`C:/tmp/o7verify-gate-p31.start`) as `AM7_UX752_MEDIA=…/AccountManagerUx752/public/media LOOP_ROOT=C:/tmp/o7verify
+LOOP_MODULE=AccountManagerObjects7 MAVEN_ARGS=-o bash .claude/loop/verify.sh --quick > C:/tmp/o7verify-gate-p31.log`; `PASS (build)` at
+~10:30. **Run 14 finished 10:43:35 `VERIFY_FAILED` — `[ERROR] Tests run: 1191, Failures: 815, Errors: 0, Skipped: 6` — and is VOID,
+my defect, not a test result** (§4.4 row 14, ⚠ 170 h): the recreated copy lacked the gitignored `am7/` key stores and `media/` that
+every earlier copy had as symlinks, so every DB-backed class failed in `BaseTest.resetIO:217` on `Key store does not exist at
+./am7/.jks/1/keystore.jks` → `Organization already exists`; the 38 green classes are the DB-less ones; no P3-1 class reached a test
+body. Reports moved to `target/surefire-reports.run14-void/`. Fixed by restoring two junctions (`am7`, `media` → the working tree),
+not by touching any test or product file. **Run 15** launched 10:52 on the refreshed copy (`src` re-copied 10:50 — includes the
+`case02` cleanup edit; `diff -rq` 0; `POM_SAME`; probe 10:49:25 GREEN; `C:/tmp/o7verify-gate-p31b.log`, stamp
+`C:/tmp/o7verify-gate-p31b.start`): `PASS (build)`, `TestCleanupOrphansTemplate` (run 14's first casualty) 2/0/0/0.
+**Run 15 finished 13:49:05 (`.end` stamp) — `VERIFY_FAILED`, `GATE_EXIT=1`, `[ERROR] Tests run: 1191, Failures: 3, Errors: 0, Skipped: 16`
+(`C:/tmp/o7verify-gate-p31b.log:54,67-68`; classification `C:/tmp/o7-run15-classify.txt`, 186 XMLs newer than the 10:51:15 stamp).** The 3 reds
+are §6.A ×3 exactly — `TestPbDeleteSeries:119`, `TestPbListSeriesBooks:138`, `TestPbSeriesCast:532` (yours) — **zero new reds**. vs run 13
+(`1188/4/0/16`): +3 tests = `TestPbLocationSchema` 3/0/0/0 (7.5 s); `TestPbModelSchema` 22/0/0/0 and `TestPbGraph` 20/0/0/0 green inside the
+module run; row 13's 4th red (`TestChatSceneRenderUtil:459`, my test-only fix) is now green in a **module** run (10/0/0/0, 19.1 s), closing
+the ⚠ 169 n "class re-run only" caveat. Skipped 16 = the identical list to run 13 (15 policy env-flag skips + the `.39` Kontext-checkpoint
+skip, "This is NOT a pass" — install is yours); none counted as a pass; 0 `Key store does not exist` lines. Full row: §4.4 row 15.
+
+**`TestPbLocationSchema` re-run (⚠ 170 n), 10:49:56 → 10:50:17, after the 10:49:25 probe and before run 15 (one Maven at a time):**
+```
+C:/tmp/p31-location2.log  [INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 14.36 s -- in org.cote.accountmanager.objects.tests.TestPbLocationSchema   BUILD SUCCESS
+```
+zero `AUDIT … admin`, zero `DENY`; `case02`'s `finally` cleanup ran on the success path (no leak into `pb2c-graph`).
+
+**Reviews.** Architect (task-level, 09:50): PASS WITH CORRECTIONS — above. Security-reviewer and verifier (both read-only, no JVM,
+10:33 → 10:40, beside the gate — ⚠ 170 j):
+- **Security-reviewer: PASS.** No finding on the model JSONs (same `name, groupId, organizationId` constraint and no `access` block as
+  every PB sibling), on the watched-set read (`readProjected` → `AccessPoint.find` → `canRead`; unreadable → null, never a hash), on
+  secrets / SQL (all `QueryUtil`) / prompts (nothing under `resources/olio/llm/` changed; the compliance directive untouched). One
+  SHOULD, **pre-existing and outside P3-1**: `OlioService.deleteWorld` READ-gates then elevates to the olio principal with no
+  `canDelete` (→ ⚠ 170 l, ask (4)). Notes carried to P3-4: foreign-FK update is READ-gated on the target and no same-world check exists
+  → explicit checks + a stranger test; `locked` invisible to generic PATCH (169 (3)); unbounded `text` columns → cap aliases on the
+  write path; `findByNameOrAlias` via `Query.field`; shared `Locations` group in a series (→ ⚠ 170 m). Tests: no admin as the asserting
+  principal (admin only in the standard `getCreateUser` fixture), no schema reset.
+- **Verifier: PASS.** Logs confirmed line-for-line (`p31-schema.log:144,151`, `p31-location.log:145,152` — 69 audit lines all
+  `system.user testUser1`, zero `admin`, zero DENY —, `p31-graph.log:50880,50887`; boot DDL `:67-68`, pg_indexes `:133-134`);
+  `TestPbLocationSchema` judged real (every create via `AccessPoint.create`, every read `setCache(false)`, literal-value asserts,
+  hash discrimination proven at `:443-455`); the tracked diff artefact equals the live `git diff`; `canonicalRef`'s artifact branch is
+  unreachable for the CHAR_PERSON / APPAREL / DATA sets, so their canonical strings change **only** by the `watched/v3` prefix; both
+  models in `PB_MODELS` with no skip list; no `default`, `UNKNOWN` declared, FKs nullable, nothing inherited re-declared;
+  `dedicatedParticipation:false` correct. SHOULD surfaced to Stephen: the v2→v3 bump re-binds every existing book once (→ ⚠ 170 a,
+  strengthened). NOTEs: variant unique key is per world, not per location (→ ⚠ 170 k, ask (3)); `case02` success-path-only cleanup →
+  fixed (⚠ 170 n); `case03:519` weak assertion → left, recorded; `p31-install.log` has no BUILD SUCCESS line (`-q`) → wording fixed
+  above; `p31-cookies.txt` (live session) + three 403-page json files → deleted; `PbNodeExecutor.EXECUTABLE_TYPES` excludes LOCATION
+  (correct — P3-4).
+
+**Status.** P3-1 is **IMPLEMENTED, TESTS GREEN (3 classes, 45/0/0/0 + the `case02`-cleanup re-run 3/0/0/0), deployed, REST-proven,
+architect / security / verifier PASS; quick gate run 14 VOID (copy defect, mine), **run 15 GREEN 13:49:05 — `1191/3/0/16`, reds = §6.A ×3
+only, +3 tests, skips identical to run 13** (§4.4 row 15)** — not DONE (yours).
+
+### 11.2 P3-2 results — location resolver + POI link (2026-10-16, 10:55 → 14:17 local)
+
+**What changed (Objects7 only).** NEW `olio/picturebook/PbLocationUtil.java` (LF): `requireBookContext` / `requireBookUpdate` (strict
+`canUpdate` PERMIT on the book re-read by objectId, ⚠ 171 a), `olioUser`, `findByNameOrAlias(actor, bctx, name)` (case-insensitive,
+trimmed, name **or** alias, `Query.field` + `Locations` group), `listLocations`, `getCreateLocation(user, book, name, description, kind,
+aliases)` (olio principal, `name` set explicitly — PB models declare `name` themselves so `applyNameGroupOwnership` skips it; no repair on a
+hit, ⚠ 171 b; caps ⚠ 171 i), `linkPoi(olioUser, world, location)` (rule 1 in a book world: store first, then a map-free
+`olio.pointOfInterest` with `location` NULL, `east`/`north` −1, `concealed=false`, `type` = `poiTypeFor(kind, name, description)`, ⚠ 172 a;
+rule 2 in a game world: `PointOfInterestUtil.findByName(world, name)` links exactly one placed POI, 0 or 2+ → `poi` stays null, ⚠ 171 g),
+`poiExists` (row lookup — a deleted FK target reads back as an id-only stub), `isBookWorld` (path-only, ⚠ 171 c), `mergeLocations(user,
+book, duplicate, survivor)` (scenes **and** variants re-pointed as the user with `canUpdate` on each scene before any write, aliases folded
+as the olio principal with 409 over `MAX_ALIASES` before any write, the duplicate's map-free POI + store deleted only under the D4 guard,
+duplicate deleted via `deleteRecordExplained`, `PbStaleUtil.touchBook` + `touch(dup)` in `finally`; ⚠ 171 d/e/j/k/n), `deleteOrphanPoi`,
+`scenesReferencing`, `variantsOf`, `readAs`/`rereadAs`. EDIT `PointOfInterestUtil` (CRLF): `newPointOfInterest(olioUser, world, type, name)`
+map-free overload (sets `name`, never `location`/`east`/`north`), `findByName(world, name)` + the design-named `findByName(ctx, name)`
+(§7.2 rule 3); the painter's never-set `name` is pre-existing and yours (⚠ 171 h, ask (2)). EDIT `PbHealthUtil` (LF): `auditLocations` lists
+as the olio principal (⚠ 171 p) and reports `LOCATION_POI_MISSING` (WARN) when `poi` is unset **or** its row is gone; `healBook` re-runs
+`linkPoi` — reported **and** repaired (⚠ 171 f). EDIT `PbBookUtil` (CRLF): `locationVariantRequest()`. No Service7 change (routes are P3-4),
+no model change beyond P3-1, no cleanup code added — design §7.2's "`WorldUtil.deleteWorld` already cleans the world's POI and store groups"
+holds and `case03` proves it. Tracked diff and `git status`: §11 files column.
+
+**Probe.** §3 13:56:41 (`C:/tmp/probe-p3-2.log`) GREEN — `.39 http=200`, container `swarm39=302 llm42=200 litellm=200`, `.42` 14 models,
+`postgres3` open, `am7test` 200. Five serial Maven runs followed (timestamps in the §3 block); no probe beside a run.
+
+**`TestPbLocationUtil` (`objects/tests/`, 5 cases, `/Development/World Building`, `testUser1` + stranger `p32Stranger`, admin only inside the
+standard `getCreateUser` fixture, never the asserting principal; every book removed in `finally` via `PbDeleteUtil.deleteBookComplete`).**
+- `case01_sameSettingThriceIsOneLocationOnePoiOneStoreAndStrangerIsRefused` — "The Gilded Tankard <id>" / "A low-beamed tavern by the quay"
+  INTERIOR resolved three times (`"The Gilded Tankard …"`, alias `"the tavern"`, `"  THE TANKARD "` — case/whitespace/alias) → **one**
+  `olio.pb.location`, **one** map-free POI (`type=COMMERCIAL`, `location` null, `east=-1`, `north=-1`, `name` set) in the world's
+  `Points of Interest`, **one** `olio.store` in `Stores`, counted by fresh `setCache(false)` list queries as the olio principal; `p32Stranger`
+  (cannot read the book) is refused **404** before 403 (`requireBook` → `requireBookUpdate`, ⚠ 171 a) and creates nothing.
+- `case02_gameWorldLinksThePaintedPoiByNameAndCreatesNothing` — the Olio test game world (`isBookWorld` false); a POI planted the painter's
+  way (`newPointOfInterest(ctx, RESOURCE, cell, name, 3, 4)`) and then **named explicitly** because the painter never sets `name` (⚠ 171 h);
+  `PointOfInterestUtil.findByName(ctx, name)` sees exactly it (rule 3); `linkPoi` on a planted location of that name links `location.poi` to
+  the planted row, which keeps its placement (`east=3`, `north=4`); a second location named for no placed POI stays `poi` null; POI, store
+  and `data.geoLocation` counts do not move (rule 2 creates nothing).
+- `case03_deletingTheBookRemovesLocationVariantPoiAndStore` — "Harbour Steps <id>" / "Weed-slick stone steps down to the water" EXTERIOR
+  (→ `STRUCTURE`) plus one `olio.pb.locationVariant`; after `PictureBookUtil.deleteBookComplete` the location, variant, POI and store rows are
+  all gone (raw row lookups by id), proving the exit criterion "deleting the world removes both" through `WorldUtil.deleteWorld`'s existing
+  sweeps (+ P3-1's two `cleanupLocation` sweeps) — not through the REST route (⚠ 171 t, ask (3)).
+- `case04_danglingPoiIsReportedAndHealedByRecreatingIt` — "Old Mill Ruin <id>" / "the burnt-out mill above the weir" MIXED; the POI row is
+  deleted underneath the location (FK left dangling, no DB constraint); `PbHealthUtil.checkBook` reports exactly one `LOCATION_POI_MISSING`
+  (WARN) naming the location's objectId; `healBook` re-creates the POI (**`type=RUIN`** — the assertion that caught ⚠ 172 a) and its store; a
+  second `checkBook` reports none.
+- `case05_mergeRepointsScenesFoldsAliasesAndRemovesTheDuplicateWithItsPoi` — survivor "The Lantern Inn <tag>" (alias `the inn`) + duplicate
+  "Lantern taproom <tag>" (aliases `the taproom`, `The Inn`), each with its own POI + store; scene 3 bound to the duplicate via a scene PATCH
+  as the user; `mergeLocations(u, bk, dup, survivor)` → the scene reads the survivor; survivor `aliases` = exactly 3 (`the inn`, `Lantern
+  taproom <tag>`, `the taproom` — `The Inn` is a case-duplicate and is not added twice); survivor's POI id unchanged and its row present; the
+  duplicate, its POI and its store rows gone (−1 / −1 / −1 in the three groups, the D4 guard); resolving `"the taproom"` afterwards returns
+  the survivor. (Variant re-pointing, ⚠ 171 k, is exercised by no case yet — recorded, not claimed.)
+
+**Runs (`cd src && mvn -o -pl AccountManagerObjects7 -Dtest=TestPbLocationUtil -DskipTests=false test`).**
+1. 13:57:33 → 13:59:52 `C:/tmp/p32-locutil.log` — `[ERROR] Tests run: 5, Failures: 0, Errors: 3, Skipped: 0, Time elapsed: 140.8 s` (`:479`),
+   `BUILD FAILURE`. All three `java.lang.ClassCastException: class java.lang.String cannot be cast to class [C` at `TestPbLocationUtil.java:264`
+   (`case01`), `:443` (`case03`), `:486` (`case04`) — **my test defect** (`String.valueOf(rec.get(…))` → `valueOf(char[])`, ⚠ 172 b); `case02`
+   and `case05` green. Fixed at the 5 `String.valueOf(…get(` sites with `(Object)`.
+2. 14:01:13 → 14:03:42 `C:/tmp/p32-locutil2.log` — `[ERROR] Tests run: 5, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 150.8 s` (`:491`),
+   `BUILD FAILURE`: `TestPbLocationUtil.case04_danglingPoiIsReportedAndHealedByRecreatingIt:486 MIXED + 'ruin' is a RUIN expected:<[RUIN]>
+   but was:<[STRUCTURE]>` (`:540`) — **my product defect**: `poiTypeFor` matched the description only and "ruin" was in the name. Fixed
+   (`poiTypeFor(kind, name, description)`, ⚠ 172 a); `case01`–`03`, `05` green.
+3. 14:04:51 → 14:07:36 `C:/tmp/p32-locutil3.log` — **`[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 166.6 s -- in
+   org.cote.accountmanager.objects.tests.TestPbLocationUtil`** (`:24937`), **`BUILD SUCCESS`** (`:24944`), `Total time: 02:50 min`,
+   `Finished at: 2026-10-16T14:07:36-05:00`. Audit: 9 `AUDIT DENY` = 1 `p32Stranger` (`case01`'s asserted refusal, `:263`) + 8 `testUser1 …
+   READ data.note (name = ".pictureBookMeta" …)` — deny-as-miss inside `deleteBookComplete`'s legacy meta-note lookup, pre-existing, not
+   P3-2's (⚠ 172 d, ask (3)); zero `admin` lines; 5 books created = 5 removed.
+4. Regression 14:08:29 → 14:17:16 `C:/tmp/p32-regress.log` (`-Dtest=TestPbLocationSchema,TestPbModelSchema,TestPbHealthGrants,TestPbHealthOrgScan,
+   TestPbHealthStaleGraph,TestPbOrphanScan`): `TestPbLocationSchema` `Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.49 s`
+   (`:145`), `TestPbModelSchema` 22/0/0/0 19.74 s (`:224`), `TestPbHealthGrants` 2/0/0/0 124.0 s (`:43169`), `TestPbHealthOrgScan` 1/0/0/0
+   153.6 s (`:141270`), `TestPbHealthStaleGraph` 2/0/0/0 136.7 s (`:190578`), `TestPbOrphanScan` 1/0/0/0 82.45 s (`:190778`) — **`[INFO] Tests
+   run: 31, Failures: 0, Errors: 0, Skipped: 0`** (`:190782`), **`BUILD SUCCESS`** (`:190785`), `Total time: 08:51 min`. The health classes
+   exercise `PbHealthUtil.checkBook` / `healBook` / the org scan with the new `auditLocations` pass in the loop (zero `LOCATION_POI_MISSING`
+   on books without locations, as expected). 65 `AUDIT DENY`: 62 `.pictureBookMeta` deny-as-miss (`pbHealthScan` 32, `pbHealthOwner` 30),
+   2 `pbHealthStranger` asserted refusals, 1 `pbHealthOwner MODIFY olio.pb.workflow` in `TestPbHealthStaleGraph`'s dead-row scenario (⚠ 172 d).
+
+LLM tier in every run: `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` — the
+in-stack Ollama container through LiteLLM (not Azure, not `.42`); **no P3-2 test calls an LLM** — the line is `BaseTest.setup()`'s probe. No
+SD call, `Skipped: 0` throughout, no SD-gated skip to report. Timings recorded, not asserted.
+
+**Reviews.** Security-reviewer **PASS** read-only beside gate run 15 (findings adopted: book re-read before the gate, closed existence oracle,
+generic client errors — ⚠ 171 a/l/m; recorded-only: ⚠ 171 q i–iv). Architect corrections from the P3-2 plan adopted (⚠ 171). **Test-author
+pass done 16:00 (read/write, no run):** `TestPbLocationUtil` gained case06 (merge re-points the duplicate's `locationVariant` to the
+survivor, ⚠ 171 k), case07 (alias overflow is 409 before any write — survivor at the 32 cap + name + 1 alias = "34 aliases",
+`PbLocationUtil.java:433-434`, ⚠ 171 j), case08 (a stranger's merge is 404 from `requireBookUpdate`'s re-read, `:102-104`, nothing written)
+and case09 (game world, two painted POIs of one name → `linkPoi` false, `poi` null, nothing created, `:283-287`, ⚠ 171 g) plus helpers
+`variantsPointingAt` (record-valued `location` condition, uncached) and `aliasesOf`; 902 lines, LF. Each case checked against the code it
+cites; **all four UNRUN** until the gate releases Maven (log to `C:/tmp/p32-locutil4.log`). **Verifier pass done 16:03 (read-only, beside
+the gate): PASS** — every claimed surefire line re-read from disk and matched (`p32-locutil3.log:24937`, `p32-regress.log:190782`); no
+weakened test, no timing threshold, no admin principal asserting; coverage gaps (172 g) confirmed and now case06–09; one record correction
+for P3-3 (⚠ 173 j) and one design-wording correction (⚠ 173 v).
+
+**Done for P3-2 with P3-3 (⚠ 172 c), 15:40 → 15:41:** `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` (`p33-install.log`, JVM
+warnings only, no exit marker — ⚠ 173 w) → `javap` over the new/edited classes, 0 `Unresolved compilation` → `docker cp` of
+`AccountManagerObjects7-7.0.0-SNAPSHOT.jar` (3,303,461 bytes) into `am7test-am7-1:/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/`
++ `docker restart am7test-am7-1` → md5 `2e03a66103a54feee242737cca489a86` local == container → `Server startup in [14131] milliseconds`
+→ live proof as `e2etest_shared` (`p33-live.log`: `POST /rest/model/search` on `olio.pb.location`, `olio.pb.locationVariant`,
+`olio.pb.locationProposal` each http=200 with 0 rows in `/Development`, `/search/count` 200, logout 200 — registration proven; the routes
+are P3-4). The Objects7 quick gate is run 16 (launched 15:47:13, §4.4 row 16 when it ends). **That jar predates the post-review edits of
+16:00 (⚠ 173 t) — a second install + deploy follows the targeted re-runs.**
+
+**Status.** P3-2 is **IMPLEMENTED, TESTS GREEN (`TestPbLocationUtil` 5/0/0/0 after one test fix + one product fix; regression 31/0/0/0),
+security-reviewer PASS, verifier PASS, deployed + live-proven 15:41, test-author's case06–09 written (UNRUN)** — quick gate run 16 in
+flight; not DONE (yours).
+
+### 11.3 P3-3 results (2026-10-16, 14:20 → 16:10)
+
+**What was built.** The whole-book location pass and its migration half, Objects7 only (no Service7 or Ux752 change; the routes are P3-4):
+
+- `PbLocationUtil` pass half (`:636` → `:1358`): `proposeLocations(user, book, chatConfigName)` (`:636`; null → the user's `generalChat`,
+  unknown name → 404) and `proposeLocations(user, book, chatConfig)` (`:663`) chunk the book's scenes that carry a meaningful `setting`,
+  render `pictureBook.cluster-locations` with the known locations (name + aliases) and the `#<n>: <setting> - <title>` lines, call the LLM
+  through the ChapBook path (`callLlmForChapBook` → `resolvePrompt`), parse each reply with `extractSingleShot(…, okOut)`, normalize every
+  cluster (`normalizeCluster` :843 — whitelisted keys only, `NarrativeUtil.isMeaningful` on every string, `kindOf` :928 case-insensitive
+  enum, `sceneObjectIds` from the scene numbers, `sameAs` matched against known locations as the olio principal and dropped with a warning
+  when unknown), merge clusters naming the same place (`mergeCluster` :896), write one `olio.pb.locationProposal` per cluster
+  (`createProposal` :970 / `writeProposal` :992, name `proposal-<slug>`, `PROPOSED`, stamped `passRun`; a re-proposed cluster updates its
+  row, a cluster matching an `ACCEPTED` row is `settled`), fold `sameAs` aliases into the known location unless `locked` (`foldAliases`
+  :1222), and retire stale `PROPOSED` rows only after a complete pass (retire loop :795-811). `listProposals` (:1059; book record +
+  numeric org + numeric `groupId`, `setCache(false)`), `readProposal` / `requireProposal` (same-book check), `acceptProposal(user, book,
+  proposal, overwriteSceneLocation)` (:1112; 409 unless `PROPOSED`; P3-2's `getCreateLocation` + `linkPoi` as the olio principal; scenes
+  re-pointed as the user with `canUpdate` per scene; result `created / repointed / skipped / folded / warnings`), `rejectProposal` (:1273).
+  `LocationPassResult` carries counts only (`scenesConsidered`, `scenesSkipped`, `chunks`, `chunksParsed`, `proposed`, `updated`, `settled`,
+  `retired`, `hardFailure`, `warnings`) — "Counts, never timings".
+- `PbMigrationUtil.importV1Book` (:126): after the scene import, `importLandscapes` (:417 — one `landscape` IMAGE artifact per PB1
+  `landscapeObjectId` found through `findData` as the user, on the canonical LANDSCAPE node `landscapeHandle(sceneOid)` created
+  `scope=scene` when absent, non-empty chain skipped, `persistArtifact(ROLE_LANDSCAPE, IMAGE, data)` referencing the PB1 blob, node
+  `DONE_UNVERIFIED`) and the location pass (`proposeLocations(user, book, null)` wrapper :505-520); both non-fatal, reported through
+  `ImportResult.landscapesImported` / `locationPass` / `locationProposals` / `warnings`; the Service7 transport map
+  (`PictureBookService.java:2300-2330`) is untouched (architect C7 → P3-4).
+- `PictureBookUtil.parseLlmJsonArray(response, context, failedExtractions, okOut)` (:4116): `stripThink`, fence strip, slice first `[` … last
+  `]`, lenient whole parse (`JSONUtil.getLenientList` :129 — `ALLOW_UNQUOTED_FIELD_NAMES`, `ALLOW_TRAILING_COMMA`, `ALLOW_SINGLE_QUOTES`,
+  `ALLOW_UNESCAPED_CONTROL_CHARS`, `ALLOW_JAVA_COMMENTS`, `ALLOW_MISSING_VALUES`) → ok + `dropEmptyElements` (:4192); else
+  `repairMissingColons` (:4265, grammar walk with a container stack, returns the input when nothing was repaired) and a second lenient parse
+  → ok + WARN `Recovered <ctx> by repairing N missing colon(s) after a key`; else WARN `Failed to parse LLM JSON array: <error>` and
+  element-wise salvage (`salvageArrayElements` :4209) of the original and, when repairs were made, the repaired text — the larger wins — into
+  a `KIND_PARSE` failure record (`Salvaged N element(s) from a malformed JSON array; …`). `extractSingleShot` 7-arg (`:8942`) with one
+  corrective retry; the 5-arg (`:8931`) delegates. `LlmEmulator.clusterLocations` (:1099-1157) synthesizes one cluster per distinct setting
+  from the `#n:` lines only (hint text ignored) and honours the fault manifest (`http500`, `empty`).
+
+**Plan-stage architect corrections, all adopted and confirmed by the as-built pass:** B1 landscape on the canonical LANDSCAPE node, scope
+SCENE, `DONE_UNVERIFIED`, referenced not copied (`PbMigrationUtil.java:417-486`; design §28 step 3 note); C1 retire stale `PROPOSED` only after
+a complete pass, as the user, via the `handled` set (`PbLocationUtil.java:795-811`); C2 `sameAs` resolved as the olio principal, re-read as the
+user (`:1133-1135`, `:1150-1151`); C3 `foldAliases` respects `locked` (`:1224-1228`); C4 `listProposals` book record + numeric org + numeric
+`groupId`, `setCache(false)` (`:1059-1083`); C5 no `sceneIndices`, `sceneObjectIds` list<string> only; C6 `sanitizeForPrompt(name, 256)`
+(`:820`), `proposalName` (`:832-840`); C7 `ImportResult` additive; C8 `/no_think`, placeholder guard, brace safety (`:820-829`).
+
+**Test runs (all `cd src && mvn -o -pl AccountManagerObjects7 -Dtest=… -DskipTests=false test`, one at a time, LF logs in `C:/tmp/`):**
+
+1. `TestPbLocationProposal` 14:17:34 → 14:20:04 `p33-proposal.log` — **`[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed:
+   151.7 s -- in org.cote.accountmanager.olio.picturebook.TestPbLocationProposal`** (`:1153`), **`BUILD SUCCESS`** (`:1160`), `Total time:
+   02:34 min`. Emulator-driven (⚠ 172 e): `case01` pass proposes without resolving and is idempotent; `case02` accept resolves, re-points and
+   settles; `case03` `sameAs` folds into a known location unless locked; `case04` stale proposals retire only after a complete pass
+   (`http500` → `HARD-FAILURE`, retire 0; `empty` → retire 1).
+2. `TestPbMigration` 15:13:23 → 15:14:17 `p33-migration.log` — **`[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 55.40 s
+   -- in org.cote.accountmanager.objects.tests.TestPbMigration`** (`:744`), **`BUILD SUCCESS`** (`:751`), `Finished at:
+   2026-10-16T15:14:17-05:00`. New `testImportV1BookLandscapesAndLocationPass` (`:284`): `:643 proposeLocations(testmigrationlandscape2deef733):
+   scenes=2 skipped=0 chunks=1/1 proposed=1 updated=0 settled=0 retired=0`, `:644 PB1 migration complete: … 2/2 scenes, 2 landscape(s),
+   1 proposal(s), 0 warning(s)`, `:645 [p33-migration] import took 20679 ms (recorded, not asserted)`, `:556 AUDIT PERMIT … ADD olio.pb.node
+   Node landscape@c2484b65`. One earlier run of the same class was red on a test-side title-vs-name assertion (⚠ 173 j); its log was
+   overwritten by this green run.
+3. `TestLlmJsonArraySalvage` + `TestPbLocationProposal` 15:20:04 → 15:22:26 `p33-salvage-proposal.log` — `Tests run: 11, Failures: 0, Errors: 0,
+   Skipped: 0, Time elapsed: 0.590 s` (`:85`), `Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 143.4 s` (`:1193`), **`Tests
+   run: 15, Failures: 0, Errors: 0, Skipped: 0`** (`:1197`), **`BUILD SUCCESS`** (`:1200`) — the regression check before the live run.
+4. `TestPbLocationPassLive` 15:22:40 → 15:23:43 `p33-passlive.log` — **RED**: `:55 [LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr
+   pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000`; pass 1 fine (`:242 proposeLocations(p33live02f9550b): scenes=7 skipped=1 chunks=1/1
+   proposed=4 updated=0 settled=0 retired=0`, `:243 … (15677 ms) … warnings=[]`; `:275 [p33-live] accept tavern: created=true repointed=3
+   skipped=0 folded=0 warnings=[] location=Gilded Tankard`); pass 2 the model replied `"aliases":[],"scenes",[1],` (`:323`) → `:327 Failed
+   to parse LLM JSON array: JSON array parse returned null`, `:328 Recovered … Salvaged 1 element(s) … 4 element(s) could not be read`, retry
+   `:368 … Illegal unquoted character ((CTRL-CHAR, code 10))`, `:371 … Salvaged 5 element(s) …`, `:379 … chunks=0/1 proposed=2 updated=1
+   settled=1 retired=0` → **`[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 63.73 s`** (`:460`),
+   `:512 TestPbLocationPassLive.livePassClustersSharedTavernAndAcceptResolvesIt:187 expected:<1> but was:<0>`, `BUILD FAILURE` (`:517`).
+   Product fix (⚠ 173 l–m), not a test change: `:187 assertEquals(1, r2.chunksParsed)` is intact.
+5. `TestLlmJsonArraySalvage` 15:33:32 `p33-salvage2.log` — **`[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.493 s`**
+   (`:91`), **`BUILD SUCCESS`** (`:98`), `Total time: 3.772 s` — the 3 new cases: a missing colon after a key is repaired to a whole parse; a
+   raw newline inside a string parses whole; `repairMissingColons` leaves well-formed and glitched-but-not-colon replies byte-identical.
+6. `TestPbLocationPassLive` + `TestPbLocationProposal` 15:34:29 → 15:37:36 `p33-passlive2.log` — **GREEN**: `:55 [LLM-GATE] route=litellm
+   tier=local …`; `:242 proposeLocations(p33lived8fe1501): scenes=7 skipped=1 chunks=1/1 proposed=4 updated=0 settled=0 retired=0`,
+   `:243 [p33-live] pass 1 (12368 ms) … warnings=[]`, `:275 [p33-live] accept tavern: created=true repointed=3 skipped=0 folded=0 warnings=[]
+   location=Gilded Tankard`, `:333 proposeLocations(p33lived8fe1501): scenes=7 skipped=1 chunks=1/1 proposed=1 updated=2 settled=1
+   retired=1`, `:334 [p33-live] pass 2 (7527 ms) … warnings=[cluster-locations chunk 1 of p33lived8fe1501: an item without a name was
+   dropped]`, `:338 after pass 2: proposal-gilded-tankard status=ACCEPTED sameAs=null scenes=[3, 7, 12]` → **`[INFO] Tests run: 1,
+   Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 53.38 s -- in org.cote.accountmanager.olio.picturebook.TestPbLocationPassLive`**
+   (`:415`); `TestPbLocationProposal` **`Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 135.0 s`** (`:1515`; `:736 …
+   chunks=0/1 … HARD-FAILURE`, `:784 … retired=1`, `:828 (empty array) … retired=1`, `:1038 case03 accept tavern: created=false folded=1`,
+   `:1053 … Location Windswept Hill is locked; its aliases were not extended`, `:1338 case02 accept tavern: created=true repointed=1
+   skipped=1`, `:1390-1391 … settled=2`); **`Tests run: 5, Failures: 0, Errors: 0, Skipped: 0`** (`:1519`), **`BUILD SUCCESS`** (`:1522`),
+   `Finished at: 2026-10-16T15:37:36-05:00`. The tavern came back `kind=EXTERIOR` (`:247`) — not asserted (⚠ 173 n).
+7. `TestPbMigration` 15:38:08 → 15:38:54 `p33-migration2.log` — **`[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed:
+   47.42 s -- in org.cote.accountmanager.objects.tests.TestPbMigration`** (`:744`), **`BUILD SUCCESS`** (`:751`), `Finished at:
+   2026-10-16T15:38:54-05:00`; `:643 … proposed=1`, `:644 … 2/2 scenes, 2 landscape(s), 1 proposal(s), 0 warning(s)`, `:645 … import took
+   16205 ms (recorded, not asserted)` — the re-run on the hardened parser.
+
+**LLM tier, in words:** every run printed `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr
+server=http://127.0.0.1:4000` — the **in-stack Ollama container (`:11435`, `qwen3:8b`) through LiteLLM**, not Azure, not the `.42` DGX. The
+model was genuinely exercised by `TestPbLocationPassLive` (runs 4 and 6) and `TestPbMigration#testImportV1BookLandscapesAndLocationPass` (runs
+2 and 7); `TestPbLocationProposal` drives the emulator; `TestLlmJsonArraySalvage` is pure Java. No SD call anywhere, `Skipped: 0` in every run,
+no SD-gated skip to report. Timings recorded, never asserted (⚠ 173 p). Every book / config / connection the tests created was deleted in
+`finally`; your `generalChat` records untouched (⚠ 173 g).
+
+**Fixture.** `TestPbLocationPassLive` builds a throwaway V3 book of 8 synthetic scenes in `/Development/World Building` as `testUser1`:
+scene 1 harbour road, 2 and 4 the abbey scriptorium, **3, 7 and 12 "The Gilded Tankard"** (a low-beamed tavern by the quay), 6 a windswept
+hill road, 5 without a setting. Asserted (`:104-169`, `:187`): no hard failure, 7 considered, 1 skipped, 1 chunk parsed, ≥ 2 proposals, nothing
+resolved by the pass, scenes 3/7/12 share exactly one proposal whose text mentions "tankard" or "tavern", 2/4 share one, accept creates
+exactly one location + one POI + one store and re-points 3 scenes, pass 2 settles the accepted proposal and re-parses whole. **Not
+AIME.pdf / Harlot's Eight** as the row's test column said (⚠ 173 s).
+
+**Deploy + live proof 15:40 → 15:41** (shared with P3-2, §11.2): jar 3,303,461 bytes, md5 `2e03a66103a54feee242737cca489a86` local ==
+container, `Server startup in [14131] milliseconds`; `p33-live.log` as `e2etest_shared`: `olio.pb.location search: http=200`,
+`olio.pb.locationVariant search: http=200`, `olio.pb.locationProposal search: http=200`, `count olio.pb.locationProposal: 0 http=200`,
+`logout=200`. **This jar predates the 16:00 review edits (⚠ 173 t).**
+
+**Reviews (as-built, read-only beside gate run 16; every cited line re-read in the code before adoption).** Architect **PASS WITH NOTES**:
+B1 + C1–C8 confirmed adopted; finding 1 (`ALLOW_MISSING_VALUES` → null element reachable with `okOut=true`) → `dropEmptyElements` after both
+lenient parses + `TestMissingAndEmptyElementsAreDroppedFromAWholeParse`; finding 2 (salvage ran on the repaired text only) → salvage both,
+keep the larger; finding 4 (`listProposals` dropped the `groupId` condition for a stub) → re-read the book, empty when still no group;
+findings 3, 5–7 recorded (⚠ 173 a, q). Security-reviewer **PASS WITH NOTES**: findings 1–2 (internal `e.getMessage()` / user name echoed in
+client messages at `rereadAs`, `writeProposal`, `rejectProposal`) → logged, generic messages; 3–6, 9, 11–13 recorded (⚠ 173 u). Verifier
+**PASS**: surefire lines matched from disk; `:187` assertion intact; corrections (⚠ 173 j, v, w) applied. Test-author: `TestPbLocationUtil`
+case06–09 (§11.2). **The five review edits are UNCOMPILED / UNRUN at the time of this record** — targeted re-runs, then a second install +
+deploy, follow gate run 16 (⚠ 173 t); their results are recorded below when they exist.
+
+**Status.** P3-3 is **IMPLEMENTED, TESTS GREEN (live LLM, emulator and pure-Java), deployed + live-proven (pre-review jar), architect /
+security-reviewer / verifier PASS WITH NOTES, review edits applied but not yet compiled or run** — quick gate run 16 in flight — not DONE
+(yours).
+
+#### §11.3 addendum — post-review re-runs, gate run 16, the sub-place fold (2026-10-16 16:10 → 21:41 local)
+
+**Gate run 16 (§4.4 row 16): `[ERROR] Tests run: 1205, Failures: 4, Errors: 0, Skipped: 16`, `VERIFY_FAILED`, `GATE_EXIT=1`** — §6.A ×3
+(yours) + one new red of mine, `TestPbLocationPassLive.livePassClustersSharedTavernAndAcceptResolvesIt:142->sharedProposal:334 the tavern
+scenes must share exactly one proposal: Scene … 3=[proposal-gilded-tankard] … 7=[proposal-gilded-tankard-taproom] … 12=[proposal-gilded-tankard-taproom]
+expected:<1> but was:<0>`. +14 tests vs run 15, skips identical, no SD-connectivity red.
+
+**The red is the model, twice.** The targeted re-run at 19:16 → 19:17 (`C:/tmp/p33-live2.log`, `[ERROR] Tests run: 1, Failures: 1, Errors: 0,
+Skipped: 0, Time elapsed: 51.97 s`, `BUILD FAILURE`) failed the SAME assertion on a different place: `the scriptorium scenes must share exactly
+one proposal: Scene p33live574ffb9a 2=[proposal-abbey-scriptorium] Scene p33live574ffb9a 4=[proposal-abbey-scriptorium-night] expected:<1> but
+was:<0>`. Both are one place split into a base cluster and a sub-place / variant cluster. **Product fix, assertion untouched** (⚠ 174 a–b):
+`PbLocationUtil.foldSubPlaces` + `placeKey` / `subPlaceOf` / `qualifierOf` / `foldInto` (`PbLocationUtil.java:1553-1690`, name-shape only,
+model-independent) applied after `normalizeCluster`, and the prompt rule in `pictureBook.cluster-locations.json`. Driven deterministically by
+`TestPbLocationProposal#case05` (emulator reply that splits "Gilded Tankard" / "Gilded Tankard Taproom" / "Abbey Scriptorium Night" on purpose).
+
+**Re-runs, strictly serial, `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000`
+(in-stack Ollama container via LiteLLM — not Azure, not `.42`) and `SdTestGate - http://192.168.1.39:7801 answered HTTP 302` in each:**
+
+| Run | Log | Verbatim | Finished |
+|---|---|---|---|
+| review edits: `TestLlmJsonArraySalvage` + `TestPbLocationProposal` | `C:/tmp/p33-proposal5.log` | `Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.559 s -- in …TestLlmJsonArraySalvage`; `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 206.8 s -- in …TestPbLocationProposal`; `[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0`; `BUILD SUCCESS` | 19:16:33 |
+| `TestPbLocationPassLive` (pre-fold) | `C:/tmp/p33-live2.log` | `[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 51.97 s <<< FAILURE!`; `BUILD FAILURE` — scriptorium split (above) | 19:17:36 |
+| `TestPbLocationProposal#case05` (fold, emulator) | `C:/tmp/p33-proposal5b.log` | `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 37.27 s -- in …TestPbLocationProposal`; `BUILD SUCCESS` | 19:21:26 |
+| `TestPbLocationPassLive` (post-fold, live LLM) | `C:/tmp/p33-live3.log` | `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 62.92 s -- in …TestPbLocationPassLive`; `[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0`; `BUILD SUCCESS` | 19:22:40 |
+| `TestPbLocationUtil` (test-author case06–09, first run) + `TestPbLocationProposal` | `C:/tmp/p32-locutil4.log` | `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 313.2 s -- in …TestPbLocationUtil`; `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 189.3 s -- in …TestPbLocationProposal`; `[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`; `BUILD SUCCESS` | 19:31:22 |
+| fold security hardening (⚠ 174 c) + P3-4 case06: `TestPbLocationProposal` | `C:/tmp/p33-proposal6.log` | `Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 220.8 s -- in …TestPbLocationProposal`; `[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0`; `BUILD SUCCESS` | 20:48:17 |
+
+Timings recorded, not asserted. The `AUDIT DENY` lines in `p32-locutil4.log` (13) and `p33-proposal6.log` (3) are the asserted negative
+cases (stranger / read-only principals); `p33-live3.log` has none.
+
+**Security review of the fold + prompt: PASS** (read-only, beside no run); adopted (⚠ 174 c): termination guard on a missed key removal,
+`sameAs` disagreement warning. Recorded: O(N³) worst case over distinct places, non-Latin `placeKey` folds only on equality, suffix-only
+variant words, "spring"/"fall" omitted.
+
+**Deploy.** No separate P3-3 post-review deploy: the jar built 21:29 (`o7-install-p34e.log`, `-q`) carries the review edits + the fold + P3-4
+and went into `am7test-am7-1` at 21:41 (md5 `56785b40ab4a4adc0e1f6e579d06a2c0` local == container; `Server startup in [11919] milliseconds`)
+— ⚠ 174 e. First live exercise of the post-review P3-3 code is the P3-4 Playwright spec (§11.4; its propose step reported
+`chunksParsed:1, folded:0, proposed:5` through the deployed jar). **The 19:22 green live run did not fire the fold either** —
+`p33-live3.log:242` `folded=0 proposed=4`: the model clustered correctly on that run, so the fold is proven by the emulator `case05` only and
+the live green cannot be attributed to the prompt rule rather than variance (⚠ 174 g).
+
+**Status.** P3-3 is **IMPLEMENTED, TESTS GREEN (live LLM, emulator and pure-Java, review edits included), deployed 21:41 + live-exercised
+through §11.4, architect / security-reviewer / verifier PASS WITH NOTES, gate run 16 recorded (one new red → product-fixed → re-run GREEN)**
+— not DONE (yours).
+
+### 11.4 P3-4 results (2026-10-16, 19:12 → 2026-10-17 00:01 local; gate run 17 in flight)
+
+**Read first (✓):** §5, §6.C 169 (3) (lock enforcement — input), 170 (e)/(m) (the generic-PATCH finding), 173–174 (P3-2 / P3-3 as built),
+§10.10; design §7, §7.1, §10, §11.1, §12 (the `RenderPlan.Location` shape — read-only here, filled in P3-5), §19, §27, §28 step 3, §29;
+`PbServiceFacade` (`ensureRenderPlanNode`, `lockStyle` pattern, `approveArtifact` / `rejectArtifact`), `PbNodeExecutor` (`executePortrait`
+binding-after-render), `PbPipelineUtil` scopes / handles, `PbArtifactUtil.approve`, `PbStaleUtil.touch`, `PbDeleteUtil.deleteBookComplete`,
+`PbHealthUtil`, `PbLocationUtil` (P3-2/P3-3), `locationModel.json`, `TestPbStyleNode` / `TestPbReview` / `TestPbRenderPath` as the test shapes.
+
+**Plan → architect.** planner report at 19:14 (goal: one LOCATION node per (location, variant), approve promotes to `approvedRender`,
+lock refuses, routes mirror `lockStyle`). Architect plan review: **CHANGES-NEEDED** — 11 findings, 6 rulings; dispositions, all landed in the
+as-built code unless marked RECORD: (1) ADOPT "lock premise is false" — the plan claimed generic PATCH is PBAC-denied; 170 (e) proves the
+owner is permitted → `case02` is a bypass *demonstration*, not a denial test; (2) ADOPT reject honours the lock (409); (3) RECORD lock scope
+— model description rewritten to the broad scope actually enforced (§5.6), 169 (3) input; (4) ADOPT no cross-book writes from
+`bindReferencingScenes` → binding moved to run time in `executeRenderPlan` (`bindSceneLocation`, every chapter's node carries it); (5) ADOPT
+materialize only from write paths, `findNodeByHandle → addNode → patchNodeScope → readNode` before opening the graph; (6) ADOPT seed by
+reference, this book only, request user via `AccessPoint`, unselected, PBAC-denied seeds skipped and counted; (7) ADOPT chapter delete clears
+a dangling `approvedRender` (`deleteBookComplete` step `approvedRendersCleared`, case01); (8) ADOPT-DEFERRED plan carries the approved
+render → **P3-5** (⚠ 175 l); (9) ADOPT explicit same-world checks with a stranger-world test (case03, case11 (d)); (10) RECORD merge re-point
+denied → skipped and counted, every update result checked (`[updated, skipped]`); (11) OK transport / `stripRaw` / `ARTIFACT_DATA_DANGLING`
+report-only / `patchOf` everywhere. Rulings: 1 lock facade-only + bypass demonstration (case02); 2 artifact role `landscape`, `location` a
+binding role only; 3 `scope="location"` + `scopeRef`, bind after render; 4 seeding as (6); 5 cross-chapter STALE via the binding, bound stated
+(⚠ 175 k), two-chapter JUnit (case01); 6 promotion in `PbArtifactUtil`, location reads in `PbLocationUtil`, no new util opening privates.
+Its two `architecture.md` rule-gap suggestions are recorded as asks (⚠ 175 y), not applied.
+
+**Built.** Objects7: `PbLocationUtil` (+`NodeSubject`, `subjectOf`, `subjectExists`, `isLocked` / `requireUnlocked`, `writeApprovedRender`,
+`updateLocation` (`EDITABLE_FIELDS`), `setLocked`, `createVariant` (cap 32), `scenesOfBookReferencing`, `deleteLocation`, `mergeLocations`,
+`cleanText`), `PbServiceFacade` (`listLocations`, `createLocation`, `updateLocation`, `deleteLocation`, `lockLocation`, `renderLocation`,
+`createVariant`, `mergeLocations`, `seedLocationNode`, `requireSubjectInBookWorld`, `stripRaw`; `approveArtifact` / `rejectArtifact`
+promote / clear `approvedRender` with lock + same-world checks), `PbArtifactUtil` (`approve` promotion, `subjectOrNullWhenDangling`,
+`reject` lock check), `PbNodeExecutor` (LOCATION in the SD-backed lists, LOCATION section, `bindSceneLocation`, `applyModelPolicy(…LOCATION…)`),
+`PbPipelineUtil` (`SCOPE_LOCATION`, `SCOPE_LOCATION_VARIANT`, `locationHandle`), `PbWatchedFields` `watched/v3` (`approvedRender` in both
+sets), `PbDeleteUtil` (`approvedRendersCleared`), `PbHealthUtil` (check 12 `LOCATION_NODE_DANGLING`, audit + heal), `PbNodeTypeEnumType.LOCATION`,
+`PbModelTaskEnumType.LOCATION`, `locationModel.json` `locked` description. Service7: 13 routes in `PictureBookService` (:2369-2657), all
+`@RolesAllowed`, `getPrincipalUser` → facade → `handlePictureBookException`, transport only. Tests: `TestPbLocationNode` (12 cases),
+`TestPbLocationProposal` case07, `TestPbNodeExecutorTypes` eight-stage, Service7 `TestPictureBookLocationRoutes` (8), Playwright
+`e2e/pictureBookLocations.spec.js` (17).
+
+**Runs, strictly serial, one Maven at a time** (`[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr
+server=http://127.0.0.1:4000` — the in-stack Ollama container through LiteLLM, not Azure, not `.42` — and `SdTestGate - Live SD checkpoint
+for http://192.168.1.39:7801 = 'OfficialStableDiffusion/sd_xl_base_1.0.safetensors' [olio.sd.config schema default]` at :50/:55 of every log):
+
+| Run | Log | Verbatim | Finished |
+|---|---|---|---|
+| `TestPbLocationNode` (first green, 8 cases) | `C:/tmp/p34-locnode.log` | `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 324.8 s -- in org.cote.accountmanager.olio.picturebook.TestPbLocationNode` → `BUILD SUCCESS` | 20:37:13 |
+| PB regression (48 tests) | `C:/tmp/p34-regress.log` | `[ERROR] Tests run: 48, Failures: 1, Errors: 0, Skipped: 0` — the one red `[ERROR] Tests run: 2, Failures: 1 … TestPbNodeExecutorTypes` (seven→eight-stage mirror); inside it GREEN: `TestPbLocationSchema` 3/0 12.17 s, `TestPbLocationUtil` 9/0 252.6 s, `TestPbStale` 10/0 319.7 s, `TestPbAutoApprove` 7/0 187.8 s, `TestPbRenderPlanExecutor` 7/0 284.6 s, `TestPbReview` 7/0 34.95 s, `TestPbStaleCacheEpoch` 3/0 | 21:07:50 |
+| `TestPbNodeExecutorTypes` (mirror updated) | `C:/tmp/p34-nodetypes.log` | `Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 35.46 s` | 21:08:46 |
+| Service7 `TestPictureBookLocationRoutes` (first) | `C:/tmp/p34-s7routes.log` | `[ERROR] Tests run: 8, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 13.05 s` (`TestOwnerLockAndMerge`, `TestOwnerLocationLifecycle`, `TestReaderReadsButCannotWrite` — H2 fixture lacked the world sub-tree grants, ⚠ 175 n) | 21:30:11 |
+| Service7 `TestPictureBookLocationRoutes` (fixture fixed) | `C:/tmp/p34-s7routes2.log` | `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 14.47 s` | 21:40:05 |
+| Playwright `pictureBookLocations.spec.js` (first) | `C:/tmp/pw-p34.log` | `Running 17 tests using 1 worker` … `17 passed (1.3m)` `EXIT=0` | 22:19 |
+| test-author `TestPbLocationNode` (+case09, case10) | `C:/tmp/p34-ta-locnode.log` | `[ERROR] Tests run: 10, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 362.7 s` — `case10MergeWithAMaterializedNodeOnTheDuplicate -- Time elapsed: 27.60 s <<< FAILURE!` (product gap: merge left the duplicate's node graph) | 22:56:37 |
+| test-author `TestPbLocationProposal` (+case07) | `C:/tmp/p34-ta-proposal.log` | `Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 223.4 s` | 23:01:25 |
+| hardening `TestPbLocationNode` (+case11, merge fix) | `C:/tmp/p34-locnode2.log` | `[ERROR] Tests run: 11, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 391.4 s` — `case11HardeningMessagesCleanTextVariantCapAndForeignWorldSubject -- Time elapsed: 56.30 s <<< ERROR!` (test fixture: grant on the wrong group, test-fixed) | 23:29:09 |
+| hardening `TestPbLocationNode` (green) | `C:/tmp/p34-locnode3.log` | `Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 379.8 s -- in org.cote.accountmanager.olio.picturebook.TestPbLocationNode` → `BUILD SUCCESS` | 23:41:16 |
+| `TestPbLocationProposal` (hardening) | `C:/tmp/p34-proposal2.log` | `Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 210.7 s -- in org.cote.accountmanager.olio.picturebook.TestPbLocationProposal` | 23:45:35 |
+| `TestPbLocationUtil` (P3-2 regression under the hardening) | `C:/tmp/p34-locutil5.log` | `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 222.1 s -- in org.cote.accountmanager.objects.tests.TestPbLocationUtil` | 23:49:54 |
+| `TestPbReview` + `TestPbRenderPath` | `C:/tmp/p34-review-renderpath.log` | `Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 57.18 s -- in …TestPbRenderPath`; `Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 34.35 s -- in …TestPbReview` → `BUILD SUCCESS` | 23:52:16 |
+| Objects7 `install -DskipTests` | `C:/tmp/o7-install-p34f.log` | `-q`, no exit marker in the log (⚠ 175 q); jar `AccountManagerObjects7-…jar` 3333180 bytes stamped 23:52:30 | 23:52:30 |
+| Service7 `TestPictureBookLocationRoutes` (against the 23:52 jar) | `C:/tmp/p34-s7routes3.log` | `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 14.45 s -- in org.cote.accountmanager.objects.tests.TestPictureBookLocationRoutes` | 23:53:09 |
+| Playwright re-run (post-hardening, all three flags on) | `C:/tmp/pw-p34b.log` | `Running 17 tests using 1 worker` … `[e2e-llm] route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr` … `17 passed (1.2m)` | 23:56:20 |
+
+**Deploy 23:53.** `javap` stub check on the local classes (no "Unresolved compilation"); `docker cp` of the Objects7 jar
+(md5 `5e2863439ad72992c42948850f114818`, local == `/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/`) and of
+`PictureBookService.class` (md5 `a4993a27e97630e0b181692d91a407ea`, local == `…/WEB-INF/classes/org/cote/rest/services/`);
+`docker restart am7test-am7-1`; catalina `17-Oct-2026 04:53:46.698 … Server startup in [9691] milliseconds` (= 23:53:46 local);
+probe `j` 23:54:44 GREEN (`am7test-am7-1 Up About a minute`). Container has no `javap`; `MSYS_NO_PATHCONV=1` for `/opt/…` paths.
+
+**Live proof (`pw-p34b.log`, `PB_LLM_TESTS=1 PB_SD_TESTS=1 PB_LOC_DB_PROOF=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 --workers=1
+--project=chromium --retries=0`, principal `e2etest_shared`, admin only to create the second user).** `propose (12 s)`:
+`"scenesConsidered":7,"scenesSkipped":1,"chunks":1,"chunksParsed":1,"folded":1,"proposed":4,"updated":0,"settled":0` — the in-stack
+model through LiteLLM (`[e2e-llm] route=litellm server=http://litellm:4000`); accept creates the location + POI + store (DB proof: READ-only
+`psql` rows for `olio.pointOfInterest` and `olio.store`, `east`/`north` = −1, `location` null, no `data.geoLocation`). `render submit`:
+`"nodeMaterialized":true,"seeded":0,"seedSkipped":3`; location render terminal after 25 s — `"handle":"location@b3f0b9a9"`,
+`"status":"DONE_UNVERIFIED"`, `"autoApproveSkipped":"off"`, `configNotApplied` HIRES + DEFAULT_NEGATIVE, `"durationMs":24050`; variant
+render terminal after 20 s — `location_variant@34e4c9f7`, `"durationMs":15410`; both against SD `http://192.168.1.39:7801` (SWARM, stack
+model `juggernautXL_ragnarokBy.safetensors`). Approve promotes the location artifact to `approvedRender` (read back by id), lock then 409s
+a description patch, a variant create and a render; unlock → render 202 again. PNGs opened with Read:
+`src/AccountManagerUx752/test-results/p34-location-render.png` (1752848 bytes, 23:55:55 — a rendered exterior, not a blank or an error tile)
+and `src/AccountManagerUx752/test-results/p34-location-variant-render.png` (1846078 bytes, 23:56:16 — the same place under the variant's
+qualifiers). Timings recorded, never asserted.
+
+**Reviews.** security-reviewer (new routes, model edits, PBAC paths): PASS WITH NOTES, eight findings — dispositions ⚠ 175 (s); the
+hardening slice (cleanText, no input echo, variant cap, facade `sameWorld` on approve / reject, cross-chapter 409 without a count) is
+`case11` and the 23:22 → 23:53 re-runs above. test-author: three fake-test checks on the existing cases (none fake; two assertions
+tightened), case09 / case10 / proposal case07 added, case10 red → product fix (`mergeLocations` deletes the duplicate's node graph) →
+green. verifier (read-only, logs as-is): "**PASS WITH NOTES — ship after deciding on 1 and 2** (both small, both outside current test
+coverage)": 1 SHOULD-FIX `subjectOrNullWhenDangling` treats unreadable as gone (less read privilege → more write ability); 2 SHOULD-FIX
+`mergeLocations` deletes `location@<dup>` nodes in this book only while records are re-pointed world-wide (chapter B's node dangles);
+3–7 NOTE (cross-user reject of an unreadable in-world node — closed by 1; Q3/Q4 confirmed; `watched/v3` one-time REF_DRIFT/STALE sweep on
+upgrade; `bindSceneLocation` on every RENDER_PLAN execution covered only indirectly by `TestPbRenderPath`; 13 routes `@RolesAllowed`,
+marshalling only). Fake-test check: substantive assertions (FK ids, statuses, binding `refModel/refObjectId`, PNG magic bytes, exact 409
+messages), admin only for user creation, earlier reds fixed in product code.
+
+**Verifier fix slice — written 2026-10-17 00:05 → 00:35, compile-clean (IDE diagnostics), UNRUN at the time of this entry (⚠ 175 x).**
+Finding 1: `PbLocationUtil.subjectExists(node)` (:402, olio principal) + `PbArtifactUtil.subjectOrNullWhenDangling` (:437, rethrow when the
+subject exists) + `PbServiceFacade.requireSubjectInBookWorld` (:339, 404 "Location not found in this book's world" when it exists but is
+outside or unreadable); test `TestPbLocationNode.case11 (e)` — a second user with book-update and no read on `Locations` gets 404 on
+reject, the lock holds, the artifact stays APPROVED. Finding 2: `PbHealthUtil` check 12 `LOCATION_NODE_DANGLING` (audit over every
+LOCATION node whose `scopeRef` no longer resolves as the olio principal; heal = `PbDeleteUtil.deleteNodeGraph` + `PbStaleUtil.invalidate`),
+test `case12` — chapter B's `location@<dup>` after a chapter-A delete **and** after a chapter-A merge are both reported and both healed,
+the survivor's node untouched. Both are run targeted next (`p34-locnode4.log`, expected 12/0/0/0), then `TestPbReview` + `TestPbRenderPath`,
+`TestPbLocationUtil`, install (exit echoed into the log), Service7 routes, redeploy with md5s, Playwright re-run (`pw-p34c.log`), and the
+next quick gate — recorded in the §11.4 addendum.
+
+**Gate run 17** — Objects7 quick gate on the `C:/tmp/o7verify` copy (`src` re-copied 00:01:29, `diff -rq` 0, `POM_SAME`, junctions in
+place, `AM7_UX752_MEDIA` exported, probe `k` 00:01:03 GREEN, `tasklist` clean), launched 00:01:39 (`C:/tmp/o7verify-gate-p34.log`,
+stamps `o7verify-gate-p34.start` / `.end`); covers P3-4 through the 23:53 deploy, not the fix slice. Expected: `§6.A ×3` only, 16 skips,
++ the P3-4 classes. Result → §4.4 row 17 and the §11.4 addendum.
+
+**Status.** P3-4 is **IMPLEMENTED, TESTS GREEN (JUnit 11/0/0/0 + 7/0 + 9/0 + 10/0 + 7/0 + 2/0, Service7 8/0, Playwright 17 passed with
+every gate on, live render on `.39`, PNGs opened), deployed 23:53 + live-proven, architect CHANGES-NEEDED → all adoptions landed,
+security-reviewer PASS WITH NOTES → hardening landed, verifier PASS WITH NOTES → fix slice written, unrun; gate run 17 in flight** —
+not DONE (yours).

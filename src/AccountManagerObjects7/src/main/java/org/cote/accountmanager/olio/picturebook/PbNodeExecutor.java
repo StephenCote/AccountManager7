@@ -92,7 +92,8 @@ public class PbNodeExecutor {
 		PbNodeTypeEnumType.LANDSCAPE_PROMPT,
 		PbNodeTypeEnumType.REFERENCE_STRIP,
 		PbNodeTypeEnumType.COMPOSITE,
-		PbNodeTypeEnumType.RENDER_PLAN
+		PbNodeTypeEnumType.RENDER_PLAN,
+		PbNodeTypeEnumType.LOCATION
 	));
 
 	/** The subset of {@link #EXECUTABLE_TYPES} that needs an SD backend; the rest are pure Java / DB work. */
@@ -100,7 +101,8 @@ public class PbNodeExecutor {
 		PbNodeTypeEnumType.PORTRAIT,
 		PbNodeTypeEnumType.LANDSCAPE,
 		PbNodeTypeEnumType.COMPOSITE,
-		PbNodeTypeEnumType.RENDER_PLAN
+		PbNodeTypeEnumType.RENDER_PLAN,
+		PbNodeTypeEnumType.LOCATION
 	));
 
 	private PbNodeExecutor() {
@@ -445,6 +447,8 @@ public class PbNodeExecutor {
 				return executeComposite(g, node, sdu);
 			case RENDER_PLAN:
 				return executeRenderPlan(g, node, sdu);
+			case LOCATION:
+				return executeLocation(g, node, sdu);
 			default:
 				throw new PictureBookException(501,
 					"Single-node execution is not yet implemented for node type " + nodeType);
@@ -590,7 +594,7 @@ public class PbNodeExecutor {
 			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
 			OlioFieldNames.FIELD_PB_SCENE_INDEX, OlioFieldNames.FIELD_PB_TITLE, "summary",
 			OlioFieldNames.FIELD_PB_SETTING, OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_MOOD,
-			OlioFieldNames.FIELD_CB_SD_PROMPT
+			OlioFieldNames.FIELD_CB_SD_PROMPT, FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_PB_LOCATION_VARIANT
 		});
 		if(scene == null) {
 			throw new PictureBookException(404, "Scene " + scopeRef + " not found");
@@ -603,12 +607,93 @@ public class PbNodeExecutor {
 			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt");
 		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
 			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
+		bindSceneLocation(g, node, scene);
 
 		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
 		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
 		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(r.bytes.length), downstream, r.degradations);
 		r.describe(out);
+		return out;
+	}
+
+	/**
+	 * Bind the scene's {@code location} (ordinal 0) and {@code locationVariant} (ordinal 1) to its RENDER_PLAN
+	 * node under role {@code location}, after the render, so that the node's watched set carries the
+	 * location's {@code approvedRender} and a later approve (or an edit of the location) stales this scene
+	 * across every chapter that shares the world asset (§7, §10). A scene re-pointed at another location, or
+	 * at none, between two renders drops the stale binding ({@link PbPipelineUtil#syncRecordBinding}). A
+	 * location this user cannot read binds with no {@code refHash} and never fails the render: the drift
+	 * scan reports that reference as undetermined.
+	 */
+	private static void bindSceneLocation(SceneGraph g, BaseRecord node, BaseRecord scene) {
+		BaseRecord loc = scene.get(FieldNames.FIELD_LOCATION);
+		BaseRecord variant = scene.get(OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
+		String locOid = (loc != null ? loc.get(FieldNames.FIELD_OBJECT_ID) : null);
+		String varOid = (variant != null ? variant.get(FieldNames.FIELD_OBJECT_ID) : null);
+		PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 0, OlioModelNames.MODEL_PB_LOCATION, locOid);
+		PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 1, OlioModelNames.MODEL_PB_LOCATION_VARIANT,
+			(locOid != null ? varOid : null));
+	}
+
+	// ─── location (LOCATION node; V3 §7, §7.1, §10, P3-4) ──────────────────
+
+	/**
+	 * Render one {@code olio.pb.location} (scope {@code location}) or one of its variants (scope
+	 * {@code locationVariant}) from a location plan ({@link PbRenderPlanUtil#buildLocationPlan}): the same
+	 * plan path as RENDER_PLAN - plan persisted first, BASE stage only, TEXT_ONLY - recorded as the node's
+	 * {@code landscape} artifact and then bound to the location (ordinal 0) and variant (ordinal 1) under
+	 * role {@code location}, mirroring {@link #executePortrait}. The artifact is a world-asset candidate:
+	 * approving it promotes it to the record's {@code approvedRender} ({@code PbArtifactUtil.approve}), and
+	 * the book's {@code autoApprove} applies through {@link #applyAutoApprove} like every other node.
+	 * <p>
+	 * The location is re-read as the acting user and refused with 404 unless its world is this book's world
+	 * (§6.C 170 m i): the node's {@code scopeRef} was written by a book-scoped route, but the executor does not
+	 * trust it across worlds. A locked location is refused with 409 - the render job records that as this
+	 * node's failure and carries on with the rest of the plan. A location whose {@code approvedRender} is set
+	 * still renders - a new candidate never replaces an approval, the reviewer does (§10 rule 5).
+	 */
+	private static Map<String, Object> executeLocation(SceneGraph g, BaseRecord node, SDUtil sdu) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
+		PbLocationUtil.NodeSubject subject = PbLocationUtil.subjectOf(user, node);
+		if(subject == null) {
+			throw new PictureBookException(400, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE) + " is not a LOCATION node");
+		}
+		if(!PbLocationUtil.sameWorld(book, subject.location)) {
+			throw new PictureBookException(404, "Location not found in this book's world");
+		}
+		PbLocationUtil.requireUnlocked(subject.location, "render it");
+		BaseRecord location = subject.location;
+		BaseRecord variant = subject.variant;
+		String locationOid = location.get(FieldNames.FIELD_OBJECT_ID);
+		String label = subject.label();
+
+		RenderPlan plan = PbRenderPlanUtil.buildLocationPlan(user, book, location, variant, node,
+			PbRenderPlanUtil.PlanOptions.NONE, sdu.getApiType(), sdu.getServer());
+		PlannedRender r = renderPlanned(g, node, plan, label, sdu,
+			"location_" + PbPipelineUtil.shortRef(variant != null ? variant.get(FieldNames.FIELD_OBJECT_ID) : locationOid),
+			"Location " + location.get(FieldNames.FIELD_NAME) + " has no description to render from");
+		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE,
+			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
+
+		/// Bind the subject AFTER the render, as executePortrait does: the binding's refHash is the location's
+		/// watched fields (approvedRender included), so approving a later candidate stales this node too.
+		PbPipelineUtil.bindRecord(g, node, PbPipelineUtil.ROLE_LOCATION, 0, OlioModelNames.MODEL_PB_LOCATION, locationOid);
+		if(variant != null) {
+			PbPipelineUtil.bindRecord(g, node, PbPipelineUtil.ROLE_LOCATION, 1, OlioModelNames.MODEL_PB_LOCATION_VARIANT,
+				variant.get(FieldNames.FIELD_OBJECT_ID));
+		}
+
+		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
+		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+
+		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(r.bytes.length), downstream, r.degradations);
+		r.describe(out);
+		out.put("locationObjectId", locationOid);
+		if(variant != null) {
+			out.put("variantObjectId", variant.get(FieldNames.FIELD_OBJECT_ID));
+		}
 		return out;
 	}
 
@@ -678,11 +763,19 @@ public class PbNodeExecutor {
 	 */
 	static PlannedRender renderPlannedScene(SceneGraph g, BaseRecord node, BaseRecord scene, String sceneLabel, SDUtil sdu,
 			String imageNamePrefix, String noTextMessage) {
-		BaseRecord user = g.getUser();
-		BaseRecord book = g.getBook();
-
-		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(user, book, scene, node, PbRenderPlanUtil.PlanOptions.NONE,
+		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(g.getUser(), g.getBook(), scene, node, PbRenderPlanUtil.PlanOptions.NONE,
 			sdu.getApiType(), sdu.getServer());
+		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage);
+	}
+
+	/**
+	 * {@link #renderPlannedScene} for a plan the caller already built (P3-4: the LOCATION node builds its plan
+	 * from the location record, not from a scene). Persists {@code plan} as the node's {@code renderPlan}
+	 * artifact first, then renders exactly the BASE stage as described above.
+	 */
+	static PlannedRender renderPlanned(SceneGraph g, BaseRecord node, RenderPlan plan, String sceneLabel, SDUtil sdu,
+			String imageNamePrefix, String noTextMessage) {
+		BaseRecord user = g.getUser();
 		BaseRecord planArtifact = PbRenderPlanUtil.persistPlanArtifact(user, node, g.getArtifactGroupPath(), plan);
 		String planOid = planArtifact.get(FieldNames.FIELD_OBJECT_ID);
 

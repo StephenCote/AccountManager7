@@ -1,12 +1,20 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
+
+import javax.imageio.ImageIO;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -15,12 +23,20 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbDeleteUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
+import org.cote.accountmanager.olio.picturebook.PbLocationUtil;
+import org.cote.accountmanager.olio.picturebook.PbLocationUtil.LocationPassResult;
 import org.cote.accountmanager.olio.picturebook.PbMigrationUtil;
 import org.cote.accountmanager.olio.picturebook.PbMigrationUtil.ImportResult;
+import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -29,6 +45,8 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -249,6 +267,236 @@ public class TestPbMigration extends BaseTest {
 			fixtureGroupName, (String) pb1GroupAfter.get(FieldNames.FIELD_NAME));
 
 		logger.info("testImportV1BookSynthetic PASSED — PB2 book exists for slug '{}'", expectedSlug);
+	}
+
+	/**
+	 * V3 §28 step 3 (P3-3): a PB1 scene note that names a {@code landscapeObjectId} has that image carried over as an
+	 * UNAPPROVED {@code landscape} artifact on the scene's canonical LANDSCAPE node (DONE_UNVERIFIED, null inputHash,
+	 * bytes referenced - the artifact's {@code data} IS the PB1 row, not a copy), and the import ends with the
+	 * whole-book location pass, whose proposals group the scenes that share a setting without resolving anything.
+	 * <p>
+	 * The pass resolves {@code generalChat} for the importing user, and {@code pbCustomTestUser} has none, so this
+	 * test provisions one in its {@code ~/Chat} on the JVM's gate-resolved LLM route (quote the {@code [LLM-GATE]}
+	 * line with the result) and deletes it - with the PB1 fixture and the imported book - in {@code finally}. The
+	 * fixture is nonce-named so every run is a fresh import, never the idempotent "already migrated" branch.
+	 */
+	@Test
+	public void testImportV1BookLandscapesAndLocationPass() throws Exception {
+		BaseRecord user = user();
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		String nonce = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+		String fixtureGroupPath = PICTURES_BOOKS_PATH + "/TestMigrationLandscape" + nonce;
+		String setting = "The Lantern Inn's taproom, a low-beamed tavern by the quay";
+		String[] titles = new String[] {"Arrival at the Lantern Inn", "Return to the Lantern Inn"};
+		List<BaseRecord> fixtures = new ArrayList<>();
+		BaseRecord fixtureGroup = null;
+		BaseRecord chatCfg = null;
+		String bookOid = null;
+		try {
+			// ── 0. generalChat for the importing user on the gate's route ───────────
+			chatCfg = OlioTestUtil.getOllamaOpenAIConfig(user, "generalChat", testProperties);
+			assertNotNull("generalChat chatConfig on the gate route", chatCfg);
+			// The get-or-create's existence check ran PBAC's group-less name scan before the row existed, and
+			// CacheDBSearch pins that result (a foreign org's same-named record) across creates; without this,
+			// resolveConfig("generalChat") in import step 12 is denied for the row's own owner.
+			ChatUtil.clearCache();
+			logger.info("[p33-migration] generalChat model={} route={} tier={}", chatCfg.get("model"),
+				testProperties.getProperty("test.llm.route"), testProperties.getProperty("test.llm.resolvedTier"));
+
+			// ── 1. PB1 fixture: group, two landscape PNGs, two scene notes at ONE place, meta note ──
+			fixtureGroup = IOSystem.getActiveContext().getPathUtil().makePath(
+				user, ModelNames.MODEL_GROUP, fixtureGroupPath, GroupEnumType.DATA.toString(), orgId);
+			assertNotNull("Fixture PB1 book group must be created", fixtureGroup);
+			String fixtureGroupObjectId = fixtureGroup.get(FieldNames.FIELD_OBJECT_ID);
+			String fixtureGroupName = fixtureGroup.get(FieldNames.FIELD_NAME);
+			String expectedSlug = PbPipelineUtil.deriveSlug(fixtureGroupName);
+			assertNotNull("Slug derivation must succeed for '" + fixtureGroupName + "'", expectedSlug);
+			assertNull("fresh fixture must not already be migrated", PbBookUtil.findBookBySlug(user, expectedSlug, orgId));
+
+			String[] dataOids = new String[titles.length];
+			long[] dataIds = new long[titles.length];
+			StringBuilder metaScenes = new StringBuilder();
+			for(int i = 0; i < titles.length; i++) {
+				BaseRecord data = createFixturePng(user, fixtureGroupPath, "landscape" + i + ".png", 0x203040 + (i * 0x404040));
+				fixtures.add(data);
+				dataOids[i] = data.get(FieldNames.FIELD_OBJECT_ID);
+				dataIds[i] = ((Number) data.get(FieldNames.FIELD_ID)).longValue();
+				String sceneJson = "{\"title\":\"" + titles[i] + "\",\"summary\":\"A traveller and the innkeeper.\","
+					+ "\"setting\":\"" + setting + "\",\"action\":\"They talk over ale.\","
+					+ "\"mood\":\"Warm\",\"blurb\":\"Scene " + i + ".\","
+					+ "\"landscapeObjectId\":\"" + dataOids[i] + "\"}";
+				BaseRecord note = createFixtureNote(user, fixtureGroupPath, ".scene" + i, sceneJson);
+				fixtures.add(note);
+				if(i > 0) {
+					metaScenes.append(',');
+				}
+				metaScenes.append("{\"schema\":\"olio.pictureBookScene\",\"objectId\":\"")
+					.append((String) note.get(FieldNames.FIELD_OBJECT_ID)).append("\"}");
+			}
+			String metaJson = "{\"schema\":\"olio.pictureBookMeta\",\"workName\":\"Landscape Migration Test Book " + nonce + "\","
+				+ "\"scenes\":[" + metaScenes + "]}";
+			BaseRecord metaNote = createFixtureNote(user, fixtureGroupPath, V1_META_NOTE_NAME, metaJson);
+			fixtures.add(metaNote);
+
+			// ── 2. Import ────────────────────────────────────────────────────────────
+			long t0 = System.currentTimeMillis();
+			ImportResult result = PbMigrationUtil.importV1Book(user, dataPath(), fixtureGroupObjectId);
+			long ms = System.currentTimeMillis() - t0;
+			assertNotNull("importV1Book must return a result", result);
+			bookOid = result.bookObjectId;
+			logger.info("[p33-migration] import took {} ms (recorded, not asserted): {}", ms, result);
+			assertEquals(expectedSlug, result.slug);
+			assertEquals("scenesFailed", 0, result.scenesFailed);
+			assertEquals("scenesImported", titles.length, result.scenesImported);
+			assertEquals("landscapesImported", titles.length, result.landscapesImported);
+
+			BaseRecord book = PbBookUtil.findBookBySlug(user, result.slug, orgId);
+			assertNotNull("PB2 book must exist for slug '" + result.slug + "'", book);
+			List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+			assertEquals("PB2 scene count", titles.length, scenes.size());
+			BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+			assertNotNull("PB2 book must have a workflow after migration", workflow);
+
+			// ── 3. One LANDSCAPE node per scene, one unapproved landscape artifact referencing the PB1 bytes ──
+			List<String> sceneOids = new ArrayList<>();
+			for(BaseRecord scene : scenes) {
+				String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+				sceneOids.add(sceneOid);
+				int idx = ((Number) scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX)).intValue();
+				assertTrue("scene index " + idx + " within the fixture", idx >= 0 && idx < titles.length);
+				assertEquals("scene " + idx + " title", titles[idx], (String) scene.get(OlioFieldNames.FIELD_PB_TITLE));
+				BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, PbPipelineUtil.landscapeHandle(sceneOid));
+				assertNotNull("LANDSCAPE node for scene " + idx, node);
+				String nodeType = String.valueOf((Object) node.get(OlioFieldNames.FIELD_PB_NODE_TYPE));
+				assertEquals("node type", "landscape", nodeType.toLowerCase());
+				String storedStatus = String.valueOf((Object) node.get(OlioFieldNames.FIELD_PB_NODE_STATUS));
+				assertEquals("migrated LANDSCAPE node " + idx + " must be DONE_UNVERIFIED", "done_unverified", storedStatus.toLowerCase());
+				assertNull("migrated LANDSCAPE node " + idx + " must have null inputHash", node.get(OlioFieldNames.FIELD_PB_INPUT_HASH));
+				List<BaseRecord> chain = PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_LANDSCAPE);
+				assertEquals("one landscape artifact on scene " + idx, 1, chain.size());
+				BaseRecord art = chain.get(0);
+				assertNotEquals("imported landscape must not be approved", PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(art));
+				Object dataRef = art.get(OlioFieldNames.FIELD_PB_DATA);
+				assertTrue("artifact.data is a record", dataRef instanceof BaseRecord);
+				long refId = ((Number) ((BaseRecord) dataRef).get(FieldNames.FIELD_ID)).longValue();
+				assertEquals("artifact " + idx + " references the PB1 data row (not a copy)", dataIds[idx], refId);
+			}
+
+			// ── 4. The location pass ran, parsed, and put every scene in a proposal; nothing resolved ──
+			LocationPassResult pass = result.locationPass;
+			assertNotNull("location pass result", pass);
+			logger.info("[p33-migration] location pass: run={} scenes={} skipped={} chunks={}/{} proposed={} updated={} settled={} retired={} hard={} warnings={}",
+				pass.passRun, pass.scenesConsidered, pass.scenesSkipped, pass.chunksParsed, pass.chunks, pass.proposed, pass.updated,
+				pass.settled, pass.retired, pass.hardFailure, pass.warnings);
+			assertFalse("location pass must not hard-fail: " + pass.warnings + " / " + result.warnings, pass.hardFailure);
+			assertEquals("scenes considered", titles.length, pass.scenesConsidered);
+			assertEquals("scenes skipped", 0, pass.scenesSkipped);
+			assertEquals("chunks", 1, pass.chunks);
+			assertEquals("chunks parsed", 1, pass.chunksParsed);
+			assertTrue("at least one proposal", pass.proposed >= 1);
+			List<BaseRecord> rows = PbLocationUtil.listProposals(user, book, null);
+			assertEquals("proposal rows", pass.proposed, rows.size());
+			for(BaseRecord row : rows) {
+				logger.info("[p33-migration] proposal '{}' kind={} scenes={}", row.get(OlioFieldNames.FIELD_PB_PROPOSED_NAME),
+					row.get(OlioFieldNames.FIELD_PB_KIND), row.get(OlioFieldNames.FIELD_PB_SCENE_OBJECT_IDS));
+				assertNull("a proposal resolves nothing", row.get(FieldNames.FIELD_LOCATION));
+			}
+			for(String sceneOid : sceneOids) {
+				boolean listed = false;
+				for(BaseRecord row : rows) {
+					List<String> ids = row.get(OlioFieldNames.FIELD_PB_SCENE_OBJECT_IDS);
+					if(ids != null && ids.contains(sceneOid)) {
+						listed = true;
+						break;
+					}
+				}
+				assertTrue("every scene appears in a proposal: " + sceneOid, listed);
+			}
+			for(BaseRecord scene : scenes) {
+				BaseRecord fresh = PbBookUtil.readScene(user, scene.get(FieldNames.FIELD_OBJECT_ID), orgId);
+				assertNotNull(fresh);
+				Object loc = fresh.get(FieldNames.FIELD_LOCATION);
+				assertTrue("no scene is resolved by a pass", loc == null || !(loc instanceof BaseRecord));
+			}
+
+			// ── 5. PB1 untouched ─────────────────────────────────────────────────────
+			BaseRecord pb1GroupAfter = PictureBookUtil.findBookGroup(user, fixtureGroupObjectId);
+			assertNotNull("PB1 fixture group must still exist after migration", pb1GroupAfter);
+			assertEquals(fixtureGroupName, (String) pb1GroupAfter.get(FieldNames.FIELD_NAME));
+			Query metaQ = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_OBJECT_ID, metaNote.get(FieldNames.FIELD_OBJECT_ID));
+			metaQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			metaQ.planMost(true);
+			metaQ.setCache(false);
+			BaseRecord metaAfter = IOSystem.getActiveContext().getAccessPoint().find(user, metaQ);
+			assertNotNull("PB1 meta note must still exist", metaAfter);
+			assertEquals("PB1 meta note text unchanged", metaJson, (String) metaAfter.get("text"));
+		}
+		finally {
+			if(bookOid != null) {
+				try {
+					DeleteResult del = PbDeleteUtil.deleteBookComplete(user, bookOid);
+					logger.info("[p33-migration] cleanup book {}: deleted={} reason={}", bookOid, del.deleted, del.reason);
+				}
+				catch(Exception e) {
+					logger.error("[p33-migration] cleanup book " + bookOid + ": " + e.getMessage());
+				}
+			}
+			for(int i = fixtures.size() - 1; i >= 0; i--) {
+				deleteQuietly(user, fixtures.get(i));
+			}
+			deleteQuietly(user, fixtureGroup);
+			if(chatCfg != null) {
+				Object conn = chatCfg.get("connection");
+				deleteQuietly(user, chatCfg);
+				if(conn instanceof BaseRecord) {
+					deleteQuietly(user, (BaseRecord) conn);
+				}
+			}
+		}
+	}
+
+	private BaseRecord createFixtureNote(BaseRecord user, String groupPath, String name, String text) throws Exception {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		BaseRecord note = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, user, null, plist);
+		note.set("text", text);
+		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, note);
+		assertNotNull("fixture note " + name, created);
+		return created;
+	}
+
+	/// A real 4x4 PNG as a data.data row in the fixture group: the migration references it, never copies it.
+	private BaseRecord createFixturePng(BaseRecord user, String groupPath, String name, int rgb) throws Exception {
+		BufferedImage img = new BufferedImage(4, 4, BufferedImage.TYPE_INT_RGB);
+		for(int y = 0; y < 4; y++) {
+			for(int x = 0; x < 4; x++) {
+				img.setRGB(x, y, rgb);
+			}
+		}
+		ByteArrayOutputStream bos = new ByteArrayOutputStream();
+		assertTrue("PNG encode", ImageIO.write(img, "png", bos));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		BaseRecord data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, plist);
+		data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+		ByteModelUtil.setValue(data, bos.toByteArray());
+		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, data);
+		assertNotNull("fixture data " + name, created);
+		return created;
+	}
+
+	private void deleteQuietly(BaseRecord user, BaseRecord rec) {
+		if(rec == null) {
+			return;
+		}
+		try {
+			if(!IOSystem.getActiveContext().getAccessPoint().delete(user, rec)) {
+				logger.warn("[p33-migration] cleanup: {} {} was not deleted", rec.getSchema(), rec.get(FieldNames.FIELD_NAME));
+			}
+		}
+		catch(Exception e) {
+			logger.error("[p33-migration] cleanup " + rec.getSchema() + " " + rec.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+		}
 	}
 
 	@Test

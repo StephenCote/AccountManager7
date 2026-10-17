@@ -12,6 +12,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -50,7 +51,7 @@ public class PbWatchedFields {
 	 * {@code refHash}, so a change here invalidates stored hashes <b>on purpose</b> and loudly, rather
 	 * than silently comparing hashes computed under two different policies.
 	 */
-	public static final String WATCHED_SET_VERSION = "watched/v2";
+	public static final String WATCHED_SET_VERSION = "watched/v3";
 
 	/**
 	 * {@code olio.charPerson}: identity and appearance, the fields a portrait or a character description
@@ -81,12 +82,42 @@ public class PbWatchedFields {
 		FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_SIZE
 	));
 
+	/**
+	 * {@code olio.pb.location} (V3 §7.1 item 2): the visual identity a LOCATION render and a scene's
+	 * location text are derived from, plus {@code approvedRender} so that approving a new render in one
+	 * chapter stales the dependent scenes of every chapter that binds the same location record.
+	 * {@code approvedRender} is a foreign {@code olio.pb.artifact} and is rendered by <b>objectId</b>, not
+	 * by name like the other foreign values ({@link #canonicalRef}): artifact names are
+	 * {@code Artifact <handle> <role> r<revision>} ({@code PbArtifactUtil.artifactName}), unique only within
+	 * one Artifacts group, and every series chapter has its own Artifacts group with per-workflow handles -
+	 * so chapter 1 and chapter 3 can each hold an identically named LOCATION artifact, and approving one
+	 * over the other (the §7.1 cross-chapter case this set exists for) would leave a name-rendered hash
+	 * unchanged. {@code aliases}, {@code poi} and {@code locked} are deliberately unwatched: none of them
+	 * changes what the place looks like.
+	 */
+	private static final List<String> PB_LOCATION = Collections.unmodifiableList(Arrays.asList(
+		FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, OlioFieldNames.FIELD_PB_KIND,
+		OlioFieldNames.FIELD_PB_APPROVED_RENDER
+	));
+
+	/**
+	 * {@code olio.pb.locationVariant}: the five deltas the variant layers over its location, plus the
+	 * variant's own {@code approvedRender}. The parent location's fields are not folded in here: a scene
+	 * that uses a variant binds the location record too, so a location edit is caught by that binding.
+	 */
+	private static final List<String> PB_LOCATION_VARIANT = Collections.unmodifiableList(Arrays.asList(
+		OlioFieldNames.FIELD_PB_TIME_OF_DAY, OlioFieldNames.FIELD_PB_WEATHER, OlioFieldNames.FIELD_PB_SEASON,
+		OlioFieldNames.FIELD_PB_VIEWPOINT, OlioFieldNames.FIELD_PB_EXTRA, OlioFieldNames.FIELD_PB_APPROVED_RENDER
+	));
+
 	private static final Map<String, List<String>> WATCHED;
 	static {
 		Map<String, List<String>> m = new LinkedHashMap<>();
 		m.put(OlioModelNames.MODEL_CHAR_PERSON, CHAR_PERSON);
 		m.put(OlioModelNames.MODEL_APPAREL, APPAREL);
 		m.put(ModelNames.MODEL_DATA, DATA);
+		m.put(OlioModelNames.MODEL_PB_LOCATION, PB_LOCATION);
+		m.put(OlioModelNames.MODEL_PB_LOCATION_VARIANT, PB_LOCATION_VARIANT);
 		WATCHED = Collections.unmodifiableMap(m);
 	}
 
@@ -219,7 +250,9 @@ public class PbWatchedFields {
 	 * <li>fields in <b>declared order</b> (the order in this class, not the model's), each as
 	 * {@code name=token};</li>
 	 * <li>a foreign {@code model} value rendered by its <b>name</b>, not its row id, so the hash stays
-	 * portable across systems (the same reason ratification 8 adopted urn);</li>
+	 * portable across systems (the same reason ratification 8 adopted urn) - except a foreign
+	 * {@code olio.pb.artifact}, rendered by <b>objectId</b> because artifact names repeat across the
+	 * Artifacts groups of a series' chapters (see {@link #PB_LOCATION});</li>
 	 * <li>watched attributes appended after the fields, prefixed {@code @};</li>
 	 * <li>the {@code store.apparel} in-use set appended last for {@code olio.charPerson} - see
 	 * {@link #apparelToken}.</li>
@@ -231,8 +264,15 @@ public class PbWatchedFields {
 		for(String f : watchedFields(model)) {
 			Object v = (rec.hasField(f) ? rec.get(f) : null);
 			if(v instanceof BaseRecord) {
-				/// data.color and friends: the NAME is the portable identity, the row id is not
-				v = ((BaseRecord) v).get(FieldNames.FIELD_NAME);
+				BaseRecord fv = (BaseRecord) v;
+				if(OlioModelNames.MODEL_PB_ARTIFACT.equals(fv.getSchema())) {
+					/// artifact names collide across a series' per-chapter Artifacts groups; objectId does not
+					v = fv.get(FieldNames.FIELD_OBJECT_ID);
+				}
+				else {
+					/// data.color and friends: the NAME is the portable identity, the row id is not
+					v = fv.get(FieldNames.FIELD_NAME);
+				}
 			}
 			sb.append(PbConfigUtil.PAIR_SEPARATOR).append(f).append('=').append(PbConfigUtil.token(v));
 		}

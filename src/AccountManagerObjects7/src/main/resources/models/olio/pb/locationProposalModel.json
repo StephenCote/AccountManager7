@@ -1,0 +1,90 @@
+{
+	"name": "olio.pb.locationProposal",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "place",
+	"label": "Location Proposal",
+	"group": "Book",
+	"dedicatedParticipation": false,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["book"],
+	"description": "PictureBook V3 §7.1 / §28 step 3: one reviewable item from the whole-book location pass (pictureBook.cluster-locations). The pass clusters the scenes' settings into places and writes one PROPOSED row per place into the book's group, owned by the request user; nothing is resolved until a reviewer accepts the item, at which point getCreateLocation (or the sameAs merge) runs as the olio principal and the referenced scenes are re-pointed. 'name' is the slug of proposedName so the (name, groupId, organizationId) constraint keeps one proposal per place per book; 'passRun' marks which pass wrote the row so a re-run can retire stale PROPOSED rows without touching ACCEPTED/REJECTED ones. No field carries a schema default (PB2 convention rule 3, TestPbModelSchema): the enum columns read NULL as UNKNOWN.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "book",
+			"baseModel": "olio.pb.book",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "proposedName",
+			"type": "string",
+			"maxLength": 256,
+			"description": "The place name the pass proposes; becomes the olio.pb.location name on accept."
+		},
+		{
+			"name": "description",
+			"type": "string",
+			"description": "The place as the pass summarized it from the referenced scenes' settings."
+		},
+		{
+			"name": "kind",
+			"baseClass": "org.cote.accountmanager.schema.type.PbLocationKindEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "aliases",
+			"type": "list",
+			"baseType": "string",
+			"description": "Other names the scenes use for the same place; folded into the resolved location's aliases on accept."
+		},
+		{
+			"name": "sceneObjectIds",
+			"type": "list",
+			"baseType": "string",
+			"description": "objectIds of the olio.pb.scene rows the pass clustered under this place; re-pointed to the resolved location on accept."
+		},
+		{
+			"name": "sameAs",
+			"type": "string",
+			"maxLength": 256,
+			"description": "When set, the name or alias of an existing olio.pb.location in the book's world this proposal duplicates; accept resolves to that location instead of creating one."
+		},
+		{
+			"name": "proposalStatus",
+			"baseClass": "org.cote.accountmanager.schema.type.PbProposalStatusEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "location",
+			"baseModel": "olio.pb.location",
+			"type": "model",
+			"foreign": true,
+			"description": "The olio.pb.location the proposal resolved to; null until ACCEPTED."
+		},
+		{
+			"name": "reason",
+			"type": "string",
+			"maxLength": 1024,
+			"description": "Reviewer note on reject, or the accept path taken."
+		},
+		{
+			"name": "passRun",
+			"type": "string",
+			"maxLength": 64,
+			"description": "Identifier of the pass run that last wrote this row."
+		}
+	]
+}

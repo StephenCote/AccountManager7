@@ -706,17 +706,47 @@ public final class RenderPlan {
 		}
 	}
 
+	/**
+	 * The setting of the plan (V3 §12). {@code locationId}/{@code variantId} are the objectIds of the bound
+	 * {@code olio.pb.location}/{@code olio.pb.locationVariant} records (null when the scene names none),
+	 * {@code revisionHash} is the location's watched-field hash as read for this plan, and
+	 * {@code renderArtifactId} is the approved render the plan carries (variant's when a variant is named,
+	 * else the location's; null → {@code LOCATION_TEXT_ONLY}). Null members are omitted from the JSON, so a
+	 * plan with no location serialises exactly as it did before these fields existed.
+	 */
 	public static final class Location {
 		private final String locationId;
+		private final String variantId;
+		private final String revisionHash;
+		private final String renderArtifactId;
 		private final String description;
 
 		public Location(String locationId, String description) {
+			this(locationId, null, null, null, description);
+		}
+
+		public Location(String locationId, String variantId, String revisionHash, String renderArtifactId, String description) {
 			this.locationId = locationId;
+			this.variantId = variantId;
+			this.revisionHash = revisionHash;
+			this.renderArtifactId = renderArtifactId;
 			this.description = description;
 		}
 
 		public String getLocationId() {
 			return locationId;
+		}
+
+		public String getVariantId() {
+			return variantId;
+		}
+
+		public String getRevisionHash() {
+			return revisionHash;
+		}
+
+		public String getRenderArtifactId() {
+			return renderArtifactId;
 		}
 
 		public String getDescription() {
@@ -726,6 +756,9 @@ public final class RenderPlan {
 		Map<String, Object> toMap() {
 			Map<String, Object> m = new LinkedHashMap<>();
 			m.put("locationId", locationId);
+			m.put("variantId", variantId);
+			m.put("revisionHash", revisionHash);
+			m.put("renderArtifactId", renderArtifactId);
 			m.put("description", description);
 			return m;
 		}
@@ -734,7 +767,8 @@ public final class RenderPlan {
 			if(m == null) {
 				return null;
 			}
-			return new Location(str(m, "locationId"), str(m, "description"));
+			return new Location(str(m, "locationId"), str(m, "variantId"), str(m, "revisionHash"),
+				str(m, "renderArtifactId"), str(m, "description"));
 		}
 	}
 

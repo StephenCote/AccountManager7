@@ -68,7 +68,12 @@ public class TestPbModelSchema extends BaseTest {
 		OlioModelNames.MODEL_PB_ARTIFACT,
 		OlioModelNames.MODEL_PB_RUN,
 		/// V3 Phase 2 P2-1: the style model follows the same conventions as the original eight
-		OlioModelNames.MODEL_PB_STYLE
+		OlioModelNames.MODEL_PB_STYLE,
+		/// V3 Phase 3 P3-1: location identity + realization key, same conventions
+		OlioModelNames.MODEL_PB_LOCATION,
+		OlioModelNames.MODEL_PB_LOCATION_VARIANT,
+		/// V3 Phase 3 P3-3: the reviewable location-pass item, same conventions
+		OlioModelNames.MODEL_PB_LOCATION_PROPOSAL
 	);
 
 	/// CREATE [UNIQUE] INDEX <name> ON <schema>.<table> USING btree (<cols>)

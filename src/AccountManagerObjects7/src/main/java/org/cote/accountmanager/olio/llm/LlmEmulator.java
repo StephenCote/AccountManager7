@@ -24,6 +24,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -135,6 +136,8 @@ public final class LlmEmulator {
 	public static final String KIND_GUESS_APPAREL = "guess-apparel";
 	public static final String KIND_SCENE_BLURB = "scene-blurb";
 	public static final String KIND_SD_PROMPT = "sd-prompt";
+	/// V3 §7.1 whole-book location pass (pictureBook.cluster-locations): scene settings in, location clusters out
+	public static final String KIND_CLUSTER_LOCATIONS = "cluster-locations";
 	public static final String KIND_CHAT = "chat";
 
 	/**
@@ -154,6 +157,7 @@ public final class LlmEmulator {
 		DEFAULT_KINDS.put(KIND_GUESS_APPAREL, Pattern.compile("Catalog \\(choose ONLY", Pattern.CASE_INSENSITIVE));
 		DEFAULT_KINDS.put(KIND_SCENE_BLURB, Pattern.compile("picture book caption", Pattern.CASE_INSENSITIVE));
 		DEFAULT_KINDS.put(KIND_SD_PROMPT, Pattern.compile("Create a Stable Diffusion", Pattern.CASE_INSENSITIVE));
+		DEFAULT_KINDS.put(KIND_CLUSTER_LOCATIONS, Pattern.compile("SCENE SETTINGS \\(one per line", Pattern.CASE_INSENSITIVE));
 	}
 
 	/// Small fixed race set used ONLY when the reduce-character prompt does not carry its own option list.
@@ -1057,6 +1061,8 @@ public final class LlmEmulator {
 					String setting = firstGroup(user, "SETTING:\\s*([^\\n]+)", "a quiet room");
 					return "masterpiece, best quality, " + setting.trim() + ", soft natural lighting, detailed environment, cinematic composition";
 				}
+				case KIND_CLUSTER_LOCATIONS:
+					return toJson(clusterLocations(user));
 				default:
 					return "Emulated response.";
 			}
@@ -1078,6 +1084,89 @@ public final class LlmEmulator {
 		/// Prompts that place a closing instruction after the text ("Return only the JSON array.") — drop it.
 		rest = rest.replaceAll("(?s)\\n\\s*Return only the JSON (array|object)\\.?\\s*$", "");
 		return rest;
+	}
+
+	private static final Pattern SCENE_SETTING_LINE = Pattern.compile("^#(\\d+):\\s*(.*?)(?:\\s+-\\s+[^-]*)?$");
+	private static final Pattern INTERIOR_WORDS = Pattern.compile("\\b(inside|indoors|room|hall|tavern|inn|kitchen|cellar|chamber|house|cabin|shop|cottage|parlou?r|bar|library|church|temple)\\b", Pattern.CASE_INSENSITIVE);
+	private static final Pattern EXTERIOR_WORDS = Pattern.compile("\\b(outside|outdoors|forest|wood|road|path|field|street|beach|shore|hill|mountain|sky|river|lake|sea|garden|courtyard|market|square|cliff|meadow)\\b", Pattern.CASE_INSENSITIVE);
+
+	/**
+	 * Deterministic stand-in for the cluster-locations pass: scenes whose setting text normalizes to the same
+	 * string form one location; a cluster whose setting mentions a KNOWN location's name verbatim gets that
+	 * name as {@code sameAs}. Settings with no text fall into an ABSTRACT "Unspecified" cluster, as the prompt
+	 * instructs the real model to do.
+	 */
+	static List<Map<String, Object>> clusterLocations(String user) {
+		String known = sectionAfter(user, "KNOWN LOCATIONS");
+		int knownEnd = known.indexOf("SCENE SETTINGS");
+		if (knownEnd >= 0) known = known.substring(0, knownEnd);
+		int nl = known.indexOf('\n');
+		known = nl >= 0 ? known.substring(nl + 1) : "";
+		List<String> knownNames = new ArrayList<>();
+		for (String line : known.split("\\r?\\n")) {
+			String t = line.trim().replaceFirst("^[-*]\\s*", "");
+			if (!t.isEmpty() && !t.equalsIgnoreCase("(none yet)") && !t.equalsIgnoreCase("(none)")) knownNames.add(t);
+		}
+
+		String scenes = sectionAfter(user, "SCENE SETTINGS");
+		nl = scenes.indexOf('\n');
+		scenes = nl >= 0 ? scenes.substring(nl + 1) : "";
+
+		LinkedHashMap<String, Map<String, Object>> clusters = new LinkedHashMap<>();
+		for (String line : scenes.split("\\r?\\n")) {
+			Matcher m = SCENE_SETTING_LINE.matcher(line.trim());
+			if (!m.matches()) continue;
+			int idx = Integer.parseInt(m.group(1));
+			String setting = m.group(2).trim();
+			String norm = setting.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
+			String keyNorm = norm.isEmpty() ? "" : norm;
+			Map<String, Object> c = clusters.get(keyNorm);
+			if (c == null) {
+				c = new LinkedHashMap<>();
+				String name;
+				String kind;
+				if (norm.isEmpty()) {
+					name = "Unspecified";
+					kind = "ABSTRACT";
+				} else {
+					name = titleCase(setting, 48);
+					boolean in = INTERIOR_WORDS.matcher(setting).find();
+					boolean out = EXTERIOR_WORDS.matcher(setting).find();
+					kind = (in && out) ? "MIXED" : in ? "INTERIOR" : out ? "EXTERIOR" : "MIXED";
+				}
+				String sameAs = null;
+				for (String kn : knownNames) {
+					if (!kn.isEmpty() && setting.toLowerCase(Locale.ROOT).contains(kn.toLowerCase(Locale.ROOT))) {
+						sameAs = kn;
+						break;
+					}
+				}
+				c.put("name", name);
+				c.put("kind", kind);
+				c.put("description", norm.isEmpty() ? "No place is named." : setting);
+				c.put("aliases", new ArrayList<String>());
+				c.put("scenes", new ArrayList<Integer>());
+				c.put("sameAs", sameAs);
+				clusters.put(keyNorm, c);
+			}
+			@SuppressWarnings("unchecked")
+			List<Integer> sc = (List<Integer>) c.get("scenes");
+			sc.add(idx);
+		}
+		return new ArrayList<>(clusters.values());
+	}
+
+	private static String titleCase(String text, int maxChars) {
+		String t = text.length() > maxChars ? text.substring(0, maxChars) : text;
+		int cut = t.indexOf(',');
+		if (cut > 0) t = t.substring(0, cut);
+		StringBuilder b = new StringBuilder();
+		for (String w : t.trim().split("\\s+")) {
+			if (w.isEmpty()) continue;
+			if (b.length() > 0) b.append(' ');
+			b.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1));
+		}
+		return b.length() == 0 ? "Unnamed Place" : b.toString();
 	}
 
 	static String firstNonBlankLine(String text, int maxChars) {

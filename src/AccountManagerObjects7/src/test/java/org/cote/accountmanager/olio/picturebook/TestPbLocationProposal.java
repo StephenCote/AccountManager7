@@ -1,0 +1,1060 @@
+package org.cote.accountmanager.olio.picturebook;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Stream;
+
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.tests.BaseTest;
+import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.LlmEmulator;
+import org.cote.accountmanager.olio.picturebook.PbLocationUtil.LocationPassResult;
+import org.cote.accountmanager.olio.picturebook.PbLocationUtil.ProposalAcceptResult;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
+import org.cote.accountmanager.schema.type.PbLocationKindEnumType;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PbProposalStatusEnumType;
+import org.cote.accountmanager.util.JSONUtil;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+
+/**
+ * V3 Phase 3, P3-3: the whole-book location pass ({@link PbLocationUtil#proposeLocations}) and its review
+ * ({@link PbLocationUtil#acceptProposal} / {@link PbLocationUtil#rejectProposal}) against the live {@code am7db},
+ * driven DETERMINISTICALLY through the EMULATOR dialect ({@link LlmEmulator} {@code cluster-locations}
+ * synthesizer) so every assertion is about what the pass does with a clustering, not about what a model said.
+ * The live-LLM counterpart on a real manuscript is {@code TestPbLocationPassLive}.
+ * <ol>
+ *  <li>a pass writes one PROPOSED row per place in the book's group, groups the scenes that share a setting,
+ *      skips scenes with no setting, creates no location / POI / store and touches no scene; a second pass
+ *      re-writes the same rows (same objectIds, new passRun) and retires nothing;</li>
+ *  <li>accepting creates the location with its map-free POI and store, re-points the proposal's scenes the
+ *      user may update ({@code overwrite=false} leaves a scene that already has a location), marks the row
+ *      ACCEPTED with the location and a reason; accept/reject are 409 unless PROPOSED; a stranger in the
+ *      organization can neither run the pass, see, nor accept; another book's proposal is 404; a re-run leaves
+ *      settled rows alone;</li>
+ *  <li>{@code sameAs} resolves to the known location and folds the proposed name in as an alias; a locked
+ *      location keeps its aliases (warning) but its scenes are still re-pointed ({@code overwrite=true});</li>
+ *  <li>a PROPOSED row the current pass did not produce is retired only after a complete pass: a hard LLM
+ *      failure (HTTP 500 on the one chunk) retires nothing, and a complete pass whose model returned an empty
+ *      array retires everything PROPOSED (§6.C 172) - the next complete pass regenerates it;</li>
+ *  <li>a cluster the model split off a place by room, view, time of day, weather or season is folded back into
+ *      the place by name shape (its name becomes an alias, its scenes and description merge); a place that merely
+ *      shares words with another (an inn on a road) is not;</li>
+ *  <li>the facade's {@link PbServiceFacade#acceptLocationProposal} materializes the location's LOCATION node only
+ *      when the book already has a workflow and the location is unlocked (P3-4 seam); it never creates the
+ *      workflow;</li>
+ *  <li>a chunk answered with prose leaves a {@code no-json} failure record carrying the whole reply in the
+ *      result's warnings, and {@link PbServiceFacade#locationPassDto} / {@link PbServiceFacade#stripRaw} put
+ *      {@code rawResponseLength} on the wire instead of the text while the result keeps it (P3-4 transport
+ *      boundary).</li>
+ * </ol>
+ * Lives in {@code org.cote.accountmanager.olio.picturebook} for the package-private {@code PbGraphUtil.patchOf}
+ * and the {@code PbLocationUtil} helpers. Each case uses its own throwaway book in {@code /Development/World
+ * Building} as {@code testUser1}, deletes it and its emulator {@code system.connection} in {@code finally}; the
+ * olio principal is used only to lock a fixture, never to assert through.
+ */
+public class TestPbLocationProposal extends BaseTest {
+
+	private static final String ORG_A = "/Development/World Building";
+	private static final String TEST_USER = "testUser1";
+	private static final String STRANGER_USER = "p33Stranger";
+	private static final String MODEL = "qwen3:8b";
+	private static final int REQUEST_TIMEOUT_SEC = 20;
+
+	/// The emulator names a cluster after the setting up to its first comma, so these are the proposed names.
+	private static final String TAVERN_SETTING = "The Gilded Tankard, a low-beamed tavern by the quay";
+	private static final String TAVERN_NAME = "The Gilded Tankard";
+	private static final String HILL_SETTING = "A windswept hill road at dusk";
+	private static final String HILL_NAME = "A Windswept Hill Road At Dusk";
+
+	private Path tmpRoot;
+	private final List<BaseRecord> connections = new ArrayList<>();
+
+	@Before
+	public void setupEach() throws Exception {
+		OlioModelNames.use();
+		OlioContextUtil.clearCache();
+		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
+		tmpRoot = Files.createTempDirectory("am7-pb-location-proposal-");
+		LlmEmulator.configure(tmpRoot.toString(), null);
+		LlmEmulator.resetCounters();
+		Chat.clearLastCallError();
+	}
+
+	@After
+	public void teardownEach() throws Exception {
+		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
+		LlmEmulator.configure(null, null);
+		LlmEmulator.resetCounters();
+		if(tmpRoot != null) {
+			deleteTree(tmpRoot);
+		}
+	}
+
+	// ─────────────────────────────── emulator fixture ───────────────────────────────
+
+	private String newSet(String manifestJson) throws Exception {
+		String set = "p33-" + UUID.randomUUID().toString().substring(0, 8);
+		Path dir = tmpRoot.resolve(set);
+		Files.createDirectories(dir);
+		if(manifestJson != null) {
+			Files.write(dir.resolve(LlmEmulator.MANIFEST_FILE), manifestJson.getBytes(StandardCharsets.UTF_8));
+		}
+		return set;
+	}
+
+	private static void deleteTree(Path root) throws Exception {
+		if(!Files.exists(root)) {
+			return;
+		}
+		try (Stream<Path> s = Files.walk(root)) {
+			s.sorted((a, b) -> b.compareTo(a)).forEach(p -> {
+				try {
+					Files.deleteIfExists(p);
+				}
+				catch(Exception e) {
+					/// best effort
+				}
+			});
+		}
+	}
+
+	/// Chat.configureChat re-queries the connection by FK id and resolves the dialect from THAT row, so the
+	/// connection must be persisted; it is deleted in the case's finally.
+	private BaseRecord persistConnection(BaseRecord user, String name, String serverUrl) throws Exception {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		BaseRecord c = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CONNECTION, user, null, plist);
+		assertNotNull("connection factory newInstance returned null", c);
+		c.set("serverUrl", serverUrl);
+		c.set("requestTimeout", REQUEST_TIMEOUT_SEC);
+		c.set(FieldNames.FIELD_DIALECT, ConnectionDialectEnumType.EMULATOR);
+		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, c);
+		assertNotNull("AccessPoint.create returned null for system.connection '" + name + "'", created);
+		long connId = created.get(FieldNames.FIELD_ID);
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_CONNECTION, FieldNames.FIELD_ID, connId);
+		cq.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_ORGANIZATION_ID, "serverUrl", "requestTimeout", "apiKey", FieldNames.FIELD_DIALECT, FieldNames.FIELD_UPSTREAM});
+		cq.setCache(false);
+		BaseRecord back = IOSystem.getActiveContext().getAccessPoint().find(user, cq);
+		assertNotNull("persisted connection id=" + connId + " could not be read back", back);
+		assertEquals("system.connection.dialect did not persist", ConnectionDialectEnumType.EMULATOR, back.getEnum(FieldNames.FIELD_DIALECT));
+		connections.add(back);
+		return back;
+	}
+
+	/// In-memory chatConfig bound to an EMULATOR connection whose serverUrl names {@code set}.
+	private BaseRecord emulatorConfig(BaseRecord user, String set) throws Exception {
+		String nonce = UUID.randomUUID().toString().substring(0, 8);
+		BaseRecord conn = persistConnection(user, "P33 Emu Conn " + nonce, LlmEmulator.SCHEME + set);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "P33 Emu Cfg " + nonce);
+		BaseRecord cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
+		assertNotNull("chatConfig factory newInstance returned null", cfg);
+		cfg.set("model", MODEL);
+		cfg.set("stream", false);
+		cfg.set("connection", conn);
+		return cfg;
+	}
+
+	private void deleteConnections(BaseRecord user) {
+		for(BaseRecord c : connections) {
+			try {
+				if(!ioContext.getAccessPoint().delete(user, c)) {
+					logger.warn("cleanup: connection " + c.get(FieldNames.FIELD_NAME) + " was not deleted");
+				}
+			}
+			catch(Exception e) {
+				logger.error("cleanup: connection " + c.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+			}
+		}
+		connections.clear();
+	}
+
+	// ─────────────────────────────── book fixture ───────────────────────────────
+
+	private static String shortId() {
+		return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+	}
+
+	private String dataPath() {
+		String p = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be configured", p);
+		return p;
+	}
+
+	private BaseRecord user() {
+		OrganizationContext org = getTestOrganization(ORG_A);
+		assertNotNull("Failed to resolve " + ORG_A, org);
+		BaseRecord u = ioContext.getFactory().getCreateUser(org.getAdminUser(), TEST_USER, org.getOrganizationId());
+		assertNotNull("Failed to resolve " + TEST_USER, u);
+		return u;
+	}
+
+	private BaseRecord stranger(long orgId) {
+		OrganizationContext org = getTestOrganization(ORG_A);
+		BaseRecord s = ioContext.getFactory().getCreateUser(org.getAdminUser(), STRANGER_USER, org.getOrganizationId());
+		assertNotNull("Failed to resolve " + STRANGER_USER, s);
+		assertEquals("stranger must be in the same organization", orgId, orgOf(s));
+		return s;
+	}
+
+	private static long orgOf(BaseRecord u) {
+		return ((Number) u.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+	}
+
+	private static long idOf(BaseRecord rec) {
+		return ((Number) rec.get(FieldNames.FIELD_ID)).longValue();
+	}
+
+	private static String oidOf(BaseRecord rec) {
+		return rec.get(FieldNames.FIELD_OBJECT_ID);
+	}
+
+	private static long fkId(BaseRecord rec, String field) {
+		Object o = rec.get(field);
+		return (o instanceof BaseRecord ? idOf((BaseRecord) o) : 0L);
+	}
+
+	private BaseRecord olioUser(long orgId) {
+		BaseRecord o = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		assertNotNull("olio principal", o);
+		return o;
+	}
+
+	private BaseRecord newBook(BaseRecord u, String tag) {
+		String slug = "p33" + tag + shortId();
+		BaseRecord bk = PbBookUtil.createBook(u, dataPath(), slug, "P3-3 " + tag + " " + slug);
+		assertNotNull("createBook " + slug, bk);
+		return bk;
+	}
+
+	private void deleteBook(BaseRecord u, BaseRecord bk) {
+		if(bk == null) {
+			return;
+		}
+		try {
+			DeleteResult res = PbDeleteUtil.deleteBookComplete(u, oidOf(bk));
+			logger.info("cleanup " + bk.get(FieldNames.FIELD_NAME) + ": deleted=" + res.deleted + " reason=" + res.reason);
+		}
+		catch(Exception e) {
+			logger.error("cleanup " + bk.get(FieldNames.FIELD_NAME) + " failed: " + e.getMessage());
+		}
+	}
+
+	private BookContext bookContext(BaseRecord u, BaseRecord bk) {
+		BookContext bc = PbBookUtil.openBookContext(u, bk);
+		assertNotNull("The book must carry a world", bc);
+		return bc;
+	}
+
+	private static long groupIdOf(BookContext bctx, String worldField) {
+		BaseRecord g = bctx.getGroup(worldField);
+		assertNotNull("world group " + worldField, g);
+		return idOf(g);
+	}
+
+	private int countInGroup(String model, long groupId, long orgId) {
+		Query q = QueryUtil.getGroupQuery(model, null, groupId, orgId);
+		q.setCache(false);
+		return ioContext.getSearch().count(q);
+	}
+
+	/// Titles must not contain " - ": the emulator strips a trailing " - <title>" from each scene line.
+	private BaseRecord addScene(BaseRecord u, BaseRecord bk, int index, String title, String setting) throws Exception {
+		String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+		BaseRecord scene = PbBookUtil.createScene(u, bk, index, title, PbBookUtil.bookGroupPath(slug));
+		assertNotNull("createScene " + index, scene);
+		if(setting != null) {
+			setSetting(u, scene, setting);
+		}
+		return readScene(u, oidOf(scene), orgOf(u));
+	}
+
+	private void setSetting(BaseRecord u, BaseRecord scene, String setting) throws Exception {
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SETTING);
+		patch.set(OlioFieldNames.FIELD_PB_SETTING, setting);
+		assertNotNull("set setting on " + scene.get(FieldNames.FIELD_NAME), ioContext.getAccessPoint().update(u, patch));
+	}
+
+	private void pointSceneAt(BaseRecord u, BaseRecord scene, BaseRecord loc) throws Exception {
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, FieldNames.FIELD_LOCATION);
+		patch.set(FieldNames.FIELD_LOCATION, loc);
+		assertNotNull("point " + scene.get(FieldNames.FIELD_NAME) + " at " + loc.get(FieldNames.FIELD_NAME), ioContext.getAccessPoint().update(u, patch));
+	}
+
+	private BaseRecord readScene(BaseRecord actor, String objectId, long orgId) {
+		BaseRecord s = PbBookUtil.readScene(actor, objectId, orgId);
+		assertNotNull("scene " + objectId + " readable by " + actor.get(FieldNames.FIELD_NAME), s);
+		return s;
+	}
+
+	private BaseRecord readLocation(BaseRecord actor, String objectId, long orgId) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_LOCATION, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(PbBookUtil.locationRequest());
+		q.setCache(false);
+		return ioContext.getAccessPoint().find(actor, q);
+	}
+
+	private static BaseRecord byName(List<BaseRecord> proposals, String rowName) {
+		for(BaseRecord p : proposals) {
+			if(rowName.equals(p.get(FieldNames.FIELD_NAME))) {
+				return p;
+			}
+		}
+		return null;
+	}
+
+	private static BaseRecord require(List<BaseRecord> proposals, String rowName) {
+		BaseRecord p = byName(proposals, rowName);
+		assertNotNull("proposal row " + rowName + " among " + names(proposals), p);
+		return p;
+	}
+
+	private static List<String> names(List<BaseRecord> recs) {
+		List<String> out = new ArrayList<>();
+		for(BaseRecord r : recs) {
+			out.add(r.get(FieldNames.FIELD_NAME));
+		}
+		return out;
+	}
+
+	private static PbLocationKindEnumType kindOf(BaseRecord rec) {
+		Object k = rec.get(OlioFieldNames.FIELD_PB_KIND);
+		return PbLocationUtil.kindOf(k != null ? String.valueOf(k) : null);
+	}
+
+	private static void assertSceneIds(BaseRecord proposal, BaseRecord... scenes) {
+		List<String> ids = proposal.get(OlioFieldNames.FIELD_PB_SCENE_OBJECT_IDS);
+		assertNotNull("sceneObjectIds", ids);
+		assertEquals("scene count on " + proposal.get(FieldNames.FIELD_NAME) + ": " + ids, scenes.length, ids.size());
+		for(BaseRecord s : scenes) {
+			assertTrue(proposal.get(FieldNames.FIELD_NAME) + " must list scene " + s.get(FieldNames.FIELD_NAME), ids.contains(oidOf(s)));
+		}
+	}
+
+	private static int expectStatus(String what, int expected, Runnable r) {
+		try {
+			r.run();
+		}
+		catch(PictureBookException e) {
+			assertEquals(what + " status (" + e.getMessage() + ")", expected, e.getStatus());
+			return e.getStatus();
+		}
+		fail(what + " must throw PictureBookException " + expected);
+		return -1;
+	}
+
+	private static boolean anyContains(List<String> warnings, String needle) {
+		for(String w : warnings) {
+			if(w != null && w.contains(needle)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// ─────────────────────────────── cases ───────────────────────────────
+
+	@Test
+	public void case01_passProposesWithoutResolvingAndIsIdempotent() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "pass");
+			BookContext bctx = bookContext(u, bk);
+			long locGid = groupIdOf(bctx, FieldNames.FIELD_LOCATIONS);
+			long poiGid = groupIdOf(bctx, "pointsOfInterest");
+			long storeGid = groupIdOf(bctx, "stores");
+			int locs0 = countInGroup(OlioModelNames.MODEL_PB_LOCATION, locGid, orgId);
+			int pois0 = countInGroup(OlioModelNames.MODEL_POI, poiGid, orgId);
+			int stores0 = countInGroup(OlioModelNames.MODEL_STORE, storeGid, orgId);
+
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			BaseRecord s2 = addScene(u, bk, 2, "The Road", HILL_SETTING);
+			BaseRecord s3 = addScene(u, bk, 3, "Return", TAVERN_SETTING);
+			BaseRecord s4 = addScene(u, bk, 4, "Interlude", null);
+
+			BaseRecord cfg = emulatorConfig(u, newSet(null));
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, cfg);
+			logger.info("case01 pass 1: " + describe(r1));
+			assertFalse("pass 1 hard failure: " + r1.warnings, r1.hardFailure);
+			assertEquals("scenes considered", 3, r1.scenesConsidered);
+			assertEquals("scenes skipped (no setting)", 1, r1.scenesSkipped);
+			assertEquals("chunks", 1, r1.chunks);
+			assertEquals("chunks parsed", 1, r1.chunksParsed);
+			assertEquals("proposed", 2, r1.proposed);
+			assertEquals("updated", 0, r1.updated);
+			assertEquals("settled", 0, r1.settled);
+			assertEquals("retired", 0, r1.retired);
+			assertNotNull(r1.passRun);
+
+			List<BaseRecord> rows = PbLocationUtil.listProposals(u, bk, null);
+			assertEquals("proposal rows: " + names(rows), 2, rows.size());
+			assertEquals(2, PbLocationUtil.listProposals(u, bk, PbProposalStatusEnumType.PROPOSED).size());
+			assertEquals(0, PbLocationUtil.listProposals(u, bk, PbProposalStatusEnumType.ACCEPTED).size());
+
+			BaseRecord tavern = require(rows, PbLocationUtil.proposalName(TAVERN_NAME));
+			assertEquals(TAVERN_NAME, tavern.get(OlioFieldNames.FIELD_PB_PROPOSED_NAME));
+			assertEquals(PbLocationKindEnumType.INTERIOR, kindOf(tavern));
+			assertEquals(TAVERN_SETTING, tavern.get(FieldNames.FIELD_DESCRIPTION));
+			assertNull("no known location, so no sameAs", tavern.get(OlioFieldNames.FIELD_PB_SAME_AS));
+			assertEquals(PbProposalStatusEnumType.PROPOSED, PbLocationUtil.statusOf(tavern));
+			assertEquals(r1.passRun, tavern.get(OlioFieldNames.FIELD_PB_PASS_RUN));
+			assertEquals("proposal belongs to the book", idOf(bk), fkId(tavern, OlioFieldNames.FIELD_PB_BOOK));
+			assertSceneIds(tavern, s1, s3);
+			assertNull("nothing resolved yet", tavern.get(FieldNames.FIELD_LOCATION));
+
+			BaseRecord hill = require(rows, PbLocationUtil.proposalName(HILL_NAME));
+			assertEquals(HILL_NAME, hill.get(OlioFieldNames.FIELD_PB_PROPOSED_NAME));
+			assertEquals(PbLocationKindEnumType.EXTERIOR, kindOf(hill));
+			assertSceneIds(hill, s2);
+
+			/// Nothing resolved: no location, POI or store, and no scene touched
+			assertEquals("locations", locs0, countInGroup(OlioModelNames.MODEL_PB_LOCATION, locGid, orgId));
+			assertEquals("POIs", pois0, countInGroup(OlioModelNames.MODEL_POI, poiGid, orgId));
+			assertEquals("stores", stores0, countInGroup(OlioModelNames.MODEL_STORE, storeGid, orgId));
+			for(BaseRecord s : new BaseRecord[] {s1, s2, s3, s4}) {
+				assertEquals("scene " + s.get(FieldNames.FIELD_NAME) + " untouched", 0L, fkId(readScene(u, oidOf(s), orgId), FieldNames.FIELD_LOCATION));
+			}
+
+			/// Idempotent: same rows, re-written under the new run, nothing retired
+			LocationPassResult r2 = PbLocationUtil.proposeLocations(u, bk, cfg);
+			logger.info("case01 pass 2: " + describe(r2));
+			assertFalse(r2.hardFailure);
+			assertNotEquals(r1.passRun, r2.passRun);
+			assertEquals("proposed on re-run", 0, r2.proposed);
+			assertEquals("updated on re-run", 2, r2.updated);
+			assertEquals("settled on re-run", 0, r2.settled);
+			assertEquals("retired on re-run", 0, r2.retired);
+			List<BaseRecord> rows2 = PbLocationUtil.listProposals(u, bk, null);
+			assertEquals(2, rows2.size());
+			BaseRecord tavern2 = require(rows2, PbLocationUtil.proposalName(TAVERN_NAME));
+			assertEquals("same row, not a duplicate", oidOf(tavern), oidOf(tavern2));
+			assertEquals(r2.passRun, tavern2.get(OlioFieldNames.FIELD_PB_PASS_RUN));
+			assertSceneIds(tavern2, s1, s3);
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	@Test
+	public void case02_acceptResolvesRepointsAndSettles() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		BaseRecord other = null;
+		try {
+			bk = newBook(u, "accept");
+			BookContext bctx = bookContext(u, bk);
+			long locGid = groupIdOf(bctx, FieldNames.FIELD_LOCATIONS);
+			long poiGid = groupIdOf(bctx, "pointsOfInterest");
+			long storeGid = groupIdOf(bctx, "stores");
+
+			BaseRecord elsewhere = PbLocationUtil.getCreateLocation(u, bk, "Elsewhere", null, PbLocationKindEnumType.ABSTRACT, null);
+			assertNotNull(elsewhere);
+			int locs0 = countInGroup(OlioModelNames.MODEL_PB_LOCATION, locGid, orgId);
+			int pois0 = countInGroup(OlioModelNames.MODEL_POI, poiGid, orgId);
+			int stores0 = countInGroup(OlioModelNames.MODEL_STORE, storeGid, orgId);
+
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			BaseRecord s2 = addScene(u, bk, 2, "The Road", HILL_SETTING);
+			BaseRecord s3 = addScene(u, bk, 3, "Return", TAVERN_SETTING);
+			pointSceneAt(u, s3, elsewhere);
+
+			BaseRecord cfg = emulatorConfig(u, newSet(null));
+
+			/// A stranger in the organization cannot run the pass
+			BaseRecord stranger = stranger(orgId);
+			final BaseRecord fbk = bk;
+			try {
+				PbLocationUtil.proposeLocations(stranger, fbk, cfg);
+				fail("stranger must not run the pass");
+			}
+			catch(PictureBookException e) {
+				assertTrue("stranger pass status " + e.getStatus(), e.getStatus() == 403 || e.getStatus() == 404);
+			}
+
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, cfg);
+			logger.info("case02 pass 1: " + describe(r1));
+			assertFalse(r1.hardFailure);
+			assertEquals(2, r1.proposed);
+			List<BaseRecord> rows = PbLocationUtil.listProposals(u, bk, null);
+			BaseRecord tavern = require(rows, PbLocationUtil.proposalName(TAVERN_NAME));
+			BaseRecord hill = require(rows, PbLocationUtil.proposalName(HILL_NAME));
+			assertNull("'Elsewhere' is not in any setting", tavern.get(OlioFieldNames.FIELD_PB_SAME_AS));
+
+			/// The stranger sees none of it and cannot accept
+			assertEquals("stranger list", 0, PbLocationUtil.listProposals(stranger, bk, null).size());
+			final BaseRecord ftavern = tavern;
+			try {
+				PbLocationUtil.acceptProposal(stranger, fbk, ftavern, false);
+				fail("stranger must not accept");
+			}
+			catch(PictureBookException e) {
+				assertTrue("stranger accept status " + e.getStatus(), e.getStatus() == 403 || e.getStatus() == 404);
+			}
+
+			/// Another book's proposal is not found through this book
+			other = newBook(u, "other");
+			addScene(u, other, 1, "Elsewhere", HILL_SETTING);
+			LocationPassResult ro = PbLocationUtil.proposeLocations(u, other, cfg);
+			assertEquals(1, ro.proposed);
+			final BaseRecord foreign = ro.proposals.get(0);
+			expectStatus("accept another book's proposal", 404, () -> PbLocationUtil.acceptProposal(u, fbk, foreign, false));
+			expectStatus("reject another book's proposal", 404, () -> PbLocationUtil.rejectProposal(u, fbk, foreign, "x"));
+
+			/// Accept the tavern without overwriting: s1 re-pointed, s3 (already at Elsewhere) skipped
+			ProposalAcceptResult a = PbLocationUtil.acceptProposal(u, bk, tavern, false);
+			logger.info("case02 accept tavern: created=" + a.locationCreated + " repointed=" + a.scenesRepointed + " skipped=" + a.scenesSkipped
+				+ " folded=" + a.aliasesFolded + " warnings=" + a.warnings);
+			assertTrue("location created", a.locationCreated);
+			assertNotNull(a.location);
+			assertEquals(TAVERN_NAME, a.location.get(FieldNames.FIELD_NAME));
+			assertEquals(PbLocationKindEnumType.INTERIOR, kindOf(a.location));
+			assertEquals(TAVERN_SETTING, a.location.get(FieldNames.FIELD_DESCRIPTION));
+			assertEquals("scenes re-pointed", 1, a.scenesRepointed);
+			assertEquals("scenes skipped", 1, a.scenesSkipped);
+			assertEquals("aliases folded on a created location", 0, a.aliasesFolded);
+			long locId = idOf(a.location);
+			assertTrue("POI linked", fkId(a.location, OlioFieldNames.FIELD_PB_POI) > 0L);
+			assertEquals("one location created", locs0 + 1, countInGroup(OlioModelNames.MODEL_PB_LOCATION, locGid, orgId));
+			assertEquals("one POI created", pois0 + 1, countInGroup(OlioModelNames.MODEL_POI, poiGid, orgId));
+			assertEquals("one store created", stores0 + 1, countInGroup(OlioModelNames.MODEL_STORE, storeGid, orgId));
+			assertEquals("s1 now at the tavern", locId, fkId(readScene(u, oidOf(s1), orgId), FieldNames.FIELD_LOCATION));
+			assertEquals("s3 left at Elsewhere", idOf(elsewhere), fkId(readScene(u, oidOf(s3), orgId), FieldNames.FIELD_LOCATION));
+			assertEquals("s2 untouched", 0L, fkId(readScene(u, oidOf(s2), orgId), FieldNames.FIELD_LOCATION));
+
+			BaseRecord accepted = a.proposal;
+			assertNotNull(accepted);
+			assertEquals(PbProposalStatusEnumType.ACCEPTED, PbLocationUtil.statusOf(accepted));
+			assertEquals("proposal.location", locId, fkId(accepted, FieldNames.FIELD_LOCATION));
+			assertEquals("created:" + TAVERN_NAME, accepted.get(OlioFieldNames.FIELD_PB_REASON));
+			assertEquals(1, PbLocationUtil.listProposals(u, bk, PbProposalStatusEnumType.ACCEPTED).size());
+
+			/// Not PROPOSED any more: 409 either way
+			expectStatus("accept twice", 409, () -> PbLocationUtil.acceptProposal(u, fbk, ftavern, true));
+			expectStatus("reject after accept", 409, () -> PbLocationUtil.rejectProposal(u, fbk, ftavern, "late"));
+
+			/// Reject the hill with a note; then it cannot be accepted
+			BaseRecord rejected = PbLocationUtil.rejectProposal(u, bk, hill, "  not a real place  ");
+			assertEquals(PbProposalStatusEnumType.REJECTED, PbLocationUtil.statusOf(rejected));
+			assertEquals("not a real place", rejected.get(OlioFieldNames.FIELD_PB_REASON));
+			assertNull(rejected.get(FieldNames.FIELD_LOCATION));
+			final BaseRecord fhill = hill;
+			expectStatus("accept after reject", 409, () -> PbLocationUtil.acceptProposal(u, fbk, fhill, true));
+			assertEquals("hill scene untouched by a rejection", 0L, fkId(readScene(u, oidOf(s2), orgId), FieldNames.FIELD_LOCATION));
+			assertEquals("no second location", locs0 + 1, countInGroup(OlioModelNames.MODEL_PB_LOCATION, locGid, orgId));
+
+			/// A re-run leaves both settled rows alone and retires nothing
+			LocationPassResult r2 = PbLocationUtil.proposeLocations(u, bk, cfg);
+			logger.info("case02 pass 2: " + describe(r2));
+			assertFalse(r2.hardFailure);
+			assertEquals("settled", 2, r2.settled);
+			assertEquals(0, r2.proposed);
+			assertEquals(0, r2.updated);
+			assertEquals(0, r2.retired);
+			List<BaseRecord> rows2 = PbLocationUtil.listProposals(u, bk, null);
+			assertEquals(2, rows2.size());
+			assertEquals(PbProposalStatusEnumType.ACCEPTED, PbLocationUtil.statusOf(require(rows2, PbLocationUtil.proposalName(TAVERN_NAME))));
+			assertEquals(PbProposalStatusEnumType.REJECTED, PbLocationUtil.statusOf(require(rows2, PbLocationUtil.proposalName(HILL_NAME))));
+			assertEquals("no stale PROPOSED after settling", 0, PbLocationUtil.listProposals(u, bk, PbProposalStatusEnumType.PROPOSED).size());
+		}
+		finally {
+			deleteBook(u, other);
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	@Test
+	public void case03_sameAsFoldsIntoKnownLocationUnlessLocked() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "sameas");
+			BookContext bctx = bookContext(u, bk);
+			long locGid = groupIdOf(bctx, FieldNames.FIELD_LOCATIONS);
+
+			BaseRecord gilded = PbLocationUtil.getCreateLocation(u, bk, "Gilded Tankard", "A tavern.", PbLocationKindEnumType.INTERIOR, null);
+			BaseRecord hill = PbLocationUtil.getCreateLocation(u, bk, "Windswept Hill", "A hill.", PbLocationKindEnumType.EXTERIOR, null);
+			assertNotNull(gilded);
+			assertNotNull(hill);
+			/// Lock the hill as the principal that owns world sub-records
+			BaseRecord olio = olioUser(orgId);
+			BaseRecord lockPatch = PbGraphUtil.patchOf(hill, OlioModelNames.MODEL_PB_LOCATION, OlioFieldNames.FIELD_PB_LOCKED);
+			lockPatch.set(OlioFieldNames.FIELD_PB_LOCKED, true);
+			assertNotNull("lock hill", ioContext.getAccessPoint().update(olio, lockPatch));
+			assertEquals(Boolean.TRUE, readLocation(u, oidOf(hill), orgId).get(OlioFieldNames.FIELD_PB_LOCKED));
+			int locs0 = countInGroup(OlioModelNames.MODEL_PB_LOCATION, locGid, orgId);
+
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			BaseRecord s2 = addScene(u, bk, 2, "The Road", HILL_SETTING);
+			pointSceneAt(u, s2, gilded);
+
+			BaseRecord cfg = emulatorConfig(u, newSet(null));
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, cfg);
+			logger.info("case03 pass 1: " + describe(r1));
+			assertFalse(r1.hardFailure);
+			assertEquals(2, r1.proposed);
+			List<BaseRecord> rows = PbLocationUtil.listProposals(u, bk, null);
+			BaseRecord tavernP = require(rows, PbLocationUtil.proposalName(TAVERN_NAME));
+			BaseRecord hillP = require(rows, PbLocationUtil.proposalName(HILL_NAME));
+			assertEquals("the setting contains the known name", "Gilded Tankard", tavernP.get(OlioFieldNames.FIELD_PB_SAME_AS));
+			assertEquals("Windswept Hill", hillP.get(OlioFieldNames.FIELD_PB_SAME_AS));
+
+			/// sameAs → the known location; the proposed name becomes an alias
+			ProposalAcceptResult a = PbLocationUtil.acceptProposal(u, bk, tavernP, true);
+			logger.info("case03 accept tavern: created=" + a.locationCreated + " folded=" + a.aliasesFolded + " warnings=" + a.warnings);
+			assertFalse("resolved to the known location", a.locationCreated);
+			assertEquals(idOf(gilded), idOf(a.location));
+			assertEquals("sameAs:Gilded Tankard", a.proposal.get(OlioFieldNames.FIELD_PB_REASON));
+			assertEquals("aliases folded", 1, a.aliasesFolded);
+			assertEquals(1, a.scenesRepointed);
+			List<String> aliases = readLocation(u, oidOf(gilded), orgId).get(OlioFieldNames.FIELD_PB_ALIASES);
+			assertTrue("alias folded into the location: " + aliases, aliases.contains(TAVERN_NAME));
+			assertEquals(idOf(gilded), fkId(readScene(u, oidOf(s1), orgId), FieldNames.FIELD_LOCATION));
+			/// and the folded alias now resolves to it
+			BaseRecord byAlias = PbLocationUtil.findByNameOrAlias(olio, bctx, TAVERN_NAME);
+			assertNotNull("alias lookup", byAlias);
+			assertEquals(idOf(gilded), idOf(byAlias));
+
+			/// Locked: aliases untouched (warning), scenes still re-pointed when overwriting
+			ProposalAcceptResult b = PbLocationUtil.acceptProposal(u, bk, hillP, true);
+			logger.info("case03 accept hill: created=" + b.locationCreated + " folded=" + b.aliasesFolded + " warnings=" + b.warnings);
+			assertFalse(b.locationCreated);
+			assertEquals(idOf(hill), idOf(b.location));
+			assertEquals("locked location folds nothing", 0, b.aliasesFolded);
+			assertTrue("locked warning: " + b.warnings, anyContains(b.warnings, "is locked"));
+			assertEquals("s2 moved from the tavern to the hill", 1, b.scenesRepointed);
+			assertEquals(idOf(hill), fkId(readScene(u, oidOf(s2), orgId), FieldNames.FIELD_LOCATION));
+			List<String> hillAliases = readLocation(u, oidOf(hill), orgId).get(OlioFieldNames.FIELD_PB_ALIASES);
+			assertTrue("locked aliases unchanged: " + hillAliases, hillAliases == null || hillAliases.isEmpty());
+			assertEquals("sameAs:Windswept Hill", b.proposal.get(OlioFieldNames.FIELD_PB_REASON));
+
+			assertEquals("no location created by either acceptance", locs0, countInGroup(OlioModelNames.MODEL_PB_LOCATION, locGid, orgId));
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	@Test
+	public void case04_staleProposalsRetireOnlyAfterACompletePass() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "retire");
+			bookContext(u, bk);
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			BaseRecord s2 = addScene(u, bk, 2, "The Road", HILL_SETTING);
+
+			BaseRecord good = emulatorConfig(u, newSet(null));
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, good);
+			logger.info("case04 pass 1: " + describe(r1));
+			assertEquals(2, r1.proposed);
+			BaseRecord hillRow = require(PbLocationUtil.listProposals(u, bk, null), PbLocationUtil.proposalName(HILL_NAME));
+
+			/// The hill scene is now set in the tavern, so a complete pass no longer proposes the hill
+			setSetting(u, s2, TAVERN_SETTING);
+
+			/// (a) a hard LLM failure on the only chunk: nothing written, nothing retired
+			BaseRecord faulty = emulatorConfig(u, newSet("{\"faults\":[{\"kind\":\"" + LlmEmulator.KIND_CLUSTER_LOCATIONS + "\",\"mode\":\"http500\",\"occurrence\":1}]}"));
+			LocationPassResult r2 = PbLocationUtil.proposeLocations(u, bk, faulty);
+			logger.info("case04 pass 2 (http500): " + describe(r2));
+			assertTrue("hard failure reported, not thrown", r2.hardFailure);
+			assertEquals(1, r2.chunks);
+			assertEquals(0, r2.chunksParsed);
+			assertEquals(0, r2.proposed);
+			assertEquals(0, r2.updated);
+			assertEquals("nothing retired after a failed pass", 0, r2.retired);
+			assertTrue("hard-failure warning: " + r2.warnings, anyContains(r2.warnings, "hard failure"));
+			assertEquals("both rows survive", 2, PbLocationUtil.listProposals(u, bk, PbProposalStatusEnumType.PROPOSED).size());
+			assertNotNull(PbLocationUtil.readProposal(u, oidOf(hillRow), orgId));
+
+			/// (b) a complete pass: the tavern row is re-written, the hill row retired
+			LocationPassResult r3 = PbLocationUtil.proposeLocations(u, bk, good);
+			logger.info("case04 pass 3: " + describe(r3));
+			assertFalse(r3.hardFailure);
+			assertEquals(1, r3.chunksParsed);
+			assertEquals(0, r3.proposed);
+			assertEquals(1, r3.updated);
+			assertEquals("stale hill retired", 1, r3.retired);
+			List<BaseRecord> rows3 = PbLocationUtil.listProposals(u, bk, null);
+			assertEquals("rows after retirement: " + names(rows3), 1, rows3.size());
+			assertSceneIds(require(rows3, PbLocationUtil.proposalName(TAVERN_NAME)), s1, s2);
+			assertNull("hill row gone", PbLocationUtil.readProposal(u, oidOf(hillRow), orgId));
+
+			/// (c) §6.C 172: a complete pass whose model returned [] is complete, so it retires every PROPOSED row
+			BaseRecord empty = emulatorConfig(u, newSet("{\"faults\":[{\"kind\":\"" + LlmEmulator.KIND_CLUSTER_LOCATIONS + "\",\"mode\":\"empty\",\"occurrence\":1}]}"));
+			LocationPassResult r4 = PbLocationUtil.proposeLocations(u, bk, empty);
+			logger.info("case04 pass 4 (empty array): " + describe(r4));
+			assertFalse(r4.hardFailure);
+			assertEquals(1, r4.chunksParsed);
+			assertEquals(0, r4.proposed);
+			assertEquals("empty array retires the remaining PROPOSED row", 1, r4.retired);
+			assertEquals(0, PbLocationUtil.listProposals(u, bk, null).size());
+
+			/// and the next complete pass regenerates it
+			LocationPassResult r5 = PbLocationUtil.proposeLocations(u, bk, good);
+			logger.info("case04 pass 5: " + describe(r5));
+			assertEquals(1, r5.proposed);
+			assertEquals(1, PbLocationUtil.listProposals(u, bk, PbProposalStatusEnumType.PROPOSED).size());
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	/**
+	 * Design §7: a place and its rooms or its doorstep are ONE location; inside/outside is a variant, not a second
+	 * record. The live model split "Gilded Tankard" from "Gilded Tankard Taproom" on 2026-10-16 despite the prompt,
+	 * so the pass folds such splits back by name shape; the next live run split the scriptorium by time of day
+	 * ("Abbey Scriptorium" / "Abbey Scriptorium Night") instead, and time of day, weather and season are variant keys
+	 * too. The emulator names a cluster from its setting text up to the first comma, which is exactly how to make it
+	 * split a place four ways on purpose. An inn on Harbour Road is a place of its own and must NOT be folded into
+	 * the road.
+	 */
+	@Test
+	public void case05_subPlaceClustersFoldIntoTheirPlace() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "fold");
+			bookContext(u, bk);
+			String taproom = "The Gilded Tankard taproom, ale stained tables and a low fire";
+			String outside = "Outside the Gilded Tankard, lanterns lit on the quay";
+			String midnight = "The Gilded Tankard at midnight, the fire out and the benches empty";
+			String inn = "Harbour Road Inn, a whitewashed inn above the fishing boats";
+			String road = "Harbour Road, gulls over the boats";
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			BaseRecord s2 = addScene(u, bk, 2, "The Taproom", taproom);
+			BaseRecord s3 = addScene(u, bk, 3, "Lanterns", outside);
+			BaseRecord s4 = addScene(u, bk, 4, "The Road", HILL_SETTING);
+			BaseRecord s5 = addScene(u, bk, 5, "The Inn", inn);
+			BaseRecord s6 = addScene(u, bk, 6, "Gulls", road);
+			BaseRecord s7 = addScene(u, bk, 7, "Closing Time", midnight);
+
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, emulatorConfig(u, newSet(null)));
+			logger.info("case05 pass: " + describe(r1));
+			assertFalse("hard failure: " + r1.warnings, r1.hardFailure);
+			assertEquals("chunks parsed", 1, r1.chunksParsed);
+			assertEquals("folded (taproom + outside view + midnight)", 3, r1.folded);
+			assertEquals("proposed (tavern, hill, inn, road)", 4, r1.proposed);
+			assertTrue("fold warning names the taproom: " + r1.warnings, anyContains(r1.warnings, "folded 'The Gilded Tankard Taproom' into 'The Gilded Tankard' - its taproom"));
+			assertTrue("fold warning names the outside view: " + r1.warnings, anyContains(r1.warnings, "folded 'Outside The Gilded Tankard' into 'The Gilded Tankard' - a view outside it"));
+			assertTrue("fold warning names the time of day: " + r1.warnings, anyContains(r1.warnings, "folded 'The Gilded Tankard At Midnight' into 'The Gilded Tankard' - its midnight variant"));
+
+			List<BaseRecord> rows = PbLocationUtil.listProposals(u, bk, null);
+			assertEquals("rows: " + names(rows), 4, rows.size());
+			BaseRecord tavern = require(rows, PbLocationUtil.proposalName(TAVERN_NAME));
+			assertSceneIds(tavern, s1, s2, s3, s7);
+			assertEquals("inside and outside views make the place MIXED", PbLocationKindEnumType.MIXED, kindOf(tavern));
+			List<String> aliases = tavern.get(OlioFieldNames.FIELD_PB_ALIASES);
+			assertNotNull(aliases);
+			assertTrue("folded names become aliases: " + aliases, aliases.contains("The Gilded Tankard Taproom"));
+			assertTrue("folded names become aliases: " + aliases, aliases.contains("Outside The Gilded Tankard"));
+			assertTrue("folded names become aliases: " + aliases, aliases.contains("The Gilded Tankard At Midnight"));
+			String desc = tavern.get(FieldNames.FIELD_DESCRIPTION);
+			assertTrue("descriptions are joined: " + desc, desc.startsWith(TAVERN_SETTING) && desc.contains(taproom) && desc.contains(outside) && desc.contains(midnight));
+			assertNull("no split cluster survives as its own row", byName(rows, PbLocationUtil.proposalName("The Gilded Tankard Taproom")));
+			assertNull("no split cluster survives as its own row", byName(rows, PbLocationUtil.proposalName("Outside The Gilded Tankard")));
+			assertNull("no split cluster survives as its own row", byName(rows, PbLocationUtil.proposalName("The Gilded Tankard At Midnight")));
+
+			assertSceneIds(require(rows, PbLocationUtil.proposalName(HILL_NAME)), s4);
+			assertSceneIds(require(rows, PbLocationUtil.proposalName("Harbour Road Inn")), s5);
+			assertSceneIds(require(rows, PbLocationUtil.proposalName("Harbour Road")), s6);
+
+			/// The rule itself, on names alone
+			assertEquals("its taproom", PbLocationUtil.subPlaceOf("gilded tankard", "gilded tankard taproom"));
+			assertEquals("a view inside it", PbLocationUtil.subPlaceOf("gilded tankard", "inside the gilded tankard"));
+			assertEquals("the same name", PbLocationUtil.subPlaceOf("gilded tankard", PbLocationUtil.placeKey("The Gilded Tankard")));
+			assertEquals("its night variant", PbLocationUtil.subPlaceOf("abbey scriptorium", "abbey scriptorium night"));
+			assertEquals("its dawn variant", PbLocationUtil.subPlaceOf("harbour road", "harbour road at dawn"));
+			assertEquals("its winter night variant", PbLocationUtil.subPlaceOf("abbey scriptorium", "abbey scriptorium on a winter night"));
+			assertEquals("its taproom by night", PbLocationUtil.subPlaceOf("gilded tankard", "gilded tankard taproom at night"));
+			assertEquals("its taproom stairs", PbLocationUtil.subPlaceOf("gilded tankard", "gilded tankard taproom stairs"));
+			assertNull("an inn is a place, not a part", PbLocationUtil.subPlaceOf("harbour road", "harbour road inn"));
+			assertNull("a leading qualifier is left alone (Night Market is a place)", PbLocationUtil.subPlaceOf("market", "night market"));
+			assertNull("the base never folds into its part", PbLocationUtil.subPlaceOf("gilded tankard taproom", "gilded tankard"));
+			assertNull("a different place with a shared word", PbLocationUtil.subPlaceOf("gilded tankard", "gilded cup"));
+			assertNull("a part plus a stranger word is something else", PbLocationUtil.subPlaceOf("gilded tankard", "gilded tankard taproom brawl"));
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	/**
+	 * P3-4 seam: the facade's {@link PbServiceFacade#acceptLocationProposal} materializes the location's LOCATION
+	 * node (design §28 step 3) only when the book already has a workflow and the location is unlocked - a book
+	 * with no graph yet gets its node at the first render, and a locked {@code sameAs} target gets no node at
+	 * all. Acceptance never creates the workflow.
+	 */
+	@Test
+	public void case06_facadeAcceptMaterializesTheNodeOnlyWithAWorkflowAndUnlocked() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "facade");
+			bookContext(u, bk);
+			String bkOid = oidOf(bk);
+			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+			String inn = "Harbour Road Inn, a whitewashed inn above the fishing boats";
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			BaseRecord s2 = addScene(u, bk, 2, "The Road", HILL_SETTING);
+			BaseRecord s3 = addScene(u, bk, 3, "Return", TAVERN_SETTING);
+			BaseRecord s4 = addScene(u, bk, 4, "The Inn", inn);
+
+			/// A known, locked location the hill resolves to through sameAs
+			BaseRecord hill = PbLocationUtil.getCreateLocation(u, bk, "Windswept Hill", "A hill.", PbLocationKindEnumType.EXTERIOR, null);
+			assertNotNull(hill);
+			BaseRecord olio = olioUser(orgId);
+			BaseRecord lockPatch = PbGraphUtil.patchOf(hill, OlioModelNames.MODEL_PB_LOCATION, OlioFieldNames.FIELD_PB_LOCKED);
+			lockPatch.set(OlioFieldNames.FIELD_PB_LOCKED, true);
+			assertNotNull("lock hill", ioContext.getAccessPoint().update(olio, lockPatch));
+
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, emulatorConfig(u, newSet(null)));
+			logger.info("case06 pass: " + describe(r1));
+			assertFalse(r1.hardFailure);
+			assertEquals(3, r1.proposed);
+			List<BaseRecord> rows = PbLocationUtil.listProposals(u, bk, null);
+			BaseRecord tavernP = require(rows, PbLocationUtil.proposalName(TAVERN_NAME));
+			BaseRecord hillP = require(rows, PbLocationUtil.proposalName(HILL_NAME));
+			BaseRecord innP = require(rows, PbLocationUtil.proposalName("Harbour Road Inn"));
+			assertEquals("Windswept Hill", hillP.get(OlioFieldNames.FIELD_PB_SAME_AS));
+			assertNull("no workflow before any acceptance", PbGraphUtil.findWorkflow(u, bk));
+
+			/// (a) no workflow yet: the location is created and its scenes re-pointed, but no node and no workflow
+			Map<String, Object> a = PbServiceFacade.acceptLocationProposal(u, bkOid, oidOf(tavernP), false);
+			logger.info("case06 accept tavern (no workflow): " + JSONUtil.exportObject(a));
+			assertEquals(Boolean.TRUE, a.get("locationCreated"));
+			String tavernOid = (String) a.get("locationObjectId");
+			assertNotNull(tavernOid);
+			assertEquals(Integer.valueOf(2), a.get("scenesRepointed"));
+			assertFalse("no node key without a workflow: " + a.keySet(), a.containsKey("nodeObjectId"));
+			assertFalse(a.containsKey("nodeMaterialized"));
+			assertFalse(a.containsKey("seeded"));
+			assertNull("acceptance never creates the workflow", PbGraphUtil.findWorkflow(u, bk));
+			BaseRecord tavern = readLocation(u, tavernOid, orgId);
+			assertNotNull(tavern);
+			assertEquals(idOf(tavern), fkId(readScene(u, oidOf(s1), orgId), FieldNames.FIELD_LOCATION));
+			assertEquals(idOf(tavern), fkId(readScene(u, oidOf(s3), orgId), FieldNames.FIELD_LOCATION));
+
+			/// (b) with a workflow: the new location gets its LOCATION node under the deterministic handle,
+			///     seeded from nothing (no landscape nodes yet), the one re-pointed scene counted as skipped
+			BaseRecord wf = PbGraphUtil.getCreateWorkflow(u, bk, PbBookUtil.workflowGroupPath(slug));
+			assertNotNull("workflow", wf);
+			Map<String, Object> b = PbServiceFacade.acceptLocationProposal(u, bkOid, oidOf(innP), false);
+			logger.info("case06 accept inn (workflow): " + JSONUtil.exportObject(b));
+			assertEquals(Boolean.TRUE, b.get("locationCreated"));
+			String innOid = (String) b.get("locationObjectId");
+			assertNotNull(innOid);
+			assertEquals(Integer.valueOf(1), b.get("scenesRepointed"));
+			assertEquals(Boolean.TRUE, b.get("nodeMaterialized"));
+			assertEquals(Integer.valueOf(0), b.get("seeded"));
+			assertEquals("the re-pointed scene has no landscape to seed from", Integer.valueOf(1), b.get("seedSkipped"));
+			String nodeOid = (String) b.get("nodeObjectId");
+			assertNotNull(nodeOid);
+			BaseRecord byHandle = PbPipelineUtil.findNodeByHandle(u, wf, PbPipelineUtil.locationHandle(innOid));
+			assertNotNull("node under the location handle", byHandle);
+			assertEquals(nodeOid, oidOf(byHandle));
+			BaseRecord node = PbGraphUtil.readNode(u, nodeOid, orgId);
+			assertNotNull(node);
+			assertEquals(PbNodeTypeEnumType.LOCATION.name(), String.valueOf((Object) node.get(OlioFieldNames.FIELD_PB_NODE_TYPE)).toUpperCase());
+			assertEquals(PbPipelineUtil.SCOPE_LOCATION, node.get(OlioFieldNames.FIELD_PB_SCOPE));
+			assertEquals(innOid, node.get(OlioFieldNames.FIELD_PB_SCOPE_REF));
+			assertEquals(idOf(readLocation(u, innOid, orgId)), fkId(readScene(u, oidOf(s4), orgId), FieldNames.FIELD_LOCATION));
+			assertEquals("the tavern accepted before the workflow existed still has no node", null,
+				PbPipelineUtil.findNodeByHandle(u, wf, PbPipelineUtil.locationHandle(tavernOid)));
+
+			/// (c) a locked sameAs target: scene re-pointed, aliases untouched, no node
+			Map<String, Object> c = PbServiceFacade.acceptLocationProposal(u, bkOid, oidOf(hillP), false);
+			logger.info("case06 accept hill (locked): " + JSONUtil.exportObject(c));
+			assertEquals(Boolean.FALSE, c.get("locationCreated"));
+			assertEquals(oidOf(hill), c.get("locationObjectId"));
+			assertEquals(Integer.valueOf(1), c.get("scenesRepointed"));
+			assertEquals(Integer.valueOf(0), c.get("aliasesFolded"));
+			assertTrue("locked warning: " + c.get("warnings"), anyContains(castWarnings(c.get("warnings")), "is locked"));
+			assertFalse("no node for a locked location: " + c.keySet(), c.containsKey("nodeObjectId"));
+			assertFalse(c.containsKey("nodeMaterialized"));
+			assertNull(PbPipelineUtil.findNodeByHandle(u, wf, PbPipelineUtil.locationHandle(oidOf(hill))));
+			assertEquals(idOf(hill), fkId(readScene(u, oidOf(s2), orgId), FieldNames.FIELD_LOCATION));
+			assertEquals("every row settled", 0, PbLocationUtil.listProposals(u, bk, PbProposalStatusEnumType.PROPOSED).size());
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	/**
+	 * P3-4 transport boundary: a chunk whose reply is prose instead of a JSON array leaves an extraction-failure
+	 * record ({@code {context, kind:"no-json", error, rawResponse, failedAt}}) in {@code LocationPassResult.warnings}
+	 * with the WHOLE reply, and {@link PbServiceFacade#locationPassDto} / {@link PbServiceFacade#stripRaw} replace
+	 * {@code rawResponse} with {@code rawResponseLength} on the wire while the result object itself keeps the raw
+	 * text. Driven by overriding the emulator's {@code scene-blurb} detector to the cluster-locations marker, so the
+	 * earlier-registered blurb synthesizer answers the clustering prompt with two sentences of prose.
+	 */
+	@Test
+	public void case07_transportStripsRawResponseButTheResultKeepsIt() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "strip");
+			bookContext(u, bk);
+			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+			addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			addScene(u, bk, 2, "The Road", HILL_SETTING);
+
+			/// scene-blurb sits before cluster-locations in the emulator's detector order; pointing its regex at the
+			/// clustering prompt's own marker makes the blurb synthesizer win and reply with prose (no '[' at all).
+			String manifest = "{\"kinds\":{\"" + LlmEmulator.KIND_SCENE_BLURB + "\":\"SCENE SETTINGS \\\\(one per line\"}}";
+			LocationPassResult r = PbLocationUtil.proposeLocations(u, bk, emulatorConfig(u, newSet(manifest)));
+			logger.info("case07 pass: " + describe(r));
+			assertFalse("a prose reply is not a hard failure", r.hardFailure);
+			assertEquals(1, r.chunks);
+			assertEquals("the chunk did not parse", 0, r.chunksParsed);
+			assertEquals(0, r.proposed);
+			assertTrue(r.proposals.isEmpty());
+			assertEquals("no proposal rows from a reply with no array", 0, PbLocationUtil.listProposals(u, bk, null).size());
+
+			/// The util's warnings carry the failure record WITH the raw reply, plus the plain per-chunk warning.
+			String failureJson = null;
+			String plain = null;
+			for(String w : r.warnings) {
+				if(w.trim().startsWith("{") && w.contains("\"rawResponse\"")) {
+					assertNull("exactly one failure record: " + r.warnings, failureJson);
+					failureJson = w;
+				}
+				else if(w.contains("response did not parse as a whole array")) {
+					assertNull("exactly one per-chunk warning: " + r.warnings, plain);
+					plain = w;
+				}
+			}
+			assertNotNull("failure record in the util's warnings: " + r.warnings, failureJson);
+			assertNotNull("per-chunk warning in the util's warnings: " + r.warnings, plain);
+			assertEquals(2, r.warnings.size());
+			assertTrue(plain, plain.contains("cluster-locations chunk 1 of " + slug + ": response did not parse as a whole array (0 item(s) salvaged)"));
+			Map<String, Object> failure = JSONUtil.getMap(failureJson.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+			assertNotNull("failure record parses: " + failureJson, failure);
+			assertEquals("cluster-locations:" + slug + ":chunk1", failure.get("context"));
+			assertEquals("no-json", failure.get("kind"));
+			assertTrue("error names the missing array: " + failure.get("error"), String.valueOf(failure.get("error")).contains("No JSON array"));
+			Object rawObj = failure.get("rawResponse");
+			assertTrue("rawResponse is the model's text: " + rawObj, rawObj instanceof String);
+			String raw = (String) rawObj;
+			assertTrue("the raw reply is the emulator's blurb prose: " + raw, raw.contains("the light settles"));
+			assertFalse("the prose holds no array", raw.contains("["));
+			assertFalse("rawResponseLength is a transport-only key", failure.containsKey("rawResponseLength"));
+
+			/// The DTO (what the REST/MCP transport returns) has the same two warnings, the record without the text.
+			Map<String, Object> dto = PbServiceFacade.locationPassDto(r);
+			logger.info("case07 dto: " + JSONUtil.exportObject(dto));
+			assertEquals(Integer.valueOf(1), dto.get("chunks"));
+			assertEquals(Integer.valueOf(0), dto.get("chunksParsed"));
+			assertEquals(Boolean.FALSE, dto.get("hardFailure"));
+			assertEquals(Integer.valueOf(0), dto.get("proposed"));
+			List<String> wire = castWarnings(dto.get("warnings"));
+			assertEquals("same number of warnings on the wire: " + wire, r.warnings.size(), wire.size());
+			String wireFailure = null;
+			boolean plainOnWire = false;
+			for(String w : wire) {
+				assertFalse("no raw reply on the wire: " + w, w.contains("rawResponse\""));
+				assertFalse("no raw reply on the wire: " + w, w.contains("the light settles"));
+				if(w.trim().startsWith("{")) {
+					assertNull("exactly one failure record on the wire: " + wire, wireFailure);
+					wireFailure = w;
+				}
+				else if(w.equals(plain)) {
+					plainOnWire = true;
+				}
+			}
+			assertNotNull("failure record on the wire: " + wire, wireFailure);
+			assertTrue("the plain warning passes through unchanged: " + wire, plainOnWire);
+			Map<String, Object> stripped = JSONUtil.getMap(wireFailure.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+			assertNotNull(stripped);
+			assertFalse("rawResponse removed: " + wireFailure, stripped.containsKey("rawResponse"));
+			assertTrue("rawResponseLength added: " + wireFailure, stripped.get("rawResponseLength") instanceof Number);
+			assertEquals("rawResponseLength is the raw reply's length", raw.length(), ((Number) stripped.get("rawResponseLength")).intValue());
+			assertEquals("context survives the strip", failure.get("context"), stripped.get("context"));
+			assertEquals("kind survives the strip", failure.get("kind"), stripped.get("kind"));
+			assertEquals("error survives the strip", failure.get("error"), stripped.get("error"));
+			assertEquals("failedAt survives the strip", failure.get("failedAt"), stripped.get("failedAt"));
+
+			/// Building the DTO did not touch the result: the raw reply is still on the util's warnings.
+			assertTrue("the result still carries the raw reply after the DTO: " + r.warnings, r.warnings.contains(failureJson));
+			assertEquals(2, r.warnings.size());
+
+			/// stripRaw on its own: nulls dropped, plain text and a '{'-prefixed non-JSON entry pass through as they are.
+			List<String> mixed = new ArrayList<>();
+			mixed.add(null);
+			mixed.add("plain warning");
+			mixed.add("{not json but mentions rawResponse");
+			mixed.add(failureJson);
+			List<String> out = PbServiceFacade.stripRaw(mixed);
+			assertEquals("null dropped, the rest kept: " + out, 3, out.size());
+			assertEquals("plain warning", out.get(0));
+			assertEquals("{not json but mentions rawResponse", out.get(1));
+			assertFalse(out.get(2).contains("the light settles"));
+			Map<String, Object> direct = JSONUtil.getMap(out.get(2).getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+			assertNotNull(direct);
+			assertFalse(direct.containsKey("rawResponse"));
+			assertEquals(raw.length(), ((Number) direct.get("rawResponseLength")).intValue());
+			assertTrue("stripRaw(null) is an empty list", PbServiceFacade.stripRaw(null).isEmpty());
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<String> castWarnings(Object v) {
+		assertTrue("warnings is a list: " + v, v instanceof List);
+		return (List<String>) v;
+	}
+
+	private static String describe(LocationPassResult r) {
+		return "run=" + r.passRun + " scenes=" + r.scenesConsidered + " skipped=" + r.scenesSkipped + " chunks=" + r.chunksParsed + "/" + r.chunks
+			+ " folded=" + r.folded + " proposed=" + r.proposed + " updated=" + r.updated + " settled=" + r.settled + " retired=" + r.retired
+			+ (r.hardFailure ? " HARD-FAILURE" : "") + " warnings=" + r.warnings;
+	}
+}

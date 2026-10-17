@@ -1200,7 +1200,31 @@ public class PbBookUtil {
 			OlioFieldNames.FIELD_PB_PAGE_BG_OPACITY,
 			OlioFieldNames.FIELD_PB_PAGE_TEXT_ALIGN,
 			OlioFieldNames.FIELD_PB_PAGE_TEXT_COLOR,
-			OlioFieldNames.FIELD_PB_IMAGE_STALE
+			OlioFieldNames.FIELD_PB_IMAGE_STALE,
+			FieldNames.FIELD_LOCATION,
+			OlioFieldNames.FIELD_PB_LOCATION_VARIANT
+		};
+	}
+
+	/** What to project on an {@code olio.pb.location} read (V3 §7): every field the resolver and the health pass act on. */
+	public static String[] locationRequest() {
+		return new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+			FieldNames.FIELD_DESCRIPTION, OlioFieldNames.FIELD_PB_KIND, OlioFieldNames.FIELD_PB_WORLD,
+			OlioFieldNames.FIELD_PB_ALIASES, OlioFieldNames.FIELD_PB_POI, OlioFieldNames.FIELD_PB_APPROVED_RENDER,
+			OlioFieldNames.FIELD_PB_LOCKED
+		};
+	}
+
+	/** What to project on an {@code olio.pb.locationVariant} read (V3 §7). */
+	public static String[] locationVariantRequest() {
+		return new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+			FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_PB_TIME_OF_DAY, OlioFieldNames.FIELD_PB_WEATHER,
+			OlioFieldNames.FIELD_PB_SEASON, OlioFieldNames.FIELD_PB_VIEWPOINT, OlioFieldNames.FIELD_PB_EXTRA,
+			OlioFieldNames.FIELD_PB_APPROVED_RENDER
 		};
 	}
 }

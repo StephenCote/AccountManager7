@@ -362,6 +362,14 @@ public class PbArtifactUtil {
 	 * re-stamps {@code approvedBy}. Protecting a human approval from the auto-approver is the caller's guard
 	 * (rule 5), not this method's.
 	 *
+	 * <p>
+	 * <b>Location artifacts (V3 §7, P3-4).</b> When the producing node is a {@code LOCATION} node, the approval is
+	 * refused with 409 before any write while the location is locked, and after the stamp the approved
+	 * {@code landscape} image is promoted to {@code approvedRender} of the location (or variant) the node renders -
+	 * the world asset every scene bound to that record consumes - and the record is touched so every graph bound
+	 * to it is rescanned for staleness. The other artifact of a LOCATION node (the {@code renderPlan} JSON) is
+	 * approvable like any other but promotes nothing.
+	 *
 	 * @param approvedBy the approving user's objectId, or {@link #APPROVED_BY_AUTO}
 	 */
 	public static BaseRecord approve(BaseRecord user, BaseRecord artifact, String approvedBy) {
@@ -372,6 +380,15 @@ public class PbArtifactUtil {
 		String role = artifact.get(OlioFieldNames.FIELD_PB_ROLE);
 		long orgId = PbGraphUtil.orgId(artifact);
 
+		BaseRecord fullNode = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), orgId);
+		if(fullNode == null) {
+			throw new PictureBookException(500, "The producing node of " + artifact.get(FieldNames.FIELD_NAME) + " could not be re-read to pin it");
+		}
+		PbLocationUtil.NodeSubject subject = PbLocationUtil.subjectOf(user, fullNode);
+		if(subject != null) {
+			PbLocationUtil.requireUnlocked(subject.location, "approve a render of it");
+		}
+
 		for(BaseRecord sibling : listChain(user, node, role)) {
 			if(!sameRecord(sibling, artifact) && reviewStatusOf(sibling) == PbReviewStatusEnumType.APPROVED) {
 				writeReview(user, sibling, PbReviewStatusEnumType.GENERATED, null, null);
@@ -380,10 +397,6 @@ public class PbArtifactUtil {
 		Boolean sel = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
 		if(sel == null || !sel.booleanValue()) {
 			setSelected(user, artifact);
-		}
-		BaseRecord fullNode = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), orgId);
-		if(fullNode == null) {
-			throw new PictureBookException(500, "The producing node of " + artifact.get(FieldNames.FIELD_NAME) + " could not be re-read to pin it");
 		}
 		Boolean pinned = fullNode.get(OlioFieldNames.FIELD_PB_PINNED);
 		if(pinned == null || !pinned.booleanValue()) {
@@ -396,7 +409,43 @@ public class PbArtifactUtil {
 				|| !approvedBy.equals(artifact.get(OlioFieldNames.FIELD_PB_APPROVED_BY))) {
 			writeReview(user, artifact, PbReviewStatusEnumType.APPROVED, approvedBy, ZonedDateTime.now());
 		}
+		if(subject != null && promotesToApprovedRender(artifact)) {
+			PbLocationUtil.writeApprovedRender(user, subject, artifact);
+		}
 		return readArtifact(user, artifact.get(FieldNames.FIELD_OBJECT_ID), orgId);
+	}
+
+	/** The one artifact of a LOCATION node that is the location's render: role {@code landscape}, an IMAGE. */
+	private static boolean promotesToApprovedRender(BaseRecord artifact) {
+		if(artifact == null || !PbPipelineUtil.ROLE_LANDSCAPE.equals(artifact.get(OlioFieldNames.FIELD_PB_ROLE))) {
+			return false;
+		}
+		if(!artifact.hasField(OlioFieldNames.FIELD_PB_ARTIFACT_TYPE)) {
+			return false;
+		}
+		PbArtifactTypeEnumType type = artifact.getEnum(OlioFieldNames.FIELD_PB_ARTIFACT_TYPE);
+		return type == PbArtifactTypeEnumType.IMAGE;
+	}
+
+	/**
+	 * A LOCATION node whose {@code scopeRef} no longer resolves (the location was deleted or merged away) has
+	 * no record to protect or to clear, so a rejection treats it as having no subject rather than refusing.
+	 * Approve keeps the 404: a render cannot be promoted onto a location that is not there. A record that
+	 * exists but that {@code user} may not read also keeps the 404 ({@link PbLocationUtil#subjectExists}):
+	 * its lock still protects it, and a caller who cannot see the lock may not clear what it guards.
+	 */
+	private static PbLocationUtil.NodeSubject subjectOrNullWhenDangling(BaseRecord user, BaseRecord fullNode, BaseRecord artifact) {
+		try {
+			return PbLocationUtil.subjectOf(user, fullNode);
+		}
+		catch(PictureBookException e) {
+			if(e.getStatus() != 404 || PbLocationUtil.subjectExists(fullNode)) {
+				throw e;
+			}
+			logger.warn("Rejecting " + artifact.get(FieldNames.FIELD_NAME) + " of node " + fullNode.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " whose location is gone: " + e.getMessage());
+			return null;
+		}
 	}
 
 	/**
@@ -453,11 +502,30 @@ public class PbArtifactUtil {
 	 * sibling the selection stays where it is (exactly one selected per chain). The node's {@code pinned}
 	 * flag is <b>not</b> touched: a rejection is a verdict on one variant, not a regeneration request, and
 	 * only an explicit unpin releases a pin.
+	 * <p>
+	 * <b>Location artifacts (P3-4).</b> Rejecting the image that is currently the {@code approvedRender} of the
+	 * location (or variant) its LOCATION node renders clears that FK (and touches the record) after the REJECTED
+	 * stamp; while the location is locked that rejection is refused with 409 before any write. Rejecting any
+	 * other candidate of a locked location is allowed - it changes nothing the lock protects.
 	 */
 	public static BaseRecord reject(BaseRecord user, BaseRecord artifact) {
 		BaseRecord node = chainNode(artifact);
 		String role = artifact.get(OlioFieldNames.FIELD_PB_ROLE);
 		long orgId = PbGraphUtil.orgId(artifact);
+
+		PbLocationUtil.NodeSubject subject = null;
+		boolean clearsApprovedRender = false;
+		if(promotesToApprovedRender(artifact)) {
+			BaseRecord fullNode = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), orgId);
+			subject = (fullNode != null ? subjectOrNullWhenDangling(user, fullNode, artifact) : null);
+			if(subject != null) {
+				clearsApprovedRender = PbHealthUtil.fkId(subject.target(), OlioFieldNames.FIELD_PB_APPROVED_RENDER) == PbHealthUtil.idOf(artifact)
+					&& PbHealthUtil.idOf(artifact) > 0L;
+				if(clearsApprovedRender) {
+					PbLocationUtil.requireUnlocked(subject.location, "reject its approved render");
+				}
+			}
+		}
 
 		Boolean sel = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
 		if(sel != null && sel.booleanValue()) {
@@ -484,6 +552,9 @@ public class PbArtifactUtil {
 		if(reviewStatusOf(artifact) != PbReviewStatusEnumType.REJECTED
 				|| artifact.get(OlioFieldNames.FIELD_PB_APPROVED_BY) != null) {
 			writeReview(user, artifact, PbReviewStatusEnumType.REJECTED, null, null);
+		}
+		if(clearsApprovedRender) {
+			PbLocationUtil.writeApprovedRender(user, subject, null);
 		}
 		return readArtifact(user, artifact.get(FieldNames.FIELD_OBJECT_ID), orgId);
 	}

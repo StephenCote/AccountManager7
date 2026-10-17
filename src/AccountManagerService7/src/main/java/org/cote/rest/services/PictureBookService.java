@@ -44,6 +44,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
@@ -2319,13 +2320,356 @@ public class PictureBookService {
             out.put("slug", result.slug);
             out.put("scenesImported", result.scenesImported);
             out.put("scenesFailed", result.scenesFailed);
-            out.put("warnings", result.warnings);
+            out.put("landscapesImported", result.landscapesImported);
+            out.put("locationPass", PbServiceFacade.locationPassDto(result.locationPass));
+            out.put("warnings", PbServiceFacade.stripRaw(result.warnings));
             return Response.status(200).entity(JSONUtil.exportObject(out)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         } catch (Exception e) {
             logger.error("migrateV1Book failed: " + e.getMessage(), e);
             return errorResponse(500, "Migration failed: " + e.getMessage());
+        }
+    }
+
+    // ----- Locations (V3 §7, §7.1, §26, §27; P3-4). Transport only; PbServiceFacade/PbLocationUtil own every rule -----
+
+    /** A JSON object body as a map: empty map for a blank body, null when the text is not a JSON object. */
+    private static Map<String, Object> bodyMap(String json) {
+        if (json == null || json.isBlank()) return new LinkedHashMap<>();
+        return JSONUtil.getMap(json.getBytes(java.nio.charset.StandardCharsets.UTF_8), String.class, Object.class);
+    }
+
+    private static String bodyString(Map<String, Object> body, String key) {
+        Object v = body.get(key);
+        return (v instanceof String) ? (String) v : null;
+    }
+
+    private static List<String> bodyStrings(Map<String, Object> body, String key) {
+        Object v = body.get(key);
+        if (!(v instanceof List)) return null;
+        List<String> out = new ArrayList<>();
+        for (Object o : (List<?>) v) {
+            if (o instanceof String) out.add((String) o);
+        }
+        return out;
+    }
+
+    private static Response malformedBody() {
+        return Response.status(400).entity("{\"error\":true,\"message\":\"Malformed request body\"}").build();
+    }
+
+    /**
+     * GET /{bookObjectId}/locations
+     * The book's location library: every location of the book's world with its variants, the scenes of this
+     * book using it, and this book's LOCATION node + landscape chain when one exists. Read-only - nothing is
+     * materialized by a GET. 404 book; 409 when the book has no resolvable world.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/locations")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listLocations(@PathParam("bookObjectId") String bookObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.listLocations(user, bookObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/locations
+     * Body: { name, description?, kind?: "interior|exterior|mixed|abstract", aliases?: [] }. Creates the
+     * location in the book's world (or returns the one the name/alias already resolves to). 400 missing name
+     * or unknown kind; 403 cannot update the book. No LOCATION node is created until the first render.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/locations")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createLocation(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        String name = bodyString(body, "name");
+        if (name == null || name.isBlank()) return errorResponse(400, "name is required");
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.createLocation(user, bookObjectId, name,
+                    bodyString(body, "description"), bodyString(body, "kind"), bodyStrings(body, "aliases"))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /** GET /{bookObjectId}/location/{objectId} - one entry of the library; 404 outside the book's world. */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/location/{objectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getLocation(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.getLocation(user, bookObjectId, objectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * PATCH /{bookObjectId}/location/{objectId}
+     * Body: any of { description, kind, aliases: [] }. Only those keys are editable ({@code name} is not - a
+     * rename is a merge); any other key is a 400 naming the editable set. 409 while the location is locked.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PATCH
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/location/{objectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response updateLocation(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.updateLocation(user, bookObjectId, objectId, body)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * DELETE /{bookObjectId}/location/{objectId}
+     * Deletes the location, its variants, this book's LOCATION nodes for them and (book world) its POI +
+     * store. 409 while locked or while any scene of any book sharing the world still references it.
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/location/{objectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteLocation(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("objectId") String objectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.deleteLocation(user, bookObjectId, objectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/location/{objectId}/variants
+     * Body: { name?, timeOfDay?, weather?, season?, viewpoint?, extra? } - at least one delta (400). The name
+     * defaults to "&lt;location&gt; - &lt;deltas&gt;"; a duplicate name is 409, as is a locked location.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/location/{objectId:[0-9A-Za-z\\-]+}/variants")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createLocationVariant(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.createLocationVariant(user, bookObjectId, objectId,
+                    bodyString(body, "name"), bodyString(body, "timeOfDay"), bodyString(body, "weather"),
+                    bodyString(body, "season"), bodyString(body, "viewpoint"), bodyString(body, "extra"))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/location/{objectId}/render?variant=&amp;force=
+     * Asynchronous render of the location (or, with {@code variant}, one of its variants) on its LOCATION node,
+     * materialized on first use and seeded with the selected landscape of every scene of this book that uses
+     * the location. 202 { jobId, runObjectId, ... }; 404 book / location / variant; 403; 409 locked, pinned or
+     * already being rendered; 429 too many jobs. The SD backend comes from the server, never the caller.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/location/{objectId:[0-9A-Za-z\\-]+}/render")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response renderLocation(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("objectId") String objectId,
+            @QueryParam("variant") String variantObjectId,
+            @QueryParam("force") @DefaultValue("false") boolean force,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(202)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestLocationRender(user, bookObjectId, objectId,
+                    variantObjectId, resolveSdApiType(context), resolveSdServer(context), force)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/location/{objectId}/lock
+     * Body: { locked: true|false } - a JSON boolean, parsed exactly as /style/lock. While locked, edits, approving
+     * or clearing an approved render, new renders, variants, delete and merge are all 409. Facade-only.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/location/{objectId:[0-9A-Za-z\\-]+}/lock")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response lockLocation(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("objectId") String objectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        Object value = body.get("locked");
+        if (!(value instanceof Boolean)) {
+            return Response.status(400).entity("{\"error\":true,\"message\":\"locked must be a JSON boolean\"}").build();
+        }
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.lockLocation(user, bookObjectId, objectId,
+                    ((Boolean) value).booleanValue())))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/locations/propose
+     * Body: { chatConfigName? }. Runs the whole-book location pass (LLM, synchronous, one call per 40 scenes)
+     * and returns the proposals; a hard LLM failure is reported in the result, not as an error status.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/locations/propose")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response proposeLocations(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.proposeLocations(user, bookObjectId,
+                    bodyString(body, "chatConfigName"))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /** GET /{bookObjectId}/locations/proposed?status=proposed|accepted|rejected - the book's proposals (all when no status). */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/locations/proposed")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listLocationProposals(@PathParam("bookObjectId") String bookObjectId,
+            @QueryParam("status") String status, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.listLocationProposals(user, bookObjectId, status)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/locations/proposed/{proposalObjectId}/accept
+     * Body: { overwrite?: false }. Resolves or creates the location, re-points the proposal's scenes (with
+     * {@code overwrite}, also scenes already pointing elsewhere), and - when this book has a workflow - materializes
+     * the LOCATION node seeded from those scenes' landscapes. 404 not in this book; 409 unless PROPOSED.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/locations/proposed/{proposalObjectId:[0-9A-Za-z\\-]+}/accept")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response acceptLocationProposal(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("proposalObjectId") String proposalObjectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        Object ow = body.get("overwrite");
+        boolean overwrite = (ow instanceof Boolean) && ((Boolean) ow).booleanValue();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.acceptLocationProposal(user, bookObjectId, proposalObjectId, overwrite)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /** POST /{bookObjectId}/locations/proposed/{proposalObjectId}/reject - Body: { reason? }. 404 not in this book; 409 unless PROPOSED. */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/locations/proposed/{proposalObjectId:[0-9A-Za-z\\-]+}/reject")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response rejectLocationProposal(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("proposalObjectId") String proposalObjectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.rejectLocationProposal(user, bookObjectId, proposalObjectId,
+                    bodyString(body, "reason"))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/locations/merge
+     * Body: { duplicateObjectId, survivorObjectId }. Scenes, variants and graph bindings of the duplicate are
+     * re-pointed at the survivor, aliases folded, the duplicate deleted. 400 same record or missing ids; 404
+     * either outside the book's world; 409 while either is locked.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/locations/merge")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response mergeLocations(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        String dup = bodyString(body, "duplicateObjectId");
+        String sur = bodyString(body, "survivorObjectId");
+        if (dup == null || dup.isBlank() || sur == null || sur.isBlank()) {
+            return errorResponse(400, "duplicateObjectId and survivorObjectId are required");
+        }
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.mergeLocations(user, bookObjectId, dup, sur)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
         }
     }
 

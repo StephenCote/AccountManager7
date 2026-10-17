@@ -39,10 +39,12 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbPageFormatEnumType;
+import org.cote.accountmanager.schema.type.PbProposalStatusEnumType;
 import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
@@ -325,6 +327,35 @@ public class PbServiceFacade {
 		}
 		requireNodeOfBook(user, workflow, (String) producedBy.get(FieldNames.FIELD_OBJECT_ID));
 		return artifact;
+	}
+
+	/**
+	 * A LOCATION node's render is promoted onto the location record on approve, and cleared from it on reject,
+	 * so the record it would write must belong to this book's world. A node whose {@code scopeRef} points at
+	 * another world's location (a re-pointed row, a shared-world mix-up) is "not found" here, and nothing is
+	 * promoted. The same answer for a location {@code user} cannot read at all: it exists (checked as the olio
+	 * principal), so its lock still protects it. Nodes of every other type have no subject and pass.
+	 */
+	private static void requireSubjectInBookWorld(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord artifact) {
+		BaseRecord producedBy = artifact.get(OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE);
+		BaseRecord node = requireNodeOfBook(user, workflow, (String) producedBy.get(FieldNames.FIELD_OBJECT_ID));
+		PbLocationUtil.NodeSubject subject;
+		try {
+			subject = PbLocationUtil.subjectOf(user, node);
+		}
+		catch(PictureBookException e) {
+			if(e.getStatus() == 404) {
+				if(PbLocationUtil.subjectExists(node)) {
+					throw new PictureBookException(404, "Location not found in this book's world");
+				}
+				/// a dangling scopeRef has no record to protect; PbArtifactUtil decides whether the action needs one
+				return;
+			}
+			throw e;
+		}
+		if(subject != null && !PbLocationUtil.sameWorld(book, subject.location)) {
+			throw new PictureBookException(404, "Location not found in this book's world");
+		}
 	}
 
 	// ─────────────────────────────── reads ───────────────────────────────
@@ -2309,6 +2340,7 @@ public class PbServiceFacade {
 		requireBookUpdate(user, book, "approve an artifact");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
+		requireSubjectInBookWorld(user, book, workflow, artifact);
 		BaseRecord approved = PbArtifactUtil.approve(user, artifact, user.get(FieldNames.FIELD_OBJECT_ID));
 		return reviewResult(approved);
 	}
@@ -2324,6 +2356,7 @@ public class PbServiceFacade {
 		requireBookUpdate(user, book, "reject an artifact");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
+		requireSubjectInBookWorld(user, book, workflow, artifact);
 		BaseRecord rejected = PbArtifactUtil.reject(user, artifact);
 		return reviewResult(rejected);
 	}
@@ -3276,6 +3309,625 @@ public class PbServiceFacade {
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("deleted", Boolean.TRUE);
 		out.put("bindingObjectId", bindingObjectId);
+		return out;
+	}
+
+	// ─────────────────────────────── locations (V3 §7, §7.1, §10, §26; P3-4) ───────────────────────────────
+
+	/**
+	 * The book's location library (V3 §26 "Locations"): every {@code olio.pb.location} of the book's world
+	 * with its variants, the scenes of <b>this</b> book that use it, and - when this book's workflow already
+	 * carries a LOCATION node for it - that node's landscape chain. Read-only: nothing is materialized here
+	 * (a LOCATION node is created only by a render or a proposal accept, never by a GET), and every read
+	 * is the caller's own through {@code AccessPoint}, so a location the caller may not see is simply absent.
+	 * <p>
+	 * Book-scoped (404 book, 409 when the book has no resolvable world) rather than the bare
+	 * {@code /location/{id}} of design §27: the book in the path is the compartment the caller addressed, and
+	 * a location of a series world is reachable through any chapter that shares it.
+	 *
+	 * @return {@code bookObjectId}, {@code worldObjectId}, {@code locations:[locationDto]}
+	 */
+	public static Map<String, Object> listLocations(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BookContext bctx = PbLocationUtil.requireBookContext(user, book);
+		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+		List<BaseRecord> locations = PbLocationUtil.listLocations(user, bctx);
+		Map<Long, List<BaseRecord>> variants = variantsByLocation(user, bctx);
+		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+
+		List<Map<String, Object>> dtos = new ArrayList<>();
+		for(BaseRecord loc : locations) {
+			long locId = PbHealthUtil.idOf(loc);
+			dtos.add(locationDto(user, workflow, loc, variants.getOrDefault(Long.valueOf(locId), Collections.emptyList()), scenes));
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("worldObjectId", bctx.getWorld().get(FieldNames.FIELD_OBJECT_ID));
+		out.put("locations", dtos);
+		return out;
+	}
+
+	/** One location of the book's world, same shape as an entry of {@link #listLocations}; 404 when it is not in that world. */
+	public static Map<String, Object> getLocation(BaseRecord user, String bookObjectId, String locationObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BookContext bctx = PbLocationUtil.requireBookContext(user, book);
+		BaseRecord loc = PbLocationUtil.requireLocationOfBook(user, book, locationObjectId);
+		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+		List<BaseRecord> variants = variantsByLocation(user, bctx).getOrDefault(Long.valueOf(PbHealthUtil.idOf(loc)), Collections.emptyList());
+		return locationDto(user, workflow, loc, variants, PbBookUtil.listScenes(user, book));
+	}
+
+	/**
+	 * Create (or resolve by name/alias) a location in the book's world (V3 §7). {@code kind} is parsed
+	 * case-insensitively ({@code PbLocationKindEnumType}; null/blank is UNKNOWN, anything else unknown is a
+	 * 400). The write is the olio principal's through {@code PbLocationUtil} after the caller's update grant
+	 * on the book is proven; a name that already resolves returns the existing record untouched. No LOCATION
+	 * node is materialized - the first render does that.
+	 */
+	public static Map<String, Object> createLocation(BaseRecord user, String bookObjectId, String name, String description,
+			String kind, List<String> aliases) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "add a location");
+		BaseRecord loc = PbLocationUtil.getCreateLocation(user, book, name, description, PbLocationUtil.parseKind(kind), aliases);
+		return getLocation(user, bookObjectId, loc.get(FieldNames.FIELD_OBJECT_ID));
+	}
+
+	/**
+	 * Edit {@code description} / {@code kind} / {@code aliases} of a location (the editable set; {@code name}
+	 * is not editable - a rename is a merge, §7.1). 400 on any other key, 404 outside the book's world, 409
+	 * while the location is locked.
+	 */
+	public static Map<String, Object> updateLocation(BaseRecord user, String bookObjectId, String locationObjectId,
+			Map<String, Object> changes) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit a location");
+		PbLocationUtil.updateLocation(user, book, locationObjectId, changes);
+		return getLocation(user, bookObjectId, locationObjectId);
+	}
+
+	/**
+	 * Delete a location, its variants, this book's LOCATION nodes for them and (in a book world) the POI +
+	 * store the §7.2 link created. 409 while locked or while any scene - of any book sharing the world - still
+	 * references it or a variant; the steps are returned as the delete audit.
+	 */
+	public static Map<String, Object> deleteLocation(BaseRecord user, String bookObjectId, String locationObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "delete a location");
+		PictureBookUtil.DeleteResult dr = PbLocationUtil.deleteLocation(user, book, locationObjectId);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("deleted", Boolean.valueOf(dr.deleted));
+		out.put("locationObjectId", locationObjectId);
+		if(dr.reason != null) {
+			out.put("reason", dr.reason);
+		}
+		out.put("steps", dr.steps);
+		return out;
+	}
+
+	/**
+	 * Add a variant (time of day / weather / season / viewpoint / extra) to a location (V3 §7). At least one
+	 * delta is required (400); the name defaults to {@code <location> - <deltas>}; a duplicate name is a 409,
+	 * as is a locked location.
+	 */
+	public static Map<String, Object> createLocationVariant(BaseRecord user, String bookObjectId, String locationObjectId,
+			String name, String timeOfDay, String weather, String season, String viewpoint, String extra) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "add a location variant");
+		BaseRecord variant = PbLocationUtil.createVariant(user, book, locationObjectId, name, timeOfDay, weather, season, viewpoint, extra);
+		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+		Map<String, Object> out = variantDto(user, workflow, variant, PbBookUtil.listScenes(user, book));
+		out.put("locationObjectId", locationObjectId);
+		return out;
+	}
+
+	/**
+	 * Lock or unlock a location (V3 §10, "whole asset"): while locked, edits, approving or clearing the
+	 * approved render of the location or any variant, new renders, new variants, delete and merge are all
+	 * refused with 409. Locking itself is never refused by the lock - this is the one way out. Facade-only:
+	 * generic {@code PATCH /rest/model} does not consult the flag.
+	 */
+	public static Map<String, Object> lockLocation(BaseRecord user, String bookObjectId, String locationObjectId, boolean locked) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, (locked ? "lock" : "unlock") + " a location");
+		BaseRecord loc = PbLocationUtil.setLocked(user, book, locationObjectId, locked);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("locationObjectId", loc.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("locked", Boolean.valueOf(PbLocationUtil.isLocked(loc)));
+		return out;
+	}
+
+	/**
+	 * Submit an asynchronous render of one location or variant (V3 §7, §21; design §27
+	 * {@code POST .../location/{id}/render?variant=}). The subject's LOCATION node is materialized on first
+	 * use (and, for a location, seeded with the selected landscape of every scene of this book that uses it -
+	 * unapproved, so the reviewer picks), then handed to {@link PbRenderJobUtil#submit} as the one terminal.
+	 * <p>
+	 * Gate order: 404 book / location / variant (a location of another world is a 404), 403 unless the caller
+	 * may update the book, 409 while the location is locked or its node is pinned, then the planner's own
+	 * 409 / 429 / 500. <b>No {@code renderPath} check</b>: the LOCATION node is V3-only machinery with no PB1
+	 * counterpart, and a PictureBook still rendering its scenes on {@code v1} must be able to build its
+	 * library (the §30 exit criterion "scenes 3/7/12 share one approved tavern").
+	 *
+	 * @param variantObjectId null for the location itself
+	 * @return {@code locationObjectId}, {@code variantObjectId}, {@code nodeObjectId}, {@code seeded} /
+	 *         {@code seedSkipped} when the node was just materialized, then {@code jobId}, {@code runObjectId}
+	 *         and the plan summary
+	 */
+	public static Map<String, Object> requestLocationRender(BaseRecord user, String bookObjectId, String locationObjectId,
+			String variantObjectId, String sdApiType, String sdServer, boolean force) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "render a location");
+		BaseRecord[] subject = requireLocationSubject(user, book, locationObjectId, variantObjectId);
+		PbLocationUtil.requireUnlocked(subject[0], "render it");
+		BaseRecord workflow = ensureWorkflow(user, book);
+		Map<String, Object> out = new LinkedHashMap<>();
+		BaseRecord node = ensureLocationNode(user, book, workflow, subject[0], subject[1], out);
+		requireNotPinned(node);
+		Long nodeId = node.get(FieldNames.FIELD_ID);
+		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of(nodeId), sdApiType, sdServer,
+			PbRenderJobUtil.KIND_RENDER, force));
+		return out;
+	}
+
+	/**
+	 * Synchronous counterpart of {@link #requestLocationRender} over an {@code SDUtil} the caller built (test
+	 * seam, the {@link #requestRenderPlanScene(BaseRecord, String, String, org.cote.accountmanager.olio.sd.SDUtil)}
+	 * shape): same gates, same materialization, then {@link PbNodeExecutor#executeNodeRun} under the in-flight
+	 * claim so a concurrent job cannot double-render the node.
+	 */
+	static Map<String, Object> renderLocation(BaseRecord user, String bookObjectId, String locationObjectId,
+			String variantObjectId, org.cote.accountmanager.olio.sd.SDUtil sdu) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "render a location");
+		BaseRecord[] subject = requireLocationSubject(user, book, locationObjectId, variantObjectId);
+		PbLocationUtil.requireUnlocked(subject[0], "render it");
+		BaseRecord workflow = ensureWorkflow(user, book);
+		Map<String, Object> out = new LinkedHashMap<>();
+		BaseRecord node = ensureLocationNode(user, book, workflow, subject[0], subject[1], out);
+		requireNotPinned(node);
+
+		List<Long> nodeIds = List.of((Long) node.get(FieldNames.FIELD_ID));
+		String claimKey = "sync:" + UUID.randomUUID();
+		Long conflict = PbNodeInflight.tryClaim(nodeIds, claimKey);
+		if(conflict != null) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is being rendered by run " + PbNodeInflight.runOf(conflict.longValue()));
+		}
+		try {
+			out.putAll(PbNodeExecutor.executeNodeRun(user, book, workflow, node, sdu));
+			out.put("executed", Boolean.TRUE);
+			return out;
+		}
+		finally {
+			PbNodeInflight.release(nodeIds, claimKey);
+		}
+	}
+
+	/**
+	 * Run the whole-book location pass (V3 §7.1, §28 step 3) on demand: every scene's setting is clustered
+	 * by the LLM into {@code olio.pb.locationProposal} rows for the reviewer. Synchronous and LLM-bound
+	 * (one call per 40 scenes); a hard LLM failure is reported on the result ({@code hardFailure}), never
+	 * thrown. {@code chatConfigName} null means the book's resolved config.
+	 */
+	public static Map<String, Object> proposeLocations(BaseRecord user, String bookObjectId, String chatConfigName) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "propose locations");
+		PbLocationUtil.LocationPassResult r = PbLocationUtil.proposeLocations(user, book, chatConfigName);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.putAll(locationPassDto(r));
+		return out;
+	}
+
+	/**
+	 * The book's location proposals, newest pass first as stored; {@code status} filters case-insensitively
+	 * on {@code PbProposalStatusEnumType} (null = all; unknown = 400).
+	 */
+	public static Map<String, Object> listLocationProposals(BaseRecord user, String bookObjectId, String status) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbProposalStatusEnumType st = null;
+		if(status != null && !status.isBlank()) {
+			for(PbProposalStatusEnumType s : PbProposalStatusEnumType.values()) {
+				if(s.name().equalsIgnoreCase(status.trim())) {
+					st = s;
+				}
+			}
+			if(st == null) {
+				throw new PictureBookException(400, "Unknown proposal status; one of proposed, accepted, rejected");
+			}
+		}
+		List<Map<String, Object>> dtos = new ArrayList<>();
+		for(BaseRecord p : PbLocationUtil.listProposals(user, book, st)) {
+			dtos.add(proposalDto(p));
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("proposals", dtos);
+		return out;
+	}
+
+	/**
+	 * Accept a proposal (V3 §7.1): resolve or create the location, re-point the proposal's scenes
+	 * ({@code overwriteSceneLocation} also moves scenes that already point elsewhere), fold aliases, and -
+	 * when this book already has a workflow - materialize the location's LOCATION node, seeded from the
+	 * scenes' selected landscapes. A book with no workflow yet gets its node at the first render instead.
+	 * 404 proposal not in this book, 409 unless it is PROPOSED.
+	 */
+	public static Map<String, Object> acceptLocationProposal(BaseRecord user, String bookObjectId, String proposalObjectId,
+			boolean overwriteSceneLocation) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "accept a location proposal");
+		BaseRecord proposal = requireProposalOfBook(user, book, proposalObjectId);
+		PbLocationUtil.ProposalAcceptResult r = PbLocationUtil.acceptProposal(user, book, proposal, overwriteSceneLocation);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("proposal", (r.proposal != null ? proposalDto(r.proposal) : null));
+		out.put("locationObjectId", (r.location != null ? r.location.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("locationCreated", Boolean.valueOf(r.locationCreated));
+		out.put("scenesRepointed", Integer.valueOf(r.scenesRepointed));
+		out.put("scenesSkipped", Integer.valueOf(r.scenesSkipped));
+		out.put("aliasesFolded", Integer.valueOf(r.aliasesFolded));
+		out.put("warnings", stripRaw(r.warnings));
+		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+		if(workflow != null && r.location != null && !PbLocationUtil.isLocked(r.location)) {
+			BaseRecord node = ensureLocationNode(user, book, workflow, r.location, null, out);
+			out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		return out;
+	}
+
+	/** Reject a proposal with an optional reason; 404 not in this book, 409 unless PROPOSED. */
+	public static Map<String, Object> rejectLocationProposal(BaseRecord user, String bookObjectId, String proposalObjectId, String reason) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "reject a location proposal");
+		BaseRecord proposal = requireProposalOfBook(user, book, proposalObjectId);
+		BaseRecord rejected = PbLocationUtil.rejectProposal(user, book, proposal, reason);
+		return proposalDto(rejected != null ? rejected : proposal);
+	}
+
+	/**
+	 * Merge {@code duplicate} into {@code survivor} (V3 §7.1 "sameAs"): scenes, variants and graph bindings
+	 * re-pointed, aliases folded, the duplicate (and its orphan POI) deleted. 404 either side outside the
+	 * world, 400 same record, 409 while either is locked, 403 when a scene re-point is not permitted.
+	 */
+	public static Map<String, Object> mergeLocations(BaseRecord user, String bookObjectId, String duplicateObjectId,
+			String survivorObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "merge locations");
+		BaseRecord dup = PbLocationUtil.requireLocationOfBook(user, book, duplicateObjectId);
+		BaseRecord sur = PbLocationUtil.requireLocationOfBook(user, book, survivorObjectId);
+		if(!PbLocationUtil.mergeLocations(user, book, dup, sur)) {
+			throw new PictureBookException(403, "Not permitted to merge these locations");
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("merged", Boolean.TRUE);
+		out.put("duplicateObjectId", duplicateObjectId);
+		out.put("survivorObjectId", survivorObjectId);
+		out.put("survivor", getLocation(user, bookObjectId, survivorObjectId));
+		return out;
+	}
+
+	/** {@code [location, variant|null]} of the book's world, or the util's 404. */
+	private static BaseRecord[] requireLocationSubject(BaseRecord user, BaseRecord book, String locationObjectId, String variantObjectId) {
+		if(variantObjectId != null && !variantObjectId.isBlank()) {
+			BaseRecord[] parent = new BaseRecord[1];
+			BaseRecord variant = PbLocationUtil.requireVariantOfBook(user, book, variantObjectId, parent);
+			if(locationObjectId != null && !locationObjectId.isBlank()
+				&& !locationObjectId.trim().equals(parent[0].get(FieldNames.FIELD_OBJECT_ID))) {
+				throw new PictureBookException(404, "Location variant not found under that location");
+			}
+			return new BaseRecord[] { parent[0], variant };
+		}
+		return new BaseRecord[] { PbLocationUtil.requireLocationOfBook(user, book, locationObjectId), null };
+	}
+
+	private static void requireNotPinned(BaseRecord node) {
+		Boolean pinned = node.get(OlioFieldNames.FIELD_PB_PINNED);
+		if(pinned != null && pinned.booleanValue()) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is pinned. Unpin it first - pinning means do not replace this artifact.");
+		}
+	}
+
+	private static BaseRecord requireProposalOfBook(BaseRecord user, BaseRecord book, String proposalObjectId) {
+		if(proposalObjectId == null || proposalObjectId.isBlank()) {
+			throw new PictureBookException(400, "A proposal objectId is required");
+		}
+		BaseRecord p = PbLocationUtil.readProposal(user, proposalObjectId, PbGraphUtil.orgId(book));
+		if(p == null || PbHealthUtil.fkId(p, OlioFieldNames.FIELD_PB_BOOK) != PbHealthUtil.idOf(book)) {
+			throw new PictureBookException(404, "Proposal not found in this book");
+		}
+		return p;
+	}
+
+	/**
+	 * The LOCATION node of this book's workflow for {@code location} (or {@code variant}), created on first use
+	 * - the {@link #ensureRenderPlanNode} shape: found by the deterministic handle
+	 * ({@link PbPipelineUtil#locationHandle} / {@link PbPipelineUtil#locationVariantHandle}), else added with
+	 * {@code scope=location|locationVariant}, {@code scopeRef=} the record objectId and ordinal 0.
+	 * <p>
+	 * <b>First materialization of a location node seeds its landscape chain</b> (design §28 step 3): the
+	 * selected {@code landscape} artifact of every scene of this book that already points at the location is
+	 * copied in as a candidate - same bytes, new artifact row on the LOCATION node, provenance in
+	 * {@code refModel=olio.pb.artifact} / {@code refObjectId=<source>} - unapproved and with the node left
+	 * PENDING, so a plain render still runs and the reviewer may approve a seeded candidate instead. Variant
+	 * nodes are not seeded (a variant's render is a delta the scene landscapes never carried). A scene whose
+	 * landscape cannot be read or copied is skipped and counted, never fatal. {@code out} receives
+	 * {@code nodeObjectId}, {@code nodeMaterialized}, and {@code seeded} / {@code seedSkipped} on creation.
+	 */
+	private static BaseRecord ensureLocationNode(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord location,
+			BaseRecord variant, Map<String, Object> out) {
+		String locOid = location.get(FieldNames.FIELD_OBJECT_ID);
+		String subjectOid = (variant != null ? variant.get(FieldNames.FIELD_OBJECT_ID) : locOid);
+		String scope = (variant != null ? PbPipelineUtil.SCOPE_LOCATION_VARIANT : PbPipelineUtil.SCOPE_LOCATION);
+		String handle = (variant != null ? PbPipelineUtil.locationVariantHandle(subjectOid) : PbPipelineUtil.locationHandle(locOid));
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
+		boolean created = false;
+		if(node == null) {
+			String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+			node = PbGraphUtil.addNode(user, workflow, handle, PbNodeTypeEnumType.LOCATION, PbBookUtil.workflowGroupPath(slug), 0);
+			if(node == null) {
+				throw new PictureBookException(500, "Failed to create the location node " + handle);
+			}
+			if(!PbPipelineUtil.patchNodeScope(user, workflow, node, scope, subjectOid, 0)) {
+				throw new PictureBookException(500, "Failed to record the location scope on node " + handle);
+			}
+			created = true;
+		}
+		BaseRecord fresh = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(node));
+		node = (fresh != null ? fresh : node);
+		if(out != null) {
+			out.put("locationObjectId", locOid);
+			out.put("variantObjectId", (variant != null ? subjectOid : null));
+			out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+			out.put("nodeMaterialized", Boolean.valueOf(created));
+		}
+		if(created && variant == null) {
+			int[] seeded = seedLocationNode(user, book, workflow, location, node);
+			if(out != null) {
+				out.put("seeded", Integer.valueOf(seeded[0]));
+				out.put("seedSkipped", Integer.valueOf(seeded[1]));
+			}
+		}
+		return node;
+	}
+
+	/** @return {@code {seeded, skipped}} */
+	private static int[] seedLocationNode(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord location, BaseRecord node) {
+		int seeded = 0;
+		int skipped = 0;
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		String groupPath = PbBookUtil.artifactGroupPath(slug);
+		for(BaseRecord scene : PbLocationUtil.scenesOfBookReferencing(user, book, location)) {
+			String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+			try {
+				BaseRecord landscapeNode = PbPipelineUtil.findNodeByHandle(user, workflow, PbPipelineUtil.landscapeHandle(sceneOid));
+				BaseRecord source = (landscapeNode != null ? PbArtifactUtil.findSelected(user, landscapeNode, PbPipelineUtil.ROLE_LANDSCAPE) : null);
+				BaseRecord data = (source != null ? source.get(OlioFieldNames.FIELD_PB_DATA) : null);
+				if(data == null || PbHealthUtil.idOf(data) <= 0L) {
+					skipped++;
+					continue;
+				}
+				BaseRecord copy = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_LANDSCAPE,
+					PbArtifactTypeEnumType.IMAGE, groupPath, data, null, null, null);
+				/// Only the metrics the source actually carries - a present-but-null field in the patch writes NULL.
+				List<String> carried = new ArrayList<>();
+				carried.add(OlioFieldNames.FIELD_PB_REF_MODEL);
+				carried.add(OlioFieldNames.FIELD_PB_REF_OBJECT_ID);
+				for(String f : new String[] { OlioFieldNames.FIELD_PB_CONTENT_HASH, OlioFieldNames.FIELD_PB_MIME_TYPE,
+						OlioFieldNames.FIELD_PB_IMAGE_WIDTH, OlioFieldNames.FIELD_PB_IMAGE_HEIGHT,
+						OlioFieldNames.FIELD_PB_BYTE_LENGTH, OlioFieldNames.FIELD_PB_SEED }) {
+					if(source.hasField(f) && source.get(f) != null) {
+						carried.add(f);
+					}
+				}
+				BaseRecord patch = PbGraphUtil.patchOf(copy, OlioModelNames.MODEL_PB_ARTIFACT, carried.toArray(new String[0]));
+				patch.set(OlioFieldNames.FIELD_PB_REF_MODEL, OlioModelNames.MODEL_PB_ARTIFACT);
+				patch.set(OlioFieldNames.FIELD_PB_REF_OBJECT_ID, source.get(FieldNames.FIELD_OBJECT_ID));
+				for(String f : carried.subList(2, carried.size())) {
+					patch.set(f, source.get(f));
+				}
+				if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+					logger.warn("Seeded artifact " + copy.get(FieldNames.FIELD_NAME) + " kept without provenance: patch refused");
+				}
+				seeded++;
+			}
+			catch(PictureBookException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.warn("Location node " + node.get(OlioFieldNames.FIELD_PB_HANDLE) + ": landscape of scene " + sceneOid
+					+ " not seeded: " + e.getMessage());
+				skipped++;
+			}
+		}
+		return new int[] { seeded, skipped };
+	}
+
+	/** Every variant of the world's Locations group, read as the caller, keyed by parent location id. */
+	private static Map<Long, List<BaseRecord>> variantsByLocation(BaseRecord user, BookContext bctx) {
+		Map<Long, List<BaseRecord>> byLoc = new HashMap<>();
+		BaseRecord grp = bctx.getGroup(FieldNames.FIELD_LOCATIONS);
+		if(grp == null) {
+			return byLoc;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_LOCATION_VARIANT, FieldNames.FIELD_GROUP_ID, (long) grp.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, bctx.getOrganizationId());
+		q.setRequest(PbBookUtil.locationVariantRequest());
+		q.setCache(false);
+		BaseRecord[] recs = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+		if(recs == null) {
+			return byLoc;
+		}
+		for(BaseRecord v : PbGraphUtil.restoreSchema(new ArrayList<>(List.of(recs)), OlioModelNames.MODEL_PB_LOCATION_VARIANT)) {
+			long locId = PbHealthUtil.fkId(v, FieldNames.FIELD_LOCATION);
+			byLoc.computeIfAbsent(Long.valueOf(locId), k -> new ArrayList<>()).add(v);
+		}
+		return byLoc;
+	}
+
+	private static Map<String, Object> locationDto(BaseRecord user, BaseRecord workflow, BaseRecord loc, List<BaseRecord> variants,
+			List<BaseRecord> scenes) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		String oid = loc.get(FieldNames.FIELD_OBJECT_ID);
+		m.put("objectId", oid);
+		m.put("name", loc.get(FieldNames.FIELD_NAME));
+		m.put("description", loc.get(FieldNames.FIELD_DESCRIPTION));
+		m.put("kind", enumString(loc, OlioFieldNames.FIELD_PB_KIND));
+		List<String> aliases = loc.get(OlioFieldNames.FIELD_PB_ALIASES);
+		m.put("aliases", (aliases != null ? new ArrayList<>(aliases) : new ArrayList<>()));
+		m.put("locked", Boolean.valueOf(PbLocationUtil.isLocked(loc)));
+		m.put("approvedRenderObjectId", fkObjectId(loc, OlioFieldNames.FIELD_PB_APPROVED_RENDER, null));
+		m.put("poiObjectId", fkObjectId(loc, OlioFieldNames.FIELD_PB_POI, null));
+		m.put("worldObjectId", fkObjectId(loc, OlioFieldNames.FIELD_PB_WORLD, null));
+		long locId = PbHealthUtil.idOf(loc);
+		List<Map<String, Object>> used = new ArrayList<>();
+		for(BaseRecord s : scenes) {
+			if(PbHealthUtil.fkId(s, FieldNames.FIELD_LOCATION) == locId) {
+				Map<String, Object> u = new LinkedHashMap<>();
+				u.put("sceneObjectId", s.get(FieldNames.FIELD_OBJECT_ID));
+				u.put("sceneIndex", s.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+				u.put("variantObjectId", fkObjectId(s, OlioFieldNames.FIELD_PB_LOCATION_VARIANT, null));
+				used.add(u);
+			}
+		}
+		m.put("usedByScenes", used);
+		m.put("node", locationNodeDto(user, workflow, PbPipelineUtil.locationHandle(oid)));
+		List<Map<String, Object>> vs = new ArrayList<>();
+		for(BaseRecord v : variants) {
+			vs.add(variantDto(user, workflow, v, scenes));
+		}
+		m.put("variants", vs);
+		return m;
+	}
+
+	private static Map<String, Object> variantDto(BaseRecord user, BaseRecord workflow, BaseRecord v, List<BaseRecord> scenes) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		String oid = v.get(FieldNames.FIELD_OBJECT_ID);
+		m.put("objectId", oid);
+		m.put("name", v.get(FieldNames.FIELD_NAME));
+		m.put("locationObjectId", fkObjectId(v, FieldNames.FIELD_LOCATION, null));
+		m.put("timeOfDay", v.get(OlioFieldNames.FIELD_PB_TIME_OF_DAY));
+		m.put("weather", v.get(OlioFieldNames.FIELD_PB_WEATHER));
+		m.put("season", v.get(OlioFieldNames.FIELD_PB_SEASON));
+		m.put("viewpoint", v.get(OlioFieldNames.FIELD_PB_VIEWPOINT));
+		m.put("extra", v.get(OlioFieldNames.FIELD_PB_EXTRA));
+		m.put("approvedRenderObjectId", fkObjectId(v, OlioFieldNames.FIELD_PB_APPROVED_RENDER, null));
+		long vid = PbHealthUtil.idOf(v);
+		List<Map<String, Object>> used = new ArrayList<>();
+		for(BaseRecord s : scenes) {
+			if(PbHealthUtil.fkId(s, OlioFieldNames.FIELD_PB_LOCATION_VARIANT) == vid) {
+				Map<String, Object> u = new LinkedHashMap<>();
+				u.put("sceneObjectId", s.get(FieldNames.FIELD_OBJECT_ID));
+				u.put("sceneIndex", s.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+				used.add(u);
+			}
+		}
+		m.put("usedByScenes", used);
+		m.put("node", locationNodeDto(user, workflow, PbPipelineUtil.locationVariantHandle(oid)));
+		return m;
+	}
+
+	/**
+	 * This book's LOCATION node for a handle with its landscape chain, or null when none has been materialized
+	 * (nothing is created here). Stored status only - no drift scan, the canvas view does that.
+	 */
+	private static Map<String, Object> locationNodeDto(BaseRecord user, BaseRecord workflow, String handle) {
+		if(workflow == null) {
+			return null;
+		}
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
+		if(node == null) {
+			return null;
+		}
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("objectId", node.get(FieldNames.FIELD_OBJECT_ID));
+		m.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
+		m.put("storedStatus", enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		m.put("pinned", node.get(OlioFieldNames.FIELD_PB_PINNED));
+		m.put("lastError", node.get(OlioFieldNames.FIELD_PB_LAST_ERROR));
+		List<Map<String, Object>> chain = new ArrayList<>();
+		for(BaseRecord a : PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_LANDSCAPE)) {
+			Map<String, Object> am = artifactSummary(a);
+			am.put("refModel", a.get(OlioFieldNames.FIELD_PB_REF_MODEL));
+			am.put("refObjectId", a.get(OlioFieldNames.FIELD_PB_REF_OBJECT_ID));
+			chain.add(am);
+		}
+		m.put("chain", chain);
+		return m;
+	}
+
+	private static Map<String, Object> proposalDto(BaseRecord p) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("objectId", p.get(FieldNames.FIELD_OBJECT_ID));
+		m.put("name", p.get(FieldNames.FIELD_NAME));
+		m.put("proposedName", p.get(OlioFieldNames.FIELD_PB_PROPOSED_NAME));
+		m.put("description", p.get(FieldNames.FIELD_DESCRIPTION));
+		m.put("kind", enumString(p, OlioFieldNames.FIELD_PB_KIND));
+		List<String> aliases = p.get(OlioFieldNames.FIELD_PB_ALIASES);
+		m.put("aliases", (aliases != null ? new ArrayList<>(aliases) : new ArrayList<>()));
+		List<String> sceneIds = p.get(OlioFieldNames.FIELD_PB_SCENE_OBJECT_IDS);
+		m.put("sceneObjectIds", (sceneIds != null ? new ArrayList<>(sceneIds) : new ArrayList<>()));
+		m.put("sameAs", p.get(OlioFieldNames.FIELD_PB_SAME_AS));
+		m.put("proposalStatus", PbLocationUtil.statusOf(p).name());
+		m.put("locationObjectId", fkObjectId(p, FieldNames.FIELD_LOCATION, null));
+		m.put("reason", p.get(OlioFieldNames.FIELD_PB_REASON));
+		m.put("passRun", p.get(OlioFieldNames.FIELD_PB_PASS_RUN));
+		return m;
+	}
+
+	public static Map<String, Object> locationPassDto(PbLocationUtil.LocationPassResult r) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		if(r == null) {
+			return m;
+		}
+		m.put("passRun", r.passRun);
+		m.put("scenesConsidered", Integer.valueOf(r.scenesConsidered));
+		m.put("scenesSkipped", Integer.valueOf(r.scenesSkipped));
+		m.put("chunks", Integer.valueOf(r.chunks));
+		m.put("chunksParsed", Integer.valueOf(r.chunksParsed));
+		m.put("folded", Integer.valueOf(r.folded));
+		m.put("proposed", Integer.valueOf(r.proposed));
+		m.put("updated", Integer.valueOf(r.updated));
+		m.put("settled", Integer.valueOf(r.settled));
+		m.put("retired", Integer.valueOf(r.retired));
+		m.put("hardFailure", Boolean.valueOf(r.hardFailure));
+		m.put("warnings", stripRaw(r.warnings));
+		List<Map<String, Object>> dtos = new ArrayList<>();
+		for(BaseRecord p : r.proposals) {
+			dtos.add(proposalDto(p));
+		}
+		m.put("proposals", dtos);
+		return m;
+	}
+
+	/**
+	 * Warnings for the wire: an extraction-failure entry ({@code {context, error, rawResponse, failedAt}} JSON
+	 * from {@code PictureBookUtil.recordFailedExtraction}) loses its {@code rawResponse} - the whole LLM reply,
+	 * which can be kilobytes of the source text - and keeps its length. Plain-text warnings pass through.
+	 */
+	public static List<String> stripRaw(List<String> warnings) {
+		List<String> out = new ArrayList<>();
+		if(warnings == null) {
+			return out;
+		}
+		for(String w : warnings) {
+			if(w == null) {
+				continue;
+			}
+			String t = w.trim();
+			if(t.startsWith("{") && t.contains("rawResponse")) {
+				try {
+					Map<String, Object> m = JSONUtil.getMap(t.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+					if(m != null && m.containsKey("rawResponse")) {
+						Object raw = m.remove("rawResponse");
+						m.put("rawResponseLength", Integer.valueOf(raw != null ? raw.toString().length() : 0));
+						out.add(JSONUtil.exportObject(m));
+						continue;
+					}
+				}
+				catch(Exception e) {
+					/// Not JSON after all - pass the text through as it is.
+				}
+			}
+			out.add(w);
+		}
 		return out;
 	}
 

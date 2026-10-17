@@ -450,4 +450,26 @@ public class OlioFieldNames {
 	/// olio.pb.style — self reference to the style this one inherits from; distinct from common.parent's parentId
 	public static final String FIELD_PB_PARENT = "parent";
 
+	/// olio.pb.location / olio.pb.locationVariant (V3 §7). location.world reuses FIELD_PB_WORLD, location.locked reuses
+	/// FIELD_PB_LOCKED, scene.location and variant.location reuse FieldNames.FIELD_LOCATION.
+	public static final String FIELD_PB_KIND = "kind";
+	public static final String FIELD_PB_ALIASES = "aliases";
+	public static final String FIELD_PB_POI = "poi";
+	public static final String FIELD_PB_APPROVED_RENDER = "approvedRender";
+	public static final String FIELD_PB_LOCATION_VARIANT = "locationVariant";
+	public static final String FIELD_PB_TIME_OF_DAY = "timeOfDay";
+	public static final String FIELD_PB_WEATHER = "weather";
+	public static final String FIELD_PB_SEASON = "season";
+	public static final String FIELD_PB_VIEWPOINT = "viewpoint";
+	public static final String FIELD_PB_EXTRA = "extra";
+
+	/// olio.pb.locationProposal (V3 §7.1 / §28 step 3). proposal.book reuses FIELD_PB_BOOK, proposal.kind/aliases reuse
+	/// FIELD_PB_KIND/FIELD_PB_ALIASES, proposal.location reuses FieldNames.FIELD_LOCATION.
+	public static final String FIELD_PB_PROPOSED_NAME = "proposedName";
+	public static final String FIELD_PB_SCENE_OBJECT_IDS = "sceneObjectIds";
+	public static final String FIELD_PB_SAME_AS = "sameAs";
+	public static final String FIELD_PB_PROPOSAL_STATUS = "proposalStatus";
+	public static final String FIELD_PB_REASON = "reason";
+	public static final String FIELD_PB_PASS_RUN = "passRun";
+
 }

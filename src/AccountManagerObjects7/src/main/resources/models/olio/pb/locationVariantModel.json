@@ -1,0 +1,61 @@
+{
+	"name": "olio.pb.locationVariant",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "wb_twilight",
+	"label": "Location Variant",
+	"group": "Locations",
+	"dedicatedParticipation": false,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["location"],
+	"description": "PictureBook V3 §7 realization key for one olio.pb.location: 'night exterior', 'winter, from the road'. The five deltas (timeOfDay, weather, season, viewpoint, extra) are sparse strings layered over the location's description when a LOCATION node renders the variant or a scene plan carries it; the default variant is the one with no deltas. Lives beside its location in the world's Locations group. 'approvedRender' is the variant's own approved artifact (§7.1 item 1) - a variant does not inherit the location's. No field carries a schema default (TestPbModelSchema rule 3).",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "location",
+			"baseModel": "olio.pb.location",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "timeOfDay",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "weather",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "season",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "viewpoint",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "extra",
+			"type": "string",
+			"description": "Free-text delta the four named ones cannot carry ('after the fire', 'festival bunting')."
+		},
+		{
+			"name": "approvedRender",
+			"baseModel": "olio.pb.artifact",
+			"type": "model",
+			"foreign": true
+		}
+	]
+}

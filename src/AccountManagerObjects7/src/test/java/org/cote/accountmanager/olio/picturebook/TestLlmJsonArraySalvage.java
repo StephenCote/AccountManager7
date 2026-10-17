@@ -252,4 +252,96 @@ public class TestLlmJsonArraySalvage {
 		assertTrue(scenes.size() >= 4);
 		assertEquals(1, failures.size());
 	}
+
+	// ── parseLlmJsonArray: the two cluster-locations defects measured live 2026-10-16 ──────────
+
+	/// The exact pattern qwen3:8b (via LiteLLM) wrote in 4 of 5 elements of the pass-2 reply:
+	/// `"aliases":[],"scenes",[3,7,12]` — a comma where the colon after the key belongs. The strict
+	/// parse rejected the whole array and the salvage kept one element; the grammar repair must turn
+	/// it into a WHOLE parse (ok true, no failure record, every element and every scene number kept).
+	@Test
+	public void TestMissingColonAfterKeyIsRepairedToWholeParse() {
+		String raw = "[{\"name\":\"Gilded Tankard\",\"kind\":\"INTERIOR\",\"description\":\"A low-beamed taproom, smoky.\","
+			+ "\"aliases\":[\"taproom\"],\"scenes\",[3,7,12],\"sameAs\":null},"
+			+ "{\"name\":\"Abbot's Scriptorium\",\"kind\":\"INTERIOR\",\"description\":\"Desks, ink, a tall window.\","
+			+ "\"aliases\":[],\"scenes\",[2,4],\"sameAs\":null},"
+			+ "{\"name\":\"Hill Road\",\"kind\":\"EXTERIOR\",\"description\":\"A rutted road, hedges either side.\","
+			+ "\"aliases\":[],\"scenes\":[6],\"sameAs\":null}]";
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> items = PictureBookUtil.parseLlmJsonArray(raw, CTX, failures, ok);
+		assertTrue("a repaired reply is a whole parse", ok[0]);
+		assertEquals(3, items.size());
+		assertEquals("Gilded Tankard", items.get(0).get("name"));
+		assertEquals("the repaired key must carry its full value", List.of(3, 7, 12), items.get(0).get("scenes"));
+		assertEquals(List.of("taproom"), items.get(0).get("aliases"));
+		assertEquals(List.of(2, 4), items.get(1).get("scenes"));
+		assertEquals(List.of(6), items.get(2).get("scenes"));
+		assertTrue("a whole parse leaves no failure record", failures.isEmpty());
+	}
+
+	/// The pass-2 retry reply: every colon right, but a raw newline inside the description string.
+	/// That is a complete reply; it must parse whole (lenient), not drop to a salvage that then costs
+	/// the caller a failed chunk.
+	@Test
+	public void TestRawNewlineInsideStringParsesWhole() {
+		String raw = "[{\"name\":\"Gilded Tankard\",\"kind\":\"INTERIOR\",\"description\":\"A low-beamed taproom.\nSmoke hangs under the rafters.\","
+			+ "\"aliases\":[],\"scenes\":[3,7,12],\"sameAs\":\"Gilded Tankard\"},"
+			+ "{\"name\":\"Unspecified\",\"kind\":\"ABSTRACT\",\"description\":\"\",\"aliases\":[],\"scenes\":[5],\"sameAs\":null}]";
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> items = PictureBookUtil.parseLlmJsonArray(raw, CTX, failures, ok);
+		assertTrue("an unescaped newline inside a string is not a parse failure", ok[0]);
+		assertEquals(2, items.size());
+		assertTrue(String.valueOf(items.get(0).get("description")).contains("\nSmoke"));
+		assertEquals("Gilded Tankard", items.get(0).get("sameAs"));
+		assertTrue(failures.isEmpty());
+	}
+
+	/// The repair is grammar-driven: commas between array members, between object members, and
+	/// inside string values are never touched, so a well-formed reply comes back byte-identical and
+	/// the glitched fixture (string parity broken) still reports a salvage, not a whole parse.
+	@Test
+	public void TestRepairMissingColonsLeavesWellFormedAndGlitchedRepliesAlone() {
+		String clean = "[{\"name\":\"A, B and C\",\"aliases\":[\"a\",\"b\"],\"scenes\":[1,2],\"nested\":{\"k\":[\"x, y\",\"z\"]},\"n\":1}]";
+		int[] repairs = new int[1];
+		assertEquals(clean, PictureBookUtil.repairMissingColons(clean, repairs));
+		assertEquals(0, repairs[0]);
+		assertEquals("whitespace before the separator and a nested object are both handled",
+			"[{\"a\" :[1],\"b\":{\"c\":2}}]", PictureBookUtil.repairMissingColons("[{\"a\" ,[1],\"b\":{\"c\",2}}]", repairs));
+		assertEquals(2, repairs[0]);
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> scenes = PictureBookUtil.parseLlmJsonArray(fixture(), CTX, failures, ok);
+		assertFalse("the parity-broken fixture is still a salvage", ok[0]);
+		assertTrue(scenes.size() >= 4);
+		assertEquals(1, failures.size());
+	}
+
+	/// The lenient read allows a missing value, so `[{...},,{...}]` and `[{...},{},{...}]` bind a null
+	/// or empty element the consumers would dereference; the whole parse must hand back only real
+	/// objects and still count as a whole parse, not a salvage.
+	@Test
+	public void TestMissingAndEmptyElementsAreDroppedFromAWholeParse() {
+		String raw = "[{\"name\":\"Harbour Road\",\"kind\":\"EXTERIOR\",\"scenes\":[1]},,{},"
+			+ "{\"name\":\"Gilded Tankard\",\"kind\":\"INTERIOR\",\"scenes\":[3,7,12]},]";
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> items = PictureBookUtil.parseLlmJsonArray(raw, CTX, failures, ok);
+		assertTrue("a missing value is a lenient whole parse", ok[0]);
+		assertEquals(2, items.size());
+		for (Map<String, Object> m : items) {
+			assertNotNull(m);
+			assertFalse(m.isEmpty());
+		}
+		assertEquals("Harbour Road", items.get(0).get("name"));
+		assertEquals("Gilded Tankard", items.get(1).get("name"));
+		assertTrue(failures.isEmpty());
+		/// Same shape after a colon repair: the repaired whole parse drops them too.
+		String glitched = "[{\"name\":\"Harbour Road\",\"scenes\",[1]},,{\"name\":\"Gilded Tankard\",\"scenes\",[3,7,12]}]";
+		items = PictureBookUtil.parseLlmJsonArray(glitched, CTX, failures, ok);
+		assertTrue("a repaired reply is a whole parse", ok[0]);
+		assertEquals(2, items.size());
+		assertEquals("Gilded Tankard", items.get(1).get("name"));
+	}
 }

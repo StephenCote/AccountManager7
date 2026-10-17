@@ -4108,7 +4108,8 @@ public class PictureBookUtil {
      * corrective instruction (see {@link #extractScenesOnly}) before settling for a salvage.
      *
      * @param okOut optional single-element array: {@code true} only when the array parsed as a
-     *   whole; {@code false} on a salvage (partial) or a failure, so a caller can decide to retry
+     *   whole (leniently, or after {@link #repairMissingColons}); {@code false} on a salvage
+     *   (partial) or a failure, so a caller can decide to retry
      *   (same contract as {@link #parseLlmJsonObject(String, String, List, boolean[])})
      */
     @SuppressWarnings("unchecked")
@@ -4132,23 +4133,49 @@ public class PictureBookUtil {
             return new ArrayList<>();
         }
         trimmed = trimmed.substring(start, end + 1);
-        String parseError;
-        try {
-            List<Map<String, Object>> parsed = JSONUtil.getList(trimmed, Map.class, null);
+        /// Lenient whole parse first (the same read features the per-element salvage already uses):
+        /// a raw newline inside a description is a complete, usable reply, not a reason to drop to a
+        /// salvage and spend a corrective retry. Measured live 2026-10-16 (cluster-locations, qwen3:8b
+        /// via LiteLLM): the retry reply was perfect except for one unescaped newline, the strict parse
+        /// rejected it, the salvage recovered all 5 elements, and the caller still saw a failed chunk.
+        String[] err = new String[1];
+        List<Map<String, Object>> parsed = JSONUtil.getLenientList(trimmed, Map.class, err);
+        if (parsed != null) {
+            if (okOut != null && okOut.length > 0) okOut[0] = true;
+            return dropEmptyElements(parsed);
+        }
+        String parseError = err[0] != null ? err[0] : "JSON array could not be parsed";
+        /// Second structural defect seen on the same model, systematically: a comma where the colon
+        /// after a key belongs (`"aliases":[],"scenes",[3,7,12]`). The repair is grammar-driven — only
+        /// a `,` sitting where JSON requires a `:` is touched — so a well-formed reply is never altered.
+        int[] repairs = new int[1];
+        String repaired = repairMissingColons(trimmed, repairs);
+        if (repairs[0] > 0) {
+            String[] err2 = new String[1];
+            parsed = JSONUtil.getLenientList(repaired, Map.class, err2);
             if (parsed != null) {
+                logger.warn("Recovered " + (context != null ? context : "LLM JSON array") + " by repairing "
+                    + repairs[0] + " missing colon(s) after a key (" + parseError + ")");
                 if (okOut != null && okOut.length > 0) okOut[0] = true;
-                return parsed;
+                return dropEmptyElements(parsed);
             }
-            parseError = "JSON array parse returned null";
-        } catch (Exception e) {
-            parseError = e.getMessage();
         }
         logger.warn("Failed to parse LLM JSON array: " + parseError);
         int[] dropped = new int[1];
         List<Map<String, Object>> salvaged = salvageArrayElements(trimmed, dropped);
+        if (repairs[0] > 0) {
+            /// The repair walker does not model single-quoted strings, so a repaired text can in
+            /// principle salvage worse than the original; keep whichever read more elements.
+            int[] droppedR = new int[1];
+            List<Map<String, Object>> salvagedR = salvageArrayElements(repaired, droppedR);
+            if (salvagedR.size() > salvaged.size()) {
+                salvaged = salvagedR;
+                dropped = droppedR;
+            }
+        }
         if (!salvaged.isEmpty()) {
             String what = "Salvaged " + salvaged.size() + " element(s) from a malformed JSON array; "
-                + (dropped[0] > 0 ? dropped[0] + " element(s) could not be read" : "the remainder could not be read")
+                + (dropped[0] > 0 ? dropped[0] + " element(s) could not be read" : "every element was read but the array itself was malformed")
                 + " (" + parseError + ")";
             logger.warn("Recovered " + (context != null ? context : "LLM JSON array") + ": " + what);
             recordFailedExtraction(failedExtractions, context, KIND_PARSE, what, response);
@@ -4156,6 +4183,15 @@ public class PictureBookUtil {
         }
         recordFailedExtraction(failedExtractions, context, KIND_PARSE, parseError, response);
         return new ArrayList<>();
+    }
+
+    /**
+     * The lenient read allows missing values, so {@code [{...},,{...}]} binds a {@code null}
+     * element that every consumer would dereference; the salvage path never yields one.
+     */
+    static List<Map<String, Object>> dropEmptyElements(List<Map<String, Object>> parsed) {
+        parsed.removeIf(m -> m == null || m.isEmpty());
+        return parsed;
     }
 
     /**
@@ -4205,6 +4241,93 @@ public class PictureBookUtil {
         }
         if (droppedOut != null && droppedOut.length > 0) droppedOut[0] = dropped;
         return out;
+    }
+
+    private static final int JS_OBJ_KEY = 0;
+    private static final int JS_OBJ_COLON = 1;
+    private static final int JS_OBJ_VALUE = 2;
+    private static final int JS_OBJ_AFTER_VALUE = 3;
+    private static final int JS_ARRAY = 4;
+
+    /**
+     * Replace a comma that sits where JSON grammar requires the colon after an object key
+     * ({@code "scenes",[3,7,12]} → {@code "scenes":[3,7,12]}). A small grammar walk tracks the
+     * container stack and, inside an object, whether the next token must be a key, the colon, a
+     * value, or a separator; only a {@code ,} met in the colon position is rewritten. Commas inside
+     * arrays, between members, and inside strings are never touched, and a reply without the defect
+     * comes back unchanged (the caller checks {@code repairsOut} before re-parsing).
+     *
+     * <p>Grammar-driven rather than regex-driven on purpose: a value string may legitimately contain
+     * {@code ","} and a key may be followed by whitespace before the separator.
+     *
+     * @param repairsOut optional single-element array receiving the number of commas rewritten
+     */
+    static String repairMissingColons(String s, int[] repairsOut) {
+        if (repairsOut != null && repairsOut.length > 0) repairsOut[0] = 0;
+        if (s == null || s.isEmpty()) return s;
+        StringBuilder out = new StringBuilder(s.length());
+        java.util.ArrayDeque<int[]> stack = new java.util.ArrayDeque<>();
+        boolean inStr = false;
+        boolean esc = false;
+        int repairs = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inStr) {
+                if (esc) { esc = false; }
+                else if (c == '\\') { esc = true; }
+                else if (c == '"') {
+                    inStr = false;
+                    int[] top = stack.peek();
+                    if (top != null) {
+                        if (top[0] == JS_OBJ_KEY) top[0] = JS_OBJ_COLON;
+                        else if (top[0] == JS_OBJ_VALUE) top[0] = JS_OBJ_AFTER_VALUE;
+                    }
+                }
+                out.append(c);
+                continue;
+            }
+            switch (c) {
+                case '"':
+                    inStr = true;
+                    break;
+                case '{':
+                    stack.push(new int[] { JS_OBJ_KEY });
+                    break;
+                case '[':
+                    stack.push(new int[] { JS_ARRAY });
+                    break;
+                case '}':
+                case ']': {
+                    if (!stack.isEmpty()) stack.pop();
+                    int[] top = stack.peek();
+                    if (top != null && top[0] == JS_OBJ_VALUE) top[0] = JS_OBJ_AFTER_VALUE;
+                    break;
+                }
+                case ':': {
+                    int[] top = stack.peek();
+                    if (top != null && top[0] == JS_OBJ_COLON) top[0] = JS_OBJ_VALUE;
+                    break;
+                }
+                case ',': {
+                    int[] top = stack.peek();
+                    if (top != null) {
+                        if (top[0] == JS_OBJ_COLON) {
+                            top[0] = JS_OBJ_VALUE;
+                            repairs++;
+                            out.append(':');
+                            continue;
+                        }
+                        if (top[0] == JS_OBJ_VALUE || top[0] == JS_OBJ_AFTER_VALUE) top[0] = JS_OBJ_KEY;
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+            out.append(c);
+        }
+        if (repairsOut != null && repairsOut.length > 0) repairsOut[0] = repairs;
+        return repairs > 0 ? out.toString() : s;
     }
 
     /**
@@ -8807,7 +8930,24 @@ public class PictureBookUtil {
      */
     static List<Map<String, Object>> extractSingleShot(java.util.function.Function<Map<String, String>, String> llm,
             Map<String, String> vars, String context, List<String> failedExtractions, SummarizeProgress cancelToken) {
+        return extractSingleShot(llm, vars, "text", context, failedExtractions, cancelToken, null);
+    }
+
+    /**
+     * {@link #extractSingleShot(java.util.function.Function, Map, String, List, SummarizeProgress)} for a
+     * prompt whose text slot is not {@code text}: the corrective instruction is appended to
+     * {@code hintVar} (the var the template renders last, so the hint lands at the end of the prompt).
+     *
+     * @param okOut optional single-element array: {@code true} only when one of the attempts parsed as a
+     *   whole array (an empty {@code []} counts); {@code false} on a null reply, a salvage or a failure —
+     *   the same contract as {@link #parseLlmJsonArray(String, String, List, boolean[])}, so a caller
+     *   that gates on "every chunk parsed" keeps that signal through the retry
+     */
+    static List<Map<String, Object>> extractSingleShot(java.util.function.Function<Map<String, String>, String> llm,
+            Map<String, String> vars, String hintVar, String context, List<String> failedExtractions,
+            SummarizeProgress cancelToken, boolean[] okOut) {
         boolean[] ok = new boolean[1];
+        if (okOut != null && okOut.length > 0) okOut[0] = false;
         String first = llm.apply(vars);
         if (first == null) {
             /// Timeout / refusal / unreachable / aborted: nothing to correct, nothing to salvage.
@@ -8819,7 +8959,10 @@ public class PictureBookUtil {
         }
         List<String> firstFailures = new ArrayList<>();
         List<Map<String, Object>> firstScenes = parseLlmJsonArray(first, context, firstFailures, ok);
-        if (ok[0]) return firstScenes;
+        if (ok[0]) {
+            if (okOut != null && okOut.length > 0) okOut[0] = true;
+            return firstScenes;
+        }
 
         if (cancelToken != null && cancelToken.isCancelled()) {
             logger.info(context + ": cancelled — not retrying the malformed reply");
@@ -8827,9 +8970,9 @@ public class PictureBookUtil {
             return firstScenes;
         }
         logger.warn(context + ": reply could not be parsed as a whole (" + firstScenes.size()
-            + " scene(s) salvaged) — retrying once with a corrective instruction");
+            + " element(s) salvaged) — retrying once with a corrective instruction");
         Map<String, String> retryVars = new LinkedHashMap<>(vars);
-        retryVars.put("text", vars.get("text")
+        retryVars.put(hintVar, vars.get(hintVar)
             + "\n\nIMPORTANT: your previous reply could not be parsed as JSON (it was truncated or"
             + " malformed). Reply with ONLY a single complete, valid JSON array. Keep every field"
             + " short so the whole array fits in one reply.");
@@ -8838,7 +8981,10 @@ public class PictureBookUtil {
         List<Map<String, Object>> secondScenes = second == null
             ? new ArrayList<>()
             : parseLlmJsonArray(second, context, secondFailures, ok);
-        if (second != null && ok[0]) return secondScenes;
+        if (second != null && ok[0]) {
+            if (okOut != null && okOut.length > 0) okOut[0] = true;
+            return secondScenes;
+        }
 
         /// Neither attempt parsed cleanly: keep whichever salvaged more, and its failure record.
         boolean useSecond = secondScenes.size() > firstScenes.size();

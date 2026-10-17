@@ -111,6 +111,20 @@
 			"name": "imageStale",
 			"type": "boolean",
 			"description": "For ChapBook scenes: true when the generated image no longer matches the edited stanza (e.g. after a merge-up folds the next stanza in). Signals the render path / UI that a re-render is needed. Additive, defaults to unset (false)."
+		},
+		{
+			"name": "location",
+			"baseModel": "olio.pb.location",
+			"type": "model",
+			"foreign": true,
+			"description": "V3 §7: the resolved olio.pb.location this scene takes place in. Nullable - null means the setting is text-only (scene.setting is the only location text). Shared seam with Phase 4 composition; the render plan's Location block is filled from it (§12)."
+		},
+		{
+			"name": "locationVariant",
+			"baseModel": "olio.pb.locationVariant",
+			"type": "model",
+			"foreign": true,
+			"description": "V3 §7: the realization of 'location' this scene uses (night, winter, from the road). Nullable; null with a location set means the default variant."
 		}
 	]
 }

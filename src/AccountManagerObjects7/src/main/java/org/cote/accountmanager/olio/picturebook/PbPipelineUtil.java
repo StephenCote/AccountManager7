@@ -72,6 +72,10 @@ public class PbPipelineUtil {
 	public static final String SCOPE_SCENE = "scene";
 	/** {@code node.scope} for a node whose {@code scopeRef} is an {@code olio.charPerson} objectId. */
 	public static final String SCOPE_CHARACTER = "character";
+	/** {@code node.scope} for a LOCATION node whose {@code scopeRef} is an {@code olio.pb.location} objectId (V3 §7.1, P3-4). */
+	public static final String SCOPE_LOCATION = "location";
+	/** {@code node.scope} for a LOCATION node whose {@code scopeRef} is an {@code olio.pb.locationVariant} objectId; the variant's {@code location} FK names the location. */
+	public static final String SCOPE_LOCATION_VARIANT = "locationVariant";
 
 	/// Binding + artifact roles. These are the wire names §2.5 and §9's level-1 assertions use, so they
 	/// are constants rather than literals scattered across the pipeline.
@@ -90,6 +94,12 @@ public class PbPipelineUtil {
 	public static final String ROLE_RENDER_PLAN = "renderPlan";
 	/** The image a RENDER_PLAN node's BASE stage produced (V3 §11, P2-5); same node as its {@code renderPlan} JSON. */
 	public static final String ROLE_BASE = "base";
+	/**
+	 * Binding role for the {@code olio.pb.location} record (ordinal 0) and its {@code olio.pb.locationVariant}
+	 * (ordinal 1) a node renders against (V3 §7, P3-4). A LOCATION node binds its own subject under this role
+	 * after a render; a RENDER_PLAN node binds the scene's location so {@code approvedRender} drift stales it.
+	 */
+	public static final String ROLE_LOCATION = "location";
 
 	private PbPipelineUtil() {
 		/// static utility
@@ -569,6 +579,38 @@ public class PbPipelineUtil {
 			g.workflowGroupPath);
 	}
 
+	/**
+	 * {@link #bindRecord} that also follows a reference that moved or went away between runs: an existing
+	 * binding on {@code (consumer, role, ordinal)} that points at another record is dropped and re-bound,
+	 * and a null {@code refObjectId} drops it. The scene → location leg uses this (a scene re-pointed at
+	 * another location, or at none, between two renders).
+	 *
+	 * @return the binding, or null when nothing is bound
+	 */
+	public static BaseRecord syncRecordBinding(SceneGraph g, BaseRecord consumer, String role, int ordinal,
+			String refModel, String refObjectId) {
+		if(g == null || consumer == null) {
+			return null;
+		}
+		BaseRecord existing = findBinding(g.user, consumer, role, ordinal);
+		if(existing != null) {
+			String bound = existing.get(OlioFieldNames.FIELD_PB_REF_OBJECT_ID);
+			if(refObjectId != null && refObjectId.equals(bound)) {
+				return bindRecord(g, consumer, role, ordinal, refModel, refObjectId);
+			}
+			if(!IOSystem.getActiveContext().getAccessPoint().delete(g.user, existing)) {
+				throw new PictureBookException(500, "Failed to drop binding " + existing.get(FieldNames.FIELD_NAME)
+					+ " whose reference changed");
+			}
+			PbGraphUtil.invalidateScan(g.workflow);
+		}
+		if(refObjectId == null) {
+			return null;
+		}
+		return PbGraphUtil.addRecordBinding(g.user, g.workflow, consumer, role, ordinal, refModel, refObjectId,
+			g.workflowGroupPath);
+	}
+
 	/** The binding on {@code (node, role, ordinal)}, or null. Foreign condition takes the RECORD. */
 	public static BaseRecord findBinding(BaseRecord user, BaseRecord node, String role, int ordinal) {
 		if(user == null || node == null || role == null) {
@@ -941,6 +983,19 @@ public class PbPipelineUtil {
 	 */
 	public static String portraitHandle(String charObjectId) {
 		return "portrait@" + shortRef(charObjectId);
+	}
+
+	/**
+	 * A LOCATION node is keyed on the location record (V3 §7.1, P3-4): one node per location per book, its
+	 * version chain holding every render of that location, so scenes 3, 7 and 12 share one approved tavern.
+	 */
+	public static String locationHandle(String locationObjectId) {
+		return "location@" + shortRef(locationObjectId);
+	}
+
+	/** One LOCATION node per (location, variant) pair; keyed on the variant, whose {@code location} FK names the location. */
+	public static String locationVariantHandle(String variantObjectId) {
+		return "location_variant@" + shortRef(variantObjectId);
 	}
 
 	/** {@code portrait0} / {@code portrait1} - the composite's reference roles, per §2.5's attribution row. */
