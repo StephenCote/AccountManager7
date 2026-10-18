@@ -18,12 +18,12 @@ import { am7client } from '../core/am7client.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { pollJob, resolveImageUrl } from '../workflows/sceneExtractor.js';
-import { deriveStageList, runSummaryText } from './pictureBook.js';
 import { orderNewestFirst, reviewStatusOf, isAutoApproved, artifactActions } from './pictureBookReview.js';
 import {
     listLocations, createLocation, updateLocation, deleteLocation, createLocationVariant, lockLocation,
     mergeLocations, renderLocation, isPinnedNodeRefusal, proposeLocations, listLocationProposals,
-    acceptLocationProposal, rejectLocationProposal, selectArtifact, approveArtifact, rejectArtifact, unpinNode
+    acceptLocationProposal, rejectLocationProposal, selectArtifact, approveArtifact, rejectArtifact, unpinNode,
+    deriveStageList, runSummaryText
 } from '../workflows/pictureBookWorkflow.js';
 
 let bookObjectId = null;

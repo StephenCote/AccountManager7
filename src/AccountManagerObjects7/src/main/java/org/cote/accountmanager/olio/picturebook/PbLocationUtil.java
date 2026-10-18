@@ -921,7 +921,7 @@ public class PbLocationUtil {
 		if(poi == null) {
 			throw new PictureBookException(500, "Could not instantiate a point of interest for '" + name + "'");
 		}
-		poi.set("concealed", false);
+		poi.set(OlioFieldNames.FIELD_CONCEALED, false);
 		BaseRecord store = poi.get(FieldNames.FIELD_STORE);
 		if(store == null) {
 			throw new PictureBookException(500, "Point of interest '" + name + "' carries no store");
@@ -1041,12 +1041,20 @@ public class PbLocationUtil {
 		}
 		try {
 			/// 2. re-point scenes as the request user
+			int staleMarked = 0;
 			for(BaseRecord scene : scenes) {
 				BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, FieldNames.FIELD_LOCATION);
 				patch.set(FieldNames.FIELD_LOCATION, sur);
 				if(ioContext.getAccessPoint().update(user, patch) == null) {
 					throw new PictureBookException(500, "Scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + " could not be re-pointed");
 				}
+				/// the render on file is of the duplicate; STALE (pinned stays pinned, RUNNING waits for the run to close)
+				if(PbBookUtil.markSceneNodeStale(user, scene)) {
+					staleMarked++;
+				}
+			}
+			if(!scenes.isEmpty()) {
+				logger.info("mergeLocations: " + scenes.size() + " scene(s) re-pointed, " + staleMarked + " page node(s) marked stale");
 			}
 			/// 3. survivor aliases += duplicate name + aliases (already checked to fit in step 0)
 			BaseRecord aliasPatch = PbGraphUtil.patchOf(sur, OlioModelNames.MODEL_PB_LOCATION, OlioFieldNames.FIELD_PB_ALIASES);
@@ -1263,6 +1271,8 @@ public class PbLocationUtil {
 		public boolean locationCreated;
 		public int scenesRepointed;
 		public int scenesSkipped;
+		/// Re-pointed scenes whose page node was marked STALE (a re-pointed scene's render is of the old place)
+		public int nodesMarkedStale;
 		public int aliasesFolded;
 		public List<String> warnings = new ArrayList<>();
 	}
@@ -1317,7 +1327,6 @@ public class PbLocationUtil {
 		BaseRecord freshBook = requireBookUpdate(user, book);
 		BookContext bctx = requireBookContext(user, freshBook);
 		long orgId = bctx.getOrganizationId();
-		BaseRecord olioUser = olioUser(orgId);
 		String slug = freshBook.get(OlioFieldNames.FIELD_PB_SLUG);
 		LocationPassResult result = new LocationPassResult();
 		result.passRun = UUID.randomUUID().toString();
@@ -1339,8 +1348,10 @@ public class PbLocationUtil {
 			return result;
 		}
 
-		/// 2. what the world already knows, as the principal that can see all of it
-		List<BaseRecord> known = listLocations(olioUser, bctx);
+		/// 2. what the world already knows, as the caller: a location the user may not read must not reach the
+		/// prompt, where it would come back as a sameAs name the user was never entitled to see. A user without
+		/// Read on the Locations group simply gets "(none yet)" and the pass proposes fresh places.
+		List<BaseRecord> known = listLocations(user, bctx);
 		Set<String> knownKeys = new LinkedHashSet<>();
 		StringBuilder knownText = new StringBuilder();
 		for(BaseRecord loc : known) {
@@ -2094,6 +2105,13 @@ public class PbLocationUtil {
 						continue;
 					}
 					res.scenesRepointed++;
+					/// the render on file is of the old place; STALE (pinned stays pinned, RUNNING waits for the run to close)
+					if(PbBookUtil.markSceneNodeStale(user, scene)) {
+						res.nodesMarkedStale++;
+					}
+					else if(PbHealthUtil.fkId(scene, OlioFieldNames.FIELD_PB_SCENE_NODE) > 0L) {
+						res.warnings.add("Scene " + soid + " was re-pointed but its page node was not marked stale");
+					}
 				}
 			}
 

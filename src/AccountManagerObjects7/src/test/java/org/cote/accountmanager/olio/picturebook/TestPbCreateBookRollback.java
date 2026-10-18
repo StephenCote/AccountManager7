@@ -23,7 +23,10 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.junit.Test;
 
 /// A failed PbBookUtil.createBook must not leave a slug taken by a row nobody can see. Before this fix a
@@ -239,6 +242,163 @@ public class TestPbCreateBookRollback extends BaseTest {
 			}
 			if(olioUser != null) {
 				cleanup(ioContext, olioUser, slug, orgId);
+			}
+		}
+	}
+
+	/// The candidate query listBooks runs, with or without the CHAPBOOK exclusion, over an explicit window.
+	/// Same shape as PbServiceFacade.listBooks: creator-scoped, sorted by name ascending, no cache.
+	private static Query candidateQuery(BaseRecord user, long orgId, boolean excludeChapBooks, int window) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.field(OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID, user.get(FieldNames.FIELD_OBJECT_ID));
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			OlioFieldNames.FIELD_PB_SLUG, OlioFieldNames.FIELD_PB_BOOK_TYPE});
+		q.setCache(false);
+		q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
+		if(excludeChapBooks) {
+			q.field(OlioFieldNames.FIELD_PB_BOOK_TYPE, ComparatorEnumType.NOT_EQUALS, PbBookTypeEnumType.CHAPBOOK.toString());
+		}
+		q.setRequestRange(0, window);
+		return q;
+	}
+
+	private static int indexOf(BaseRecord[] rows, String objectId) {
+		if(rows == null) {
+			return -1;
+		}
+		for(int i = 0; i < rows.length; i++) {
+			if(objectId.equals(rows[i].get(FieldNames.FIELD_OBJECT_ID))) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private static String typeOf(BaseRecord row) {
+		Object t = (row != null && row.hasField(OlioFieldNames.FIELD_PB_BOOK_TYPE) ? row.get(OlioFieldNames.FIELD_PB_BOOK_TYPE) : null);
+		return (t != null ? t.toString() : null);
+	}
+
+	/// Turn a freshly created STORY book into a CHAPBOOK the way ChapBookUtil does (ChapBookUtil.java:764-767):
+	/// the row is olio-owned so the patch goes through RecordUtil, and the type is verified by a raw re-read.
+	private static void makeChapBook(IOContext ioContext, String slug, long orgId) throws Exception {
+		BaseRecord row = rawRowBySlug(ioContext, slug, orgId);
+		assertNotNull("row for " + slug, row);
+		BaseRecord typePatch = PbGraphUtil.patchOf(row, OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		typePatch.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.CHAPBOOK.toString());
+		assertTrue("bookType patch of " + slug, ioContext.getRecordUtil().updateRecord(typePatch));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SLUG, slug);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_BOOK_TYPE});
+		q.setCache(false);
+		BaseRecord back = ioContext.getSearch().findRecord(q);
+		assertNotNull("re-read " + slug, back);
+		assertTrue("persisted bookType of " + slug + " must be CHAPBOOK, was " + typeOf(back),
+			"CHAPBOOK".equalsIgnoreCase(typeOf(back)));
+	}
+
+	/// P3-8 run 5: 550 ChapBooks hid every story book because the old candidate query enumerated the first
+	/// N rows of ALL the creator's books and filtered CHAPBOOK afterwards. The exclusion now lives inside the
+	/// candidate query, so a window that CHAPBOOKs would otherwise fill still reaches the story book.
+	///
+	/// Leftover-proof: the window is not a guessed constant. It is computed from the live exclusion query
+	/// as (index of the STORY among this creator's non-CHAPBOOK books) + 1, so any rows a failed earlier
+	/// run left behind for this user only shift the index; they cannot make either half pass or fail
+	/// spuriously. The two CHAPBOOK slugs sort BEFORE the STORY slug by name (name == "Book <slug>"), so
+	/// in the un-excluded query they occupy slots inside the same window and push the STORY out of it.
+	@Test
+	public void listBooksSkipsChapBooksInsideTheCandidateRange() throws Exception {
+		OlioModelNames.use();
+		IOContext ioContext = IOSystem.getActiveContext();
+
+		BaseRecord owner = getCreateUser("pbListCapOwner");
+		assertNotNull("owner", owner);
+		long orgId = ((Number) owner.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be configured", dataPath);
+
+		String run = shortId();
+		String chap1 = "aa" + run + "1";
+		String chap2 = "aa" + run + "2";
+		String story = "zz" + run;
+		BaseRecord olioUser = null;
+		try {
+			BaseRecord c1 = PbBookUtil.createBook(owner, dataPath, chap1, "Chap one " + run);
+			BaseRecord c2 = PbBookUtil.createBook(owner, dataPath, chap2, "Chap two " + run);
+			BaseRecord st = PbBookUtil.createBook(owner, dataPath, story, "Story " + run);
+			assertNotNull("chapbook 1", c1);
+			assertNotNull("chapbook 2", c2);
+			assertNotNull("story", st);
+			String storyOid = st.get(FieldNames.FIELD_OBJECT_ID);
+			assertNotNull("story objectId", storyOid);
+			olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+			assertNotNull("olio principal", olioUser);
+
+			makeChapBook(ioContext, chap1, orgId);
+			makeChapBook(ioContext, chap2, orgId);
+			BaseRecord storyRow = rawRowBySlug(ioContext, story, orgId);
+			assertNotNull("story row", storyRow);
+			assertEquals("story must be stamped with its creator", (String) owner.get(FieldNames.FIELD_OBJECT_ID),
+				(String) storyRow.get(OlioFieldNames.FIELD_PB_CREATED_BY_OBJECT_ID));
+
+			/// Where does the STORY land among this creator's non-CHAPBOOK books? That decides the window.
+			BaseRecord[] excluded = ioContext.getSearch().findRecords(candidateQuery(owner, orgId, true, 10000));
+			int storyIdx = indexOf(excluded, storyOid);
+			assertTrue("story must appear in the exclusion query (idx=" + storyIdx + ")", storyIdx >= 0);
+			for(BaseRecord r : excluded) {
+				assertFalse("exclusion query must not return a CHAPBOOK: " + r.get(OlioFieldNames.FIELD_PB_SLUG),
+					"CHAPBOOK".equalsIgnoreCase(typeOf(r)));
+			}
+			int cap = storyIdx + 1;
+
+			/// Negative control: the SAME query shape without the bookType condition, over the SAME window,
+			/// does not reach the STORY - the two CHAPBOOKs that sort before it consume the slots.
+			BaseRecord[] unexcluded = ioContext.getSearch().findRecords(candidateQuery(owner, orgId, false, cap));
+			assertNotNull("un-excluded window", unexcluded);
+			assertEquals("un-excluded window must be full", cap, unexcluded.length);
+			/// With a fresh creator the STORY is idx 0, so cap == 1 and only ONE of the two CHAPBOOKs fits the window;
+			/// what matters is that a CHAPBOOK took the slot the STORY would otherwise have had.
+			assertTrue("negative control: un-excluded window of " + cap + " must contain a CHAPBOOK",
+				indexOf(unexcluded, c1.get(FieldNames.FIELD_OBJECT_ID)) >= 0
+				|| indexOf(unexcluded, c2.get(FieldNames.FIELD_OBJECT_ID)) >= 0);
+			assertEquals("negative control: STORY must be pushed out of the un-excluded window of " + cap,
+				-1, indexOf(unexcluded, storyOid));
+
+			/// The facade with that same window must still list the STORY, and neither CHAPBOOK.
+			long t0 = System.currentTimeMillis();
+			List<Map<String, Object>> books = PbServiceFacade.listBooks(owner, cap);
+			logger.info("listBooks(owner, cap=" + cap + ") returned " + books.size() + " in " + (System.currentTimeMillis() - t0) + "ms");
+			assertTrue("listBooks(owner, " + cap + ") must contain the STORY " + story, listed(books, story));
+			boolean oidListed = false;
+			for(Map<String, Object> b : books) {
+				if(storyOid.equals(b.get("objectId"))) {
+					oidListed = true;
+				}
+			}
+			assertTrue("listBooks(owner, " + cap + ") must carry the STORY objectId", oidListed);
+			assertFalse("listBooks must not list CHAPBOOK " + chap1, listed(books, chap1));
+			assertFalse("listBooks must not list CHAPBOOK " + chap2, listed(books, chap2));
+
+			/// And the production cap behaves the same way for these three.
+			List<Map<String, Object>> prod = PbServiceFacade.listBooks(owner);
+			assertTrue("listBooks(owner) must contain the STORY", listed(prod, story));
+			assertFalse("listBooks(owner) must not list CHAPBOOK " + chap1, listed(prod, chap1));
+			assertFalse("listBooks(owner) must not list CHAPBOOK " + chap2, listed(prod, chap2));
+		}
+		finally {
+			if(olioUser == null) {
+				olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+			}
+			if(olioUser != null) {
+				for(String slug : new String[] {chap1, chap2, story}) {
+					try {
+						cleanup(ioContext, olioUser, slug, orgId);
+					}
+					catch(Throwable t) {
+						logger.error("cleanup of " + slug + " failed: " + t.getMessage());
+					}
+				}
 			}
 		}
 	}

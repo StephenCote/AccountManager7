@@ -103,7 +103,9 @@ public class OlioFieldNames {
 	
 	public static final String FIELD_POINTS_OF_INTEREST = "pointsOfInterest";
 	public static final String FIELD_POINTS_OF_INTEREST_ID = "pointsOfInterest.id";
-	
+	public static final String FIELD_POINTS_OF_INTEREST_PATH = "pointsOfInterest.path";
+	public static final String FIELD_CONCEALED = "concealed";
+
 	
 	
 	

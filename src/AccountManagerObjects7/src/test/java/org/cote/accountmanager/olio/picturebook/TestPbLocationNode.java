@@ -1529,4 +1529,119 @@ public class TestPbLocationNode extends BaseTest {
 		}
 		return out;
 	}
+
+	// ─── 13. merge marks each re-pointed page node STALE ───────────────────────
+
+	/**
+	 * P4-0 (4b): {@code mergeLocations} re-points every scene of the duplicate at the survivor and, after each
+	 * re-point, calls {@code PbBookUtil.markSceneNodeStale} so the page's landscape render - which is of the
+	 * duplicate - is flagged for re-render. Four scenes:
+	 * <ul>
+	 * <li>s1 → duplicate, page node DONE: must be STALE afterwards;</li>
+	 * <li>s2 → duplicate, page node READY and pinned: must be STALE afterwards and STILL pinned;</li>
+	 * <li>s3 → survivor, page node DONE: never re-pointed, must stay DONE (control);</li>
+	 * <li>s4 → duplicate, no page node: re-pointed, nothing to mark, merge still succeeds.</li>
+	 * </ul>
+	 * The page nodes are built in the shape {@code ensureChapBookPageNode} produces (LANDSCAPE node scoped to
+	 * the scene and linked as {@code scene.sceneNode}) so no render is needed.
+	 */
+	@Test
+	public void mergeMarksRepointedPageNodesStale() throws Exception {
+		BaseRecord u = owner();
+		long orgId = orgOf(u);
+		BaseRecord bk = newBook(u, "ms");
+		try {
+			BaseRecord survivor = newLocation(u, bk, "The Tavern " + shortId(), DESCRIPTION);
+			BaseRecord dup = PbLocationUtil.getCreateLocation(u, bk, "Tavern Taproom " + shortId(), "the taproom of the tavern", PbLocationKindEnumType.INTERIOR, null);
+			assertNotNull(dup);
+			assertNotEquals("two distinct locations", idOf(survivor), idOf(dup));
+
+			BaseRecord s1 = addScene(u, bk, 0, "Scene 0", "in the taproom");
+			BaseRecord s2 = addScene(u, bk, 1, "Scene 1", "in the taproom at night");
+			BaseRecord s3 = addScene(u, bk, 2, "Scene 2", "in the tavern");
+			BaseRecord s4 = addScene(u, bk, 3, "Scene 3", "the taproom again");
+			pointSceneAt(u, s1, dup);
+			pointSceneAt(u, s2, dup);
+			pointSceneAt(u, s3, survivor);
+			pointSceneAt(u, s4, dup);
+
+			BaseRecord wf = workflow(u, bk);
+			BaseRecord n1 = setStatus(u, ensurePageNode(u, bk, wf, oidOf(s1)), PbNodeStatusEnumType.DONE, orgId);
+			BaseRecord n2 = setStatus(u, ensurePageNode(u, bk, wf, oidOf(s2)), PbNodeStatusEnumType.READY, orgId);
+			assertTrue("pin n2", PbGraphUtil.setPinned(u, n2, true));
+			n2 = PbGraphUtil.readNode(u, oidOf(n2), orgId);
+			assertNotNull(n2);
+			assertEquals("precondition: n2 pinned", Boolean.TRUE, n2.get(OlioFieldNames.FIELD_PB_PINNED));
+			BaseRecord n3 = setStatus(u, ensurePageNode(u, bk, wf, oidOf(s3)), PbNodeStatusEnumType.DONE, orgId);
+			assertEquals("precondition: s4 has no page node", 0L, fkId(readScene(u, oidOf(s4), orgId), OlioFieldNames.FIELD_PB_SCENE_NODE));
+			assertEquals("precondition: three scenes reference the duplicate", 3, PbLocationUtil.scenesReferencing(dup, orgId).size());
+
+			long t0 = System.currentTimeMillis();
+			assertTrue("mergeLocations(dup -> survivor)", PbLocationUtil.mergeLocations(u, bk, dup, survivor));
+			logger.info("merge (" + (System.currentTimeMillis() - t0) + "ms) dup=" + oidOf(dup) + " -> survivor=" + oidOf(survivor));
+
+			assertNull("the duplicate is gone", readLocation(u, oidOf(dup), orgId));
+			assertEquals("no scene references the duplicate any more", 0, PbLocationUtil.scenesReferencing(dup, orgId).size());
+			for(BaseRecord s : List.of(s1, s2, s3, s4)) {
+				assertEquals("scene " + s.get(OlioFieldNames.FIELD_PB_SCENE_INDEX) + " points at the survivor",
+					idOf(survivor), fkId(readScene(u, oidOf(s), orgId), FieldNames.FIELD_LOCATION));
+			}
+
+			BaseRecord n1After = PbGraphUtil.readNode(u, oidOf(n1), orgId);
+			assertNotNull(n1After);
+			assertEquals("s1's DONE page node is STALE after the re-point", PbNodeStatusEnumType.STALE.name(), status(n1After, OlioFieldNames.FIELD_PB_NODE_STATUS));
+
+			BaseRecord n2After = PbGraphUtil.readNode(u, oidOf(n2), orgId);
+			assertNotNull(n2After);
+			assertEquals("s2's READY page node is STALE after the re-point", PbNodeStatusEnumType.STALE.name(), status(n2After, OlioFieldNames.FIELD_PB_NODE_STATUS));
+			assertEquals("s2's page node is still pinned", Boolean.TRUE, n2After.get(OlioFieldNames.FIELD_PB_PINNED));
+
+			BaseRecord n3After = PbGraphUtil.readNode(u, oidOf(n3), orgId);
+			assertNotNull(n3After);
+			assertEquals("control: the survivor's own scene was not re-pointed, its node stays DONE", PbNodeStatusEnumType.DONE.name(), status(n3After, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/// The page's LANDSCAPE node linked as scene.sceneNode - PbServiceFacade.ensureChapBookPageNode's shape,
+	/// replicated so no render is needed; the link is asserted by re-reading the scene before returning.
+	/// (Copied from TestPbLocationProposal / TestPbSceneLocationPointer.)
+	private BaseRecord ensurePageNode(BaseRecord u, BaseRecord bk, BaseRecord wf, String sceneOid) throws Exception {
+		long orgId = orgOf(u);
+		String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+		BaseRecord scene = readScene(u, sceneOid, orgId);
+		long linked = fkId(scene, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		if(linked > 0L) {
+			BaseRecord existing = PbGraphUtil.readNodeById(u, linked, orgId);
+			assertNotNull("the page's linked node #" + linked + " must read back", existing);
+			return existing;
+		}
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
+		String handle = PbPipelineUtil.landscapeHandle(sceneOid);
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(u, wf, handle);
+		if(node == null) {
+			node = PbGraphUtil.addNode(u, wf, handle, PbNodeTypeEnumType.LANDSCAPE, PbBookUtil.workflowGroupPath(slug), idx);
+			assertNotNull("page node " + handle, node);
+			assertTrue("page node scope patch", PbPipelineUtil.patchNodeScope(u, wf, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx));
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		patch.set(OlioFieldNames.FIELD_PB_SCENE_NODE, node);
+		assertNotNull("scene.sceneNode patch", IOSystem.getActiveContext().getAccessPoint().update(u, patch));
+		BaseRecord back = readScene(u, sceneOid, orgId);
+		assertEquals("the page links its node", idOf(node), fkId(back, OlioFieldNames.FIELD_PB_SCENE_NODE));
+		BaseRecord fresh = PbGraphUtil.readNode(u, oidOf(node), orgId);
+		assertNotNull("node " + oidOf(node), fresh);
+		return fresh;
+	}
+
+	private BaseRecord setStatus(BaseRecord u, BaseRecord node, PbNodeStatusEnumType to, long orgId) {
+		assertTrue("persistStatus " + to, PbGraphUtil.persistStatus(u, node, to));
+		BaseRecord fresh = PbGraphUtil.readNode(u, oidOf(node), orgId);
+		assertNotNull("node " + oidOf(node), fresh);
+		assertEquals("precondition: node is " + to, to.toString(), status(fresh, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		return fresh;
+	}
 }

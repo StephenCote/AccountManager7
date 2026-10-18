@@ -38,8 +38,10 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
@@ -1946,9 +1948,18 @@ public class PbServiceFacade {
 	 * shared books reached through collaboration roles are opened by objectId directly.
 	 * <p>
 	 * {@code CHAPBOOK} rows are excluded: they belong to the ChapBook list ({@code ChapBookUtil.listChapBooks})
-	 * and the PB2 selector routes each entry into the story workflow.
+	 * and the PB2 selector routes each entry into the story workflow. The exclusion is a condition of the
+	 * candidate query itself, not only the per-row skip below, so a user with more ChapBooks than
+	 * {@link #LIST_BOOKS_CANDIDATE_CAP} still sees every story book (P3-8 run 5: 550 ChapBooks hid all of them).
 	 */
 	public static List<Map<String, Object>> listBooks(BaseRecord user) {
+		return listBooks(user, LIST_BOOKS_CANDIDATE_CAP);
+	}
+
+	/** Upper bound on candidate rows enumerated per call; every chapter of a series is its own row. */
+	static final int LIST_BOOKS_CANDIDATE_CAP = 400;
+
+	static List<Map<String, Object>> listBooks(BaseRecord user, int candidateCap) {
 		if(user == null) throw new PictureBookException(401, "No authenticated principal");
 		long orgId = orgOf(user);
 		String userObjectId = user.get(FieldNames.FIELD_OBJECT_ID);
@@ -1961,8 +1972,11 @@ public class PbServiceFacade {
 		q.setCache(false);
 		q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
 		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
-		/// Every chapter of a series is its own row, so one 22-chapter novel is 22 candidates.
-		q.setRequestRange(0, 400);
+		/// "NOT bookType = 'CHAPBOOK'" also drops a SQL-NULL bookType (IS_NULL is not implemented by StatementUtil).
+		/// Measured 2026-10-18 on am7db and the Docker stack DB: no NULL rows; rows from before the column existed
+		/// hold the literal UNKNOWN. A NULL row would be missing from this list, not mis-typed.
+		q.field(OlioFieldNames.FIELD_PB_BOOK_TYPE, ComparatorEnumType.NOT_EQUALS, PbBookTypeEnumType.CHAPBOOK.toString());
+		q.setRequestRange(0, candidateCap);
 		BaseRecord[] candidates = IOSystem.getActiveContext().getSearch().findRecords(q);
 		if(candidates == null) return out;
 
@@ -3573,6 +3587,7 @@ public class PbServiceFacade {
 		out.put("locationCreated", Boolean.valueOf(r.locationCreated));
 		out.put("scenesRepointed", Integer.valueOf(r.scenesRepointed));
 		out.put("scenesSkipped", Integer.valueOf(r.scenesSkipped));
+		out.put("nodesMarkedStale", Integer.valueOf(r.nodesMarkedStale));
 		out.put("aliasesFolded", Integer.valueOf(r.aliasesFolded));
 		out.put("warnings", stripRaw(r.warnings));
 		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);

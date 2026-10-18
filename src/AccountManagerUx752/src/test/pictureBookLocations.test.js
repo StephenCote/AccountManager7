@@ -10,8 +10,8 @@
  * the artifact chain offers exactly artifactActions(a, node.pinned). No network, LLM or SD is touched:
  * fetch, am7client.get/dotPath/clearCache and page.toast are stubbed.
  *
- * pictureBook.js and pictureBookLocations.js import each other (routes ↔ deriveStageList); pictureBook.js
- * must be imported first or `routes` is read in its TDZ.
+ * pictureBookLocations.js no longer imports pictureBook.js (deriveStageList/runSummaryText live in
+ * workflows/pictureBookWorkflow.js since P4-0), so either module may be imported first.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import m from 'mithril';

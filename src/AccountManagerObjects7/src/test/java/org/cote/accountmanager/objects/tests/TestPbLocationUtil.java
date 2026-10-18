@@ -899,4 +899,45 @@ public class TestPbLocationUtil extends BaseTest {
 			}
 		}
 	}
+
+	/// P4-0: PbLocationUtil.createMapFreePoi and PointOfInterestUtil.newPointOfInterest now address the POI
+	/// fields through OlioFieldNames.FIELD_CONCEALED / FIELD_POINTS_OF_INTEREST_PATH instead of string literals.
+	/// That the constants exist and compile is proven by the build; this case proves the values they carry
+	/// still reach the right columns: a map-free POI created for a book location reads back
+	/// concealed == FALSE under the constant, and it landed in the world's Points of Interest group (which
+	/// newPointOfInterest resolves from the world through FIELD_POINTS_OF_INTEREST_PATH).
+	@Test
+	public void mapFreePoiIsNotConcealed() {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = newBook(u, "cnc");
+		try {
+			BookContext bctx = bookContext(u, bk);
+			long poiGid = groupIdOf(bctx, "pointsOfInterest");
+			String poiPath = bctx.getWorld().get(OlioFieldNames.FIELD_POINTS_OF_INTEREST_PATH);
+			assertNotNull("world carries " + OlioFieldNames.FIELD_POINTS_OF_INTEREST_PATH, poiPath);
+
+			String name = "Concealment Check " + shortId();
+			long t0 = System.currentTimeMillis();
+			BaseRecord loc = PbLocationUtil.getCreateLocation(u, bk, name, "a lantern-lit boathouse", PbLocationKindEnumType.EXTERIOR, null);
+			logger.info("getCreateLocation took " + (System.currentTimeMillis() - t0) + "ms");
+			assertNotNull("location", loc);
+
+			long poiId = fkId(loc, OlioFieldNames.FIELD_PB_POI);
+			assertTrue("location.poi is linked", poiId > 0L);
+			BaseRecord poi = readPoi(poiId, orgId);
+			assertNotNull("POI row", poi);
+			assertTrue("POI carries the field named by FIELD_CONCEALED", poi.hasField(OlioFieldNames.FIELD_CONCEALED));
+			Object concealed = poi.get(OlioFieldNames.FIELD_CONCEALED);
+			assertNotNull("concealed is persisted, not SQL NULL", concealed);
+			assertEquals("map-free POI is not concealed", Boolean.FALSE, concealed);
+			assertEquals("POI in the world's Points of Interest group (resolved via FIELD_POINTS_OF_INTEREST_PATH)",
+				poiGid, ((Number) poi.get(FieldNames.FIELD_GROUP_ID)).longValue());
+			assertEquals("POI name = location name", name, poi.get(FieldNames.FIELD_NAME));
+			assertNull("map-free: no cell", poi.get(FieldNames.FIELD_LOCATION));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
 }

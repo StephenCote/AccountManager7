@@ -36,7 +36,8 @@ import {
     listOrphans, purgeOrphans, countOrphans,
     workflowView, renderScene, renderAll, getRun, resumeRun, cancelRun,
     getAutoApprove, setAutoApprove, unpinNode, isPinnedRefusal,
-    planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS
+    planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS,
+    deriveStageList, runSummaryText
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -1170,48 +1171,6 @@ export function sceneChip(page, isV3) {
     return null;
 }
 
-/**
- * Stage list for the run progress panel. `planned` is the 202 body's planned[] (handles, in execution
- * order; objects with a handle are tolerated); `job` is the latest /rest/job payload (phase = the
- * handle being rendered, current = nodes finished, result.nodes[] at terminal) or null before the
- * first poll. States: pending | running | done | failed | skipped | unrun.
- */
-export function deriveStageList(planned, job) {
-    let handles = (Array.isArray(planned) ? planned : []).map(function (p) {
-        if (typeof p === 'string') return p;
-        return (p && (p.handle || p.nodeObjectId)) || '';
-    }).filter(Boolean);
-    let result = job && job.result && typeof job.result === 'object' ? job.result : null;
-    let outcomes = {};
-    (result && Array.isArray(result.nodes) ? result.nodes : []).forEach(function (n) {
-        if (n && n.handle) outcomes[n.handle] = n;
-    });
-    let current = job && typeof job.current === 'number' ? job.current : 0;
-    let phase = job && job.phase ? String(job.phase) : null;
-    let terminal = !!(job && job.terminal);
-    return handles.map(function (h, i) {
-        let o = outcomes[h];
-        if (o) {
-            let st = String(o.status || '').toUpperCase();
-            let state = 'done';
-            if (st === 'FAILED') state = 'failed';
-            else if (st.indexOf('SKIPPED') === 0) state = 'skipped';
-            return {
-                handle: h, state: state,
-                error: o.error || null,
-                artifactObjectId: o.artifactObjectId || null,
-                autoApproved: !!o.autoApproved,
-                reviewStatus: o.reviewStatus || null
-            };
-        }
-        if (!job) return { handle: h, state: 'pending' };
-        if (terminal) return { handle: h, state: 'unrun' };
-        if (phase && h === phase) return { handle: h, state: 'running' };
-        if (i < current) return { handle: h, state: 'done' };
-        return { handle: h, state: 'pending' };
-    });
-}
-
 /** Resume banner: shown only for an INTERRUPTED run the server says is resumable (runDto.resumable). */
 export function resumeBannerState(run) {
     if (!run || typeof run !== 'object') return { show: false, reason: null };
@@ -1228,24 +1187,6 @@ export function resumeBannerState(run) {
         requested: requested,
         error: run.error || null
     };
-}
-
-/** One-line outcome of a terminal render job for the toast + progress panel. */
-export function runSummaryText(job) {
-    if (!job) return '';
-    let r = job.result && typeof job.result === 'object' ? job.result : null;
-    let st = String(job.status || '').toLowerCase();
-    if (job.error && !r) return 'Render failed: ' + job.error;
-    if (!r) return job.cancelled ? 'Render cancelled' : ('Render ' + (st || 'finished'));
-    let runStatus = String(r.runStatus || '').toUpperCase();
-    let parts = [];
-    parts.push((r.executedNodeCount || 0) + ' rendered');
-    if (r.failedNodeCount) parts.push(r.failedNodeCount + ' failed');
-    if (r.skippedNodeCount) parts.push(r.skippedNodeCount + ' skipped');
-    let head = runStatus === 'INTERRUPTED' ? 'Render interrupted' : runStatus === 'CANCELLED' ? 'Render cancelled' : runStatus === 'FAILED' ? 'Render failed' : 'Render complete';
-    let text = head + ': ' + parts.join(', ');
-    if (r.error) text += ' — ' + r.error;
-    return text;
 }
 
 // ── V3 run watching / submit ─────────────────────────────────────────────

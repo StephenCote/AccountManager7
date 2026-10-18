@@ -10,6 +10,7 @@
  * shown verbatim and only an explicit "Unpin and re-render" confirmation sends pin {pinned:false}.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as wf from '../workflows/pictureBookWorkflow.js';
 import { Dialog } from '../components/dialogCore.js';
 import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
@@ -84,10 +85,10 @@ describe('deriveStageList — planned[] × job payload', () => {
     const planned = ['scene-1', 'scene-2', 'scene-3'];
 
     it('no job yet: every planned handle is pending', () => {
-        expect(pbf.deriveStageList(planned, null).map(s => s.state)).toEqual(['pending', 'pending', 'pending']);
+        expect(wf.deriveStageList(planned, null).map(s => s.state)).toEqual(['pending', 'pending', 'pending']);
     });
     it('in flight: phase = running, i < current = done, rest pending', () => {
-        let states = pbf.deriveStageList(planned, { status: 'running', phase: 'scene-2', current: 1, total: 3, terminal: false }).map(s => s.state);
+        let states = wf.deriveStageList(planned, { status: 'running', phase: 'scene-2', current: 1, total: 3, terminal: false }).map(s => s.state);
         expect(states).toEqual(['done', 'running', 'pending']);
     });
     it('terminal: result.nodes outcomes win (DONE/FAILED/SKIPPED_PINNED), unlisted handles are unrun', () => {
@@ -96,20 +97,20 @@ describe('deriveStageList — planned[] × job payload', () => {
             { handle: 'scene-2', status: 'FAILED', error: 'SD timeout' },
             { handle: 'scene-3', status: 'SKIPPED_PINNED' }
         ] } };
-        let stages = pbf.deriveStageList(planned.concat(['scene-4']), job);
+        let stages = wf.deriveStageList(planned.concat(['scene-4']), job);
         expect(stages.map(s => s.state)).toEqual(['done', 'failed', 'skipped', 'unrun']);
         expect(stages[0]).toMatchObject({ artifactObjectId: 'a1', autoApproved: true, reviewStatus: 'APPROVED' });
         expect(stages[1].error).toBe('SD timeout');
     });
     it('tolerates planned entries as objects and lowercase statuses', () => {
-        let stages = pbf.deriveStageList([{ handle: 'h1' }, { nodeObjectId: 'n2' }, null, ''],
+        let stages = wf.deriveStageList([{ handle: 'h1' }, { nodeObjectId: 'n2' }, null, ''],
             { terminal: true, result: { nodes: [{ handle: 'h1', status: 'done' }] } });
         expect(stages.map(s => s.handle)).toEqual(['h1', 'n2']);
         expect(stages.map(s => s.state)).toEqual(['done', 'unrun']);
     });
     it('non-array planned → empty list', () => {
-        expect(pbf.deriveStageList(null, null)).toEqual([]);
-        expect(pbf.deriveStageList('scene-1', null)).toEqual([]);
+        expect(wf.deriveStageList(null, null)).toEqual([]);
+        expect(wf.deriveStageList('scene-1', null)).toEqual([]);
     });
 });
 
@@ -132,16 +133,16 @@ describe('resumeBannerState — only INTERRUPTED + resumable', () => {
 
 describe('runSummaryText', () => {
     it('summarizes the result counts and run status', () => {
-        expect(pbf.runSummaryText({ status: 'done', terminal: true, result: { runStatus: 'DONE', executedNodeCount: 3, failedNodeCount: 0, skippedNodeCount: 1 } }))
+        expect(wf.runSummaryText({ status: 'done', terminal: true, result: { runStatus: 'DONE', executedNodeCount: 3, failedNodeCount: 0, skippedNodeCount: 1 } }))
             .toBe('Render complete: 3 rendered, 1 skipped');
-        expect(pbf.runSummaryText({ terminal: true, result: { runStatus: 'INTERRUPTED', executedNodeCount: 1, failedNodeCount: 1, error: 'boom' } }))
+        expect(wf.runSummaryText({ terminal: true, result: { runStatus: 'INTERRUPTED', executedNodeCount: 1, failedNodeCount: 1, error: 'boom' } }))
             .toBe('Render interrupted: 1 rendered, 1 failed — boom');
-        expect(pbf.runSummaryText({ terminal: true, result: { runStatus: 'cancelled', executedNodeCount: 2 } })).toBe('Render cancelled: 2 rendered');
+        expect(wf.runSummaryText({ terminal: true, result: { runStatus: 'cancelled', executedNodeCount: 2 } })).toBe('Render cancelled: 2 rendered');
     });
     it('job-level error without result, cancelled without result, empty', () => {
-        expect(pbf.runSummaryText({ terminal: true, error: 'worker died' })).toBe('Render failed: worker died');
-        expect(pbf.runSummaryText({ terminal: true, cancelled: true })).toBe('Render cancelled');
-        expect(pbf.runSummaryText(null)).toBe('');
+        expect(wf.runSummaryText({ terminal: true, error: 'worker died' })).toBe('Render failed: worker died');
+        expect(wf.runSummaryText({ terminal: true, cancelled: true })).toBe('Render cancelled');
+        expect(wf.runSummaryText(null)).toBe('');
     });
 });
 

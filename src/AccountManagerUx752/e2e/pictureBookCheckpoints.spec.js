@@ -324,7 +324,7 @@ test.describe.serial('PictureBook — unfinished extractions (checkpoints with n
         // unfinished extractions (it does: leftovers from earlier sessions), so the section itself may stay.
         await expect(page.locator('[data-pb-checkpoint-list] [data-pb-checkpoint-work="' + workNote.objectId + '"]'),
             'list row removed after the in-wizard discard').toHaveCount(0, { timeout: 15000 });
-        await page.locator('[data-pb-checkpoint-list]').first().scrollIntoViewIfNeeded().catch(function () {});
+        await page.locator('[data-pb-checkpoint-list]').first().scrollIntoViewIfNeeded({ timeout: 5000 }).catch(function () {});
         await page.screenshot({ path: 'test-results/pb-ckpt-list-after-wizard-discard.png' });
     });
 

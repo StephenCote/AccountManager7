@@ -108,7 +108,7 @@ public class PointOfInterestUtil {
 		if(ctx.getWorld() == null) {
 			return rec;
 		}
-		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("pointsOfInterest.path"));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_POINTS_OF_INTEREST_PATH));
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_POI, ctx.getOlioUser(), null, plist);
@@ -136,7 +136,7 @@ public class PointOfInterestUtil {
 		if(olioUser == null || world == null) {
 			return rec;
 		}
-		String poiPath = world.get("pointsOfInterest.path");
+		String poiPath = world.get(OlioFieldNames.FIELD_POINTS_OF_INTEREST_PATH);
 		String storePath = world.get(OlioFieldNames.FIELD_STORES_PATH);
 		if(poiPath == null || storePath == null) {
 			logger.error("World " + world.get(FieldNames.FIELD_NAME) + " does not expose its Points of Interest / Stores group paths");

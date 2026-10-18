@@ -32,13 +32,18 @@ import org.cote.accountmanager.olio.picturebook.PbLocationUtil.ProposalAcceptRes
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbLocationKindEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbProposalStatusEnumType;
+import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.After;
 import org.junit.Before;
@@ -85,6 +90,8 @@ public class TestPbLocationProposal extends BaseTest {
 	private static final String ORG_A = "/Development/World Building";
 	private static final String TEST_USER = "testUser1";
 	private static final String STRANGER_USER = "p33Stranger";
+	/// case09: entitled on the Book group only, never on the world's Locations group.
+	private static final String COLLAB_USER = "p33Collab";
 	private static final String MODEL = "qwen3:8b";
 	private static final int REQUEST_TIMEOUT_SEC = 20;
 
@@ -1132,6 +1139,246 @@ public class TestPbLocationProposal extends BaseTest {
 			deleteBook(u, bk);
 			deleteConnections(u);
 		}
+	}
+
+	/// P4-0 (3): proposeLocations reads the world's known locations AS THE CALLER (listLocations(user, bctx)),
+	/// not as the olio principal. The emulator's cluster-locations synthesizer sets sameAs only when a setting
+	/// contains a name from the prompt's known-locations section, so sameAs is a direct readout of what the
+	/// pass put in the prompt:
+	///  - the owner (Read on the Locations group) runs the pass and gets sameAs == "Gilded Tankard";
+	///  - a collaborator entitled Read+Update+Create on the BOOK group only - NOT on the world's Locations
+	///    group - passes every gate (readBook, canUpdate PERMIT), sees no locations, and gets a proposal row
+	///    with sameAs == null. The row EXISTS, so the collaborator could write into the book group.
+	/// Under the previous code (listLocations(olioUser, bctx)) the olio principal owns every location and
+	/// would have put "Gilded Tankard" into the collaborator's prompt; the emulator would then have answered
+	/// sameAs == "Gilded Tankard" and the second half of this case would fail at the null assertion - the
+	/// collaborator would have been handed the name of a record they are not entitled to read.
+	@Test
+	public void case09_knownLocationsAreReadAsTheCaller() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		OrganizationContext org = getTestOrganization(ORG_A);
+		BaseRecord collab = ioContext.getFactory().getCreateUser(org.getAdminUser(), COLLAB_USER, org.getOrganizationId());
+		assertNotNull("collaborator " + COLLAB_USER, collab);
+		assertNotEquals("collaborator must be a different user from the owner", idOf(u), idOf(collab));
+		assertEquals("collaborator in the same organization", orgId, orgOf(collab));
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "caller");
+			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+			BookContext bctx = bookContext(u, bk);
+
+			BaseRecord gilded = PbLocationUtil.getCreateLocation(u, bk, "Gilded Tankard", "A tavern.", PbLocationKindEnumType.INTERIOR, null);
+			assertNotNull(gilded);
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			assertNotNull(s1);
+
+			/// Positive control: the owner can read the Locations group, so the known name reaches the prompt.
+			BaseRecord ownerCfg = emulatorConfig(u, newSet(null));
+			long t0 = System.currentTimeMillis();
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, ownerCfg);
+			logger.info("case09 owner pass (" + (System.currentTimeMillis() - t0) + "ms): " + describe(r1));
+			assertFalse(r1.hardFailure);
+			assertEquals(1, r1.proposed);
+			BaseRecord ownerRow = require(PbLocationUtil.listProposals(u, bk, null), PbLocationUtil.proposalName(TAVERN_NAME));
+			assertEquals("owner: the setting contains the known name", "Gilded Tankard", ownerRow.get(OlioFieldNames.FIELD_PB_SAME_AS));
+
+			/// Clear the owner's row so the collaborator's pass has to CREATE one (a re-run would only patch it).
+			DeleteResult dr = PictureBookUtil.deleteRecordExplained(u, ownerRow);
+			assertTrue("owner deletes their proposal row: " + dr.reason, dr.deleted);
+			assertEquals("no proposal rows before the collaborator's pass", 0, PbLocationUtil.listProposals(u, bk, null).size());
+			deleteConnections(u);
+
+			/// The collaborator: Read + Update + Create on the Book group ONLY. The admin of the book's OWN
+			/// organization (ORG_A, not BaseTest's default orgContext) applies the grant.
+			BaseRecord olio = olioUser(orgId);
+			BaseRecord bookGroup = ioContext.getPathUtil().findPath(olio, ModelNames.MODEL_GROUP, PbBookUtil.bookGroupPath(slug),
+				GroupEnumType.DATA.toString(), orgId);
+			assertNotNull("book group", bookGroup);
+			assertEquals("book group is in the book's organization", orgId, ((Number) bookGroup.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
+			assertEquals("the book sits in the group being granted", ((Number) bookGroup.get(FieldNames.FIELD_ID)).longValue(),
+				((Number) bk.get(FieldNames.FIELD_GROUP_ID)).longValue());
+			ioContext.getAuthorizationUtil().setEntitlement(org.getAdminUser(), collab, new BaseRecord[] {bookGroup},
+				new String[] {"Read", "Update", "Create"},
+				new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+			/// readBook projects the book's world FK, and PBAC adds a dynamic READ rule for olio.pb.book.world
+			/// (policy trace: groupdatareadaccess / groupreadaccess on /Olio/Universes/Books/Worlds, then
+			/// resourceReadAccess on the world record - all UNKNOWN without a grant, and the whole read is
+			/// DENIED). Grant Read on the WORLD RECORD only (resourceReadAccess) - never on the shared Worlds
+			/// group, and never on the world's Locations group, which is what this case is about.
+			BaseRecord world = bctx.getWorld();
+			assertNotNull("world record", world);
+			ioContext.getAuthorizationUtil().setEntitlement(org.getAdminUser(), collab, new BaseRecord[] {world},
+				new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString()});
+
+			/// Prove the gates: the collaborator reaches the pass (not a 404/403), can see the scene, and
+			/// CANNOT see the location the owner created.
+			BaseRecord asCollab = PbBookUtil.readBook(collab, oidOf(bk), orgId);
+			assertNotNull("collaborator must be able to READ the book (else the pass 404s before anything is read)", asCollab);
+			PolicyResponseType canUpd = ioContext.getAuthorizationUtil().canUpdate(collab, collab, asCollab);
+			assertTrue("collaborator must be PERMITted to UPDATE the book (else the pass 403s)",
+				canUpd != null && canUpd.getType() == PolicyResponseEnumType.PERMIT);
+			assertEquals("collaborator sees the scene", 1, PbBookUtil.listScenes(collab, asCollab).size());
+			assertTrue("gate: collaborator must NOT see any location (no Read on the Locations group)",
+				PbLocationUtil.listLocations(collab, bctx).isEmpty());
+			assertEquals("control: the owner still sees the location", 1, PbLocationUtil.listLocations(u, bctx).size());
+			assertNull("gate: collaborator cannot read the location by id", readLocation(collab, oidOf(gilded), orgId));
+
+			BaseRecord collabCfg = emulatorConfig(collab, newSet(null));
+			t0 = System.currentTimeMillis();
+			LocationPassResult r2 = PbLocationUtil.proposeLocations(collab, bk, collabCfg);
+			logger.info("case09 collaborator pass (" + (System.currentTimeMillis() - t0) + "ms): " + describe(r2));
+			assertFalse("collaborator pass must not hard-fail: " + r2.warnings, r2.hardFailure);
+			assertEquals("collaborator pass proposes the tavern", 1, r2.proposed);
+			List<BaseRecord> collabRows = PbLocationUtil.listProposals(collab, bk, PbProposalStatusEnumType.PROPOSED);
+			BaseRecord collabRow = require(collabRows, PbLocationUtil.proposalName(TAVERN_NAME));
+			assertEquals("the collaborator wrote the row", idOf(collab), ((Number) collabRow.get(FieldNames.FIELD_OWNER_ID)).longValue());
+			assertNull("collaborator: the known location was NOT in the prompt, so no sameAs", collabRow.get(OlioFieldNames.FIELD_PB_SAME_AS));
+			assertSceneIds(collabRow, s1);
+			/// and the owner sees the same row the same way
+			BaseRecord ownerView = require(PbLocationUtil.listProposals(u, bk, null), PbLocationUtil.proposalName(TAVERN_NAME));
+			assertEquals(oidOf(collabRow), oidOf(ownerView));
+			assertNull(ownerView.get(OlioFieldNames.FIELD_PB_SAME_AS));
+		}
+		finally {
+			deleteBook(u, bk);
+			/// two creators: each connection is deleted by whoever created it
+			for(BaseRecord c : new ArrayList<>(connections)) {
+				boolean gone = false;
+				for(BaseRecord who : new BaseRecord[] {u, collab}) {
+					try {
+						if(ioContext.getAccessPoint().delete(who, c)) {
+							gone = true;
+							break;
+						}
+					}
+					catch(Exception e) {
+						/// try the other creator
+					}
+				}
+				if(!gone) {
+					logger.warn("cleanup: connection " + c.get(FieldNames.FIELD_NAME) + " was not deleted");
+				}
+			}
+			connections.clear();
+		}
+	}
+
+	/// P4-0 (4a): acceptProposal marks the re-pointed scene's page node STALE (the render on file is of the
+	/// old place) and counts it in nodesMarkedStale. Sub-case 2: a READY, pinned node is still marked STALE
+	/// and stays pinned - no exception, no un-pin.
+	@Test
+	public void case10_acceptMarksRepointedPageNodeStale() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "stale");
+			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			BaseRecord s2 = addScene(u, bk, 2, "The Road", HILL_SETTING);
+			BaseRecord wf = PbGraphUtil.getCreateWorkflow(u, bk, PbBookUtil.workflowGroupPath(slug));
+			assertNotNull("workflow", wf);
+
+			/// Sub-case 1: DONE page node on s1
+			BaseRecord n1 = ensurePageNode(u, bk, wf, oidOf(s1));
+			n1 = setStatus(u, n1, PbNodeStatusEnumType.DONE, orgId);
+			/// Sub-case 2: READY + pinned page node on s2
+			BaseRecord n2 = ensurePageNode(u, bk, wf, oidOf(s2));
+			n2 = setStatus(u, n2, PbNodeStatusEnumType.READY, orgId);
+			assertTrue("pin n2", PbGraphUtil.setPinned(u, n2, true));
+			n2 = readNode(u, oidOf(n2), orgId);
+			assertEquals("precondition: n2 pinned", Boolean.TRUE, n2.get(OlioFieldNames.FIELD_PB_PINNED));
+			assertEquals("precondition: n2 READY", "READY", status(n2, OlioFieldNames.FIELD_PB_NODE_STATUS));
+
+			BaseRecord cfg = emulatorConfig(u, newSet(null));
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, cfg);
+			logger.info("case10 pass: " + describe(r1));
+			assertFalse(r1.hardFailure);
+			assertEquals(2, r1.proposed);
+			List<BaseRecord> rows = PbLocationUtil.listProposals(u, bk, null);
+			BaseRecord tavernP = require(rows, PbLocationUtil.proposalName(TAVERN_NAME));
+			BaseRecord hillP = require(rows, PbLocationUtil.proposalName(HILL_NAME));
+			assertSceneIds(tavernP, s1);
+			assertSceneIds(hillP, s2);
+
+			/// Sub-case 1
+			long t0 = System.currentTimeMillis();
+			ProposalAcceptResult a = PbLocationUtil.acceptProposal(u, bk, tavernP, true);
+			logger.info("case10 accept tavern (" + (System.currentTimeMillis() - t0) + "ms): repointed=" + a.scenesRepointed
+				+ " stale=" + a.nodesMarkedStale + " warnings=" + a.warnings);
+			assertTrue(a.locationCreated);
+			assertEquals("one scene re-pointed", 1, a.scenesRepointed);
+			assertEquals("the re-pointed scene's node was marked stale", 1, a.nodesMarkedStale);
+			assertEquals(a.scenesRepointed, a.nodesMarkedStale);
+			assertFalse("no 'not marked stale' warning: " + a.warnings, anyContains(a.warnings, "was not marked stale"));
+			assertEquals("s1 at the tavern", idOf(a.location), fkId(readScene(u, oidOf(s1), orgId), FieldNames.FIELD_LOCATION));
+			BaseRecord n1After = readNode(u, oidOf(n1), orgId);
+			assertEquals("n1 DONE -> STALE", "STALE", status(n1After, OlioFieldNames.FIELD_PB_NODE_STATUS));
+
+			/// Sub-case 2
+			ProposalAcceptResult b = PbLocationUtil.acceptProposal(u, bk, hillP, true);
+			logger.info("case10 accept hill: repointed=" + b.scenesRepointed + " stale=" + b.nodesMarkedStale + " warnings=" + b.warnings);
+			assertEquals(1, b.scenesRepointed);
+			assertEquals("pinned node still marked stale", 1, b.nodesMarkedStale);
+			assertEquals("s2 at the hill", idOf(b.location), fkId(readScene(u, oidOf(s2), orgId), FieldNames.FIELD_LOCATION));
+			BaseRecord n2After = readNode(u, oidOf(n2), orgId);
+			assertEquals("n2 READY -> STALE", "STALE", status(n2After, OlioFieldNames.FIELD_PB_NODE_STATUS));
+			assertEquals("n2 still pinned", Boolean.TRUE, n2After.get(OlioFieldNames.FIELD_PB_PINNED));
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	// ─────────────────────────────── page-node fixture (copied from TestPbSceneLocationPointer) ───────────────────────────────
+
+	private static String status(BaseRecord rec, String field) {
+		Object v = rec.get(field);
+		return (v != null ? String.valueOf(v).toUpperCase() : null);
+	}
+
+	private BaseRecord readNode(BaseRecord u, String nodeOid, long orgId) {
+		BaseRecord n = PbGraphUtil.readNode(u, nodeOid, orgId);
+		assertNotNull("node " + nodeOid, n);
+		return n;
+	}
+
+	/// The page's LANDSCAPE node linked as scene.sceneNode - PbServiceFacade.ensureChapBookPageNode's shape,
+	/// replicated so no render is needed; the link is asserted by re-reading the scene before returning.
+	private BaseRecord ensurePageNode(BaseRecord u, BaseRecord bk, BaseRecord wf, String sceneOid) throws Exception {
+		long orgId = orgOf(u);
+		String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+		BaseRecord scene = readScene(u, sceneOid, orgId);
+		long linked = fkId(scene, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		if(linked > 0L) {
+			BaseRecord existing = PbGraphUtil.readNodeById(u, linked, orgId);
+			assertNotNull("the page's linked node #" + linked + " must read back", existing);
+			return existing;
+		}
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
+		String handle = PbPipelineUtil.landscapeHandle(sceneOid);
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(u, wf, handle);
+		if(node == null) {
+			node = PbGraphUtil.addNode(u, wf, handle, PbNodeTypeEnumType.LANDSCAPE, PbBookUtil.workflowGroupPath(slug), idx);
+			assertNotNull("page node " + handle, node);
+			assertTrue("page node scope patch", PbPipelineUtil.patchNodeScope(u, wf, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx));
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		patch.set(OlioFieldNames.FIELD_PB_SCENE_NODE, node);
+		assertNotNull("scene.sceneNode patch", ioContext.getAccessPoint().update(u, patch));
+		BaseRecord back = readScene(u, sceneOid, orgId);
+		assertEquals("the page links its node", idOf(node), fkId(back, OlioFieldNames.FIELD_PB_SCENE_NODE));
+		return readNode(u, oidOf(node), orgId);
+	}
+
+	private BaseRecord setStatus(BaseRecord u, BaseRecord node, PbNodeStatusEnumType to, long orgId) {
+		assertTrue("persistStatus " + to, PbGraphUtil.persistStatus(u, node, to));
+		BaseRecord fresh = readNode(u, oidOf(node), orgId);
+		assertEquals("precondition: node is " + to, to.toString(), status(fresh, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		return fresh;
 	}
 
 	private static PbLocationUtil.Cluster cluster(String name) {
