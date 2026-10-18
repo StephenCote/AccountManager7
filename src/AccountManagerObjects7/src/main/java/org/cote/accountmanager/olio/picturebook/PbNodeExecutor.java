@@ -607,7 +607,7 @@ public class PbNodeExecutor {
 			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt");
 		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
 			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
-		bindSceneLocation(g, node, scene);
+		bindSceneLocation(g, node, r.plan);
 
 		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
 		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
@@ -618,22 +618,24 @@ public class PbNodeExecutor {
 	}
 
 	/**
-	 * Bind the scene's {@code location} (ordinal 0) and {@code locationVariant} (ordinal 1) to its RENDER_PLAN
-	 * node under role {@code location}, after the render, so that the node's watched set carries the
-	 * location's {@code approvedRender} and a later approve (or an edit of the location) stales this scene
-	 * across every chapter that shares the world asset (§7, §10). A scene re-pointed at another location, or
-	 * at none, between two renders drops the stale binding ({@link PbPipelineUtil#syncRecordBinding}). A
-	 * location this user cannot read binds with no {@code refHash} and never fails the render: the drift
-	 * scan reports that reference as undetermined.
+	 * Bind the location (ordinal 0) and variant (ordinal 1) the plan accepted to the scene's RENDER_PLAN node
+	 * - and, for a ChapBook page, its LANDSCAPE page node (P3-6) - under role {@code location}, after the
+	 * render, so that the node's watched set carries the location's {@code approvedRender} and a later approve
+	 * (or an edit of the location) stales this scene across every chapter that shares the world asset (§7,
+	 * §10). The verdict is the plan's, not the scene's raw pointer: a location the resolver refused or could
+	 * not read has no {@code revisionHash}, a refused or unreadable variant has a null
+	 * {@code inputs.locationVariant} ({@link PbRenderPlanUtil#resolveSceneLocation}), and neither is bound -
+	 * the watched set carries only what contributed to the render, so another world's edits or approvals
+	 * cannot stale this scene. A scene re-pointed at another location, or at none, between two renders drops
+	 * the stale binding ({@link PbPipelineUtil#syncRecordBinding}); so does a pointer that became refused.
 	 */
-	private static void bindSceneLocation(SceneGraph g, BaseRecord node, BaseRecord scene) {
-		BaseRecord loc = scene.get(FieldNames.FIELD_LOCATION);
-		BaseRecord variant = scene.get(OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
-		String locOid = (loc != null ? loc.get(FieldNames.FIELD_OBJECT_ID) : null);
-		String varOid = (variant != null ? variant.get(FieldNames.FIELD_OBJECT_ID) : null);
+	private static void bindSceneLocation(SceneGraph g, BaseRecord node, RenderPlan plan) {
+		RenderPlan.Location pl = (plan != null ? plan.getLocation() : null);
+		String locOid = (pl != null && pl.getRevisionHash() != null ? pl.getLocationId() : null);
+		String varOid = (locOid != null && pl.getVariantId() != null
+			&& plan.getInputs().get(PbRenderPlanUtil.INPUT_LOCATION_VARIANT) != null ? pl.getVariantId() : null);
 		PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 0, OlioModelNames.MODEL_PB_LOCATION, locOid);
-		PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 1, OlioModelNames.MODEL_PB_LOCATION_VARIANT,
-			(locOid != null ? varOid : null));
+		PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 1, OlioModelNames.MODEL_PB_LOCATION_VARIANT, varOid);
 	}
 
 	// ─── location (LOCATION node; V3 §7, §7.1, §10, P3-4) ──────────────────
@@ -934,6 +936,22 @@ public class PbNodeExecutor {
 	 * tier is the scene's override - minus the per-request client overlay, which the v3 path drops by
 	 * design (§24). The v1 page path's {@code fillStyleDefaults} / {@code applyConfigStyle} / default
 	 * negative are not applied here; see {@link #renderPlannedScene} for how each is reported instead.
+	 * <p>
+	 * Optional page location (V3 §24, P3-6): a page may point at an {@code olio.pb.location} of the book's
+	 * world through the same two scene FKs a PictureBook scene uses ({@code location}, {@code locationVariant}),
+	 * so both are projected here and {@link PbRenderPlanUtil#resolveSceneLocation} runs for the page exactly
+	 * as for a RENDER_PLAN scene. Set, the compiled BASE MAIN clause is the location's subject text followed
+	 * by the page's {@code sdPrompt} ({@code PbRenderPlanUtil.joinSentences}); the location's approved render
+	 * is carried on {@code RenderPlan.Location.renderArtifactId} and not consumed by the TEXT_ONLY strategy
+	 * (D4), and a location with no approved render is a {@code LOCATION_TEXT_ONLY} degradation that vetoes
+	 * auto-approve (D5). A pointer the resolver refuses (another world, a variant of another location, §19)
+	 * plans as unlocated with the same degradation. Unset, nothing changes: the MAIN clause is the
+	 * {@code sdPrompt} alone and no binding is written. After the image and the page patch, the page node
+	 * binds the location (ordinal 0) and variant (ordinal 1) the plan accepted under role {@code location}
+	 * ({@link #bindSceneLocation}) - a refused pointer is not bound - so an approve or an edit of the
+	 * location stales the page through the drift scan. {@code scene.sdPrompt} stays the page's own text; the full compiled prompt lives on the
+	 * plan artifact. Because the FK is now projected, a page whose pointer this user cannot read is itself
+	 * unreadable (nested-foreign read rule) and is reported as 404 "Page not found".
 	 */
 	private static Map<String, Object> executeChapBookPage(SceneGraph g, BaseRecord node, SDUtil sdu) {
 		BaseRecord user = g.getUser();
@@ -948,7 +966,8 @@ public class PbNodeExecutor {
 		BaseRecord scene = findSceneByNodeRef(user, book, node, orgId, new String[] {
 			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
 			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
-			OlioFieldNames.FIELD_PB_SCENE_INDEX, OlioFieldNames.FIELD_CB_SD_PROMPT
+			OlioFieldNames.FIELD_PB_SCENE_INDEX, OlioFieldNames.FIELD_CB_SD_PROMPT,
+			FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_PB_LOCATION_VARIANT
 		});
 		if(scene == null) {
 			throw new PictureBookException(404, "Page " + scopeRef + " not found");
@@ -986,6 +1005,9 @@ public class PbNodeExecutor {
 			logger.warn("executeChapBookPage: could not assemble the page patch for {}: {}", sceneOid, e.getMessage());
 			degradations.add(PbPipelineUtil.ROLE_LANDSCAPE + ": page imageObjectId could not be updated: " + e.getMessage());
 		}
+
+		/// After the page patch, so a binding failure cannot leave the page pointing at its previous image.
+		bindSceneLocation(g, node, r.plan);
 
 		/// completeNode (not a bare persistStatus) so the page node gets its inputHash/lastRunAt: the drift
 		/// scan never marks a node with inputHash == null, and a page that cannot go STALE cannot be reviewed.

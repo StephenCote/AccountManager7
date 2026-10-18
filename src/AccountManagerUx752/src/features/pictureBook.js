@@ -9,6 +9,7 @@
  *   /picture-book/v2/:pb2BookObjectId    — PB2 scene page reader (pb2BookObjectId = olio.pb.book objectId)
  *   /picture-book/:bookObjectId/review   — V3 review queue (features/pictureBookReview.js; spread in below)
  *   /picture-book/:bookObjectId/style    — V3 book style editor (features/pictureBookStyle.js; spread in below)
+ *   /picture-book/:bookObjectId/locations — V3 locations library (features/pictureBookLocations.js; spread in below)
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -28,6 +29,7 @@ import { openCharacterManager } from '../workflows/pictureBookCharacters.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { routes as reviewRoutes } from './pictureBookReview.js';
 import { routes as styleRoutes } from './pictureBookStyle.js';
+import { routes as locationRoutes } from './pictureBookLocations.js';
 import {
     listPb2Books, listSeriesBooks, bookPages,
     bookHealth, healBook, orgHealth, healOrg, summarizeHealth,
@@ -1947,6 +1949,25 @@ export function renderPb2SceneChip(scene) {
     }, PB2_CHIP_LABEL[chip] + (scene && scene.pinned ? ' · pinned' : ''));
 }
 
+/** Pure: "Tavern / dusk" from bookPageView's locationName / locationVariantName; null when the page is unlocated. */
+export function pageLocationText(scene) {
+    if (!scene || !scene.locationName) return null;
+    return scene.locationName + (scene.locationVariantName ? ' / ' + scene.locationVariantName : '');
+}
+
+/** Read-only location chip of the reader page (the ChapBook page card owns the picker). */
+export function renderPb2LocationChip(scene) {
+    let text = pageLocationText(scene);
+    if (!text) return null;
+    return m('span', {
+        'data-testid': 'pb2-page-location',
+        'data-location-id': scene.locationObjectId || '',
+        'data-variant-id': scene.locationVariantObjectId || '',
+        class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-teal-300 text-teal-800 bg-teal-50 dark:border-teal-700 dark:text-teal-200 dark:bg-teal-900/30',
+        title: 'Location of this page'
+    }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'location_on'), text]);
+}
+
 export function renderPb2ScenePage() {
     let scene = pb2CurrentScene();
     if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
@@ -1981,6 +2002,7 @@ export function renderPb2ScenePage() {
                 style: 'font-family: Georgia, serif;'
             }, scene.title || 'Scene ' + (pb2CurrentPage)),
             renderPb2SceneChip(scene),
+            renderPb2LocationChip(scene),
             v3 ? m('button', {
                 'data-testid': 'pb2-scene-render',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
@@ -2072,6 +2094,12 @@ export function renderPb2Header() {
             title: 'Book style (render settings, page format, models)',
             onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/style'); }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'palette')) : null,
+        v3 ? m('button', {
+            'data-testid': 'pb2-locations-link',
+            class: 'text-gray-500 hover:text-purple-600',
+            title: 'Locations library (settings, variants, renders)',
+            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/locations'); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'location_on')) : null,
 
         // Edit (wizard) and Characters — same pair the book list rows offer.
         pb2BookObjectId ? renderPb2EditButton(
@@ -2278,6 +2306,7 @@ export const routes = {
     ...wfRoutes,
     ...reviewRoutes,
     ...styleRoutes,
+    ...locationRoutes,
     '/picture-book': {
         oninit: function () { workSelectorView.oninit(); },
         view: function () { return layout(pageLayout(workSelectorView.view())); }

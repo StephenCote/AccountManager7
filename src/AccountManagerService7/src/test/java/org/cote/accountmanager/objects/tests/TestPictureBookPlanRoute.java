@@ -525,7 +525,11 @@ public class TestPictureBookPlanRoute extends BaseTest {
 			assertEquals(Boolean.FALSE, map(dto, "preset").get("upscale"));
 
 			Map<String, Object> location = map(dto, "location");
-			assertEquals(oid(scene), location.get("locationId"));
+			assertNull("a scene that names no olio.pb.location carries no locationId (P3-5; it used to be the scene objectId): " + location,
+				location.get("locationId"));
+			assertNull(location.get("variantId"));
+			assertNull(location.get("revisionHash"));
+			assertNull(location.get("renderArtifactId"));
 			assertTrue("location text is the scene's setting: " + location, String.valueOf(location.get("description")).contains(SETTING));
 
 			Map<String, Object> models = map(dto, "models");

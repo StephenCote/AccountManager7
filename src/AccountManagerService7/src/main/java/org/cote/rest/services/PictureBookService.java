@@ -2673,6 +2673,41 @@ public class PictureBookService {
         }
     }
 
+    /**
+     * PUT /{bookObjectId}/scene/{sceneObjectId}/location
+     * Body: { locationObjectId?, variantObjectId? }. Points a scene or ChapBook page at a library location /
+     * variant, or clears both pointers when both are absent, and marks the scene's node STALE - the one
+     * pointing path with a staleness event (design §24 P3-6, §26). Ids must be strings when present. 403
+     * unless the caller may update the book; 404 scene outside the book, location outside the book's world
+     * (D4), variant under a different location than the one named. A pinned node is re-pointed and echoed
+     * as pinned:true, not a 409. The body is read as a map, not through olio.pictureBookRequest, which does
+     * not declare these keys. Facade-only.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/location")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response setSceneLocation(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        Object locVal = body.get("locationObjectId");
+        Object varVal = body.get("variantObjectId");
+        if ((locVal != null && !(locVal instanceof String)) || (varVal != null && !(varVal instanceof String))) {
+            return errorResponse(400, "locationObjectId and variantObjectId must be strings when present");
+        }
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.setSceneLocation(user, bookObjectId, sceneObjectId,
+                    (String) locVal, (String) varVal)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
     // ----- Health check + self-heal (transport only; PbHealthUtil owns every check and repair) -----
 
     /** The optional {@code codes} string array from a heal/purge body, or null when absent (= all codes). */

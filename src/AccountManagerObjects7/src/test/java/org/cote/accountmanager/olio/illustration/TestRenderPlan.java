@@ -136,6 +136,67 @@ public class TestRenderPlan {
 		assertNull(back.getDegradations().get(1).getActorId());
 	}
 
+	/// P3-5: the five-member Location (design §12 {objectId, variant, revisionHash, renderArtifactId, text},
+	/// carried as locationId/variantId/revisionHash/renderArtifactId/description) is exact on the wire, null
+	/// members are absent, and the two-arg form is byte-identical to the five-arg form with nulls - so a plan
+	/// with no location hashes exactly as it did before the members existed.
+	@Test
+	public void locationMembersAreExactOnTheWireAndNullsAreAbsent() {
+		RenderPlan.Location full = new RenderPlan.Location("loc-1", "var-1", "ab12", "art-9", "the tavern. at night. rain on the lane");
+		RenderPlan a = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE).location(full)
+			.input("location", "ab12").input("locationVariant", "cd34").build();
+		String json = a.toJson();
+		assertTrue(json, json.contains("\"location\":{\"locationId\":\"loc-1\",\"variantId\":\"var-1\",\"revisionHash\":\"ab12\","
+			+ "\"renderArtifactId\":\"art-9\",\"description\":\"the tavern. at night. rain on the lane\"}"));
+		assertTrue(json, json.contains("\"inputs\":{\"location\":\"ab12\",\"locationVariant\":\"cd34\"}"));
+		RenderPlan back = RenderPlan.fromJson(json);
+		assertEquals(json, back.toJson());
+		assertEquals(a.contentHash(), back.contentHash());
+		assertEquals("loc-1", back.getLocation().getLocationId());
+		assertEquals("var-1", back.getLocation().getVariantId());
+		assertEquals("ab12", back.getLocation().getRevisionHash());
+		assertEquals("art-9", back.getLocation().getRenderArtifactId());
+		assertEquals("ab12", back.getInputs().get("location"));
+		assertEquals("cd34", back.getInputs().get("locationVariant"));
+
+		RenderPlan twoArg = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE)
+			.location(new RenderPlan.Location(null, "a flooded cathedral nave at dusk")).build();
+		RenderPlan fiveArgNulls = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE)
+			.location(new RenderPlan.Location(null, null, null, null, "a flooded cathedral nave at dusk")).build();
+		assertEquals(twoArg.toJson(), fiveArgNulls.toJson());
+		assertEquals(twoArg.contentHash(), fiveArgNulls.contentHash());
+		assertTrue(twoArg.toJson(), twoArg.toJson().contains("\"location\":{\"description\":\"a flooded cathedral nave at dusk\"}"));
+		assertFalse(twoArg.toJson().contains("variantId"));
+		assertFalse(twoArg.toJson().contains("revisionHash"));
+		assertFalse(twoArg.toJson().contains("renderArtifactId"));
+		assertFalse("no inputs -> no inputs key", twoArg.toJson().contains("\"inputs\""));
+
+		/// A named-but-unreadable input is a null hash in memory and absent on the wire (NON_EMPTY), so a
+		/// round trip loses the key: readers must not infer "not named" from "absent".
+		RenderPlan nullHash = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE).input("location", null).build();
+		assertTrue(nullHash.getInputs().containsKey("location"));
+		assertNull(nullHash.getInputs().get("location"));
+		assertFalse(nullHash.toJson(), nullHash.toJson().contains("\"inputs\""));
+		assertFalse(RenderPlan.fromJson(nullHash.toJson()).getInputs().containsKey("location"));
+	}
+
+	/// A plan persisted before P3-5 carried the scene's objectId in locationId; it still parses, with the
+	/// new members null. A one-time hash inequality against a re-planned scene, not a re-roll.
+	@Test
+	public void preP35LocationJsonStillParses() {
+		String old = "{\"planVersion\":\"illustration/1\",\"purpose\":\"scene\",\"config\":{},"
+			+ "\"location\":{\"locationId\":\"scene-oid-77\",\"description\":\"a lighthouse at dusk\"},"
+			+ "\"actors\":[],\"intent\":{\"raw\":false},\"models\":{}}";
+		RenderPlan back = RenderPlan.fromJson(old);
+		assertNotNull(back);
+		assertEquals("scene-oid-77", back.getLocation().getLocationId());
+		assertEquals("a lighthouse at dusk", back.getLocation().getDescription());
+		assertNull(back.getLocation().getVariantId());
+		assertNull(back.getLocation().getRevisionHash());
+		assertNull(back.getLocation().getRenderArtifactId());
+		assertTrue(back.getInputs().isEmpty());
+	}
+
 	@Test
 	public void seedIsNotAPlanField() {
 		RenderPlan a = samplePlan();

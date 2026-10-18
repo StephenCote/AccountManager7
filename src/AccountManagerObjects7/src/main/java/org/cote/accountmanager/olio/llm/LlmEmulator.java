@@ -1094,7 +1094,9 @@ public final class LlmEmulator {
 	 * Deterministic stand-in for the cluster-locations pass: scenes whose setting text normalizes to the same
 	 * string form one location; a cluster whose setting mentions a KNOWN location's name verbatim gets that
 	 * name as {@code sameAs}. Settings with no text fall into an ABSTRACT "Unspecified" cluster, as the prompt
-	 * instructs the real model to do.
+	 * instructs the real model to do. A later cluster whose name ends with an earlier cluster's whole name
+	 * ("Abbey Scriptorium" after "Scriptorium") is returned the way qwen3:8b returned it live on 2026-10-17: as its
+	 * own object with {@code sameAs} naming the earlier one, and listed among the earlier one's aliases.
 	 */
 	static List<Map<String, Object>> clusterLocations(String user) {
 		String known = sectionAfter(user, "KNOWN LOCATIONS");
@@ -1153,7 +1155,23 @@ public final class LlmEmulator {
 			List<Integer> sc = (List<Integer>) c.get("scenes");
 			sc.add(idx);
 		}
-		return new ArrayList<>(clusters.values());
+		List<Map<String, Object>> out = new ArrayList<>(clusters.values());
+		for (int i = 1; i < out.size(); i++) {
+			Map<String, Object> later = out.get(i);
+			if (later.get("sameAs") != null) continue;
+			String laterName = String.valueOf(later.get("name")).toLowerCase(Locale.ROOT);
+			for (int j = 0; j < i; j++) {
+				Map<String, Object> earlier = out.get(j);
+				String earlierName = String.valueOf(earlier.get("name"));
+				if (!laterName.endsWith(" " + earlierName.toLowerCase(Locale.ROOT))) continue;
+				later.put("sameAs", earlierName);
+				@SuppressWarnings("unchecked")
+				List<String> al = (List<String>) earlier.get("aliases");
+				al.add(String.valueOf(later.get("name")));
+				break;
+			}
+		}
+		return out;
 	}
 
 	private static String titleCase(String text, int maxChars) {

@@ -1268,13 +1268,16 @@ public class PbLocationUtil {
 	}
 
 	/** One clustered place as the pass understood it, before it is written as a proposal row. */
-	private static final class Cluster {
+	static final class Cluster {
 		String proposedName;
 		String description;
 		PbLocationKindEnumType kind = PbLocationKindEnumType.UNKNOWN;
 		List<String> aliases = new ArrayList<>();
 		List<String> sceneObjectIds = new ArrayList<>();
 		String sameAs;
+		/// A sameAs that names no known location: resolved against the other clusters of the pass by
+		/// foldSubPlaces, and only warned about when it names none of them either.
+		String sameAsClaim;
 	}
 
 	/**
@@ -1543,7 +1546,7 @@ public class PbLocationUtil {
 				c.sameAs = sanitizeForPrompt(same, 256);
 			}
 			else {
-				warnings.add("cluster-locations chunk " + chunkNo + " of " + slug + ": '" + c.proposedName + "' claims sameAs '" + same.trim() + "', which is not a known location; ignored");
+				c.sameAsClaim = sanitizeForPrompt(same, 256);
 			}
 		}
 		return c;
@@ -1580,6 +1583,9 @@ public class PbLocationUtil {
 		if(have.sameAs == null) {
 			have.sameAs = c.sameAs;
 		}
+		if(have.sameAsClaim == null) {
+			have.sameAsClaim = c.sameAsClaim;
+		}
 	}
 
 	/// Words that name a PART of a place: "<name> taproom", "<name> courtyard". An inn, a road, a square or a garden
@@ -1614,6 +1620,13 @@ public class PbLocationUtil {
 	 * the Gilded Tankard"), or the same name up to the article, into that cluster: scenes unioned, the folded name and
 	 * aliases kept as aliases, descriptions joined, kind MIXED when the two disagree. The shorter name survives.
 	 * Repeats until nothing folds. Name shape only - no model, no text of the settings - so it is the same for every LLM.
+	 * <p>
+	 * Then the model's own word: a cluster named among another cluster's aliases, or whose {@code sameAs} names
+	 * another cluster of this pass (by name or alias) rather than a known location, folds into that cluster. Measured
+	 * live 2026-10-17 (qwen3:8b through LiteLLM): "Scriptorium" with alias "abbey scriptorium" for scene 2 and
+	 * "Abbey Scriptorium" with sameAs "Scriptorium" for scene 4 - the model had already said they are one place, and
+	 * a leading qualifier ("abbey", "night" in "Night Market") is by design never folded on shape alone. A claim that
+	 * resolves to nothing is reported once, here, after the fold.
 	 *
 	 * @return how many clusters were folded away
 	 */
@@ -1630,7 +1643,11 @@ public class PbLocationUtil {
 					if(part == base) {
 						continue;
 					}
-					String why = subPlaceOf(baseKey, placeKey(part.proposedName));
+					String partKey = placeKey(part.proposedName);
+					String why = subPlaceOf(baseKey, partKey);
+					if(why == null) {
+						why = sameSiblingOf(base, baseKey, part, partKey);
+					}
 					if(why == null) {
 						continue;
 					}
@@ -1653,7 +1670,45 @@ public class PbLocationUtil {
 				}
 			}
 		}
+		for(Cluster c : clusters.values()) {
+			if(c.sameAsClaim != null) {
+				warnings.add("cluster-locations " + slug + ": '" + c.proposedName + "' claims sameAs '" + c.sameAsClaim
+					+ "', which is neither a known location nor another place of this pass; ignored");
+			}
+		}
 		return folded;
+	}
+
+	/**
+	 * Why {@code part} is, by the model's own word, the same place as {@code base}: named among base's aliases, or its
+	 * sameAs names base (by name or alias). Null when neither.
+	 */
+	static String sameSiblingOf(Cluster base, String baseKey, Cluster part, String partKey) {
+		if(baseKey.isEmpty() || partKey.isEmpty()) {
+			return null;
+		}
+		Set<String> baseKeys = keysOf(base);
+		if(baseKeys.contains(partKey)) {
+			return "named among its aliases";
+		}
+		if(part.sameAsClaim != null && baseKeys.contains(placeKey(part.sameAsClaim))) {
+			return "marked the same as it";
+		}
+		return null;
+	}
+
+	/** The place keys a cluster answers to: its name and every alias. */
+	private static Set<String> keysOf(Cluster c) {
+		Set<String> keys = new LinkedHashSet<>();
+		keys.add(placeKey(c.proposedName));
+		for(String a : c.aliases) {
+			String k = placeKey(a);
+			if(!k.isEmpty()) {
+				keys.add(k);
+			}
+		}
+		keys.remove("");
+		return keys;
 	}
 
 	/** Lower-case, alphanumeric words only, leading article dropped: "The Gilded Tankard!" → "gilded tankard". */
@@ -1753,6 +1808,13 @@ public class PbLocationUtil {
 		}
 		if(base.sameAs == null) {
 			base.sameAs = part.sameAs;
+		}
+		/// A claim the part made about a third cluster travels with it; one either made about the other is now met.
+		if(base.sameAsClaim == null) {
+			base.sameAsClaim = part.sameAsClaim;
+		}
+		if(base.sameAsClaim != null && keysOf(base).contains(placeKey(base.sameAsClaim))) {
+			base.sameAsClaim = null;
 		}
 	}
 

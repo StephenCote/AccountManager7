@@ -22,7 +22,9 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.WorldUtil;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbLocationUtil;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -61,6 +63,9 @@ import jakarta.ws.rs.core.Response;
 ///   POST   /{book}/locations/proposed/{id}/accept              acceptLocationProposal
 ///   POST   /{book}/locations/proposed/{id}/reject              rejectLocationProposal
 ///   POST   /{book}/locations/merge                             mergeLocations
+///   POST   /{book}/scene/{scene}/plan                          planScene, for a scene that NAMES a location
+///                                                              (P3-5; the no-location shape is TestPictureBookPlanRoute)
+///   PUT    /{book}/scene/{scene}/location                      setSceneLocation (P3-7; the Ux pointing path)
 ///
 /// FIXTURE. Locations live in the book's Olio world (design §7 decided default), so unlike the style routes a
 /// bare owner-owned book is not enough: requireBookContext needs a world under /Olio/Universes/Books/Worlds
@@ -423,10 +428,13 @@ public class TestPictureBookLocationRoutes extends BaseTest {
 		refused(service.createLocation(NIL_UUID, json("name", "Anywhere"), anon), 401, "No authenticated principal", "anonymous create");
 		refused(service.lockLocation(NIL_UUID, NIL_UUID, json("locked", Boolean.TRUE), anon), 401, "No authenticated principal", "anonymous lock");
 		refused(service.listLocationProposals(NIL_UUID, null, anon), 401, "No authenticated principal", "anonymous proposals");
+		/// the body is read before the principal is required, so a well-formed body is what reaches the 401
+		refused(service.setSceneLocation(NIL_UUID, NIL_UUID, "{}", anon), 401, "No authenticated principal", "anonymous scene location");
+		refused(service.setSceneLocation(NIL_UUID, NIL_UUID, json("locationObjectId", NIL_UUID), anon), 401, "No authenticated principal", "anonymous scene location with an id");
 	}
 
-	/// A user with no grant on the book cannot tell it exists: 404 "Book not found" on all thirteen routes, the
-	/// location / proposal ids never being consulted.
+	/// A user with no grant on the book cannot tell it exists: 404 "Book not found" on all fourteen routes, the
+	/// location / proposal / scene ids never being consulted.
 	@Test
 	public void TestStrangerIs404OnEveryRoute() throws Exception {
 		Fixture f = createWorldBook(false);
@@ -446,6 +454,11 @@ public class TestPictureBookLocationRoutes extends BaseTest {
 			refused(service.acceptLocationProposal(f.bookOid, NIL_UUID, "{}", s), 404, nf, "stranger accept");
 			refused(service.rejectLocationProposal(f.bookOid, NIL_UUID, "{}", s), 404, nf, "stranger reject");
 			refused(service.mergeLocations(f.bookOid, json("duplicateObjectId", NIL_UUID, "survivorObjectId", NIL_UUID), s), 404, nf, "stranger merge");
+			/// a real page of the book, so the 404 is provably the book gate and not a scene miss
+			BaseRecord page = addScene(f, 1);
+			refused(service.setSceneLocation(f.bookOid, oid(page), json("locationObjectId", NIL_UUID), s), 404, nf, "stranger scene location");
+			refused(service.setSceneLocation(f.bookOid, oid(page), "{}", s), 404, nf, "stranger scene location clear");
+			assertPointer(oid(page), null, null, "the stranger wrote nothing");
 		}
 		finally {
 			cleanup(f);
@@ -721,6 +734,10 @@ public class TestPictureBookLocationRoutes extends BaseTest {
 			refused(service.acceptLocationProposal(f.bookOid, NIL_UUID, "{}", r), 403, na + "accept a location proposal in this book", "reader accept");
 			refused(service.rejectLocationProposal(f.bookOid, NIL_UUID, "{}", r), 403, na + "reject a location proposal in this book", "reader reject");
 			refused(service.mergeLocations(f.bookOid, json("duplicateObjectId", locOid, "survivorObjectId", NIL_UUID), r), 403, na + "merge locations in this book", "reader merge");
+			/// a real page of the book pointed at a real location: the 403 fires before the scene or the location is consulted
+			BaseRecord page = addScene(f, 1);
+			refused(service.setSceneLocation(f.bookOid, oid(page), json("locationObjectId", locOid), r), 403, na + "point a scene at a location in this book", "reader scene location");
+			refused(service.setSceneLocation(f.bookOid, oid(page), "{}", r), 403, na + "point a scene at a location in this book", "reader scene location clear");
 
 			/// and nothing changed
 			Map<String, Object> after = ok(service.getLocation(f.bookOid, locOid, o), "owner get after reader attempts");
@@ -728,9 +745,421 @@ public class TestPictureBookLocationRoutes extends BaseTest {
 			assertEquals(Boolean.FALSE, after.get("locked"));
 			assertTrue("no variant was added", list(after, "variants").isEmpty());
 			assertEquals("still exactly one location", 1, list(ok(service.listLocations(f.bookOid, o), "owner list"), "locations").size());
+			assertPointer(oid(page), null, null, "the reader pointed nothing");
 		}
 		finally {
 			cleanup(f);
+		}
+	}
+
+	// ─────────────────────────────── P3-5: the plan of a scene that names a location ───────────────────────────────
+
+	private static final String SCENE_SETTING = "Rain hammers the shutters while the fiddler tunes up";
+	private static final String TAVERN_DESCRIPTION = "A low-ceilinged harbour tavern";
+
+	/// A page of the world book created as the owner (Writer) with its setting patched in, read back with the
+	/// scene projection (TestPictureBookPlanRoute.addScene).
+	private BaseRecord addScene(Fixture f, int index) throws Exception {
+		BaseRecord book = PbBookUtil.readBook(owner, f.bookOid, orgId);
+		assertNotNull("the world book must read back as the owner", book);
+		BaseRecord created = PbBookUtil.createScene(owner, book, index, "Page " + index, PbBookUtil.bookGroupPath(f.slug));
+		assertNotNull("Failed to create page " + index, created);
+		String sceneOid = oid(created);
+		assertNotNull("Page carries no objectId", sceneOid);
+		BaseRecord scene = PbBookUtil.readScene(owner, sceneOid, orgId);
+		assertNotNull("Page must read back as its owner", scene);
+		BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE, new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, OlioFieldNames.FIELD_PB_SETTING });
+		patch.set(FieldNames.FIELD_ID, scene.get(FieldNames.FIELD_ID));
+		patch.set(FieldNames.FIELD_OBJECT_ID, sceneOid);
+		patch.set(FieldNames.FIELD_NAME, scene.get(FieldNames.FIELD_NAME));
+		patch.set(OlioFieldNames.FIELD_PB_SETTING, SCENE_SETTING);
+		assertNotNull("scene setting patch must persist", IOSystem.getActiveContext().getAccessPoint().update(owner, patch));
+		scene = PbBookUtil.readScene(owner, sceneOid, orgId);
+		assertNotNull("Patched page must read back", scene);
+		assertEquals("the setting must be stored", SCENE_SETTING, scene.get(OlioFieldNames.FIELD_PB_SETTING));
+		return scene;
+	}
+
+	/// Points the scene at a location and/or a variant the way the Ux does it: a field-list patch of the scene's
+	/// own FK fields through AccessPoint as the owner. The FK targets are olio-owned world rows the owner can
+	/// READ, which is all the writer gates on - so a location of ANOTHER world persists too (the resolver, not
+	/// the writer, is what refuses it; TestLocatedScenePlanRefusesForeignReferences).
+	private void pointScene(BaseRecord scene, BaseRecord location, BaseRecord variant) throws Exception {
+		List<String> fields = new ArrayList<>(List.of(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_LOCATION));
+		if(variant != null) {
+			fields.add(OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
+		}
+		BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE, fields.toArray(new String[0]));
+		patch.set(FieldNames.FIELD_ID, scene.get(FieldNames.FIELD_ID));
+		patch.set(FieldNames.FIELD_OBJECT_ID, oid(scene));
+		patch.set(FieldNames.FIELD_NAME, scene.get(FieldNames.FIELD_NAME));
+		patch.set(FieldNames.FIELD_LOCATION, location);
+		if(variant != null) {
+			patch.set(OlioFieldNames.FIELD_PB_LOCATION_VARIANT, variant);
+		}
+		assertNotNull("scene location patch must persist", IOSystem.getActiveContext().getAccessPoint().update(owner, patch));
+	}
+
+	/// The page as the owner reads it now (PbBookUtil.readScene is uncached, so this is the persisted state).
+	private BaseRecord freshPage(String sceneOid) {
+		BaseRecord s = PbBookUtil.readScene(owner, sceneOid, orgId);
+		assertNotNull("page " + sceneOid + " must read back as the owner", s);
+		return s;
+	}
+
+	/// Both pointer FKs of the page, re-read fresh; a cleared / never-set FK reads back as a null nested record.
+	private void assertPointer(String sceneOid, String expectLocOid, String expectVarOid, String what) {
+		BaseRecord s = freshPage(sceneOid);
+		BaseRecord loc = s.get(FieldNames.FIELD_LOCATION);
+		BaseRecord var = s.get(OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
+		assertEquals(what + ": persisted location pointer", expectLocOid, oid(loc));
+		assertEquals(what + ": persisted variant pointer", expectVarOid, oid(var));
+	}
+
+	private BaseRecord locationRecord(String locOid) {
+		BaseRecord loc = PbLocationUtil.readLocation(owner, locOid, orgId);
+		assertNotNull("location " + locOid + " must read back as the owner", loc);
+		return loc;
+	}
+
+	private BaseRecord variantRecord(String varOid) {
+		BaseRecord var = PbLocationUtil.readVariant(owner, varOid, orgId);
+		assertNotNull("variant " + varOid + " must read back as the owner", var);
+		return var;
+	}
+
+	private Map<String, Object> planOf(Fixture f, BaseRecord scene) {
+		return ok(service.planScene(f.bookOid, oid(scene), "{}", requestAs(owner), SD_CONTEXT), "plan of " + scene.get(FieldNames.FIELD_NAME));
+	}
+
+	/// The LOCATION_TEXT_ONLY degradations of a plan DTO, in order.
+	private List<Map<String, Object>> locationDegradations(Map<String, Object> dto) {
+		List<Map<String, Object>> out = new ArrayList<>();
+		for(Object o : list(dto, "degradations")) {
+			assertTrue("degradations[] entries must be objects", o instanceof Map);
+			@SuppressWarnings("unchecked")
+			Map<String, Object> d = (Map<String, Object>) o;
+			if(RenderPlan.Degradation.LOCATION_TEXT_ONLY.equals(d.get("code"))) {
+				out.add(d);
+			}
+		}
+		return out;
+	}
+
+	private void assertTheOneLocationDegradation(Map<String, Object> dto, String message) {
+		List<Map<String, Object>> ds = locationDegradations(dto);
+		assertEquals("exactly one LOCATION_TEXT_ONLY: " + dto.get("degradations"), 1, ds.size());
+		assertEquals(message, ds.get(0).get("message"));
+		assertEquals(RenderPlan.STAGE_BASE, ds.get(0).get("stage"));
+		assertNull("not an actor degradation: " + ds.get(0), ds.get(0).get("actorId"));
+	}
+
+	private String basePrompt(Map<String, Object> dto) {
+		Map<String, Object> base = map(map(dto, "compiled"), RenderPlan.STAGE_BASE);
+		assertFalse("compiled must carry a BASE entry: " + dto.get("compiled"), base.isEmpty());
+		return String.valueOf(base.get("prompt"));
+	}
+
+	/// A scene that names an (unrendered) location: the plan carries the location's identity and revision hash,
+	/// composes its description ahead of the scene setting, carries no render, and says so with one
+	/// LOCATION_TEXT_ONLY on BASE. A second scene at the location's dusk/rain variant names the variant, carries the
+	/// variant's own input beside the location's, composes the qualifiers, and the degradation names the variant.
+	/// Nothing here needs an SD server: the pinned loopback SD only adds the MODEL_SUBSTITUTED line every plan in
+	/// this harness carries. The rendered half (the approved render riding the plan) is the Playwright proof
+	/// (pictureBookLocations.spec.js, PB_SD_TESTS=1) and TestPbScenePlanLocation (Objects7, SdTestGate).
+	@Test
+	public void TestLocatedScenePlanCarriesTheLocation() throws Exception {
+		Fixture f = createWorldBook(false);
+		try {
+			HttpServletRequestMock o = requestAs(owner);
+			Map<String, Object> locDto = createLocation(owner, f.bookOid, "The Drowned Anchor", TAVERN_DESCRIPTION, "interior", null);
+			String locOid = String.valueOf(locDto.get("objectId"));
+			BaseRecord loc = locationRecord(locOid);
+			Map<String, Object> varDto = ok(service.createLocationVariant(f.bookOid, locOid, json("timeOfDay", "dusk", "weather", "rain"), o), "variant dusk/rain");
+			String varOid = String.valueOf(varDto.get("objectId"));
+			assertEquals("The Drowned Anchor - dusk, rain", varDto.get("name"));
+			BaseRecord var = variantRecord(varOid);
+
+			BaseRecord located = addScene(f, 1);
+			pointScene(located, loc, null);
+			BaseRecord atVariant = addScene(f, 2);
+			pointScene(atVariant, loc, var);
+			BaseRecord plain = addScene(f, 3);
+
+			/// the located scene
+			Map<String, Object> dto = planOf(f, located);
+			Map<String, Object> location = map(dto, "location");
+			assertEquals(locOid, location.get("locationId"));
+			assertNull("no variant named: " + location, location.get("variantId"));
+			String revisionHash = String.valueOf(location.get("revisionHash"));
+			assertTrue("revisionHash is the location's watched-field hash: " + location, location.get("revisionHash") != null && !revisionHash.isEmpty());
+			assertNull("no approved render, so none is carried: " + location, location.get("renderArtifactId"));
+			assertEquals("location description, then the scene setting", TAVERN_DESCRIPTION + ". " + SCENE_SETTING, location.get("description"));
+			Map<String, Object> inputs = map(dto, "inputs");
+			assertEquals("inputs.location is the revision hash: " + inputs, revisionHash, inputs.get("location"));
+			assertFalse("no locationVariant input on a plain located scene: " + inputs, inputs.containsKey("locationVariant"));
+			assertTheOneLocationDegradation(dto, "No approved render for location The Drowned Anchor; setting described in text");
+			assertTrue("the carried text is what is compiled: " + basePrompt(dto), basePrompt(dto).contains(TAVERN_DESCRIPTION + ". " + SCENE_SETTING));
+			assertEquals("strategy unchanged by the location", "TEXT_ONLY", map(dto, "strategy").get("name"));
+			String hash = String.valueOf(dto.get("contentHash"));
+			assertEquals("contentHash is the hash of the plan on the wire", RenderPlan.fromMap(dto).contentHash(), hash);
+			assertEquals("the same scene plans identically twice", hash, planOf(f, located).get("contentHash"));
+
+			/// the scene at the variant
+			Map<String, Object> vdto = planOf(f, atVariant);
+			Map<String, Object> vloc = map(vdto, "location");
+			assertEquals(locOid, vloc.get("locationId"));
+			assertEquals(varOid, vloc.get("variantId"));
+			assertEquals("the revision hash is the location's", revisionHash, vloc.get("revisionHash"));
+			assertNull("the location's missing render is not the variant's either: " + vloc, vloc.get("renderArtifactId"));
+			assertEquals("location, dusk, rain, then the scene setting", TAVERN_DESCRIPTION + ". dusk. rain. " + SCENE_SETTING, vloc.get("description"));
+			Map<String, Object> vinputs = map(vdto, "inputs");
+			assertEquals(revisionHash, vinputs.get("location"));
+			Object variantInput = vinputs.get("locationVariant");
+			assertTrue("inputs.locationVariant is the variant's own hash: " + vinputs, variantInput instanceof String && !((String) variantInput).isEmpty());
+			assertNotEquals("the variant's hash is not the location's", revisionHash, variantInput);
+			assertTheOneLocationDegradation(vdto, "No approved render for variant The Drowned Anchor - dusk, rain; setting described in text");
+			assertTrue("compiled prompt carries the qualifiers: " + basePrompt(vdto), basePrompt(vdto).contains("dusk. rain"));
+			assertNotEquals("the two plans differ", hash, vdto.get("contentHash"));
+
+			/// the plain scene is unchanged by its siblings
+			Map<String, Object> pdto = planOf(f, plain);
+			Map<String, Object> ploc = map(pdto, "location");
+			assertNull(ploc.get("locationId"));
+			assertNull(ploc.get("revisionHash"));
+			assertEquals(SCENE_SETTING, ploc.get("description"));
+			assertFalse("no location input without a location: " + pdto.get("inputs"), map(pdto, "inputs").containsKey("location"));
+			assertTrue("no LOCATION_TEXT_ONLY without a location", locationDegradations(pdto).isEmpty());
+
+			/// editing the location moves its hash, and the plan with it, for every scene that names it
+			ok(service.updateLocation(f.bookOid, locOid, json("description", TAVERN_DESCRIPTION + ", lamps swinging"), o), "patch description");
+			Map<String, Object> edited = planOf(f, located);
+			String editedHash = String.valueOf(map(edited, "location").get("revisionHash"));
+			assertNotEquals("the revision hash moved with the description", revisionHash, editedHash);
+			assertEquals(editedHash, map(edited, "inputs").get("location"));
+			assertEquals(TAVERN_DESCRIPTION + ", lamps swinging. " + SCENE_SETTING, map(edited, "location").get("description"));
+			assertNotEquals("the content hash moved", hash, edited.get("contentHash"));
+			Map<String, Object> vedited = planOf(f, atVariant);
+			assertEquals("the variant scene sees the new location hash", editedHash, map(vedited, "inputs").get("location"));
+			assertEquals("the variant's own input did not move", variantInput, map(vedited, "inputs").get("locationVariant"));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// The resolver refuses what the writer let through (security review of P3-5). A location of ANOTHER world
+	/// (the owner is Writer of both books, so the FK persists) is treated as unreadable: null hash, no composed text,
+	/// no render, the named variant falls with it, and the message says why. A variant of ANOTHER location of the
+	/// same world keeps the location's hash and text, carries a null locationVariant input and no render, and the
+	/// message says why. Both are the one LOCATION_TEXT_ONLY on BASE - no new code.
+	@Test
+	public void TestLocatedScenePlanRefusesForeignReferences() throws Exception {
+		Fixture f = createWorldBook(false);
+		Fixture other = null;
+		try {
+			other = createWorldBook(false);
+			HttpServletRequestMock o = requestAs(owner);
+			assertNotEquals("two distinct worlds", oid(f.world), oid(other.world));
+
+			Map<String, Object> foreignDto = createLocation(owner, other.bookOid, "The Salt Chapel", "A chapel of white salt blocks", "exterior", null);
+			String foreignOid = String.valueOf(foreignDto.get("objectId"));
+			BaseRecord foreign = locationRecord(foreignOid);
+			Map<String, Object> foreignVarDto = ok(service.createLocationVariant(other.bookOid, foreignOid, json("timeOfDay", "night"), o), "foreign variant");
+			BaseRecord foreignVar = variantRecord(String.valueOf(foreignVarDto.get("objectId")));
+			assertTrue("the owner can read the other world's location, so the writer lets the FK through", PbLocationUtil.readLocation(owner, foreignOid, orgId) != null);
+
+			BaseRecord crossWorld = addScene(f, 1);
+			pointScene(crossWorld, foreign, null);
+			BaseRecord crossWorldVariant = addScene(f, 2);
+			pointScene(crossWorldVariant, foreign, foreignVar);
+
+			String refused = "Location The Salt Chapel is not in this book's world; setting described in text";
+			Map<String, Object> dto = planOf(f, crossWorld);
+			Map<String, Object> location = map(dto, "location");
+			assertEquals("the pointer is still reported", foreignOid, location.get("locationId"));
+			assertNull("no hash for a refused location: " + location, location.get("revisionHash"));
+			assertNull("no render for a refused location: " + location, location.get("renderArtifactId"));
+			assertEquals("no text composed from a refused location", SCENE_SETTING, location.get("description"));
+			assertFalse("a null location input is absent on the wire: " + dto.get("inputs"), map(dto, "inputs").containsKey("location"));
+			assertTheOneLocationDegradation(dto, refused);
+			assertFalse("the refused description is not compiled", basePrompt(dto).contains("white salt"));
+
+			Map<String, Object> vdto = planOf(f, crossWorldVariant);
+			Map<String, Object> vloc = map(vdto, "location");
+			assertEquals(foreignOid, vloc.get("locationId"));
+			assertEquals("the variant pointer is still reported", oid(foreignVar), vloc.get("variantId"));
+			assertNull(vloc.get("revisionHash"));
+			assertNull(vloc.get("renderArtifactId"));
+			assertEquals(SCENE_SETTING, vloc.get("description"));
+			assertTrue("both inputs null, so absent on the wire: " + vdto.get("inputs"), map(vdto, "inputs").isEmpty());
+			assertTheOneLocationDegradation(vdto, refused);
+
+			/// a variant of another location of the SAME world
+			Map<String, Object> aDto = createLocation(owner, f.bookOid, "The Drowned Anchor", TAVERN_DESCRIPTION, "interior", null);
+			BaseRecord locA = locationRecord(String.valueOf(aDto.get("objectId")));
+			Map<String, Object> bDto = createLocation(owner, f.bookOid, "The Rope Walk", "A long shed where rope is laid", "exterior", null);
+			String locBOid = String.valueOf(bDto.get("objectId"));
+			Map<String, Object> vBDto = ok(service.createLocationVariant(f.bookOid, locBOid, json("timeOfDay", "night"), o), "variant of B");
+			BaseRecord vB = variantRecord(String.valueOf(vBDto.get("objectId")));
+			assertEquals("The Rope Walk - night", vBDto.get("name"));
+
+			BaseRecord mismatched = addScene(f, 3);
+			pointScene(mismatched, locA, vB);
+			Map<String, Object> mdto = planOf(f, mismatched);
+			Map<String, Object> mloc = map(mdto, "location");
+			assertEquals(oid(locA), mloc.get("locationId"));
+			assertEquals(oid(vB), mloc.get("variantId"));
+			String aHash = String.valueOf(mloc.get("revisionHash"));
+			assertTrue("the location keeps its hash: " + mloc, mloc.get("revisionHash") != null && !aHash.isEmpty());
+			assertNull("no render is carried for a refused variant: " + mloc, mloc.get("renderArtifactId"));
+			assertEquals("the location's text without the foreign variant's qualifiers", TAVERN_DESCRIPTION + ". " + SCENE_SETTING, mloc.get("description"));
+			Map<String, Object> minputs = map(mdto, "inputs");
+			assertEquals(aHash, minputs.get("location"));
+			assertFalse("the null locationVariant input is absent on the wire: " + minputs, minputs.containsKey("locationVariant"));
+			assertTheOneLocationDegradation(mdto, "Variant The Rope Walk - night is not a variant of location The Drowned Anchor; setting described in text");
+			assertFalse("night is not compiled", basePrompt(mdto).contains("night"));
+		}
+		finally {
+			cleanup(f);
+			cleanup(other);
+		}
+	}
+
+	// ─────────────────────────────── P3-7: PUT /{book}/scene/{scene}/location ───────────────────────────────
+
+	/// The one pointing path the Ux uses (design §24 P3-6, §26), on a page of the world book that has never been
+	/// rendered (no sceneNode, so nodeStale:false / pinned:false are on the wire and nodeStatus is absent). The
+	/// route's own 400s come before the facade (body shape, id types); the facade's 404s cover the scene outside
+	/// the book, a location of ANOTHER world (D4 - the owner can read it, only the same-world check refuses it),
+	/// an unknown location / variant, and a variant under a different location than the one named. Every success
+	/// is re-read fresh as the owner through PbBookUtil.readScene; every refusal is proven to leave the page as
+	/// it was. Staleness on a node-bearing page is Objects7's TestPbSceneLocationPointer (case 9), not H2's.
+	@Test
+	public void TestSetSceneLocationRoute() throws Exception {
+		Fixture f = createWorldBook(false);
+		Fixture other = null;
+		try {
+			other = createWorldBook(false);
+			HttpServletRequestMock o = requestAs(owner);
+			assertNotEquals("two distinct worlds", oid(f.world), oid(other.world));
+			BaseRecord page = addScene(f, 1);
+			String pageOid = oid(page);
+			BaseRecord foreignPage = addScene(other, 1);
+			String foreignPageOid = oid(foreignPage);
+			assertNotEquals(pageOid, foreignPageOid);
+
+			Map<String, Object> aDto = createLocation(owner, f.bookOid, "The Drowned Anchor", TAVERN_DESCRIPTION, "interior", null);
+			String locA = String.valueOf(aDto.get("objectId"));
+			Map<String, Object> bDto = createLocation(owner, f.bookOid, "The Rope Walk", "A long shed where rope is laid", "exterior", null);
+			String locB = String.valueOf(bDto.get("objectId"));
+			assertNotEquals(locA, locB);
+			Map<String, Object> vBDto = ok(service.createLocationVariant(f.bookOid, locB, json("timeOfDay", "night"), o), "variant of B");
+			String varB = String.valueOf(vBDto.get("objectId"));
+			assertEquals("The Rope Walk - night", vBDto.get("name"));
+			Map<String, Object> foreignDto = createLocation(owner, other.bookOid, "The Salt Chapel", "A chapel of white salt blocks", "exterior", null);
+			String foreignOid = String.valueOf(foreignDto.get("objectId"));
+			assertNotNull("the owner can read the other world's location; only the facade's same-world check refuses it",
+				PbLocationUtil.readLocation(owner, foreignOid, orgId));
+			assertPointer(pageOid, null, null, "a fresh page");
+
+			/// route-level 400s: the body is checked before the facade is reached
+			refused(service.setSceneLocation(f.bookOid, pageOid, "not json", o), 400, "Malformed request body", "malformed body");
+			refused(service.setSceneLocation(f.bookOid, pageOid, "[1,2]", o), 400, "Malformed request body", "array body");
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", Integer.valueOf(5)), o), 400, "locationObjectId and variantObjectId must be strings when present", "numeric locationObjectId");
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("variantObjectId", Boolean.TRUE), o), 400, "locationObjectId and variantObjectId must be strings when present", "boolean variantObjectId");
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", locA, "variantObjectId", Map.of("objectId", varB)), o), 400, "locationObjectId and variantObjectId must be strings when present", "object variantObjectId");
+
+			/// facade 404s: the scene, then the location / variant, must be the book's
+			refused(service.setSceneLocation(f.bookOid, NIL_UUID, json("locationObjectId", locA), o), 404, "Scene " + NIL_UUID + " not found in this book", "unknown scene");
+			refused(service.setSceneLocation(f.bookOid, foreignPageOid, json("locationObjectId", locA), o), 404, "Scene " + foreignPageOid + " not found in this book", "page of another book");
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", foreignOid), o), 404, "Location not found in this book's world", "location of another world");
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", NIL_UUID), o), 404, "Location not found in this book's world", "unknown location");
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("variantObjectId", NIL_UUID), o), 404, "Location variant not found in this book's world", "unknown variant");
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", locA, "variantObjectId", varB), o), 404, "Location variant not found under that location", "variant under the wrong location");
+			assertPointer(pageOid, null, null, "after every refusal");
+			assertPointer(foreignPageOid, null, null, "the other book's page");
+
+			/// 200: point at a location
+			Map<String, Object> pointed = ok(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", locA), o), "point at A");
+			assertEquals(Boolean.TRUE, pointed.get("updated"));
+			assertEquals(pageOid, pointed.get("sceneObjectId"));
+			assertEquals(locA, pointed.get("locationObjectId"));
+			assertEquals("The Drowned Anchor", pointed.get("locationName"));
+			assertNull("no variant named: " + pointed, pointed.get("variantObjectId"));
+			assertNull("no variant name: " + pointed, pointed.get("variantName"));
+			assertEquals("a page with no node is not stale", Boolean.FALSE, pointed.get("nodeStale"));
+			assertEquals(Boolean.FALSE, pointed.get("pinned"));
+			assertNull("no node, no status (absent under NON_EMPTY): " + pointed, pointed.get("nodeStatus"));
+			assertPointer(pageOid, locA, null, "after the point at A");
+			/// and the library sees the page under A (usedByScenes is computed from the scenes' location FK)
+			Map<String, Object> aListed = locationNamed(ok(service.listLocations(f.bookOid, o), "owner list after the point"), "The Drowned Anchor");
+			assertNotNull("The Drowned Anchor is in the library", aListed);
+			List<Object> usedA = list(aListed, "usedByScenes");
+			assertEquals("exactly the one page uses A: " + usedA, 1, usedA.size());
+			assertTrue(usedA.get(0) instanceof Map);
+			@SuppressWarnings("unchecked")
+			Map<String, Object> usedA0 = (Map<String, Object>) usedA.get(0);
+			assertEquals(pageOid, usedA0.get("sceneObjectId"));
+			assertNull("no variant on that use: " + usedA0, usedA0.get("variantObjectId"));
+
+			/// 200: the variant alone resolves its parent
+			Map<String, Object> viaVariant = ok(service.setSceneLocation(f.bookOid, pageOid, json("variantObjectId", varB), o), "point at B's variant");
+			assertEquals(Boolean.TRUE, viaVariant.get("updated"));
+			assertEquals("the parent location is resolved from the variant", locB, viaVariant.get("locationObjectId"));
+			assertEquals("The Rope Walk", viaVariant.get("locationName"));
+			assertEquals(varB, viaVariant.get("variantObjectId"));
+			assertEquals("The Rope Walk - night", viaVariant.get("variantName"));
+			assertPointer(pageOid, locB, varB, "after the point at B's variant");
+
+			/// naming the matching pair is the same result
+			Map<String, Object> both = ok(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", locB, "variantObjectId", varB), o), "point at B + variant");
+			assertEquals(locB, both.get("locationObjectId"));
+			assertEquals(varB, both.get("variantObjectId"));
+			assertPointer(pageOid, locB, varB, "after the point at B + variant");
+
+			/// a refusal on a pointed page leaves the pointer alone
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", locA, "variantObjectId", varB), o), 404, "Location variant not found under that location", "mismatch on a pointed page");
+			refused(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", foreignOid), o), 404, "Location not found in this book's world", "foreign location on a pointed page");
+			assertPointer(pageOid, locB, varB, "after the refusals on a pointed page");
+
+			/// 200: "{}" clears both pointers
+			Map<String, Object> cleared = ok(service.setSceneLocation(f.bookOid, pageOid, "{}", o), "clear");
+			assertEquals(Boolean.TRUE, cleared.get("updated"));
+			assertEquals(pageOid, cleared.get("sceneObjectId"));
+			assertNull("cleared location: " + cleared, cleared.get("locationObjectId"));
+			assertNull("cleared location name: " + cleared, cleared.get("locationName"));
+			assertNull("cleared variant: " + cleared, cleared.get("variantObjectId"));
+			assertNull("cleared variant name: " + cleared, cleared.get("variantName"));
+			assertEquals(Boolean.FALSE, cleared.get("nodeStale"));
+			assertPointer(pageOid, null, null, "after the clear");
+
+			/// a blank body and explicit nulls clear the same way
+			ok(service.setSceneLocation(f.bookOid, pageOid, json("locationObjectId", locA), o), "re-point at A");
+			assertPointer(pageOid, locA, null, "re-pointed at A");
+			Map<String, Object> blankCleared = ok(service.setSceneLocation(f.bookOid, pageOid, "", o), "clear with a blank body");
+			assertNull("blank body clears: " + blankCleared, blankCleared.get("locationObjectId"));
+			assertPointer(pageOid, null, null, "after the blank-body clear");
+			ok(service.setSceneLocation(f.bookOid, pageOid, json("variantObjectId", varB), o), "re-point at B's variant");
+			assertPointer(pageOid, locB, varB, "re-pointed at B's variant");
+			Map<String, Object> nullCleared = ok(service.setSceneLocation(f.bookOid, pageOid, "{\"locationObjectId\":null,\"variantObjectId\":null}", o), "clear with explicit nulls");
+			assertNull("explicit nulls clear: " + nullCleared, nullCleared.get("locationObjectId"));
+			assertNull("explicit nulls clear the variant: " + nullCleared, nullCleared.get("variantObjectId"));
+			assertPointer(pageOid, null, null, "after the explicit-null clear");
+
+			/// and the library lists the page under nothing now
+			Map<String, Object> listed = ok(service.listLocations(f.bookOid, o), "owner list after the clears");
+			Map<String, Object> aAfter = locationNamed(listed, "The Drowned Anchor");
+			Map<String, Object> bAfter = locationNamed(listed, "The Rope Walk");
+			assertNotNull("The Drowned Anchor is still in the library", aAfter);
+			assertNotNull("The Rope Walk is still in the library", bAfter);
+			assertTrue("no scene uses A after the clear: " + aAfter, list(aAfter, "usedByScenes").isEmpty());
+			assertTrue("no scene uses B after the clear: " + bAfter, list(bAfter, "usedByScenes").isEmpty());
+		}
+		finally {
+			cleanup(f);
+			cleanup(other);
 		}
 	}
 }

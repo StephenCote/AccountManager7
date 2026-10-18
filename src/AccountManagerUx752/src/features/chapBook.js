@@ -11,7 +11,7 @@ import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
-import { bookPages, unpinNode } from '../workflows/pictureBookWorkflow.js';
+import { bookPages, unpinNode, listLocations, setSceneLocation } from '../workflows/pictureBookWorkflow.js';
 import { resolveImageUrl, pollJob, cancelJob, listJobs } from '../workflows/sceneExtractor.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
@@ -3112,7 +3112,8 @@ async function loadSceneOverrides(groupId) {
             type: 'olio.pb.scene',
             cache: false,
             request: ['id', 'objectId', 'name', 'configOverride', 'sdPrompt', 'imageObjectId', 'promptLocked',
-                'pageFont', 'pageBgColor', 'pageBgOpacity', 'pageTextAlign', 'pageTextColor', 'imageStale', 'mood'],
+                'pageFont', 'pageBgColor', 'pageBgOpacity', 'pageTextAlign', 'pageTextColor', 'imageStale', 'mood',
+                'location', 'locationVariant'],
             fields: [
                 { name: 'groupId', comparator: 'EQUALS', value: Number(groupId) },
                 { name: 'organizationId', comparator: 'EQUALS', value: Number(orgId) }
@@ -3138,11 +3139,28 @@ async function loadSceneOverrides(groupId) {
                 pageTextAlign: r.pageTextAlign || '',
                 pageTextColor: r.pageTextColor || '',
                 imageStale: !!r.imageStale,
-                mood: r.mood || ''
+                mood: r.mood || '',
+                location: locationRef(r.location),
+                locationVariant: locationRef(r.locationVariant)
             };
         }
     });
     return map;
+}
+
+// A scene's location / locationVariant FK arrives as the sub-model's common fields (objectId + name)
+// or null when cleared (a cleared FK is stored as 0 and reads back as a null nested record).
+function locationRef(rec) {
+    if (!rec || typeof rec !== 'object' || !rec.objectId) return null;
+    return { objectId: rec.objectId, name: rec.name || '' };
+}
+
+/** "located: Tavern / dusk" for the page card chip, or "unlocated" when the scene has no location. Pure. */
+function pageLocationLabel(scene) {
+    let loc = scene && scene.location;
+    if (!loc || !loc.objectId) return 'unlocated';
+    let v = scene.locationVariant;
+    return 'located: ' + (loc.name || loc.objectId) + (v && v.objectId ? ' / ' + (v.name || v.objectId) : '');
 }
 
 // Gap 8: persist (or clear) a scene's sparse override. A null/blank body clears the field; a
@@ -3246,6 +3264,10 @@ async function loadReviewBook(bookObjectId) {
                 // Per-page mood (bookPages does not project it; backfilled from the override batch-read
                 // below and refreshed by the per-page Analyze button).
                 mood: pg.mood || '',
+                // P3-7: the scene's location pointer as bookPageView names it; the override batch-read
+                // below refreshes it from the scene's own FK fields.
+                location: pg.locationObjectId ? { objectId: pg.locationObjectId, name: pg.locationName || '' } : null,
+                locationVariant: pg.locationVariantObjectId ? { objectId: pg.locationVariantObjectId, name: pg.locationVariantName || '' } : null,
                 // Per-card dirty set: field names the user has edited since the last save. The single
                 // per-card Save button (and book-level Save all) act on this; empty ⇒ nothing to save.
                 _dirty: new Set(),
@@ -3290,6 +3312,8 @@ async function loadReviewBook(bookObjectId) {
                         s.pageTextColor = row.pageTextColor || s.pageTextColor;
                         s.imageStale = row.imageStale;
                         s.mood = row.mood || s.mood;
+                        s.location = row.location;
+                        s.locationVariant = row.locationVariant;
                     }
                 });
             } catch (_) {}
@@ -3466,6 +3490,137 @@ async function doAnalyzePage(idx) {
     }
     analyzingIds.delete(oid);
     m.redraw();
+}
+
+// P3-7: point THIS scene at a library location (+ optional variant), or clear it. The route marks the
+// scene's node STALE (echoed as nodeStale); a pinned node is marked but Render skips it until unpinned,
+// which the toast says in as many words. The scene's own pointer is refreshed from the response, then
+// the override batch-read reloads every card so the "used by" counts stay honest.
+async function doSetSceneLocation(scene, locationObjectId, variantObjectId) {
+    if (!scene || !scene.objectId || !reviewBookObjectId) return;
+    scene._saving = true;
+    m.redraw();
+    try {
+        let r = await setSceneLocation(reviewBookObjectId, scene.objectId, locationObjectId, variantObjectId);
+        scene.location = r.locationObjectId ? { objectId: r.locationObjectId, name: r.locationName || '' } : null;
+        scene.locationVariant = r.variantObjectId ? { objectId: r.variantObjectId, name: r.variantName || '' } : null;
+        let msg = r.locationObjectId ? 'Page ' + pageLocationLabel(scene) : 'Page location cleared';
+        if (r.nodeStale && r.pinned) {
+            page.toast('warn', msg + ' — node marked stale; it is pinned, so Render will skip it until unpinned');
+        } else if (r.nodeStale) {
+            page.toast('success', msg + ' — node marked stale');
+        } else {
+            page.toast('success', msg);
+        }
+        am7client.clearCache('olio.pb.scene', true);
+        if (reviewGroupId != null) {
+            let ovMap = await loadSceneOverrides(reviewGroupId);
+            reviewScenes.forEach(function (s) {
+                let row = s.objectId ? ovMap[s.objectId] : null;
+                if (row) {
+                    s.location = row.location;
+                    s.locationVariant = row.locationVariant;
+                }
+            });
+        }
+    } catch (e) {
+        page.toast('error', e.message || 'Set location failed');
+    }
+    scene._saving = false;
+    m.redraw();
+}
+
+// The picker lists the book's locations (and each one's variants) from the locations library;
+// "Clear" removes the pointer. Choosing a location alone keeps no variant.
+export function openSceneLocationPicker(scene) {
+    if (!scene || !scene.objectId) return;
+    let locs = null;
+    let loadError = null;
+    let locOid = scene.location ? scene.location.objectId : null;
+    let varOid = scene.locationVariant ? scene.locationVariant.objectId : null;
+    let saving = false;
+    listLocations(reviewBookObjectId).then(function (r) {
+        locs = r.locations;
+        m.redraw();
+    }).catch(function (e) {
+        loadError = e.message || 'Load locations failed';
+        locs = [];
+        m.redraw();
+    });
+    let current = function () {
+        return (locs || []).find(function (l) { return l.objectId === locOid; }) || null;
+    };
+    let apply = async function (lo, vo) {
+        if (saving) return;
+        saving = true;
+        Dialog.close();
+        await doSetSceneLocation(scene, lo, vo);
+        saving = false;
+    };
+    Dialog.open({
+        title: 'Page location',
+        size: 'md',
+        content: {
+            view: function () {
+                let loc = current();
+                return m('div', { 'data-testid': 'cb-page-location-picker', class: 'space-y-3 text-sm' }, [
+                    loadError ? m('div', { 'data-testid': 'cb-page-location-error', class: 'text-red-600' }, loadError) : null,
+                    locs == null ? m('div', { class: 'text-gray-500' }, 'Loading locations…') : null,
+                    locs && !locs.length ? m('div', { 'data-testid': 'cb-page-location-empty', class: 'text-gray-500' }, 'This book has no locations yet. Add them in the Locations library.') : null,
+                    locs && locs.length ? m('label', { class: 'block' }, [
+                        m('span', { class: 'block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1' }, 'Location'),
+                        m('select', {
+                            'data-testid': 'cb-page-location-select',
+                            class: 'w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm',
+                            value: locOid || '',
+                            onchange: function (e) { locOid = e.target.value || null; varOid = null; }
+                        }, [m('option', { value: '' }, '— none —')].concat(locs.map(function (l) {
+                            return m('option', { value: l.objectId, selected: l.objectId === locOid }, l.name + (l.kind ? ' (' + l.kind + ')' : ''));
+                        })))
+                    ]) : null,
+                    loc && loc.variants && loc.variants.length ? m('label', { class: 'block' }, [
+                        m('span', { class: 'block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1' }, 'Variant'),
+                        m('select', {
+                            'data-testid': 'cb-page-location-variant',
+                            class: 'w-full rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm',
+                            value: varOid || '',
+                            onchange: function (e) { varOid = e.target.value || null; }
+                        }, [m('option', { value: '' }, '— base location —')].concat(loc.variants.map(function (v) {
+                            return m('option', { value: v.objectId, selected: v.objectId === varOid }, v.name);
+                        })))
+                    ]) : null
+                ]);
+            }
+        },
+        actions: {
+            view: function () {
+                return [
+                    { label: 'Cancel', icon: 'cancel', onclick: function () { Dialog.close(); } },
+                    { label: 'Clear', icon: 'location_off', disabled: saving || !scene.location, attrs: { 'data-testid': 'cb-page-location-clear' }, onclick: function () { apply(null, null); } },
+                    { label: 'Apply', icon: 'check', primary: true, disabled: saving || locs == null || !locOid, attrs: { 'data-testid': 'cb-page-location-apply' }, onclick: function () { apply(locOid, varOid); } }
+                ];
+            }
+        }
+    });
+}
+
+export function renderPageLocationChip(scene) {
+    let located = !!(scene.location && scene.location.objectId);
+    return m('button', {
+        'data-testid': 'cb-page-location',
+        'data-scene-oid': scene.objectId || '',
+        'data-location-id': located ? scene.location.objectId : '',
+        'data-variant-id': scene.locationVariant && scene.locationVariant.objectId ? scene.locationVariant.objectId : '',
+        class: 'px-2 py-1 rounded text-xs flex items-center gap-1 disabled:opacity-40 ' + (located
+            ? 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300 hover:bg-teal-200'
+            : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200'),
+        title: located ? 'Change or clear this page\'s location' : 'Point this page at a library location',
+        disabled: scene._saving || roleWarning,
+        onclick: function () { openSceneLocationPicker(scene); }
+    }, [
+        m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, located ? 'location_on' : 'location_off'),
+        pageLocationLabel(scene)
+    ]);
 }
 
 // Book-level Save all (D1): commit every dirty card in order, then one aggregate toast.
@@ -3919,6 +4074,8 @@ function renderSceneCard(scene, idx) {
                         analyzingIds.has(oid) ? 'hourglass_empty' : 'psychology'),
                     analyzingIds.has(oid) ? ' Analyzing...' : ' Analyze'
                 ]),
+                // P3-7: which library location (and variant) this page is pointed at; opens the picker.
+                renderPageLocationChip(scene),
                 // D3: after a merge-up the backend flags imageStale — the existing image no longer
                 // matches the (now longer) stanza. Informational badge only; the user re-renders via the
                 // per-page button below (no auto-regen).
@@ -4437,5 +4594,13 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig, isChapBookPinnedRefusal, coerceSceneRenderResult, v3JobOutcome, mergeSceneOverlay, chapBookRenderPath, renderPageWithPinConfirm, applyPageRenderResult, loadSceneRenderFields };
+export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig, isChapBookPinnedRefusal, coerceSceneRenderResult, v3JobOutcome, mergeSceneOverlay, chapBookRenderPath, renderPageWithPinConfirm, applyPageRenderResult, loadSceneRenderFields, pageLocationLabel, loadSceneOverrides, doSetSceneLocation };
+// Exported for Vitest (P3-7): seed the review view's module state without mounting the route.
+export function __setReviewStateForTest(patch) {
+    patch = patch || {};
+    if ('reviewBookObjectId' in patch) reviewBookObjectId = patch.reviewBookObjectId;
+    if ('reviewGroupId' in patch) reviewGroupId = patch.reviewGroupId;
+    if ('reviewScenes' in patch) reviewScenes = patch.reviewScenes;
+    if ('roleWarning' in patch) roleWarning = patch.roleWarning;
+}
 export default ChapBookFeature;

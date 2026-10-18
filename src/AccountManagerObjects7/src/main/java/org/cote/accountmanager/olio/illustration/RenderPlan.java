@@ -445,6 +445,14 @@ public final class RenderPlan {
 			return this;
 		}
 
+		/**
+		 * Record the revision/ref hash of one input the plan was built from, keyed by binding role (V3 §12
+		 * {@code inputs}). Keys in use: {@code location} (the scene's {@code olio.pb.location}, binding role
+		 * {@code location} ordinal 0) and {@code locationVariant} (its {@code olio.pb.locationVariant} - the
+		 * executor binds it under role {@code location} ordinal 1, so this key names that binding, not a role
+		 * of its own). A null hash is kept: it says the input was named but not readable when the plan was
+		 * built, which is what the node's binding records too. Null values are dropped from the JSON form.
+		 */
 		public Builder input(String role, String hash) {
 			if(role != null) {
 				this.inputs.put(role, hash);

@@ -1046,6 +1046,100 @@ public class TestPbLocationProposal extends BaseTest {
 		}
 	}
 
+	/**
+	 * Gate run 17 (2026-10-17, qwen3:8b through LiteLLM) split the scriptorium by its leading qualifier: "Scriptorium"
+	 * (alias "abbey scriptorium") for scene 2 and "Abbey Scriptorium" (sameAs "Scriptorium") for scene 4. The model
+	 * had said they are one place twice over and the pass threw both signals away - sameAs counted only against
+	 * known locations, the fold looked at name shape only, and a leading qualifier is by design never folded on
+	 * shape ("Night Market" is a place). The emulator now returns that exact shape for a later name ending with an
+	 * earlier one, so the fold is proven here without the model; a name ending in another cluster's name with no
+	 * alias and no sameAs still never folds.
+	 */
+	@Test
+	public void case08_aliasAndSiblingSameAsFoldByTheModelsOwnWord() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "sibling");
+			bookContext(u, bk);
+			String scriptoriumA = "Scriptorium, candles guttering over the copyists' desks";
+			String scriptoriumB = "Abbey scriptorium, the same candlelit desks after midnight";
+			BaseRecord s1 = addScene(u, bk, 1, "Arrival", TAVERN_SETTING);
+			BaseRecord s2 = addScene(u, bk, 2, "The Copyist", scriptoriumA);
+			BaseRecord s3 = addScene(u, bk, 3, "The Road", HILL_SETTING);
+			BaseRecord s4 = addScene(u, bk, 4, "After Midnight", scriptoriumB);
+
+			LocationPassResult r1 = PbLocationUtil.proposeLocations(u, bk, emulatorConfig(u, newSet(null)));
+			logger.info("case08 pass: " + describe(r1));
+			assertFalse("hard failure: " + r1.warnings, r1.hardFailure);
+			assertEquals("chunks parsed", 1, r1.chunksParsed);
+			assertEquals("folded (abbey scriptorium)", 1, r1.folded);
+			assertEquals("proposed (tavern, scriptorium, hill)", 3, r1.proposed);
+			assertTrue("fold warning names the alias: " + r1.warnings, anyContains(r1.warnings, "folded 'Abbey Scriptorium' into 'Scriptorium' - named among its aliases"));
+			assertFalse("the sibling claim is met, not ignored: " + r1.warnings, anyContains(r1.warnings, "ignored"));
+
+			List<BaseRecord> rows = PbLocationUtil.listProposals(u, bk, null);
+			assertEquals("rows: " + names(rows), 3, rows.size());
+			BaseRecord scriptorium = require(rows, PbLocationUtil.proposalName("Scriptorium"));
+			assertSceneIds(scriptorium, s2, s4);
+			List<String> aliases = scriptorium.get(OlioFieldNames.FIELD_PB_ALIASES);
+			assertNotNull(aliases);
+			assertTrue("the folded name is an alias: " + aliases, aliases.contains("Abbey Scriptorium"));
+			assertNull("no sameAs: nothing known", scriptorium.get(OlioFieldNames.FIELD_PB_SAME_AS));
+			String desc = scriptorium.get(FieldNames.FIELD_DESCRIPTION);
+			assertTrue("descriptions are joined: " + desc, desc.startsWith(scriptoriumA) && desc.contains(scriptoriumB));
+			assertNull("no split cluster survives as its own row", byName(rows, PbLocationUtil.proposalName("Abbey Scriptorium")));
+			assertSceneIds(require(rows, PbLocationUtil.proposalName(TAVERN_NAME)), s1);
+			assertSceneIds(require(rows, PbLocationUtil.proposalName(HILL_NAME)), s3);
+
+			/// The rule itself, on clusters alone: each signal on its own, the sameAs-only path, the chain, the negative
+			PbLocationUtil.Cluster base = cluster("Scriptorium");
+			PbLocationUtil.Cluster part = cluster("Abbey Scriptorium");
+			assertNull("a leading qualifier with no signal never folds", PbLocationUtil.sameSiblingOf(base, "scriptorium", part, "abbey scriptorium"));
+			assertNull("shape alone never folds it either", PbLocationUtil.subPlaceOf("scriptorium", "abbey scriptorium"));
+			part.sameAsClaim = "The Scriptorium";
+			assertEquals("marked the same as it", PbLocationUtil.sameSiblingOf(base, "scriptorium", part, "abbey scriptorium"));
+			part.sameAsClaim = "The Copyists' Hall";
+			assertNull("a claim about something else", PbLocationUtil.sameSiblingOf(base, "scriptorium", part, "abbey scriptorium"));
+			base.aliases.add("the copyists hall");
+			assertEquals("a claim naming an alias", "marked the same as it", PbLocationUtil.sameSiblingOf(base, "scriptorium", part, "abbey scriptorium"));
+			part.sameAsClaim = null;
+			base.aliases.add("Abbey Scriptorium");
+			assertEquals("named among its aliases", PbLocationUtil.sameSiblingOf(base, "scriptorium", part, "abbey scriptorium"));
+			assertNull("never the other way round", PbLocationUtil.sameSiblingOf(part, "abbey scriptorium", base, "scriptorium"));
+
+			/// foldSubPlaces end to end: sameAs-only (no alias), a claim that resolves to nothing is reported once
+			java.util.Map<String, PbLocationUtil.Cluster> clusters = new java.util.LinkedHashMap<>();
+			PbLocationUtil.Cluster a = cluster("Scriptorium");
+			PbLocationUtil.Cluster b = cluster("Abbey Scriptorium");
+			b.sameAsClaim = "Scriptorium";
+			PbLocationUtil.Cluster c = cluster("Harbour Road");
+			c.sameAsClaim = "The Quay";
+			for(PbLocationUtil.Cluster x : new PbLocationUtil.Cluster[] {a, b, c}) {
+				clusters.put(PbLocationUtil.proposalName(x.proposedName), x);
+			}
+			List<String> warnings = new ArrayList<>();
+			assertEquals(1, PbLocationUtil.foldSubPlaces(clusters, "unit", warnings));
+			assertEquals("survivors: " + clusters.keySet(), 2, clusters.size());
+			assertTrue(clusters.containsKey(PbLocationUtil.proposalName("Scriptorium")));
+			assertTrue("the folded name becomes an alias: " + a.aliases, a.aliases.contains("Abbey Scriptorium"));
+			assertNull("the met claim is cleared", a.sameAsClaim);
+			assertTrue("fold reported: " + warnings, anyContains(warnings, "folded 'Abbey Scriptorium' into 'Scriptorium' - marked the same as it"));
+			assertTrue("unmet claim reported: " + warnings, anyContains(warnings, "'Harbour Road' claims sameAs 'The Quay', which is neither a known location nor another place of this pass; ignored"));
+			assertEquals("one line per fact: " + warnings, 2, warnings.size());
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	private static PbLocationUtil.Cluster cluster(String name) {
+		PbLocationUtil.Cluster c = new PbLocationUtil.Cluster();
+		c.proposedName = name;
+		return c;
+	}
+
 	@SuppressWarnings("unchecked")
 	private static List<String> castWarnings(Object v) {
 		assertTrue("warnings is a list: " + v, v instanceof List);

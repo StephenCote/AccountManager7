@@ -94,8 +94,8 @@ import org.junit.Test;
  *     characters in a create name or alias are stripped; the 33rd variant is a 409; a LOCATION node whose
  *     {@code scopeRef} is another world's location is 404 on approve and reject and promotes nothing, while a
  *     dangling {@code scopeRef} is still rejectable; a {@code scopeRef} the caller cannot read but which exists
- *     (another user's world, locked, carrying this render as its {@code approvedRender}) is the same 404 and
- *     never treated as dangling - the lock holds ({@code PbLocationUtil.subjectExists}).</li>
+ *     (another user's world, locked, with that user's own approved render) is the same 404 and never treated as
+ *     dangling - the lock holds ({@code PbLocationUtil.subjectExists}).</li>
  * <li>{@link #case12HealthFindsAndHealsNodeDanglingAfterCrossChapterDelete}: chapter A deletes one shared location
  *     and merges another away; chapter B's LOCATION nodes on both are left dangling and {@code PbHealthUtil} reports
  *     {@code LOCATION_NODE_DANGLING} for each, which the heal removes with their candidate renders; a node with a
@@ -1344,20 +1344,28 @@ public class TestPbLocationNode extends BaseTest {
 
 			/// (e) "Gone" and "unreadable" are not the same thing. A node whose scopeRef names a location that exists
 			/// but that this caller cannot read (another user's world) is refused 404 by approve AND reject, exactly
-			/// like the foreign-world case - not treated as dangling. Otherwise a caller with update on the book but
-			/// no read on the location could reject the approved render of a LOCKED location, clearing what the lock
-			/// guards without ever seeing the lock.
+			/// like the foreign-world case - not treated as dangling (a dangling scopeRef lets reject proceed, above).
+			/// Otherwise a caller with update on the book but no read on the location could stamp a candidate of a
+			/// LOCKED location REJECTED without ever seeing the lock.
+			/// The stranger pins a render of their own book on the location by the product path (approve) and then
+			/// locks it. PBAC reads a record only when every populated foreign record is readable too
+			/// (PolicyUtil.getSchemaRules adds a READ pattern per foreign field), so the pinned render has to be one
+			/// the stranger can read: a render from the owner's book pinned here - a state approve never produces -
+			/// would make the stranger's own location unreadable to the stranger.
 			BaseRecord s = stranger();
 			otherS = newBook(s, "hx");
 			BaseRecord strangerLoc = newLocation(s, otherS, "Hidden Cove " + tag, DESCRIPTION);
 			String strangerOid = oidOf(strangerLoc);
 			assertNull("the owner cannot read the stranger's location", readLocation(u, strangerOid, orgId));
-			BaseRecord unreadableNode = locationNode(u, chA, wfA, strangerOid);
-			BaseRecord ua = landscapeArtifact(u, chA, unreadableNode, Color.CYAN);
-			/// Pin the owner's render on the stranger's location as the record's owner would, then lock it.
-			assertTrue(PbLocationUtil.writeApprovedRender(s, new PbLocationUtil.NodeSubject(mustReadLocation(s, strangerOid, orgOf(s)), null), ua));
+			BaseRecord wfS = workflow(s, otherS);
+			BaseRecord strangerNode = locationNode(s, otherS, wfS, strangerOid);
+			BaseRecord sa = landscapeArtifact(s, otherS, strangerNode, Color.ORANGE);
+			PbServiceFacade.approveArtifact(s, oidOf(otherS), oidOf(sa));
+			assertEquals("the stranger's own render is pinned", idOf(sa), fkId(mustReadLocation(s, strangerOid, orgOf(s)), OlioFieldNames.FIELD_PB_APPROVED_RENDER));
 			PbServiceFacade.lockLocation(s, oidOf(otherS), strangerOid, true);
 			assertTrue("locked", PbLocationUtil.isLocked(mustReadLocation(s, strangerOid, orgOf(s))));
+			BaseRecord unreadableNode = locationNode(u, chA, wfA, strangerOid);
+			BaseRecord ua = landscapeArtifact(u, chA, unreadableNode, Color.CYAN);
 			assertTrue("the record exists for the existence test even though the caller cannot read it", PbLocationUtil.subjectExists(PbGraphUtil.readNode(u, oidOf(unreadableNode), orgId)));
 			expect("approve with an unreadable subject", 404, "Location not found in this book's world",
 				() -> PbServiceFacade.approveArtifact(u, chAOid, oidOf(ua)));
@@ -1365,7 +1373,8 @@ public class TestPbLocationNode extends BaseTest {
 				() -> PbServiceFacade.rejectArtifact(u, chAOid, oidOf(ua)));
 			assertEquals("the artifact is untouched", PbReviewStatusEnumType.GENERATED.name(), status(readArtifact(u, oidOf(ua)), OlioFieldNames.FIELD_PB_REVIEW_STATUS));
 			assertNotEquals("the node is not pinned", Boolean.TRUE, PbGraphUtil.readNode(u, oidOf(unreadableNode), orgId).get(OlioFieldNames.FIELD_PB_PINNED));
-			assertEquals("the locked location keeps its approved render", idOf(ua), fkId(mustReadLocation(s, strangerOid, orgOf(s)), OlioFieldNames.FIELD_PB_APPROVED_RENDER));
+			assertEquals("the locked location keeps its approved render", idOf(sa), fkId(mustReadLocation(s, strangerOid, orgOf(s)), OlioFieldNames.FIELD_PB_APPROVED_RENDER));
+			assertTrue("still locked", PbLocationUtil.isLocked(mustReadLocation(s, strangerOid, orgOf(s))));
 			/// The util-level reject path is the same answer: PbArtifactUtil.reject does not treat it as dangling.
 			expect("util reject with an unreadable subject", 404, "of node",
 				() -> PbArtifactUtil.reject(u, readArtifact(u, oidOf(ua))));

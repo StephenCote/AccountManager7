@@ -2209,6 +2209,14 @@ public class PbServiceFacade {
 			p.put("pageTextAlign", scene.get(OlioFieldNames.FIELD_PB_PAGE_TEXT_ALIGN));
 			p.put("pageTextColor", scene.get(OlioFieldNames.FIELD_PB_PAGE_TEXT_COLOR));
 			p.put("imageStale", scene.get(OlioFieldNames.FIELD_PB_IMAGE_STALE));
+			// V3 §7.2 / §26: the page's location pointer. sceneRequest() projects both FKs bare, which
+			// materializes the sub-model's common fields (objectId, name) - no further read per page.
+			BaseRecord pageLoc = scene.get(FieldNames.FIELD_LOCATION);
+			BaseRecord pageVar = scene.get(OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
+			p.put("locationObjectId", (pageLoc != null ? pageLoc.get(FieldNames.FIELD_OBJECT_ID) : null));
+			p.put("locationName", (pageLoc != null ? pageLoc.get(FieldNames.FIELD_NAME) : null));
+			p.put("locationVariantObjectId", (pageVar != null ? pageVar.get(FieldNames.FIELD_OBJECT_ID) : null));
+			p.put("locationVariantName", (pageVar != null ? pageVar.get(FieldNames.FIELD_NAME) : null));
 
 			String dataObjectId = null;
 			BaseRecord node = null;
@@ -3603,6 +3611,56 @@ public class PbServiceFacade {
 		out.put("duplicateObjectId", duplicateObjectId);
 		out.put("survivorObjectId", survivorObjectId);
 		out.put("survivor", getLocation(user, bookObjectId, survivorObjectId));
+		return out;
+	}
+
+	/**
+	 * Point a scene or ChapBook page of {@code book} at a library location / variant, or clear the pointer
+	 * (V3 §7.2, §24 P3-6 as-built, §26; design §27 {@code PUT /{book}/scene/{scene}/location}). The one
+	 * pointing path with a staleness event: {@link PbBookUtil#setSceneLocation} patches the two FKs as the
+	 * caller and then marks the scene's node STALE, which generic {@code PATCH /rest/model} cannot do.
+	 * <p>
+	 * Gate order: 404 book, 403 unless the caller may update the book, 404 scene outside the book, then the
+	 * subject through {@link #requireLocationSubject} - a location of another world is a 404 (D4), a variant
+	 * under a different location than the one named is a 404; naming only the variant resolves its parent.
+	 * Both ids blank clears both pointers. A pinned node is <b>not</b> a conflict: the pointer is scene
+	 * data, and a pin only stops the runner from replacing the node's artifact ({@code PbGraphUtil#setPinned}),
+	 * so the scene is re-pointed, the node is marked STALE like any other, and {@code pinned:true} is echoed
+	 * so the Ux can say "unpin to re-render". A RUNNING node is left alone by the mark ({@code nodeStale:false}).
+	 *
+	 * @return {@code sceneObjectId}, {@code locationObjectId} / {@code locationName} / {@code variantObjectId} /
+	 *         {@code variantName} as persisted (null when cleared), {@code updated:true}, {@code nodeStale},
+	 *         {@code pinned} and {@code nodeStatus} (null when the scene has no node)
+	 */
+	public static Map<String, Object> setSceneLocation(BaseRecord user, String bookObjectId, String sceneObjectId,
+		String locationObjectId, String variantObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "point a scene at a location");
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		BaseRecord location = null;
+		BaseRecord variant = null;
+		boolean hasLocation = (locationObjectId != null && !locationObjectId.isBlank());
+		boolean hasVariant = (variantObjectId != null && !variantObjectId.isBlank());
+		if(hasLocation || hasVariant) {
+			BaseRecord[] subject = requireLocationSubject(user, book, (hasLocation ? locationObjectId.trim() : null),
+				(hasVariant ? variantObjectId.trim() : null));
+			location = subject[0];
+			variant = subject[1];
+		}
+		boolean nodeStale = PbBookUtil.setSceneLocation(user, scene, location, variant);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("locationObjectId", (location != null ? location.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("locationName", (location != null ? location.get(FieldNames.FIELD_NAME) : null));
+		out.put("variantObjectId", (variant != null ? variant.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("variantName", (variant != null ? variant.get(FieldNames.FIELD_NAME) : null));
+		out.put("updated", Boolean.TRUE);
+		out.put("nodeStale", Boolean.valueOf(nodeStale));
+		BaseRecord nodeRef = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
+		Long nodeId = (nodeRef != null ? nodeRef.get(FieldNames.FIELD_ID) : null);
+		BaseRecord node = (nodeId != null && nodeId.longValue() > 0L ? PbGraphUtil.readNodeById(user, nodeId.longValue(), orgOf(user)) : null);
+		out.put("pinned", Boolean.valueOf(node != null && Boolean.TRUE.equals(node.get(OlioFieldNames.FIELD_PB_PINNED, null))));
+		out.put("nodeStatus", (node != null ? enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS) : null));
 		return out;
 	}
 

@@ -827,6 +827,61 @@ public class PbBookUtil {
 		return true;
 	}
 
+	/**
+	 * Point a scene (or ChapBook page) at a library location, optionally at one of its variants, or un-point
+	 * it (V3 §7.2, §24 P3-6 as-built, §26 P3-7). Both FKs are written on every call so a location change can
+	 * never leave a stale variant behind; a null FK on the field-name patch clears the column (it is stored
+	 * as {@code 0} and reads back as a null nested record). The caller has already proven the scene belongs
+	 * to the book and the subject to the book's world (D4) - this method validates only that the variant,
+	 * when given, is a variant of the location, because that is the one invariant a mismatched pair of
+	 * already-authorized records could still violate.
+	 * <p>
+	 * PATCH-shaped and authorized exactly like {@link #setSceneConfigOverride}: identity + the validated
+	 * {@code name} + the two changed fields through {@code AccessPoint.update} as {@code user}. The update
+	 * result is asserted, never discarded. Then {@link #markSceneNodeStale} runs - a pointer edit changes
+	 * what the page's plan compiles, so the node that renders it is out of date (the staleness event
+	 * generic {@code PATCH /rest/model} cannot raise; design §24 commits the Ux to this path).
+	 *
+	 * @param location the {@code olio.pb.location} to point at, or null to clear
+	 * @param variant  the {@code olio.pb.locationVariant} to point at (requires {@code location}), or null
+	 * @return the {@link #markSceneNodeStale} result: true when the scene's node is STALE on return; false
+	 *         when the scene has no node, the node is RUNNING, or the mark failed. The pointer write itself
+	 *         has succeeded whenever this returns.
+	 * @throws PictureBookException 400 when a variant is given without its location or belongs to another
+	 *         location; 500 when the patch cannot be assembled or the update is refused
+	 */
+	public static boolean setSceneLocation(BaseRecord user, BaseRecord scene, BaseRecord location, BaseRecord variant) {
+		if(user == null || scene == null) {
+			throw new PictureBookException(400, "user and scene are required");
+		}
+		if(variant != null) {
+			if(location == null) {
+				throw new PictureBookException(400, "A location variant cannot be set without its location");
+			}
+			BaseRecord parent = (variant.hasField(FieldNames.FIELD_LOCATION) ? variant.get(FieldNames.FIELD_LOCATION) : null);
+			Long parentId = (parent != null ? parent.get(FieldNames.FIELD_ID) : null);
+			Long locId = location.get(FieldNames.FIELD_ID);
+			if(parentId == null || locId == null || !parentId.equals(locId)) {
+				throw new PictureBookException(400, "Variant " + variant.get(FieldNames.FIELD_NAME)
+					+ " is not a variant of " + location.get(FieldNames.FIELD_NAME));
+			}
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+			FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
+		try {
+			patch.set(FieldNames.FIELD_LOCATION, location);
+			patch.set(OlioFieldNames.FIELD_PB_LOCATION_VARIANT, variant);
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble a location patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist the location pointer on scene "
+				+ scene.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		return markSceneNodeStale(user, scene);
+	}
+
 	// ─────────────────────────────── scene -> page node drift (V3 §24, P1-9) ───────────────────────────────
 
 	/**

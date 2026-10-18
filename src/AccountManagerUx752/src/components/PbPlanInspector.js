@@ -139,7 +139,13 @@ const PbPlanInspector = {
             kv('Style', plan.style.styleObjectId),
             kv('Revision hash', plan.style.revisionHash),
             kv('Photoreal', plan.style.photoreal == null ? null : (plan.style.photoreal ? 'yes' : 'no')),
-            kv('Location', plan.location && plan.location.description),
+            kv('Location', plan.location.description),
+            plan.location.locationId ? kv('Location id', plan.location.locationId) : null,
+            plan.location.variantId ? kv('Variant id', plan.location.variantId) : null,
+            plan.location.revisionHash ? kv('Location hash', plan.location.revisionHash) : null,
+            plan.location.renderArtifactId ? kv('Location render', plan.location.renderArtifactId) : null,
+            plan.inputs.location ? kv('Input: location', plan.inputs.location) : null,
+            plan.inputs.locationVariant ? kv('Input: variant', plan.inputs.locationVariant) : null,
             kv('Raw intent', plan.intent && plan.intent.raw != null ? (plan.intent.raw ? 'yes' : 'no') : null),
             kv('Content hash', plan.contentHash)
         ]);

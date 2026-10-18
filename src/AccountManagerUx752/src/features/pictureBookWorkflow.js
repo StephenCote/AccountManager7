@@ -54,11 +54,17 @@ const STATUS_COLOR = {
 const NODE_TYPE_RANK = {
     portrait: 0,
     landscape: 1,
-    reference: 2,
-    scene: 3,
-    composite: 4,
-    character: 5,
-    book: 6,
+    location: 2,       // V3 P3-7: LOCATION nodes (scope location / location_variant) sit with the other backgrounds
+    reference: 3,
+    scene: 4,
+    composite: 5,
+    character: 6,
+    book: 7,
+};
+
+/** Header accent per node type, for the types the status badge alone does not tell apart. */
+const TYPE_ACCENT = {
+    location: { label: 'LOCATION', color: '#0d9488' },
 };
 
 function nodeRank(n) {
@@ -67,6 +73,14 @@ function nodeRank(n) {
         if (t.indexOf(k) >= 0) return NODE_TYPE_RANK[k];
     }
     return 99;
+}
+
+function typeAccent(n) {
+    let t = ((n && n.nodeType) || '').toLowerCase();
+    for (let k of Object.keys(TYPE_ACCENT)) {
+        if (t.indexOf(k) >= 0) return TYPE_ACCENT[k];
+    }
+    return null;
 }
 
 function statusColor(status) {
@@ -718,17 +732,19 @@ function renderNodeCard(n) {
     let selected = selectedNodeId === n.objectId;
     let details = (selected && nodeDetails) ? nodeDetails : null;
     let thumb = details ? renderArtifactThumb(details.artifacts) : null;
+    let accent = typeAccent(n);
 
     return m('div', {
         key: n.objectId,
         'data-node-id': n.objectId,
+        'data-node-type': (n.nodeType || '').toLowerCase(),
         style: [
             'position:absolute',
             'left:' + p.x + 'px',
             'top:' + p.y + 'px',
             'width:' + CARD_W + 'px',
             'background:var(--card-bg,#fff)',
-            'border:2px solid ' + (selected ? '#3b82f6' : '#e2e8f0'),
+            'border:2px solid ' + (selected ? '#3b82f6' : (accent ? accent.color : '#e2e8f0')),
             'border-radius:8px',
             'padding:8px',
             'box-shadow:0 1px 4px rgba(0,0,0,.1)',
@@ -761,6 +777,10 @@ function renderNodeCard(n) {
                     'background:' + statusColor(status),
                 ].join(''),
             }, status),
+            accent ? m('span', {
+                'data-testid': 'pb-canvas-type-accent',
+                style: 'font-size:9px;font-weight:700;padding:1px 5px;border-radius:9999px;flex-shrink:0;color:#fff;background:' + accent.color,
+            }, accent.label) : null,
             m('span', { style: 'font-size:11px;color:#374151;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;' },
                 n.handle || n.nodeType || '?'),
         ]),
@@ -1550,7 +1570,7 @@ var pictureBookWorkflowView = {
 export { openMemberDialog, openChapterDialog };
 
 // Exported for Vitest (P1-10 S6): pure layout/colour helpers plus a seam for the drag-drop save.
-export { computePositions, storedPosition, pickThumbArtifact, statusColor, STATUS_COLOR, onCanvasMouseUp, renderNodeDetailPanel, toggleNodePlan };
+export { computePositions, storedPosition, pickThumbArtifact, statusColor, STATUS_COLOR, onCanvasMouseUp, renderNodeDetailPanel, toggleNodePlan, NODE_TYPE_RANK, TYPE_ACCENT, typeAccent, renderNodeCard };
 export const CANVAS_GEOMETRY = { CARD_W, CARD_H, COL_GAP, ROW_GAP, CANVAS_PAD };
 export function __canvasStateForTest() {
     return { graphData, positions, draggingNodeId, pb2BookObjectId, selectedNodeId, nodeDetails, nodePlan };

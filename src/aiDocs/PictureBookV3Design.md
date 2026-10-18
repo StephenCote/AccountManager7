@@ -733,6 +733,21 @@ RenderPlan
      for ChapBook lock parity.
    - Inpaint strategies use it as the base/scene description, and actor regions still compile from
      actor rows.
+4. **[2026-10-17 (P3-5), as built — `location`:** the member is `{locationId, variantId, revisionHash,
+   renderArtifactId, description}`. `locationId`/`variantId` are the objectIds of the scene's bound
+   `olio.pb.location`/`olio.pb.locationVariant` (both null when the scene names none); `revisionHash` is the
+   location's watched-field hash as read for this plan (`PbWatchedFields.refHashOf` on the one record read —
+   never a second read); `renderArtifactId` is the approved render the plan carries (the variant's when a
+   variant is named, else the location's; null → `LOCATION_TEXT_ONLY`, §19); `description` is the location's
+   subject text (description, then the variant's qualifiers) followed by the scene's own setting text —
+   composed, not replaced, because the setting is the compiled prompt's MAIN clause and dropping the scene's
+   action/mood for a located scene would be a silent loss until the Phase 4 composition model. Key names
+   deviate from the sketch above (`objectId, variant, text`) to follow the other members' `*Id` idiom; null
+   members are omitted from the JSON, so a plan for a scene without a location serialises exactly as before.
+   `inputs` keys: `location` (binding role `location`, ordinal 0) and `locationVariant` (the same role's
+   ordinal 1 — a key naming that binding, not a role of its own). A pre-P3-5 SCENE manifest carried the
+   **scene's** objectId in `locationId`; the first re-plan of such a scene is a one-time hash inequality, not
+   a re-roll. Built by `PbRenderPlanUtil.resolveSceneLocation`; Implementation §6.C 178 (D1, D6).]**
 
 ### 13. Strategy selection
 
@@ -760,6 +775,11 @@ string in the plan.
   creativity value, so the actors are painted into the approved place. That is the notes'
   "background-first".
 - If the location has no approved render, both fall back to text and record a degradation (G-11).
+- **[2026-10-17 (P3-5), as built:** `TEXT_ONLY` **carries** the approved render
+  (`plan.location.renderArtifactId`) and does not consume it — the init-image / reference uses above belong to
+  `SEQUENTIAL_INPAINT` / `DIRECT_REFERENCE`, which arrive in Phase 5; `PbNodeExecutor` and `StageRequest` are
+  unchanged. A render carried but not used by the stage is **not** a degradation and does not change the
+  strategy name or reason. Implementation §6.C 178 (D4, option A).]**
 
 ### 14. Prompt compilers
 
@@ -987,6 +1007,33 @@ has a `code`, a human `message`, and the `actorId`/`stage` it applies to.
 
 The scene card shows a summary ("5 characters: 3 referenced, 2 regional"). The review screen shows
 the full list. A degradation never stops the render.
+
+**[2026-10-17 (P3-5), as built — `LOCATION_TEXT_ONLY`:** emitted by `PbRenderPlanUtil.resolveSceneLocation` on
+the BASE stage (where the render would have been used) when the scene **names** a location
+(`olio.pb.scene.location`) whose render subject has no approved render. The subject is the variant when
+`locationVariant` is named — the location's own render is never a substitute for a missing variant render, and
+the message names the variant ("No approved render for variant Night; setting described in text") — else the
+location; a subject the planning user cannot read counts as no render (`… (not readable)`). A scene that names
+no location gets **no** degradation: plain text-only is the §29 default, not a shortfall. The `approvedRender`
+pointer is taken as truth; the artifact's own review status is not re-read (Implementation ⚠ 175 e). The same
+degradation is the **auto-approve veto**: `PbArtifactUtil.autoApprove` skips a degraded attempt
+(`"degraded: LOCATION_TEXT_ONLY: …"`) so a located scene rendered without its approved place waits for a
+human — transitional until the Phase 4 composition model decides which degradations are review-worthy.
+Implementation §6.C 178 (D2, D3, D5).]**
+
+**[2026-10-17 (P3-5 hardening), as built — refused references:** the resolver trusts no pointer it did not
+check. A `location` outside the book's Olio world (`PbLocationUtil.sameWorld` false — reachable only through the
+generic `POST /rest/model` route, which gates a foreign key on the caller's READ right, not on the parent) is
+treated exactly as an unreadable one: no revision hash, no text, no render, the variant falls with it, and the
+BASE degradation reads "Location <name> is not in this book's world; setting described in text". A
+`locationVariant` whose own `location` is not the scene's location is refused by itself: the location keeps its
+hash and text, `inputs.locationVariant` is present and null, no render is carried (D3: the location's render is
+never the variant's), and the message reads "Variant <variant> is not a variant of location <location>; setting described in text". A variant
+the planning user cannot read is reported as unreadable before the parent check. Both are `LOCATION_TEXT_ONLY`
+on BASE — no new degradation code — so the auto-approve veto above covers them. `PbNodeExecutor.bindSceneLocation`
+still binds whatever the scene points at; the binding is a watched-set pointer, not a render decision. The
+same-world rule and the facade routes (`requireLocationOfBook`, `requireVariantOfBook`) are the write-side
+guards; this is the read-side one. Implementation §6.C 178 (t).]**
 
 ### 20. Failure semantics
 
@@ -1243,6 +1290,53 @@ Verified by `TestChapBookV3Render`, `TestPbRenderPlanExecutor`, `TestPbRenderPat
 `.39`), `TestChapBookRestContract` / `TestChapBookServiceRenderPath` / `TestFeatureConfigService` (Service7
 H2) and the ChapBook Playwright group (Docker stack) — `PictureBookV3Implementation.md` §10.6, §6.C 165.]**
 
+**[2026-10-17 (P3-6), as built — ChapBook optional locations.** A page is an `olio.pb.scene`, so it already carries
+the nullable `location` / `locationVariant` FKs of §7.2, and the plan path treats a page exactly as a scene:
+`PbNodeExecutor.executeChapBookPage` now projects both FKs when it reads the page, and `PbRenderPlanUtil.buildScenePlan`
+→ `resolveSceneLocation` (§19, P3-5) fills `plan.location` for it. What that means per case:
+- **Unset (the default, and every page today):** unchanged from P2-6 — `plan.location` is `{description: sdPrompt}`,
+  no `inputs.location`, no degradation, no binding; `TestChapBookV3Render`'s verbatim prompt pins still hold.
+- **Set:** the location must be in the book's world (D4 — the ChapBook's own world, §7.1; another book's location
+  is refused with "Location <name> is not in this book's world" and the page compiles text-only). The compiled
+  MAIN clause is the location's subject text (description, then the variant's qualifiers) joined to the page's
+  `sdPrompt` by `joinSentences`, so **the page's `sdPrompt` is no longer the whole prompt sent**: the composed
+  prompt is visible on the review screen's plan inspector and the plan route, and the page card's
+  "located: <name>" chip is P3-7 (§26). `inputs.location` carries the location's revision hash (and
+  `inputs.locationVariant` the variant's), so the page's input hash changes when the location is edited. The
+  subject's `approvedRender` is carried in `plan.location.renderArtifactId` (TEXT_ONLY still sends text only; the
+  reference/init-image strategies that consume it are Phase 5), and a subject without one adds `LOCATION_TEXT_ONLY`,
+  which **vetoes auto-approve for the page** — D5 applies to pages with no page-specific code, because
+  `applyAutoApprove` folds the plan's degradations for every plan-driven node (resolves Implementation §6.C 178 ask 2).
+- **Binding — the node binds what the plan accepted, never the raw pointer.** After a successful render the page's
+  LANDSCAPE node binds the location record at role `location` ordinal 0 (the variant at ordinal 1) through
+  `bindSceneLocation(graph, node, plan)`, the same bindings a PictureBook scene node gets, so `PbStaleUtil.scan`
+  reports the page as `refDrift` when the location's watched fields change — and marks it STALE even when
+  auto-approve pinned it (a pin stops the runner, not the scan; §10). The binder reads the plan's verdict, not the
+  scene's FK: a refused location (`revisionHash` null) binds nothing, a refused variant (`inputs.locationVariant`
+  null) leaves ordinal 1 unbound, and a re-pointed or un-pointed page is re-bound or unbound on its next render
+  (`syncRecordBinding` rebinds a changed reference and drops a cleared one), so the stored `inputHash` is always the
+  recompute over the bindings the plan actually used. A failed render binds nothing and leaves no input hash; the
+  plan artifact still records what was attempted (§12 rule 1). The page's landscape artifact is never promoted to
+  the location's `approvedRender` — promotion is reserved for LOCATION-scoped nodes (§7.1), so a page render cannot
+  become the place's canonical image.
+- **Pointing a page at a location** has no route or Ux in P3-6: the proposal pass (§9) skips pages (they carry no
+  `setting`), so until P3-7's Locations tab the only write path is generic `PATCH /rest/model` on
+  `olio.pb.scene.location`. **A pointer edit is not a staleness event** — nothing marks the page STALE when
+  `location` is set or cleared; the bound is the next render. PictureBook scenes have the same gap on
+  proposal-accept and merge (Implementation §6.C 179 c), and P3-7's pointing Ux must go through a facade route that
+  calls `markSceneNodeStale`, not generic PATCH.
+- **Unreadable pointer:** a page whose `location` the caller cannot read is itself unreadable (nested-foreign PBAC,
+  Implementation §6.C 177), so the page render 404s rather than rendering without its place.
+- **v1** (`chapbook.renderPath=v1`) ignores the pointer entirely; the rollback is untouched.
+No model, constant, route, prompt or degradation code is added. Verified by `TestChapBookPageLocation` (Objects7,
+SD-live on `.39`: a located page renders with the location in the sent prompt, auto-approves, binds, and drifts when
+the location is edited; an unrendered location degrades and vetoes auto-approve; a failed render keeps the plan and
+binds nothing; an unlocated page plans as before; another book's location is refused and, rendered, binds nothing;
+a page at a variant binds both ordinals, re-pointed re-binds ordinal 0 and drops ordinal 1, un-pointed drops both
+and auto-approves), the P2-6 regressions,
+`TestChapBookRestContract` / `TestChapBookServiceRenderPath` (Service7 H2) and the ChapBook Playwright group (Docker
+stack) — `PictureBookV3Implementation.md` §11.6, §6.C 179.]**
+
 ### 24.1 Chat scene renderer: a third consumer of the same code
 
 Chat's scene generator also renders through this code:
@@ -1316,7 +1410,19 @@ Book ▸ Style | Characters | Locations | Scenes | Cover & Art | Review queue
 - **Characters:** the existing Manage Characters, plus each character's book portrait chain (select
   or approve), and "affected scenes: 3 [Review] [Regenerate]".
 - **Locations:** the library grid. Per location: description, variants, render chain,
-  approve/lock, "used by scenes 3, 7, 12".
+  approve/lock, "used by scenes 3, 7, 12". **[2026-10-17 (P3-7), as built:** `features/pictureBookLocations.js` at
+  `/picture-book/:bookObjectId/locations` (header link `pb2-locations-link`, v3 books), fed by one `GET /{book}/locations` and
+  refetched after every write. Per card: name, kind, description, aliases, lock, `usedByScenes` from the DTO (no client join),
+  variants with their own chain, and the render chain reusing `pictureBookReview.js`'s exported `orderNewestFirst` /
+  `reviewStatusOf` / `isAutoApproved` / `artifactActions(a, node.pinned)` with Use this / Approve / Reject — `renderArtifact` is
+  not extracted. New / Edit (inline) / Lock / Delete / Add variant / Merge; Render → `202 {jobId}` polled with `pollJob` and the
+  P1-10 `deriveStageList` progress, an AbortController stopping the poll on route change; a pinned LOCATION node's 409 is answered
+  in place with "Unpin and render", never a silent unpin. Proposed-locations panel: Propose (synchronous), status filter,
+  Accept / Merge-into (`sameAs`) / Dismiss. The canvas gives LOCATION nodes their own rank and accent; `PbPlanInspector` shows the
+  location/variant names and the location input kind. ChapBook page cards carry the `cb-page-location` chip ("located: <name>[ /
+  <variant>]" or "unlocated") that opens a picker Dialog (Cancel / Clear / Apply) calling `PUT /{book}/scene/{id}/location` (§27)
+  and reporting the `nodeStale` / `pinned` outcome; the reader page chip reads `locationName` / `locationVariantName` from
+  `/{book}/pages`.]**
 - **Scenes:** a card list with a status chip (stale/review/approved), degradation summary and
   thumbnail.
 - **Scene detail:** Story | Composition | Render | Review. The composition board from the notes
@@ -1348,6 +1454,7 @@ Ux implementation follows Ux752 patterns. Read `features/pictureBook.js`,
 | `GET/PUT /{book}/style`, `POST /{book}/style/lock` | Style CRUD/lock |
 | `GET/POST /{book}/locations`, `PATCH/DELETE /location/{id}`, `POST /location/{id}/variants` | Location library. **[2026-10-16 (P3-4), as built: every location route is book-scoped — `GET|POST /{book}/locations`, `GET|PATCH|DELETE /{book}/location/{id}`, `POST /{book}/location/{id}/variants`, `POST /{book}/location/{id}/lock`, `POST /{book}/locations/propose` (synchronous), `GET /{book}/locations/proposed`, `POST /{book}/locations/proposed/{pid}/accept|reject`, `POST /{book}/locations/merge`; the book is the authorization anchor and the world is derived from it. Bare-path aliases are an open ask (Implementation ⚠ 175 a).]** |
 | `POST /location/{id}/render?variant=` (async) | Render a location. **[2026-10-16 (P3-4), as built: `POST /{book}/location/{id}/render` with `variant` in the body → `202 {jobId}`; 409 when locked, pinned (an approved render on the subject) or in flight.]** |
+| `PUT /{book}/scene/{sceneId}/location` | **[2026-10-17 (P3-7), as built:** point a scene (or ChapBook page) at a location, `{ locationObjectId?, variantObjectId? }` — both absent clears both FKs (stored as column `0`, read back as null); naming only the variant resolves its parent location. Gate order: 404 book unreadable, 403 unless the caller may update the book, 404 scene outside the book, 404 location outside the book's world (D4) or variant under a different location than the one named; non-string ids 400. Writes both FKs as the caller through `AccessPoint` and then `markSceneNodeStale` (§24 P3-6 (c) — a pointer edit is a staleness event); returns `{sceneObjectId, locationObjectId, locationName, variantObjectId, variantName, updated, nodeStale, pinned, nodeStatus}`. A pinned node is marked STALE like any other and echoed `pinned:true`, not a 409 — only `nextRunnable` honours the pin. `GET /{book}/pages` now carries `locationObjectId`, `locationName`, `locationVariantObjectId`, `locationVariantName` per page.]** |
 | `POST /{book}/compose` → 202, `POST /{book}/scene/{id}/compose` | Whole-book, in-order composition job (§9.1); single-scene re-compose. Both respect `userEdited` |
 | `GET/POST /character/{id}/wardrobe`, `PATCH /scene-actor/{id}/apparel` | Wardrobe alternates; per-scene outfit (§6) |
 | `GET/PUT /{book}/settings/auto-approve` | Auto-approve toggle (§10 rule 5) |
@@ -1497,7 +1604,7 @@ render path.
 |---|---|
 | Style | migrated per §28.1, else deployment defaults with STANDARD preset and SQUARE format |
 | Composition | the lazy per-scene fallback (§9.1); if the LLM is unavailable, a MIGRATED-style composition from scene fields, flagged for re-compose |
-| Location | text-only (`LOCATION_TEXT_ONLY`) |
+| Location | text-only (`LOCATION_TEXT_ONLY`) **[2026-10-17 (P3-5), as built: a scene that names a location (or variant) without an approved render → text + `LOCATION_TEXT_ONLY`; a scene that names none → plain text-only with **no** degradation — nothing was promised, nothing is missing. Implementation §6.C 178 (D2).]** |
 | Camera | MEDIUM, EYE_LEVEL; WIDE when there are more than 3 actors |
 | Portrait | render on first use; while missing → `ACTOR_TEXT_ONLY` |
 

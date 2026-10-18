@@ -63,6 +63,9 @@ import org.junit.Test;
  *     stranger, 400 for a bad preset, 500 for no SD server, and the owner's response carries the plan,
  *     the estimate and the content hash with no server URL anywhere in it.</li>
  * </ol>
+ * Every scene here names no location, so (P3-5) the plan's {@code location} carries no identity, hash or
+ * render, no {@code inputs} and no {@code LOCATION_TEXT_ONLY}; the located shape is
+ * {@code TestPbScenePlanLocation}'s.
  */
 public class TestRenderPlanLive extends BaseTest {
 
@@ -153,7 +156,14 @@ public class TestRenderPlanLive extends BaseTest {
 		assertNotNull(plan.getStyle());
 		assertNotNull("the style revision hash is always present", plan.getStyle().getRevisionHash());
 		assertNotNull(plan.getLocation());
-		assertEquals(f.scene.get(FieldNames.FIELD_OBJECT_ID), plan.getLocation().getLocationId());
+		assertNull("a scene that names no location carries no location identity (P3-5; it used to carry the scene objectId)",
+			plan.getLocation().getLocationId());
+		assertNull(plan.getLocation().getVariantId());
+		assertNull(plan.getLocation().getRevisionHash());
+		assertNull(plan.getLocation().getRenderArtifactId());
+		assertFalse("no location named is plain text-only, not a degradation: " + plan.getDegradations(),
+			hasDegradation(plan, RenderPlan.Degradation.LOCATION_TEXT_ONLY));
+		assertTrue("no location named puts nothing in inputs: " + plan.getInputs(), plan.getInputs().isEmpty());
 		assertTrue("location text comes from the scene's setting: " + plan.getLocation().getDescription(),
 			plan.getLocation().getDescription().contains(SETTING));
 		assertTrue("...and action", plan.getLocation().getDescription().contains(ACTION));

@@ -17,8 +17,18 @@
  *                        share one tavern".
  *   PB_SD_TESTS=1      — POST .../render → 202 job → /rest/job poll → PNG bytes from the MediaServlet →
  *                        approve pins approvedRender → lock refuses render/approve/reject → variant render.
+ *                        P3-5: POST /{book}/scene/{scene}/plan for a scene at the approved location carries
+ *                        {locationId, revisionHash, renderArtifactId}; at an unrendered variant it is
+ *                        LOCATION_TEXT_ONLY naming the variant; after the variant is approved its render rides.
  *   PB_LOC_DB_PROOF=1  — §7.2 exit criterion "deleting the world removes both": reads the stack DB
  *                        (docker exec am7-pg psql, READ ONLY) before and after DELETE /{book}/reset.
+ *   P3-7 Ux (default) — the Locations tab in the browser (loginAsSharedUser): reached from the reader
+ *                        header, create / variant / lock / unlock / delete through the cards, and the
+ *                        ChapBook review page chip + picker pointing a scene (PUT /scene/{s}/location)
+ *                        so "used by" on the card and the variant reflects it. The UI works on its own
+ *                        "The Lighthouse" so the tavern the later tiers read is never touched.
+ *   P3-7 Ux + SD       — PB_SD_TESTS=1: Render on the pinned tavern card is refused in place; "Unpin and
+ *                        render" runs the job to a new artifact in the card's chain. No timing asserted.
  *
  * Run (Windows / Docker stack — 127.0.0.1, never localhost):
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 PB_LLM_TESTS=1 PB_SD_TESTS=1 PB_LOC_DB_PROOF=1 \
@@ -26,6 +36,7 @@
  */
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { ensureSharedTestUser, ensureChatConfig } from './helpers/api.js';
+import { loginAsSharedUser } from './helpers/chapbook.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -69,6 +80,22 @@ let tavern;            // { objectId, poiObjectId, name }
 let variantObjectId;
 let locationArtifactObjectId;
 let locationDataObjectId;
+let locatedSceneObjectId;   // P3-5: a scene whose location is the approved tavern
+let variantSceneObjectId;   // P3-5: a scene at the tavern's dusk/rain variant
+let preApprovalVariantInputHash;  // P3-5: inputs.locationVariant before the variant has an approved render
+let locatedPlanBefore;            // P3-5: the located scene's plan before the variant is approved
+
+const P35_SETTING = 'Rain hammers the shutters while the fiddler tunes up';
+
+// Mirror of PbRenderPlanUtil.joinSentences: a trailing stop or clause separator is kept as the join, else ". ".
+function joinSentences(parts) {
+    let s = '';
+    for (const p of parts) {
+        if (s.length) s += (/[.!?;,:]$/.test(s) ? ' ' : '. ');
+        s += p;
+    }
+    return s;
+}
 
 async function errOf(resp) {
     const t = await resp.text();
@@ -106,6 +133,20 @@ async function listLocations() {
 async function createLocation(body) {
     const r = await api.post(PB + '/' + bookObjectId + '/locations', { data: body });
     return expectStatus(r, 200, 'POST /locations ' + JSON.stringify(body));
+}
+
+// POST /{book}/scene/{scene}/plan (P2-4 inspector): the RenderPlan map + estimate + contentHash, nothing persisted.
+async function planOf(sceneOid, label) {
+    const r = await api.post(PB + '/' + bookObjectId + '/scene/' + sceneOid + '/plan', { data: {}, timeout: 120000 });
+    const plan = await expectStatus(r, 200, 'POST /plan ' + label);
+    console.log(TAG + ' plan ' + label + ': location=' + JSON.stringify(plan.location) + ' inputs=' + JSON.stringify(plan.inputs)
+        + ' degradations=' + JSON.stringify(plan.degradations || []) + ' strategy=' + JSON.stringify(plan.strategy));
+    expect(plan.location, 'plan carries a location member: ' + JSON.stringify(plan).slice(0, 400)).toBeTruthy();
+    return plan;
+}
+
+function codesOf(plan) {
+    return (plan.degradations || []).map(d => d.code);
 }
 
 async function setLock(oid, locked) {
@@ -556,6 +597,67 @@ test.describe('LOCATION node render, approve pins, lock (PB_SD_TESTS=1)', () => 
         expect(errMsg(await expectStatus(r, 409, 'render while pinned'))).toMatch(/pinned/i);
     });
 
+    test('P3-5: the plan of a scene at the approved location carries the render; an unrendered variant is LOCATION_TEXT_ONLY', async () => {
+        test.setTimeout(10 * 60 * 1000);
+        // The scene FKs patch by numeric id; the location DTO carries objectIds only.
+        const locRec = await expectStatus(await api.get(REST + '/model/olio.pb.location/' + tavern.objectId), 200, 'GET olio.pb.location by id');
+        const varRec = await expectStatus(await api.get(REST + '/model/olio.pb.locationVariant/' + variantObjectId), 200, 'GET olio.pb.locationVariant by id');
+        expect(locRec.id && varRec.id, 'numeric ids: ' + JSON.stringify([locRec, varRec]).slice(0, 300)).toBeTruthy();
+        const locRef = { schema: 'olio.pb.location', id: locRec.id, objectId: tavern.objectId };
+        const varRef = { schema: 'olio.pb.locationVariant', id: varRec.id, objectId: variantObjectId };
+        const locDescription = (await getLocation(tavern.objectId)).description;
+
+        const mk = async (idx, title, extra) => {
+            const body = Object.assign({
+                schema: 'olio.pb.scene', name: 'Scene ' + bookSlug + ' ' + idx, groupId: bookGroupId, groupPath: bookGroupPath,
+                book: { schema: 'olio.pb.book', id: bookId, objectId: bookObjectId }, sceneIndex: idx, title, setting: P35_SETTING
+            }, extra);
+            const created = await expectStatus(await api.post(REST + '/model', { data: body }), 200, 'POST olio.pb.scene ' + idx);
+            expect(created && created.objectId, 'scene ' + idx + ' create returned no objectId: ' + JSON.stringify(created)).toBeTruthy();
+            return created.objectId;
+        };
+        locatedSceneObjectId = await mk(101, 'At the Anchor', { location: locRef });
+        variantSceneObjectId = await mk(102, 'At the Anchor, dusk', { location: locRef, locationVariant: varRef });
+
+        // Scene at the approved location: the plan carries the pinned render, names the location, no degradation.
+        const plan = await planOf(locatedSceneObjectId, 'located');
+        expect(plan.location.locationId, 'locationId is the location record').toBe(tavern.objectId);
+        expect(plan.location.variantId == null, 'no variant named: ' + JSON.stringify(plan.location)).toBe(true);
+        expect(plan.location.renderArtifactId, 'the approved render rides the plan').toBe(locationArtifactObjectId);
+        expect(typeof plan.location.revisionHash === 'string' && plan.location.revisionHash.length > 0, 'revisionHash: ' + JSON.stringify(plan.location)).toBe(true);
+        expect(plan.inputs && plan.inputs.location, 'inputs.location: ' + JSON.stringify(plan.inputs)).toBe(plan.location.revisionHash);
+        expect(plan.inputs.locationVariant == null, 'no locationVariant input: ' + JSON.stringify(plan.inputs)).toBe(true);
+        expect(plan.location.description, 'composed: location description, then the scene setting').toBe(joinSentences([locDescription, P35_SETTING]));
+        expect(codesOf(plan), 'no LOCATION_TEXT_ONLY for an approved location').not.toContain('LOCATION_TEXT_ONLY');
+        expect(plan.strategy && plan.strategy.name, 'strategy unchanged by the carried render').toBe('TEXT_ONLY');
+        locatedPlanBefore = plan;
+
+        // Scene at the variant (not rendered yet): the variant is the subject, so text-only naming the variant.
+        const vplan = await planOf(variantSceneObjectId, 'variant-unrendered');
+        expect(vplan.location.locationId).toBe(tavern.objectId);
+        expect(vplan.location.variantId).toBe(variantObjectId);
+        expect(vplan.location.renderArtifactId == null, 'the location render is no substitute for the variant: ' + JSON.stringify(vplan.location)).toBe(true);
+        expect(vplan.location.revisionHash).toBe(plan.location.revisionHash);
+        expect(vplan.inputs.location).toBe(plan.location.revisionHash);
+        expect(typeof vplan.inputs.locationVariant === 'string' && vplan.inputs.locationVariant.length > 0, 'inputs.locationVariant: ' + JSON.stringify(vplan.inputs)).toBe(true);
+        // Location description, then the variant's qualifiers in the fixed order (timeOfDay, weather), then the scene setting.
+        expect(vplan.location.description, 'composed: location, dusk, rain, scene setting').toBe(joinSentences([locDescription, 'dusk', 'rain', P35_SETTING]));
+        const vds = (vplan.degradations || []).filter(x => x.code === 'LOCATION_TEXT_ONLY');
+        expect(vds.length, 'exactly one LOCATION_TEXT_ONLY: ' + JSON.stringify(vplan.degradations)).toBe(1);
+        const d = vds[0];
+        expect(d.stage).toBe('BASE');
+        expect(d.actorId == null, 'not an actor degradation: ' + JSON.stringify(d)).toBe(true);
+        expect(d.message).toBe('No approved render for variant The Drowned Anchor - dusk, rain; setting described in text');
+        expect(vplan.contentHash, 'the two plans differ').not.toBe(plan.contentHash);
+        // The compiled BASE prompt is built from the composed description: prompt shown = prompt sent.
+        const base = vplan.compiled && vplan.compiled.BASE;
+        expect(base && typeof base.prompt === 'string', 'compiled BASE stage: ' + JSON.stringify(Object.keys(vplan.compiled || {}))).toBe(true);
+        expect(base.prompt, 'compiled prompt carries the location description').toContain(locDescription);
+        expect(base.prompt, 'compiled prompt carries the variant qualifiers').toContain('dusk');
+        expect(base.prompt, 'compiled prompt carries the scene setting').toContain(P35_SETTING);
+        preApprovalVariantInputHash = vplan.inputs.locationVariant;
+    });
+
     test('a variant renders through its own LOCATION node (?variant=)', async () => {
         test.setTimeout(30 * 60 * 1000);
         const t0 = Date.now();
@@ -580,6 +682,336 @@ test.describe('LOCATION node render, approve pins, lock (PB_SD_TESTS=1)', () => 
         expect(after.variants.find(x => x.objectId === variantObjectId).approvedRenderObjectId).toBe(v.node.chain[0].objectId);
         // The location's own pin is untouched by the variant's approval.
         expect(after.approvedRenderObjectId).toBe(locationArtifactObjectId);
+
+        // P3-5: now that the variant is approved, the same scene's plan carries the VARIANT's render and the
+        // degradation is gone; the scene at the plain location still carries the location's own render.
+        const vplan = await planOf(variantSceneObjectId, 'variant-approved');
+        expect(vplan.location.locationId).toBe(tavern.objectId);
+        expect(vplan.location.variantId).toBe(variantObjectId);
+        expect(vplan.location.renderArtifactId, 'the variant render rides the plan').toBe(v.node.chain[0].objectId);
+        expect(codesOf(vplan)).not.toContain('LOCATION_TEXT_ONLY');
+        // Only the variant's own input moved (approvedRender is in the variant's watched set); the location's did not.
+        expect(typeof vplan.inputs.locationVariant === 'string' && vplan.inputs.locationVariant.length > 0, 'inputs.locationVariant: ' + JSON.stringify(vplan.inputs)).toBe(true);
+        expect(preApprovalVariantInputHash && locatedPlanBefore, 'pre-approval state captured by the P3-5 test').toBeTruthy();
+        expect(vplan.inputs.locationVariant, 'the variant input hash moves with its approvedRender').not.toBe(preApprovalVariantInputHash);
+        expect(vplan.inputs.location, 'the location input is untouched by the variant approval').toBe(locatedPlanBefore.location.revisionHash);
+        expect(vplan.location.revisionHash).toBe(locatedPlanBefore.location.revisionHash);
+        const locDescription = (await getLocation(tavern.objectId)).description;
+        expect(vplan.location.description, 'the composed text does not change with the render').toBe(joinSentences([locDescription, 'dusk', 'rain', P35_SETTING]));
+        const plan = await planOf(locatedSceneObjectId, 'located-after-variant');
+        expect(plan.location.renderArtifactId).toBe(locationArtifactObjectId);
+        expect(plan.location.variantId == null).toBe(true);
+        expect(plan.location.revisionHash).toBe(locatedPlanBefore.location.revisionHash);
+        expect(plan.inputs.location).toBe(locatedPlanBefore.inputs.location);
+        expect(plan.inputs.locationVariant == null, 'still no locationVariant input: ' + JSON.stringify(plan.inputs)).toBe(true);
+        expect(codesOf(plan)).not.toContain('LOCATION_TEXT_ONLY');
+        expect(plan.location.description).toBe(locatedPlanBefore.location.description);
+        expect(plan.contentHash, 'the located scene\'s plan is unchanged by the variant approval').toBe(locatedPlanBefore.contentHash);
+    });
+});
+
+// ────────────────────────────── P3-7: the Locations tab in the browser ──────────────────────────────
+const UI_SCENE_INDEX = 201;
+const LIGHTHOUSE = { name: 'The Lighthouse', description: 'A white lighthouse on the headland, gulls wheeling', kind: 'exterior', aliases: ['the light', 'headland light'] };
+
+async function openLibrary(page) {
+    await page.goto('/#!/picture-book/' + bookObjectId + '/locations', { timeout: 30000 });
+    await expect(page.getByTestId('pb-loc')).toBeVisible({ timeout: 30000 });
+    await expect(page.getByTestId('pb-loc-grid')).toBeVisible({ timeout: 30000 });
+}
+
+function cardOf(page, locationObjectId) {
+    return page.locator('[data-testid="pb-loc-card"][data-location-id="' + locationObjectId + '"]');
+}
+
+function toast(page, text) {
+    return page.locator('.toast-text', { hasText: text });
+}
+
+test.describe('location library Ux (default tier)', () => {
+    let uiSceneObjectId;            // scene 201 — the CRUD tier proved the book scene-less, so the chip test seeds its own page
+    let lighthouse;                 // { objectId, name } — created through the New-location dialog
+    let lighthouseVariant;          // { objectId, name } — created through the Add-variant dialog
+
+    test.beforeAll(async () => {
+        const body = {
+            schema: 'olio.pb.scene', name: 'Scene ' + bookSlug + ' ' + UI_SCENE_INDEX, groupId: bookGroupId, groupPath: bookGroupPath,
+            book: { schema: 'olio.pb.book', id: bookId, objectId: bookObjectId }, sceneIndex: UI_SCENE_INDEX,
+            title: 'The Keeper', setting: 'The lighthouse gallery at dusk, the lamp not yet lit'
+        };
+        const created = await expectStatus(await api.post(REST + '/model', { data: body }), 200, 'POST olio.pb.scene ' + UI_SCENE_INDEX);
+        expect(created && created.objectId, 'scene ' + UI_SCENE_INDEX + ' create returned no objectId: ' + JSON.stringify(created)).toBeTruthy();
+        uiSceneObjectId = created.objectId;
+    });
+
+    test('reached from the reader header; the grid lists what GET /locations returns; New creates a location', async ({ page }) => {
+        test.setTimeout(5 * 60 * 1000);
+        await loginAsSharedUser(page);
+        await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
+        const link = page.getByTestId('pb2-locations-link');
+        await expect(link).toBeVisible({ timeout: 30000 });
+        await link.click();
+        await expect(page).toHaveURL(new RegExp('#!/picture-book/' + bookObjectId + '/locations$'));
+        await expect(page.getByTestId('pb-loc')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('pb-loc-grid')).toBeVisible({ timeout: 30000 });
+
+        // The grid is the API list, card for card.
+        const before = (await listLocations()).locations;
+        expect(before.map(l => l.objectId), 'the tavern from the CRUD tier is listed').toContain(tavern.objectId);
+        await expect(page.getByTestId('pb-loc-card')).toHaveCount(before.length);
+        for (const l of before) {
+            await expect(cardOf(page, l.objectId)).toHaveAttribute('data-location-name', l.name);
+            await expect(cardOf(page, l.objectId).getByTestId('pb-loc-description')).toHaveText(l.description || 'No description');
+        }
+        await expect(page.getByTestId('pb-loc-count')).toHaveText(before.length + ' location' + (before.length === 1 ? '' : 's'));
+
+        await page.getByTestId('pb-loc-new').click();
+        await expect(page.getByTestId('pb-loc-new-form')).toBeVisible();
+        await page.getByTestId('pb-loc-new-name').fill(LIGHTHOUSE.name);
+        await page.getByTestId('pb-loc-new-description').fill(LIGHTHOUSE.description);
+        await page.getByTestId('pb-loc-new-kind').selectOption(LIGHTHOUSE.kind);
+        await page.getByTestId('pb-loc-new-aliases').fill(LIGHTHOUSE.aliases.join(', '));
+        await page.getByTestId('pb-loc-new-create').click();
+        await expect(page.getByTestId('pb-loc-new-form')).toHaveCount(0, { timeout: 30000 });
+        await expect(toast(page, 'Created ' + LIGHTHOUSE.name)).toBeVisible({ timeout: 15000 });
+
+        const after = (await listLocations()).locations;
+        const rec = after.find(l => l.name === LIGHTHOUSE.name);
+        expect(rec, 'the UI-created location is in GET /locations: ' + JSON.stringify(after.map(l => l.name))).toBeTruthy();
+        expect(after.length).toBe(before.length + 1);
+        expect(String(rec.kind).toLowerCase()).toBe(LIGHTHOUSE.kind);
+        expect(rec.description).toBe(LIGHTHOUSE.description);
+        expect(rec.aliases).toEqual(LIGHTHOUSE.aliases);
+        expect(rec.locked).toBe(false);
+        expect(rec.usedByScenes || []).toEqual([]);
+        lighthouse = { objectId: rec.objectId, name: rec.name };
+        console.log(TAG + ' UI created ' + rec.name + ' ' + rec.objectId);
+
+        const card = cardOf(page, lighthouse.objectId);
+        await expect(card).toBeVisible({ timeout: 30000 });
+        await expect(card).toHaveAttribute('data-location-name', LIGHTHOUSE.name);
+        await expect(card).toHaveAttribute('data-locked', '0');
+        await expect(card.getByTestId('pb-loc-kind')).toHaveText(LIGHTHOUSE.kind);
+        await expect(card.getByTestId('pb-loc-description')).toHaveText(LIGHTHOUSE.description);
+        await expect(card.getByTestId('pb-loc-alias')).toHaveText(LIGHTHOUSE.aliases);
+        await expect(card.getByTestId('pb-loc-used-by')).toHaveText('Not used by any scene');
+        await expect(card.getByTestId('pb-loc-not-rendered')).toHaveText('Not rendered yet');
+        await expect(card.getByTestId('pb-loc-variant')).toHaveCount(0);
+        await expect(page.getByTestId('pb-loc-card')).toHaveCount(after.length);
+    });
+
+    test('Add variant creates one; Lock disables edit / render / variant / delete and Unlock restores them', async ({ page }) => {
+        test.setTimeout(5 * 60 * 1000);
+        expect(lighthouse, 'created by the previous test').toBeTruthy();
+        await loginAsSharedUser(page);
+        await openLibrary(page);
+        const card = cardOf(page, lighthouse.objectId);
+        await expect(card).toBeVisible({ timeout: 30000 });
+
+        await card.getByTestId('pb-loc-add-variant').click();
+        await expect(page.getByTestId('pb-loc-variant-form')).toBeVisible();
+        await page.getByTestId('pb-loc-variant-timeOfDay').fill('dusk');
+        await page.getByTestId('pb-loc-variant-create').click();
+        await expect(page.getByTestId('pb-loc-variant-form')).toHaveCount(0, { timeout: 30000 });
+        const addedToast = toast(page, /^Added variant /);
+        await expect(addedToast).toBeVisible({ timeout: 15000 });
+        const addedText = await addedToast.textContent();
+
+        const loc = await getLocation(lighthouse.objectId);
+        expect(loc.variants.length, 'one variant: ' + JSON.stringify(loc.variants)).toBe(1);
+        const v = loc.variants[0];
+        expect(v.timeOfDay).toBe('dusk');
+        expect(v.locationObjectId).toBe(lighthouse.objectId);
+        expect(addedText, 'the toast names the server-derived variant').toBe('Added variant ' + v.name);
+        lighthouseVariant = { objectId: v.objectId, name: v.name };
+        console.log(TAG + ' UI created variant ' + v.name + ' ' + v.objectId);
+
+        const row = card.locator('[data-testid="pb-loc-variant"][data-variant-id="' + v.objectId + '"]');
+        await expect(row).toBeVisible({ timeout: 30000 });
+        await expect(row.getByTestId('pb-loc-variant-name')).toHaveText(v.name);
+        await expect(row.getByTestId('pb-loc-variant-used-by')).toHaveText('Not used by any scene');
+        await expect(row.getByTestId('pb-loc-not-rendered')).toHaveText('Not rendered yet');
+        await expect(row.getByTestId('pb-loc-variant-render')).toBeEnabled();
+
+        // Lock: the card reflects the server echo, every write control on it is disabled, the API agrees.
+        await card.getByTestId('pb-loc-lock').click();
+        await expect(toast(page, new RegExp('^Locked ' + LIGHTHOUSE.name + '$'))).toBeVisible({ timeout: 15000 });
+        await expect(card).toHaveAttribute('data-locked', '1', { timeout: 30000 });
+        await expect(card.getByTestId('pb-loc-locked')).toHaveText('Locked');
+        await expect(card.getByTestId('pb-loc-lock')).toHaveText(/Unlock/);
+        for (const t of ['pb-loc-edit', 'pb-loc-render', 'pb-loc-add-variant', 'pb-loc-delete', 'pb-loc-merge']) {
+            await expect(card.getByTestId(t), t + ' disabled while locked').toBeDisabled();
+        }
+        await expect(row.getByTestId('pb-loc-variant-render')).toBeDisabled();
+        expect((await getLocation(lighthouse.objectId)).locked).toBe(true);
+
+        await card.getByTestId('pb-loc-lock').click();
+        await expect(toast(page, new RegExp('^Unlocked ' + LIGHTHOUSE.name + '$'))).toBeVisible({ timeout: 15000 });
+        await expect(card).toHaveAttribute('data-locked', '0', { timeout: 30000 });
+        await expect(card.getByTestId('pb-loc-locked')).toHaveCount(0);
+        for (const t of ['pb-loc-edit', 'pb-loc-render', 'pb-loc-add-variant', 'pb-loc-delete']) {
+            await expect(card.getByTestId(t), t + ' enabled after unlock').toBeEnabled();
+        }
+        await expect(row.getByTestId('pb-loc-variant-render')).toBeEnabled();
+        expect((await getLocation(lighthouse.objectId)).locked).toBe(false);
+    });
+
+    test('ChapBook review: the page chip opens the picker; Apply points the scene at the variant and the library shows it as used; delete is refused; Clear un-points it', async ({ page }) => {
+        test.setTimeout(8 * 60 * 1000);
+        expect(lighthouse && lighthouseVariant && uiSceneObjectId, 'fixtures from the previous tests').toBeTruthy();
+        await loginAsSharedUser(page);
+        await page.goto('/#!/chap-book/review/' + bookObjectId, { timeout: 30000 });
+        const chip = page.locator('[data-testid="cb-page-location"][data-scene-oid="' + uiSceneObjectId + '"]');
+        await expect(chip).toBeVisible({ timeout: 30000 });
+        await expect(chip).toContainText('unlocated');
+        await expect(chip).toHaveAttribute('data-location-id', '');
+        await expect(chip).toBeEnabled();
+
+        await chip.click();
+        await expect(page.getByTestId('cb-page-location-picker')).toBeVisible();
+        const select = page.getByTestId('cb-page-location-select');
+        await expect(select).toBeVisible({ timeout: 15000 });
+        await expect(page.getByTestId('cb-page-location-empty')).toHaveCount(0);
+        await expect(page.getByTestId('cb-page-location-error')).toHaveCount(0);
+        await expect(page.getByTestId('cb-page-location-apply')).toBeDisabled();
+        await expect(page.getByTestId('cb-page-location-clear')).toBeDisabled();
+        await select.selectOption(lighthouse.objectId);
+        const variantSelect = page.getByTestId('cb-page-location-variant');
+        await expect(variantSelect).toBeVisible();
+        await variantSelect.selectOption(lighthouseVariant.objectId);
+        await expect(page.getByTestId('cb-page-location-apply')).toBeEnabled();
+        await page.getByTestId('cb-page-location-apply').click();
+        await expect(page.getByTestId('cb-page-location-picker')).toHaveCount(0);
+        await expect(toast(page, 'Page located: ' + lighthouse.name + ' / ' + lighthouseVariant.name)).toBeVisible({ timeout: 15000 });
+        await expect(chip).toHaveAttribute('data-location-id', lighthouse.objectId, { timeout: 30000 });
+        await expect(chip).toHaveAttribute('data-variant-id', lighthouseVariant.objectId);
+        await expect(chip).toContainText('located: ' + lighthouse.name + ' / ' + lighthouseVariant.name);
+
+        // The API is the oracle for "used by": the location DTO names the scene (with its variant) and so does the variant.
+        let loc = await getLocation(lighthouse.objectId);
+        let used = (loc.usedByScenes || []).find(u => u.sceneObjectId === uiSceneObjectId);
+        expect(used, 'usedByScenes: ' + JSON.stringify(loc.usedByScenes)).toBeTruthy();
+        expect(used.sceneIndex).toBe(UI_SCENE_INDEX);
+        expect(used.variantObjectId).toBe(lighthouseVariant.objectId);
+        expect((loc.usedByScenes || []).length, 'only this scene points at the lighthouse').toBe(1);
+        let vUsed = (loc.variants[0].usedByScenes || []).map(u => u.sceneObjectId);
+        expect(vUsed, 'variant usedByScenes').toEqual([uiSceneObjectId]);
+
+        await openLibrary(page);
+        const card = cardOf(page, lighthouse.objectId);
+        await expect(card).toBeVisible({ timeout: 30000 });
+        await expect(card.getByTestId('pb-loc-used-by')).toHaveText('Used by scene ' + UI_SCENE_INDEX);
+        const row = card.locator('[data-testid="pb-loc-variant"][data-variant-id="' + lighthouseVariant.objectId + '"]');
+        await expect(row.getByTestId('pb-loc-variant-used-by')).toHaveText('Used by scene ' + UI_SCENE_INDEX);
+
+        // A location a scene still points at cannot be deleted; the server's refusal is the toast, verbatim.
+        await card.getByTestId('pb-loc-delete').click();
+        await expect(page.locator('.am7-dialog-title', { hasText: 'Delete location' })).toBeVisible();
+        await page.locator('.am7-dialog-btn-destructive').click();
+        await expect(toast(page, /still the location of 1 scene/)).toBeVisible({ timeout: 15000 });
+        await expect(card).toBeVisible();
+        await getLocation(lighthouse.objectId);
+
+        await page.goto('/#!/chap-book/review/' + bookObjectId, { timeout: 30000 });
+        await expect(chip).toBeVisible({ timeout: 30000 });
+        await expect(chip).toHaveAttribute('data-location-id', lighthouse.objectId);
+        await expect(chip).toContainText('located: ' + lighthouse.name + ' / ' + lighthouseVariant.name);
+        await chip.click();
+        await expect(page.getByTestId('cb-page-location-picker')).toBeVisible();
+        await expect(page.getByTestId('cb-page-location-select')).toHaveValue(lighthouse.objectId, { timeout: 15000 });
+        await expect(page.getByTestId('cb-page-location-variant')).toHaveValue(lighthouseVariant.objectId);
+        await expect(page.getByTestId('cb-page-location-clear')).toBeEnabled();
+        await page.getByTestId('cb-page-location-clear').click();
+        await expect(page.getByTestId('cb-page-location-picker')).toHaveCount(0);
+        await expect(toast(page, 'Page location cleared')).toBeVisible({ timeout: 15000 });
+        await expect(chip).toHaveAttribute('data-location-id', '', { timeout: 30000 });
+        await expect(chip).toHaveAttribute('data-variant-id', '');
+        await expect(chip).toContainText('unlocated');
+
+        loc = await getLocation(lighthouse.objectId);
+        expect((loc.usedByScenes || []).map(u => u.sceneObjectId), 'cleared: ' + JSON.stringify(loc.usedByScenes)).not.toContain(uiSceneObjectId);
+        expect(loc.variants[0].usedByScenes || []).toEqual([]);
+
+        await openLibrary(page);
+        await expect(cardOf(page, lighthouse.objectId).getByTestId('pb-loc-used-by')).toHaveText('Not used by any scene');
+        await expect(row.getByTestId('pb-loc-variant-used-by')).toHaveText('Not used by any scene');
+    });
+
+    test('Delete removes the location from the grid and from GET /locations', async ({ page }) => {
+        test.setTimeout(5 * 60 * 1000);
+        expect(lighthouse, 'created by the first test').toBeTruthy();
+        await loginAsSharedUser(page);
+        await openLibrary(page);
+        const card = cardOf(page, lighthouse.objectId);
+        await expect(card).toBeVisible({ timeout: 30000 });
+        const countBefore = await page.getByTestId('pb-loc-card').count();
+
+        await card.getByTestId('pb-loc-delete').click();
+        await expect(page.locator('.am7-dialog-title', { hasText: 'Delete location' })).toBeVisible();
+        await page.locator('.am7-dialog-btn-destructive').click();
+        await expect(toast(page, 'Deleted ' + LIGHTHOUSE.name)).toBeVisible({ timeout: 30000 });
+        await expect(card).toHaveCount(0, { timeout: 30000 });
+        await expect(page.getByTestId('pb-loc-card')).toHaveCount(countBefore - 1);
+
+        await expectStatus(await api.get(PB + '/' + bookObjectId + '/location/' + lighthouse.objectId), 404, 'deleted lighthouse is gone');
+        const names = (await listLocations()).locations.map(l => l.name);
+        expect(names).not.toContain(LIGHTHOUSE.name);
+        expect(names, 'the tavern the later tiers read is untouched').toContain(tavern.name);
+    });
+});
+
+test.describe('location library Ux: Render from the card (PB_SD_TESTS=1)', () => {
+    test.skip(!SD_ENABLED, 'PB_SD_TESTS=1 not set — live SD render through the Locations tab skipped (a skip, not a pass)');
+
+    test('Render on the pinned tavern is refused in place; Unpin and render runs the job to a new artifact in the chain', async ({ page }) => {
+        test.setTimeout(35 * 60 * 1000);
+        expect(tavern && tavern.objectId, 'tavern from the CRUD tier').toBeTruthy();
+        const before = await getLocation(tavern.objectId);
+        expect(before.node && before.node.pinned === true, 'the SD tier left the tavern pinned: ' + JSON.stringify(before.node)).toBe(true);
+        expect(before.locked, 'the SD tier left the tavern unlocked').toBe(false);
+        const beforeIds = (before.node.chain || []).map(a => a.objectId);
+
+        await loginAsSharedUser(page);
+        await openLibrary(page);
+        const card = cardOf(page, tavern.objectId);
+        await expect(card).toBeVisible({ timeout: 30000 });
+        await expect(card.getByTestId('pb-loc-node-pinned').first()).toHaveText('pinned');
+        for (const id of beforeIds) {
+            await expect(card.locator('[data-testid="pb-loc-artifact"][data-artifact-id="' + id + '"]')).toBeVisible();
+        }
+
+        // The 409 is shown on the card with the server's own sentence, not as a run.
+        await card.getByTestId('pb-loc-render').click();
+        const refusal = card.getByTestId('pb-loc-pinned');
+        await expect(refusal).toBeVisible({ timeout: 30000 });
+        await expect(refusal).toContainText(/pinned/i);
+        await expect(card.getByTestId('pb-loc-run')).toHaveCount(0);
+        await expect(card.getByTestId('pb-loc-render')).toBeEnabled();
+
+        const t0 = Date.now();
+        await card.getByTestId('pb-loc-unpin').click();
+        // The location's own run panel precedes the variants in the card.
+        const run = card.getByTestId('pb-loc-run').first();
+        await expect(run).toBeVisible({ timeout: 60000 });
+        await expect(card.getByTestId('pb-loc-pinned')).toHaveCount(0);
+        await expect(card.getByTestId('pb-loc-render')).toBeDisabled();
+        await expect(card.getByTestId('pb-loc-render')).toHaveText(/Rendering/);
+        expect(await run.getByTestId('pb-loc-run-stage').count(), 'planned stages listed').toBeGreaterThan(0);
+
+        // Never a timing assertion: the ceiling exists so a dead job fails the test rather than hanging it.
+        await expect(run).toHaveAttribute('data-run-terminal', '1', { timeout: 30 * 60 * 1000 });
+        const summary = await run.getByTestId('pb-loc-run-counter').textContent();
+        console.log(TAG + ' UI render of ' + tavern.name + ' terminal after ' + Math.round((Date.now() - t0) / 1000) + ' s: ' + summary);
+        expect(summary).toMatch(/^Render complete/);
+
+        const after = await getLocation(tavern.objectId);
+        const fresh = (after.node.chain || []).map(a => a.objectId).filter(id => beforeIds.indexOf(id) < 0);
+        expect(fresh.length, 'a new artifact in the chain: ' + JSON.stringify(after.node.chain)).toBeGreaterThan(0);
+        expect(after.node.chain.find(a => a.objectId === fresh[0]).dataObjectId, 'the new artifact has bytes').toBeTruthy();
+        await expect(card.locator('[data-testid="pb-loc-artifact"][data-artifact-id="' + fresh[0] + '"]')).toBeVisible({ timeout: 30000 });
+        await expect(card.getByTestId('pb-loc-render')).toBeEnabled();
+        await run.getByTestId('pb-loc-run-dismiss').click();
+        await expect(card.getByTestId('pb-loc-run')).toHaveCount(0);
     });
 });
 

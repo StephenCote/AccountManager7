@@ -712,7 +712,9 @@ export function normalizePlan(plan) {
         compiled: p.compiled && typeof p.compiled === 'object' ? p.compiled : {},
         degradations: Array.isArray(p.degradations) ? p.degradations : [],
         configNotApplied: Array.isArray(p.configNotApplied) ? p.configNotApplied : [],
-        estimate: p.estimate && typeof p.estimate === 'object' ? p.estimate : {}
+        estimate: p.estimate && typeof p.estimate === 'object' ? p.estimate : {},
+        location: p.location && typeof p.location === 'object' ? p.location : {},
+        inputs: p.inputs && typeof p.inputs === 'object' ? p.inputs : {}
     });
 }
 
@@ -746,4 +748,234 @@ export async function loadNodePlan(pb2BookObjectId, artifacts) {
     if (!latest || !latest.objectId) return null;
     let artifact = await getArtifact(pb2BookObjectId, latest.objectId);
     return { artifact: artifact, plan: planFromArtifact(artifact) };
+}
+
+// ── V3 locations library (P3-7) ───────────────────────────────────────
+// Wire shapes are PbServiceFacade's locationDto / variantDto / locationNodeDto / proposalDto, serialized
+// NON_EMPTY: every list below may be absent and every nullable scalar may be missing.
+
+function normalizeUsedBy(list) {
+    return (Array.isArray(list) ? list : []).map(function (u) {
+        u = u || {};
+        return Object.assign({}, u, {
+            sceneObjectId: u.sceneObjectId != null ? u.sceneObjectId : null,
+            sceneIndex: u.sceneIndex != null ? u.sceneIndex : null,
+            variantObjectId: u.variantObjectId != null ? u.variantObjectId : null
+        });
+    });
+}
+
+export function normalizeLocationNode(n) {
+    if (!n || typeof n !== 'object') return null;
+    return Object.assign({}, n, {
+        handle: n.handle != null ? n.handle : null,
+        storedStatus: n.storedStatus != null ? n.storedStatus : null,
+        pinned: !!n.pinned,
+        lastError: n.lastError != null ? n.lastError : null,
+        chain: (Array.isArray(n.chain) ? n.chain : []).map(normalizeArtifact)
+    });
+}
+
+export function normalizeVariant(v) {
+    v = v || {};
+    return Object.assign({}, v, {
+        name: v.name != null ? v.name : null,
+        locationObjectId: v.locationObjectId != null ? v.locationObjectId : null,
+        timeOfDay: v.timeOfDay != null ? v.timeOfDay : null,
+        weather: v.weather != null ? v.weather : null,
+        season: v.season != null ? v.season : null,
+        viewpoint: v.viewpoint != null ? v.viewpoint : null,
+        extra: v.extra != null ? v.extra : null,
+        approvedRenderObjectId: v.approvedRenderObjectId != null ? v.approvedRenderObjectId : null,
+        usedByScenes: normalizeUsedBy(v.usedByScenes),
+        node: normalizeLocationNode(v.node)
+    });
+}
+
+export function normalizeLocation(l) {
+    l = l || {};
+    return Object.assign({}, l, {
+        name: l.name != null ? l.name : null,
+        description: l.description != null ? l.description : null,
+        kind: l.kind != null ? l.kind : null,
+        aliases: Array.isArray(l.aliases) ? l.aliases : [],
+        locked: !!l.locked,
+        approvedRenderObjectId: l.approvedRenderObjectId != null ? l.approvedRenderObjectId : null,
+        usedByScenes: normalizeUsedBy(l.usedByScenes),
+        node: normalizeLocationNode(l.node),
+        variants: (Array.isArray(l.variants) ? l.variants : []).map(normalizeVariant)
+    });
+}
+
+export function normalizeProposal(p) {
+    p = p || {};
+    return Object.assign({}, p, {
+        proposedName: p.proposedName != null ? p.proposedName : (p.name != null ? p.name : null),
+        description: p.description != null ? p.description : null,
+        kind: p.kind != null ? p.kind : null,
+        aliases: Array.isArray(p.aliases) ? p.aliases : [],
+        sceneObjectIds: Array.isArray(p.sceneObjectIds) ? p.sceneObjectIds : [],
+        sameAs: p.sameAs != null ? p.sameAs : null,
+        proposalStatus: p.proposalStatus != null ? String(p.proposalStatus).toUpperCase() : null,
+        locationObjectId: p.locationObjectId != null ? p.locationObjectId : null,
+        reason: p.reason != null ? p.reason : null
+    });
+}
+
+export function normalizeLocationList(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        locations: (Array.isArray(r.locations) ? r.locations : []).map(normalizeLocation)
+    });
+}
+
+export function normalizeLocationPass(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        scenesConsidered: r.scenesConsidered != null ? r.scenesConsidered : 0,
+        scenesSkipped: r.scenesSkipped != null ? r.scenesSkipped : 0,
+        proposed: r.proposed != null ? r.proposed : 0,
+        hardFailure: !!r.hardFailure,
+        proposals: (Array.isArray(r.proposals) ? r.proposals : []).map(normalizeProposal),
+        warnings: Array.isArray(r.warnings) ? r.warnings : []
+    });
+}
+
+/** GET /{book}/locations → {bookObjectId, worldObjectId, locations[]} */
+export async function listLocations(pb2BookObjectId) {
+    return normalizeLocationList(await wfFetch('/' + pb2BookObjectId + '/locations', { method: 'GET' }, 'listLocations failed'));
+}
+
+/** GET /{book}/location/{location} → locationDto */
+export async function getLocation(pb2BookObjectId, locationObjectId) {
+    return normalizeLocation(await wfFetch('/' + pb2BookObjectId + '/location/' + locationObjectId, { method: 'GET' }, 'getLocation failed'));
+}
+
+/** POST /{book}/locations {name, description?, kind?, aliases?} → locationDto */
+export async function createLocation(pb2BookObjectId, body) {
+    return normalizeLocation(await wfFetch('/' + pb2BookObjectId + '/locations',
+        { method: 'POST', body: body || {} }, 'createLocation failed'));
+}
+
+/** PATCH /{book}/location/{location} — editable keys only: description, kind, aliases (name is not editable; a rename is a merge). */
+export async function updateLocation(pb2BookObjectId, locationObjectId, body) {
+    return normalizeLocation(await wfFetch('/' + pb2BookObjectId + '/location/' + locationObjectId,
+        { method: 'PATCH', body: body || {} }, 'updateLocation failed'));
+}
+
+/** DELETE /{book}/location/{location} → {deleted, locationObjectId, steps[]} */
+export async function deleteLocation(pb2BookObjectId, locationObjectId) {
+    return wfFetch('/' + pb2BookObjectId + '/location/' + locationObjectId, { method: 'DELETE' }, 'deleteLocation failed');
+}
+
+/** POST /{book}/location/{location}/variants {name?, timeOfDay?, weather?, season?, viewpoint?, extra?} → variantDto */
+export async function createLocationVariant(pb2BookObjectId, locationObjectId, body) {
+    return normalizeVariant(await wfFetch('/' + pb2BookObjectId + '/location/' + locationObjectId + '/variants',
+        { method: 'POST', body: body || {} }, 'createLocationVariant failed'));
+}
+
+/** POST /{book}/location/{location}/lock {locked} → locationDto */
+export async function lockLocation(pb2BookObjectId, locationObjectId, locked) {
+    return normalizeLocation(await wfFetch('/' + pb2BookObjectId + '/location/' + locationObjectId + '/lock',
+        { method: 'POST', body: { locked: !!locked } }, 'lockLocation failed'));
+}
+
+/** POST /{book}/locations/merge {duplicateObjectId, survivorObjectId} → {merged, survivor} */
+export async function mergeLocations(pb2BookObjectId, duplicateObjectId, survivorObjectId) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/locations/merge',
+        { method: 'POST', body: { duplicateObjectId: duplicateObjectId, survivorObjectId: survivorObjectId } }, 'mergeLocations failed');
+    r = r || {};
+    return Object.assign({}, r, { survivor: r.survivor ? normalizeLocation(r.survivor) : null });
+}
+
+/**
+ * POST /{book}/location/{location}/render[?variant=<oid>][&force=true]
+ * → 202 {locationObjectId, variantObjectId, nodeObjectId, nodeMaterialized, jobId, runObjectId, runStatus, planned[], …}
+ * (facade ensureLocationNode keys + PbRenderJobUtil.submit keys). 409 when the location is locked, the node is
+ * pinned ("Node … is pinned. Unpin it first …") or a render is in flight; 429 at the per-principal job cap.
+ */
+export async function renderLocation(pb2BookObjectId, locationObjectId, variantObjectId, force) {
+    let qs = [];
+    if (variantObjectId) qs.push('variant=' + encodeURIComponent(variantObjectId));
+    if (force) qs.push('force=true');
+    let r = await wfFetch('/' + pb2BookObjectId + '/location/' + locationObjectId + '/render' + (qs.length ? '?' + qs.join('&') : ''),
+        { method: 'POST' }, 'renderLocation failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        jobId: r.jobId != null ? r.jobId : null,
+        runObjectId: r.runObjectId != null ? r.runObjectId : null,
+        nodeObjectId: r.nodeObjectId != null ? r.nodeObjectId : null,
+        variantObjectId: r.variantObjectId != null ? r.variantObjectId : null,
+        planned: Array.isArray(r.planned) ? r.planned : []
+    });
+}
+
+/** Pure: the location render route's 409 for a pinned node (distinct from the planner's "(N reused, M pinned)" shape). */
+export function isPinnedNodeRefusal(err) {
+    if (!err || err.status !== 409) return false;
+    return /is pinned/i.test(String(err.message || '') + ' ' + String(err.body || ''));
+}
+
+/** POST /{book}/locations/propose {chatConfigName?} — synchronous; → locationPassDto */
+export async function proposeLocations(pb2BookObjectId, chatConfigName) {
+    let body = {};
+    if (chatConfigName) body.chatConfigName = chatConfigName;
+    return normalizeLocationPass(await wfFetch('/' + pb2BookObjectId + '/locations/propose',
+        { method: 'POST', body: body }, 'proposeLocations failed'));
+}
+
+/** GET /{book}/locations/proposed[?status=proposed|accepted|rejected] → {proposals[]} */
+export async function listLocationProposals(pb2BookObjectId, status) {
+    let qs = status ? '?status=' + encodeURIComponent(String(status).toLowerCase()) : '';
+    let r = await wfFetch('/' + pb2BookObjectId + '/locations/proposed' + qs, { method: 'GET' }, 'listLocationProposals failed');
+    r = r || {};
+    return Object.assign({}, r, { proposals: (Array.isArray(r.proposals) ? r.proposals : []).map(normalizeProposal) });
+}
+
+/** POST /{book}/locations/proposed/{proposal}/accept {overwrite?} → {proposal, locationObjectId, locationCreated, scenesRepointed, scenesSkipped, aliasesFolded, warnings} */
+export async function acceptLocationProposal(pb2BookObjectId, proposalObjectId, overwrite) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/locations/proposed/' + proposalObjectId + '/accept',
+        { method: 'POST', body: { overwrite: !!overwrite } }, 'acceptLocationProposal failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        proposal: r.proposal ? normalizeProposal(r.proposal) : null,
+        locationObjectId: r.locationObjectId != null ? r.locationObjectId : null,
+        locationCreated: !!r.locationCreated,
+        scenesRepointed: r.scenesRepointed != null ? r.scenesRepointed : 0,
+        scenesSkipped: r.scenesSkipped != null ? r.scenesSkipped : 0,
+        aliasesFolded: r.aliasesFolded != null ? r.aliasesFolded : 0,
+        warnings: Array.isArray(r.warnings) ? r.warnings : []
+    });
+}
+
+/** POST /{book}/locations/proposed/{proposal}/reject {reason?} → proposalDto */
+export async function rejectLocationProposal(pb2BookObjectId, proposalObjectId, reason) {
+    let body = {};
+    if (reason) body.reason = reason;
+    return normalizeProposal(await wfFetch('/' + pb2BookObjectId + '/locations/proposed/' + proposalObjectId + '/reject',
+        { method: 'POST', body: body }, 'rejectLocationProposal failed'));
+}
+
+/**
+ * PUT /{book}/scene/{scene}/location {locationObjectId?, variantObjectId?} — only non-null keys are sent; `{}` clears.
+ * → {sceneObjectId, locationObjectId, locationName, variantObjectId, variantName, updated, nodeStale, pinned, nodeStatus}.
+ * A pinned scene node is not a 409 here: the scene is repointed and `pinned:true` says Render will skip it.
+ */
+export async function setSceneLocation(pb2BookObjectId, sceneObjectId, locationObjectId, variantObjectId) {
+    let body = {};
+    if (locationObjectId != null) body.locationObjectId = String(locationObjectId);
+    if (variantObjectId != null) body.variantObjectId = String(variantObjectId);
+    let r = await wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/location',
+        { method: 'PUT', body: body }, 'setSceneLocation failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        locationObjectId: r.locationObjectId != null ? r.locationObjectId : null,
+        locationName: r.locationName != null ? r.locationName : null,
+        variantObjectId: r.variantObjectId != null ? r.variantObjectId : null,
+        variantName: r.variantName != null ? r.variantName : null,
+        updated: !!r.updated,
+        nodeStale: !!r.nodeStale,
+        pinned: !!r.pinned,
+        nodeStatus: r.nodeStatus != null ? r.nodeStatus : null
+    });
 }
