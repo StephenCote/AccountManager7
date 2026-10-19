@@ -3652,7 +3652,7 @@ public class PbServiceFacade {
 		catch(RuntimeException e) {
 			Map<String, Object> err = new LinkedHashMap<>();
 			err.put("status", Integer.valueOf(500));
-			err.put("message", (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+			err.put("message", curatedMessage(e));
 			out.put("composeJobError", err);
 			logger.error("createFromScenes: scenes imported but the compose job was not queued", e);
 		}
@@ -4183,6 +4183,23 @@ public class PbServiceFacade {
 		}
 		m.put("proposals", dtos);
 		return m;
+	}
+
+	/** What an owner-visible result says when a non-curated exception is the cause; the detail is in the server log. */
+	public static final String INTERNAL_ERROR_MESSAGE = "internal error; the server log has the detail";
+
+	/**
+	 * Error text for the wire. Only {@link PictureBookException} and the executor's cancel marker carry text written
+	 * for the owner; any other exception (a client library, a driver, a bare runtime failure) is replaced by
+	 * {@link #INTERNAL_ERROR_MESSAGE} so an upstream URL, host name or credential fragment in its message never
+	 * reaches the job result. The caller logs the real exception.
+	 */
+	public static String curatedMessage(RuntimeException e) {
+		if(e instanceof PictureBookException || e instanceof PbNodeExecutor.PbStageCancelledException) {
+			String m = e.getMessage();
+			return (m != null && !m.isBlank() ? m : e.getClass().getSimpleName());
+		}
+		return INTERNAL_ERROR_MESSAGE;
 	}
 
 	/**

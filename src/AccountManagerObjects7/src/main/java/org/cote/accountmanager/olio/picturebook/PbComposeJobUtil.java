@@ -485,7 +485,7 @@ public final class PbComposeJobUtil {
 				r = PbComposeUtil.composeScene(user, fresh, scene, chatConfig, force, progress);
 			}
 			catch(RuntimeException e) {
-				String msg = messageOf(e);
+				String msg = PbServiceFacade.curatedMessage(e);
 				if(shuttingDown()) {
 					outcome.put("status", "interrupted");
 					outcome.put("error", "interrupted by shutdown: " + msg);
@@ -501,7 +501,7 @@ public final class PbComposeJobUtil {
 				hardFailures++;
 				outcome.put("status", "error");
 				outcome.put("error", msg);
-				logger.warn("compose job " + slug + " scene " + idx + " failed: " + msg);
+				logger.warn("compose job " + slug + " scene " + idx + " failed: " + detailOf(e));
 				tick(progress);
 				continue;
 			}
@@ -564,12 +564,12 @@ public final class PbComposeJobUtil {
 					quickStartRendered++;
 				}
 				catch(PbStageCancelledException e) {
-					outcome.put("draftRenderError", "cancelled: " + messageOf(e));
+					outcome.put("draftRenderError", "cancelled: " + PbServiceFacade.curatedMessage(e));
 					cancelled = true;
 					break;
 				}
 				catch(RuntimeException e) {
-					String msg = messageOf(e);
+					String msg = PbServiceFacade.curatedMessage(e);
 					if(shuttingDown()) {
 						outcome.put("draftRenderError", "interrupted by shutdown: " + msg);
 						interrupted = true;
@@ -582,7 +582,7 @@ public final class PbComposeJobUtil {
 					}
 					quickStartFailed++;
 					outcome.put("draftRenderError", msg);
-					logger.warn("compose job " + slug + " quick-start render of scene " + idx + " failed: " + msg);
+					logger.warn("compose job " + slug + " quick-start render of scene " + idx + " failed: " + detailOf(e));
 				}
 				finally {
 					if(laneHeld) {
@@ -714,8 +714,9 @@ public final class PbComposeJobUtil {
 		return progress != null && progress.isCancelled();
 	}
 
-	private static String messageOf(RuntimeException e) {
-		return (e.getMessage() != null && !e.getMessage().isBlank() ? e.getMessage() : e.getClass().getSimpleName());
+	/// For the log only; the owner-visible text is {@link PbServiceFacade#curatedMessage}.
+	private static String detailOf(RuntimeException e) {
+		return e.getClass().getName() + (e.getMessage() != null && !e.getMessage().isBlank() ? ": " + e.getMessage() : "");
 	}
 
 	/** The container has announced its stop or the pool has interrupted this worker. */

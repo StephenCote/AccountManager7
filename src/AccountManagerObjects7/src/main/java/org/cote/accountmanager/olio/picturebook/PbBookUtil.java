@@ -700,10 +700,48 @@ public class PbBookUtil {
 		return readScene(user, created.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(book));
 	}
 
-	/** The book's scenes, ascending by {@code sceneIndex}. Uncached, so a just-written reorder is visible. */
+	/**
+	 * The book's scenes, ascending by {@code sceneIndex}. Uncached, so a just-written reorder is visible.
+	 *
+	 * @throws PictureBookException 409 when the book record carries no group
+	 */
 	public static List<BaseRecord> listScenes(BaseRecord user, BaseRecord book) {
 		if(user == null || book == null) {
 			return Collections.emptyList();
+		}
+		Query q = sceneQuery(book);
+		q.setRequest(sceneRequest());
+		q.setValue(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
+		BaseRecord[] recs = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
+		return (recs != null ? PbGraphUtil.restoreSchema(Arrays.asList(recs), OlioModelNames.MODEL_PB_SCENE)
+			: Collections.emptyList());
+	}
+
+	/**
+	 * How many scenes the book has — same shape as {@link #listScenes} without materialising them.
+	 *
+	 * @throws PictureBookException 409 when the book record carries no group
+	 */
+	public static int countScenes(BaseRecord user, BaseRecord book) {
+		if(user == null || book == null) {
+			return 0;
+		}
+		Query q = sceneQuery(book);
+		q.setRequest(new String[] { FieldNames.FIELD_ID });
+		return IOSystem.getActiveContext().getAccessPoint().count(user, q);
+	}
+
+	/**
+	 * The book's scene rows: by book FK <b>and</b> the book's group (every scene is created in the book's own
+	 * group, {@link #bookGroupPath}). {@code AccessPoint.list} is not a per-record boundary, so by FK and
+	 * organization alone a row written into another group that points at this book would be listed and
+	 * counted as the book's own.
+	 */
+	private static Query sceneQuery(BaseRecord book) {
+		Long gid = book.get(FieldNames.FIELD_GROUP_ID);
+		if(gid == null || gid.longValue() <= 0L) {
+			throw new PictureBookException(409, "Book " + book.get(OlioFieldNames.FIELD_PB_SLUG) + " has no group");
 		}
 		/// A condition on a FOREIGN MODEL field takes the RECORD, never its id: Query.field routes the
 		/// value through FieldUtil.setFlex, which calls setModel() for a MODEL-typed field, so a Long is
@@ -711,26 +749,10 @@ public class PbBookUtil {
 		/// nothing at the call site. StatementUtil casts the value to BaseRecord and reads its id
 		/// (StatementUtil.java:1367). Measured on am7db 2026-08-15.
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_BOOK, book);
+		q.field(FieldNames.FIELD_GROUP_ID, gid);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, PbGraphUtil.orgId(book));
-		q.setRequest(sceneRequest());
-		q.setValue(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_PB_SCENE_INDEX);
-		q.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
 		q.setCache(false);
-		BaseRecord[] recs = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
-		return (recs != null ? PbGraphUtil.restoreSchema(Arrays.asList(recs), OlioModelNames.MODEL_PB_SCENE)
-			: Collections.emptyList());
-	}
-
-	/** How many scenes the book has — same shape as {@link #listScenes} without materialising them. */
-	public static int countScenes(BaseRecord user, BaseRecord book) {
-		if(user == null || book == null) {
-			return 0;
-		}
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_BOOK, book);
-		q.field(FieldNames.FIELD_ORGANIZATION_ID, PbGraphUtil.orgId(book));
-		q.setRequest(new String[] { FieldNames.FIELD_ID });
-		q.setCache(false);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, q);
+		return q;
 	}
 
 	/**
