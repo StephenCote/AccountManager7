@@ -474,4 +474,34 @@ public class OlioFieldNames {
 	public static final String FIELD_PB_REASON = "reason";
 	public static final String FIELD_PB_PASS_RUN = "passRun";
 
+	/// olio.pb.composition / olio.pb.sceneActor / olio.pb.sceneElement (V3 §8). Reused: composition.book FIELD_PB_BOOK,
+	/// composition.location FieldNames.FIELD_LOCATION, composition.locationVariant FIELD_PB_LOCATION_VARIANT,
+	/// composition.action/actor.action FIELD_PB_ACTION, composition.mood FIELD_PB_MOOD, composition.viewpoint FIELD_PB_VIEWPOINT
+	/// (an enum here, a string on olio.pb.locationVariant), composition.configOverride FIELD_PB_CONFIG_OVERRIDE,
+	/// composition.promptLocked FIELD_PB_PROMPT_LOCKED, composition.userEdited FIELD_PB_USER_EDITED, composition.revision
+	/// FIELD_PB_REVISION, actor.role FIELD_PB_ROLE, actor.apparel FIELD_APPAREL, actor.expression FieldNames.FIELD_EXPRESSION,
+	/// actor/element.description FieldNames.FIELD_DESCRIPTION, actor.count FieldNames.FIELD_COUNT, element.item FIELD_ITEM.
+	public static final String FIELD_PB_PURPOSE = "purpose";
+	public static final String FIELD_PB_SCENE = "scene";
+	public static final String FIELD_PB_SETTING_TEXT = "settingText";
+	public static final String FIELD_PB_SHOT_TYPE = "shotType";
+	public static final String FIELD_PB_FOCAL_ACTOR = "focalActor";
+	public static final String FIELD_PB_CAMERA_TEXT = "cameraText";
+	public static final String FIELD_PB_PROPS = "props";
+	public static final String FIELD_PB_PROMPT_OVERRIDE = "promptOverride";
+	public static final String FIELD_PB_SOURCE = "source";
+	public static final String FIELD_PB_COMPOSITION = "composition";
+	public static final String FIELD_PB_CHARACTER = "character";
+	public static final String FIELD_PB_PRIORITY = "priority";
+	public static final String FIELD_PB_POSE = "pose";
+	public static final String FIELD_PB_FACING = "facing";
+	public static final String FIELD_PB_X = "x";
+	public static final String FIELD_PB_Y = "y";
+	public static final String FIELD_PB_W = "w";
+	public static final String FIELD_PB_H = "h";
+	public static final String FIELD_PB_DEPTH = "depth";
+	public static final String FIELD_PB_REFERENCE_POLICY = "referencePolicy";
+	public static final String FIELD_PB_ELEMENT_TYPE = "elementType";
+	public static final String FIELD_PB_IMPORTANCE = "importance";
+
 }

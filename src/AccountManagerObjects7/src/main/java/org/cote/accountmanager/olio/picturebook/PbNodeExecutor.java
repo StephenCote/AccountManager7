@@ -28,6 +28,7 @@ import org.cote.accountmanager.olio.illustration.StageImage;
 import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StageResult;
 import org.cote.accountmanager.olio.illustration.SwarmRendererAdapter;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil.SceneGraph;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.ResolvedCharacter;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -236,9 +237,23 @@ public class PbNodeExecutor {
 	/** Body of {@link #executeNodeRun(BaseRecord, BaseRecord, BaseRecord, BaseRecord, String, String)}; see {@link #executeNode(BaseRecord, BaseRecord, BaseRecord, BaseRecord, SDUtil)}. */
 	static Map<String, Object> executeNodeRun(BaseRecord user, BaseRecord book,
 			BaseRecord workflow, BaseRecord node, SDUtil sdu) {
+		return executeNodeRun(user, book, workflow, node, sdu, PbRenderPlanUtil.PlanOptions.NONE, null);
+	}
+
+	/**
+	 * {@link #executeNodeRun(BaseRecord, BaseRecord, BaseRecord, BaseRecord, SDUtil)} with the scene plan built
+	 * under {@code opts} and a cancel token (V3 P4-4, the compose job's Quick-start DRAFT render). A cancel
+	 * noticed after the renderer answered discards the image, returns the node to the status its handle
+	 * computes, closes the run CANCELLED and rethrows {@link PbStageCancelledException}: the caller decides
+	 * whether that ends its own loop. Without a token this is exactly the five-argument form.
+	 */
+	static Map<String, Object> executeNodeRun(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, SDUtil sdu, PbRenderPlanUtil.PlanOptions opts, SummarizeProgress cancelToken) {
 		PbNodeTypeEnumType nodeType = gate(node, sdu);
 		long started = System.currentTimeMillis();
 		SceneGraph g = PbPipelineUtil.openNodeGraph(user, book, workflow, node, true);
+		g.setPlanOptions(opts);
+		g.setCancelToken(cancelToken);
 		Map<String, Object> out = null;
 		try {
 			/// Both stamps are writes the caller must be entitled to. A false here is not something to log
@@ -256,6 +271,20 @@ public class PbNodeExecutor {
 			}
 			out = dispatch(g, node, nodeType, sdu);
 			PbPipelineUtil.closeRun(g, PbRunStatusEnumType.COMPLETED, null);
+		}
+		catch(PbStageCancelledException e) {
+			/// Not a failure: nothing was persisted. Return the node to what its handle computes (the same
+			/// revert the async render job does) and close the run CANCELLED, never FAILED.
+			PbNodeStatusEnumType back = PbGraphUtil.recomputeStatus(user, node, book);
+			if(back == null || back == PbNodeStatusEnumType.UNKNOWN) {
+				back = PbNodeStatusEnumType.READY;
+			}
+			if(!PbGraphUtil.persistStatus(user, node, back)) {
+				logger.error("Cancelled node " + node.get(FieldNames.FIELD_NAME) + " could not be returned to " + back
+					+ "; it reads RUNNING until restart recovery");
+			}
+			PbPipelineUtil.closeRun(g, PbRunStatusEnumType.CANCELLED, e.getMessage());
+			throw e;
 		}
 		catch(Exception e) {
 			String msg = errorMessage(e);
@@ -765,8 +794,21 @@ public class PbNodeExecutor {
 	 */
 	static PlannedRender renderPlannedScene(SceneGraph g, BaseRecord node, BaseRecord scene, String sceneLabel, SDUtil sdu,
 			String imageNamePrefix, String noTextMessage) {
-		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(g.getUser(), g.getBook(), scene, node, PbRenderPlanUtil.PlanOptions.NONE,
+		/// V3 §9.1 (P4-4): a scene rendered before the compose job reached it is composed here, by itself,
+		/// as the request user, and the plan says so. A ChapBook page has no SCENE composition (P4-8), and the
+		/// preview path (PbServiceFacade.planScene) never comes through here, so a read stays a read.
+		PbComposeUtil.EnsureResult ensured = null;
+		if(!isChapBook(g.getBook())) {
+			ensured = PbComposeUtil.ensureComposition(g.getUser(), g.getBook(), scene, g.getCancelToken());
+		}
+		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(g.getUser(), g.getBook(), scene, node, g.getPlanOptions(),
 			sdu.getApiType(), sdu.getServer());
+		if(ensured != null && ensured.composedNow) {
+			plan = plan.withDegradations(List.of(new RenderPlan.Degradation(RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER,
+				"Composed by this render, out of story order" + (ensured.result != null && ensured.result.migratedFallback
+					? " (MIGRATED: " + ensured.result.failureReason + ")" : "") + "; re-compose in order to clear",
+				null, RenderPlan.STAGE_BASE)));
+		}
 		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage);
 	}
 

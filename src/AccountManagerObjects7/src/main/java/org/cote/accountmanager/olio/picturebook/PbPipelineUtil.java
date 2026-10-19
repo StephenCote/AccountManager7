@@ -27,6 +27,7 @@ import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
+import org.cote.accountmanager.util.MemberUtil;
 
 /**
  * The phase-3 seam: {@code PictureBookUtil.generateSceneImage}'s existing per-stage boundaries recorded
@@ -137,6 +138,9 @@ public class PbPipelineUtil {
 		/// V3 P1-6: the async render job's own progress token, so a stage can notice a cancel that landed
 		/// while the backend call was in flight. Null on every other path (sync regenerate, PB1 mirror).
 		private SummarizeProgress cancelToken;
+		/// V3 P4-4: how the scene plan is built on this graph. NONE everywhere except a Quick-start DRAFT
+		/// render from the compose job; read only by the RENDER_PLAN / ChapBook page scene-plan path.
+		private PbRenderPlanUtil.PlanOptions planOptions = PbRenderPlanUtil.PlanOptions.NONE;
 
 		SceneGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord sceneRow,
 				String workflowGroupPath, String artifactGroupPath, String galleryGroupPath,
@@ -201,6 +205,19 @@ public class PbPipelineUtil {
 		/** True only when a render job owns this graph and its cancel flag has been raised. */
 		public boolean isCancelRequested() {
 			return (cancelToken != null && cancelToken.isCancelled());
+		}
+
+		/** Never null; {@link PbRenderPlanUtil.PlanOptions#NONE} unless a Quick-start render set a preset. */
+		public PbRenderPlanUtil.PlanOptions getPlanOptions() {
+			return planOptions;
+		}
+
+		void setPlanOptions(PbRenderPlanUtil.PlanOptions opts) {
+			this.planOptions = (opts != null ? opts : PbRenderPlanUtil.PlanOptions.NONE);
+		}
+
+		void setCancelToken(SummarizeProgress token) {
+			this.cancelToken = token;
 		}
 
 		public String getArtifactGroupPath() {
@@ -929,6 +946,164 @@ public class PbPipelineUtil {
 		}
 		catch(Exception e) {
 			logger.warn("Failed to dual-write the PB2 scene row: " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * The import half of the dual write: one {@code olio.pb.scene} row per scene {@code createFromScenes}
+	 * just saved into a PB2 book, so the compose job that follows the import (V3 §9.1, "straight after
+	 * createFromScenes") has scenes to compose instead of tallying none. Until now a row only appeared when
+	 * the scene first rendered ({@link #openSceneGraph}), which is exactly the moment composing up front
+	 * is meant to precede.
+	 * <p>
+	 * Idempotent by {@code sceneIndex}: a re-run of the import refreshes the existing row (text fields only,
+	 * never the node pointer a render set) rather than forking a second one. The text fields are the ones
+	 * {@link #dualWriteScene} mirrors plus {@code description}, and the scene's extracted cast is enrolled
+	 * as {@code characters} participations (idempotent), which is what the compose cast and
+	 * {@code PbRenderPlanUtil.sceneActors} read before falling back to the whole population. Every write is
+	 * made as the request user through {@code AccessPoint}. Never throws: the PB1 note a row mirrors is
+	 * already saved, so a row that cannot be written is logged and the import still succeeds.
+	 *
+	 * @param sceneList  the imported scene maps, in story order (index = {@code sceneIndex})
+	 * @param metaScenes the {@code olio.pictureBookScene} entries built from them, same order; each carries
+	 *                   the resolved {@code charPerson} objectIds of its cast as {@code characters}
+	 * @return the number of rows created or refreshed
+	 */
+	public static int dualWriteImportedScenes(BaseRecord user, BaseRecord book, List<Map<String, Object>> sceneList,
+			List<BaseRecord> metaScenes) {
+		if(user == null || book == null || sceneList == null || sceneList.isEmpty()) {
+			return 0;
+		}
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		if(slug == null || slug.isBlank()) {
+			logger.warn("Import dual write skipped: book " + book.get(FieldNames.FIELD_OBJECT_ID) + " has no slug");
+			return 0;
+		}
+		int written = 0;
+		try {
+			long orgId = PbGraphUtil.orgId(book);
+			String groupPath = PbBookUtil.bookGroupPath(slug);
+			Map<Integer, BaseRecord> byIndex = new LinkedHashMap<>();
+			for(BaseRecord s : PbBookUtil.listScenes(user, book)) {
+				Integer idx = s.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+				if(idx != null && !byIndex.containsKey(idx)) {
+					byIndex.put(idx, s);
+				}
+			}
+			Map<String, BaseRecord> people = new LinkedHashMap<>();
+			for(int idx = 0; idx < sceneList.size(); idx++) {
+				Map<String, Object> sceneData = sceneList.get(idx);
+				if(sceneData == null) {
+					continue;
+				}
+				BaseRecord entry = (metaScenes != null && idx < metaScenes.size()) ? metaScenes.get(idx) : null;
+				try {
+					Object t = sceneData.get(OlioFieldNames.FIELD_PB_TITLE);
+					String title = (t instanceof String && !((String) t).isBlank()) ? (String) t : "Scene " + idx;
+					BaseRecord row = byIndex.get(Integer.valueOf(idx));
+					if(row == null) {
+						row = PbBookUtil.createScene(user, book, idx, title, groupPath);
+						byIndex.put(Integer.valueOf(idx), row);
+					}
+					Map<String, Object> data = new LinkedHashMap<>(PictureBookUtil.sceneNoteStore(sceneData, idx));
+					data.put(OlioFieldNames.FIELD_PB_TITLE, title);
+					Object blurb = data.get(OlioFieldNames.FIELD_PB_BLURB);
+					if(blurb instanceof String && !((String) blurb).isBlank()) {
+						data.put(FieldNames.FIELD_DESCRIPTION, blurb);
+					}
+					List<String> warnings = new ArrayList<>();
+					if(!patchImportedSceneText(user, row, data, warnings)) {
+						logger.warn("Import dual write: scene " + idx + " of '" + slug + "' row text not refreshed: " + warnings);
+					}
+					enrolImportedCast(user, row, entry, orgId, people, slug, idx);
+					written++;
+				}
+				catch(Exception e) {
+					logger.error("Import dual write: no olio.pb.scene row for scene " + idx + " of '" + slug + "': " + e.getMessage()
+						+ ". The PB1 scene note is saved; the row is created on first render or by the book health Repair.", e);
+				}
+			}
+		}
+		catch(Exception e) {
+			logger.error("Import dual write failed for '" + slug + "': " + e.getMessage(), e);
+		}
+		return written;
+	}
+
+	/// dualWriteScene's field set plus summary/description, PATCH-shaped (identity + the fields set), as the user.
+	private static boolean patchImportedSceneText(BaseRecord user, BaseRecord row, Map<String, Object> data,
+			List<String> warnings) {
+		String[] candidates = { OlioFieldNames.FIELD_PB_TITLE, OlioFieldNames.FIELD_PB_SUMMARY, OlioFieldNames.FIELD_PB_SETTING,
+			OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_PB_BLURB, FieldNames.FIELD_DESCRIPTION };
+		List<String> toSet = new ArrayList<>();
+		for(String f : candidates) {
+			Object v = data.get(f);
+			if(v instanceof String && !((String) v).isBlank()) {
+				toSet.add(f);
+			}
+		}
+		if(toSet.isEmpty()) {
+			return true;
+		}
+		try {
+			BaseRecord patch = PbGraphUtil.patchOf(row, OlioModelNames.MODEL_PB_SCENE, toSet.toArray(new String[0]));
+			for(String f : toSet) {
+				patch.set(f, ((String) data.get(f)).trim());
+			}
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				warnings.add("text patch of " + row.get(FieldNames.FIELD_NAME) + " was not persisted");
+				return false;
+			}
+			return true;
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			warnings.add("text patch of " + row.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+			return false;
+		}
+	}
+
+	/// Enrol the meta entry's charPerson objectIds as scene.characters; a person the user cannot read is skipped.
+	private static void enrolImportedCast(BaseRecord user, BaseRecord row, BaseRecord entry, long orgId,
+			Map<String, BaseRecord> people, String slug, int idx) {
+		if(entry == null || !entry.hasField(OlioFieldNames.FIELD_PB_CHARACTERS)) {
+			return;
+		}
+		List<String> oids = entry.get(OlioFieldNames.FIELD_PB_CHARACTERS);
+		if(oids == null || oids.isEmpty()) {
+			return;
+		}
+		for(String oid : oids) {
+			if(oid == null || oid.isBlank()) {
+				continue;
+			}
+			BaseRecord person = people.get(oid);
+			if(person == null) {
+				Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, oid);
+				q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+					FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID });
+				q.setCache(false);
+				person = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+				if(person == null) {
+					logger.warn("Import dual write: scene " + idx + " of '" + slug + "': cast member " + oid + " not readable; not enrolled");
+					continue;
+				}
+				people.put(oid, person);
+			}
+			try {
+				MemberUtil mu = IOSystem.getActiveContext().getMemberUtil();
+				/// member(..., true) answers false both when the row could not be written and when the
+				/// participation already exists (a re-import); only the former is worth a warning.
+				if(!mu.member(user, row, OlioFieldNames.FIELD_PB_CHARACTERS, person, null, true)
+						&& !mu.isMember(person, row, OlioFieldNames.FIELD_PB_CHARACTERS)) {
+					logger.warn("Import dual write: scene " + idx + " of '" + slug + "': cast member "
+						+ person.get(FieldNames.FIELD_NAME) + " was not enrolled");
+				}
+			}
+			catch(Exception e) {
+				logger.warn("Import dual write: scene " + idx + " of '" + slug + "': enrolling " + person.get(FieldNames.FIELD_NAME)
+					+ " failed: " + e.getMessage());
+			}
 		}
 	}
 

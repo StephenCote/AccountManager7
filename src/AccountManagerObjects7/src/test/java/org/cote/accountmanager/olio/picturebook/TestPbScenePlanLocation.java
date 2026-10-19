@@ -29,6 +29,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
@@ -85,8 +86,10 @@ import org.junit.Test;
  *     one that names no location (the {@code executeChapBookPage} contract until P3-6).</li>
  * <li>{@link #case08LiveRenderCarriesApprovedLocationAndTextOnlyVetoesAutoApprove}: one real render per scene
  *     on the live Swarm node - the persisted plan artifact carries the location, the node's binding hash is
- *     the plan's {@code inputs.location}, the prompt sent carries both texts, the located scene auto-approves
- *     and its unrendered twin is vetoed with {@code degraded: LOCATION_TEXT_ONLY}. SD-gated.</li>
+ *     the plan's {@code inputs.location}, the prompt sent carries both texts, the located scene (composed in
+ *     story order first, against the live LLM) auto-approves with no degradation, and its unrendered,
+ *     never-composed twin reports {@code LOCATION_TEXT_ONLY} plus {@code COMPOSED_OUT_OF_ORDER} (P4-4 lazy
+ *     fallback) and is vetoed with {@code degraded: ...}. SD-gated; one live LLM compose.</li>
  * <li>{@link #case09UnreadableVariantKeepsTheParentAndCarriesNoRender}: a variant the owner cannot read under a
  *     readable, approved parent - the parent's hash and text are kept, {@code inputs.locationVariant} is present
  *     and null, the parent's render never stands in (D3), "(not readable)" names the variant's objectId.</li>
@@ -785,13 +788,16 @@ public class TestPbScenePlanLocation extends BaseTest {
 	}
 
 	/**
-	 * Live pair on the Swarm node (SD-gated): scene A at a location with an approved render, scene B at a
-	 * location without one, both rendered through {@code requestRenderPlanScene} with auto-approve on.
+	 * Live pair on the Swarm node (SD-gated, and the live LLM for one compose): scene A at a location with an
+	 * approved render, scene B at a location without one, both rendered through {@code requestRenderPlanScene}
+	 * with auto-approve on. A is composed in story order first ({@link PbComposeUtil#composeScene} against the
+	 * gate's LLM, LLM-sourced, not MIGRATED), so its render is not the P4-4 lazy out-of-order compose.
 	 * A's persisted plan artifact carries the location identity, hash and render; the RENDER_PLAN node's
 	 * {@code location} binding (ordinal 0) carries the same hash as {@code inputs.location}; the prompt sent
 	 * (the artifact's config snapshot) carries both the location description and the scene setting; A
 	 * auto-approves (no degradations on a fresh book - the same precondition TestPbRenderPlanExecutor asserts).
-	 * B's DTO lists {@code LOCATION_TEXT_ONLY} and its auto-approve is vetoed with {@code degraded: ...}
+	 * B is never composed: its DTO lists {@code LOCATION_TEXT_ONLY} and {@code COMPOSED_OUT_OF_ORDER} (its first
+	 * render composed it, out of story order) and its auto-approve is vetoed with {@code degraded: ...}
 	 * (D5, transitional: the veto keys on a field the executor does not yet consume).
 	 */
 	@Test
@@ -806,6 +812,7 @@ public class TestPbScenePlanLocation extends BaseTest {
 		BaseRecord bk = newBook(u, "h");
 		String bkOid = oidOf(bk);
 		long orgId = orgOf(u);
+		BaseRecord cfg = null;
 		try {
 			BaseRecord locA = newLocation(u, bk, "The Gilded Tankard " + shortId(), LOC_DESCRIPTION);
 			String locAOid = oidOf(locA);
@@ -816,6 +823,28 @@ public class TestPbScenePlanLocation extends BaseTest {
 
 			BaseRecord sceneA = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
 			pointSceneAt(u, sceneA, locA);
+			/// P4-4: compose A in story order first, against the live LLM, so its render is not the lazy
+			/// out-of-order compose (which would be a degradation and veto the auto-approve asserted below).
+			/// The live model does not always return a parseable staging; a MIGRATED fallback still needs a
+			/// compose, so a bounded number of attempts is allowed before the precondition is reported as unmet.
+			cfg = OlioTestUtil.getOllamaOpenAIConfig(u, "P35 Case08 Cfg", testProperties);
+			assertNotNull("chatConfig for the pre-compose", cfg);
+			logger.info("[p35-live] route=" + testProperties.getProperty("test.llm.route") + " tier=" + testProperties.getProperty("test.llm.resolvedTier")
+				+ " server=" + testProperties.getProperty("test.llm.connection.server") + " model=" + (Object) cfg.get("model"));
+			PbComposeUtil.ComposeResult pre = null;
+			for(int attempt = 1; attempt <= 3; attempt++) {
+				long tc = System.currentTimeMillis();
+				pre = PbComposeUtil.composeScene(u, bk, readScene(u, oidOf(sceneA)), cfg, attempt > 1, null);
+				logger.info("MEASURED: P3-5 case08 pre-compose of scene A attempt " + attempt + " wallMs=" + (System.currentTimeMillis() - tc)
+					+ " elapsedMs=" + pre.elapsedMs + " written=" + pre.isWritten() + " source=" + pre.source + " migrated=" + pre.migratedFallback
+					+ " hardFailure=" + pre.hardFailure + " reason=" + pre.failureReason + " warnings=" + pre.warnings);
+				if(pre.isWritten() && !pre.migratedFallback) {
+					break;
+				}
+			}
+			assertTrue("the pre-compose wrote a composition: " + pre.failureReason, pre.isWritten());
+			assertFalse("the pre-compose is the LLM's staging, not the MIGRATED fallback (after up to 3 attempts): " + pre.failureReason, pre.migratedFallback);
+			assertFalse("a composed scene needs no further compose", PbComposeUtil.needsCompose(pre.composition));
 			BaseRecord sceneB = addScene(u, bk, 1, "Scene 1", "The congregation files in under a flat grey sky");
 			pointSceneAt(u, sceneB, locB);
 
@@ -890,12 +919,18 @@ public class TestPbScenePlanLocation extends BaseTest {
 
 			List<String> degB = strings(outB, "degradations");
 			boolean textOnly = false;
+			boolean outOfOrder = false;
 			for(String d : degB) {
 				if(d.startsWith(RenderPlan.Degradation.LOCATION_TEXT_ONLY + ": ")) {
 					textOnly = true;
 				}
+				if(d.startsWith(RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": ")) {
+					outOfOrder = true;
+				}
 			}
 			assertTrue("the DTO lists LOCATION_TEXT_ONLY: " + degB, textOnly);
+			assertTrue("B was never composed, so its first render composed it out of story order (P4-4 lazy fallback): " + degB, outOfOrder);
+			assertEquals("exactly those two degradations on B: " + degB, 2, degB.size());
 			assertEquals(Boolean.FALSE, outB.get(PbNodeExecutor.KEY_AUTO_APPROVED));
 			String skipped = (String) outB.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED);
 			assertNotNull(skipped);
@@ -921,6 +956,25 @@ public class TestPbScenePlanLocation extends BaseTest {
 				logger.warn("autoApprove reset: " + e.getMessage());
 			}
 			deleteBook(u, bk);
+			if(cfg != null) {
+				BaseRecord conn = cfg.get("connection");
+				deleteQuietly(u, cfg);
+				deleteQuietly(u, conn);
+			}
+		}
+	}
+
+	private void deleteQuietly(BaseRecord u, BaseRecord rec) {
+		if(rec == null) {
+			return;
+		}
+		try {
+			if(!IOSystem.getActiveContext().getAccessPoint().delete(u, rec)) {
+				logger.warn("cleanup: " + rec.getSchema() + " " + (Object) rec.get(FieldNames.FIELD_NAME) + " was not deleted");
+			}
+		}
+		catch(Exception e) {
+			logger.error("cleanup: " + rec.getSchema() + " " + (Object) rec.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
 		}
 	}
 

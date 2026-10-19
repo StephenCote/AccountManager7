@@ -51,7 +51,7 @@ public class PbWatchedFields {
 	 * {@code refHash}, so a change here invalidates stored hashes <b>on purpose</b> and loudly, rather
 	 * than silently comparing hashes computed under two different policies.
 	 */
-	public static final String WATCHED_SET_VERSION = "watched/v3";
+	public static final String WATCHED_SET_VERSION = "watched/v4";
 
 	/**
 	 * {@code olio.charPerson}: identity and appearance, the fields a portrait or a character description
@@ -110,6 +110,54 @@ public class PbWatchedFields {
 		OlioFieldNames.FIELD_PB_VIEWPOINT, OlioFieldNames.FIELD_PB_EXTRA, OlioFieldNames.FIELD_PB_APPROVED_RENDER
 	));
 
+	/**
+	 * {@code olio.pb.composition} (V3 §8, watched/v4): everything the composed prompt is derived from -
+	 * purpose, the place (location / variant / settingText), action and mood, the camera (shotType /
+	 * viewpoint / focalActor / cameraText), props, and the overrides (configOverride, promptOverride,
+	 * promptLocked). {@code book}, {@code source}, {@code userEdited} and {@code revision} are deliberately
+	 * unwatched: none of them changes what the picture looks like, and {@code revision} in particular is
+	 * bumped by the very save that already changed a watched field. {@code focalActor} is a foreign
+	 * {@code olio.pb.sceneActor} rendered by name like every other non-artifact foreign value - two
+	 * same-named actors in one composition would be a data defect, not a case this set is asked to catch.
+	 */
+	private static final List<String> PB_COMPOSITION = Collections.unmodifiableList(Arrays.asList(
+		OlioFieldNames.FIELD_PB_PURPOSE, OlioFieldNames.FIELD_PB_SCENE, FieldNames.FIELD_LOCATION,
+		OlioFieldNames.FIELD_PB_LOCATION_VARIANT, OlioFieldNames.FIELD_PB_SETTING_TEXT, OlioFieldNames.FIELD_PB_ACTION,
+		OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_PB_SHOT_TYPE, OlioFieldNames.FIELD_PB_VIEWPOINT,
+		OlioFieldNames.FIELD_PB_FOCAL_ACTOR, OlioFieldNames.FIELD_PB_CAMERA_TEXT, OlioFieldNames.FIELD_PB_PROPS,
+		OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, OlioFieldNames.FIELD_PB_PROMPT_LOCKED
+	));
+
+	/**
+	 * {@code olio.pb.sceneActor} (V3 §8, watched/v4): who, what they wear and do, where in the frame and how
+	 * they are referenced. {@code composition} (the parent FK) is not watched - moving an actor between
+	 * compositions is a structural edit the composer handles, not a field drift.
+	 */
+	private static final List<String> PB_SCENE_ACTOR = Collections.unmodifiableList(Arrays.asList(
+		OlioFieldNames.FIELD_PB_CHARACTER, OlioFieldNames.FIELD_PB_ROLE, OlioFieldNames.FIELD_PB_PRIORITY,
+		OlioFieldNames.FIELD_APPAREL, OlioFieldNames.FIELD_PB_POSE, FieldNames.FIELD_EXPRESSION, OlioFieldNames.FIELD_PB_ACTION,
+		OlioFieldNames.FIELD_PB_FACING, OlioFieldNames.FIELD_PB_X, OlioFieldNames.FIELD_PB_Y, OlioFieldNames.FIELD_PB_W,
+		OlioFieldNames.FIELD_PB_H, OlioFieldNames.FIELD_PB_DEPTH, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_COUNT,
+		OlioFieldNames.FIELD_PB_REFERENCE_POLICY
+	));
+
+	/** {@code olio.pb.sceneElement} (V3 §8, watched/v4): what it is, where it sits, how much it matters, and which item it is. */
+	private static final List<String> PB_SCENE_ELEMENT = Collections.unmodifiableList(Arrays.asList(
+		OlioFieldNames.FIELD_PB_ELEMENT_TYPE, FieldNames.FIELD_DESCRIPTION, OlioFieldNames.FIELD_PB_X, OlioFieldNames.FIELD_PB_Y,
+		OlioFieldNames.FIELD_PB_W, OlioFieldNames.FIELD_PB_H, OlioFieldNames.FIELD_PB_DEPTH, OlioFieldNames.FIELD_PB_IMPORTANCE,
+		OlioFieldNames.FIELD_ITEM
+	));
+
+	/**
+	 * {@code olio.item} (V3 §8, watched/v4): the appearance of a world item a scene element points at - name,
+	 * description, the three {@code data.color} references (rendered by name, as {@code data.color}'s query
+	 * set carries {@code name}) and the materials list. Quantity, price, perks and statistics are game state,
+	 * not appearance, and stay unwatched.
+	 */
+	private static final List<String> ITEM = Collections.unmodifiableList(Arrays.asList(
+		FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "color", "complementColor", "accentColor", "materials"
+	));
+
 	private static final Map<String, List<String>> WATCHED;
 	static {
 		Map<String, List<String>> m = new LinkedHashMap<>();
@@ -118,6 +166,10 @@ public class PbWatchedFields {
 		m.put(ModelNames.MODEL_DATA, DATA);
 		m.put(OlioModelNames.MODEL_PB_LOCATION, PB_LOCATION);
 		m.put(OlioModelNames.MODEL_PB_LOCATION_VARIANT, PB_LOCATION_VARIANT);
+		m.put(OlioModelNames.MODEL_PB_COMPOSITION, PB_COMPOSITION);
+		m.put(OlioModelNames.MODEL_PB_SCENE_ACTOR, PB_SCENE_ACTOR);
+		m.put(OlioModelNames.MODEL_PB_SCENE_ELEMENT, PB_SCENE_ELEMENT);
+		m.put(OlioModelNames.MODEL_ITEM, ITEM);
 		WATCHED = Collections.unmodifiableMap(m);
 	}
 

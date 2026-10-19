@@ -489,7 +489,8 @@ public class ChatUtil {
 		/// ChapBook uses its own poetry-oriented templates (landscape-only imagery, poem analysis).
 		/// Without these entries the chapBook.* calls in ChapBookUtil have no seedable DB template and
 		/// hard-fail "Prompt template not found" the same way pictureBook.reduce-character once did.
-		"chapBook.landscape-prompt", "chapBook.poem-analysis"
+		"chapBook.landscape-prompt", "chapBook.poem-analysis",
+		"pictureBook.compose-scene"
 	};
 
 	public static String[] getPromptTemplateTemplateNames() {

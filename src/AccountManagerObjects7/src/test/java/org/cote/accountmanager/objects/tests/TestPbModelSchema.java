@@ -73,7 +73,11 @@ public class TestPbModelSchema extends BaseTest {
 		OlioModelNames.MODEL_PB_LOCATION,
 		OlioModelNames.MODEL_PB_LOCATION_VARIANT,
 		/// V3 Phase 3 P3-3: the reviewable location-pass item, same conventions
-		OlioModelNames.MODEL_PB_LOCATION_PROPOSAL
+		OlioModelNames.MODEL_PB_LOCATION_PROPOSAL,
+		/// V3 Phase 4 P4-1: composition + its actor and element rows, same conventions
+		OlioModelNames.MODEL_PB_COMPOSITION,
+		OlioModelNames.MODEL_PB_SCENE_ACTOR,
+		OlioModelNames.MODEL_PB_SCENE_ELEMENT
 	);
 
 	/// CREATE [UNIQUE] INDEX <name> ON <schema>.<table> USING btree (<cols>)

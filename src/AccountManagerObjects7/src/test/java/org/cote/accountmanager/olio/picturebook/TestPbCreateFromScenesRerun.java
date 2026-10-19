@@ -656,4 +656,133 @@ public class TestPbCreateFromScenesRerun extends BaseTest {
 		BaseRecord cp4 = findCharPersonWithRace(testUser, charOid);
 		assertEquals("run 4: filled label is never overwritten", "Selkie", cp4.get(OlioFieldNames.FIELD_RACE_LABEL));
 	}
+
+	/// V3 §9.1 / P4-4: the compose job that follows a PB2 import tallies {@code olio.pb.scene} rows, and
+	/// until 2026-10-19 the import wrote none (rows came only from the first render's dual write), so the
+	/// auto-submitted job answered "The book has no scenes" on every real import. The import now carries
+	/// the PB2 half of the dual write: one row per scene, the text the compose prompt reads (summary →
+	/// description, setting, action, mood, blurb), the cast enrolled as {@code characters} participations,
+	/// idempotent by sceneIndex on a re-run. No LLM: chatConfigName is null and the cast carries name only.
+	@Test
+	public void testImportDualWritesSceneRowsForCompose() throws Exception {
+		OlioModelNames.use();
+		BaseRecord testUser = getCreateUser("pbRerunUser");
+		assertNotNull("test user", testUser);
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be configured", dataPath);
+		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+		String tag = shortId();
+		BaseRecord work = createWork(testUser, tag);
+		String workObjectId = work.get(FieldNames.FIELD_OBJECT_ID);
+		String slug = "pbdual" + tag;
+		String bookName = "PB Dual Write Book " + tag;
+		BaseRecord created = PbBookUtil.createBook(testUser, dataPath, slug, bookName);
+		assertNotNull("PB2 book must be created", created);
+		String pb2BookOid = created.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord pb2Book = PbBookUtil.readBook(testUser, pb2BookOid, orgId);
+		assertNotNull("PB2 book reads back", pb2Book);
+		assertEquals("a fresh PB2 book has no olio.pb.scene rows", 0, PbBookUtil.listScenes(testUser, pb2Book).size());
+
+		String charName = "Tamsin Quayle " + tag;
+		List<Map<String, Object>> run1 = new ArrayList<>();
+		Map<String, Object> s0 = castlessScene("Harbour Lamps", "Tamsin lights the first lamp on the quay");
+		s0.put("characters", new ArrayList<>(List.of(charName)));
+		Map<String, Object> s1 = castlessScene("The Turning Tide", "Tamsin watches the tide turn");
+		s1.put("characters", new ArrayList<>(List.of(charName)));
+		Map<String, Object> s2 = castlessScene("Wall Watchers", "the harbour wall, empty");
+		run1.add(s0);
+		run1.add(s1);
+		run1.add(s2);
+		List<Map<String, Object>> cast1 = new ArrayList<>();
+		cast1.add(cast(charName, null));
+
+		// ── RUN 1: the import writes the rows the compose tally reads ──
+		BaseRecord meta1 = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, run1, cast1, dataPath, pb2BookOid);
+		assertNotNull("run 1 returned meta", meta1);
+		List<BaseRecord> metaScenes1 = meta1.get("scenes");
+		assertEquals("meta carries 3 scenes", 3, metaScenes1.size());
+		List<String> charOids = metaScenes1.get(0).get("characters");
+		assertNotNull("scene 0 meta entry carries its cast", charOids);
+		assertEquals("one cast member on scene 0: " + charOids, 1, charOids.size());
+		BaseRecord cp = findCharPersonWithRace(testUser, charOids.get(0));
+		assertNotNull("the cast charPerson is readable by the importing user", cp);
+		long cpId = ((Number) cp.get(FieldNames.FIELD_ID)).longValue();
+
+		List<BaseRecord> rows1 = PbBookUtil.listScenes(testUser, pb2Book);
+		assertEquals("one olio.pb.scene row per imported scene", 3, rows1.size());
+		long bookGroupId = ((Number) pb2Book.get(FieldNames.FIELD_GROUP_ID)).longValue();
+		String[] titles = { "Harbour Lamps", "The Turning Tide", "Wall Watchers" };
+		for (int i = 0; i < 3; i++) {
+			BaseRecord row = rows1.get(i);
+			assertEquals("row " + i + " sceneIndex", i, ((Number) row.get(OlioFieldNames.FIELD_PB_SCENE_INDEX)).intValue());
+			assertEquals("row " + i + " lives in the book group", bookGroupId, ((Number) row.get(FieldNames.FIELD_GROUP_ID)).longValue());
+			assertEquals("row " + i + " title", titles[i], row.get(OlioFieldNames.FIELD_PB_TITLE));
+			String summary = (String) run1.get(i).get("summary");
+			assertEquals("row " + i + " summary", summary, row.get(OlioFieldNames.FIELD_PB_SUMMARY));
+			assertEquals("row " + i + " blurb (the note's blurb = the summary)", summary, row.get(OlioFieldNames.FIELD_PB_BLURB));
+			assertEquals("row " + i + " description (what the compose prompt reads first)", summary, row.get(FieldNames.FIELD_DESCRIPTION));
+			assertEquals("row " + i + " setting", run1.get(i).get("setting"), row.get(OlioFieldNames.FIELD_PB_SETTING));
+			assertEquals("row " + i + " action", run1.get(i).get("action"), row.get(OlioFieldNames.FIELD_PB_ACTION));
+			assertEquals("row " + i + " mood", run1.get(i).get("mood"), row.get(OlioFieldNames.FIELD_PB_MOOD));
+			assertNull("row " + i + " has no image yet", row.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID));
+			assertNull("row " + i + " has no workflow node yet", row.get(OlioFieldNames.FIELD_PB_SCENE_NODE));
+			Set<Long> members = characterIds(row);
+			if (i < 2) {
+				assertEquals("row " + i + " has the scene's cast enrolled as characters: " + members, Set.of(cpId), members);
+			} else {
+				assertTrue("castless scene " + i + " enrols nobody: " + members, members.isEmpty());
+			}
+		}
+
+		PbComposeJobUtil.Tally tally1 = PbComposeJobUtil.tally(testUser, pb2Book, false);
+		assertEquals("the compose tally sees the imported scenes", 3, tally1.sceneCount);
+		assertEquals("every imported scene wants composing", 3, tally1.toCompose);
+		assertFalse("a PictureBook import is not a ChapBook", tally1.chapBook);
+
+		// ── RUN 2: same titles, new text → the same rows, refreshed; no duplicates; cast still enrolled once ──
+		List<Map<String, Object>> run2 = new ArrayList<>();
+		Map<String, Object> r0 = castlessScene("Harbour Lamps", "run2: Tamsin lights every lamp");
+		r0.put("characters", new ArrayList<>(List.of(charName)));
+		Map<String, Object> r1 = castlessScene("The Turning Tide", "run2: the tide turns without her");
+		Map<String, Object> r2 = castlessScene("Wall Watchers", "run2: the wall fills with watchers");
+		r2.put("characters", new ArrayList<>(List.of(charName)));
+		run2.add(r0);
+		run2.add(r1);
+		run2.add(r2);
+		BaseRecord meta2 = PictureBookUtil.createFromScenes(testUser, workObjectId, null, "fiction",
+			bookName, run2, cast1, dataPath, pb2BookOid);
+		assertNotNull("run 2 returned meta", meta2);
+
+		List<BaseRecord> rows2 = PbBookUtil.listScenes(testUser, pb2Book);
+		assertEquals("a re-run creates no duplicate rows", 3, rows2.size());
+		for (int i = 0; i < 3; i++) {
+			assertEquals("row " + i + " identity is reused across the re-run",
+				(String) rows1.get(i).get(FieldNames.FIELD_OBJECT_ID), (String) rows2.get(i).get(FieldNames.FIELD_OBJECT_ID));
+			String summary = (String) run2.get(i).get("summary");
+			assertEquals("row " + i + " summary refreshed", summary, rows2.get(i).get(OlioFieldNames.FIELD_PB_SUMMARY));
+			assertEquals("row " + i + " description refreshed", summary, rows2.get(i).get(FieldNames.FIELD_DESCRIPTION));
+		}
+		assertEquals("scene 0 still has exactly one enrolment after the re-run", Set.of(cpId), characterIds(rows2.get(0)));
+		assertEquals("scene 1 keeps its earlier enrolment (a re-run adds, it does not unenrol)", Set.of(cpId), characterIds(rows2.get(1)));
+		assertEquals("scene 2 gained the cast it now names", Set.of(cpId), characterIds(rows2.get(2)));
+
+		PbComposeJobUtil.Tally tally2 = PbComposeJobUtil.tally(testUser, pb2Book, false);
+		assertEquals("tally after the re-run", 3, tally2.sceneCount);
+		assertEquals("still nothing composed", 3, tally2.toCompose);
+	}
+
+	/// The charPerson ids enrolled as the row's {@code characters} participations (what compose reads).
+	private Set<Long> characterIds(BaseRecord sceneRow) throws Exception {
+		Set<Long> ids = new HashSet<>();
+		List<BaseRecord> parts = ioContext.getMemberUtil().findMembers(sceneRow,
+			OlioFieldNames.FIELD_PB_CHARACTERS, OlioModelNames.MODEL_CHAR_PERSON, 0L);
+		if (parts == null) return ids;
+		for (BaseRecord part : parts) {
+			Object pid = part.get(FieldNames.FIELD_PARTICIPANT_ID);
+			if (pid instanceof Number) ids.add(((Number) pid).longValue());
+		}
+		return ids;
+	}
 }

@@ -10,6 +10,11 @@
  * the artifact chain offers exactly artifactActions(a, node.pinned). No network, LLM or SD is touched:
  * fetch, am7client.get/dotPath/clearCache and page.toast are stubbed.
  *
+ * P4-4: POST /locations/propose is a 202 job submit; the pass result is read from the terminal /rest/job
+ * payload (locationPassFromJob / awaitLocationPass) and the button shows the job phase while polling. The
+ * compose client (composeBook / composeScene / normalizeComposeJobResult / isComposeJobRefusal) is covered
+ * here too; the compose board UI is P4-9.
+ *
  * pictureBookLocations.js no longer imports pictureBook.js (deriveStageList/runSummaryText live in
  * workflows/pictureBookWorkflow.js since P4-0), so either module may be imported first.
  */
@@ -131,7 +136,7 @@ function runningJob() {
 function freshState(extra) {
     return Object.assign({
         bookObjectId: BOOK, locations: [], worldObjectId: null, loading: false, error: null, proposals: [], proposalFilter: 'PROPOSED',
-        proposalsLoading: false, proposalsError: null, proposing: false, busy: {}, edits: {}, runs: {}, pinnedRefusals: {}, overwrite: {},
+        proposalsLoading: false, proposalsError: null, proposing: false, proposeJob: null, busy: {}, edits: {}, runs: {}, pinnedRefusals: {}, overwrite: {},
         imageUrls: {}, pollIntervalMs: 1, loadSeq: 0
     }, extra || {});
 }
@@ -267,13 +272,36 @@ describe('pictureBookWorkflow location helpers — URL / method / body', () => {
         expect(wf.isPinnedNodeRefusal(null)).toBe(false);
         expect(wf.isPinnedNodeRefusal({ status: 409, message: 'Nothing to render (0 reused, 1 pinned)' })).toBe(false);
     });
-    it('proposeLocations POSTs /{book}/locations/propose with {} or {chatConfigName}; pass counts default to 0', async () => {
-        let calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? jsonResponse(200, { proposed: 2, scenesConsidered: 5, proposals: [proposalWire()] }) : null });
+    it('proposeLocations POSTs /{book}/locations/propose with {} or {chatConfigName}; the 202 submit DTO is normalized', async () => {
+        let calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose'
+            ? jsonResponse(202, { bookObjectId: BOOK, kind: 'pb.proposeLocations', submitted: true, reused: false, jobId: 'pj-1', jobStatus: 'queued' }) : null });
         let r = await wf.proposeLocations(BOOK);
         await wf.proposeLocations(BOOK, 'generalChat');
         expect(calls.map(c => c.body)).toEqual([{}, { chatConfigName: 'generalChat' }]);
-        expect(r).toMatchObject({ proposed: 2, scenesConsidered: 5, scenesSkipped: 0, hardFailure: false, warnings: [] });
-        expect(r.proposals[0].proposalStatus).toBe('PROPOSED');
+        expect(r).toMatchObject({ bookObjectId: BOOK, jobId: 'pj-1', jobStatus: 'queued', submitted: true, reused: false, kind: 'pb.proposeLocations' });
+        expect(wf.normalizeJobSubmit({})).toEqual({ jobId: null, jobStatus: null, submitted: false, reused: false, kind: null });
+    });
+    it('locationPassFromJob: the terminal job\'s result is the locationPassDto (counts 0, proposals normalized); cancelled rides; a job error throws', () => {
+        let pass = wf.locationPassFromJob({ jobId: 'pj-1', terminal: true, status: 'completed', cancelled: false,
+            result: { bookObjectId: BOOK, kind: 'pb.proposeLocations', passRun: true, scenesConsidered: 5, scenesSkipped: 1, proposed: 2, warnings: ['chunk 2 returned nothing'], proposals: [proposalWire()], durationMs: 1234 } });
+        expect(pass).toMatchObject({ proposed: 2, scenesConsidered: 5, scenesSkipped: 1, hardFailure: false, cancelled: false, jobId: 'pj-1', kind: 'pb.proposeLocations', durationMs: 1234, warnings: ['chunk 2 returned nothing'] });
+        expect(pass.proposals[0].proposalStatus).toBe('PROPOSED');
+        expect(wf.locationPassFromJob({ terminal: true, cancelled: true, result: { cancelled: true, proposed: 0 } })).toMatchObject({ cancelled: true, proposed: 0, proposals: [], warnings: [] });
+        expect(wf.locationPassFromJob({ terminal: true, cancelled: false, result: { cancelled: true } }).cancelled).toBe(true);
+        expect(wf.locationPassFromJob({ terminal: true, status: 'completed' })).toMatchObject({ proposed: 0, scenesConsidered: 0, scenesSkipped: 0, hardFailure: false, cancelled: false, proposals: [], warnings: [] });
+        expect(() => wf.locationPassFromJob({ terminal: true, status: 'failed', error: 'boom' })).toThrow(/boom/);
+    });
+    it('awaitLocationPass polls /rest/job/{id} to the terminal job and returns the pass with the jobId', async () => {
+        let calls = wire({ job: (id, nth) => jsonResponse(200, nth === 1
+            ? { jobId: id, status: 'running', phase: 'locations', terminal: false }
+            : { jobId: id, status: 'completed', phase: 'locations chunk 1/1', terminal: true, result: { proposed: 1, scenesConsidered: 2, proposals: [proposalWire()] } }) });
+        let phases = [];
+        let pass = await wf.awaitLocationPass('pj-2', { intervalMs: 1, onProgress: j => phases.push(j.phase) });
+        expect(seqOf(calls)).toEqual(['GET /rest/job/pj-2', 'GET /rest/job/pj-2']);
+        expect(phases).toEqual(['locations', 'locations chunk 1/1']);
+        expect(pass).toMatchObject({ jobId: 'pj-2', proposed: 1, scenesConsidered: 2, cancelled: false, hardFailure: false });
+        wire({ job: id => jsonResponse(200, { jobId: id, status: 'failed', terminal: true, error: 'LLM unreachable' }) });
+        await expect(wf.awaitLocationPass('pj-3', { intervalMs: 1 })).rejects.toThrow('LLM unreachable');
     });
     it('listLocationProposals GETs /{book}/locations/proposed with a lowercase ?status= only when given', async () => {
         let calls = wire({ proposals: () => [proposalWire({ proposalStatus: 'accepted', locationObjectId: 'L1' })] });
@@ -310,6 +338,73 @@ describe('pictureBookWorkflow location helpers — URL / method / body', () => {
         expect(r).toMatchObject({ sceneObjectId: 's1', locationObjectId: 'L1', locationName: 'The Drowned Anchor', variantObjectId: 'V1', variantName: 'dusk', updated: true, nodeStale: true, pinned: false, nodeStatus: 'STALE' });
         expect(cleared).toMatchObject({ locationObjectId: null, locationName: null, variantObjectId: null, variantName: null });
         expect(wf.normalizeLocationPass(null)).toMatchObject({ proposed: 0, hardFailure: false, proposals: [], warnings: [] });
+    });
+});
+
+// ─────────────────────────────── compose client (P4-4) ───────────────────────────────
+
+describe('compose client (P4-4)', () => {
+    const COMPOSE_RUNNING = '(409) A compose job is running for this book; wait for it to finish or cancel it first';
+    const JOB_HELD = '(409) Your pb.compose job abc is still running for this book; wait for it to finish or cancel it first';
+    it('composeBook POSTs /{book}/compose with only the set keys; 202 and 200 bodies normalize to one submit shape', async () => {
+        let n = 0;
+        let calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/compose'
+            ? (++n === 1
+                ? jsonResponse(202, { bookObjectId: BOOK, submitted: true, jobId: 'cj-1', jobStatus: 'queued', sceneCount: 3, scenesToCompose: 3, kind: 'pb.compose' })
+                : jsonResponse(200, { bookObjectId: BOOK, submitted: false, reason: 'Every scene is composed', sceneCount: 3, scenesCurrent: 3 }))
+            : null });
+        let queued = await wf.composeBook(BOOK);
+        let idle = await wf.composeBook(BOOK, { quickStart: true, force: true, chatConfigName: 'generalChat' });
+        await wf.composeBook(BOOK, { quickStart: false, force: 0, chatConfigName: '' });
+        expect(seqOf(calls)).toEqual(['POST ' + PB + '/compose', 'POST ' + PB + '/compose', 'POST ' + PB + '/compose']);
+        expect(calls.map(c => c.body)).toEqual([{}, { quickStart: true, force: true, chatConfigName: 'generalChat' }, {}]);
+        expect(calls[0].headers['Content-Type']).toBe('application/json');
+        expect(queued).toMatchObject({ bookObjectId: BOOK, kind: 'pb.compose', submitted: true, reused: false, jobId: 'cj-1', jobStatus: 'queued', sceneCount: 3, scenesToCompose: 3, scenesCurrent: 0, pagesSkipped: 0, quickStart: false, force: false, reason: null });
+        expect(idle).toMatchObject({ submitted: false, reused: false, jobId: null, jobStatus: null, reason: 'Every scene is composed', sceneCount: 3, scenesCurrent: 3, scenesToCompose: 0, pagesSkipped: 0 });
+    });
+    it('composeBook 409 "render path is v1" rejects with .status 409 and is not a job refusal; isComposeJobRefusal recognizes the two job-held wordings', async () => {
+        wire({ route: () => jsonResponse(409, { error: 'render path is v1 for this book' }) });
+        let err = await wf.composeBook(BOOK).catch(e => e);
+        expect(err.status).toBe(409);
+        expect(err.message).toBe('(409) render path is v1 for this book');
+        expect(wf.isComposeJobRefusal(err)).toBe(false);
+        expect(wf.isComposeJobRefusal({ status: 409, message: COMPOSE_RUNNING })).toBe(true);
+        expect(wf.isComposeJobRefusal({ status: 409, message: JOB_HELD })).toBe(true);
+        expect(wf.isComposeJobRefusal({ status: 409, message: '(409) A job is already running for this book' })).toBe(true);
+        expect(wf.isComposeJobRefusal({ status: 400, message: COMPOSE_RUNNING })).toBe(false);
+        expect(wf.isComposeJobRefusal({ status: 429, message: 'Too many jobs' })).toBe(false);
+        expect(wf.isComposeJobRefusal(null)).toBe(false);
+        wire({ route: () => jsonResponse(409, { error: COMPOSE_RUNNING.slice(6) }) });
+        let held = await wf.composeScene(BOOK, 's1').catch(e => e);
+        expect(held.status).toBe(409);
+        expect(wf.isComposeJobRefusal(held)).toBe(true);
+    });
+    it('composeScene POSTs /{book}/scene/{s}/compose with {force?, chatConfigName?}; the 200 result normalizes lists/flags/nulls', async () => {
+        let calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/scene/s1/compose'
+            ? jsonResponse(200, { bookObjectId: BOOK, sceneObjectId: 's1', sceneIndex: 1, written: true, source: 'LLM', castTier: 'SCENE_MEMBERS', compositionObjectId: 'c1', actors: [{ objectId: 'a1' }] }) : null });
+        let r = await wf.composeScene(BOOK, 's1', { force: true });
+        await wf.composeScene(BOOK, 's1');
+        await wf.composeScene(BOOK, 's1', { chatConfigName: 'generalChat', quickStart: true });
+        expect(seqOf(calls)).toEqual(['POST ' + PB + '/scene/s1/compose', 'POST ' + PB + '/scene/s1/compose', 'POST ' + PB + '/scene/s1/compose']);
+        expect(calls.map(c => c.body)).toEqual([{ force: true }, {}, { chatConfigName: 'generalChat' }]);
+        expect(r).toMatchObject({
+            sceneObjectId: 's1', sceneIndex: 1, written: true, source: 'LLM', castTier: 'SCENE_MEMBERS', compositionObjectId: 'c1', actors: [{ objectId: 'a1' }],
+            warnings: [], elements: [], unresolvedNames: [], unrecognizedPlacements: [], hardFailure: false, cancelled: false, skippedUserEdited: false, migratedFallback: false,
+            failureReason: null, locationHint: null, composition: null, elapsedMs: 0
+        });
+        expect(wf.normalizeComposeResult(null)).toMatchObject({ sceneObjectId: null, written: false, compositionObjectId: null, source: null, castTier: null, actors: [], elements: [] });
+    });
+    it('normalizeComposeJobResult: counts 0, flags boolean, scenes[] with draftRender normalized or null, locationPass normalized or null', () => {
+        let r = wf.normalizeComposeJobResult({ composed: 2, scenes: [{ sceneObjectId: 's1', status: 'composed', draftRender: { artifactObjectId: 'a1' } }, { sceneObjectId: 's2', status: 'cancelled' }], locationPass: { proposed: 1 }, note: 'x' });
+        expect(r).toMatchObject({ composed: 2, visited: 0, current: 0, sceneCount: 0, skippedUserEdited: 0, migrated: 0, hardFailures: 0, pagesSkipped: 0, quickStartRendered: 0, quickStartFailed: 0, durationMs: 0, lastSceneIndex: null, cancelled: false, interrupted: false, locationPassRan: false, quickStart: false, force: false, note: 'x' });
+        expect(r.scenes).toHaveLength(2);
+        expect(r.scenes[0]).toMatchObject({ sceneObjectId: 's1', status: 'composed', warnings: [], actorCount: 0, elementCount: 0, elapsedMs: 0, draftRenderMs: 0, error: null, draftRenderError: null });
+        expect(r.scenes[0].draftRender).toMatchObject({ artifactObjectId: 'a1', degradations: [], autoApproved: false, autoApproveSkipped: false, configNotApplied: false, stagesPlanned: 0, stagesRendered: 0, nodeObjectId: null, reviewStatus: null });
+        expect(r.scenes[1]).toMatchObject({ sceneObjectId: 's2', status: 'cancelled', draftRender: null, warnings: [] });
+        expect(r.locationPass).toMatchObject({ proposed: 1, proposals: [], warnings: [], hardFailure: false, scenesConsidered: 0 });
+        let empty = wf.normalizeComposeJobResult(null);
+        expect(empty).toMatchObject({ sceneCount: 0, visited: 0, composed: 0, hardFailures: 0, durationMs: 0, lastSceneIndex: null, cancelled: false, scenes: [], locationPass: null, note: null, bookObjectId: null });
+        expect(wf.normalizeComposeJobResult({ scenes: [{ draftRender: 'not-an-object' }], locationPass: 'nope' })).toMatchObject({ scenes: [{ draftRender: null }], locationPass: null });
     });
 });
 
@@ -813,16 +908,65 @@ describe('proposals', () => {
         expect(c.querySelector('.am7-dialog-title').textContent).toBe('Merge Anchor Inn into…');
         expect(c.querySelector('[data-testid="pb-loc-merge-survivor"]').value).toBe('L1');
     });
-    it('Propose from scenes → POST …/locations/propose {}; the summary toast; hardFailure is an error', async () => {
-        let n = 0;
-        let calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose'
-            ? jsonResponse(200, ++n === 1 ? { scenesConsidered: 5, scenesSkipped: 1, proposed: 2, warnings: ['chunk 2 returned nothing'], proposals: [proposalWire()] } : { hardFailure: true, warnings: ['the LLM returned no JSON'] }) : null });
+    it('Propose from scenes → POST …/locations/propose {} (202) → poll /rest/job/pj-1 with the phase on the button → the summary toast; a hardFailure result is an error; a 409 submit is toasted and never polled', async () => {
+        let submit = { bookObjectId: BOOK, kind: 'pb.proposeLocations', submitted: true, reused: false, jobId: 'pj-1', jobStatus: 'queued' };
+        let release;
+        let gate = new Promise(r => { release = r; });
+        let runningPoll = { jobId: 'pj-1', kind: 'pb.proposeLocations', status: 'running', phase: 'locations chunk 1/1', current: 1, total: 2, terminal: false, cancelled: false };
+        let donePoll = { jobId: 'pj-1', kind: 'pb.proposeLocations', status: 'completed', phase: 'locations chunk 1/1', current: 2, total: 2, terminal: true, cancelled: false,
+            result: { bookObjectId: BOOK, kind: 'pb.proposeLocations', passRun: true, scenesConsidered: 5, scenesSkipped: 1, proposed: 2, warnings: ['chunk 2 returned nothing'], proposals: [proposalWire()], durationMs: 1234 } };
+        lib.__setLocationsStateForTest({ pollIntervalMs: 1 });
+        let calls = wire({
+            route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? jsonResponse(202, submit) : null,
+            job: (id, nth) => nth === 1 ? jsonResponse(200, runningPoll) : gate.then(() => jsonResponse(200, donePoll))
+        });
         findByTestId(lib.renderLocationsHeader(), 'pb-loc-propose').attrs.onclick();
+        await waitFor(() => { let j = lib.__locationsStateForTest().proposeJob; return j && j.phase === 'locations chunk 1/1'; });
+        let mid = findByTestId(lib.renderLocationsHeader(), 'pb-loc-propose');
+        expect(mid.attrs.disabled).toBe(true);
+        expect(textOf(mid)).toBe('progress_activityProposing… locations chunk 1/1');
+        expect(lib.__locationsStateForTest().proposing).toBe(true);
+        expect(page.toast).not.toHaveBeenCalled();
+        release();
         await waitFor(() => only(calls, /GET .*\/proposed/).length === 1);
         expect(calls[0]).toMatchObject({ method: 'POST', url: PB + '/locations/propose', body: {} });
+        expect(seqOf(calls)).toEqual(['POST ' + PB + '/locations/propose', 'GET /rest/job/pj-1', 'GET /rest/job/pj-1', 'GET ' + PB + '/locations', 'GET ' + PB + '/locations/proposed?status=proposed']);
         expect(page.toast).toHaveBeenCalledWith('success', 'Proposed 2 locations from 5 scenes (1 skipped) · 1 warning(s)');
+        expect(lib.__locationsStateForTest()).toMatchObject({ proposing: false, proposeJob: null, proposalFilter: 'PROPOSED' });
+        expect(textOf(findByTestId(lib.renderLocationsHeader(), 'pb-loc-propose'))).toBe('auto_awesomePropose from scenes');
+
+        calls = wire({
+            route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? jsonResponse(202, submit) : null,
+            job: () => jsonResponse(200, Object.assign({}, donePoll, { result: { bookObjectId: BOOK, kind: 'pb.proposeLocations', hardFailure: true, warnings: ['the LLM returned no JSON'] } }))
+        });
         await lib.propose();
         expect(page.toast).toHaveBeenCalledWith('error', 'Location pass failed: the LLM returned no JSON');
+        expect(seqOf(calls).slice(0, 2)).toEqual(['POST ' + PB + '/locations/propose', 'GET /rest/job/pj-1']);
+
+        calls = wire({
+            route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? jsonResponse(202, submit) : null,
+            job: () => jsonResponse(200, Object.assign({}, donePoll, { cancelled: true, result: { cancelled: true, proposed: 0 } }))
+        });
+        await lib.propose();
+        expect(page.toast).toHaveBeenCalledWith('warn', 'Location pass cancelled');
+
+        calls = wire({
+            route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? jsonResponse(202, submit) : null,
+            job: () => jsonResponse(200, { jobId: 'pj-1', status: 'failed', terminal: true, error: 'LLM unreachable' })
+        });
+        await lib.propose();
+        expect(page.toast).toHaveBeenCalledWith('error', 'Location pass failed: LLM unreachable');
+
+        calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? jsonResponse(409, { error: 'A job is already running for this book' }) : null });
+        await lib.propose();
+        expect(page.toast).toHaveBeenCalledWith('error', '(409) A job is already running for this book');
+        expect(only(calls, /GET \/rest\/job/)).toEqual([]);
+        expect(lib.__locationsStateForTest()).toMatchObject({ proposing: false, proposeJob: null });
+
+        calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? jsonResponse(202, { bookObjectId: BOOK, kind: 'pb.proposeLocations', submitted: true }) : null });
+        await lib.propose();
+        expect(page.toast).toHaveBeenCalledWith('error', 'The location pass was accepted but no job id was returned');
+        expect(only(calls, /GET \/rest\/job/)).toEqual([]);
     });
     it('the status filter reloads GET …/proposed?status=<lower>', async () => {
         let calls = wire({ proposals: () => [] });

@@ -38,6 +38,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.accountmanager.schema.type.PbLocationKindEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
@@ -79,6 +80,9 @@ import org.junit.Test;
  *      result's warnings, and {@link PbServiceFacade#locationPassDto} / {@link PbServiceFacade#stripRaw} put
  *      {@code rawResponseLength} on the wire instead of the text while the result keeps it (P3-4 transport
  *      boundary).</li>
+ *  <li>(case11, P4-4) a ChapBook page has no {@code setting}: the pass clusters it by its {@code sdPrompt},
+ *      then by its stanza, and skips a page with neither ({@link PbLocationUtil#settingTextOf}); the text the
+ *      emulator was handed is read back off the proposal rows it produced.</li>
  * </ol>
  * Lives in {@code org.cote.accountmanager.olio.picturebook} for the package-private {@code PbGraphUtil.patchOf}
  * and the {@code PbLocationUtil} helpers. Each case uses its own throwaway book in {@code /Development/World
@@ -1330,6 +1334,94 @@ public class TestPbLocationProposal extends BaseTest {
 			deleteBook(u, bk);
 			deleteConnections(u);
 		}
+	}
+
+	/// P4-4: a ChapBook page carries no `setting`; the pass clusters it by its `sdPrompt`, then its stanza, and
+	/// skips a page with neither. The emulator names a cluster after the text it was handed (up to the first
+	/// comma, Title Case) and echoes the text as the description, so the proposal rows are the readout of what
+	/// `settingTextOf` put on the prompt line. Texts carry no " - " (the emulator strips a trailing " - <title>").
+	@Test
+	public void case11_pagesUseSdPromptThenStanzaAsSetting() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		final String sdPrompt = "A moonlit orchard behind the rectory, apple boughs heavy with frost";
+		final String sdPromptName = "A Moonlit Orchard Behind The Rectory";
+		final String stanza = "Under the pier\nthe tide runs black";
+		final String stanzaLine = "Under the pier the tide runs black";
+		final String stanzaName = "Under The Pier The Tide Runs Black";
+		try {
+			bk = newBook(u, "chap");
+			bk = makeChapBook(u, bk);
+			BaseRecord p0 = addScene(u, bk, 0, "Frost", null);
+			BaseRecord p1 = addScene(u, bk, 1, "Tide", null);
+			BaseRecord p2 = addScene(u, bk, 2, "Blank", null);
+			p0 = setPageField(u, p0, OlioFieldNames.FIELD_CB_SD_PROMPT, sdPrompt);
+			p1 = setPageField(u, p1, OlioFieldNames.FIELD_CB_POEM_STANZA, stanza);
+			for(BaseRecord p : new BaseRecord[] {p0, p1, p2}) {
+				assertNull("a page has no setting: " + p.get(FieldNames.FIELD_NAME), p.get(OlioFieldNames.FIELD_PB_SETTING));
+			}
+			assertEquals("page 0 clusters by its sdPrompt", sdPrompt, PbLocationUtil.settingTextOf(p0));
+			assertEquals("page 1 clusters by its stanza", stanza, PbLocationUtil.settingTextOf(p1));
+			assertNull("page 2 has nothing to cluster by", PbLocationUtil.settingTextOf(p2));
+			/// Precedence on one record: a page carrying both is clustered by its sdPrompt.
+			BaseRecord both = PbBookUtil.readScene(u, oidOf(p1), orgId);
+			both.set(OlioFieldNames.FIELD_CB_SD_PROMPT, sdPrompt);
+			assertEquals("sdPrompt wins over the stanza", sdPrompt, PbLocationUtil.settingTextOf(both));
+
+			BaseRecord cfg = emulatorConfig(u, newSet(null));
+			long t0 = System.currentTimeMillis();
+			LocationPassResult r = PbLocationUtil.proposeLocations(u, bk, cfg, null);
+			logger.info("MEASURED: case11 pass " + (System.currentTimeMillis() - t0) + " ms: " + describe(r));
+			assertFalse("hard failure: " + r.warnings, r.hardFailure);
+			assertFalse(r.cancelled);
+			assertEquals("pages with an sdPrompt or a stanza", 2, r.scenesConsidered);
+			assertEquals("the page with neither", 1, r.scenesSkipped);
+			assertEquals(1, r.chunks);
+			assertEquals(1, r.chunksParsed);
+			assertEquals("one place per page text", 2, r.proposed);
+			assertEquals(0, r.folded);
+
+			List<BaseRecord> rows = PbLocationUtil.listProposals(u, bk, null);
+			assertEquals("proposal rows: " + names(rows), 2, rows.size());
+			BaseRecord orchard = require(rows, PbLocationUtil.proposalName(sdPromptName));
+			assertEquals("the prompt line was the sdPrompt", sdPromptName, orchard.get(OlioFieldNames.FIELD_PB_PROPOSED_NAME));
+			assertEquals("the emulator echoed the sdPrompt back as the description", sdPrompt, orchard.get(FieldNames.FIELD_DESCRIPTION));
+			assertSceneIds(orchard, p0);
+			BaseRecord pier = require(rows, PbLocationUtil.proposalName(stanzaName));
+			assertEquals("the prompt line was the stanza", stanzaName, pier.get(OlioFieldNames.FIELD_PB_PROPOSED_NAME));
+			assertEquals("the stanza reached the prompt on one line", stanzaLine, pier.get(FieldNames.FIELD_DESCRIPTION));
+			assertSceneIds(pier, p1);
+			for(BaseRecord row : rows) {
+				List<String> ids = row.get(OlioFieldNames.FIELD_PB_SCENE_OBJECT_IDS);
+				assertFalse("the blank page is in no cluster: " + row.get(FieldNames.FIELD_NAME), ids.contains(oidOf(p2)));
+			}
+		}
+		finally {
+			deleteBook(u, bk);
+			deleteConnections(u);
+		}
+	}
+
+	/// Turn a freshly created STORY book into a CHAPBOOK as its owner (the one-field PATCH idiom of
+	/// PbBookUtil.setAutoApprove) and re-read it so the record handed to the pass carries the type.
+	private BaseRecord makeChapBook(BaseRecord u, BaseRecord bk) throws Exception {
+		BaseRecord patch = PbGraphUtil.patchOf(bk, OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		patch.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.CHAPBOOK.toString());
+		assertNotNull("bookType patch", ioContext.getAccessPoint().update(u, patch));
+		BaseRecord fresh = PbBookUtil.readBook(u, oidOf(bk), orgOf(u));
+		assertNotNull("re-read book", fresh);
+		assertTrue("the book reads back as a ChapBook: " + fresh.get(OlioFieldNames.FIELD_PB_BOOK_TYPE), PbNodeExecutor.isChapBook(fresh));
+		return fresh;
+	}
+
+	private BaseRecord setPageField(BaseRecord u, BaseRecord page, String field, String value) throws Exception {
+		BaseRecord patch = PbGraphUtil.patchOf(page, OlioModelNames.MODEL_PB_SCENE, field);
+		patch.set(field, value);
+		assertNotNull("set " + field + " on " + page.get(FieldNames.FIELD_NAME), ioContext.getAccessPoint().update(u, patch));
+		BaseRecord fresh = readScene(u, oidOf(page), orgOf(u));
+		assertEquals(field + " persisted", value, fresh.get(field));
+		return fresh;
 	}
 
 	// ─────────────────────────────── page-node fixture (copied from TestPbSceneLocationPointer) ───────────────────────────────

@@ -31,6 +31,7 @@ import org.cote.accountmanager.olio.illustration.RenderEstimate;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
@@ -648,6 +649,18 @@ public class PbServiceFacade {
 		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "render a scene plan");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		return executePlanScene(user, book, scene, sdu, PbRenderPlanUtil.PlanOptions.NONE, null);
+	}
+
+	/**
+	 * The body of {@link #requestRenderPlanScene} after the book and scene are authorized: find-or-create the
+	 * scene's RENDER_PLAN node, refuse a pinned one (409), claim it for the duration (409 when another run of
+	 * this JVM holds it) and execute it on a fresh run. Shared with the compose job's Quick-start DRAFT render
+	 * (V3 §9.1, P4-4), which passes a preset override and the job's cancel token; the caller has already
+	 * authorized {@code book} for update and {@code scene} as one of its scenes.
+	 */
+	static Map<String, Object> executePlanScene(BaseRecord user, BaseRecord book, BaseRecord scene,
+			org.cote.accountmanager.olio.sd.SDUtil sdu, PbRenderPlanUtil.PlanOptions opts, SummarizeProgress cancelToken) {
 		BaseRecord workflow = ensureWorkflow(user, book);
 		BaseRecord node = ensureRenderPlanNode(user, book, workflow, scene);
 
@@ -669,7 +682,7 @@ public class PbServiceFacade {
 			out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
 			out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
 			out.put("renderPath", "v3");
-			out.putAll(PbNodeExecutor.executeNodeRun(user, book, workflow, node, sdu));
+			out.putAll(PbNodeExecutor.executeNodeRun(user, book, workflow, node, sdu, opts, cancelToken));
 			out.put("executed", Boolean.TRUE);
 			return out;
 		}
@@ -3542,6 +3555,207 @@ public class PbServiceFacade {
 	}
 
 	/**
+	 * Submit the whole-book location pass as a job (V3 §9.1, §21, P4-4; ruling 182 (9)) - the asynchronous
+	 * form of {@link #proposeLocations}: returns as soon as the job is queued; poll {@code GET /rest/job/{jobId}}
+	 * for the {@link #locationPassDto} result. See {@link PbComposeJobUtil#submitProposeLocations} for what is
+	 * reused and refused.
+	 */
+	public static Map<String, Object> requestProposeLocations(BaseRecord user, String bookObjectId, String chatConfigName) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "propose locations");
+		return PbComposeJobUtil.submitProposeLocations(user, book, chatConfigName);
+	}
+
+	// ─────────────────────────────── compose (V3 §9.1, P4-4) ───────────────────────────────
+
+	/**
+	 * Submit the whole-book compose job (V3 §9.1 ratified A, §21, P4-4): every scene without a current
+	 * composition is composed in story order, then the whole-book location pass runs; with {@code quickStart}
+	 * each newly composed scene is also rendered once at the DRAFT preset. Idempotent on a composed book - the
+	 * answer is {@code submitted:false} and nothing is queued - so a client may call it on every V3 open.
+	 * {@code force} re-composes every scene, user-edited ones included. V3 books only (409 otherwise).
+	 *
+	 * @return {@link PbComposeJobUtil#submitCompose}'s map: {@code submitted}, {@code jobId}, {@code jobStatus},
+	 *         {@code reused}, the scene tally and the echoed options
+	 */
+	public static Map<String, Object> requestCompose(BaseRecord user, String bookObjectId, boolean quickStart, boolean force,
+			String chatConfigName, String sdApiType, String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "compose scenes");
+		return PbComposeJobUtil.submitCompose(user, book, quickStart, force, chatConfigName, sdApiType, sdServer);
+	}
+
+	/**
+	 * Compose one scene synchronously (V3 §9.1 lazy / explicit re-compose, P4-4): one LLM call, the result as
+	 * {@link #composeResultDto}. Refused with 409 while a compose job holds the book in this JVM, so a
+	 * per-scene call never races the job on the same rows. Without {@code force} a user-edited composition is
+	 * left alone ({@code skippedUserEdited}); with it, every existing composition of the scene is replaced.
+	 */
+	public static Map<String, Object> composeScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String chatConfigName, boolean force) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "compose scenes");
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		PbComposeJobUtil.requireNotComposing(bookObjectId);
+		PbComposeUtil.ComposeResult r = PbComposeUtil.composeScene(user, book, scene, chatConfigName, force);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+		out.putAll(composeResultDto(r));
+		return out;
+	}
+
+	/**
+	 * Import extracted scenes into a work and, when the import was bound to a V3 book, submit its compose
+	 * job (V3 §9.1 "composed up front", P4-4). The import's own result ({@code pictureBookMeta}, with the
+	 * top-level {@code bookObjectId} / {@code pb2BookObjectId} / {@code scenes} the client reads) is returned
+	 * unchanged with {@code composeJob} (the submit result), {@code composeJobSkipped} (a reason: no PB2 book,
+	 * or the book is not on the V3 path) or {@code composeJobError} ({@code status}, {@code message}) added.
+	 * A compose that cannot be queued never fails the import - the scenes are saved; the client can submit
+	 * the compose again from the book.
+	 */
+	public static Map<String, Object> createFromScenesAndCompose(BaseRecord user, String workObjectId, String chatConfigName,
+			String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataList,
+			String dataPath, String pb2BookObjectId) {
+		BaseRecord meta = PictureBookUtil.createFromScenes(user, workObjectId, chatConfigName, genre, bookName, sceneList,
+			charDataList, dataPath, pb2BookObjectId);
+		Map<String, Object> out = new LinkedHashMap<>();
+		if(meta != null) {
+			Map<String, Object> m = JSONUtil.getMap(meta.toFullString().getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+			if(m != null) {
+				out.putAll(m);
+			}
+		}
+		if(pb2BookObjectId == null || pb2BookObjectId.isBlank()) {
+			out.put("composeJobSkipped", "no PictureBook was bound to the import");
+			return out;
+		}
+		try {
+			BaseRecord book = requireBook(user, pb2BookObjectId);
+			if(!PbRenderPath.isV3(book)) {
+				out.put("composeJobSkipped", "render path is not v3");
+				return out;
+			}
+			requireBookUpdate(user, book, "compose scenes");
+			out.put("composeJob", PbComposeJobUtil.submitCompose(user, book, false, false, chatConfigName, null, null));
+		}
+		catch(PictureBookException e) {
+			Map<String, Object> err = new LinkedHashMap<>();
+			err.put("status", Integer.valueOf(e.getStatus()));
+			err.put("message", e.getMessage());
+			out.put("composeJobError", err);
+			logger.warn("createFromScenes: scenes imported but the compose job was not queued: " + e.getStatus() + " " + e.getMessage());
+		}
+		catch(RuntimeException e) {
+			Map<String, Object> err = new LinkedHashMap<>();
+			err.put("status", Integer.valueOf(500));
+			err.put("message", (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+			out.put("composeJobError", err);
+			logger.error("createFromScenes: scenes imported but the compose job was not queued", e);
+		}
+		return out;
+	}
+
+	/** The wire shape of one {@link PbComposeUtil.ComposeResult}: the outcome flags, the composition and its rows. */
+	public static Map<String, Object> composeResultDto(PbComposeUtil.ComposeResult r) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		if(r == null) {
+			return m;
+		}
+		m.put("written", Boolean.valueOf(r.isWritten()));
+		m.put("cancelled", Boolean.valueOf(r.cancelled));
+		m.put("skippedUserEdited", Boolean.valueOf(r.skippedUserEdited));
+		m.put("migratedFallback", Boolean.valueOf(r.migratedFallback));
+		m.put("hardFailure", Boolean.valueOf(r.hardFailure));
+		m.put("failureReason", r.failureReason);
+		m.put("source", (r.source != null ? r.source.name() : null));
+		m.put("castTier", (r.castTier != null ? r.castTier.name() : null));
+		m.put("warnings", stripRaw(r.warnings));
+		m.put("unresolvedNames", (r.unresolvedNames != null ? new ArrayList<>(r.unresolvedNames) : new ArrayList<>()));
+		m.put("unrecognizedPlacements", (r.unrecognizedPlacements != null ? new ArrayList<>(r.unrecognizedPlacements) : new ArrayList<>()));
+		m.put("locationHint", r.locationHint);
+		m.put("elapsedMs", Long.valueOf(r.elapsedMs));
+		m.put("compositionObjectId", (r.composition != null ? r.composition.get(FieldNames.FIELD_OBJECT_ID) : null));
+		m.put("composition", (r.composition != null ? compositionDto(r.composition) : null));
+		List<Map<String, Object>> actors = new ArrayList<>();
+		if(r.actors != null) {
+			for(BaseRecord a : r.actors) {
+				actors.add(actorDto(a));
+			}
+		}
+		m.put("actors", actors);
+		List<Map<String, Object>> elements = new ArrayList<>();
+		if(r.elements != null) {
+			for(BaseRecord e : r.elements) {
+				elements.add(elementDto(e));
+			}
+		}
+		m.put("elements", elements);
+		return m;
+	}
+
+	private static Map<String, Object> compositionDto(BaseRecord c) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("objectId", c.get(FieldNames.FIELD_OBJECT_ID));
+		m.put("name", c.get(FieldNames.FIELD_NAME));
+		m.put("source", enumString(c, OlioFieldNames.FIELD_PB_SOURCE));
+		m.put("purpose", enumString(c, OlioFieldNames.FIELD_PB_PURPOSE));
+		m.put("shotType", enumString(c, OlioFieldNames.FIELD_PB_SHOT_TYPE));
+		m.put("viewpoint", enumString(c, OlioFieldNames.FIELD_PB_VIEWPOINT));
+		m.put("cameraText", c.get(OlioFieldNames.FIELD_PB_CAMERA_TEXT));
+		m.put("mood", c.get(OlioFieldNames.FIELD_PB_MOOD));
+		m.put("settingText", c.get(OlioFieldNames.FIELD_PB_SETTING_TEXT));
+		m.put("action", c.get(OlioFieldNames.FIELD_PB_ACTION));
+		m.put("locationObjectId", fkObjectId(c, FieldNames.FIELD_LOCATION, null));
+		m.put("locationVariant", c.get(OlioFieldNames.FIELD_PB_LOCATION_VARIANT));
+		m.put("focalActorObjectId", fkObjectId(c, OlioFieldNames.FIELD_PB_FOCAL_ACTOR, null));
+		m.put("userEdited", c.get(OlioFieldNames.FIELD_PB_USER_EDITED));
+		m.put("revision", c.get(OlioFieldNames.FIELD_PB_REVISION));
+		m.put("promptLocked", c.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		return m;
+	}
+
+	private static Map<String, Object> actorDto(BaseRecord a) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("objectId", a.get(FieldNames.FIELD_OBJECT_ID));
+		m.put("name", a.get(FieldNames.FIELD_NAME));
+		m.put("characterObjectId", fkObjectId(a, OlioFieldNames.FIELD_PB_CHARACTER, null));
+		m.put("role", enumString(a, OlioFieldNames.FIELD_PB_ROLE));
+		m.put("priority", a.get(OlioFieldNames.FIELD_PB_PRIORITY));
+		m.put("pose", a.get(OlioFieldNames.FIELD_PB_POSE));
+		m.put("expression", a.get(FieldNames.FIELD_EXPRESSION));
+		m.put("action", a.get(OlioFieldNames.FIELD_PB_ACTION));
+		m.put("facing", a.get(OlioFieldNames.FIELD_PB_FACING));
+		m.put("x", a.get(OlioFieldNames.FIELD_PB_X));
+		m.put("y", a.get(OlioFieldNames.FIELD_PB_Y));
+		m.put("w", a.get(OlioFieldNames.FIELD_PB_W));
+		m.put("h", a.get(OlioFieldNames.FIELD_PB_H));
+		m.put("depth", a.get(OlioFieldNames.FIELD_PB_DEPTH));
+		m.put("count", a.get(FieldNames.FIELD_COUNT));
+		m.put("description", a.get(FieldNames.FIELD_DESCRIPTION));
+		m.put("referencePolicy", enumString(a, OlioFieldNames.FIELD_PB_REFERENCE_POLICY));
+		return m;
+	}
+
+	private static Map<String, Object> elementDto(BaseRecord e) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("objectId", e.get(FieldNames.FIELD_OBJECT_ID));
+		m.put("elementType", enumString(e, OlioFieldNames.FIELD_PB_ELEMENT_TYPE));
+		m.put("description", e.get(FieldNames.FIELD_DESCRIPTION));
+		m.put("x", e.get(OlioFieldNames.FIELD_PB_X));
+		m.put("y", e.get(OlioFieldNames.FIELD_PB_Y));
+		m.put("w", e.get(OlioFieldNames.FIELD_PB_W));
+		m.put("h", e.get(OlioFieldNames.FIELD_PB_H));
+		m.put("depth", e.get(OlioFieldNames.FIELD_PB_DEPTH));
+		m.put("importance", enumString(e, OlioFieldNames.FIELD_PB_IMPORTANCE));
+		m.put("itemObjectId", fkObjectId(e, OlioFieldNames.FIELD_ITEM, null));
+		return m;
+	}
+
+	/**
 	 * The book's location proposals, newest pass first as stored; {@code status} filters case-insensitively
 	 * on {@code PbProposalStatusEnumType} (null = all; unknown = 400).
 	 */
@@ -3961,6 +4175,7 @@ public class PbServiceFacade {
 		m.put("settled", Integer.valueOf(r.settled));
 		m.put("retired", Integer.valueOf(r.retired));
 		m.put("hardFailure", Boolean.valueOf(r.hardFailure));
+		m.put("cancelled", Boolean.valueOf(r.cancelled));
 		m.put("warnings", stripRaw(r.warnings));
 		List<Map<String, Object>> dtos = new ArrayList<>();
 		for(BaseRecord p : r.proposals) {

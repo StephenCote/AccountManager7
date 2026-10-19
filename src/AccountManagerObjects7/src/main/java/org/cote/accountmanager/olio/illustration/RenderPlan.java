@@ -175,6 +175,16 @@ public final class RenderPlan {
 		return b.build();
 	}
 
+	/// Copy with degradations appended that arose outside strategy selection and compilation (P4-4: a
+	/// composition written lazily by the render itself, COMPOSED_OUT_OF_ORDER).
+	public RenderPlan withDegradations(List<Degradation> added) {
+		Builder b = toBuilder();
+		if(added != null) {
+			b.degradations.addAll(added);
+		}
+		return b.build();
+	}
+
 	/// Copy with the compiled prompts replaced and the compiler's degradations appended.
 	public RenderPlan withCompiled(Map<String, CompiledPrompt> compiled, List<Degradation> added) {
 		Builder b = toBuilder();
@@ -987,6 +997,9 @@ public final class RenderPlan {
 		public static final String MODEL_SUBSTITUTED = ModelResolver.DEGRADATION_MODEL_SUBSTITUTED;
 		public static final String PROMPT_TRUNCATED = "PROMPT_TRUNCATED";
 		public static final String QA_WARN = "QA_WARN";
+		/// §9.1: the render composed this scene itself because no composition existed; the scene was staged
+		/// without the story-order context the compose job gives it. Re-compose in order to clear it.
+		public static final String COMPOSED_OUT_OF_ORDER = "COMPOSED_OUT_OF_ORDER";
 
 		private final String code;
 		private final String message;

@@ -1,0 +1,79 @@
+{
+	"name": "olio.pb.sceneElement",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "category",
+	"label": "Scene element",
+	"group": "Book",
+	"dedicatedParticipation": false,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["composition", "item"],
+	"description": "PictureBook V3 §8 scene element: one non-character thing placed in an olio.pb.composition - a prop, furniture, animal, vehicle, structure or natural feature - with a normalized box (x, y, w, h in 0-1 image space), depth (0 = front), an importance the composer spends prompt budget by, and an optional olio.item FK when the thing is a world item with its own colours and materials. Rows live in the book's group, owned by the request user, and are found by the 'composition' FK - never a list on the composition. Deleted with the book by PbDeleteUtil. No field carries a schema default (PB2 convention rule 3, TestPbModelSchema): enum columns read NULL as UNKNOWN, numbers read 0 on legacy rows.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "composition",
+			"baseModel": "olio.pb.composition",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "elementType",
+			"baseClass": "org.cote.accountmanager.schema.type.PbElementTypeEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "description",
+			"type": "string",
+			"description": "The thing as the text describes it; the base of its prompt fragment."
+		},
+		{
+			"name": "x",
+			"type": "double",
+			"description": "Left edge of the element's box, normalized 0-1 of image width."
+		},
+		{
+			"name": "y",
+			"type": "double",
+			"description": "Top edge of the element's box, normalized 0-1 of image height."
+		},
+		{
+			"name": "w",
+			"type": "double",
+			"description": "Box width, normalized 0-1."
+		},
+		{
+			"name": "h",
+			"type": "double",
+			"description": "Box height, normalized 0-1."
+		},
+		{
+			"name": "depth",
+			"type": "int",
+			"description": "Layer order, 0 = front-most."
+		},
+		{
+			"name": "importance",
+			"baseClass": "org.cote.accountmanager.schema.type.PbImportanceEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "item",
+			"baseModel": "olio.item",
+			"type": "model",
+			"foreign": true,
+			"description": "The world item this element is, when it is one; nullable. Its name/description/colours/materials are watched (watched/v4) so an item edit marks the composition's render stale."
+		}
+	]
+}

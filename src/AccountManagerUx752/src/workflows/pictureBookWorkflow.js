@@ -4,6 +4,7 @@
  * Call getBookInfo(bookGroupObjectId) first to resolve the pb2BookObjectId.
  */
 import { applicationPath } from '../core/config.js';
+import { pollJob } from './sceneExtractor.js';
 
 function wfBase() { return applicationPath + '/rest/olio/picture-book'; }
 
@@ -916,12 +917,193 @@ export function isPinnedNodeRefusal(err) {
     return /is pinned/i.test(String(err.message || '') + ' ' + String(err.body || ''));
 }
 
-/** POST /{book}/locations/propose {chatConfigName?} — synchronous; → locationPassDto */
+/** The 202 submit body shared by the location pass and the compose job: {bookObjectId, kind, submitted, reused, jobId, jobStatus}. */
+export function normalizeJobSubmit(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        jobId: r.jobId != null ? r.jobId : null,
+        jobStatus: r.jobStatus != null ? r.jobStatus : null,
+        submitted: !!r.submitted,
+        reused: !!r.reused,
+        kind: r.kind || null
+    });
+}
+
+/**
+ * POST /{book}/locations/propose {chatConfigName?} → 202 submit DTO {bookObjectId, kind:"pb.proposeLocations",
+ * submitted, reused, jobId, jobStatus}. The pass runs as a background job: collect the locationPassDto from
+ * GET /rest/job/{jobId} (awaitLocationPass / locationPassFromJob). 409 while another job holds the book,
+ * 429 at the principal's job cap, 404 for an unknown chatConfigName.
+ */
 export async function proposeLocations(pb2BookObjectId, chatConfigName) {
     let body = {};
     if (chatConfigName) body.chatConfigName = chatConfigName;
-    return normalizeLocationPass(await wfFetch('/' + pb2BookObjectId + '/locations/propose',
+    return normalizeJobSubmit(await wfFetch('/' + pb2BookObjectId + '/locations/propose',
         { method: 'POST', body: body }, 'proposeLocations failed'));
+}
+
+/**
+ * Pure: the terminal /rest/job payload of a pb.proposeLocations job → locationPassDto (+ cancelled, jobId).
+ * Throws the job's `error` when the job itself failed, so callers toast it like a rejected submit.
+ */
+export function locationPassFromJob(job) {
+    job = job || {};
+    if (job.error) throw new Error(job.error);
+    let result = job.result && typeof job.result === 'object' ? job.result : null;
+    return Object.assign(normalizeLocationPass(result), {
+        cancelled: !!(job.cancelled || (result && result.cancelled)),
+        jobId: job.jobId != null ? job.jobId : null
+    });
+}
+
+/** Poll a pb.proposeLocations job to its end (pollJob opts: intervalMs, onProgress, signal, deadlineMs) → locationPassDto. */
+export async function awaitLocationPass(jobId, opts) {
+    let job = await pollJob(jobId, opts);
+    return Object.assign(locationPassFromJob(job), { jobId: jobId });
+}
+
+function normalizeComposeSubmit(r) {
+    r = r || {};
+    return Object.assign(normalizeJobSubmit(r), {
+        quickStart: !!r.quickStart,
+        force: !!r.force,
+        sceneCount: r.sceneCount != null ? r.sceneCount : 0,
+        scenesToCompose: r.scenesToCompose != null ? r.scenesToCompose : 0,
+        scenesCurrent: r.scenesCurrent != null ? r.scenesCurrent : 0,
+        pagesSkipped: r.pagesSkipped != null ? r.pagesSkipped : 0,
+        reason: r.reason != null ? r.reason : null
+    });
+}
+
+function composeBody(opts) {
+    let o = opts || {};
+    let body = {};
+    if (o.quickStart) body.quickStart = true;
+    if (o.force) body.force = true;
+    if (o.chatConfigName) body.chatConfigName = o.chatConfigName;
+    return body;
+}
+
+/**
+ * POST /{book}/compose {quickStart?, force?, chatConfigName?} — only the keys that are set are sent.
+ * 202 {…counts, submitted:true, reused, jobId, jobStatus, kind:"pb.compose"} when a job was queued;
+ * 200 {…counts, submitted:false, reason} when nothing needs composing. 409 when the book is not on the V3
+ * render path or another job holds it (isComposeJobRefusal), 429 at the job cap, 404 unknown chatConfigName,
+ * 500 when quickStart has no SD backend. The job result is normalizeComposeJobResult(job.result).
+ */
+export async function composeBook(pb2BookObjectId, opts) {
+    return normalizeComposeSubmit(await wfFetch('/' + pb2BookObjectId + '/compose',
+        { method: 'POST', body: composeBody(opts) }, 'composeBook failed'));
+}
+
+export function normalizeComposeResult(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        sceneObjectId: r.sceneObjectId != null ? r.sceneObjectId : null,
+        sceneIndex: r.sceneIndex != null ? r.sceneIndex : null,
+        written: !!r.written,
+        cancelled: !!r.cancelled,
+        skippedUserEdited: !!r.skippedUserEdited,
+        migratedFallback: !!r.migratedFallback,
+        hardFailure: !!r.hardFailure,
+        failureReason: r.failureReason != null ? r.failureReason : null,
+        source: r.source != null ? r.source : null,
+        castTier: r.castTier != null ? r.castTier : null,
+        locationHint: r.locationHint != null ? r.locationHint : null,
+        elapsedMs: r.elapsedMs != null ? r.elapsedMs : 0,
+        compositionObjectId: r.compositionObjectId != null ? r.compositionObjectId : null,
+        composition: r.composition != null ? r.composition : null,
+        warnings: Array.isArray(r.warnings) ? r.warnings : [],
+        unresolvedNames: Array.isArray(r.unresolvedNames) ? r.unresolvedNames : [],
+        unrecognizedPlacements: Array.isArray(r.unrecognizedPlacements) ? r.unrecognizedPlacements : [],
+        actors: Array.isArray(r.actors) ? r.actors : [],
+        elements: Array.isArray(r.elements) ? r.elements : []
+    });
+}
+
+/**
+ * POST /{book}/scene/{scene}/compose {force?, chatConfigName?} → 200 composeResult (synchronous, one scene).
+ * 409 "A compose job is running for this book; …" while the book's compose job is live (isComposeJobRefusal),
+ * 409 when the book is not on the V3 render path, 404 unknown chatConfigName.
+ */
+export async function composeScene(pb2BookObjectId, sceneObjectId, opts) {
+    let o = opts || {};
+    return normalizeComposeResult(await wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/compose',
+        { method: 'POST', body: composeBody({ force: o.force, chatConfigName: o.chatConfigName }) }, 'composeScene failed'));
+}
+
+function normalizeDraftRender(d) {
+    if (!d || typeof d !== 'object') return null;
+    return Object.assign({}, d, {
+        artifactObjectId: d.artifactObjectId != null ? d.artifactObjectId : null,
+        nodeObjectId: d.nodeObjectId != null ? d.nodeObjectId : null,
+        nodeStatus: d.nodeStatus != null ? d.nodeStatus : null,
+        runObjectId: d.runObjectId != null ? d.runObjectId : null,
+        reviewStatus: d.reviewStatus != null ? d.reviewStatus : null,
+        strategy: d.strategy != null ? d.strategy : null,
+        stagesPlanned: d.stagesPlanned != null ? d.stagesPlanned : 0,
+        stagesRendered: d.stagesRendered != null ? d.stagesRendered : 0,
+        degradations: Array.isArray(d.degradations) ? d.degradations : [],
+        autoApproved: !!d.autoApproved,
+        autoApproveSkipped: !!d.autoApproveSkipped,
+        configNotApplied: !!d.configNotApplied
+    });
+}
+
+function normalizeComposeJobScene(s) {
+    s = s || {};
+    return Object.assign({}, s, {
+        sceneObjectId: s.sceneObjectId != null ? s.sceneObjectId : null,
+        sceneIndex: s.sceneIndex != null ? s.sceneIndex : null,
+        title: s.title != null ? s.title : null,
+        status: s.status != null ? s.status : null,
+        compositionObjectId: s.compositionObjectId != null ? s.compositionObjectId : null,
+        error: s.error != null ? s.error : null,
+        source: s.source != null ? s.source : null,
+        castTier: s.castTier != null ? s.castTier : null,
+        actorCount: s.actorCount != null ? s.actorCount : 0,
+        elementCount: s.elementCount != null ? s.elementCount : 0,
+        warnings: Array.isArray(s.warnings) ? s.warnings : [],
+        elapsedMs: s.elapsedMs != null ? s.elapsedMs : 0,
+        draftRender: normalizeDraftRender(s.draftRender),
+        draftRenderError: s.draftRenderError != null ? s.draftRenderError : null,
+        draftRenderMs: s.draftRenderMs != null ? s.draftRenderMs : 0
+    });
+}
+
+/** Pure: the terminal pb.compose job's `result` → every count 0, every list [], every flag boolean, locationPass normalized or null. */
+export function normalizeComposeJobResult(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        bookObjectId: r.bookObjectId != null ? r.bookObjectId : null,
+        slug: r.slug != null ? r.slug : null,
+        quickStart: !!r.quickStart,
+        force: !!r.force,
+        sceneCount: r.sceneCount != null ? r.sceneCount : 0,
+        visited: r.visited != null ? r.visited : 0,
+        composed: r.composed != null ? r.composed : 0,
+        current: r.current != null ? r.current : 0,
+        skippedUserEdited: r.skippedUserEdited != null ? r.skippedUserEdited : 0,
+        migrated: r.migrated != null ? r.migrated : 0,
+        hardFailures: r.hardFailures != null ? r.hardFailures : 0,
+        pagesSkipped: r.pagesSkipped != null ? r.pagesSkipped : 0,
+        quickStartRendered: r.quickStartRendered != null ? r.quickStartRendered : 0,
+        quickStartFailed: r.quickStartFailed != null ? r.quickStartFailed : 0,
+        durationMs: r.durationMs != null ? r.durationMs : 0,
+        lastSceneIndex: r.lastSceneIndex != null ? r.lastSceneIndex : null,
+        cancelled: !!r.cancelled,
+        interrupted: !!r.interrupted,
+        locationPassRan: !!r.locationPassRan,
+        locationPass: r.locationPass && typeof r.locationPass === 'object' ? normalizeLocationPass(r.locationPass) : null,
+        note: r.note != null ? r.note : null,
+        scenes: (Array.isArray(r.scenes) ? r.scenes : []).map(normalizeComposeJobScene)
+    });
+}
+
+/** Pure: a 409 from compose / composeScene / propose that means another job holds the book (not the "render path is v1" 409). */
+export function isComposeJobRefusal(err) {
+    if (!err || err.status !== 409) return false;
+    return /compose job|job .* is still running|already running for this book/i.test(String(err.message || '') + ' ' + String(err.body || ''));
 }
 
 /** GET /{book}/locations/proposed[?status=proposed|accepted|rejected] → {proposals[]} */

@@ -177,14 +177,20 @@ public class PbDeleteUtil {
 	}
 
 	/**
-	 * Delete every graph row that references {@code book} by FK — scenes, cast groups, location proposals, and each workflow
-	 * with its bindings, artifacts, runs and nodes (child→parent). Shared with the health check's stale-graph
-	 * purge, which hands it a dead book stand-in carrying only {@code id}.
+	 * Delete every graph row that references {@code book} by FK — compositions with their scene actors and elements
+	 * (element → actor → composition, before the scenes they point at), scenes, cast groups, location proposals, and
+	 * each workflow with its bindings, artifacts, runs and nodes (child→parent). Shared with the health check's
+	 * stale-graph purge, which hands it a dead book stand-in carrying only {@code id}.
 	 *
 	 * @return the number of rows deleted
 	 */
 	static int deleteGraphByBook(BaseRecord actor, BaseRecord book, long orgId, DeleteResult res) {
 		int total = 0;
+		for (BaseRecord comp : findByFk(OlioModelNames.MODEL_PB_COMPOSITION, OlioFieldNames.FIELD_PB_BOOK, book, orgId)) {
+			total += deleteByFk(actor, OlioModelNames.MODEL_PB_SCENE_ELEMENT, OlioFieldNames.FIELD_PB_COMPOSITION, comp, orgId, res, "sceneElementsByComposition");
+			total += deleteByFk(actor, OlioModelNames.MODEL_PB_SCENE_ACTOR, OlioFieldNames.FIELD_PB_COMPOSITION, comp, orgId, res, "sceneActorsByComposition");
+		}
+		total += deleteByFk(actor, OlioModelNames.MODEL_PB_COMPOSITION, OlioFieldNames.FIELD_PB_BOOK, book, orgId, res, "compositionsByBook");
 		total += deleteByFk(actor, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_BOOK, book, orgId, res, "scenesByBook");
 		total += deleteByFk(actor, OlioModelNames.MODEL_PB_CAST_GROUP, OlioFieldNames.FIELD_PB_BOOK, book, orgId, res, "castGroupsByBook");
 		total += deleteByFk(actor, OlioModelNames.MODEL_PB_LOCATION_PROPOSAL, OlioFieldNames.FIELD_PB_BOOK, book, orgId, res, "locationProposalsByBook");

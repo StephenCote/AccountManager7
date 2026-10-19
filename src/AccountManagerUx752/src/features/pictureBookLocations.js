@@ -8,9 +8,10 @@
  * variants, usedByScenes and (once rendered) its LOCATION node + artifact chain. Every write goes through
  * the facade routes and is followed by a refetch, so the grid only ever shows server state. A location's
  * name is not editable (a rename is a merge); description, kind and aliases are PATCHed as the changed
- * keys only. Render is asynchronous (202 {jobId}) and watched with pollJob; a pinned node is a 409 the
- * server words itself ("Node … is pinned. Unpin it first …") and is answered with an Unpin button.
- * Every server error is toasted verbatim.
+ * keys only. Render is asynchronous (202 {jobId}) and watched with pollJob; so is the location pass
+ * (POST /locations/propose → 202 {jobId}, the pass result collected from the terminal job with
+ * locationPassFromJob); a pinned node is a 409 the server words itself ("Node … is pinned. Unpin it
+ * first …") and is answered with an Unpin button. Every server error is toasted verbatim.
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -21,7 +22,7 @@ import { pollJob, resolveImageUrl } from '../workflows/sceneExtractor.js';
 import { orderNewestFirst, reviewStatusOf, isAutoApproved, artifactActions } from './pictureBookReview.js';
 import {
     listLocations, createLocation, updateLocation, deleteLocation, createLocationVariant, lockLocation,
-    mergeLocations, renderLocation, isPinnedNodeRefusal, proposeLocations, listLocationProposals,
+    mergeLocations, renderLocation, isPinnedNodeRefusal, proposeLocations, locationPassFromJob, listLocationProposals,
     acceptLocationProposal, rejectLocationProposal, selectArtifact, approveArtifact, rejectArtifact, unpinNode,
     deriveStageList, runSummaryText
 } from '../workflows/pictureBookWorkflow.js';
@@ -37,6 +38,7 @@ let proposalFilter = 'PROPOSED';
 let proposalsLoading = false;
 let proposalsError = null;
 let proposing = false;
+let proposeJob = null;      // latest /rest/job payload of the running location pass, null when idle
 let busy = {};              // subject/proposal/artifact objectId → true while a write is in flight
 let edits = {};             // location objectId → {description, kind, aliases} inline draft
 let runs = {};              // subject objectId → {jobId, runObjectId, planned, job, label, error}
@@ -367,20 +369,34 @@ export function openMergeDialog(duplicate, preselectName) {
 export async function propose() {
     if (proposing) return;
     proposing = true;
+    proposeJob = null;
     m.redraw();
     try {
         let r = await proposeLocations(bookObjectId);
-        if (r.hardFailure) {
-            page.toast('error', 'Location pass failed: ' + (r.warnings[0] || 'the LLM returned nothing usable'));
+        if (!r.jobId) {
+            page.toast('error', 'The location pass was accepted but no job id was returned');
         } else {
-            page.toast('success', 'Proposed ' + r.proposed + ' location' + (r.proposed === 1 ? '' : 's') + ' from ' + r.scenesConsidered + ' scene' + (r.scenesConsidered === 1 ? '' : 's')
-                + (r.scenesSkipped ? ' (' + r.scenesSkipped + ' skipped)' : '') + (r.warnings.length ? ' · ' + r.warnings.length + ' warning(s)' : ''));
+            let job = await pollJob(r.jobId, { intervalMs: pollIntervalMs, onProgress: function (j) { proposeJob = j; m.redraw(); } });
+            if (job.error) {
+                page.toast('error', 'Location pass failed: ' + job.error);
+            } else {
+                let pass = locationPassFromJob(job);
+                if (pass.cancelled) {
+                    page.toast('warn', 'Location pass cancelled');
+                } else if (pass.hardFailure) {
+                    page.toast('error', 'Location pass failed: ' + (pass.warnings[0] || 'the LLM returned nothing usable'));
+                } else {
+                    page.toast('success', 'Proposed ' + pass.proposed + ' location' + (pass.proposed === 1 ? '' : 's') + ' from ' + pass.scenesConsidered + ' scene' + (pass.scenesConsidered === 1 ? '' : 's')
+                        + (pass.scenesSkipped ? ' (' + pass.scenesSkipped + ' skipped)' : '') + (pass.warnings.length ? ' · ' + pass.warnings.length + ' warning(s)' : ''));
+                }
+            }
+            proposalFilter = 'PROPOSED';
         }
-        proposalFilter = 'PROPOSED';
     } catch (e) {
         page.toast('error', (e && e.message) || 'The location pass failed');
     }
     proposing = false;
+    proposeJob = null;
     m.redraw();
     await refetch();
 }
@@ -828,9 +844,10 @@ export function renderLocationsHeader() {
         m('span', { class: 'flex-1' }),
         m('button', {
             'data-testid': 'pb-loc-propose', class: BTN, disabled: proposing || loading,
-            title: 'Cluster every scene\'s setting into location proposals (one LLM call per 40 scenes; synchronous)',
+            title: 'Cluster every scene\'s setting into location proposals (one LLM call per 40 scenes; runs as a background job)',
             onclick: propose
-        }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' + (proposing ? ' animate-spin' : '') }, proposing ? 'progress_activity' : 'auto_awesome'), proposing ? 'Proposing…' : 'Propose from scenes']),
+        }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' + (proposing ? ' animate-spin' : '') }, proposing ? 'progress_activity' : 'auto_awesome'),
+            proposing ? 'Proposing…' + (proposeJob && proposeJob.phase ? ' ' + proposeJob.phase : '') : 'Propose from scenes']),
         m('button', {
             'data-testid': 'pb-loc-new', class: BTN + ' bg-purple-600 text-white border-purple-600 hover:bg-purple-700', disabled: loading,
             onclick: openNewLocationDialog
@@ -887,7 +904,7 @@ const locationsView = {
 // ── Test seams ─────────────────────────────────────────────────────────
 
 export function __locationsStateForTest() {
-    return { bookObjectId, locations, worldObjectId, loading, error, proposals, proposalFilter, proposalsLoading, proposalsError, proposing, busy, edits, runs, runAborts, pinnedRefusals, overwrite, imageUrls, pollIntervalMs };
+    return { bookObjectId, locations, worldObjectId, loading, error, proposals, proposalFilter, proposalsLoading, proposalsError, proposing, proposeJob, busy, edits, runs, runAborts, pinnedRefusals, overwrite, imageUrls, pollIntervalMs };
 }
 
 export function __setLocationsStateForTest(s) {
@@ -902,6 +919,7 @@ export function __setLocationsStateForTest(s) {
     if ('proposalsLoading' in s) proposalsLoading = s.proposalsLoading;
     if ('proposalsError' in s) proposalsError = s.proposalsError;
     if ('proposing' in s) proposing = s.proposing;
+    if ('proposeJob' in s) proposeJob = s.proposeJob || null;
     if ('busy' in s) busy = s.busy || {};
     if ('edits' in s) edits = s.edits || {};
     if ('runs' in s) runs = s.runs || {};

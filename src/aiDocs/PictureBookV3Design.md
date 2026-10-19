@@ -1530,6 +1530,12 @@ first V3 open, plus an optional batch admin route.
 PB1 note-blob books (`data.note` scenes) first go through the existing PB2 dual-write and backfill
 path (`olio.pb.scene`), then the steps above.
 
+> **Built (P4-4, 2026-10-19):** the dual write now also happens **at import time**. `createFromScenes` on a
+> bound V3 book writes the `olio.pb.scene` rows (`text`, `setting`, `sceneIndex`, `characters` enrolment;
+> idempotent on re-run) before the §9.1 compose job is auto-submitted — without them the job found no scenes
+> and "straight after `createFromScenes`" was unreachable. Books imported before this date still get their
+> rows lazily at first render; their backfill is the P4-10 one-off (implementation doc §6.C 189 h).
+
 ### 28.1 Retiring PB1 and the old ChapBook render path: disable, verify, then remove
 
 Ratified 2026-10-09: PB1 is **disabled** in favour of V3, and it is **not removed** until V3 is known

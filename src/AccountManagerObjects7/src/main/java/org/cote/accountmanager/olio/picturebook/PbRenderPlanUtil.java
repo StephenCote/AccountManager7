@@ -452,7 +452,7 @@ public final class PbRenderPlanUtil {
 
 	/// pbDescription attribute first, then the narrative's physical (+ outfit) description. The
 	/// narrative's own sdPrompt is deliberately NOT used: it is a portrait prompt, not a scene actor line.
-	private static String actorDescription(BaseRecord cp) {
+	static String actorDescription(BaseRecord cp) {
 		try {
 			String d = AttributeUtil.getAttributeValue(cp, PictureBookUtil.ATTR_DESCRIPTION, (String) null);
 			if(NarrativeUtil.isMeaningful(d)) return d.trim();

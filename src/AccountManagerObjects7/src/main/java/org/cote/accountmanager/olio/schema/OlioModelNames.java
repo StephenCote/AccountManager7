@@ -110,6 +110,12 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_PB_LOCATION_VARIANT = "olio.pb.locationVariant";
 	/// V3 §7.1 / §28 step 3 reviewable item from the whole-book location pass; lives in the book's group, resolved to a location on accept
 	public static final String MODEL_PB_LOCATION_PROPOSAL = "olio.pb.locationProposal";
+	/// V3 §8 composition: the structured scene plan (purpose, setting, camera, focal actor, overrides) that replaces the scene's bare sdPrompt; lives in the book's group
+	public static final String MODEL_PB_COMPOSITION = "olio.pb.composition";
+	/// V3 §8 scene actor: one figure (or crowd) placed in a composition - character FK, role, pose, facing, normalized box, reference policy
+	public static final String MODEL_PB_SCENE_ACTOR = "olio.pb.sceneActor";
+	/// V3 §8 scene element: one non-character thing placed in a composition - element type, box, importance, optional olio.item FK
+	public static final String MODEL_PB_SCENE_ELEMENT = "olio.pb.sceneElement";
 
 	/// ChapBook models — poem library, sets, and the ChapBook variant of olio.pb.book
 	public static final String MODEL_CB_POEM = "olio.cb.poem";
@@ -149,6 +155,9 @@ public class OlioModelNames extends ModelNames {
 		MODEL_PB_LOCATION,
 		MODEL_PB_LOCATION_VARIANT,
 		MODEL_PB_LOCATION_PROPOSAL,
+		MODEL_PB_COMPOSITION,
+		MODEL_PB_SCENE_ACTOR,
+		MODEL_PB_SCENE_ELEMENT,
 		MODEL_CB_POEM,
 		MODEL_CB_SET
 		/// MODEL_CB_BOOK (olio.cb.book) removed from registration — superseded by olio.pb.book

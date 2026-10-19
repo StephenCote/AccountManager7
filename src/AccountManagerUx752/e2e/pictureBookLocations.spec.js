@@ -6,15 +6,16 @@
  * Routes under REST /olio/picture-book (PictureBookService, PbServiceFacade, PbLocationUtil):
  *   GET|POST /{book}/locations            GET|PATCH|DELETE /{book}/location/{id}
  *   POST /{book}/location/{id}/variants   POST /{book}/location/{id}/lock        POST /{book}/location/{id}/render
- *   POST /{book}/locations/propose        GET /{book}/locations/proposed?status=
+ *   POST /{book}/locations/propose (202 {jobId}; the pass result is the terminal /rest/job result)
+ *   GET /{book}/locations/proposed?status=
  *   POST /{book}/locations/proposed/{pid}/accept|reject                          POST /{book}/locations/merge
  *
  * Tiers (a gated skip is a skip, never a pass):
- *   default            — CRUD, variants, lock/unlock 409s, merge, delete, propose on a scene-less book,
- *                        malformed bodies. No LLM, no SD.
- *   PB_LLM_TESTS=1     — scenes with settings → POST /locations/propose (live LLM through the shared user's
- *                        e2e-chapbook-llm config) → accept / reject; the §30 exit criterion "scenes 3/7/12
- *                        share one tavern".
+ *   default            — CRUD, variants, lock/unlock 409s, merge, delete, propose on a scene-less book
+ *                        (202 job polled to completion), malformed bodies. No LLM, no SD.
+ *   PB_LLM_TESTS=1     — scenes with settings → POST /locations/propose (202 job; live LLM through the shared
+ *                        user's e2e-chapbook-llm config, polled via /rest/job) → accept / reject; the §30 exit
+ *                        criterion "scenes 3/7/12 share one tavern".
  *   PB_SD_TESTS=1      — POST .../render → 202 job → /rest/job poll → PNG bytes from the MediaServlet →
  *                        approve pins approvedRender → lock refuses render/approve/reject → variant render.
  *                        P3-5: POST /{book}/scene/{scene}/plan for a scene at the approved location carries
@@ -118,6 +119,20 @@ async function expectStatus(resp, status, what) {
 function errMsg(body) {
     if (body && typeof body === 'object') return String(body.message || body.error || JSON.stringify(body));
     return String(body);
+}
+
+async function pollJob(jobId, label, maxMs) {
+    const t0 = Date.now();
+    let last = '';
+    for (;;) {
+        const r = await api.get(REST + '/job/' + jobId);
+        const j = await expectStatus(r, 200, 'GET /job/' + jobId);
+        const line = j.status + ' phase=' + j.phase + ' ' + j.current + '/' + j.total + ' elapsed=' + j.elapsed + 's';
+        if (line !== last) { console.log(TAG + ' ' + label + ' job ' + jobId + ': ' + line); last = line; }
+        if (j.terminal) return j;
+        expect(Date.now() - t0, label + ' job still running after ' + maxMs + ' ms').toBeLessThan(maxMs);
+        await new Promise(res => setTimeout(res, 5000));
+    }
 }
 
 async function getLocation(oid) {
@@ -378,7 +393,15 @@ test.describe('location library CRUD (default tier)', () => {
         expect(errMsg(await expectStatus(r, 400, 'bad status'))).toMatch(/^Unknown proposal status/);
 
         r = await api.post(PB + '/' + bookObjectId + '/locations/propose', { data: {} });
-        const pass = await expectStatus(r, 200, 'propose (no scenes)');
+        const sub = await expectStatus(r, 202, 'propose (no scenes)');
+        expect(sub.submitted, JSON.stringify(sub)).toBe(true);
+        expect(sub.kind).toBe('pb.proposeLocations');
+        expect(sub.jobId, 'submit returned no jobId: ' + JSON.stringify(sub)).toBeTruthy();
+        const job = await pollJob(sub.jobId, 'propose (no scenes)', 10 * 60 * 1000);
+        expect(job.status, 'propose job ended ' + job.status + ': ' + (job.error || '') + ' ' + JSON.stringify(job).slice(0, 600)).toBe('completed');
+        const pass = job.result;
+        expect(pass, 'completed job carries no result: ' + JSON.stringify(job).slice(0, 600)).toBeTruthy();
+        expect(pass.kind).toBe('pb.proposeLocations');
         expect(pass.scenesConsidered).toBe(0);
         expect(pass.proposed).toBe(0);
         expect(pass.hardFailure).toBe(false);
@@ -425,9 +448,17 @@ test.describe('location pass: propose / accept / reject (PB_LLM_TESTS=1)', () =>
         expect(chatConfigName, 'ensureChatConfig returned no config').toBeTruthy();
 
         const t0 = Date.now();
-        const r = await api.post(PB + '/' + bookObjectId + '/locations/propose', { data: { chatConfigName }, timeout: 24 * 60 * 1000 });
-        const pass = await expectStatus(r, 200, 'propose');
+        const r = await api.post(PB + '/' + bookObjectId + '/locations/propose', { data: { chatConfigName } });
+        const sub = await expectStatus(r, 202, 'propose');
+        expect(sub.submitted, JSON.stringify(sub)).toBe(true);
+        expect(sub.kind).toBe('pb.proposeLocations');
+        expect(sub.jobId, 'submit returned no jobId: ' + JSON.stringify(sub)).toBeTruthy();
+        const job = await pollJob(sub.jobId, 'propose', 24 * 60 * 1000);
+        expect(job.status, 'propose job ended ' + job.status + ': ' + (job.error || '') + ' ' + JSON.stringify(job).slice(0, 600)).toBe('completed');
+        const pass = job.result;
+        expect(pass, 'completed job carries no result: ' + JSON.stringify(job).slice(0, 600)).toBeTruthy();
         console.log(TAG + ' propose (' + Math.round((Date.now() - t0) / 1000) + ' s): ' + JSON.stringify(pass).slice(0, 1500));
+        expect(pass.kind).toBe('pb.proposeLocations');
         expect(pass.hardFailure, 'hard failure: ' + JSON.stringify(pass.warnings)).toBe(false);
         expect(pass.scenesConsidered).toBe(7);
         expect(pass.scenesSkipped).toBe(1);
@@ -493,20 +524,6 @@ test.describe('location pass: propose / accept / reject (PB_LLM_TESTS=1)', () =>
 // ────────────────────────────── SD tier ──────────────────────────────
 test.describe('LOCATION node render, approve pins, lock (PB_SD_TESTS=1)', () => {
     test.skip(!SD_ENABLED, 'PB_SD_TESTS=1 not set — live SD location render skipped (a skip, not a pass)');
-
-    async function pollJob(jobId, label, maxMs) {
-        const t0 = Date.now();
-        let last = '';
-        for (;;) {
-            const r = await api.get(REST + '/job/' + jobId);
-            const j = await expectStatus(r, 200, 'GET /job/' + jobId);
-            const line = j.status + ' phase=' + j.phase + ' ' + j.current + '/' + j.total + ' elapsed=' + j.elapsed + 's';
-            if (line !== last) { console.log(TAG + ' ' + label + ' job ' + jobId + ': ' + line); last = line; }
-            if (j.terminal) return j;
-            expect(Date.now() - t0, label + ' job still running after ' + maxMs + ' ms').toBeLessThan(maxMs);
-            await new Promise(res => setTimeout(res, 5000));
-        }
-    }
 
     async function fetchImage(dataObjectId, fileName) {
         const dataResp = await api.get(REST + '/model/data.data/' + dataObjectId + '/full');

@@ -1,0 +1,134 @@
+{
+	"name": "olio.pb.composition",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "photo_camera",
+	"label": "Composition",
+	"group": "Book",
+	"dedicatedParticipation": false,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["book", "scene", "book, purpose"],
+	"description": "PictureBook V3 §8 composition: the structured scene plan that replaces the scene's bare sdPrompt - what the picture is for (purpose), where it is (location/variant or free settingText), what happens and how it feels (action/mood copied from the scene at compose time), how the camera frames it (shotType/viewpoint/focalActor/cameraText), loose props, and the per-composition overrides (configOverride as sparse JSON, promptOverride + promptLocked). Actors and elements are child rows (olio.pb.sceneActor / olio.pb.sceneElement) keyed by their 'composition' FK, never a list on this record. Rows live in the book's group, owned by the request user, one per scene for SCENE/CHAPBOOK_PAGE and one per book for COVER/TITLE_PAGE/CHAPTER_OPENER/SERIES_ART. Deleted with the book by PbDeleteUtil (element -> actor -> composition). No field carries a schema default (PB2 convention rule 3, TestPbModelSchema): the enum columns read NULL as UNKNOWN, booleans materialise false, revision reads 0 on legacy rows.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "book",
+			"baseModel": "olio.pb.book",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "purpose",
+			"baseClass": "org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "scene",
+			"baseModel": "olio.pb.scene",
+			"type": "model",
+			"foreign": true,
+			"description": "The scene this composition plans; set for SCENE and CHAPBOOK_PAGE, null for cover/title/opener/series art."
+		},
+		{
+			"name": "location",
+			"baseModel": "olio.pb.location",
+			"type": "model",
+			"foreign": true,
+			"description": "The resolved location (§7); nullable - a composition with none renders from settingText alone."
+		},
+		{
+			"name": "locationVariant",
+			"baseModel": "olio.pb.locationVariant",
+			"type": "model",
+			"foreign": true,
+			"description": "The location realization (time of day / weather / season) in effect; nullable."
+		},
+		{
+			"name": "settingText",
+			"type": "string",
+			"description": "Free-text setting used when no location is linked, or to add to the linked one."
+		},
+		{
+			"name": "action",
+			"type": "string",
+			"description": "What happens in the frame; copied from the scene at compose time and editable here without touching the scene."
+		},
+		{
+			"name": "mood",
+			"type": "string",
+			"maxLength": 256,
+			"description": "Emotional tone of the frame; copied from the scene at compose time."
+		},
+		{
+			"name": "shotType",
+			"baseClass": "org.cote.accountmanager.schema.type.PbShotTypeEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "viewpoint",
+			"baseClass": "org.cote.accountmanager.schema.type.PbViewpointEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"description": "Camera angle. An enum here; olio.pb.locationVariant.viewpoint is free text."
+		},
+		{
+			"name": "focalActor",
+			"baseModel": "olio.pb.sceneActor",
+			"type": "model",
+			"foreign": true,
+			"description": "The actor the camera is on; one of this composition's own sceneActor rows, nullable."
+		},
+		{
+			"name": "cameraText",
+			"type": "string",
+			"description": "Free-text camera direction beyond shotType/viewpoint (lens, motion, framing notes)."
+		},
+		{
+			"name": "props",
+			"type": "string",
+			"description": "Loose props as text, for things not worth an olio.pb.sceneElement row."
+		},
+		{
+			"name": "configOverride",
+			"type": "string",
+			"description": "Sparse JSON of olio.sd.config fields this composition overrides on top of the effective book/style config (§5 precedence)."
+		},
+		{
+			"name": "promptOverride",
+			"type": "string",
+			"description": "A user-authored prompt that replaces the composed one when promptLocked is true."
+		},
+		{
+			"name": "promptLocked",
+			"type": "boolean",
+			"description": "When true the composer leaves promptOverride alone and renders it verbatim."
+		},
+		{
+			"name": "source",
+			"baseClass": "org.cote.accountmanager.schema.type.PbCompositionSourceEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "userEdited",
+			"type": "boolean",
+			"description": "True once a user has edited any field after the composer wrote it; a recompose must not silently overwrite."
+		},
+		{
+			"name": "revision",
+			"type": "int",
+			"description": "Bumped on every composer write or user save; reads 0 on legacy rows."
+		}
+	]
+}

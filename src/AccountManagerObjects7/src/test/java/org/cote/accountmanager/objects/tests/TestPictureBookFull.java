@@ -2105,7 +2105,8 @@ public class TestPictureBookFull extends BaseTest {
 			"pictureBook.extract-character",
 			"pictureBook.scene-blurb",
 			"pictureBook.landscape-prompt",
-			"pictureBook.scene-image-prompt"
+			"pictureBook.scene-image-prompt",
+			"pictureBook.compose-scene"
 		};
 
 		for (String exp : expected) {
@@ -2115,7 +2116,7 @@ public class TestPictureBookFull extends BaseTest {
 			assertNotNull("Library template " + exp + " should load from resource", template);
 		}
 
-		logger.info("All 6 pictureBook library templates registered and loadable");
+		logger.info("All " + expected.length + " pictureBook library templates registered and loadable");
 	}
 
 	// ── Chunked Extraction (no LLM — tests chunking logic) ──────────────

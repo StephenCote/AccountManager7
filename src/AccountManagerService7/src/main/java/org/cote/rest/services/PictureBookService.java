@@ -628,7 +628,6 @@ public class PictureBookService {
      * extracts + creates charPerson records, saves meta. Returns bookObjectId.
      * Body: { bookName, chatConfig, genre, sceneList: [...], characters: [...] }
      */
-    @SuppressWarnings("unchecked")
     @RolesAllowed({"admin", "user"})
     @POST
     @Path("/{workObjectId:[0-9A-Za-z\\-]+}/create-from-scenes")
@@ -668,25 +667,15 @@ public class PictureBookService {
         String dataPath = context.getInitParameter("datagen.path");
 
         try {
-            BaseRecord meta = PictureBookUtil.createFromScenes(user, workObjectId, chatConfigName, genre, bookName,
-                    sceneList, charDataList, dataPath, pb2BookObjectId);
-            return Response.status(200).entity(toJson(meta)).build();
+            // V3 §9.1 / P4-4: the import result plus composeJob | composeJobSkipped | composeJobError; the
+            // facade never fails the import because the compose job could not be queued.
+            Map<String, Object> out = PbServiceFacade.createFromScenesAndCompose(user, workObjectId, chatConfigName, genre,
+                    bookName, sceneList, charDataList, dataPath, pb2BookObjectId);
+            return Response.status(200).entity(JSONUtil.exportObject(out)).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         } catch (RuntimeException e) {
-            // Catch unchecked exceptions (e.g. from OlioContext init or createCharPerson) so Jersey
-            // returns a parseable JSON body instead of a 500 HTML page. The UX reads body.error.
-            logger.error("createFromScenes failed unexpectedly: " + e.getMessage(), e);
-            Throwable root = e;
-            while (root.getCause() != null) root = root.getCause();
-            String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            String causeMsg = (root != e && root.getMessage() != null) ? root.getMessage() : null;
-            if (causeMsg != null) {
-                return Response.status(500).entity(
-                    "{\"error\":" + escapeJson(errMsg) + ",\"cause\":" + escapeJson(causeMsg) + "}"
-                ).build();
-            }
-            return errorResponse(500, errMsg);
+            return unexpectedFailure("createFromScenes", e);
         }
     }
 
@@ -2555,8 +2544,10 @@ public class PictureBookService {
 
     /**
      * POST /{bookObjectId}/locations/propose
-     * Body: { chatConfigName? }. Runs the whole-book location pass (LLM, synchronous, one call per 40 scenes)
-     * and returns the proposals; a hard LLM failure is reported in the result, not as an error status.
+     * Body: { chatConfigName? }. Submits the whole-book location pass as a job (V3 §21, P4-4; ruling 182 (9))
+     * and answers 202 { jobId, jobStatus, kind, reused, bookObjectId }; poll GET /rest/job/{jobId} for the
+     * pass result (the same shape the synchronous route returned: proposals, counts, hardFailure, cancelled).
+     * 409 while another job holds the book; 429 at the principal's job cap.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -2569,12 +2560,102 @@ public class PictureBookService {
         Map<String, Object> body = bodyMap(json);
         if (body == null) return malformedBody();
         try {
-            return Response.status(200)
-                .entity(JSONUtil.exportObject(PbServiceFacade.proposeLocations(user, bookObjectId,
+            return Response.status(202)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestProposeLocations(user, bookObjectId,
                     bodyString(body, "chatConfigName"))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("proposeLocations", e);
+        }
+    }
+
+    // ----- Compose (V3 §9, §9.1, §21; P4-4). Transport only; PbServiceFacade/PbComposeJobUtil own every rule -----
+
+    private static boolean bodyBoolean(Map<String, Object> body, String key, boolean dflt) {
+        Object v = body.get(key);
+        if (v instanceof Boolean) return ((Boolean) v).booleanValue();
+        if (v instanceof String) return Boolean.parseBoolean(((String) v).trim());
+        return dflt;
+    }
+
+    /**
+     * Unchecked failure below the facade (OlioContext init, a job registry refusal, a null from a
+     * missing fixture): answer a parseable 500 JSON body, never Jersey's HTML page. The UX reads body.error.
+     */
+    private Response unexpectedFailure(String route, RuntimeException e) {
+        logger.error(route + " failed unexpectedly: " + e.getMessage(), e);
+        Throwable root = e;
+        while (root.getCause() != null) root = root.getCause();
+        String errMsg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+        String causeMsg = (root != e && root.getMessage() != null) ? root.getMessage() : null;
+        if (causeMsg != null) {
+            return Response.status(500).entity(
+                "{\"error\":" + escapeJson(errMsg) + ",\"cause\":" + escapeJson(causeMsg) + "}"
+            ).build();
+        }
+        return errorResponse(500, errMsg);
+    }
+
+    /**
+     * POST /{bookObjectId}/compose
+     * Body: { quickStart?, force?, chatConfigName? }. Submits the whole-book compose job: every scene without a
+     * current composition is composed in story order, then the location pass runs; quickStart also renders a
+     * DRAFT of each newly composed scene. 202 { submitted:true, jobId, jobStatus, reused, sceneCount,
+     * scenesToCompose, ... } when queued; 200 { submitted:false, reason, ... } when nothing needs composing
+     * (idempotent on a composed book - a client may call it on every V3 open). 409 when the book is not on the
+     * V3 path or another job holds it; 429 at the principal's job cap; 500 when quickStart has no SD backend.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/compose")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response compose(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            Map<String, Object> out = PbServiceFacade.requestCompose(user, bookObjectId,
+                bodyBoolean(body, "quickStart", false), bodyBoolean(body, "force", false),
+                bodyString(body, "chatConfigName"), resolveSdApiType(context), resolveSdServer(context));
+            boolean submitted = Boolean.TRUE.equals(out.get("submitted"));
+            return Response.status(submitted ? 202 : 200).entity(JSONUtil.exportObject(out)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("compose", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/scene/{sceneObjectId}/compose
+     * Body: { force?, chatConfigName? }. Composes one scene synchronously (one LLM call) and returns the
+     * composition with its actors and elements. Without force a user-edited composition is left alone
+     * (skippedUserEdited). 409 while the book's compose job is running, or when the book is not on the V3 path.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/compose")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response composeScene(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.composeScene(user, bookObjectId, sceneObjectId,
+                    bodyString(body, "chatConfigName"), bodyBoolean(body, "force", false))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("composeScene", e);
         }
     }
 

@@ -188,7 +188,8 @@ public class TestPromptLibrary extends BaseTest {
 		for (String required : new String[] {
 				"contentAnalysis", "coding", "summary",
 				"pictureBook.extract-scenes", "pictureBook.extract-chunk", "pictureBook.extract-character",
-				"pictureBook.scene-blurb", "pictureBook.landscape-prompt", "pictureBook.scene-image-prompt" }) {
+				"pictureBook.scene-blurb", "pictureBook.landscape-prompt", "pictureBook.scene-image-prompt",
+				"pictureBook.compose-scene" }) {
 			assertTrue("Should include '" + required + "' — got " + nameList, nameList.contains(required));
 		}
 		assertEquals("Template names must be unique", nameList.size(), new java.util.HashSet<>(nameList).size());

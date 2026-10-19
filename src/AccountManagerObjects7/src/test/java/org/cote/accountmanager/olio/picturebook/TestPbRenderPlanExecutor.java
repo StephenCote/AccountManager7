@@ -53,8 +53,10 @@ import org.junit.Test;
  * <li>{@link #renderPlanCreatesNodeAndBaseArtifact}: the first call creates the scene's RENDER_PLAN node
  *     lazily, persists the plan as the node's {@code renderPlan} artifact, renders exactly the BASE stage
  *     and records the image as the selected {@code base} artifact (snapshot frozen with the compiled prompt
- *     and the installed checkpoint). A second call with an installed node override re-uses the SAME node
- *     and supersedes the artifact (revision 2). Two real renders.</li>
+ *     and the installed checkpoint). The scene was never composed, so the first render composes it itself
+ *     (P4-4 lazy fallback, §9.1) and reports exactly one {@code COMPOSED_OUT_OF_ORDER} degradation. A second
+ *     call with an installed node override re-uses the SAME node, supersedes the artifact (revision 2) and
+ *     reports no degradation (the composition now exists). Two real renders.</li>
  * <li>{@link #degradedOverrideStillRendersWithSubstitutedModel}: an uninstalled node override is rejected,
  *     the deployment default is substituted, the render proceeds and the DTO reports
  *     {@code MODEL_SUBSTITUTED}. One real render.</li>
@@ -73,7 +75,9 @@ import org.junit.Test;
  *     reports exactly the {@code HIRES} / {@code STYLE_CLAUSE} / {@code DEFAULT_NEGATIVE} codes the
  *     effective config calls for, each checked against the persisted plan and the request Swarm received,
  *     never as a degradation; the review queue lists the {@code base} artifact and never the
- *     {@code renderPlan}, which {@code nodeView} still exposes. Two real renders.</li>
+ *     {@code renderPlan}, which {@code nodeView} still exposes. The scene was never composed, so render 1
+ *     reports exactly one {@code COMPOSED_OUT_OF_ORDER} degradation (P4-4 lazy fallback) and render 2
+ *     reports none. Two real renders.</li>
  * </ol>
  * SD-gated cases skip visibly through {@link SdTestGate} when {@code .39} is unreachable or lists no
  * usable checkpoint; a skip is reported as a skip, never counted as a pass.
@@ -470,7 +474,10 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 			BaseRecord node = assertRendered(f, first, installed, 1, "first");
 			assertEquals("the facade created exactly one node", 1, nodeCount(f));
 			List<String> degradations = strings(first, "degradations");
-			assertTrue("a fresh book with no style resolves at DEPLOYMENT_DEFAULT with no substitution: " + degradations, degradations.isEmpty());
+			assertEquals("a never-composed scene is composed by its first render, out of story order (P4-4 lazy fallback); nothing else is degraded: " + degradations,
+				1, degradations.size());
+			assertTrue("the one degradation is COMPOSED_OUT_OF_ORDER (a fresh book with no style resolves at DEPLOYMENT_DEFAULT with no substitution): " + degradations,
+				degradations.get(0).startsWith(RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": "));
 			String firstPlanOid = (String) first.get("planArtifactObjectId");
 			String firstArtifactOid = (String) first.get("artifactObjectId");
 
@@ -726,7 +733,11 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 			String nodeOid = (String) first.get("nodeObjectId");
 			String planOid1 = (String) first.get("planArtifactObjectId");
 			String baseOid1 = (String) first.get("artifactObjectId");
-			assertTrue("not a degradation: " + first.get("degradations"), strings(first, "degradations").isEmpty());
+			List<String> degradations1 = strings(first, "degradations");
+			assertEquals("a never-composed scene is composed by its first render, out of story order (P4-4 lazy fallback); nothing else is degraded - configNotApplied is not a degradation: " + degradations1,
+				1, degradations1.size());
+			assertTrue("the one degradation is COMPOSED_OUT_OF_ORDER: " + degradations1,
+				degradations1.get(0).startsWith(RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": "));
 			List<String> notApplied1 = strings(first, PbNodeExecutor.KEY_CONFIG_NOT_APPLIED);
 			Set<String> codes1 = notAppliedCodes(notApplied1);
 			RenderPlan plan1 = PbRenderPlanUtil.readPlanArtifact(PbArtifactUtil.readArtifact(f.owner, planOid1, orgId));

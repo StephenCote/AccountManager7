@@ -38,7 +38,8 @@ import org.junit.Test;
 /**
  * V3 Phase 3, P3-1: {@code olio.pb.location} and {@code olio.pb.locationVariant} round trip through
  * {@code AccessPoint} against the live {@code am7db} as a non-admin user, the two new nullable FKs on
- * {@code olio.pb.scene} resolve, and the {@code watched/v3} set notices the edits it is declared to notice.
+ * {@code olio.pb.scene} resolve, and the watched set (now {@code watched/v4} since P4-1 added the §8 models;
+ * the location entries are unchanged) notices the edits it is declared to notice.
  * <p>
  * Same fixture as {@link TestPbStyleSchema}: org {@code /Development/World Building}, user {@code testUser1},
  * book {@code pb2c-graph}. Locations live in the book world's {@code Locations} group, resolved by FK through
@@ -347,7 +348,7 @@ public class TestPbLocationSchema extends BaseTest {
 		}
 	}
 
-	// ───────── 2: watched/v3 notices kind, description and approvedRender edits; ignores aliases; renders artifacts by objectId ─────────
+	// ───────── 2: the watched set notices kind, description and approvedRender edits; ignores aliases; renders artifacts by objectId ─────────
 
 	@Test
 	public void case02_watchedSetDetectsTheEditsItDeclares() throws Exception {
@@ -358,7 +359,7 @@ public class TestPbLocationSchema extends BaseTest {
 		String groupPath = locationsPath(u, bk);
 		String tag = shortId();
 
-		assertEquals("watched/v3", PbWatchedFields.WATCHED_SET_VERSION);
+		assertEquals("watched/v4", PbWatchedFields.WATCHED_SET_VERSION);
 		assertTrue(PbWatchedFields.watchedModels().contains(OlioModelNames.MODEL_PB_LOCATION));
 		assertTrue(PbWatchedFields.watchedModels().contains(OlioModelNames.MODEL_PB_LOCATION_VARIANT));
 		assertEquals(Arrays.asList(FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, OlioFieldNames.FIELD_PB_KIND,

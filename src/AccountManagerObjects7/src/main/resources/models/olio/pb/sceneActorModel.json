@@ -1,0 +1,117 @@
+{
+	"name": "olio.pb.sceneActor",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"common.urn"
+	],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name"],
+	"icon": "person",
+	"label": "Scene actor",
+	"group": "Book",
+	"dedicatedParticipation": false,
+	"constraints": ["name, groupId, organizationId"],
+	"hints": ["composition", "character"],
+	"description": "PictureBook V3 §8 scene actor: one figure placed in an olio.pb.composition - a cast character (character FK) or an unnamed extra / crowd (character null, description + count). Carries the narrative role, the priority the composer orders references by (default derived from the role; reads 0 on legacy rows), the apparel worn, pose / expression / action / facing text and enum, a normalized box (x, y, w, h in 0-1 image space), depth (0 = front), and the reference policy. Rows live in the book's group, owned by the request user, and are found by the 'composition' FK - never a list on the composition. Deleted with the book by PbDeleteUtil. No field carries a schema default (PB2 convention rule 3, TestPbModelSchema): enum columns read NULL as UNKNOWN, numbers read 0 on legacy rows.",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "composition",
+			"baseModel": "olio.pb.composition",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "character",
+			"baseModel": "olio.charPerson",
+			"type": "model",
+			"foreign": true,
+			"description": "The cast member this actor is; null for an unnamed extra or a crowd."
+		},
+		{
+			"name": "role",
+			"baseClass": "org.cote.accountmanager.schema.type.PbActorRoleEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "priority",
+			"type": "int",
+			"description": "Reference-slot and prompt-budget order within the composition; the composer derives the default from the role. Reads 0 on legacy rows."
+		},
+		{
+			"name": "apparel",
+			"baseModel": "olio.apparel",
+			"type": "model",
+			"foreign": true,
+			"description": "The outfit worn in this frame; nullable - the character's current apparel applies when unset."
+		},
+		{
+			"name": "pose",
+			"type": "string",
+			"maxLength": 512
+		},
+		{
+			"name": "expression",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "action",
+			"type": "string",
+			"description": "What this actor is doing, as distinct from the composition's overall action."
+		},
+		{
+			"name": "facing",
+			"baseClass": "org.cote.accountmanager.schema.type.PbFacingEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "x",
+			"type": "double",
+			"description": "Left edge of the actor's box, normalized 0-1 of image width."
+		},
+		{
+			"name": "y",
+			"type": "double",
+			"description": "Top edge of the actor's box, normalized 0-1 of image height."
+		},
+		{
+			"name": "w",
+			"type": "double",
+			"description": "Box width, normalized 0-1."
+		},
+		{
+			"name": "h",
+			"type": "double",
+			"description": "Box height, normalized 0-1."
+		},
+		{
+			"name": "depth",
+			"type": "int",
+			"description": "Layer order, 0 = front-most."
+		},
+		{
+			"name": "description",
+			"type": "string",
+			"description": "Free-text description, required when character is null (an extra or a crowd)."
+		},
+		{
+			"name": "count",
+			"type": "int",
+			"description": "How many figures this row stands for; 1 for a single actor, more for a crowd. Reads 0 on legacy rows."
+		},
+		{
+			"name": "referencePolicy",
+			"baseClass": "org.cote.accountmanager.schema.type.PbReferencePolicyEnumType",
+			"type": "enum",
+			"maxLength": 32
+		}
+	]
+}

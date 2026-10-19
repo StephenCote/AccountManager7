@@ -28,6 +28,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.PointOfInterestEnumType;
 import org.cote.accountmanager.olio.PointOfInterestUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -99,19 +100,7 @@ public class PbLocationUtil {
 	/// The book is re-read by objectId as the user first, so the world written into is the persisted one and
 	/// never a world FK carried on a caller-supplied record.
 	private static BaseRecord requireBookUpdate(BaseRecord user, BaseRecord book) {
-		if(user == null || book == null) {
-			throw new PictureBookException(401, "No user");
-		}
-		Long orgId = book.get(FieldNames.FIELD_ORGANIZATION_ID);
-		BaseRecord fresh = (orgId != null ? PbBookUtil.readBook(user, oid(book), orgId.longValue()) : null);
-		if(fresh == null) {
-			throw new PictureBookException(404, "Book not found");
-		}
-		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, fresh);
-		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
-			throw new PictureBookException(403, "Not permitted to modify locations of book " + fresh.get(OlioFieldNames.FIELD_PB_SLUG));
-		}
-		return fresh;
+		return PbBookUtil.requireBookUpdate(user, book, "modify locations");
 	}
 
 	private static BaseRecord olioUser(long orgId) {
@@ -1260,6 +1249,11 @@ public class PbLocationUtil {
 		/** Clusters the model split off a named place by room or inside/outside, folded back into it (design §7). */
 		public int folded;
 		public boolean hardFailure;
+		/**
+		 * The job's cancel flag went up during the chunk loop. Clusters from the chunks that had already
+		 * parsed are still written (idempotent, re-written by the next complete pass); nothing is retired.
+		 */
+		public boolean cancelled;
 		public List<String> warnings = new ArrayList<>();
 		public List<BaseRecord> proposals = new ArrayList<>();
 	}
@@ -1324,6 +1318,17 @@ public class PbLocationUtil {
 	 * @throws PictureBookException 401/403/404 not permitted, 409 no world
 	 */
 	public static LocationPassResult proposeLocations(BaseRecord user, BaseRecord book, BaseRecord chatConfig) {
+		return proposeLocations(user, book, chatConfig, null);
+	}
+
+	/**
+	 * As {@link #proposeLocations(BaseRecord, BaseRecord, BaseRecord)}, reporting per-chunk progress on and
+	 * observing the cancel flag of a job's {@code progress} (null when not under a job). A cancelled pass stops
+	 * at the chunk boundary, still writes the clusters already parsed and never retires; the registry's cancel
+	 * scope aborts the in-flight LLM stream, which would otherwise read as a hard failure, so the flag is checked
+	 * before the hard-failure branch.
+	 */
+	public static LocationPassResult proposeLocations(BaseRecord user, BaseRecord book, BaseRecord chatConfig, SummarizeProgress progress) {
 		BaseRecord freshBook = requireBookUpdate(user, book);
 		BookContext bctx = requireBookContext(user, freshBook);
 		long orgId = bctx.getOrganizationId();
@@ -1331,12 +1336,12 @@ public class PbLocationUtil {
 		LocationPassResult result = new LocationPassResult();
 		result.passRun = UUID.randomUUID().toString();
 
-		/// 1. scenes with something to cluster, keyed by the index the LLM will echo back
+		/// 1. scenes with something to cluster, keyed by the index the LLM will echo back. A ChapBook page has
+		/// no `setting`; its place is in its `sdPrompt` or, failing that, its stanza (design §9.1, ruling 182 (15-22)).
 		Map<Integer, BaseRecord> byIndex = new LinkedHashMap<>();
 		for(BaseRecord scene : PbBookUtil.listScenes(user, freshBook)) {
 			Object idx = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
-			String setting = scene.get(OlioFieldNames.FIELD_PB_SETTING);
-			if(!(idx instanceof Number) || !NarrativeUtil.isMeaningful(setting)) {
+			if(!(idx instanceof Number) || !NarrativeUtil.isMeaningful(settingTextOf(scene))) {
 				result.scenesSkipped++;
 				continue;
 			}
@@ -1378,14 +1383,24 @@ public class PbLocationUtil {
 		List<Integer> indices = new ArrayList<>(byIndex.keySet());
 		Map<String, Cluster> clusters = new LinkedHashMap<>();
 		int chunkNo = 0;
+		int chunkCount = (indices.size() + PASS_CHUNK_SIZE - 1) / PASS_CHUNK_SIZE;
 		for(int from = 0; from < indices.size(); from += PASS_CHUNK_SIZE) {
+			if(progress != null && progress.isCancelled()) {
+				result.cancelled = true;
+				result.warnings.add("cluster-locations of " + slug + ": cancelled before chunk " + (chunkNo + 1) + " of " + chunkCount
+					+ "; clusters from the " + chunkNo + " chunk(s) already parsed are written, nothing is retired");
+				break;
+			}
 			chunkNo++;
 			result.chunks++;
+			if(progress != null) {
+				progress.setPhase("locations chunk " + chunkNo + "/" + chunkCount);
+			}
 			List<Integer> part = indices.subList(from, Math.min(indices.size(), from + PASS_CHUNK_SIZE));
 			StringBuilder lines = new StringBuilder();
 			for(Integer i : part) {
 				BaseRecord scene = byIndex.get(i);
-				lines.append('#').append(i).append(": ").append(sanitizeForPrompt(scene.get(OlioFieldNames.FIELD_PB_SETTING), MAX_SETTING_CHARS));
+				lines.append('#').append(i).append(": ").append(sanitizeForPrompt(settingTextOf(scene), MAX_SETTING_CHARS));
 				String title = scene.get(OlioFieldNames.FIELD_PB_TITLE);
 				if(NarrativeUtil.isMeaningful(title)) {
 					lines.append(" - ").append(sanitizeForPrompt(title, MAX_TITLE_CHARS));
@@ -1407,6 +1422,13 @@ public class PbLocationUtil {
 				lastReply[0] = r;
 				return r;
 			}, vars, "scenes", "cluster-locations:" + slug + ":chunk" + chunkNo, result.warnings, null, okOut);
+			if(progress != null && progress.isCancelled()) {
+				result.cancelled = true;
+				result.warnings.add("cluster-locations chunk " + chunkNo + " of " + slug + ": cancelled during the LLM call; clusters from the "
+					+ (chunkNo - 1) + " chunk(s) already parsed are written, nothing is retired");
+				logger.info("proposeLocations(" + slug + "): cancelled on chunk " + chunkNo + " of " + chunkCount);
+				break;
+			}
 			if(hardOut[0]) {
 				result.hardFailure = true;
 				result.warnings.add("cluster-locations chunk " + chunkNo + " of " + slug + ": the LLM could not be used (hard failure)");
@@ -1466,7 +1488,7 @@ public class PbLocationUtil {
 		/// 5. retire what an earlier pass proposed and this complete pass did not (C1); never ACCEPTED/REJECTED.
 		/// `existing` holds the pre-pass rows, so their passRun is always the old one - membership in `handled`
 		/// is the only reliable "this pass produced it" test.
-		if(!result.hardFailure && result.chunks > 0 && result.chunksParsed == result.chunks) {
+		if(!result.hardFailure && !result.cancelled && result.chunks > 0 && result.chunksParsed == result.chunks) {
 			for(BaseRecord p : existing.values()) {
 				if(statusOf(p) != PbProposalStatusEnumType.PROPOSED || handled.contains(p.get(FieldNames.FIELD_NAME))) {
 					continue;
@@ -1482,8 +1504,28 @@ public class PbLocationUtil {
 		}
 		logger.info("proposeLocations(" + slug + "): scenes=" + result.scenesConsidered + " skipped=" + result.scenesSkipped
 			+ " chunks=" + result.chunksParsed + "/" + result.chunks + " folded=" + result.folded + " proposed=" + result.proposed + " updated=" + result.updated
-			+ " settled=" + result.settled + " retired=" + result.retired + (result.hardFailure ? " HARD-FAILURE" : ""));
+			+ " settled=" + result.settled + " retired=" + result.retired + (result.hardFailure ? " HARD-FAILURE" : "") + (result.cancelled ? " CANCELLED" : ""));
 		return result;
+	}
+
+	/**
+	 * The text the location pass clusters a scene by: its {@code setting}, or for a ChapBook page (which has
+	 * none) its {@code sdPrompt}, then its stanza. Null when the scene carries none of them.
+	 */
+	static String settingTextOf(BaseRecord scene) {
+		if(scene == null) {
+			return null;
+		}
+		String setting = scene.get(OlioFieldNames.FIELD_PB_SETTING);
+		if(NarrativeUtil.isMeaningful(setting)) {
+			return setting;
+		}
+		String sdPrompt = (scene.hasField(OlioFieldNames.FIELD_CB_SD_PROMPT) ? scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT) : null);
+		if(NarrativeUtil.isMeaningful(sdPrompt)) {
+			return sdPrompt;
+		}
+		String stanza = (scene.hasField(OlioFieldNames.FIELD_CB_POEM_STANZA) ? scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA) : null);
+		return (NarrativeUtil.isMeaningful(stanza) ? stanza : null);
 	}
 
 	/// Braces would trip PictureBookUtil's unsubstituted-placeholder guard after substitution; newlines would

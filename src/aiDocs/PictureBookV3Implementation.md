@@ -49,7 +49,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | 1 — Graph-first rendering + review | **IN PROGRESS — end-of-(A) verifiers 2026-10-13 11:39 → 11:48: three PASS-WITH-NOTES, PF-1 / PF-9 / PF-15b DONE (§9.3.6 / §9.4.2 / §9.2.3), Objects7 quick gate run 6 11:47:25 → 12:23:01 **VOID** (§4.4 row 6: Docker Desktop's engine stopped 12:05:14 under the WSL 3.0.3.0 update mid-run — 991/589/1/5 is the outage, not a result; one real pre-outage red `TestGameUtil:964` to classify; restart denied to me ⚠ §6.C 148; Stephen restarted WSL/Docker ~13:57, `postgres3` started by me 14:08, **run 7 14:12:04 → 16:41:28 VALID** (§4.4 row 7): `Tests run: 991, Failures: 4, Errors: 0, Skipped: 15` — the four reds are §6.A ×3 + the mannequin copy artefact, all baseline; §6.B and §6.F green for the first time in a full gate; `TestGameUtil` 25/25 (run-6 red = flaky); `TestWebAuthnUtil` 8/8, `TestPbRenderJob` 11/11 — **(A)'s gate obligation met**) · PF-5b/PF-5c LANDED (live) 2026-10-13 11:14: passkey assertion verification + list cache, JUnit 8/8 + 10/10 (both red → green), `webauthn.spec.js` `16 passed`, Service7 gate `VERIFY_OK` 142/0/0/0, verifier PASS, security PASS (§9.3.5, §6.C 146); follow-up product fixes (A) under way 2026-10-12 from 14:40 (§9): Ux752 batch PF-2/3/4/6/7/15a/15b/15d landed + proven live (Vitest 89/1156 green, 7 Playwright specs green, PF-7 gated `.42` run `1 passed (12.5m)` with the new PF-15d teardown proven), Service7 PF-1/5/8 landed + proven live 16:05–16:50 (JUnit 18/18 on H2 incl. the two new contract classes, `worldDeleteBreadcrumb` `3 passed`, `webauthn` `13 passed`, `bugfix3-live:211` `1 passed (1.6m)` with a real `.39` render, Service7 quick gate `VERIFY_OK` after the H2 fixture repair §6.C 137) — **but PF-5 is BLOCKED by the 20:27 security review FAIL: the parse fix makes the never-verified passkey login reachable (sign-in as any passkey user without the key; §6.C 142, §9.3.1) — decision asked, nothing changed, the test stack still runs the PF-5 bytes**, **2026-10-13 08:40 Stephen: implement assertion verification → PF-5b IN PROGRESS; 09:25: PF-15b hardening landed + proven (Vitest `sdConfigSavePlacement.test.js` `3 failed` → `13 passed (13)`, built, container md5 equal), PF-1 re-find fix landed (`OlioService.java:786`, both-principals recheck) + new H2 JUnit `TestOlioServiceDeleteWorld` red `{deleted=false}` → 4/4, Service7 H2 suites 16/16 — redeploy + Playwright re-proof waited for the §4.6 re-gate (§6.C 144, §9.2.2, §9.3.3); **§4.6 run 2 is back (08:48:11 → 09:26:03): `VERIFY_FAILED` on e2e only — `518 passed / 10 failed / 3 flaky / 92 skipped / 7 did not run (37.4m)` vs run 1 `495 / 61 / 4 / 58 / 5`; the 10 reds are triaged in §4.6 — none a PF regression, none fixed, candidates ⚠ §6.C 145**, Objects7 PF-9 landed + proven live 17:07–17:15 (`mvn-o7-pf9.log` `Tests run: 18, Failures: 0, Errors: 0` / `BUILD SUCCESS`, the new `TestPbRenderJob.case11` 409 `(1 reused, 0 pinned)` then forced revision 2 on `.39`, jar `416f5714…` deployed; REST-level proof on the Docker stack 20:11–20:13 — `pictureBookV3PlainPb.spec.js` `4 passed (1.1m)` as `e2etest_shared`, STORY book, un-forced 409 `(1 reused, 0 pinned)`, pinned+forced 409 `(0 reused, 1 pinned)`, forced 202 → revision 2 supersedes 1, reader shows it — §9.4.1), Stephen 17:25: three module verifiers + PF-5 security review + Objects7 quick gate (~2 h) + §4.6 re-gate (~2 h) all approved and run in sequence (§6.C 141), §9.5 proposals deferred, (B) after the launches are back; every task P1-1…P1-11 executed; phase gate `VERIFY_FAILED` on e2e 2026-10-11 22:30; P1-12 test-repair 2026-10-12 08:45 → 14:03, STOPPED at Stephen's instruction after the in-flight agents reported (§8.12; started on my misread of a Q&A remark — §6.C 126); test files only, nothing committed; the §4.6 re-gate, the verifier hand-off and the three SD-serial tests are NOT run and wait on Stephen** (started 2026-10-10 18:13 local; **P1-1…P1-9 DONE** — §8.1–§8.9, every task through planner → architect → implement → test-author → verifier, security-reviewer on every new route; P1-1 schema, P1-2 drift/stale, P1-3 executor converged with v1 + runs, P1-4 review state machine, P1-5 auto-approve, P1-6 async `pb.render` jobs + cancel + 429 cap, P1-7 restart recovery (boot sweep → INTERRUPTED, `resumable`, `POST /{book}/run/{id}/resume`), P1-8 `renderPath` switch (default v1; 13 facade gates 409; `GET /rest/config/render-path`). Objects7 quick gate of the copy: run 2 924/6/0/15 after the P1-1 fix, run 3 949/6/0/15 (§4.4) — both red only on the §4.2 baseline + the mannequin copy artefact; run 4 queued with the three new classes. Defects found by review and fixed: P1-6 verifier M1 (`workflow.lastRun` displaced by a refused run → `case10`), P1-7 test-author (`runDto` `ZonedDateTime` → empty 200 body). **P1-9 ChapBook on the Phase 1 path DONE 13:00 (§8.9) — code, JUnit, Service7 contract, new Playwright spec, suite-on-v3 run, security-reviewer PASS, test-author pass (three real gaps closed, no product defects) and an independent verifier PASS (11/11 · 6/6 · 5/5 re-run live; four non-blocking observations §6.C 104); the suite's 8 reds are classified pre-existing stale specs (§6.C 102), none v3.** **P1-10 Ux752 subset DONE 17:05 — planned + architect-corrected (§8.10, §6.C 103); S0 backend (`affected-by` route, `lastRunObjectId`, `runDto.jobId`, `nodeSummary` canvas geometry, `bookPageView` node/review fields) DONE 13:30 + security PASS-WITH-NOTES 13:42 + S0b hardening DONE 13:54 (notes 1/2/6 closed, redeployed, jar md5 `66ef41fb…`); Ux S1–S8 DONE 14:08 (6 files + new `features/pictureBookReview.js` + 6 Vitest files; suite 89/1151 green; S7 skipped §6.C 103(j); dist copied 14:08); **Playwright exit criteria 1–4 ALL GREEN 15:07** (test-author; new `pictureBookV3Ux.spec.js` + criterion 2 in `pictureBookRestartRecovery.spec.js` across a real `docker restart`; no product defects, observations §6.C 107(i)–(m)); Ux752 quick gate `VERIFY_OK` 14:17; Service7 quick gate `127/0/1` red only on §6.H 15:18; **independent verifier CHANGES-NEEDED ~15:50** — one MUST-FIX proven live over REST (the reader's "Unpin and re-render" unpins, then re-submits without `force` → 409 "(1 reused, 0 pinned)": pin lost, no render) plus two SHOULD-FIX with the same root; **fixed as the ⚠ default §6.C 109 and verified live 16:00–16:47** (explicit per-scene renders pass `force`, mirroring the ratified ChapBook pattern §6.C 98; "Render all" unchanged; pin still wins): JUnit re-homed to `TestChapBookV3Render` 1/1 live `.39` (the plain-PictureBook `case11` could never pass — `executeLandscape` never stamps `inputHash`, the §8.9 gap, left alone), Service7 contract 25/0/0, Vitest 89/1152, Playwright `pictureBookV3Ux.spec.js` `4 passed (2.2m)` with the new criterion 1b through the reader's "Scene is pinned" confirm (every PNG opened), Ux752 gate `VERIFY_OK`; **independent re-verify PASS 17:05** (every test re-run by the verifier itself, md5s matched, force-caller grep clean, three non-blocking observations §6.C 111) — **P1-10 DONE 17:05**.** **P1-11 17:09 → 22:30, CLOSED `VERIFY_FAILED`:** Objects7 gate run 5 done 19:13 (§4.4 row 5: 982/7/0/15 — the six expected reds plus one new, `TestPbRenderJob.case07`, a race in the P1-6 test's own assertion, fixed in the test ⚠ §6.C 113 and the class 10/10 green on the working tree); §6.C 76 login alignment edited in both Phase-1 specs (§8.11, ⚠ §6.C 112) and proven live 19:23–19:28 — `pictureBookV3Ux.spec.js` `4 passed (2.3m)`, `pictureBookRestartRecovery.spec.js` `2 passed (1.8m)`; **full Ux752 gate 19:33→21:42 `VERIFY_FAILED` on e2e (§4.5)** — 623 tests, `495 passed / 61 failed / 4 flaky / 58 skipped / 5 did not run`: the 28 expected §4.3 reds all present and unchanged, plus 33 unexpected = 8 stale ChapBook specs (§6.C 102), 4 gate-2 PictureBook fixture/stale reds, 1 stack-PBAC red (`apparelSequence:29`: `e2etest_shared` dropped from `Olio User` by `explorer.spec.js`; repair denied by the permission classifier → ⚠ §6.C 114, **waiting on Stephen**), 20 generic-UI reds re-run serially — **all 20 red again, deterministic, none in the Phase 1 diff, 8 already red in gate 2** (§4.5.1; couplings → ⚠ §6.C 114 (g)); **Phase 1 is NOT declared done**; no product code changed at phase end.) | `TestPbV3Schema` 5/5, `TestPbModelSchema` 19/19, `TestPbStale` 9/9, `TestPbStaleCacheEpoch` 3/3, `TestPbNodeRun` 7/7 (live `.39`), `TestPbReview` 7/7, `TestPbAutoApprove` 7/7, `TestPbRenderJob` 10/10 (live `.39`; run 2 191.8 s), `TestPbRecovery` 8/8 (live `.39`; 38.19 s verifier re-run), `TestPbRenderPath` 9/9, `TestPbCanvas#TestPortraitNodeExecution` 1/1, `TestPbNodeExecutorTypes` 2/2, `TestPbSceneGenerationGuards` 6/6, `TestPbGraph` 18/18 (§8.1–§8.8); Service7 `TestPictureBookRestContract` 17/17, `TestPbRenderPathRefusal` 6/6, `TestFeatureConfigService` 2/2, full Service7 119/0/1 (§6.H only); Vitest `renderPathConfig.test.js`; Playwright `pictureBookWorkflow.spec.js` `:615` stale / `:697` review / `:900` auto-approve / `:1094` live-SD / `:1292` leave-the-page (L4) all 1/1, `pictureBookRestartRecovery.spec.js` `1 passed (46.2s)` across a real `docker restart`, render-path spec 4/4 — all on the Docker stack; §6.F re-run still red, unchanged; P1-9: `TestChapBookV3Render` 11/11 live `.39` + LLM (241.4 s, test-author run; earlier 8/8 + tightened render-all 1/1), Service7 `TestChapBookServiceRenderPath` 6/6 (9.304 s), Playwright `chapBookRenderPathV3.spec.js` `5 passed (2.4m)` live single run (`CB_LIVE_GEN=1`), ChapBook suite on v3 `60 passed / 8 failed / 13 skipped (11.8m)` — the 8 reds pre-existing stale specs (§8.9 table) |
 | 2 — Style, model resolution, compiler core; ChapBook goes V3; Kontext Disable | **GREEN PASS COMPLETE — phase exit is yours (159 b) — as of 2026-10-15 19:45 local: P2-10 (phase gate) run under `.39 http=200` probes (§3 16:04:44 / 19:00:19 / 19:05:49 / 19:42:28 / 19:45:10): Objects7 run 13 (§4.4 row 13) `Tests run: 1188, Failures: 4, Errors: 0, Skipped: 16` — §6.A ×3 + 1 new red `TestChatSceneRenderUtil:459` (my test's read used `planMost`, which filters `attributes`; projection fixed test-only, class re-run **10/0/0/0** under the same probe, ⚠ 169 n); every `.39` outage red cleared and every SD-gated case executed on `http://192.168.1.39:7801` (`sd_xl_base_1.0`, 29 renders; 0 SD skips; the 1 Kontext-not-installed skip is NOT a pass); Service7 **`VERIFY_OK` 193/0/0/0**; Ux752 full gate run 4 (§4.7.2) **`VERIFY_FAILED` — 9 failed / 3 flaky / 101 skipped / 10 did not run / 529 passed (31.8 m)**: 8 reds are the §4.6 run-2 set (pre-Phase-2), 1 NEW and real — `pictureBookV3StyleEditor:260` (test 2, first execution of its live-inventory branch): my P2-9 editor read `models[].name` where the server sends `listedName` (`PbServiceFacade.listModelsForTask :195`), so the installed-model datalist and the "Not in the installed-model list" hint never rendered against a live inventory; **fixed** (`pictureBookStyle.js:518`, one expression) + the Vitest fixture that carried the wrong shape (`pictureBookStyle.test.js:66-70,224`; the corrected fixture fails against the old code), dist rebuilt + copied (md5 local == container), style spec **6 passed (41.6 s)** under `.39` UP (`[p29-style-2] live inventory models listed: 13`; hint visible in `02-dirty.png`), Ux752 quick gate **`VERIFY_OK`** 19:44 — ⚠ 169 o (product fix inside the phase without asking) / 169 p (no second full Ux752 gate after the fix). Architect **PASS WITH NOTES**, security **PASS WITH NOTES**, phase verifier **PASS WITH NOTES** — three SHOULD-FIX asks + coverage ask recorded, none acted on (§6.C 169 (1)–(8)). **P2-1…P2-9 stay "Verifier PASS; gate run GREEN" — DONE is yours (§6.C 159 b).** Working tree = 5d60177a + two test-only fixes (`TestIllustrationResources:151`, `TestChatSceneRenderUtil:439-447`) + the P2-9 Ux752 fix (`pictureBookStyle.js:518`, `pictureBookStyle.test.js`), all uncommitted. Previously, as of 06:23: P2-9 (Ux752 — book style editor at `/picture-book/{book}/style`, the reader's "Plan & generate" dialog with the estimate line + `PbPlanInspector`, the same inspector on the canvas node detail and the review page, and the model-missing message in the editor's live availability column — design §26; **Ux752 only, no server code changed**) **IMPLEMENTED + DEPLOYED + TESTED 02:05 → 06:23** (§10.9): Vitest NEW `pictureBookStyle.test.js` 40 + `pictureBookPlanInspector.test.js` 20 → **60/60**, full suite **92 files / 1222 passed** (`C:/tmp/p29-vitest-full.log`); `npx vite build` exit 0, `dist` copied, md5 local == container; Playwright NEW `pictureBookV3StyleEditor.spec.js` **5 passed (10.0 m)** (`C:/tmp/pw-p29-style2.log`) + NEW `pictureBookV3PlanInspector.spec.js` **3 passed (9.3 m) + 1 SD-gated skip** (`C:/tmp/pw-p29-plan.log`), both as `e2etest_shared` against the live stack with `.39` DOWN (inventory `error` surfaced in the editor; `POST /render-plan` **503** verbatim in the dialog; the 400/409 style contracts verbatim; every screenshot opened); test-author: all four files REAL, NEW test 6 (inheritance / book override / parent lock) → style spec **6 passed (10.2 m)** (`C:/tmp/pw-p29-ta-style2.log`), Vitest 60/60 (`C:/tmp/p29-ta-vitest.log`); verifier **PASS WITH NOTES** → own-lock gap in the render-settings panel fixed (`<fieldset disabled>`, 168 ac), style spec **6 passed (10.2 m)** again (`C:/tmp/pw-p29-fix-style.log`), delta re-check **PASS**; **no security-reviewer pass for this task (no new route — the P2-10 phase pass covers the client surface)**; ⚠ §6.C 168 (defaults a–m, asks 1–14 incl. a pre-existing canvas `saveCanvas` 500, 168 z); Ux752 quick gate **`VERIFY_OK`** 06:21 (`C:/tmp/ux752-gate-p29.log`); phase quick gates ⚠ batched forward (run 11) — **not DONE (yours)**; `.39` Swarm still DOWN (host + container) — SD-gated skips are not passes; 02:01 local: P2-8 (Kontext Disable, §37.3 Disable stage — `compositeMode=kontext` refused before any LLM/SD contact at every entry point: Objects7 `PbRenderPath.requireEnabledCompositeMode` → 409 in the executor and PB1 `generateSceneImage`, `ChatService.generateScene` 400 explicit / 409 config-resolved before the session lookup, `SceneCompositeUtil.buildSceneRequest` refuses a retired mode itself; `flux2|classic` stay supported; code stays until Phase 10 Remove) **IMPLEMENTED + DEPLOYED + TESTED 00:50 → 01:58** (§10.8): first pass Objects7 **104 run / 0 fail / 10 SD-gated skips** (`TestPbKontextDisable` NEW ×3 with an SD sentinel that proves no SD call, `TestKontextDeprecation` 8, `TestFlux2Composite` 36), Service7 NEW `TestChatSceneKontextDisable` ×8 + `TestChatSceneRenderPath` 4 → **12/12**, Playwright item 14 **4 passed**, curl proof as `e2etest_shared` (400/409/404 shapes); **security-reviewer PASS** (REQUIRED) with two hardenings applied in-task (bounded, control-stripped echo of an unknown mode; builder-level refusal) → hardening pass Objects7 **47/0/0/0**, Service7 **13/13**, Playwright item 14 **5 passed**, curl proof, jar/class/dist redeployed md5-equal; **verifier PASS** (own serial runs 61/0/0/10 + 12/12; two doc findings fixed in-task, design-level finding 3 recorded as ask 167 t) and **verifier re-check of the hardening diff PASS** (test rewrite ruled not a weakening) → **Verifier PASS; quick gates ⚠ batched forward (run 11)**, not DONE (yours); ⚠ §6.C 167 (asks 167 g / r / t); `.39` Swarm still DOWN (host + container) — SD-gated skips are not passes; 00:50 local: P2-6 (ChapBook goes V3 — pages compile through TEXT_ONLY via the shared `renderPlannedScene`; `chapbook.renderPath` defaults to `v3` at every surface, `v1` is the documented rollback) is implemented, deployed, live-proven on the Docker stack (Playwright group 2 **42 passed / 4 gated skips / 0 failed**; the two SD-gated reader tests red on pre-existing locator drift → repaired → **2/2** live; §10.6; ⚠ §6.C 165; §28 verify stage started — checks 1/4/5 yours); test-author 24/24, security PASS WITH NOTES and **verifier PASS WITH NOTES** for P2-6 → **Verifier PASS; quick gates ⚠ batched forward (run 11)**, not DONE (yours); P2-7 (chat scene through the illustration service, behind a third boot-pinned `chat.renderPath`, default `v1`, test stack `v3`) **IMPLEMENTED + DEPLOYED 23:10** — every surface edited and compiling (Objects7 jar installed, Service7/Console7 compile, Vite build, Vitest 5/5), `am7test-am7-1` recreated with `CHAT_RENDER_PATH=v3` and re-seeded (jar + classes + dist + template + entrypoint, md5-equal), boot log `chat.renderPath set to v3 (was v1)`, `GET /rest/config/render-path` as `e2etest_shared` → `{picturebook:v3, chapbook:v3, chat:v3}`; **TESTS WRITTEN + RUN 23:48 → 00:33** (§10.7) — Objects7 NEW `TestChatSceneRenderUtil` **10 run / 0 fail / 1 SD-gated skip**, re-run list **101 run / 0 fail / 29 SD-outage skips** (every skip classified from the XMLs, none a pass); Service7 NEW `TestChatSceneRenderPath` **4/4** + list **45/45** after a second H2 fixture corruption → rename-aside (✓ §6.C 166 x); Vitest 5/5; Playwright `renderPath` 4/4, item 14 **2 passed / 1 skipped** (the v3 live block skips on the documented inventory-unavailable 503 only together with a failed host probe, ⚠ 166 w); light security pass **PASS** — two in-task hardenings applied + redeployed (⚠ 166 y), two asks (166 z); **verifier PASS** 00:35 (code / switch / transport; it states the v3 200 path is UNVERIFIED until `.39` answers; one spec fix ⚠ 166 aa, ask 166 ab, notes 166 ac) → **Verifier PASS; quick gates ⚠ batched forward (run 11); live render pending `.39` / 166 v**, not DONE (yours); **SD-live proof still blocked**: Swarm `.39` unreachable from host and container (ping 100 % loss) while `.42:7801` answers 302 — the stack's `/System` `sd` connection still points at `.39` and the harness refused the admin `PATCH` that would repoint it (⚠ §6.C 166 v — yours); ⚠ §6.C 166 / §10.7; P2-5 (`PbNodeExecutor` renders from the plan through TEXT_ONLY; `POST …/scene/{scene}/render-plan`) is implemented, deployed, live-proven on the Docker stack (Playwright 6/6 as `e2etest_shared` against Swarm `.39`), security PASS, test-author gap-fills green, **verifier PASS** (§10.5; ⚠ §6.C 164; Objects7/Service7 quick gates ⚠ batched forward, 163 o / 164 w); P2-4 is verifier PASS (§10.4; ⚠ §6.C 163); started 2026-10-13 14:20 local (§10) on Stephen's "start (B) after the launches above" (17:25) once WSL/Docker were back (§3 14:08:33 probe); P2-1 planned + architect PASS (§10.1, §6.C 149/150), then **implemented in the working tree 14:50 → 15:30** (model, two FKs, five enums + `RENDER_PLAN`, `PbStyleUtil`, two illustration resources + two pure loaders, `TestPbModelSchema` +3, new `TestPbStyleSchema` ×8 and `TestIllustrationResources` ×17 — ⚠ defaults §6.C 151) while Objects7 gate run 7 held the Maven/DB/LLM slot on its own copy; **P2-1 tests green 16:45 (55/55, first Maven run) → test-author +3 cases 58/58 (16:54) → verifier PASS 17:04 (58/58 re-run by the verifier itself; §10.1 results)** — P2-1 is **verifier PASS, Objects7 quick gate pending** (⚠ batched with P2-2's, §6.C 153); nothing committed; P2-2 planned (§10.2, 15:45) + architect PASS WITH CORRECTIONS (16:00, all adopted, route resolved to §27's `/olio/illustration/models`; ⚠ §6.C 152), **Objects7 sources implemented 16:30 → 17:25** (`ModelResolver`, `ModelInventory`, `SwarmModelInventory`, `CheckpointNames`, `ModelTaskKeys`, `DeploymentModelDefaults`, `TestModelResolver`; `SDUtil.listModelsOrNull()`; `PbStyleUtil.readSdConfigModels`) while the P2-1 test-author/verifier held the Maven slot — compiled clean by the verifier's own javac (633 main / 322 test sources); **P2-2 finished 17:25 → 17:34** (§10.2 results): `PbServiceFacade.listModelsForTask`, new Service7 `IllustrationService` (`GET /olio/illustration/models?task=&style=`), `TestIllustrationRestContract` ×3, `TestModelResolverLive` ×11 — `TestModelResolver` **40/40** 17:27 after one product fix in `CheckpointNames` (⚠ §6.C 154 a), `TestModelResolverLive` **10 pass / 1 honest skip** 17:27 (.39 lists no Kontext checkpoint), `TestIllustrationRestContract` **3/3** 17:28; jar + class redeployed to `am7test-am7-1` (md5 equal, `javap` clean) and the route **proven live as `e2etest_shared` 17:34** (`C:/tmp/p2-2-live.log`: 403 unauthenticated, 200 with all 13 installed checkpoints, 400 `bogus`, 404 absent style) — **P2-2 is implemented and green; test-author / verifier / security-reviewer pending, Objects7 quick gate batched with P2-1's (⚠ §6.C 153 a)** | — |
 | 3 — Locations + POI link | **DONE 2026-10-18 — Stephen confirmed the §11.8 report and answered every open ask (§6.C 182); was IN PROGRESS** — started 2026-10-16 09:43 local (§3 probe GREEN). **P3-1 (schema) IMPLEMENTED + TESTS GREEN 10:18** (`TestPbModelSchema` 22/0/0/0, `TestPbLocationSchema` 3/0/0/0, `TestPbGraph` 20/0/0/0, all `BUILD SUCCESS`, zero `AUDIT DENY`, §11.1); jar installed 10:22 + deployed to `am7test-am7-1` 10:23 (md5 local == container, the scene-column DDL applied in the container, both location tables in the stack DB); REST-proven read-only as `e2etest_shared` 10:28; Objects7 quick gate run 14 (10:29:42 → 10:43:35) **VOID — 815/1191 failed in `BaseTest.resetIO` because the copy I recreated lacked the gitignored `am7/` key stores; mine, not a test or DB result** (§4.4 row 14, ⚠ §6.C 170 h); junctions restored, **run 15 GREEN 10:51:15 → 13:49:05: `1191/3/0/16`, reds = §6.A ×3 only (zero new), +3 tests, skips identical to run 13 (§4.4 row 15)**; `TestPbLocationSchema` cleanup re-run 3/0/0/0 10:50; security-reviewer PASS + verifier PASS 10:40 (⚠ 170 k–n). **P3-2** (`PbLocationUtil` resolver + POI link, `PbHealthUtil` `LOCATION_POI_MISSING`) and **P3-3** (`pictureBook.cluster-locations` pass, `olio.pb.locationProposal`, `PbMigrationUtil` landscapes + pass) code WRITTEN. **P3-2 TESTS GREEN 14:07** — `TestPbLocationUtil` 5/0/0/0 (after one test fix and one product fix, §11.2), regression 31/0/0/0 14:17; **P3-3 TESTS GREEN 15:38** — `TestPbLocationProposal` 4/0/0/0 (emulator), **`TestPbLocationPassLive` 1/0/0/0 live** (red once at 15:23 on a malformed model reply, parser hardened, green 15:37 — scenes 3/7/12 share one tavern proposal, accept creates one location + POI + store and re-points 3), `TestPbMigration` 4/0/0/0 (+landscapes + pass), `TestLlmJsonArraySalvage` 14/0/0/0 (§11.3); jar installed + deployed 15:40 (md5 local == container), live proof 15:41 (`/rest/model/search` 200 on all three location models as `e2etest_shared`); architect + security-reviewer PASS WITH NOTES (adopted as code edits, **compiled/run pending** — ⚠ §6.C 173 t); verifier PASS (record corrections applied); test-author added `TestPbLocationUtil` case06–09 — **run GREEN 19:31** (`TestPbLocationUtil` 9/0/0/0, `p32-locutil4.log`); **Objects7 quick gate run 16 (15:47:13 → 18:58:02) `1205/4/0/16`: reds = §6.A ×3 + `TestPbLocationPassLive:334` (the model split the tavern from its taproom — product-fixed by `PbLocationUtil.foldSubPlaces` + a prompt rule, assertion untouched, re-run GREEN 1/0/0/0 19:22 `p33-live3.log` with `folded=0` — fold proven by emulator case05, ⚠ 174 a, g), +14 tests, skips identical to run 15 (§4.4 row 16)**; the five P3-3 review edits compiled + run GREEN 19:16 → 19:31 (`TestLlmJsonArraySalvage` 15/0/0/0, `TestPbLocationProposal` 5/0/0/0 then 1/0/0/0, §11.3 addendum); fold security review PASS, two hardening notes adopted + re-run GREEN 20:48 (`TestPbLocationProposal` 6/0/0/0, `p33-proposal6.log`); post-review jar installed 21:29 + deployed 21:41 together with P3-4 (md5 `56785b40…` local == container). **P3-4 (LOCATION node, render, approve/lock) IMPLEMENTED + TESTS GREEN** — `TestPbLocationNode` 8/0/0/0 20:37 (`p34-locnode.log`), regression 48 tests 21:07 (`p34-regress.log`; one red = `TestPbNodeExecutorTypes` seven→eight-stage mirror, re-run 2/0/0/0 21:08), Service7 `TestPictureBookLocationRoutes` 8/0/0/0 21:40 (`p34-s7routes2.log`), Playwright `pictureBookLocations.spec.js` `17 passed (1.3m)` `EXIT=0` 22:22 (`pw-p34.log`; live location render on `.39`, PNGs opened); security-reviewer PASS WITH NOTES → hardening slice landed (`cleanText`, no input echo, variant cap 32, facade `sameWorld` on approve/reject) and re-run GREEN 23:41 (`TestPbLocationNode` 11/0/0/0 `p34-locnode3.log`; `TestPbLocationProposal` 7/0 `p34-proposal2.log`; `TestPbLocationUtil` 9/0 `p34-locutil5.log`; `TestPbRenderPath` 10/0 + `TestPbReview` 7/0 `p34-review-renderpath.log`; Service7 8/0 `p34-s7routes3.log`); test-author added case09/case10/proposal case07 (case10 red → product fix → green); jar + `PictureBookService.class` redeployed 23:53 (md5 `5e2863…` / `a4993a…` local == container, restart `[9691] ms`); Playwright re-run `17 passed (1.2m)` 23:56 (`pw-p34b.log`, all three env gates on, live render on `.39`, PNGs opened); architect plan review CHANGES-NEEDED → every adoption landed; verifier PASS WITH NOTES ("ship after deciding on 1 and 2") → fix slice (`subjectExists` 404-for-unreadable + health check 12 `LOCATION_NODE_DANGLING`, case11 (e) + case12) **written, compile-clean, UNRUN**; **Objects7 quick gate run 17 2026-10-17 00:01:39 → 03:16:45 (`1224/4/0/16`, §4.4 row 17): §6.A ×3 + one new red `TestPbLocationPassLive:334` — the P3-3 cluster pass dropped the live model's own "same place" signals (alias / sibling `sameAs`); product-fixed in `PbLocationUtil.foldSubPlaces` + prompt + emulator case08, re-run green 10:51 (`p33-passlive-rerun.log` 1/0 + 8/0; ⚠ 176); every P3-4 class green inside run 17 (`TestPbLocationNode` 11/0/0/0)**; verifier fix slice run targeted 11:16 → 12:02:55: `p34-locnode4.log` 12/0/1/0 (case11 **fixture** — PBAC nested-foreign READ, test-fixed, ⚠ 177) → `p34-locnode-case11.log` 1/0/0/0 → full class `p35-locnode-full.log` `Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 551.7 s` → `BUILD SUCCESS`, `MVN_EXIT=0`; stack still on the 23:53 jar, fix-slice redeploy with P3-5 — §11.4 + addendum written, ⚠ 175 a–y, 176, 177. **P3-5 (plan carries the location) IMPLEMENTED + TESTS GREEN 12:36** (`TestPbScenePlanLocation` 8/0 incl. the live pair on `.39`; regression chain `TestPbLocationNode` 12/0, `TestPbRenderPath` 10/0 + `TestPbReview` 7/0, `TestPbLocationUtil` 9/0, `TestRenderPlanLive` 4/0, `TestChapBookV3Render` 17/0, `TestPbRenderPlanExecutor` 7/0, pure 36/0; Service7 `TestPictureBookLocationRoutes` 8/0 + `TestPictureBookPlanRoute` 12/0; jar `929206b1…` deployed 12:33, `Server startup in [9756]`; Playwright `pictureBookLocations.spec.js` `18 passed (1.3m)` with the new P3-5 plan proof, PNGs opened — §11.5); **gate run 18 GREEN 16:08 — 1236 run / 3 reds = §6.A ×3 only / 16 skips (§4.4 row 18); security/test-author/verifier reviews received (§6.C 178 t–x)**; **P3-6 (ChapBook optional locations) IMPLEMENTED + TESTS GREEN 21:18** (`TestChapBookPageLocation` 5/0 in one run after the plan-based binder fix, renders on `.39`, PNGs opened; Service7 four classes 37/0; jar `e46858ab…` deployed 17:19; ChapBook Playwright group 42/4 gated + gated `chapBook.spec.js` 18/0 + `pictureBookLocations.spec.js` 18/0; security PASS, test-author findings adopted, verifier PASS — §6.C 179 a–p, asks (1)–(7); §11.6); **gate run 19 GREEN 21:18 — 1246 run / 3 reds = §6.A ×3 only / 16 skips (§4.4 row 19)**; **P3-7 (Ux752 location library + scene-pointing route) IMPLEMENTED + TESTS GREEN 2026-10-18 01:40** (`TestPbSceneLocationPointer` 11/0 on `am7db`; Service7 `TestPictureBookLocationRoutes` 11/0 incl. the new `PUT …/scene/{id}/location` case; jar `38a14903…` + `PictureBookService.class` `3978f637…` deployed 21:34, dist identical; Playwright `pictureBookLocations.spec.js` 14 passed / 9 gated skips ungated, **23/0 gated** (two SD renders on `.39`, Ux render tier), ChapBook group 42/4; Vitest 69 new, suite 93 files / 1291 green; security CHANGES-NEEDED on the then-missing route test → closed, PBAC clean; test-author; verifier PASS-WITH-NOTES — §6.C 180 a–r, asks (1)–(6); §11.7); **gate run 20 GREEN 2026-10-18 01:37 — 1257 run / 3 reds = §6.A ×3 only / 16 skips (§4.4 row 20)**; **P3-8 gate (2026-10-18 01:37 → 02:50): Objects7 = run 20 (⚠ 181 b); Service7 quick gate `VERIFY_OK` 29 classes 204/0/0/0; Ux752 full gate run 5 `VERIFY_FAILED` 12/3/111/7/542 (34.6 m) = 7 carried §4.7.2 reds + 5 non-Phase-3 reds (4 × pre-Phase-3 `listBooks` 400-cap on the stack's 618 accumulated e2e books, proven over REST; 1 × `pictureBookCheckpoints:284` unguarded wait), 0 Phase 3 reds, `pictureBookLocations` 14/9 gated, style editor 6/6 (§4.8); architect + security + verifier PASS WITH NOTES, asks 181 (1)–(14); STOP; **confirmed 2026-10-18 — P3-1…P3-8 DONE, run 5 accepted as the Ux752 leg, run 20 as the Objects7 leg, no flagged re-run (§6.C 182 answers 1–4)** | §11 |
-| 4 — Composition + wardrobe | **IN PROGRESS** — started 2026-10-18 after the Phase 3 confirmation (§6.C 182). **P4-0 (Phase 3 carry-overs) IMPLEMENTED + TESTS GREEN + reviewed 2026-10-18 11:35 local** — (a) `listBooks` excludes CHAPBOOK inside the query (`TestPbCreateBookRollback#listBooksSkipsChapBooksInsideTheCandidateRange` 1/0/0/0; live: `e2etest_shared` now sees all 68 of her STORY books, was 17); (b) 550 e2e ChapBook rows purged, 107 PBAC-denied rows (other specs' users) left; (c) `deriveStageList`/`runSummaryText` moved to `workflows/pictureBookWorkflow.js` (vitest 94/1292 green + isolation spec); (d) `FIELD_CONCEALED`/`FIELD_POINTS_OF_INTEREST_PATH` (`TestPbLocationUtil#mapFreePoiIsNotConcealed`); (e) known locations read as the caller (`TestPbLocationProposal#case09`); (f) checkpoints spec wait (5/5 whole spec); (g) accept + merge mark re-pointed page nodes STALE (`case10`, `TestPbLocationNode#mergeMarksRepointedPageNodesStale`); security PASS, verifier PASS; jar deployed 11:12, Service7 compiled; §12.0, §6.C 183 (DONE yours, 159 b). Next P4-1 (schema) | §12 |
+| 4 — Composition + wardrobe | **IN PROGRESS** — started 2026-10-18 after the Phase 3 confirmation (§6.C 182). **P4-0 (Phase 3 carry-overs) IMPLEMENTED + TESTS GREEN + reviewed 2026-10-18 11:35 local** — (a) `listBooks` excludes CHAPBOOK inside the query (`TestPbCreateBookRollback#listBooksSkipsChapBooksInsideTheCandidateRange` 1/0/0/0; live: `e2etest_shared` now sees all 68 of her STORY books, was 17); (b) 550 e2e ChapBook rows purged, 107 PBAC-denied rows (other specs' users) left; (c) `deriveStageList`/`runSummaryText` moved to `workflows/pictureBookWorkflow.js` (vitest 94/1292 green + isolation spec); (d) `FIELD_CONCEALED`/`FIELD_POINTS_OF_INTEREST_PATH` (`TestPbLocationUtil#mapFreePoiIsNotConcealed`); (e) known locations read as the caller (`TestPbLocationProposal#case09`); (f) checkpoints spec wait (5/5 whole spec); (g) accept + merge mark re-pointed page nodes STALE (`case10`, `TestPbLocationNode#mergeMarksRepointedPageNodesStale`); security PASS, verifier PASS; jar deployed 11:12, Service7 compiled; §12.0, §6.C 183 (DONE yours, 159 b). **P4-1 IMPLEMENTED + TESTS GREEN + reviewed 2026-10-18 15:49** — three models (`olio.pb.composition` / `sceneActor` / `sceneElement`), nine `Pb*EnumType`s, `watched/v4` (+ `olio.item` set), `deleteGraphByBook` extended; `TestPbV4Schema` 8/0/0/0 inside `Tests run: 33, Failures: 0, Errors: 0, Skipped: 0` (`C:/tmp/p41-junit2.log`); architect PASS WITH CORRECTIONS (adopted), security PASS, verifier PASS; jar deployed 15:41, Service7 compiled, REST live proof `RESULT ALL PASS` as `e2etest_shared` 15:48; gate run 21 §4.4 15:49:37 → 19:50:14 **`Tests run: 1270, Failures: 4, Errors: 0, Skipped: 16` — reds = §6.A ×3 + the §6.C 162 `TestGameUtil` known red, skips = the row-20 list verbatim, no P4-1 red** (⚠ on the working tree, 185 g — accepted by its default); §12.1, §6.C 185 (DONE yours, 159 b). **P4-2 (`PbLayoutUtil`) IMPLEMENTED + TESTS GREEN + reviewed 2026-10-18 20:12 local** — `TestPbLayoutUtil` 17/0/0/0 (pure; `JUnitCore` 16:49:57 `OK (17 tests)`, Maven `p42-junit.log` 20:04:58 `BUILD SUCCESS`); architect PASS WITH CORRECTIONS (all adopted), verifier PASS WITH FINDINGS; jar deployed 20:12 (md5 `93653a21…`); §12.2, §6.C 186 (DONE yours, 159 b). **P4-3 (`PbComposeUtil` + `PbBookUtil.requireBookUpdate`, `pictureBook.compose-scene` prompt + `promptTemplate.` twin + `ChatUtil` list entry) IMPLEMENTED + TESTS GREEN + reviewed 2026-10-18 21:12 local** — `TestPbComposeFallback` 13/0/0/0 + `TestPbComposeSceneLive` 1/0/0/0 (`p43-junit5.log` 21:11:30 `BUILD SUCCESS`; the Live test composes a real scene against the in-stack Ollama container `qwen3:8b` via LiteLLM — compose 9467 ms / forced re-compose 4465 ms, recorded not asserted; no SD call); security-reviewer on the prompt + diff PASS WITH CORRECTIONS (H1/H2/L1/L4/L5 adopted, L2/L3 → §6.C 187 m), architect CHANGES NEEDED → D7 adopted, verifier PASS WITH FINDINGS (three Lows fixed in-task, MEDIUM kept for P4-10); jar deployed 21:12 (md5 `f55658b9…`), Service7 compiled, **no REST surface until P4-4**; **merged gate run 22 §4.4 (`o7verify` copy) 21:13:37 → 01:17:25 2026-10-19 `VERIFY_FAILED` — `Tests run: 1301, Failures: 4, Errors: 0, Skipped: 16` = §6.A ×3 (yours) + ONE NEW RED `TestPbDeleteComplete#testFullFootprintStrangerDeniedOwnerDeletesSecondCall404 :303`, diagnosed as DB-row-order dependence in committed `PbDeleteUtil.deleteWorkflowGraph` (green on a rerun 01:27:46; not a P4-2/P4-3 class, no P4 change touches it) — fix proposed §6.C 188 (default: apply, not yet applied); all 31 new P4-2/P4-3 tests green; `TestGameUtil` green** (`C:/tmp/o7verify-gate-p42.log`; ⚠ 186 a); §12.3, §6.C 187 (DONE yours, 159 b). **P4-4 (`pb.compose` job + lazy fallback + Quick start + `proposeLocations` job) IMPLEMENTED + TESTS GREEN + reviewed 2026-10-19 07:52 local** — new `PbComposeJobUtil` (`KIND_COMPOSE` / `KIND_PROPOSE_LOCATIONS`, story order, cooperative cancel that discards in-flight output (architect M1), progress in the job token, per-JVM `INFLIGHT` claim — same owner `reused`, other owner 409 — ends with the whole-book location pass with ChapBook pages via `settingTextOf`), auto-submit in Objects7 `PbServiceFacade.createFromScenesAndCompose` (architect M2) plus the import-time `olio.pb.scene` dual write it needed (189 h), lazy hook in `PbNodeExecutor.renderPlannedScene` → `COMPOSED_OUT_OF_ORDER` degradation (vetoes auto-approve until P4-7), Quick start inline DRAFT on the compose worker, three routes (`POST /{book}/compose` 202/200, `/scene/{id}/compose` sync 200, `/locations/propose` 202; `@RolesAllowed`, RuntimeException → 500 JSON), Ux752 thin client + Propose polling; `TestPbComposeJob` 10/0/0/0 (`p44-composejob4.log`), `TestPbComposeLazyRender` 3/0/0/1, `TestPbQuickStart` 1/0/0/1 (SD-gated, NOT run), `TestPbLocationProposal` 11/0, `TestPbCreateFromScenesRerun` 7/0, `TestPbRenderPlanExecutor` 7/0/0/5, `TestPbScenePlanLocation` 13/0/0/1, `TestPbComposeFallback` 13/0 + `TestPbComposeSceneLive` 1/0, `TestPbAutoApprove` 7/0 + `TestPbRenderJob` 11/0/0/3 — every LLM call through the in-stack Ollama container via LiteLLM; Service7 `TestPictureBookComposeRoutes` 8/0 + `TestPictureBookLocationRoutes` 11/0; Vitest 94 files / 1298; Playwright compose 11/0/1 skipped + locations 18/0/5 skipped + scene-text 1/0/1 skipped; nine red runs in all, every one mine and fixed; security PASS (should-fix 1 applied), verifier PASS-with-notes (1/3/4/7 fixed); jar + WAR deployed 07:42 (md5 `7a3ada47…`), live proof `p44-live3.log` ALL PASS; **Swarm `.39` down from 04:19 — SD-gated cases listed as not run, `.42` not used (§6.N)**; **gate run 23 §4.4 row 23 07:53:29 → 11:32:55: `VERIFY_FAILED` = §6.A ×3 + ten `.39`-outage reds (`TestPbCanvas`, `TestPictureBookCustom`, `TestPictureBookWorkflow`, `TestPbSceneGenerationGuards`; §6.C 189 r), no P4-4 red; `.39` back 10:50 → SD re-run A 11:35 → 11:57 ran every SD-gated P4-4 case live: 24/0/0/0, eleven PNGs opened (§12.4); SD re-run B 11:58 → 12:53 re-ran the four outage classes green: 23/0/0/0; Playwright compose spec with `PB_LLM_TESTS=1 PB_SD_TESTS=1` 12:54 → 12:56: `12 passed`, Quick start rendered 2/2 DRAFTs (two 512×512 PNGs opened)**; §12.4, §6.C 189 (DONE yours, 159 b). | §12 |
 | 5 — Multi-character strategies (spike first) | TODO | — |
 | 6 — Variants | TODO | — |
 | 7 — PictureBook goes V3 | TODO | — |
@@ -3540,6 +3540,198 @@ invocations, one at a time); `mvn install` 11:11:40 → 11:11:48; Service7 `comp
 isolation Vitest alone 11:19:11. LLM tier for the JUnit runs: §12.0 (the gate line only — `case09`/`case10` use the emulator, the other three
 tests no LLM at all; no SD call at all).
 
+### Probes 2026-10-18 14:37:19, 15:27:53, 15:35:25 and 15:46:04 local (`C:/tmp/probe-p4-1a.log` … `probe-p4-1d.log`) — P4-1 before the first edit, before each JUnit run and before the live proof — GREEN
+
+`1a` verbatim (P4-1 start; nothing else of mine running — the P4-0 single-class runs had ended 11:19):
+
+```
+--- 2026-10-18 14:37:19 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 3 hours;am7-pg Up 3 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  523G  422G  56% /c
+```
+
+`1b` (15:27:53, after the Objects7 `compile` / `test-compile`, before JUnit run 1): `diff probe-p4-1a.log probe-p4-1b.log` = the timestamp
+line and `Up 3 hours` → `Up 4 hours` only. `1c` (15:35:25, after the `case06` rewrite, before JUnit run 2): `diff 1b 1c` = the timestamp
+line only. `1d` (15:46:04, after the jar deploy + container restart, before the REST live proof): `diff 1c 1d` = the timestamp line,
+`Up 4 hours` → `Up 5 minutes` (the 15:40:51 `docker restart am7test-am7-1` of the deploy) and `[4c] none loaded` →
+`[('nomic-embed-text:latest', 323150151, 323150151)]` — the embedding model became resident on the container GPU (size == size_vram)
+somewhere across the restart; nothing in P4-1 makes an embedding or LLM call (what loaded it is not established — recorded, not chased).
+Every other line byte-identical at all four probes (`.39 http=200`, `in-container llm42=200 swarm39=302 litellm=200`, `container dist
+index.html identical to local build` — no `dist` change in P4-1, `C: 56%`). No Vite dev server at any probe (no Playwright in P4-1).
+
+Serial timeline, no overlap: `1a` 14:37:19; planner 14:39 → 14:48; architect 14:49 → 14:57 (both read-only); edits; `mvn compile` 15:05:22
+(`C:/tmp/p41-compile1.log`); `test-compile` 15:27:36 (`p41-testcompile1.log`); `1b` 15:27:53; JUnit run 1 15:28:30 → 15:30:11
+(`p41-junit.log`, `case06` red); `case06` rewrite; `1c` 15:35:25; JUnit run 2 15:35:44 → 15:37:17 (`p41-junit2.log`, 33/0/0/0);
+security-reviewer 15:38 → 15:43 and verifier 15:38 → 15:42 (both read-only, concurrent with each other only); `mvn install` 15:39:51
+(`p41-install.log`); Service7 `compile` 15:40:17 (`p41-s7compile.log`); deploy 15:40:45 → 15:41:25 (`p41-deploy.log`); `1d` 15:46:04;
+REST live proof 15:48:40 → 15:48:41 (`p41-live.log`); `o7verify` copy refresh 15:49:21 → 15:49:27 (`o7verify-refresh-p41.log`, `DIFF_OK
+(0 lines)`, `POM_SAME` — refreshed but NOT what the gate ran on, 185 g); gate run 21 15:49:37 (build) / 15:49:42 (test phase) →
+19:50:14 (4 h 00 m 32 s; `Tests run: 1270, Failures: 4, Errors: 0, Skipped: 16` — §4.4 row 21). LLM tier for the JUnit runs: §12.1 (the `[LLM-GATE]` line only — no test in P4-1 calls an LLM or SD).
+
+### Probes 2026-10-18 20:04:17 → 21:08:38 local (`C:/tmp/probe-p4-2a.log`, `2b`, `3a` … `3f`) — P4-2 and P4-3 — GREEN
+
+Eight probes, each between serial steps and never beside a Maven run: `2a` 20:04:17 before the P4-2 Maven run; `2b` 20:11:03 before the
+P4-2 jar deploy; `3a` 20:12:46 before P4-3 JUnit run 1; `3b` 20:21:00 before run 2; `3c` 20:24:04 before run 3; `3d` 20:26:46 before the
+Live run; `3e` 21:01:53 (the test-author's, before `p43-junit4`); `3f` 21:08:38 before `p43-junit5`. No probe preceded the 16:10 → 16:51
+P4-2 agent work because gate run 21 held the machine until 19:50:14 — the only P4-2 execution inside that window was the test-author's
+pure `JUnitCore` run (16:49:57, javac into `C:/tmp/p42-classes`, no DB/LLM/SD/Maven/`target/`) — §6.C 186 (h).
+
+`2a` verbatim (`C:/tmp/probe-p4-2a.log`):
+
+```
+--- 2026-10-18 20:04:17 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 4 hours;am7-pg Up 3 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  526G  419G  56% /c
+```
+
+The other seven differ from `2a` only in: the timestamp; `[2]` uptime (`Up 5 hours` at `2b`; `Up About a minute` at `3a` — the P4-2
+deploy's `docker restart am7test-am7-1` at 20:11:39; then `9` / `12` / `15` / `50` / `56 minutes`); `[4c]` — `[('nomic-embed-text:latest',
+323150151, 323150151)]` at `3a` (the container warming its embedding model after the restart), `[('qwen3:8b', 6186378198, 6186378198)]`
+at `3c` and `3d` (loaded by run 2's `[LLM-GATE]` probe; size == size_vram, fully GPU-resident as the standing rule requires), `none loaded`
+again at `3e`/`3f` (idle eviction); `[5]`/`[6]` at `2b` only — `Swarm .39: http=0` and `swarm39=000`, a transient on `.39` during the P4-2
+install, back to `200`/`302` at `3a` 103 s later and in every later probe (no P4-2/P4-3 test calls SD; recorded, not acted on); free
+space `419G` → `418G` at `3c`/`3d` → `419G`. `[1]`, `[3]`, `[4]`, `[4b]`, `litellm=200` and `container dist index.html identical to local
+build` are identical in all eight.
+
+Serial timeline, no overlap: gate run 21 ended 19:50:14 → `2a` 20:04:17 → `p42-junit` 20:04:35 → 20:04:58 → P4-2 verifier (own Maven
+re-run) 20:05:47 → 20:09:23 → `p42-install` 20:10:16 → `p42-s7compile` 20:10:26 → `2b` 20:11:03 → `p42-deploy` 20:11:31 → 20:12:10 →
+`3a` 20:12:46 → `p43-junit` 20:13:03 → 20:15:39 (red, mine) → fix → `3b` 20:21:00 → `p43-junit2` → 20:23:39 (error, mine) → fix → `3c`
+20:24:04 → `p43-junit3` 20:24:15 → 20:26:27 (green) → `3d` 20:26:46 → `p43-live` 20:26:59 → 20:27:59 → test-author review (read-only)
+20:29:45 → 20:36:45 beside the verifier (own Maven run `p43-verifier-junit` 20:30:28 → 20:31:40) 20:30:28 → 20:37:14 → fixes 20:38 →
+20:47 (no Maven) → test-author writing 20:48:53 → `3e` 21:01:53 → `p43-junit4` 21:02:12 → 21:05:12 → `integer()` fix ~21:07 → `3f`
+21:08:38 → `p43-junit5` 21:09:04 → 21:11:30 → `p43-install` 21:11:46 → `p43-s7compile` 21:11:51 → `p43-deploy` 21:11:56 → 21:12:52 →
+`o7verify` refresh 21:13:18 → 21:13:23 → gate run 22 launch 21:13:37 (stamp; test phase under way by 21:13:57, §4.4 row 22). One Maven at a time throughout.
+
+### Probes 2026-10-19 01:25:12 local (`C:/tmp/probe-p4-3g.log`) — gate run 22 follow-up (`TestPbDeleteComplete` rerun) — GREEN
+
+One probe, after gate run 22 ended (01:17:25) and before the single reproduction run of `TestPbDeleteComplete` (§4.4 row 22, §6.C 188);
+nothing else of mine on the machine. Verbatim:
+
+```
+--- 2026-10-19 01:25:12 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 4 hours;am7-pg Up 3 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  528G  417G  56% /c
+```
+
+Differs from `3f` only in the timestamp and free space (`419G` → `417G`, the gate's surefire output). Serial timeline: gate run 22
+21:13:37 → 01:17:25 → classification (`o7-run22-classify.py`, read-only) → surefire/XML/`am7db` reads (read-only `psql` via `docker exec
+postgres3`: `EXPLAIN`, `ctid` listing) → `3g` 01:25:12 → `p43-deletecomplete` 01:25:30 → 01:27:46 (`mvn -o -q -pl AccountManagerObjects7
+-Dtest=TestPbDeleteComplete -DskipTests=false test`, from `src/`, exit 0; `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr
+pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` — the local container through LiteLLM, though the class makes no LLM call). One Maven
+at a time throughout.
+
+### Probes 2026-10-19 02:45:41 → 12:54:12 local (`C:/tmp/probe-p4-4a.log` … `probe-p4-4ad.log`) — P4-4 — GREEN stack, Swarm `.39` DOWN from `4b` to the gate, back from `4ab`
+
+Twenty-seven probes (`4a` … `4z`, then `4aa`), one before every P4-4 test run (the standing rule), none beside a run. `4a` verbatim:
+
+```
+--- 2026-10-19 02:45:41 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 6 hours;am7-pg Up 3 days (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  528G  417G  56% /c
+```
+
+The other twelve differ from `4a` only in: the timestamp (`4b` 04:19:41, `4c` 04:41:45, `4d` 04:48:59, `4e` 04:58:37, `4f` 05:19:29,
+`4g` 05:26:48, `4h` 05:29:30, `4i` 05:31:10, `4j` 05:37:21, `4k` 05:39:28, `4l` 05:41:51, `4m` 06:00:37); `[2]` uptime (`Up 7`/`8 hours`,
+then `Up 5 minutes` at `4m` — the P4-4 deploy's `docker restart am7test-am7-1` at 05:55:03); `[4c]` — `[('qwen3:8b', 6186378198,
+6186378198)]` at `4d`, `4k`, `4l` (loaded by the preceding run's `[LLM-GATE]` probe; size == size_vram, fully GPU-resident) and
+`[('goekdenizguelmez/JOSIEFIED-Qwen3:8b', 5988784536, 5988784536)]` at `4m` (the live-proof script's `[e2e-llm]` probe), `none loaded`
+otherwise (idle eviction); **`[5]`/`[6]` from `4b` onward — `Swarm .39: http=0` and `swarm39=000` in all twelve, i.e. `192.168.1.39:7801`
+accepted no connections from ~04:20 through 06:00 (`.42:7801` kept answering `302`; `llm42=200`, `litellm=200` throughout)** — so every
+SD-gated case in the P4-4 runs skipped visibly (§12.4; not acted on — §6.N precedent, wait for `.39`); `container dist index.html DIFFERS
+from local build` at `4b` … `4l` (the P4-4 Ux752 edits built locally at 03:15 but not yet copied in; `identical` again at `4m` after the
+`vite build` + `docker cp` at 06:00); free space `417G` → `416G` from `4b`. `[1]`, `[3]`, `[4]`, `[4b]` are identical in all thirteen.
+
+The fourteen after the reviews (`4n` 06:50:34, `4o` 07:05:18, `4p` 07:13:41, `4q` 07:17:34, `4r` 07:19:27, `4s` 07:27:05, `4t` 07:31:11,
+`4u` 07:32:43, `4v` 07:36:36, `4w` 07:46:11, `4x` 07:48:08, `4y` 07:49:49, `4z` 07:51:23, `4aa` 07:52:56) differ from `4m` only in: `[2]`
+uptime (`Up 55 minutes` → `Up 2 hours`, then `Up 4 minutes` at `4w` — the second P4-4 deploy's `docker restart am7test-am7-1` at 07:42:00 —
+→ `Up 10 minutes` at `4aa`); `[4c]` — `[('qwen3:8b', 6186378198, 6186378198)]` at `4p`, `4t`, `4u`, `4v` (the preceding JUnit run's
+`[LLM-GATE]`), `[('goekdenizguelmez/JOSIEFIED-Qwen3:8b', 5988784536, 5988784536)]` at `4w` … `4aa` (the live-proof / Playwright `[e2e-llm]`
+probe; size == size_vram throughout), `none loaded` at `4n`, `4o`, `4q`, `4r`, `4s`; **`[5]` `Swarm .39: http=0` and `[6]` `swarm39=000` in
+all fourteen** (`llm42=200`, `litellm=200` throughout) — `.39:7801` stayed down from `4b` to the end of P4-4; `container dist index.html
+identical to local build` in all fourteen (the compose spec edits at 07:47 and 07:49 were spec-only, no dist change); free space `416G`
+throughout.
+
+Serial timeline, no overlap (local; the JUnit logs stamp UTC, +5 h): `4a` 02:45:41 → `p44-vitest-locations` → 03:14:34 → `p44-vitest-all`
+→ 03:14:57 → `p44-vite-build` → 03:15:12 → `p44-compile1` → 03:30:21 → `p44-composejob` 03:30:45 → 03:37:31 (red, mine: case06
+`composed` expected 2 was 1 — an empty-but-parseable LLM proposal; retry fix in `PbComposeUtil` + bounded resubmit in the test) →
+`p44-compile2` → 03:49:06 → `4b` 04:19:41 → `p44-testcompile` → 04:20:10 → `p44-composejob2` 04:21:40 → 04:29:07 (8/0, green) → `4c`
+04:41:45 → `p44-composeregress` 04:42:25 → 04:45:10 → `4d` 04:48:59 → `p44-locationproposal` 04:49:32 → 04:57:23 → `4e` 04:58:37 →
+`p44-autoapprove-renderjob` 04:59:10 → 05:15:21 → `4f` 05:19:29 → `p44-lazyrender` 05:20:03 → 05:20:27 (1 run / 1 skipped, SD-gated;
+`case00` not yet written) → `4g` 05:26:48 → `p44-lazyrender2` 05:27:22 → 05:28:24 (red, mine: `case00` expected a MIGRATED row to be
+re-composed by the second ensure; in the JUnit org `testUser1` resolves no chat config, so the second ensure is a `hardFailure` that leaves
+the row untouched — the assertion was wrong, the product right; `case00` rewritten) → `4h` 05:29:30 → `p44-lazyrender3` 05:30:03 →
+05:31:03 (2/0/1 skipped, green) → `4i` 05:31:10 → `p44-quickstart` 05:31:42 → 05:32:06 (1 run / 1 skipped, SD-gated) → `case09` written →
+`4j` 05:37:21 → `p44-composejob-quickstart` 05:38:01 → 05:39:20 (1/0, green) → `4k` 05:39:28 → `p44-renderplanexecutor` 05:40:05 →
+05:41:46 (7/0/5 skipped) → `4l` 05:41:51 → `p44-sceneplanlocation` 05:42:36 → 05:51:40 (13/0/1 skipped) → `p44-install` → 05:51:52 →
+`p44-service7-routes` 05:52:14 → 05:52:45 (red, mine: `String.valueOf(char[])` overload at `TestPictureBookComposeRoutes.java:700`) → fix →
+`p44-service7-routes2` 05:53:33 → 05:54:05 (19/0, green) → `p44-package` → 05:54:13 → `p44-deploy` 05:54:29 → 05:55:31 → `p44-live` (run 1
+`ECONNREFUSED :8899`, `PLAYWRIGHT_BASE_URL` omitted — its output was overwritten by run 2 in the same file, which ends `RESULT 1 FAIL`: my
+script's 409 text) → 05:56:26 → `p44-live2` → 05:57:10 (ALL PASS)
+→ `p44-vite-build2` + `docker cp` → 06:00:29 → `4m` 06:00:37 → `p44-pw-locations` → 06:01:51 (17/6 skipped) → `p44-pw-compose` →
+06:02:15 (red, mine: the same 409 text at `pictureBookCompose.spec.js:288`) → fix → `p44-pw-compose2` → 06:03:08 (9/1 skipped) →
+`p44-pw-locations2` (+`PB_LOC_DB_PROOF=1`) → 06:03:57 (18/5 skipped). One Maven / one Playwright at a time throughout; no JUnit LLM run
+beside a Playwright LLM run.
+
+Continuation after the security-reviewer (06:04:56 → 06:11:44, read-only) ∥ verifier (06:05:34 → 06:19:57; its own Objects7 + Service7
+`test-compile` and one targeted Vitest run were the only Maven/node of mine in that window) and the post-review edits (06:20 → 06:50; no test
+run, one Objects7 `compile` at 06:40 and one Service7 `compile` at 06:50): `4n` 06:50:34 → `p44-composejob3` 06:51:15 → 06:58:48 (red, mine: new `case10` built its "other group"
+from `dataPath()`, a filesystem path — `~/Data/P44 Foreign <id>` instead) → `4o` 07:05:18 → `p44-composejob4` 07:05:53 → 07:13:24 (10/0,
+green) → `4p` 07:13:41 → `p44-rerun1` 07:14:33 → 07:17:20 (7/0, green; one false `Import dual write … was not enrolled` WARN on the re-run
+→ `enrolImportedCast` `isMember` guard) → `4q` 07:17:34 → `4r` 07:19:27 (re-probed after the product edit; no run between) → `p44-lazy4`
+07:20:05 → 07:21:09 (red, mine: new `case02` looked the user's `generalChat` up before the policy-decision cache had let go of the earlier
+miss — `CacheUtil.clearCache()` in the test) → `4s` 07:27:05 → `p44-lazy5` 07:27:40 → 07:29:37 (3/0/1 skipped, green) → `4t` 07:31:11 →
+`p44-quickstart2` 07:31:46 → 07:32:13 (1 run / 1 skipped, SD-gated) → `4u` 07:32:43 → `p44-composeregress2` 07:33:19 → 07:35:53 (14/0) →
+`4v` 07:36:36 → `p44-rerun2` 07:37:10 → 07:39:54 (7/0, zero WARN) → `p44-install2` → 07:40:36 → `p44-service7-routes3` 07:40:44 → 07:41:01
+(8/0) → `p44-package2` → 07:41:20 → `p44-deploy2` 07:41:26 → 07:42:30 → `p44-live3` → 07:46:05 (ALL PASS) → `4w` 07:46:11 →
+`p44-pw-compose3` → 07:47:13 (red, mine: the new import spec asserted `bookObjectId` where the wire carries the PB1 note-book and
+`pb2BookObjectId` the V3 book) → spec fix → `4x` 07:48:08 → `p44-pw-compose4` → 07:48:59 (red, mine: the wire omits a zero `sceneIndex`;
+spec normalises `(s.sceneIndex || 0)`) → spec fix → `4y` 07:49:49 → `p44-pw-compose5` → 07:51:15 (11/1 skipped, green) → `4z` 07:51:23 →
+`p44-pw-scenetext` → 07:52:09 (1/1 skipped) → `o7verify-refresh-p44` 07:52:35 → 07:52:41 (`DIFF_OK (0 lines)`, `POM_SAME`) → `4aa` 07:52:56
+→ gate run 23 07:53:29 → 11:32:55 (§4.4 row 23). One Maven / one Playwright at a time throughout; no probe beside a run.
+
+**After the gate — Swarm `.39` back (you: ".39 is back up now"; confirmed 10:55:38 from the host while the gate was still running: `swarm39=302`,
+`GetNewSession` returned a session, Swarm `0.9.8.3.GIT-ded28b19` — read-only, no run started beside the gate).** `4ab` 11:34:57 (after the gate's
+`.end` stamp) differs from `4aa` only in: `[2]` `am7test-am7-1 Up 4 hours;am7-pg Up 4 days (healthy)`; **`[5]` `Swarm .39: http=200` and `[6]`
+`swarm39=302`** — first green `.39` since `4a`; `[4c]` `none loaded`; free space `413G`. Then `p44-sd-p44` (SD re-run A: `TestPbComposeLazyRender`,
+`TestPbQuickStart`, `TestPbRenderPlanExecutor`, `TestPbScenePlanLocation` in one Maven) 11:35:23 → 11:57:38 (24/0/0/0, §12.4) → `4ac` 11:57:57
+(identical to `4ab` but `[2]` unchanged `Up 4 hours`) → `p44-sd-env` (SD re-run B: `TestPbSceneGenerationGuards`, `TestPbCanvas`,
+`TestPictureBookCustom`, `TestPictureBookWorkflow`) 11:58:41 → 12:53:41 (23/0/0/0, §12.4) → `4ad` 12:54:12 (differs from `4ac` in `[2]`
+`Up 5 hours` and `[4c]` `[('goekdenizguelmez/JOSIEFIED-Qwen3:8b', 5988784536, 5988784536)]` — loaded by re-run B's PictureBook classes, size ==
+size_vram) → `p44-pw-compose-sd` (Playwright, whole compose spec with `PB_LLM_TESTS=1 PB_SD_TESTS=1`) 12:54:31 → 12:56:13, `12 passed (1.6m)`, `exit=0`, two 512×512 DRAFT PNGs opened (§12.4). `[5]` `Swarm .39:
+http=200` / `[6]` `swarm39=302` in all three. One Maven / one Playwright at a time; no probe beside a run; no JUnit beside the Playwright run.
+
 ## 4. Verification per phase
 
 | Phase | `verify.sh` | verifier | architect | security-reviewer |
@@ -4099,6 +4291,9 @@ Same command and rsync'd `C:/tmp/o7verify` copy as §4.1; live `am7db` on `postg
 | 18 — **GREEN** (`.39` UP) | P3-5 (background-first in the plan) + the P3-4 verifier fix slice + the PassLive fold fix — everything row 17 did not cover — `src` re-copied 2026-10-17 12:36:43 from the working tree (`o7verify-refresh.sh`: `DIFF_OK (0 lines)`, `POM_SAME`; `target/classes`, `test-classes`, `maven-status`, `surefire-reports` removed; `am7`/`media` junctions in place; the copy carries `TestPbScenePlanLocation` 8 cases incl. case08 live); `AM7_UX752_MEDIA` exported; probe `g` 12:36:54 §3 GREEN; `tasklist` before launch: only the IDE's `java.exe` 33848 / `node.exe` 40644 | 2026-10-17 12:37:15 → 16:07:59 (3 h 31 m; `C:/tmp/o7verify-gate-p35.log`, copy `C:/tmp/o7-run18-gate.log`, stamps `o7verify-gate-p35.start`/`.end`; classification `C:/tmp/o7-run18-classify.txt`, 191 XMLs newer than the stamp) | `PASS (build)`; `FAIL (test) in AccountManagerObjects7`; `VERIFY_FAILED`, `GATE_EXIT=1` — `Tests run: 1236, Failures: 3, Errors: 0, Skipped: 16` | **3 reds = §6.A ×3 (yours), byte-identical to row 17:** `TestPbDeleteSeries#testStrangerDeniedThenOwnerDeletesWholeSeries @ :119 :: chapter 1 row`; `TestPbListSeriesBooks#testEntitledNonOwnerSeesAllChaptersStrangerSeesNone @ :138 :: … expected:<2> but was:<0>`; `TestPbSeriesCast#testRecopyAndMergeDenyReadOnlyUserAndDoNotMutate @ :532 :: subject MUST be able to READ the chapter book …`. **Row 17's fourth red (mine, the P3-4 verifier fix slice) is green here** — that slice was in this copy. 16 skips = the row-17 list verbatim (7 `LITELLM_LIVE`, 4 `PICTUREBOOK_E2E`, 2 `-Dam7test.db.url`, `TestModelResolverLive#case07` no Kontext on `.39` ("NOT a pass"), `TestPathUtilBehavior` D3). +12 tests vs row 17 (1224 → 1236): `TestPbScenePlanLocation` 8 (new), `TestRenderPlan` +2, `TestPbLocationProposal` +1, and the committed P3-4 fix slice's case12 (`TestPbLocationNode` 12). Slowest: `TestPictureBookWorkflow` 2517.7 s, `TestBookWorld` 649.4 s, `TestPbRenderJob` 580.1 s, `TestPbLocationNode` 548.7 s, `TestChapBookV3Render` 485.1 s, `TestPbRenderPlanExecutor` 412.8 s, `TestPbScenePlanLocation` 332.4 s. **Note:** this copy predates the P3-5 hardening (resolver `sameWorld` / variant-parent refusal, cases 09–13) and the P3-6 edits — both go through run 19. |
 | 19 — **GREEN** (`.39` UP) | P3-5 hardening (resolver `sameWorld` / variant-parent refusal, `TestPbScenePlanLocation` cases 09–13) + P3-6 (`executeChapBookPage` FK projection, plan-based `bindSceneLocation` at both call sites, `TestChapBookPageLocation` 5 incl. the post-17:12 case01 `:759` re-read) — everything row 18 did not cover — `src` re-copied 2026-10-17 17:42:05 → 17:42:11 from the working tree (`o7verify-refresh.sh`: `DIFF_OK (0 lines)`, `POM_SAME`; `target/classes`, `test-classes`, `maven-status`, `surefire-reports` removed; `am7`/`media` junctions in place); `AM7_UX752_MEDIA` exported; probe `i` 17:42:19 §3 GREEN; `tasklist` before launch: only the IDE's `java.exe` 33848 / `node.exe` 40644 | 2026-10-17 17:42:37 → 21:17:54 (3 h 35 m; `C:/tmp/o7verify-gate-p36.log`, stamps `o7verify-gate-p36.start`/`.end`; classification `C:/tmp/o7-run19-classify.txt`, 192 XMLs newer than the stamp) | `PASS (build)`; `FAIL (test) in AccountManagerObjects7`; `VERIFY_FAILED`, `GATE_EXIT=1` — `Tests run: 1246, Failures: 3, Errors: 0, Skipped: 16` | **3 reds = §6.A ×3 (yours), byte-identical to rows 17/18:** `TestPbDeleteSeries#testStrangerDeniedThenOwnerDeletesWholeSeries @ :119 :: chapter 1 row`; `TestPbListSeriesBooks#testEntitledNonOwnerSeesAllChaptersStrangerSeesNone @ :138 :: … expected:<2> but was:<0>`; `TestPbSeriesCast#testRecopyAndMergeDenyReadOnlyUserAndDoNotMutate @ :532 :: subject MUST be able to READ the chapter book …`. 16 skips = the row-18 list verbatim (7 `LITELLM_LIVE`, 5 `PICTUREBOOK_E2E`, 2 `-Dam7test.db.url`, `TestModelResolverLive#case07` no Kontext on `.39` ("NOT a pass"), `TestPathUtilBehavior` D3). +10 tests vs row 18 (1236 → 1246): `TestPbScenePlanLocation` +5 (8 → 13, the P3-5 hardening), `TestChapBookPageLocation` 5 (new). Every P3 location class green inside the run: `TestChapBookPageLocation` 5/0 319.3 s, `TestPbLocationNode` 12/0 540.0 s, `TestPbLocationProposal` 8/0 281.8 s, `TestPbScenePlanLocation` 13/0 481.8 s, `TestPbLocationUtil` 9/0 312.8 s. Slowest: `TestPictureBookWorkflow` 2528.5 s, `TestBookWorld` 667.1 s, `TestPbRenderJob` 567.3 s, `TestPbLocationNode` 540.0 s, `TestPictureBookCustom` 517.0 s, `TestPbScenePlanLocation` 481.8 s, `TestChapBookV3Render` 478.6 s, `TestPbSecurity` 407.1 s. **Note:** this copy predates the P3-7 edits (`PbBookUtil.setSceneLocation`, `PbServiceFacade.setSceneLocation` + `bookPageView`, `TestPbSceneLocationPointer` 11) — those go through run 20. |
 | 20 — **GREEN modulo §6.A ×3** (`.39` UP) | P3-7 (`PbBookUtil.setSceneLocation` + `markSceneNodeStale` caller, `PbServiceFacade.setSceneLocation` + `requireLocationSubject` + `bookPageView` four keys, `TestPbSceneLocationPointer` 11 new) — everything row 19 did not cover — `src` re-copied 2026-10-17 21:50:33 → 21:50:39 from the working tree (`o7verify-refresh.sh`: `DIFF_OK (0 lines)`, `POM_SAME`; `target/classes`, `test-classes`, `maven-status`, `surefire-reports` removed; `am7`/`media` junctions in place); `AM7_UX752_MEDIA` exported; probe `7e` 21:50:39 §3 GREEN; nothing else of mine on the machine (the ChapBook Playwright group had ended 21:49:58) | 2026-10-17 21:51:00 → 2026-10-18 01:37:12 (3 h 46 m; `C:/tmp/o7verify-gate-p37.log`, stamps `o7verify-gate-p37.start`/`.end`; classification `C:/tmp/o7-run20-classify.txt`, 193 XMLs newer than the stamp) | `PASS (build)`; `FAIL (test) in AccountManagerObjects7`; `VERIFY_FAILED`, `GATE_EXIT=1` — `Tests run: 1257, Failures: 3, Errors: 0, Skipped: 16` | **3 reds = §6.A ×3 (yours), byte-identical to rows 17–19:** `TestPbDeleteSeries#testStrangerDeniedThenOwnerDeletesWholeSeries @ :119 :: chapter 1 row`; `TestPbListSeriesBooks#testEntitledNonOwnerSeesAllChaptersStrangerSeesNone @ :138 :: … expected:<2> but was:<0>`; `TestPbSeriesCast#testRecopyAndMergeDenyReadOnlyUserAndDoNotMutate @ :532 :: subject MUST be able to READ the chapter book …`. 16 skips = the row-19 list verbatim (7 `LITELLM_LIVE`, 5 `PICTUREBOOK_E2E`, 2 `-Dam7test.db.url`, `TestModelResolverLive#case07` no Kontext on `.39` ("NOT a pass"), `TestPathUtilBehavior` D3) — none of them a P3 class. +11 tests vs row 19 (1246 → 1257) = `TestPbSceneLocationPointer` 11 (new). `TestPbSceneLocationPointer` 11/0 (406.1 s; cases 01–11 29.3–60.4 s each) inside the run — the only run of the class beside the 21:23 solo run. Every P3 location class green inside the run: `TestPbSceneLocationPointer` 11/0 406.1 s, `TestChapBookPageLocation` 5/0 324.0 s, `TestPbLocationNode` 12/0 559.2 s, `TestPbLocationProposal` 8/0 282.8 s, `TestPbScenePlanLocation` 13/0 482.1 s, `TestPbLocationUtil` 9/0 295.8 s, `TestPbLocationPassLive` 1/0 52.7 s, `TestRenderPlan` 9/0, `TestRenderPlanLive` 4/0 118.4 s. Slowest: `TestPictureBookWorkflow` 2513.9 s, `TestBookWorld` 786.3 s, `TestPbRenderJob` 570.1 s, `TestPbLocationNode` 559.2 s, `TestPictureBookCustom` 540.0 s, `TestChapBookV3Render` 482.9 s, `TestPbScenePlanLocation` 482.1 s, `TestPbSecurity` 415.0 s, `TestPbSceneLocationPointer` 406.1 s. `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` in the captured test output (tier=local = the in-stack Ollama container via LiteLLM, not Azure); `SdTestGate` rendered with checkpoint `OfficialStableDiffusion/sd_xl_base_1.0.safetensors` on `http://192.168.1.39:7801`. |
+| 21 — **GREEN modulo §6.A ×3 + §6.C 162** (`.39` UP; ⚠ 185 g — accepted by its default) | P4-1 (three new models + nine enums, `watched/v4`, `deleteGraphByBook`, `TestPbV4Schema` 8 new; `TestPbModelSchema`/`TestPbLocationSchema` counts) — **launched on the working tree** (`src/AccountManagerObjects7`), not the `C:/tmp/o7verify` copy: the `LOOP_ROOT=C:/tmp/o7verify` and `AM7_UX752_MEDIA` exports were omitted from the launch (mine). The copy had been refreshed 15:49:21 → 15:49:27 (`o7verify-refresh-p41.log`: `DIFF_OK (0 lines)`, `POM_SAME`) and sat unused. The launcher shell was stopped once noticed; `verify.sh` itself, the Maven JVM (PID 46604) and the Surefire fork (61596) survived it and ran to completion — the log ends with verify.sh's own `VERIFY_FAILED`; only the launcher's `GATE_EXIT=` echo is missing (my earlier note in this row that no `VERIFY_` line would appear was wrong). No existing Objects7 class or resource was edited while it ran — new files only (`PbLayoutUtil`, `PbComposeUtil`, their tests, the two `compose-scene` JSONs), none picked up by this run (no XML for `TestPbLayoutUtil` / `TestPbComposeFallback` / `TestPbComposeSceneLive`). `TestMannequinBaseImage` 10/0 with the unset env (media via the sibling `../AccountManagerUx752/public/media/`). Probe `1d` 15:46:04 §3 GREEN; nothing else of mine on the machine for the whole run (the only concurrent work was read-only: the P4-3 security-reviewer agent, and edits to new files) | 2026-10-18 15:49:37 (build) / 15:49:42 (test phase) → 19:50:14 (4 h 00 m 32 s; `C:/tmp/o7verify-gate-p41.log`, stamp `o7verify-gate-p41.start`; `.end` 19:50:30 written by the PID waiter; classification `C:/tmp/o7-run21-classify.txt`, 194 XMLs newer than the stamp — the 195th, `TestScratchCfgDeny`, is a 2026-10-16 leftover not run in row 20 or 21) | `PASS (build)`; `FAIL (test) in AccountManagerObjects7`; `VERIFY_FAILED` — `Tests run: 1270, Failures: 4, Errors: 0, Skipped: 16` | **4 reds = §6.A ×3 (yours), byte-identical to rows 17–20:** `TestPbDeleteSeries#testStrangerDeniedThenOwnerDeletesWholeSeries @ :119 :: chapter 1 row`; `TestPbListSeriesBooks#testEntitledNonOwnerSeesAllChaptersStrangerSeesNone @ :138 :: … expected:<2> but was:<0>`; `TestPbSeriesCast#testRecopyAndMergeDenyReadOnlyUserAndDoNotMutate @ :532 :: subject MUST be able to READ the chapter book …` — **plus `TestGameUtil#TestMoveTowardsPositionAcrossCells @ :964 :: Distance should not increase significantly (was 158.0, now 1148.0)`**, the §6.C 162 known red you ruled non-blocking (green in rows 17–20, red in row 9 — intermittent; not a P4-1 class, and P4-1 touched nothing in the game path). 16 skips = the row-20 list verbatim (7 `LITELLM_LIVE`, 5 `PICTUREBOOK_E2E`, 2 `-Dam7test.db.url`, `TestModelResolverLive#case07` no Kontext on `.39` ("NOT a pass"), `TestPathUtilBehavior` D3). +13 tests vs row 20 (1257 → 1270) = `TestPbV4Schema` 8 (new, P4-1) + 5 committed in `e1fe517e PB3 P4 Prep` (14:31, after row 20 ran): `TestPbLocationUtil` +1, `TestPbLocationNode` +1, `TestPbLocationProposal` +2, `TestPbCreateBookRollback` +1 — the "expected 1265" I wrote here before the run missed those. P4-1 classes inside the run: `TestPbV4Schema` 8/0 59.4 s, `TestPbModelSchema` 22/0 21.4 s, `TestPbLocationSchema` 3/0 7.3 s, `TestPbV3Schema` 5/0 10.1 s, `TestPbStyleSchema` 9/0 19.2 s. **No P4-1 red.** Slowest: `TestPictureBookWorkflow` 2369.1 s, `TestBookWorld` 782.1 s, `TestPbLocationNode` 635.0 s, `TestPbRenderJob` 594.6 s, `TestPbScenePlanLocation` 523.9 s, `TestPictureBookCustom` 511.7 s, `TestChapBookV3Render` 494.0 s, `TestPbSecurity` 481.2 s, `TestPbSceneLocationPointer` 413.2 s. `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` in the captured test output (tier=local = the in-stack Ollama container via LiteLLM, not Azure); `SdTestGate` rendered with checkpoint `OfficialStableDiffusion/sd_xl_base_1.0.safetensors` on `http://192.168.1.39:7801`. |
+| 22 — **`VERIFY_FAILED` = §6.A ×3 + ONE NEW RED, diagnosed: `TestPbDeleteComplete` order-dependence (§6.C 188)** (`.39` UP; ⚠ 186 a — one merged run for P4-2 + P4-3) | P4-2 + P4-3 (`PbLayoutUtil`, `PbComposeUtil`, `PbBookUtil.requireBookUpdate`, `PbLocationUtil` delegating to it, `PbRenderPlanUtil.actorDescription` package-private, `ChatUtil` template-list entry, the two `pictureBook.compose-scene` resources; `TestPbLayoutUtil` 17 + `TestPbComposeFallback` 13 + `TestPbComposeSceneLive` 1 new; `TestPictureBookFull` / `TestPromptLibrary` expectations +1) — **on the `C:/tmp/o7verify` copy** (`LOOP_ROOT=C:/tmp/o7verify LOOP_MODULE=AccountManagerObjects7 MAVEN_ARGS=-o`, `AM7_UX752_MEDIA` exported, launched from the git root; copy refreshed 21:13:18 → 21:13:23, `o7verify-refresh-p42.log`: `DIFF_OK (0 lines)`, `POM_SAME`). Probe `3f` 21:08:38 §3 GREEN. Nothing else of mine on the machine while it ran — no Maven, no probe, no edit to an existing Objects7 class or resource (this doc and `C:/tmp` drafts only). `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` (first class `TestCleanupOrphansTemplate`) — the in-stack Ollama container through LiteLLM, not Azure, not `.42`; `SdTestGate - http://192.168.1.39:7801 answered HTTP 302`, every SD-touching class `will render with checkpoint 'OfficialStableDiffusion/sd_xl_base_1.0.safetensors' on http://192.168.1.39:7801` | 2026-10-18 21:13:37 (stamp; build PASS, test phase under way by 21:13:57) → 2026-10-19 01:17:25 (4 h 03 m 48 s; `C:/tmp/o7verify-gate-p42.log`, stamp `o7verify-gate-p42.start`; classification `C:/tmp/o7-run22-classify.py` → `.txt`, **197 XMLs newer than the stamp** = row 21's 194 + the three new classes) | `PASS (build)`; `FAIL (test) in AccountManagerObjects7`; `VERIFY_FAILED`; `GATE_EXIT=1` — `Tests run: 1301, Failures: 4, Errors: 0, Skipped: 16` (1301 = row 21's 1270 + 31, exactly as predicted above) | **4 reds = §6.A ×3 (yours), byte-identical to rows 17–21:** `TestPbDeleteSeries#testStrangerDeniedThenOwnerDeletesWholeSeries @ :119 :: chapter 1 row`; `TestPbListSeriesBooks#testEntitledNonOwnerSeesAllChaptersStrangerSeesNone @ :138 :: entitled non-owner must see BOTH chapters expected:<2> but was:<0>`; `TestPbSeriesCast#testRecopyAndMergeDenyReadOnlyUserAndDoNotMutate @ :532 :: subject MUST be able to READ the chapter book (else recopy 404s before the canUpdate gate)` — **plus ONE NEW RED: `TestPbDeleteComplete#testFullFootprintStrangerDeniedOwnerDeletesSecondCall404 @ :303 :: step audit must record 'bindingsByNode': [bookRoles, castGroupsByBook, footprint, workflow, artifactsByNode, cleanupOrphans, nodesByWorkflow, uxTree, approvedRendersCleared, bindingsBySourceNode, scenesByBook, metaNotes]`** (36.05 s; class 2 tests, 1 failure, 75.203 s; green in rows 17–21). **Diagnosed 01:20 → 01:35, not closed as pre-existing:** the fixture's one binding is `node = scene node (#7507)`, `sourceNode = portrait node (#7508)`; `PbDeleteUtil.findByFk` emits no `ORDER BY` (`olio.pb.node` declares no `sortField`, `StatementUtil.getDefaultOrderClause` → empty), so `deleteWorkflowGraph` (`PbDeleteUtil.java:207-228`) walks the workflow's nodes in heap-TID order (plan: `Index Scan using a7_olio_pb_node_0_1_ww_2_idx`, equal keys in TID order); `deleteByFk` (`:360-371`) records a step only when it found rows. This run's audit (`TEST-…TestPbDeleteComplete.xml`, 23:49:11): `DELETE olio.pb.binding #1560` once, then `DELETE olio.pb.node #7508` **before** `#7507` — the portrait node was visited first, so the binding went out under `bindingsBySourceNode` and the later `bindingsByNode` pass over the scene node found nothing and recorded nothing. Heap order ≠ id order on this churned table (`am7db` now: workflow 2037 has `7445@(280,23)` before `7444@(280,27)`), so which step name gets the binding depends on where the FSM placed two rows. **Rerun after probe `3g` (01:25:30 → 01:27:46, `C:/tmp/p43-deletecomplete.log`, exit 0): `Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 130.1 s`** — same code, nodes visited `#7681` then `#7682` (scene first). `deleteWorkflowGraph`, `deleteByFk`, `findByFk`, `PbGraphUtil` and the test are unchanged vs HEAD (`git status`); the P4-1 edit to `deleteGraphByBook` runs before the workflow loop and touches no node order; P4-2/P4-3 touched none of them. A latent flake in committed P3 code surfaced by chance in run 22, not a P4 regression — **but it is red in my gate, so the fix is proposed, not deferred: §6.C 188** (three passes in `deleteWorkflowGraph` so the step attribution never depends on row order, plus `findByFk` ordered by `id`; product code outside P4-3's row → asked, default apply). `TestGameUtil` 25/0/0/0 244.596 s — green this run (§6.C 162 intermittent). 16 skips = the row-20/21 list verbatim (7 `LITELLM_LIVE`, 5 `PICTUREBOOK_E2E`, 2 `-Dam7test.db.url`, `TestModelResolverLive#case07` no Kontext on `.39` ("NOT a pass"), `TestPathUtilBehavior` D3). P4-2/P4-3 classes inside the gate: `TestPbLayoutUtil` 17/0/0/0 0.16 s, `TestPbComposeFallback` 13/0/0/0 86.717 s, `TestPbComposeSceneLive` 1/0/0/0 50.081 s (two real LLM round-trips through the local tier); P4-1's `TestPbV4Schema` 8/0 64.13 s; `TestPbLocationProposal` 10/0 413.42 s. Slowest: `TestPictureBookWorkflow` 2425.27 s (5), `TestBookWorld` 775.886 (21), `TestPbLocationNode` 637.109 (13), `TestPbRenderJob` 587.678 (11), `TestPbScenePlanLocation` 529.944 (13), `TestPictureBookCustom` 516.333 (7), `TestChapBookV3Render` 497.116 (17), `TestPbSecurity` 466.779 (10), `TestPbSceneLocationPointer` 444.595 (11), `TestPbStale` 441.16 (10). The prediction above ("reds §6.A ×3 ± `TestGameUtil`") missed the delete-order flake, which no earlier run had shown. |
+| 23 — **`VERIFY_FAILED` = §6.A ×3 + TEN `.39`-OUTAGE REDS (environment: Swarm `.39` DOWN 04:19 → ~10:50), no P4-4 red; the ten re-run against the restored `.39` in §12.4 (SD re-run B — result there)** | P4-4 (`PbComposeJobUtil` new; `PbRenderJobUtil.KIND_COMPOSE` / `KIND_PROPOSE_LOCATIONS`; `PbComposeUtil.ensureComposition` + lazy hook in `PbNodeExecutor.renderPlannedScene`; `PbServiceFacade.createFromScenesAndCompose`; `PbPipelineUtil.dualWriteImportedScenes`; `RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER`; `TestPbComposeJob` 10 + `TestPbComposeLazyRender` 3 + `TestPbQuickStart` 1 new; `TestPbCreateFromScenesRerun` +1, `TestPbLocationProposal` +1) — **on the `C:/tmp/o7verify` copy** (refresh 07:52:35 → 07:52:41, `DIFF_OK (0 lines)`, `POM_SAME`). Probe `4aa` 07:52:56 §3 (Swarm `.39` http=0, in-container swarm39=0 — DOWN from 04:19, the run was launched knowing the SD-gated classes would skip; §6.N option (b), `.42` not used). Nothing else of mine on the machine while it ran — no Maven, no probe, no edit to an existing Objects7 class or resource (this doc and `C:/tmp` drafts only). `verify.sh` keeps only the last 60 Maven lines (`LOG="$(mktemp)"` deleted on exit), so the `[LLM-GATE]` line is confirmed from the surefire XML instead: `TEST-…TestPbComposeJob.xml` carries `route=litellm tier=local server=http://127.0.0.1:4000 model=qwen3:8b-ctr` ×4 — the in-stack Ollama container through LiteLLM, not Azure, not `.42`; `SdTestGate - Swarm http://192.168.1.39:7801 not reachable - leaving test.swarm.* checkpoints as configured` (same XML, and the gate log tail at 11:32:53) | 2026-10-19 07:53:29 (`o7verify-gate-p44.start`) → 11:32:55 (`.end`; 3 h 39 m 26 s; `C:/tmp/o7verify-gate-p44.log`; **200 XMLs newer than the stamp** = row 22's 197 + the three new classes) | `PASS (build)`; `FAIL (test) in AccountManagerObjects7`; `VERIFY_FAILED`; `exit=1` — `Tests run: 1317, Failures: 4, Errors: 9, Skipped: 90` (1317 = row 22's 1301 + 16: `TestPbComposeJob` 10 + `TestPbComposeLazyRender` 3 + `TestPbQuickStart` 1 + `TestPbCreateFromScenesRerun` +1 + `TestPbLocationProposal` +1) | **Failures 4 = §6.A ×3 (yours), byte-identical to rows 17–22:** `TestPbDeleteSeries#testStrangerDeniedThenOwnerDeletesWholeSeries @ :119 :: chapter 1 row` (10:01:28); `TestPbListSeriesBooks#testEntitledNonOwnerSeesAllChaptersStrangerSeesNone @ :138 :: entitled non-owner must see BOTH chapters expected:<2> but was:<0>` (10:12:28); `TestPbSeriesCast#testRecopyAndMergeDenyReadOnlyUserAndDoNotMutate @ :532 :: subject MUST be able to READ the chapter book (else recopy 404s before the canUpdate gate)` (11:15:52) — **plus ONE `.39`-outage failure:** `TestPbSceneGenerationGuards#testLandscapeFailureIsNonFatal @ :437 :: Swarm must be reachable at http://192.168.1.39:7801` (class 6 tests, 1 failure, 101.7 s, 10:57:23 — an ungated `assertTrue` on Swarm reachability, not an SD-gated skip; §6.C 189 r). **Errors 9 = `.39` timeouts (`java.lang.ConnectException: Connection timed out: getsockopt`, every URL in the XMLs `http://192.168.1.39:7801`) in the three ungated SD classes:** `TestPbCanvas` ×3 (`TestPortraitNodeExecution:131`, `testCompositeNodeExecution:372`, `testLandscapeNodeExecution:285`; 5 tests, 08:25:08), `TestPictureBookCustom` ×2 (`TestPictureBookCustomPipeline:1412`, `TestSceneGraphWriteFailurePlumbingArtifactsRevokeInert:1618`; 7 tests, 09:04:54), `TestPictureBookWorkflow` ×4 (`TestFreshCharacterSubRecordsAndPortraitRender:677`, `TestLandscapeReferenceChangesTheComposite:425`, `TestSceneGraphIsRecordedAndStructurallySound:217`, `TestStepBudgetComparison:788`; 5 tests, 09:23:34). All ten were green in row 22 with `.39` up; P4-4 touched none of the four classes nor the code under them (`git status`: no edit to `TestPbCanvas`, `TestPictureBookCustom`, `TestPictureBookWorkflow`, `TestPbSceneGenerationGuards`); **the re-run against the restored `.39` is the proof, §12.4 (SD re-run B).** `TestPbDeleteComplete` 2/0/0/0 112.693 s (10:01:11) — §6.C 188's order-dependence did not recur (same code; still proposed, default apply). `TestGameUtil` 25/0/0/0 234.632 s — green (§6.C 162 intermittent). **90 skips = 15 of row 22's 16 verbatim** (7 `LITELLM_LIVE`: `TestLiteLLMOllamaProxy` 4 + `TestLiteLLMRoundTrip` 3; 5 `PICTUREBOOK_E2E`: `TestPictureBookListCharactersIdor`, `TestPictureBookListCharactersPb2`, `TestPictureBookLandscapePromptLiveE2E`, `TestPbChapterBookApparelRenderE2E`, `TestPbSeriesMergeImagePrompt`; 2 `-Dam7test.db.url` `TestSetupMarkerGuard`; `TestPathUtilBehavior` D3) **+ 75 SD-gated `SKIPPED: test.swarm.server=http://192.168.1.39:7801 did not answer, so nothing live can be exercised here (off the LAN?). This is NOT a pass.`** (row 22's `TestModelResolverLive#case07` "no Kontext" skip is among them this run): `TestModelResolverLive` 16, `TestChapBookV3Render` 13, `TestIllustrationModelPolicy` 10, `TestPbRenderPlanExecutor` 5, `TestChapBookPageLocation` 5, `TestSDUtilCreateImage` 4, `TestChapBookRenderSignal` 4, `TestPbRenderJob` 3, `TestChapBook` 3, and 1 each `TestRenderPlanLive`, `TestPbScenePlanLocation` (case08), `TestPbRecovery`, `TestPbQuickStart`, `TestPbNodeRun`, `TestPbLocationNode`, `TestPbComposeLazyRender` (case01), `TestPb1ModelPolicySequence`, `TestChapBookRenderStyle`, `TestChatSceneRenderUtil`, `TestChapBookSceneLandscapePrompt`, `TestChapBookPromptLockedResolution` — none counted as a pass; the P4-4 ones re-run live in §12.4 (SD re-run A). **Every P4-4 class green inside the gate:** `TestPbComposeJob` 10/0/0/0 502.485 s (09:48:45), `TestPbComposeLazyRender` 3/0/0/**1 skip** 110.35 s (09:50:35), `TestPbQuickStart` 1/0/0/**1 skip** 1.776 s (10:35:16), `TestPbCreateFromScenesRerun` 7/0/0/0 119.342 s (09:58:42), `TestPbLocationProposal` 11/0/0/0 424.941 s (10:30:40), `TestPbRenderPlanExecutor` 7/0/0/**5 skips** 72.666 s (10:54:57), `TestPbScenePlanLocation` 13/0/0/**1 skip** 489.487 s (11:13:46); neighbours `TestPbComposeFallback` 13/0 90.95 s (09:40:22), `TestPbComposeSceneLive` 1/0 58.882 s (09:51:34), `TestPbLayoutUtil` 17/0 (10:12:08), `TestPbV4Schema` 8/0 (08:56:12). Slowest: `TestPictureBookWorkflow` 940.733 s (5; 4 timeouts), `TestPbRenderJob` 867.166 (11), `TestBookWorld` 832.879 (21), `TestPbLocationNode` 607.516 (13), `TestPbSecurity` 527.459 (10), `TestPictureBookCustom` 521.626 (7), `TestPbComposeJob` 502.485 (10), `TestPbScenePlanLocation` 489.487 (13), `TestPbSceneLocationPointer` 458.236 (11), `TestPbLocationProposal` 424.941 (11). The prediction in §12.4 ("§6.A ×3 ± `TestGameUtil`, SD-gated skips") missed that four classes assert Swarm reachability without a gate — they are the ten reds. |
 
 A **full** gate (Playwright included) runs once before Phase 1 is declared done (P1-11); its Playwright
 counts will be compared against the §4.2/§4.3 list in the brief.
@@ -5318,6 +5513,131 @@ P3-5 (2026-10-17):
 - **PBAC follows every populated foreign field on READ** (`PolicyUtil.getSchemaRules`, `followReference` default true): a scene whose
   persisted `location` FK the reader cannot read is itself unreadable to the reader. No product path creates that state (approve pins an
   artifact of the approver's own book); `TestPbScenePlanLocation.case05` sets the FK in memory to reach "(not readable)" (⚠ 177, 178 m).
+
+### 5.7 Phase 4 recorded facts (2026-10-18 → 2026-10-19) — P4-1 … P4-4
+
+Facts, not design changes; design §8 is implemented field-for-field (verifier: "models match §8 field-for-field, only extra is `name`"),
+§32 as written. No dated design edit in P4-1. P4-2 and P4-3 likewise record facts; the one P4-3 item that may need a dated
+design edit (§28 step 4, the cast fallback) is held for your ruling under §6.C 187 (c) — no design edit written. P4-4 adds one dated
+"Built" note to design §28 (after :1531, the import-time dual write — §6.C 189 h, reword if you like); everything else in P4-4 is §9.1 A
+/ §21 as ratified.
+
+P4-1:
+
+- **The three models carry a `name` (design §8 has none) and it is unique per book, not per composition.** The PB envelope
+  (`likeInherits: ["data.directory"]` + `inherits: ["common.groupExt", "common.baseLight", "common.urn"]`, own `name` maxLength 256,
+  `group: "Book"`, `constraints: ["name, groupId, organizationId"]`) is the one `olio.pb.scene` uses, so a sceneActor or sceneElement name
+  collides across every composition of the book. Nothing in P4-1 mints names; the composer (P4-3) must — `<scene>/<character>`-style
+  for actors, `<scene>/<element>` for elements — and the row-level routes (P4-8) must not accept a bare character name as the actor name.
+  §6.C 185 (h).
+- **A bare `planMost(true)` / `GET /rest/model/olio.pb.composition/{id}/full` is not a supported read shape for the new models** — your
+  ruling on the run-1 `case06` red ("it's because you used planMost on the query"). The MOST walk goes composition → `focalActor`
+  (`olio.pb.sceneActor`) → `composition` → `location` → `poi` → `builder` → `apparel` → `wearables` → `statistics` and past the depth
+  limit (2896 `BaseRecord - Exceeded maximum depth` lines in `C:/tmp/p41-junit.log`, the read returns null); live, `/full` on a
+  composition answers **404** (`p41-live.log`). The read shape every consumer uses is a targeted projection — `q.setRequest(...)` in Java,
+  `request` on `POST /rest/model/search` over REST — with nested `field.subField` paths, proven live for `book.name`, `book.slug`,
+  `focalActor.name`, `focalActor.role`, `composition.name`, `composition.purpose`. P4-3/P4-7/P4-8 add `compositionRequest()`-style
+  helpers rather than reaching for `planMost`. §6.C 185 (f).
+- **`WATCHED_SET_VERSION` → `watched/v4` invalidates every stored `refHash` once, by design** (`PbWatchedFields.java` javadoc: "Folded
+  into every refHash, so a change here invalidates stored hashes on purpose and loudly"). The first drift scan after the 15:41 deploy
+  reports every existing node STALE on the Docker stack, and the same on `am7db` for the JUnit JVMs. Expected, not a defect; the brief
+  asked for `watched/v4`. §6.C 185 (e).
+- **Nullable enum columns read back `UNKNOWN`, INT columns `0`, FK columns NULL** on rows written before a field existed or without the
+  field set (`TestPbV4Schema#case03_unsetColumnsReadDdlDefaults`) — the §5.6 P3-1 fact holds for all nine new enums, each of which declares
+  `UNKNOWN` first.
+- **`deleteGraphByBook` now orders elements → actors (per composition) → compositions → scenes** (`PbDeleteUtil.java:188-193`), driven
+  through the public `deleteBookComplete` in `case08`; the only caller is `deleteBookComplete` (`:131`). The javadoc's "shared with the
+  health check's stale-graph purge" sentence predates P4-1 and is not borne out by a caller today (security nit, left; 185 (k)).
+
+P4-2:
+- **`PbLayoutUtil` is a pure function of (placement words, shot type, role).** No state, no IO, no exceptions: every input, including null
+  and garbage, yields an in-bounds `x/y/w/h` + `depth`. The slot numbers per shot type × plane and the `FAR_NUDGE = 0.08` /
+  `WIDE_ACTOR_THRESHOLD = 3` constants are the class's own and unpinned — the tests assert bounds, ordering and monotonicity, not literal
+  values; tune from the P4-9 board (186 c, d).
+- **"Unknown word → centre + MEDIUM" is two independent defaults, not one.** An unknown placement word is the CENTRE slot of the *declared*
+  shot (a WIDE scene stays WIDE); MEDIUM is the default only when the shot itself is null/UNKNOWN (186 b). A declared shot type always beats
+  the actor-count rule (`resolveShotType`).
+- **Direct callers and the composer differ on purpose.** `place()` returns the CENTRE slot for an unrecognised word; `PbComposeUtil` instead
+  gives such an actor its `defaultPlacement` spread slot so two unknown words do not stack at centre, and logs the word at WARN (186 f).
+- **Vocabulary is wider than §9** (synonyms for centre/front/back/near/far/behind, `far left`/`far right`, camera words for shot and
+  viewpoint); `upstage`/`downstage` are absent (186 e). Enum words are normalised with `Locale.ROOT` and never passed to a bare
+  `valueOf`/`fromValue` (architect Correction 2).
+- **Process facts.** The test was written by the test-author agent and first run under `JUnitCore` while gate run 21 held Maven (186 h); the
+  P4-2 jar of 20:11 already carried the P4-3 sources that existed in the working tree (186 i); the P4-1 deploy's `javap -p` stub check could
+  not see a stub — re-checked with `-v -p` = 0 in `p42-deploy.log` (186 j).
+
+P4-3:
+- **§28 step 4 is extended, not contradicted — held for your ruling.** Actors come from `scene.characters` first (SCENE_MEMBERS); when the
+  roster is empty the cast falls back to the `charPerson` refs on the scene's nodes (SCENE_REFS), then the world population capped at 40
+  (POPULATION); `result.castTier` names the tier used. `scene.characters` is **not** back-filled from the resolved actors (187 c). If you
+  accept the fallback, §28 :1518 gets a one-line dated note; if not, tiers 2 and 3 come out.
+- **§29 MIGRATED scope honoured (architect D7).** A MIGRATED composition is written only for a scene that has none; an existing composition
+  plus an LLM failure (unavailable, empty, unparseable after one retry) is left untouched and the result says `hardFailure = true`.
+- **§9.1 A honoured.** Nothing in compose can block rendering: compose writes rows and a `source`/`userEdited`/`revision` state; P4-7 reads
+  whatever is there and `needsCompose` tells P4-4 what to (re)compose.
+- **Identity.** One composition per scene, `name = composition.<scene.objectId>` (idempotent re-compose, in place, `revision` +1); actor
+  rows `actor.<compositionObjectId>.<index>`, element rows `element.<compositionObjectId>.<index>`, recreated on every write; the LLM's
+  display name is not persisted as `name` — an unresolved name survives in `description` as `"<name> - <pose>"` (187 b).
+- **The scene's own `setting`/`action`/`mood` win** over the LLM's restatement whenever they are meaningful; the LLM stages, it does not
+  author. Every LLM string passes `NarrativeUtil.isMeaningful` (the words `null`/`none`/`n/a`/`unknown` are absences), counts take the first
+  run of digits of the whole phrase, and the caps are `MAX_ACTORS = 24`, `MAX_ELEMENTS = 32`, `MAX_CROWD_COUNT = 500`,
+  `MAX_FIELD_CHARS = 512`, `MAX_SCENE_TEXT_CHARS = 4096`, `MAX_POPULATION_CAST = 40` (security L1; 187 d).
+- **Names and items.** `PictureBookUtil.findCharPersonByNameInGroup` — chapter shadow group first, then the baseline — then the cast list,
+  case/punctuation-insensitive; unresolved → `NAMED_BACKGROUND` + `character = null`, never dropped; HERO/SUPPORTING only for a resolved
+  character. Element descriptions match the scene location's POI store items whole-word, optional plural, longest match wins → `item` FK.
+- **Prompt placement.** `prompts/pictureBook.compose-scene.json` + `templates/promptTemplate.pictureBook.compose-scene.json` + the `ChatUtil`
+  template-list entry — the P3 `locations-propose` shape; the two system texts are held equal by a test and end with `/no_think`. Live runs
+  on the JUnit org use the classpath fallback at WARN (no DB `olio.llm.promptTemplate` record — the `AccessPoint could not be authorized`
+  lines in the logs are DENY-as-miss, `troubleshooting.md`) (187 e).
+- **One update gate.** `PbBookUtil.requireBookUpdate(user, book, what)` (public; strict PERMIT; 404 unreadable / 403 not permitted) now
+  gates P3 `PbLocationUtil` and every P4-3 entry point; all compose writes go through `AccessPoint` as the caller into the book's `Book`
+  group — never the olio principal, never `RecordUtil` (187 k).
+- **Pre-existing noise recorded, not fixed.** A `system.audit` write in the dead-LLM path fails `RecordValidator` (`description` too long
+  for its column → `WriterException`) — present in `p43-junit3/4/5`, not P4-3's, left (187 r).
+
+P4-4:
+- **§9.1 A as ratified: compose is its own job kind, with no `olio.pb.run` row.** `pb.compose` / `pb.proposeLocations` live on
+  `AsyncJobRegistry` only (D1) — a compose is not a render, and the P2 run/step audit is for renders; the job token carries the progress
+  (`phase`, `current/total`) and the result map carries the per-scene audit (`scenes[]`). One live compose per book per JVM via the
+  `INFLIGHT` claim (D3; same owner → `reused`, other owner → 409 without the jobId); the cross-JVM bound is documented on the class and
+  harmless because compositions are idempotent (189 e).
+- **§21 cancel semantics honoured at the scene boundary and inside it (architect M1).** A cancel seen between scenes stops the loop with
+  the partial result kept and `cancelled:true`; a cancel landing *inside* `composeScene` (the LLM call is under the registry's cancel
+  scope) returns `cancelled=true` from the `SummarizeProgress` overload **without persisting** — no MIGRATED row is written for a cancel,
+  so a cancelled scene is simply "not composed", never "composed from the scene's own fields". The same check guards
+  `PbLocationUtil.proposeLocations`'s hard-out. `AsyncJobRegistry.isShuttingDown()` → `interrupted:true`.
+- **The auto-submit is policy and lives in Objects7 (architect M2).** `PbServiceFacade.createFromScenesAndCompose` wraps
+  `PictureBookUtil.createFromScenes`; `PictureBookService.createFromScenes` is a call plus HTTP mapping. The create never fails because the
+  compose could not be queued (`composeJobSkipped` / `composeJobError` on the body).
+- **Import-time dual write (design §28, dated note).** Without it the ratified "straight after `createFromScenes`" queued a job over zero
+  scenes (the PB2 rows were written lazily by the first render). `PbPipelineUtil.dualWriteImportedScenes` writes them at import for a
+  bound book; existing books' backfill is P4-10 (189 h).
+- **The lazy fallback is a write-path write, as the caller.** `ensureComposition` runs from `renderPlannedScene` (a render is a write —
+  N1), after `requireBookUpdate`, through `AccessPoint`; `planScene`'s read path never composes. The out-of-order composition is recorded
+  as a `RenderPlan.Degradation(COMPOSED_OUT_OF_ORDER)` on the persisted plan — and because 182 (13)'s auto-approve veto set is "any
+  degradation", **a lazily composed first render is never auto-approved until P4-7 narrows the set** (N2). The fallback composes with
+  `generalChat`, not a book-level config (189 f).
+- **Quick start is a DRAFT render per composed scene on the compose worker, under the render lane** (D5): `PlanOptions{preset=DRAFT}`
+  travels on the `SceneGraph` (S2 — no new public overloads); `PbRenderLanes.acquire(sdServer, progress)` false = interrupted/cancelled,
+  never a per-scene failure; a render failure is `quickStartFailed` + `draftRenderError` on the row, never the job's. Each DRAFT is a
+  normal RENDER_PLAN run with its own `olio.pb.run` row (planner risk 6 — accepted, it is a render).
+- **Pages are in the location pass only** (D8, 182 (15–22)): the compose loop skips ChapBook pages (`pagesSkipped`); the location pass
+  reads `settingTextOf` = `setting` → `sdPrompt` → `poemStanza` in both the filter and the prompt line (S5), so a page with only a stanza
+  still clusters. `settingTextOf` also lifts a non-ChapBook scene with a blank `setting` and an `sdPrompt` (verifier 9 — design-justified).
+- **`proposeLocations` over REST is 202 + poll only** (D4, 182 (9)); the synchronous `PbServiceFacade.proposeLocations` stays for JUnit.
+  The single-scene compose route is synchronous 200 (D10 — one LLM call, 4–10 s measured) and 409 while the book's compose job holds the
+  claim. Gate order on every route: `requireBook` 404 → `requireV3` 409 → `requireBookUpdate` 403 → `requireSceneOfBook` →
+  `requireNotComposing` 409 → util, so a stranger cannot probe the claim map.
+- **`listSceneCompositions` is `groupId`-constrained** (security should-fix 1; 189 a); `listScenes` / `countScenes` keep the FK +
+  `organizationId` shape (189 d).
+- **P4-10 seam.** `PbComposeJobUtil.Work.run` opens with the documented no-op `migrate` position (D11) — the one-off idempotent compose on
+  an existing book's first V3 open is the same job (`POST /{book}/compose {}` is idempotent and returns `submitted:false` when every
+  scene is current), so P4-10 needs a trigger and a backfill, not a new job kind. The UI trigger is P4-9 (verifier 5).
+- **Process facts.** Nine red runs across P4-4, every one mine: the empty-staging retry gap (product, `parseStagedProposal`), a wrong
+  assertion (`case00`), `dataPath()` as a group path (`case10`), the policy-decision cache (`case02`, 189 i), a `String.valueOf(char[])`
+  overload in the Service7 test, three spec-only Playwright reds (409 text, `pb2BookObjectId`, zero `sceneIndex` — 189 m) and one
+  misconfigured live-proof run (`:8899`). The two tests the test-author relaxed/bounded (case06, case08) are recorded under 189 n/o. Swarm
+  `.39` was down from 04:19 for the rest of the task: every SD-gated case is listed as not run, `.42` was not used (§6.N).
 
 ## 6. Blocked / waiting on Stephen
 
@@ -9729,6 +10049,280 @@ blocking item), 12, 13 and 15 are ⚠ MY JUDGMENT.
      Two verifier INFOs, no ask: `markSceneNodeStale` returns `true` for an already-STALE node, so `nodesMarkedStale` counts it (slight
      over-report when a node was already stale — acceptable; the number is "nodes now stale because of this call or before it"); the Playwright
      run (10:40) preceded the 11:12 jar redeploy — it covers (f), a frontend-only change, and the backend is covered by the 11:13 REST live proof.
+
+184. ✓ **2026-10-18 — Stephen's answers to the six P4-0 asks (§6.C 183): every answer left blank, so each recorded default stands. No
+     DONE mark was given for P4-0 (159 b); the row stays IMPLEMENTED + TESTS GREEN + reviewed.**
+     (a) 183 (a) closed — `listBooks` keeps the single `NOT bookType = 'CHAPBOOK'` query condition; the NULL caveat stays as the code comment.
+     (b) 183 (d) closed — the two `PointOfInterestUtil.java:111,139` literal→constant swaps stay.
+     (c) 183 (g) closed — `mergeLocations` keeps its boolean signature; a merge result object with the stale count is P4-8 work.
+     (d) 183 (h) closed — `markSceneNodeStale`'s mirror-before-RUNNING-check ordering is left as is; P4-7/P4-8 move every reader off
+     `sdPrompt`.
+     (e) 183 (j) closed — no pre-create Read check in `getCreateLocation` now; accept's ordering is fixed in P4-4 with the `proposeLocations` job.
+     (f) 183 (k) closed — `listBooks` per-book `countScenesForBook` cost/noise is not a P4 row; noted for P4-9 (book list on the board Ux).
+
+185. ⚠ **2026-10-18 — P4-1 (schema) decisions, deviations and carry-forwards; each ⚠ has a default that stands unless you say
+     otherwise (159 b for the DONE mark).**
+     (a) ⚠ `PbDeleteUtil.deleteGraphByBook` was extended (elements → actors per composition → compositions, before scenes) — the brief
+     named only the models, enums and watched sets; the architect ruled a book delete that leaves composition rows behind is an FK leak
+     and in scope, and `case08` drives it through the public `deleteBookComplete`. Keep the extension? Default: keep.
+     (b) ⚠ `focalActor` is watched and rendered **by name** in the composition's refHash (a foreign `olio.pb.sceneActor`, like every
+     other non-artifact foreign value in `PbWatchedFields`); two same-named actors in one composition would be a data defect, not a
+     case the set is asked to catch. By name, or by id? Default: by name.
+     (c) ⚠ `group: "Book"` on all three models (architect correction — the brief says "compositions in the book's group"; actors and
+     elements follow their composition into the same group so the group-only PBAC shortcut and `deleteGraphByBook` see one group).
+     Default: all three in the book's `Book` group.
+     (d) The architect notes a rules gap — nothing in `objects7-reference.md` / `model-api.md` says a bare `planMost(true)` is not a
+     supported read for the PB models once the `focalActor` ↔ `composition` two-hop cycle exists. Rules files are yours; a one-liner
+     under `model-api.md` "Field projection" would carry it. No default — yours.
+     (e) Fact: `watched/v4` invalidates every stored `refHash` once (§5.7); every existing node reads STALE on the first drift scan after
+     the 15:41 deploy. Expected (the brief asked for `watched/v4`); recorded so the board's first STALE sweep is not read as a regression.
+     (f) Fact: bare `planMost(true)` / `GET …/full` on `olio.pb.composition` is not a supported read shape (§5.7; your ruling; live
+     404). `case06` became `case06_projectedReadUnderNestedCap` (targeted projection + `QueryPlan.countMaterializedFields(...) <=
+     MAX_NESTED_PLAN_FIELDS` on the nested `focalActor`/`composition` plans); no product change. P4-3/P4-7/P4-8 use
+     `compositionRequest()`-style projections.
+     (g) ⚠ **Gate run 21 was launched on the working tree, not the `C:/tmp/o7verify` copy, and without `AM7_UX752_MEDIA`** — mine: the
+     two exports were dropped from the launch line after the copy had already been refreshed (`DIFF_OK (0 lines)`, `POM_SAME`). The
+     wrapper was stopped; the Maven JVM and Surefire fork were left to finish (§4.4 row 21). Consequences: no `GATE_EXIT=` line
+     (classification from the surefire XMLs newer than the `.start` stamp); no edit to an existing Objects7 class until it ends;
+     `TestMannequinBaseImage` resolves media via the sibling `../AccountManagerUx752/public/media/` on the working tree, so the unset env
+     should not add a red. Accept run 21 as the P4-1 gate if its reds are §6.A ×3 only (same tree contents as the copy, `DIFF_OK`), or
+     rerun on the copy at P4-2's gate? Default: accept if reds = §6.A ×3 and skips = 16; otherwise rerun on the copy with the P4-2 gate.
+     **Outcome 19:50:14:** `Tests run: 1270, Failures: 4, Errors: 0, Skipped: 16` — reds = §6.A ×3 + `TestGameUtil` (the 162 known red,
+     intermittent, not a P4-1 class), skips = the row-20 list verbatim → accepted as the P4-1 gate by the default above (§4.4 row 21).
+     Correction to the text above: `verify.sh` survived the stopped launcher shell and wrote its own `VERIFY_FAILED`; only the launcher's
+     `GATE_EXIT=` echo is missing. The "no `VERIFY_` line" statement was mine and wrong.
+     (h) Per-book unique names (§5.7): the composer (P4-3) mints `<scene>/<character>` actor names and `<scene>/<element>` element
+     names; no schema change (dropping the inherited constraint would mean a PB-local envelope, out of scope). Default: mint names.
+     (i) ⚠ Protocol deviation: `TestPbV4Schema` was written in the main thread, not by the test-author agent (the architect's three
+     corrections were folded straight into the test). The verifier reviewed it independently ("test real as `testUser1`", no fake
+     assertions). Re-run it through test-author, or accept the verifier pass? Default: accept; back on the per-task protocol from P4-2.
+     (j) Security carry-forwards (PASS, no blockers): H1 — `PbHealthUtil.scanStale` / `PbOrphanUtil` do not enumerate the three new
+     models (orphan actors/elements under a deleted composition would be invisible to the health check) → P4-8 with the row-level
+     routes; H2 — `PbConfigUtil.parseOverride` deserializes with `getUnfilteredModule()`; the P4-7 consumer of
+     `composition.configOverride` should use the filtered module; H3 — nothing enforces `focalActor.composition == this` or
+     `scene.book == composition.book` at the schema level → the composer (P4-3) and the routes (P4-8) validate. Default: carry as
+     listed.
+     (k) Verifier Lows, left: `case07` existence-checks the `olio.item` colour fields (`color`/`complementColor`/`accentColor`) rather
+     than round-tripping a `data.color` edit through the item's refHash (`TestPbV4Schema.java:891-894`; description and materials are
+     round-tripped); failure-path record leaks in the test (a red mid-case leaves its rows on `am7db`); no `hints`
+     entry on `composition.location` / `locationVariant` (add if a location-filtered composition listing appears — P4-6/P4-8); the
+     `deleteGraphByBook` javadoc health-purge sentence (nit). Default: leave all four.
+     (l) `git diff` warns `LF will be replaced by CRLF the next time Git touches it` for `PbDeleteUtil.java` and
+     `TestPbLocationSchema.java` — the edits were written LF on files the checkout had as CRLF; content identical in the index, harmless
+     under `core.autocrlf`. Recorded so it is not mistaken for a whole-file rewrite.
+
+186. ⚠ **2026-10-18 — P4-2 (`PbLayoutUtil`) decisions, deviations and carry-forwards; each ⚠ has a default that stands unless you say
+     otherwise (159 b for the DONE mark).**
+     (a) ⚠ One merged Objects7 gate run (22, `o7verify` copy) for P4-2 + P4-3 instead of one per task — P4-2 alone added 17 pure tests and
+     the P4-3 jar already contained it (i). Default: accept; the run is classified in §4.4 row 22 when it ends.
+     (b) ⚠ The brief's "unknown word → centre + MEDIUM" was implemented as two independent defaults: an unknown placement word is the CENTRE
+     slot of the *declared* shot (a WIDE scene stays WIDE); MEDIUM only when the shot itself is null/UNKNOWN (`unknownWordIsCentreOfDeclaredShot`,
+     `nullAndUnknownShotLayOutAsMedium`). Default: keep — demoting a declared WIDE to MEDIUM because one actor's word was unknown would
+     re-frame the whole illustration on one bad word. Say if you meant the literal reading.
+     (c) ⚠ `defaultPlacement(ordinal, actorCount, shot, role)` — the spread for actors with no placement word (ordinal 0 the hero slot, the
+     rest fanned left/right by plane) — is the class's own template; architect Correction 1 (the `Plane` javadoc cited `RenderPlan.ROLE_*`,
+     unrelated constants) adopted, the §28 citation corrected. Default: keep.
+     (d) ⚠ The slot numbers per shot type × plane, `FAR_NUDGE = 0.08` and `WIDE_ACTOR_THRESHOLD = 3` are unpinned by design and by test (the
+     tests assert bounds, ordering and monotonicity). Default: leave unpinned until the P4-9 board shows real frames, then tune and pin.
+     (e) ⚠ The vocabulary is wider than §9's list (centre/center/middle; front/fore/foreground/near/close; back/rear/background/far/distant/
+     behind; left/right; far left/far right; camera words for shot and viewpoint); `upstage`/`downstage` are absent. Default: leave; the
+     composer logs every unrecognised word at WARN (`unrecognised placement 'upstairs'` in the stage test), so the list grows from evidence.
+     (f) ⚠ `PbComposeUtil` does not use the CENTRE slot for an unrecognised word — it gives the actor its `defaultPlacement` spread slot
+     (two unknown words do not stack at centre); `place()` itself still returns CENTRE for direct callers. Default: keep both.
+     (g) ⚠ Verifier's untested edges left: a declared CLOSE_UP with > 3 actors (declared wins — covered only by `resolveShotType`'s
+     contract), word-order independence of combined phrases, 24 actors in WIDE (overlap is allowed, bounds are asserted). Default: leave —
+     pure code, P4-9 will show it.
+     (h) ⚠ Process: the P4-2 test *was* written by the test-author agent and first run under `JUnitCore` (javac into `C:/tmp/p42-classes`,
+     JUnit 4.13.2 from `.m2`, `Time: 0.55`, `OK (17 tests)`, 16:49:57) while gate run 21 held Maven — a pure JVM sharing no DB, LLM, SD,
+     Maven or `target/` with the gate; the Maven run of the same test (`p42-junit.log`, 20:04:58) came after the gate ended. Default: accept
+     as within "one Maven at a time"; say if a `JUnitCore` run beside a gate counts for you as a second test run on the machine, and it will
+     not happen again. Architect Correction 2 (never a bare `valueOf`/`fromValue` on LLM words; `Locale.ROOT`) and Q3/Q6 (keep `Placement`
+     in `picturebook`; test in the same package) adopted.
+     (i) ⚠ The P4-2 jar (20:11, md5 `93653a21…`) already carried the P4-3 sources present in the working tree at install time
+     (`PbComposeUtil`, both `compose-scene` resources, the `ChatUtil` list entry, `requireBookUpdate`, package-private `actorDescription`) —
+     at the code level the "P4-2 deploy" was a P4-2 + P4-3 deploy, re-deployed at 21:12 after the P4-3 tests. Default: accept — nothing in
+     it is reachable over REST until P4-4.
+     (j) ⚠ The P4-1 deploy's Eclipse-stub check used `javap -p`, which cannot show an "Unresolved compilation" stub (needs `-v`); every P4-1
+     class was re-checked with `javap -v -p` in `p42-deploy.log` and `p43-deploy.log` = `unresolved=0`, so nothing was deployed broken. The
+     memory note is mine and updated (`javap -v -p`; `-constants` lists only constant-valued static fields; the container JRE has no
+     `javap` and the host has no `strings` → extract the class from the deployed jar and `javap -v -p` it on the host); the rules
+     one-liner is yours (185 d).
+
+187. ⚠ **2026-10-18 — P4-3 (compose step) decisions, deviations and carry-forwards; each ⚠ has a default that stands unless you say
+     otherwise (159 b for the DONE mark).**
+     (a) ⚠ `findSceneComposition` and `needsCompose` require an explicit `purpose = SCENE`; a composition whose `purpose` reads back
+     `UNKNOWN` (an unset enum column) is not the scene's. Run 1 went red because I had treated `UNKNOWN` as a match. Default: keep — COVER
+     and later purposes must never be mistaken for the scene composition.
+     (b) ⚠ Row naming: `composition.<scene.objectId>` (one per scene, idempotent), `actor.<compositionObjectId>.<index>`,
+     `element.<compositionObjectId>.<index>` — not the `<scene>/<character>` naming floated in 185 (h); the LLM's display name is not
+     persisted as `name` (an unresolved name survives in `description` as `"<name> - <pose>"`). Default: keep the index naming; say if you
+     want a `displayName` column (a P4-1 schema addition, Path 1 — edit the JSON and restart).
+     (c) ⚠ **Design §28 step 4 (":1518 Actors come from `scene.characters`") is extended:** SCENE_MEMBERS first, then SCENE_REFS (the
+     `charPerson` refs on the scene's nodes), then POPULATION (world population, cap `MAX_POPULATION_CAST = 40`); `scene.characters` is
+     **not** back-filled from the resolved actors (compose reads the roster, it does not edit it). Default: keep the fallback and no
+     back-fill; on your yes I add the one-line dated note to §28 :1518 — no design edit written yet (§5.7). On your no, tiers 2 and 3 come out.
+     (d) ⚠ Caps (security L1): `MAX_ACTORS = 24`, `MAX_ELEMENTS = 32`, `MAX_CROWD_COUNT = 500`, `MAX_FIELD_CHARS = 512`,
+     `MAX_SCENE_TEXT_CHARS = 4096`, `MAX_POPULATION_CAST = 40`; rows beyond the caps are dropped and counted on the result. Default: keep.
+     (e) ⚠ Prompt as `prompts/pictureBook.compose-scene.json` + `templates/promptTemplate.pictureBook.compose-scene.json` + a `ChatUtil`
+     template-list entry (the P3 `locations-propose` shape; `TestPictureBookFull` / `TestPromptLibrary` expectations +1). Live runs on the
+     JUnit org hit the classpath fallback at WARN because no DB `olio.llm.promptTemplate` record exists there (`AccessPoint could not be
+     authorized` ×3 per run = DENY-as-miss). Default: keep; seeding DB templates is yours if/when.
+     (f) ⚠ Persist is delete-and-recreate of the actor/element rows under the one composition (`focalActor` nulled first so the FK never
+     dangles) rather than a diff-patch; `revision` +1 per write. Default: keep — the rows are derived, `userEdited` guards them, and P4-9's
+     per-row edits land on the composition's `userEdited`, which blocks the recreate unless `force`.
+     (g) ⚠ No `LlmEmulator` compose fixture: the LLM-failure → MIGRATED path is covered by a `chatConfig` whose connection points at
+     `http://127.0.0.1:1` (`deadLlmWritesMigratedThenLeavesItAloneUntilForced`), not by a recorded malformed reply. Default: no fixture now;
+     add one when P4-10's migration needs deterministic replay.
+     (h) ⚠ The tests enrol store items and `scene.characters` through `ioContext.getMemberUtil().member(..., true)` directly — fixture
+     plumbing, no product code. Default: accept.
+     (i) ⚠ Unrecognised placement word → `defaultPlacement` spread slot, logged at WARN (186 f). Default: keep.
+     (j) ⚠ An empty/blank LLM reply is treated like an unavailable LLM (MIGRATED when the scene has no composition, `hardFailure` otherwise);
+     `migratedStaging` copies `scene.sdPrompt` → `promptOverride` unconditionally. Default: keep — a MIGRATED composition is flagged for
+     re-compose anyway, and the copy is what keeps a Phase-0 book rendering exactly as before.
+     (k) ⚠ Compositions, actors and elements are written **as the request user** into the scene's group (the book's `Book` group) through
+     `AccessPoint` — never the olio principal, never `RecordUtil`; `PbBookUtil.requireBookUpdate(user, book, what)` (security H2: strict
+     PERMIT, 404/403 never fall through) is now public and gates P3 `PbLocationUtil` (delegating, behaviour identical) and every P4-3 entry
+     point. Default: keep.
+     (l) ⚠ Architect D7 adopted: an existing composition + LLM failure → `hardFailure = true`, rows untouched; MIGRATED only when the scene
+     has none. The verifier's MEDIUM — `composeMigrated(user, book, scene, force=true)` *does* overwrite an existing LLM/USER composition
+     with MIGRATED — is by design for P4-10's one-off migration and is now exercised by the stage test (revision 2, 2 actors, 0 elements);
+     P4-4 must never pass `force` to it casually. Default: keep, with that constraint carried into P4-4/P4-10.
+     (m) ⚠ Security: H1 `PbRenderPlanUtil.actorDescription` made package-private (not public) — adopted; L4 `flagForRecompose` on any
+     partial persist — adopted; L5 the "Use ONLY what the scene text, setting and action state; do not invent people, props or events the
+     text does not give, and do not describe the art style" instruction in the system text (which ends `/no_think`) — adopted; **L2** `PictureBookUtil.callLlmInternal` (`:4890-4928`) logs the full prompt
+     and reply at INFO, so scene text and cast descriptions land in the server log for every compose — pre-existing, shared by P3 and
+     ChapBook. Default: separate task, left as is until you say; **L3** cast/item reads are org-only `id IN` queries (the standing PB
+     pattern, `AccessPoint.list` not a per-record boundary). Default: accept as the standing pattern.
+     (n) ⚠ Verifier LOW kept: a non-forced `composeScene` on an existing *unedited* LLM composition re-runs the LLM and bumps `revision`
+     (only `userEdited` short-circuits). Default: P4-4's job gates on `needsCompose` and passes `force` only on the user's explicit
+     re-compose; the util itself stays permissive.
+     (o) ⚠ `TestPbComposeSceneLive` is not env-flag gated — it always makes two real LLM round-trips (compose, forced re-compose)
+     through whichever tier `LlmTestGate` picks (~53 s; the local container today). Default: keep ungated so the Objects7 gate exercises a real compose every run.
+     (p) ⚠ Three verifier Lows fixed in-task (20:38 → 20:39): `persist` first-delete failure now flags for re-compose like every other
+     failure path; `integer()` takes the first run of digits instead of concatenating all digits (`"3 or 4"` → 3); `matchItem` is
+     whole-word with optional plural and longest match (no `cup` inside `cupboard`). My follow-on defect — `integer()` truncating the phrase
+     to 16 chars before the scan, so `"a dozen or so, 12 figures"` read 1 — was flagged by the test-author, fixed to the full
+     `MAX_FIELD_CHARS` phrase and locked in by a 9th row of `applyReplyCountTakesTheFirstRunOfDigitsAndDropsNonCounts` (`p43-junit5`).
+     (q) ⚠ The Live test's hero assertion was relaxed from "the first actor is HERO Mira" to the invariant "every HERO/SUPPORTING actor is a
+     resolved character, and Mira is among the resolved" — a free LLM reply may legitimately make Tobin the hero. Four package-private seams
+     (`openContext`, `collectCast`, `stage`, `persist`) were opened for the stage test; `result.castTier` is set by the public entry points
+     only, so a seam-driven result logs `tier=NONE` (visible in the `[p43-stage]` lines). Default: accept.
+     (r) ⚠ Pre-existing, not mine, not fixed: in the dead-LLM path a `system.audit` row fails `RecordValidator` (`description` longer than its
+     column → `WriterException`) — one ERROR per run in `p43-junit3/4/5` (Thread-71 at 21:04:38 in run 4). Default: separate task; say if you
+     want it in P4-4.
+     (s) ⚠ Uncovered by tests (test-author review), carried forward with defaults: chapter-shadow name resolution (shadow group first) —
+     P4-5/P4-10; a recorded malformed reply → MIGRATED — (g); `composeScene(String chatConfigName)` 404 — P4-4's route test; SCENE_REFS /
+     POPULATION tiers — P4-4 quick-start test on a roster-less book; `flagForRecompose` under a forced delete failure — not reproducible
+     without a fault injection, left.
+     (t) ⚠ `createComposition` failing at the DB throws `PictureBookException(500)` (nothing to roll back — rows are written after the
+     composition exists and the actor/element loop is flag-guarded). Default: keep.
+     (u) ⚠ No REST surface and no Playwright for P4-3 — the compose routes are P4-4's row; the live proof is the deployed jar's contents
+     inside the container (classes, both resources, the `ChatUtil` constant-pool entry). Default: accept; the REST live script comes with
+     P4-4.
+
+188. ⚠ **2026-10-19 — gate run 22's one new red is a DB-row-order dependence in committed P3 delete code; fix proposed, NOT applied
+     (product code outside P4-3's row — your call; default: apply).** `TestPbDeleteComplete#testFullFootprintStrangerDeniedOwnerDeletesSecondCall404`
+     asserts the step audit records `bindingsByNode` (`:301-303`). The fixture's single binding is `node = scene node`, `sourceNode = portrait
+     node`. `PbDeleteUtil.deleteWorkflowGraph` (`:207-228`) walks the workflow's nodes once and, per node, runs `bindingsByNode` →
+     `bindingsBySourceNode` → `artifactsByNode`; `deleteByFk` (`:360-371`) records a step only when it found rows; `findByFk` (`:335-358`) has no
+     `ORDER BY` (`olio.pb.node` declares no `sortField`; `StatementUtil.getDefaultOrderClause` returns empty), so the node order is the
+     `a7_olio_pb_node_0_1_ww_2_idx` index scan's heap-TID order. When the portrait node comes first, the binding is deleted under
+     `bindingsBySourceNode` and `bindingsByNode` is never recorded. Evidence: run 22's audit — `DELETE olio.pb.binding #1560` once, then node
+     `#7508` before `#7507`; `am7db` workflow 2037 today has `7445@(280,23)` physically before `7444@(280,27)`; the rerun 01:25:30 → 01:27:46
+     (`C:/tmp/p43-deletecomplete.log`) went 2/0/0/0 with the nodes visited scene-first. `deleteWorkflowGraph`, `deleteByFk`, `findByFk`,
+     `PbGraphUtil` and the test are unchanged vs HEAD; no P4-1/P4-2/P4-3 edit touches node order (P4-1's `deleteGraphByBook` change runs
+     before the workflow loop). The binding IS deleted either way — the defect is the audit's attribution and the test's reliance on it,
+     i.e. a flake that will recur in any later gate.
+     (a) ⚠ Proposed fix, in `PbDeleteUtil` only: (1) `deleteWorkflowGraph` does three passes over the node list — every node's
+     `bindingsByNode`, then every node's `bindingsBySourceNode`, then every node's `artifactsByNode` — so a binding consumed by a node of this
+     workflow is always attributed to `bindingsByNode` regardless of row order (`deleteNodeGraph`, the per-node path, is unchanged); (2)
+     `findByFk` sets `sortField = id` ascending so every delete pass and its audit are reproducible run to run. No test is weakened; the
+     test's assertion becomes order-independent because the code is. Default: apply, then re-run `TestPbDeleteComplete` + `TestPbDeleteSeries`
+     + `TestPbHealthStaleGraph` + `TestPbOrphanScan` (the other `deleteWorkflowGraph` callers are `PbHealthUtil.java:820` and
+     `PbOrphanUtil.java:770`) and fold into the next gate (P4-4's). Say "leave it" if you would rather
+     fix it yourself or keep the flake on record instead.
+     (b) ⚠ Not done in-task because the standing rule is no product-code change outside the row without asking; the gate-22 result is
+     recorded with the diagnosis rather than a fix (§4.4 row 22). P4-4 proceeds meanwhile — it touches none of the delete code.
+
+189. ⚠ **2026-10-19 — P4-4 (`pb.compose` job + lazy fallback + Quick start + `proposeLocations` job) judgement calls; each with a
+     default that stands unless you say otherwise.** Full results §12.4; row status IMPLEMENTED + TESTS GREEN + reviewed, DONE yours.
+     (a) ⚠ `PbComposeUtil.listSceneCompositions` is now `groupId`-constrained (security should-fix 1: by book FK + `organizationId` alone, a
+     same-org user could skew another owner's compose tally through generic `POST /rest/model/olio.pb.composition`; `TestPbComposeJob`
+     case10 proves the constraint), and `submitCompose` / `submitProposeLocations` refuse a world-less book with 409 via
+     `PbLocationUtil.requireBookContext` before counting anything. Default: keep both.
+     (b) ⚠ A worker-side `RuntimeException` message is copied verbatim into the owner-visible job result (`scenes[].error` /
+     `locationPass.error`) and into `createFromScenes`'s `composeJobError.message` (security should-fix 2). Curated `PictureBookException`
+     text never carries a URL or credential; the residual is a non-curated client exception, and the audience is the book's owner.
+     Default: keep as is; say "curate" to map non-`PictureBookException` text to a fixed string.
+     (c) ⚠ `pictureBook.compose-scene` carries no `TRAINING BIAS OVERCORRECTION` directive — nor does any sibling PictureBook prompt
+     (`pictureBook.extract-scenes`, `.propose-locations`, …); the directive lives in `prompts/compliance.json` (the detection path), not in
+     the generation prompts, per the 2026-08 removal (bias-policy memory). The security-reviewer reads `.claude/rules/` as expecting it on
+     every runtime prompt. Default: leave the prompt alone; the rules one-liner that records which it is, is yours.
+     (d) ⚠ `PbBookUtil.listScenes` / `countScenes` share the book-FK + `organizationId` shape (no `groupId`) and were left as they were — the
+     scene list is the book owner's own data, and the same-org skew in (a) matters for the *composition* tally, not for listing scenes.
+     Default: leave; say "constrain" to add `groupId` there too.
+     (e) ⚠ The per-JVM `INFLIGHT` claim map (`PbComposeJobUtil.java:60-64`, `submitExclusive` `:250-307`) repairs a stale claim only for
+     the same owner (from the registry's terminal state); a claim held by *another* owner is reported 409 without a liveness check, so a
+     job that died without reaching `finally` (JVM kill) blocks other owners of a shared book until restart. Release-by-value in the
+     worker's `finally` and `onCancelledBeforeStart` make this unreachable in normal operation; compositions are idempotent, so a second
+     JVM's parallel compose (Console7, a second Service7 — the cross-JVM bound) is harmless. Default: leave; a registry-backed liveness
+     check is a small follow-up if a shared-book workflow appears.
+     (f) ⚠ The lazy per-scene fallback (`PbComposeUtil.ensureComposition` from `PbNodeExecutor.renderPlannedScene`) composes with the
+     user's `generalChat` chat config (`ChatUtil.resolveConfig(user, null)`), not with whatever config the book's compose job was last
+     submitted with — the render request carries no `chatConfigName`, and the job's choice is not persisted on the book. The composition
+     records `source=LLM` either way. Default: keep; the ordered compose job is the primary path and carries the config explicitly.
+     (g) ⚠ `createFromScenes`'s response body is now built with `JSONUtil.exportObject` (NON_EMPTY — empty strings/lists/maps are dropped)
+     so the facade can merge `composeJob{…}` / `composeJobSkipped` / `composeJobError` into the `olio.pictureBookMeta`; it was
+     `toFullString()`. `pictureBookSceneText.spec.js` and the P4-4 compose spec read the same keys (`bookObjectId`, `pb2BookObjectId`,
+     `scenes`, `sourceChunk`, …) green; the Service7 H2 harness has no `createFromScenes` fixture, so this layer is proven by Playwright
+     only. Default: keep; say "restore" if a consumer depends on empty values being present.
+     (h) ⚠ `createFromScenes` now dual-writes `olio.pb.scene` rows at import (`PbPipelineUtil.dualWriteImportedScenes` →
+     `patchImportedSceneText` → `enrolImportedCast`: `text`, `setting`, `sceneIndex`, `characters` enrolment via `MemberUtil.member`,
+     `isMember`-guarded on re-run) for a bound V3 book — without it the auto-submitted compose job found no scenes (`scenesToCompose 0`) and
+     the ratified "straight after `createFromScenes`" was dead on arrival. Design §28 (:1530) describes the dual write on the PB1 → PB2
+     path; it now also happens at import time, and books imported before 2026-10-19 have no rows until their first render — their backfill
+     is P4-10's. Default: keep, and I add a dated "as built" line to design §28 unless you would rather word it.
+     (i) ⚠ Pre-existing, not changed: the policy-decision cache (`CachePolicyUtil`, query-hash key, `decisionAge` 120 s) serves a
+     group-less `ChatUtil.resolveConfig` **miss** as DENY for up to 120 s after the config is created (`AUDIT DENY … could not be authorized`
+     — the troubleshooting.md "DENY as a miss" shape, now with a cache tail). Found by `TestPbComposeLazyRender` case02 (`p44-lazy4.log`);
+     the test evicts with `CacheUtil.clearCache()`, test-only. Default: leave; the `troubleshooting.md` one-liner is yours.
+     (j) ⚠ `enrolImportedCast` logged a false `Import dual write … was not enrolled` WARN on re-run because `MemberUtil.member(...)` returns
+     false for an already-existing membership; now `isMember`-guarded. Log-only. Default: keep.
+     (k) ⚠ `DELETE /{book}/reset` and the book delete do not cancel a running compose job for that book; the job fails cleanly on its next
+     persist (`Failed to create composition` → `Book not found` → `Async job FAILED: kind=pb.compose … elapsed=8s`, job
+     `26503ce8-17e8-46e1-98dc-7d24d612a6eb`, 12:47:10 → 12:47:18 UTC, observed during the Playwright compose run) and releases its claim in
+     `finally`. Default: leave; say "cancel on reset" to have reset/delete cancel the owner's live compose / propose jobs first.
+     (l) ⚠ `pictureBookSceneText.spec.js`'s default-tier import now queues a background LLM compose job on the stack (job
+     `eab2c706-6af3-46a8-89d2-21baa48e8d8d`, `2 composed … location pass ran`, `COMPLETED … elapsed=14s`), as every bound
+     `createFromScenes` does — the ratified behaviour, but it means the default 4-worker Playwright suite's two create-from-scenes tests
+     each fire ~15 s of LLM work after they pass. Default: leave (they run `--workers=1` under `PB_LLM_TESTS=1` here); say "gate" to put the
+     bound-import tests behind `PB_LLM_TESTS` as well.
+     (m) The wire omits a zero `sceneIndex` on `olio.pb.scene` rows (NON_EMPTY / default-value elision), so the first scene of a book reads
+     as `undefined` in the browser; `e2e/helpers/chapbook.js scenesByGroup` and the compose spec normalise with `(s.sceneIndex || 0)`. Note,
+     no action; a Ux752 consumer sorting by `sceneIndex` must do the same (P4-9).
+     (n) ⚠ Expectation changes in two existing tests, both consequences of the lazy hook: `TestPbRenderPlanExecutor` (`:476-480`, `:736-740`)
+     now expects exactly one degradation on render 1, starting `COMPOSED_OUT_OF_ORDER: `, instead of none; `TestPbScenePlanLocation` case08
+     pre-composes scene A in story order through the LLM (bounded 3 attempts) and expects B's render to carry `LOCATION_TEXT_ONLY` +
+     `COMPOSED_OUT_OF_ORDER`. Both SD-gated in the P4-4 runs and in gate run 23 (`.39` down) — **executed 11:35 → 11:57 in SD re-run A once
+     `.39` was back (§12.4): `TestPbRenderPlanExecutor` 7/0/0/0 and `TestPbScenePlanLocation` 13/0/0/0, the changed assertions passing against
+     live renders** (case08's pre-compose came from the LLM, `source=LLM migrated=false`; scene B carried both degradations). Default: keep.
+     (o) ⚠ `TestPbComposeJob` case06 tolerates a first-pass `MIGRATED` row (the LLM may stage nothing twice) with a bounded (<5)
+     non-forced resubmit loop proving the re-pick semantics — relaxed after run 1's red, the test-author's judgement, kept. In runs 2 and
+     4 the first pass composed both scenes, so the loop body never ran live; the re-pick-of-a-MIGRATED-row-to-LLM branch ran only in the
+     Service7 H2 harness (`TestOwnerComposeJobLifecycle`, where it ends in `hardFailure` because H2 has no chat config). Default: keep as
+     is and record "proven H2 only"; say "force it" to add a case that writes a MIGRATED row first and asserts the resubmit re-picks it.
+     (p) ⚠ Architect N5: `.claude/rules/architecture.md` has no entry for per-JVM claim maps (`PbNodeInflight`, now `PbComposeJobUtil.INFLIGHT`)
+     and their cross-JVM bound — the same class of thing as the `PbStaleUtil` TTL note. Yours; not edited.
+     (q) SD-gated JUnit skips print one shared `SKIPPED: test.swarm.server=… did not answer … This is NOT a pass.` line without the case
+     name, so a log reader has to pair skips with cases by position (verifier 8). Note for the next test-author pass; no product change.
+     (r) ⚠ **Gate run 23 (§4.4 row 23) ran while Swarm `.39` was down (04:19 → ~10:50) and shows ten environment reds on top of §6.A ×3:**
+     `TestPbCanvas` ×3, `TestPictureBookCustom` ×2, `TestPictureBookWorkflow` ×4 (all `ConnectException: Connection timed out` to
+     `http://192.168.1.39:7801`) and `TestPbSceneGenerationGuards#testLandscapeFailureIsNonFatal:437`, which is a plain `assertTrue("Swarm
+     must be reachable …")` rather than an `SdTestGate` `Assume` — so with `.39` down that class fails instead of skipping. None of the four
+     is P4-4 code or touched by it (`git status`), all were green in row 22, and **all four re-ran green against the restored `.39` in SD
+     re-run B (11:58:41 → 12:53:41, `Tests run: 23, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`; §12.4)**. Default: leave the four classes as they are (gating `TestPbSceneGenerationGuards` on `SdTestGate` would be a test-only
+     change outside P4-4's row); say "gate it" and I will make it `Assume`-skip like its siblings. I did not launch the gate on `.42`
+     (§6.N option (b)) and did not repoint `test.swarm.*`.
 
 ### 6.G Found in Slice C transport (P0-10c), left alone under scope discipline — your call on each
 
@@ -17330,10 +17924,10 @@ reviewed. Standing permission 182 (6): the Docker stack DB and its test data may
 | Id | Task | Design § | Files | Status | Tests | Last run | Date |
 |---|---|---|---|---|---|---|---|
 | P4-0 | Phase 3 carry-overs Stephen said yes to (§6.C 182): (a) `listBooks` — `bookType != CHAPBOOK` inside the query before `setRequestRange(0, 400)`; (b) purge `e2etest_shared`'s stale e2e ChapBook rows on the Docker stack (`DELETE …/reset`, as that user); (c) `deriveStageList`/`runSummaryText` → `workflows/pictureBookWorkflow.js` (import cycle); (d) `OlioFieldNames.FIELD_CONCEALED` (+ `_PATH`) for `PbLocationUtil.java:924`; (e) `proposeLocations` known-location list read as the user (no `sameAs` name leak); (f) `pictureBookCheckpoints.spec.js:327` explicit wait; (g) proposal-accept + merge call `markSceneNodeStale`. Each its own test; each a §6.C 183 sub-item. | §7.2, §26, §27 | `PbServiceFacade.listBooks`, `PbLocationUtil`, `OlioFieldNames`, `PointOfInterestUtil`, `PbBookUtil.markSceneNodeStale` (callers), `features/pictureBook.js`, `features/pictureBookLocations.js`, `workflows/pictureBookWorkflow.js`, `e2e/pictureBookCheckpoints.spec.js`, `src/test/pictureBookLocations.isolation.test.js` (new) | **IMPLEMENTED + TESTS GREEN + reviewed 2026-10-18 11:35** (security PASS; verifier PASS; jar deployed 11:12 + live proof 11:13; DONE yours, 159 b; §12.0, §6.C 183) | `TestPbCreateBookRollback#listBooksSkipsChapBooksInsideTheCandidateRange` 1/0/0/0; `TestPbLocationUtil#mapFreePoiIsNotConcealed` 1/0/0/0; `TestPbLocationProposal#case09_knownLocationsAreReadAsTheCaller` 1/0/0/0; `#case10_acceptMarksRepointedPageNodeStale` 1/0/0/0; `TestPbLocationNode#mergeMarksRepointedPageNodesStale` 1/0/0/0; Vitest 94 files / 1292 tests + isolation spec 1/1; Playwright `pictureBookCheckpoints.spec.js` 5 passed (14.8 s); live `p38-books-cap-repro.mjs` both new STORY books listed | JUnit 10:49:40 → 11:10:07; Vitest 10:37:51 + 11:19:11; Playwright 10:40; live 11:13 | 2026-10-18 |
-| P4-1 | Schema — `olio.pb.composition`, `olio.pb.sceneActor`, `olio.pb.sceneElement` (`item` FK → `olio.item`, nullable) exactly per design §8; enums `PbCompositionPurposeEnumType` {SCENE, COVER, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART, CHAPBOOK_PAGE}, `PbShotTypeEnumType`, `PbViewpointEnumType`, `PbActorRoleEnumType` {HERO, SUPPORTING, NAMED_BACKGROUND, EXTRA, CROWD}, `PbFacingEnumType`, `PbElementTypeEnumType`, `PbImportanceEnumType`, `PbReferencePolicyEnumType` {AUTO, REQUIRE_REFERENCE, TEXT_ONLY}, `PbCompositionSourceEnumType` {LLM, USER, MIGRATED}; rows not JSON; compositions in the book's group; watched sets for the three models + `olio.item` name/description/colours/materials (`WATCHED_SET_VERSION` → `watched/v4`); additive + nullable, boot patch, never a reset. | §8, §32 | `resources/models/olio/pb/`, `schema/type/`, `PbWatchedFields` | TODO | — | — | — |
-| P4-2 | `PbLayoutUtil` (pure) — placement words → normalized `x/y/w/h` + `depth`, shot-type-aware; defaults MEDIUM/EYE_LEVEL, WIDE when > 3 actors; unknown word → centre + MEDIUM, never throws. | §9, §29 | `olio/picturebook/PbLayoutUtil` | TODO | — | — | — |
-| P4-3 | Compose step — template `pictureBook.compose-scene.json` (+ `promptTemplate.` twin, `/no_think`); input scene text, setting/action/mood, cast, location names + aliases, style name, the location's POI store items by name; output JSON per §9; `PbComposeUtil.composeScene(user, book, scene, force)` writes composition + actor + element rows; names via `PictureBookUtil.findCharPersonByNameInGroup` (chapter shadow first, then baseline); unresolved → NAMED_BACKGROUND + `character=null`, never dropped; element names matching store items set `item`; `isMeaningful` on every field; `PbLayoutUtil` placements; `userEdited=true` never overwritten unless `force`; LLM unavailable/malformed → `source=MIGRATED` from the scene's own fields, flagged for re-compose. Security-reviewer on the prompt. | §9, §29 | `resources/olio/llm/`, `olio/picturebook/PbComposeUtil` | TODO | — | — | — |
-| P4-4 | `pb.compose` job + lazy fallback + Quick start + `proposeLocations` job — `PbRenderJobUtil.KIND_COMPOSE`; story order on the LLM lane, cooperative cancel, progress in the job token, ends with the whole-book location pass (`proposeLocations` as a job, 182 (9); pages included, 182 (15–22)); auto-submitted after `createFromScenes`; lazy per-scene compose on a render with no composition (`COMPOSED_OUT_OF_ORDER` note + "re-compose in order"); `quickStart` renders a DRAFT per composed scene; one-off idempotent compose job on an existing book's first V3 open. Routes `POST /{book}/compose` → 202 `{jobId}` (`{quickStart, force}`), `POST /{book}/scene/{id}/compose` (`{force}`), `POST /{book}/locations/propose` → 202. | §9.1, §21 | `PbRenderJobUtil`, `PbServiceFacade`, `PictureBookService` | TODO | — | — | — |
+| P4-1 | Schema — `olio.pb.composition`, `olio.pb.sceneActor`, `olio.pb.sceneElement` (`item` FK → `olio.item`, nullable) exactly per design §8; enums `PbCompositionPurposeEnumType` {SCENE, COVER, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART, CHAPBOOK_PAGE}, `PbShotTypeEnumType`, `PbViewpointEnumType`, `PbActorRoleEnumType` {HERO, SUPPORTING, NAMED_BACKGROUND, EXTRA, CROWD}, `PbFacingEnumType`, `PbElementTypeEnumType`, `PbImportanceEnumType`, `PbReferencePolicyEnumType` {AUTO, REQUIRE_REFERENCE, TEXT_ONLY}, `PbCompositionSourceEnumType` {LLM, USER, MIGRATED}; rows not JSON; compositions in the book's group; watched sets for the three models + `olio.item` name/description/colours/materials (`WATCHED_SET_VERSION` → `watched/v4`); additive + nullable, boot patch, never a reset. | §8, §32 | `resources/models/olio/pb/compositionModel.json` (134 lines), `sceneActorModel.json` (117), `sceneElementModel.json` (79) — new; `schema/type/Pb{CompositionPurpose,ShotType,Viewpoint,ActorRole,Facing,ElementType,Importance,ReferencePolicy,CompositionSource}EnumType` — new; `OlioModelNames` (+3 constants), `OlioFieldNames` (+30), `PbWatchedFields` (`watched/v4`; `PB_COMPOSITION`, `PB_SCENE_ACTOR`, `PB_SCENE_ELEMENT`, `ITEM` sets), `PbDeleteUtil.deleteGraphByBook` (elements → actors per composition → compositions, before scenes); `TestPbV4Schema` (new, 8 cases, 1087 lines), `TestPbModelSchema` + `TestPbLocationSchema` (model/column counts +3) | **IMPLEMENTED + TESTS GREEN + reviewed 2026-10-18 15:49** (architect PASS WITH CORRECTIONS, all three adopted; security PASS, H1–H3 carried to P4-3/P4-7/P4-8; verifier PASS; jar deployed 15:41 + REST live proof 15:48; gate run 21 §4.4 row 21 GREEN modulo §6.A ×3 + §6.C 162, no P4-1 red — ⚠ 185 g accepted by its default; DONE yours, 159 b; §12.1, §6.C 185) | `TestPbV4Schema` 8/0/0/0 (55.05 s), `TestPbModelSchema` 22/0/0/0 (22.74 s), `TestPbLocationSchema` 3/0/0/0 (12.59 s) — `Tests run: 33, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS` (`C:/tmp/p41-junit2.log`). Run 1 (`p41-junit.log`) 33/1/0/0: `case06` red on a bare `planMost(true)` read (2896 `Exceeded maximum depth` lines) — your ruling, test rewritten to a targeted projection, no product change. Live `C:/tmp/p41-live.mjs` → `p41-live.log` `RESULT ALL PASS` as `e2etest_shared` (#228): create / enum round-trip / nested-path read / `PATCH` / `DELETE` on all three models; `GET …/full` on a composition = 404 (recorded, not a supported read shape) | JUnit run 1 15:28:30 → 15:30:11, run 2 15:35:44 → 15:37:17; install 15:39:51; Service7 compile 15:40:17; deploy 15:40:45 → 15:41:25; live 15:48:40 → 15:48:41; gate run 21 15:49:37 → 19:50:14 | 2026-10-18 |
+| P4-2 | `PbLayoutUtil` (pure) — placement words → normalized `x/y/w/h` + `depth`, shot-type-aware; defaults MEDIUM/EYE_LEVEL, WIDE when > 3 actors; unknown word → centre + MEDIUM, never throws. | §9, §29 | `olio/picturebook/PbLayoutUtil` | **IMPLEMENTED + TESTS GREEN + reviewed** (architect PASS WITH CORRECTIONS, all adopted; verifier PASS WITH FINDINGS; merged gate run 22 §4.4 `VERIFY_FAILED` = §6.A ×3 + the `TestPbDeleteComplete` order-dependence (§6.C 188 — not a P4-2 class; `TestPbLayoutUtil` 17/0 inside the gate) — ⚠ 186 a; DONE yours, 159 b; §12.2, §6.C 186) | `TestPbLayoutUtil` 17/0/0/0 — pure, no DB/LLM/SD: `JUnitCore` `p42-junitcore.log` `OK (17 tests)` 0.55 s; Maven `p42-junit.log` `Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.718 s` BUILD SUCCESS; verifier re-run 17/0; inside `p43-junit4.log` 17/0 0.158 s | JUnitCore 16:49:57; Maven 20:04:35 → 20:04:58; install 20:10:16; Service7 compile 20:10:26; deploy 20:11:31 → 20:12:10; gate run 22 21:13:37 → 01:17:25 2026-10-19 | 2026-10-18 |
+| P4-3 | Compose step — template `pictureBook.compose-scene.json` (+ `promptTemplate.` twin, `/no_think`); input scene text, setting/action/mood, cast, location names + aliases, style name, the location's POI store items by name; output JSON per §9; `PbComposeUtil.composeScene(user, book, scene, force)` writes composition + actor + element rows; names via `PictureBookUtil.findCharPersonByNameInGroup` (chapter shadow first, then baseline); unresolved → NAMED_BACKGROUND + `character=null`, never dropped; element names matching store items set `item`; `isMeaningful` on every field; `PbLayoutUtil` placements; `userEdited=true` never overwritten unless `force`; LLM unavailable/malformed → `source=MIGRATED` from the scene's own fields, flagged for re-compose. Security-reviewer on the prompt. | §9, §29 | `resources/olio/llm/`, `olio/picturebook/PbComposeUtil` | **IMPLEMENTED + TESTS GREEN + reviewed** (planner plan adopted; architect CHANGES NEEDED → D7 adopted; security-reviewer on prompt + diff PASS WITH CORRECTIONS, H1/H2/L1/L4/L5 adopted, L2/L3 → 187 m; test-author review + 3 tests; verifier PASS WITH FINDINGS, 3 Lows fixed, MEDIUM kept for P4-10; merged gate run 22 §4.4 `VERIFY_FAILED` = §6.A ×3 + the `TestPbDeleteComplete` order-dependence (§6.C 188 — not a P4-3 class; `TestPbComposeFallback` 13/0 + `TestPbComposeSceneLive` 1/0 inside the gate) — ⚠ 186 a; DONE yours, 159 b; §12.3, §6.C 187; no REST surface until P4-4) | `TestPbComposeFallback` 13/0/0/0 (`p43-junit5.log` `Time elapsed: 93.91 s`; 11 pure + `deadLlmWritesMigratedThenLeavesItAloneUntilForced` against `http://127.0.0.1:1` + `stageResolvesNamesLinksItemsAndSurfacesUnknownPlacements` on a real book/location/store) + `TestPbComposeSceneLive` 1/0/0/0 (`52.95 s`; real compose through `LlmTestGate` — in-stack Ollama container `qwen3:8b` via LiteLLM: compose 9467 ms, forced re-compose 4465 ms, `userEdited` skip; recorded, not asserted); `TestPictureBookFull` 1/0, `TestPromptLibrary` 14/0 (`p43-junit4.log`); runs 1–2 red/error (mine: `needsCompose` UNKNOWN purpose; `String.valueOf(char[])`), run 3 33/0/0/0; no SD call, no PNG | JUnit run 1 20:13:03 → 20:15:39, run 2 → 20:23:39, run 3 20:24:15 → 20:26:27; live 20:26:59 → 20:27:59; verifier run 20:30:28 → 20:31:40; test-author run 21:02:12 → 21:05:12; run 5 21:09:04 → 21:11:30; install 21:11:46; Service7 compile 21:11:51; deploy 21:11:56 → 21:12:52; gate run 22 21:13:37 → 01:17:25 2026-10-19 | 2026-10-18 |
+| P4-4 | `pb.compose` job + lazy fallback + Quick start + `proposeLocations` job — `PbRenderJobUtil.KIND_COMPOSE`; story order on the LLM lane, cooperative cancel, progress in the job token, ends with the whole-book location pass (`proposeLocations` as a job, 182 (9); pages included, 182 (15–22)); auto-submitted after `createFromScenes`; lazy per-scene compose on a render with no composition (`COMPOSED_OUT_OF_ORDER` note + "re-compose in order"); `quickStart` renders a DRAFT per composed scene; one-off idempotent compose job on an existing book's first V3 open. Routes `POST /{book}/compose` → 202 `{jobId}` (`{quickStart, force}`), `POST /{book}/scene/{id}/compose` (`{force}`), `POST /{book}/locations/propose` → 202. | §9.1, §21 | `PbRenderJobUtil`, `PbServiceFacade`, `PictureBookService` | **IMPLEMENTED + TESTS GREEN + reviewed 2026-10-19 07:52 local** (planner plan adopted; architect CHANGES NEEDED → M1 cancel-discards-in-flight + M2 auto-submit moved to `PbServiceFacade.createFromScenesAndCompose`, S1–S5 adopted; ux-specialist thin client + propose poll; test-author 8 + 3 cases; security-reviewer PASS, should-fix 1 applied (`listSceneCompositions` `groupId`), 2–3 → 189 b/c; verifier PASS-with-notes, 1/3/4/7 fixed, 5 → P4-9, 6/8/9 → 189 e/q; new `PbComposeJobUtil` (`KIND_COMPOSE` / `KIND_PROPOSE_LOCATIONS`, per-JVM `INFLIGHT` claim, no `olio.pb.run` row); lazy hook in `PbNodeExecutor.renderPlannedScene` → `COMPOSED_OUT_OF_ORDER` degradation vetoes auto-approve until P4-7; Quick start inline DRAFT on the compose worker; pages in the location pass via `settingTextOf`; import-time `olio.pb.scene` dual write added (the auto-submit found no scenes without it — 189 h); RuntimeException → 500 JSON on compose/composeScene/proposeLocations; re-pick-to-LLM path proven H2 only (189 o); UI trigger for compose-on-first-open deferred to P4-9; gate run 23 §4.4 row 23 — ⚠ 189 a–q; DONE yours, 159 b; §12.4) | Objects7 (every log `[LLM-GATE] route=litellm tier=local` = in-stack Ollama container via LiteLLM): `TestPbComposeJob` 10/0/0/0 (`p44-composejob4.log` `447.3 s`; runs 1 and 3 red, mine: empty-staging retry gap → `parseStagedProposal`; case10 `dataPath()` misuse), `TestPbComposeLazyRender` 3/0/0/1 (`p44-lazy5.log`; case02 source `LLM`; run 4 red, mine: policy-decision cache), `TestPbQuickStart` 1/0/0/1 (`p44-quickstart2.log`, SD-gated — NOT run), `TestPbLocationProposal` 11/0 (`p44-locationproposal.log`), `TestPbCreateFromScenesRerun` 7/0 (`p44-rerun2.log`, zero WARN), `TestPbRenderPlanExecutor` 7/0/0/5 (`p44-renderplanexecutor.log`), `TestPbScenePlanLocation` 13/0/0/1 (`p44-sceneplanlocation.log`), `TestPbComposeFallback` 13/0 + `TestPbComposeSceneLive` 1/0 (`p44-composeregress2.log`), `TestPbAutoApprove` 7/0 + `TestPbRenderJob` 11/0/0/3 (`p44-autoapprove-renderjob.log`); Service7 `TestPictureBookComposeRoutes` 8/0/0/0 (`p44-service7-routes3.log` `13.67 s`; run 1 error, mine: `String.valueOf(char[])`) + `TestPictureBookLocationRoutes` 11/0 (`p44-service7-routes2.log`); Vitest 75/75 + 94 files / 1298; Playwright (`[e2e-llm] route=litellm server=http://litellm:4000`) `pictureBookCompose.spec.js` 11/0/1 skipped (`p44-pw-compose5.log` `49.6s`; runs 1/3/4 red, mine: 409 text, `pb2BookObjectId`, zero `sceneIndex` — spec-only), `pictureBookLocations.spec.js` 18/0/5 skipped (`p44-pw-locations2.log`), `pictureBookSceneText.spec.js` 1/0/1 skipped (`p44-pw-scenetext.log`); live proof `p44-live3.log` ALL PASS; no SD server hit (`.39` down from 04:19; `.42` not used), no PNG | planner 01:38:20 → 01:50:24; architect 01:59:14 → 02:08:07; implement → 03:01; test-author 03:01:04 → 04:19:07 ∥ ux-specialist 03:08:41 → 03:17:43; JUnit run 1 03:30:45 → 03:37:31, run 2 → 04:29:07, classes → 05:51:40; install 05:51:52, Service7 routes → 05:54:05, deploy 05:54:29 → 05:55:31, live2 → 05:58; Playwright → 06:04; security 06:04:56 → 06:11:44 ∥ verifier 06:05:34 → 06:19:57; post-review 06:20 → 06:50; reruns 06:51:15 → 07:39:54; install2 → 07:40:36, routes3 → 07:41:01, package2 → 07:41:20, deploy2 07:41:26 → 07:42:30, live3 → 07:46:05; Playwright → 07:52:09; refresh 07:52:35 → 07:52:41; gate run 23 07:53:29 → 11:32:55 (`VERIFY_FAILED` = §6.A ×3 + ten `.39`-outage reds, no P4-4 red); `.39` back — probe 4ab 11:34:57; SD re-run A (`p44-sd-p44`, the four SD-gated P4-4 classes) 11:35:23 → 11:57:38 (24/0/0/0, `BUILD SUCCESS`, eleven PNGs opened); probe 4ac 11:57:57; SD re-run B (`p44-sd-env`, the four outage classes) 11:58:41 → 12:53:41 (23/0/0/0, `BUILD SUCCESS`); probe 4ad 12:54:12; Playwright compose spec with `PB_LLM_TESTS=1 PB_SD_TESTS=1` (`p44-pw-compose-sd`) 12:54:31 → 12:56:13 (`12 passed (1.6m)`, `exit=0`; Quick start `quickStartRendered:2`, two DRAFT PNGs opened) | 2026-10-19 |
 | P4-5 | Wardrobe alternates + carry-forward — `PbWardrobeUtil`: list `store.apparel`; alternate from description (compose-detected outfit change → LLM description → existing apparel/wearable generator, olio principal, `inuse=false`); user-created alternates; `sceneIndex` apparel-tag migration (supersedes `tagApparelSceneIndex` — deprecated, not deleted); `sceneActor.apparel` must belong to that character's wardrobe (refused otherwise); carry-forward by `sceneIndex` → `(from scene N)` / `(default)`, pinning breaks the chain; default change stales only default-resolved scenes (watched set); rendering never mutates `inuse`; reference image per alternate in `apparel.gallery` (the style-level reference-image routes, 182 (12)). | §6, §6.1, §6.2 | `olio/picturebook/PbWardrobeUtil`, `PictureBookUtil`, routes | TODO | — | — | — |
 | P4-6 | Elements → POI items — `PbComposeUtil.promoteElement(user, book, elementObjectId)`: `olio.item` (name/description/colours/materials) as the olio principal after book authorization, added to the scene's location's POI `store.items` via `MemberUtil` in the `ItemUtil.addNewInventory` shape, `sceneElement.item` set; compile element text from the freshly-loaded item when set; `POST /{book}/composition/{id}/element/{elementId}/promote`. | §7.2 rule 4 | `PbComposeUtil`, `PbLocationUtil`, routes | TODO | — | — | — |
 | P4-7 | RenderPlan + `Flux2Compiler` + degradations — `RenderPlan.Actor` → §12 shape (`actorId, characterId, role, priority, box, depth, pose, expression, action, facing, outfit{apparelId,text,refArtifactId}, identity{portraitArtifactId,fullbodyArtifactId,text}, policy`), `Element` (`type, description, box, importance, itemId`), `intent` = `promptOverride`; `PbRenderPlanUtil.sceneActors` reads composition rows (identity = approved PORTRAIT artifact else `ACTOR_TEXT_ONLY`; outfit text from the resolved apparel freshly loaded — G-5), membership only via the lazy compose; `Flux2Compiler` (positional reference wording, identity rules, KI-68, every actor listed, referenced by ordinal); shared rules (style once, exclusions always, `isMeaningful`, smart quotes, `appendLoras`, `PromptBudget` drop order elements LOW → MEDIUM → extras → background-actor detail, each drop a `PROMPT_TRUNCATED` with what was dropped); degradations `ACTOR_TEXT_ONLY`/`ACTOR_UNRESOLVED`/`ACTOR_FAILED`/`PROMPT_TRUNCATED` persisted on the plan; scene-card summary line; auto-approve veto set 182 (13) as one constant; unreadable pointer → unlocated + degradation (182 (15–22)). | §12, §13, §14, §19, §20 | `olio/illustration/RenderPlan`, `Flux2Compiler`, `SdxlCompiler`, `PromptBudget`, `PbRenderPlanUtil`, `PbArtifactUtil` | TODO | — | — | — |
@@ -17508,3 +18102,822 @@ webapp's stop (the same family every prior deploy logged; not new). The WAR was 
 
 **DECISION AUDIT:** ✓ every item is the 182 resolution; ⚠ defaults (a)–(k) in §6.C 183 with the asks spelled out; nothing waits on Stephen
 before P4-1. Row status IMPLEMENTED + TESTS GREEN + reviewed — DONE is his (159 b).
+
+### 12.1 P4-1 results — schema (2026-10-18, 14:37 → 15:49 local; gate run 21 §4.4 15:49:37 → 19:50:14)
+
+**Read-first:** `llm-conduct.md`, `architecture.md`, `objects7-reference.md` (Path 1 boot DDL patch — add a field = edit the JSON and
+restart; nullable enum columns need `UNKNOWN`; never re-declare an inherited field or constraint; `likeInherits` is load-bearing),
+`model-api.md` (49-field nested cap; `/full` = `planMost(true)`; foreign model query fields take the record, not the id), this doc §5.6 /
+§6.C 182–184 / §12 scope, design §8 (line 346) / §32; then `sceneModel.json` (the envelope to copy), `locationModel.json`,
+`PbWatchedFields`, `PbDeleteUtil`, `OlioModelNames`, `OlioFieldNames`, `TestPbV3Schema` / `TestPbLocationSchema` / `TestPbModelSchema`
+(the Phase 0/3 schema-test shape), `QueryPlan.countMaterializedFields`. Probes: §3 `1a` 14:37:19 / `1b` 15:27:53 / `1c` 15:35:25 /
+`1d` 15:46:04, all GREEN.
+
+**Flow:** planner (14:39 → 14:48; plan adopted) → architect (14:49 → 14:57; **PASS WITH CORRECTIONS**, all three adopted: (1) `group`
+must be `"Book"`, not `"Compositions"`; (2) the `deleteGraphByBook` extension is in scope and `case08` must drive the public
+`deleteBookComplete`, the util being package-private; (3) `case06` should assert
+`QueryPlan.countMaterializedFields(schema, RecordUtil.getMostRequestFields(name), parent) <= QueryPlan.MAX_NESTED_PLAN_FIELDS` on the
+nested plans rather than only "the read came back") → implement → **test written in the main thread (no test-author agent — ⚠ 185 i)**
+→ JUnit run 1 (red) → your ruling on `case06` → JUnit run 2 (green) → security-reviewer + verifier (read-only, concurrent) → install /
+Service7 compile / jar deploy / REST live proof → `o7verify` refresh → gate run 21 (⚠ 185 g).
+
+**What changed (Objects7 only; no Service7 source — the WAR is untouched, the jar carries everything).** Untracked, yours to add:
+`resources/models/olio/pb/compositionModel.json` (134 lines), `sceneActorModel.json` (117), `sceneElementModel.json` (79) and nine
+`schema/type/Pb{CompositionPurpose,ShotType,Viewpoint,ActorRole,Facing,ElementType,Importance,ReferencePolicy,CompositionSource}EnumType.java`,
+plus `src/test/.../TestPbV4Schema.java` (1087 lines). Tracked diff `6 files changed, 110 insertions(+), 8 deletions(-)`:
+`OlioModelNames` +9 (`MODEL_PB_COMPOSITION = "olio.pb.composition"`, `MODEL_PB_SCENE_ACTOR = "olio.pb.sceneActor"`,
+`MODEL_PB_SCENE_ELEMENT = "olio.pb.sceneElement"`, registered in the PB block); `OlioFieldNames` +30 lines / 22 new constants (`FIELD_PB_PURPOSE`,
+`FIELD_PB_SCENE`, `FIELD_PB_SETTING_TEXT`, `FIELD_PB_SHOT_TYPE`, `FIELD_PB_FOCAL_ACTOR`, `FIELD_PB_CAMERA_TEXT`, `FIELD_PB_PROPS`,
+`FIELD_PB_PROMPT_OVERRIDE`, `FIELD_PB_SOURCE`, `FIELD_PB_COMPOSITION`, `FIELD_PB_CHARACTER`, `FIELD_PB_PRIORITY`, `FIELD_PB_POSE`,
+`FIELD_PB_FACING`, `FIELD_PB_X/_Y/_W/_H`, `FIELD_PB_DEPTH`, `FIELD_PB_REFERENCE_POLICY`, `FIELD_PB_ELEMENT_TYPE`, `FIELD_PB_IMPORTANCE`;
+`FIELD_PB_VIEWPOINT`, `FIELD_PB_MOOD`, `FIELD_PB_ACTION`, `FIELD_PB_ROLE`, `FIELD_PB_REVISION`, `FIELD_PB_USER_EDITED`,
+`FIELD_PB_LOCATION_VARIANT`, `FIELD_PB_CONFIG_OVERRIDE`, `FIELD_PB_PROMPT_LOCKED`, `FIELD_APPAREL`, `FIELD_ITEM` pre-existed); `PbWatchedFields` +54 — `WATCHED_SET_VERSION = "watched/v4"` and four sets:
+`PB_COMPOSITION` (purpose, scene, location, locationVariant, settingText, action, mood, shotType, viewpoint, focalActor, cameraText,
+props, configOverride, promptOverride, promptLocked — `book`/`source`/`userEdited`/`revision` deliberately unwatched, `revision` being
+bumped by the very save that changed a watched field), `PB_SCENE_ACTOR` (character, role, priority, apparel, pose, expression, action,
+facing, x, y, w, h, depth, description, count, referencePolicy — `composition` unwatched: moving an actor is a structural edit),
+`PB_SCENE_ELEMENT` (elementType, description, x, y, w, h, depth, importance, item), `ITEM` on `olio.item` (name, description, `color`,
+`complementColor`, `accentColor` — rendered by name, `data.color`'s query set carries `name` — and `materials`; quantity/price/perks/
+statistics are game state, unwatched); `PbDeleteUtil.deleteGraphByBook` +12/−4 — elements → actors per composition → compositions
+inserted ahead of the scene delete, javadoc updated; `TestPbModelSchema` / `TestPbLocationSchema` — expected model and column counts +3.
+
+**Models, per design §8.** Envelope identical to `sceneModel.json` (`likeInherits: ["data.directory"]`, `inherits: ["common.groupExt",
+"common.baseLight", "common.urn"]`, own `name` 256, `group: "Book"`, `constraints: ["name, groupId, organizationId"]`); enum fields via
+`baseClass` with `maxLength: 32`; FKs `type: "model", foreign: true` (`bigint` columns); `x/y/w/h` double, `depth`/`priority`/`count`/
+`revision` int, `promptLocked`/`userEdited` boolean. `olio.pb.composition`: `book`, `purpose`, `scene`, `location`, `locationVariant`,
+`settingText`, `action`, `mood`, `shotType`, `viewpoint`, `focalActor` (→ `olio.pb.sceneActor`), `cameraText`, `props`, `configOverride`,
+`promptOverride`, `promptLocked`, `source`, `userEdited`, `revision`; hints `["book", "scene", "book, purpose"]`. `olio.pb.sceneActor`:
+`composition`, `character` (→ `olio.charPerson`), `role`, `priority`, `apparel` (→ `olio.apparel`), `pose`, `expression`, `action`,
+`facing`, `x`, `y`, `w`, `h`, `depth`, `description`, `count`, `referencePolicy`; hints `["composition", "character"]`.
+`olio.pb.sceneElement`: `composition`, `elementType`, `description`, `x`, `y`, `w`, `h`, `depth`, `importance`, `item` (→ `olio.item`,
+nullable); hints `["composition", "item"]`. Every enum declares `UNKNOWN` first; the value lists are the brief's verbatim. No
+`access`/`followReference`/`system`/`encrypt` anywhere under `models/olio/pb/` (security).
+
+**Tests (`TestPbV4Schema`, 8 cases, `testUser1` non-admin on `am7db`; admin only as the `getCreateUser` creator argument).**
+`case01_registeredAndFksAreBigint` (the three models resolve, the tables exist, every FK column is `bigint` via `DBUtil`);
+`case02_compositionRoundTrip` (a COVER composition created as the test user in a real book's `Book` group — `urn` composed, every
+column read back, COVER/WIDE/LOW/USER enums through the wire-lowercase/Java-UPPERCASE boundary, `scene`/`location`/`focalActor` null;
+PATCH → `revision` 1 → 2 with unpatched fields untouched; a SCENE composition listed by the `book, purpose` hint; owner delete);
+`case03_unsetColumnsReadDdlDefaults` (unset enums read `UNKNOWN`, ints `0`, doubles `0.0`, booleans `false`, FKs null on all three);
+`case04_actorRoundTripAndFocalActorCycle` (HERO actor + a CROWD extra `count=12` TEXT_ONLY under one composition; PATCH facing/x;
+`focalActor` set on the composition and read back both ways round the two-hop cycle, then cleared; exactly two actors listed; owner
+delete); `case05_elementRoundTripWithItemFk` (an `olio.item` in the world's Items group with `materials=[brass]`; a PROP element pointing
+at it and a NATURE element with no item; the item FK cleared and re-set by PATCH; exactly two elements listed; deleting the element never
+touches the item); `case06_projectedReadUnderNestedCap` (`QueryPlan.countMaterializedFields(...) <= MAX_NESTED_PLAN_FIELDS` for each
+nested model/parent pair, then a targeted `setRequest` with `scene.sceneIndex` / `focalActor.name` / `focalActor.role` paths returns the
+composition and the actor's `composition.name` / `composition.purpose` paths return the way back);
+`case07_watchedSetDetectsTheEditsItDeclares` (`WATCHED_SET_VERSION == "watched/v4"`; the four sets' fields exist on their models and
+are in the projection; `revision`/`source`/`userEdited`/`book` and the actor's `composition` unwatched; `computeRefHash` deterministic and
+unmoved by bookkeeping edits; moved by shotType, promptOverride, focalActor on the composition, facing and x/depth on the actor,
+importance on the element, description and materials on the item; `canonicalRef` starts with the version and renders `focalActor` and
+`item` by name); `case08_deleteBookCompleteRemovesTheThreeModels` (public `deleteBookComplete` as the owner on a throwaway book — the
+composition, actor and element rows are gone by raw count). **Run 1** (`C:/tmp/p41-junit.log`, 15:28:30 → 15:30:11):
+`[ERROR] Tests run: 8, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 63.37 s <<< FAILURE! -- in …TestPbV4Schema`;
+`case06_fullPlanReadUnderNestedCap … java.lang.AssertionError: The full-plan read must return the composition (a null here is the
+nested-cap/depth failure, not a miss)` at `TestPbV4Schema.java:822`; `planMost(true) on olio.pb.composition returned in 581 ms`; 2896 ×
+`BaseRecord - Exceeded maximum depth: olio.pb.composition -> olio.pb.sceneActor.focalActor -> olio.pb.composition.composition ->
+olio.pb.location.location -> olio.pointOfInterest.poi -> olio.builder.builder -> olio.apparel.apparel -> olio.wearable.wearables ->
+olio.itemStatistics.statistics`; `Tests run: 33, Failures: 1, Errors: 0, Skipped: 0`, `BUILD FAILURE`. Your ruling: "it's because you used
+planMost on the query" — the case was rewritten to the targeted projection (`case06_projectedReadUnderNestedCap`), no product change
+(§5.7, 185 f). **Run 2** (`C:/tmp/p41-junit2.log`, 15:35:44 → 15:37:17): `TestPbLocationSchema` `Tests run: 3, Failures: 0, Errors: 0,
+Skipped: 0, Time elapsed: 12.59 s`; `TestPbModelSchema` `Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 22.74 s`;
+`TestPbV4Schema` `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 55.05 s`; `Tests run: 33, Failures: 0, Errors: 0,
+Skipped: 0`; `BUILD SUCCESS`; `Total time: 01:33 min`; `Finished at: 2026-10-18T15:37:17-05:00`. ERROR lines in the run-2 log, classified
+by the verifier: the duplicate-slug negative test's own expected failure, and `Failed to find root location` / `Root Epoch is null` —
+pre-existing fixture noise also present in `o7verify-gate-p33.log:18-19,34-35`. No skip in either run.
+
+**LLM tier and SD.** Both JUnit logs carry `[LLM-GATE] http://127.0.0.1:4000/health/liveliness answered HTTP 200` and `[LLM-GATE]
+route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` — in words: the in-stack Ollama
+container reached through LiteLLM was selected (not Azure, not `.42`), and **no test in P4-1 made an LLM call**. `SdTestGate` resolved
+`http://192.168.1.39:7801` (HTTP 302) with checkpoint `OfficialStableDiffusion/sd_xl_base_1.0.safetensors`; **no SD call was made** and
+no PNG was produced. Nothing gated, nothing skipped.
+
+**Security review (Objects7 diff + the three JSONs, read-only) — PASS**, no blockers: envelope identical to `sceneModel.json`; no
+`access`/`followReference`/`system`/`encrypt` in `models/olio/pb/`; the new FKs tighten and never loosen (they point at models already
+PBAC-checked); the `focalActor` ↔ `composition` cycle is bounded by `MAX_FOREIGN_POLICY_DEPTH`; `configOverride` cannot repoint a
+backend (parsed by `PbConfigUtil`, server URLs resolved elsewhere); every `PbDeleteUtil` row goes through `deleteRecordExplained` and is
+PBAC-checked per row. Three carry-forwards H1–H3 → §6.C 185 (j); one nit (javadoc) → 185 (k).
+
+**Install / compile / deploy (serial).** `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` 15:39:51 (`C:/tmp/p41-install.log`,
+JDK/Maven WARNING lines only); `mvn -o -pl AccountManagerService7 compile` → `BUILD SUCCESS`, `Total time: 2.359 s`, `Finished at:
+2026-10-18T15:40:17-05:00` (`p41-s7compile.log`). `C:/tmp/p41-deploy.sh` (`p41-deploy.log`): `javap` stub check on all 13 new/changed
+classes `unresolved=0`; jar content check `3` model JSONs / `9` enum classes; `WATCHED_SET_VERSION = "watched/v4"` and the three
+`MODEL_PB_*` constants read out of the jar with `javap -constants`; md5 local `ef265739550a926b7cec80275d5df503`, container before
+`7005fd510064861b05690ebf00482f31` → after `docker cp` `ef265739…`; `docker restart am7test-am7-1` 15:40:51; `setup/state=200 after 30 s
+(15:41:24)`; `Server startup in [14134] milliseconds`; the 8 `SEVERE … checkThreadLocalMapForLeaks` lines are the old webapp's stop (same
+family as every prior deploy) and `[ERROR] DBUtil - iso42001.certificationRequest Index collision: (objectId)/(id)/(urn)` is KI-69; md5
+final local == container. The boot DDL patch created `a7_olio_pb_composition_0_1` (26 columns), `a7_olio_pb_sceneactor_0_1` (24),
+`a7_olio_pb_sceneelement_0_1` (17) in the stack DB (`psql` appended to `p41-live.log`; FK columns `bigint`, enum columns
+`character varying`, `promptlocked`/`useredited` `boolean`, `revision` `integer`).
+
+**REST live proof (`C:/tmp/p41-live.mjs` → `p41-live.log`, 15:48:40 → 15:48:41) — `RESULT ALL PASS`.** `login 200 as e2etest_shared
+(#228) base https://127.0.0.1:9443`; `self lookup http=200 id=228 organizationId=2`; `POST /rest/model/search` (`"schema":"io.query"`,
+numeric `organizationId`, `cache:false`) on all three models `http=200 rows=0`; `GET /rest/olio/picture-book/books` `http=200 rows=68`;
+target book `Book bwo-overhaul-empty-mv2teocb` (id 606, groupId 15902, `/Olio/Universes/Books/Worlds/bwo-overhaul-empty-mv2teocb/Book`,
+ownerId 20 = the olio principal — the book list route, never an `ownerId` filter); `POST /rest/model` composition `p41-live-comp-mveasm07`
+(id 3) → `PASS enum round-trip purpose=scene shotType=medium viewpoint=eye_level` (lowercase on the wire), `PASS nested path book.name=…
+slug=… settingText kept, revision=1`, `PATCH /rest/model` `http=200 body=true` → `shotType=wide mood kept=quiet`; sceneActor
+`p41-live-actor-mveasm07` (id 2) → `role=hero facing=toward referencePolicy=require_reference x=0.25 composition.name=…
+composition.purpose=scene`; `PATCH` `focalActor` onto the composition → `focalActor path -> p41-live-actor-mveasm07 role=hero`;
+sceneElement (id 2) → `elementType=furniture item=undefined` (nullable FK left unset); `INFO GET /full on composition http=404 (not a
+supported read shape - recorded only)`; `DELETE /rest/model/{type}/{objectId}` × 3 `http=200 body=true`, each followed by a `rows=0`
+re-search; `psql` after: `rows composition=0 sceneactor=0 sceneelement=0`. Three field-name guesses in the first draft of the script
+(`cameraNotes`, `pose`, `referencePolicy` on the composition; `importance` on the actor) came back `FieldException` from
+`/rest/model/search` and were corrected by reading the JSONs — the schema rejected them, which is the behaviour wanted.
+
+**Verifier (independent, read-only, whole diff + both logs + live log): PASS (with carry-forward notes)** — log lines cited (run-2
+`145/227/475/479`, `482 BUILD SUCCESS`); ERRORs classified as above; models match §8 field-for-field, the only extra is `name`; enums
+exact; the test is real as `testUser1`; Lows → 185 (k); carry-forwards: per-book unique names (Medium → 185 h), bare `planMost(true)`
+null / `/full` 404 (Medium → 185 f), no hint on `composition.location`/`locationVariant` (Low → 185 k), doc row still TODO at review time
+(this splice).
+
+**Serial timeline:** §3 probe block (`1a` 14:37:19 … gate run 21 launch 15:49:37). Nothing of mine ran concurrently with a Maven
+invocation; the two read-only review agents overlapped only each other and the `mvn install` (which runs no tests). Gate run 21 (working tree, ⚠ 185 g)
+ran 15:49:37 → 19:50:14 and is classified in §4.4 row 21: `Tests run: 1270, Failures: 4, Errors: 0, Skipped: 16` — reds §6.A ×3 +
+`TestGameUtil` (§6.C 162 known red), skips the row-20 list; `TestPbV4Schema` 8/0/0/0 (59.4 s), `TestPbModelSchema` 22/0 (21.4 s),
+`TestPbLocationSchema` 3/0 (7.3 s) inside the run. **No P4-1 red.** No existing Objects7 class was edited while it ran.
+
+**DECISION AUDIT:** ✓ models, enums, watched sets, `watched/v4`, additive-nullable boot patch, non-admin test user, no reset, per-task
+reviews, jar redeploy + live proof, this doc; ⚠ (a) `deleteGraphByBook` extension, (b) `focalActor` by name, (c) `group: "Book"` on all
+three, (g) gate on the working tree, (i) test written without test-author — all under §6.C 185 with defaults and the asks spelled out;
+(d) the rules one-liner is yours. Row status IMPLEMENTED + TESTS GREEN + reviewed — DONE is yours (159 b).
+
+### 12.2 P4-2 results — `PbLayoutUtil` (2026-10-18, 16:10 → 20:12 local; merged gate run 22 §4.4 21:13:37 → 01:17:25 2026-10-19, `VERIFY_FAILED` = §6.A ×3 + §6.C 188)
+
+**Read-first:** `llm-conduct.md`, `architecture.md`, `objects7-reference.md` (enum handling — never a bare `valueOf` on an LLM word),
+this doc §5.7 / §6.C 185 / §12.1, design §9 (line 409; placement vocabulary and the wire JSON :419-428), §28 step 4 (:1517-1524,
+the default spread), §29 (:1601); then the P4-1 enums (`PbShotTypeEnumType`, `PbViewpointEnumType`, `PbActorRoleEnumType`),
+`sceneActorModel.json` / `sceneElementModel.json` (`x/y/w/h` double, `depth` int), `PbRenderPlanUtil` (the P4-7 consumer). No probe
+preceded the agent work — gate run 21 held the machine until 19:50:14 and nothing of P4-2 ran under Maven until `2a` 20:04:17 (§3).
+
+**Flow:** planner (16:10:39 → 16:16:29; plan adopted) → architect (16:20:05 → 16:24:49; **PASS WITH CORRECTIONS**, all adopted:
+Correction 1 the `Plane` javadoc cited `RenderPlan.ROLE_*`, unrelated constants — citation corrected to §28 / the class's own template;
+Correction 2 never a bare `valueOf`/`fromValue` on a word that may come from an LLM, normalise with `Locale.ROOT` and map by table;
+Q3 keep `Placement` in `olio.picturebook`, Q6 test in the same package) → implement (`PbLayoutUtil.java`, 399 lines, LF, new file,
+yours to add) → **test-author agent** (16:30:36 → 16:51:06) wrote `TestPbLayoutUtil.java` (863 lines, 17 tests) and first ran it under
+`JUnitCore` while gate run 21 held Maven (⚠ 186 h) → Maven run after the gate (`p42-junit.log`) → verifier (20:05:47 → 20:09:23, own
+Maven re-run) → install / Service7 compile / jar deploy (`p42-deploy.sh`) → P4-3.
+
+**What changed (Objects7 only; one new class, one new test; no existing class touched).** `PbLayoutUtil` is a pure, stateless,
+exception-free mapper from placement words to a normalised box: `place(String words, PbShotTypeEnumType shot, PbActorRoleEnumType
+role)` and the 2-arg overload (elements, midground by default) return a `Placement(x, y, w, h, depth)` with every coordinate in
+`[0, 1]` and `x + w <= 1`, `y + h <= 1`; `defaultPlacement(int ordinal, int actorCount, shot, role)` is the spread for actors with no
+word (ordinal 0 the hero slot, the rest fanned left/right by plane); `defaultShotType(int actorCount)` is MEDIUM, WIDE when
+`actorCount > WIDE_ACTOR_THRESHOLD (3)`; `resolveShotType(declared, actorCount)` — a declared shot always wins, the count rule only fills
+null/UNKNOWN; `parseShotType` / `parseViewpoint` map camera words (`close`, `close-up`, `wide`, `establishing`, `medium`, `two-shot`;
+`low`, `high`, `bird's eye`, `worm's eye`, `eye level`, `over the shoulder`…) to the P4-1 enums, UNKNOWN when nothing matches. Words are
+lower-cased with `Locale.ROOT`, punctuation and `the`/`of`/`in`/`at` are stripped, a phrase combines one horizontal word (left / centre /
+right, `far left` / `far right` → the edge with `FAR_NUDGE = 0.08` outward) with one depth word (front / foreground / near / close →
+FOREGROUND; back / background / far / distant / behind → BACKGROUND; otherwise MIDGROUND, the role's default plane — HERO/SUPPORTING
+foreground-biased, BACKGROUND/CROWD/NAMED_BACKGROUND back). The per-shot `Template` (three planes × three horizontals) gives a nearer
+plane a lower, taller box, and WIDE smaller, more separated boxes than MEDIUM. An unknown word is the CENTRE slot of the *declared*
+shot; MEDIUM only when the shot itself is null/UNKNOWN (⚠ 186 b). Null, blank and garbage input never throw
+(`garbageIsCentreAndNeverThrows`). Inner types `Placement`, `Plane`, `Horizontal`, `Template`, `Parsed` (+ `$1`), all checked
+`unresolved=0` in `p42-deploy.log`.
+
+**Tests (`TestPbLayoutUtil`, 17 pure tests, no `BaseTest`, no DB/LLM/SD).** `everyShotTypeProducesInBoundsBoxes` (every shot × plane ×
+horizontal in `[0,1]`, `x + w`, `y + h` ≤ 1), `nullAndUnknownShotLayOutAsMedium`, `unknownWordIsCentreOfDeclaredShot` (WIDE stays WIDE),
+`everyHorizontalWordParses`, `everyDepthWordParses`, `phrasesCombine` (`"front left"` == `"left front"` == `"left, in the foreground"`),
+`normalisationIsForgiving` (case, punctuation, stop words), `garbageIsCentreAndNeverThrows` (null, `""`, emoji, 10 kB), `roleDefaultsPlane`,
+`elementOverloadDefaultsToMidground`, `wideIsSmallerAndMoreSeparatedThanMedium`, `nearerPlaneIsLowerAndTaller`, `defaultPlacementSpreadsActors`
+(no two of five actors share a box; ordinal 0 nearest the centre), `cameraDefaults` (MEDIUM/EYE_LEVEL; WIDE above three), `parseCameraWords`,
+`deterministic` (same input, same box, 1000×), `templatesAreInternallyConsistent` (the three planes of a shot never overlap vertically).
+Bounds, ordering and monotonicity are asserted, never literal slot numbers (⚠ 186 d). **`JUnitCore` run** (test-author, 16:49:57,
+`C:/tmp/p42-junitcore.log`): `javac` into `C:/tmp/p42-classes`, JUnit 4.13.2 from `.m2` — `Time: 0.55`, `OK (17 tests)`. **Maven run**
+(`C:/tmp/p42-junit.log`, 20:04:35 → 20:04:58): `Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.718 s -- in
+org.cote.accountmanager.olio.picturebook.TestPbLayoutUtil`; `Tests run: 17, Failures: 0, Errors: 0, Skipped: 0`; `BUILD SUCCESS`;
+`Total time: 21.110 s`; `Finished at: 2026-10-18T20:04:58-05:00` (the run also compiled the P4-3 sources already in the tree). Later runs
+of the same class: verifier `p43-verifier-junit.log` 17/0/0/0 (0.139 s), test-author `p43-junit4.log` 17/0/0/0 (0.158 s). No skip.
+
+**LLM tier and SD.** No LLM and no SD call anywhere in P4-2 (a pure class; the test has no `BaseTest`, so no `[LLM-GATE]` or
+`SdTestGate` line in `p42-junit.log`). Nothing gated, nothing skipped, no PNG.
+
+**Security review.** Not run for P4-2 on its own: no model, route, PBAC path, olio-principal write or prompt — a pure mapper. The P4-3
+security review (§12.3) read `PbLayoutUtil` as the consumer path of the LLM's placement words and raised nothing on it.
+
+**Install / compile / deploy (serial).** `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` 20:10:16 (`C:/tmp/p42-install.log`,
+JDK/Maven WARNING lines only); `mvn -o -pl AccountManagerService7 compile` → `BUILD SUCCESS`, `Total time: 2.034 s`,
+`Finished at: 2026-10-18T20:10:26-05:00` (`p42-s7compile.log`). `C:/tmp/p42-deploy.sh` (`p42-deploy.log`, 20:11:31 → 20:12:10): `javap -v
+-p` stub check — the 7 `PbLayoutUtil` classes, all 13 P4-1 classes (re-checked; ⚠ 186 j) and the P4-3 classes present in the tree, all
+`unresolved=0`, on `target/classes` **and** on the classes extracted from the jar; jar content check 7 `PbLayoutUtil*.class`, the three
+public signatures read out with `javap -p`; md5 local `93653a21f500686304bb3e93ae3c43f0`, container before `ef265739550a926b7cec80275d5df503`
+(the P4-1 jar) → after `docker cp` `93653a21…`; `docker restart am7test-am7-1` 20:11:39; `setup/state=200 after 28 s (20:12:09)`;
+`Server startup in [10375] milliseconds`; md5 final local == container. The deploy log is 1 MB because one `jar tf | grep` line matched
+the whole listing — fixed in `p43-deploy.sh` (8.6 kB). ⚠ 186 i: this jar already carried the P4-3 sources in the tree at install time.
+
+**Live proof.** Nothing REST-reachable changes in P4-2 (no route, no model); the live proof is the deployed jar's contents (above) and
+the Tomcat restart to `setup/state=200`. No REST script, no Playwright.
+
+**Verifier (independent, own Maven re-run 17/0/0/0): PASS WITH FINDINGS** — all low: untested edges (declared CLOSE_UP with > 3 actors,
+word-order independence beyond the three phrases tested, 24 actors in WIDE) → ⚠ 186 g; vocabulary wider than §9 and `upstage`/`downstage`
+absent → 186 e; template numbers unpinned → 186 d; the "unknown word" reading → 186 b. No fake test, no rule violation, no admin.
+
+**Serial timeline:** planner 16:10:39 → 16:16:29 → architect 16:20:05 → 16:24:49 → implement → test-author 16:30:36 → 16:51:06
+(`JUnitCore` 16:49:57) — all while gate run 21 held Maven (no Maven, no probe, no DB from P4-2 in that window) → gate 21 ended 19:50:14
+→ `2a` 20:04:17 → Maven 20:04:35 → 20:04:58 → verifier 20:05:47 → 20:09:23 → install 20:10:16 → Service7 compile 20:10:26 → `2b`
+20:11:03 → deploy 20:11:31 → 20:12:10 → P4-3 (§12.3). Gate run 22 (merged with P4-3, ⚠ 186 a) is §4.4 row 22.
+
+**DECISION AUDIT:** ✓ pure class, no state, no throw; defaults MEDIUM/EYE_LEVEL, WIDE above three; declared shot wins; `Locale.ROOT`;
+architect corrections adopted; test-author-written test; serial Maven; jar redeploy; this doc. ⚠ (a) merged gate, (b) two-default
+reading of "centre + MEDIUM", (f) composer's spread for unknown words, (h) `JUnitCore` beside the gate, (i) jar already carrying P4-3
+— all under §6.C 186 with defaults. Row status IMPLEMENTED + TESTS GREEN + reviewed — DONE is yours (159 b).
+
+### 12.3 P4-3 results — compose step (2026-10-18, 17:00 → 21:13 local; merged gate run 22 §4.4 21:13:37 → 01:17:25 2026-10-19, `VERIFY_FAILED` = §6.A ×3 + §6.C 188)
+
+**Read-first:** `llm-conduct.md`, `architecture.md` (read paths never create as the admin; per-org config never into a singleton),
+`objects7-reference.md` (`NarrativeUtil.isMeaningful` for every LLM field; enum handling), `model-api.md` (PATCH does not cascade; the
+field-name `newInstance` idiom; `AccessPoint.list` is not a per-record boundary; foreign query fields take the record), `troubleshooting.md`
+(`AUDIT DENY` as a miss), this doc §5.6 / §5.7 / §6.C 182–186 / §12.1 / §12.2, design §9 (:409, wire JSON :419-428), §9.1 A (:440, compose
+failure never blocks rendering :463), §19, §21 (:1053), §28 (:1479; step 4 :1517-1524), :766 top-k, §29 (:1601; MIGRATED scoped to a
+*missing* composition :1606), §30 (:1610+); then `PbLocationUtil` (P3's `proposeLocations` — the prompt/`callLlmForChapBook`/sanitise
+shape to copy, `sanitizeForPrompt`), `PictureBookUtil.callLlmForChapBook` / `callLlmInternal` / `findCharPersonByNameInGroup`,
+`PbBookUtil` (book context, `requireBookUpdate`), `PbGraphUtil.patchOf`, `PbRenderPlanUtil.actorDescription`, `ChatUtil`'s template
+list, `prompts/pictureBook.locations-propose.json` + its `promptTemplate.` twin, `TestPbLocationProposal` (the P3 test shape),
+`TestPbV4Schema` (P4-1 fixtures), `OlioTestUtil` (get-or-create chatConfig/connection). Probes: §3 `3a` 20:12:46 … `3f` 21:08:38, all GREEN.
+
+**Flow:** planner (17:00:50 → 17:12:25; plan adopted) → architect (17:14:18 → 17:25:05; **CHANGES NEEDED** — D7: a scene that already
+has a composition must not be overwritten with MIGRATED on an LLM failure, §29 :1606 scopes MIGRATED to a *missing* composition —
+adopted: existing composition + failure → `hardFailure = true`, rows untouched) → implement (`PbComposeUtil.java` 1616 lines, the two
+prompt resources, the `ChatUtil` entry, `PbBookUtil.requireBookUpdate`, `PbLocationUtil` delegation, `actorDescription` visibility; the
+three existing-class edits were **held in the editor until gate run 21 ended** and written after 19:50:14) → security-reviewer on the
+prompt + diff (18:39:58 → 18:48:34; **PASS WITH CORRECTIONS**, below) → `3a` → JUnit run 1 (red, mine) → fix → `3b` → run 2 (error,
+mine) → fix → `3c` → run 3 (green) → `3d` → Live run (green) → **test-author review (read-only) ∥ verifier** (20:29 → 20:37) → three
+verifier Lows fixed + hero assertion relaxed + four package-private seams (20:38 → 20:47, no Maven) → **test-author (writing)**
+(20:48:53 →) three deterministic tests + `3e` + run 4 (green) → my `integer()` defect flagged by the test-author → fix → `3f` → run 5
+(green) → install / Service7 compile / jar deploy (`p43-deploy.sh`) → `o7verify` refresh → gate run 22 (⚠ 186 a).
+
+**What changed.** Untracked, yours to add: `olio/picturebook/PbComposeUtil.java` (1616 lines, LF),
+`resources/olio/llm/prompts/pictureBook.compose-scene.json` (4 lines; `{system, user}`, system 2199 chars ending `/no_think`, user 954
+chars), `resources/olio/llm/templates/promptTemplate.pictureBook.compose-scene.json` (51 lines; the same two texts as sections),
+`src/test/.../olio/picturebook/TestPbComposeFallback.java` (1068 lines, 13 tests) and `TestPbComposeSceneLive.java` (452 lines, 1 test).
+Tracked diff `6 files changed, 31 insertions(+), 18 deletions(-)`: `ChatUtil` +1 (`"pictureBook.compose-scene"` in the template list,
+so the DB-template / classpath-fallback resolution path is the P3 one); `PbBookUtil` +22 — `public static BaseRecord
+requireBookUpdate(BaseRecord user, BaseRecord book, String what)` lifted out of `PbLocationUtil`: re-reads the book as the caller,
+404 `PictureBookException` when unreadable, `AuthorizationUtil` UPDATE check **strict PERMIT** (security H2 — DENY and anything else
+→ 403, never a fall-through); `PbLocationUtil` −13/+1 — delegates to it, behaviour identical (P3 tests unchanged, `TestPbLocationProposal`
+untouched); `PbRenderPlanUtil` 1 line — `actorDescription` `public` → package-private (security H1: not a public text surface);
+`TestPictureBookFull` / `TestPromptLibrary` — the expected template-list count +1 and the new name in the list.
+
+**`PbComposeUtil`, per design §9 / §29.** Entry points: `composeScene(user, book, scene, String chatConfigName, boolean force)` (resolves
+the named `olio.llm.chatConfig` as the caller, 404 when not found, null/blank → `generalChat`) → `composeScene(user, book, scene,
+BaseRecord chatConfig, force)` → `openContext(user, book, scene, "compose scenes")` (`requireBookUpdate`, the scene re-read as the caller
+in the book's `Book` group, the scene's location + aliases, the location's POI store items by name, the style name) →
+`findSceneComposition` (one per scene, `purpose = SCENE` strictly, ⚠ 187 a) → `userEdited` short-circuit unless `force` → `collectCast`
+(SCENE_MEMBERS = `scene.characters`; empty → SCENE_REFS = the `charPerson` refs on the scene's nodes; empty → POPULATION = the world
+population capped at `MAX_POPULATION_CAST = 40`; `result.castTier` records which, ⚠ 187 c) → `promptVariables` (`style`, `sceneIndex`,
+`title`, `setting`, `action`, `mood`, `sceneText` capped at `MAX_SCENE_TEXT_CHARS = 4096`, `cast` as `name - short description`,
+`locations` as `name - aliases`, `items` by name — every value through `PbLocationUtil.sanitizeForPrompt`, absences as `none`) →
+`PictureBookUtil.callLlmForChapBook(user, chatConfig, "pictureBook.compose-scene", vars, hard)` → JSON extracted from the reply, **one
+retry** with a `RETRY_HINT` appended when the first reply has no parseable object, or a parseable one staging nothing (P4-4, §12.4:
+`parseStagedProposal` returns null for an empty-but-parseable reply so the retry fires there too) → `applyReply(Map)` (pure: case-insensitive keys,
+`location{name, sameAs, variant}` or a bare string, `camera{shot, viewpoint, focal}` or flat `shot`/`viewpoint`/`focal`, `actors[]{character
+| name, role, pose, expression, action, placement, description, count}`, `elements[]{type, description | name, placement}`, `mood`;
+every string through `isMeaningful` + a cap, rows with nothing in them skipped, rows past `MAX_ACTORS = 24` / `MAX_ELEMENTS = 32`
+counted as dropped; `count` is the first run of digits of the whole phrase, `null` when none, capped at `MAX_CROWD_COUNT = 500`) →
+`stage(ctx, cast, proposal)` (names via `PictureBookUtil.findCharPersonByNameInGroup` — the chapter shadow group first when the book is a
+series chapter, then the baseline — then the cast list case/punctuation-insensitively; unresolved → `NAMED_BACKGROUND` + `character =
+null`, never dropped, listed on `result.unresolvedNames`; role words tolerant (`roleFor`), HERO/SUPPORTING only for a resolved
+character; element type words tolerant (`elementTypeFor`, never null); element descriptions matched whole-word / optional plural /
+longest-wins against the location's store items → `item` FK; placement words → `PbLayoutUtil.place` with the resolved shot, unrecognised
+words → the `defaultPlacement` spread slot + a WARN + `result.unrecognizedPlacements` (⚠ 186 f); shot = `resolveShotType(parsed camera
+word, actor count)`; focal = the `camera.focal` name when it resolves to a staged actor, else the first HERO; the scene's own
+`setting`/`action`/`mood` win over the LLM's when meaningful) → `persist` (create or patch the composition `composition.<scene.objectId>`
+with `source = LLM`, `revision + 1`, `userEdited = false`; `focalActor` nulled; the old `actor.<compOid>.<i>` / `element.<compOid>.<i>` rows
+deleted and recreated; `focalActor` re-pointed; any failed delete/create → `flagForRecompose` (security L4) and `result.warnings`). LLM
+unavailable / empty / unparseable after the retry → `composeMigrated(user, book, scene, force)` when the scene has **no** composition
+(`migratedStaging`: the roster in order, the first actor HERO, `defaultPlacement` spread, WIDE above three, `scene.sdPrompt` →
+`promptOverride`, `source = MIGRATED`, flagged for re-compose by `needsCompose`); when it has one → `hardFailure = true`, untouched (D7).
+Every read and write is `AccessPoint` as the request user (⚠ 187 k); `readComposition(user, objectId, orgId)` and the `listActors` /
+`listElements` / `compositionRequest()` / `actorRequest()` / `elementRequest()` projections are the P4-4/P4-7 read surface. Nothing
+here blocks rendering (§9.1 A): P4-7 reads whatever rows exist.
+
+**Tests (`testUser1` non-admin on `am7db`; admin only as the `getCreateUser` creator).** `TestPbComposeFallback` (13):
+`applyReplyLiftsTheNestedShape`, `applyReplyToleratesFlatKeysNullWordsAndJunkRows` (`"null"`/`"n/a"`/`"none"` → absent; non-map rows
+skipped), `applyReplyOfNothingIsEmpty`, `applyReplyCapsTheRowCountsAndCountsTheDrops` (30 actors → 24 + 6 dropped; 40 elements → 32 + 8),
+`applyReplyCountTakesTheFirstRunOfDigitsAndDropsNonCounts` (9 rows: `"3 or 4"` → 3, `"none"` / `0` / `-2` → null, `5` → 5, `"about 12
+men"` → 12, a `"null"` character name → no name, `"a dozen or so, 12 figures"` → 12 — the row that caught my 16-char truncation),
+`composeScenePromptSystemTextsAgreeAndEndWithNoThink` (the `prompts/` system text == the `templates/` twin's system section, both end
+`/no_think`, the template's `name` == `PROMPT_COMPOSE_SCENE`), `roleWordsAreTolerant`,
+`elementTypeWordsAreTolerantAndNeverNull`, `migratedStagingFollowsTheRosterOrderAndTheSceneFields`,
+`migratedStagingGoesWideForABigRosterAndEmptyForNone`, `needsComposeFlagsOnlyAnUneditedMigratedSceneComposition` (MIGRATED + unedited +
+SCENE → true; LLM, USER, userEdited, COVER, `UNKNOWN` purpose → false), `deadLlmWritesMigratedThenLeavesItAloneUntilForced` (a real book
++ scene + 5-member roster, a `chatConfig` on a connection to `http://127.0.0.1:1`: compose → `migratedFallback`, 5 actors, WIDE, HERO
+first, `promptOverride == scene.sdPrompt`, `needsCompose` true; compose again → `hardFailure`, revision unchanged (D7); `composeMigrated(...,
+force=true)` → revision 2; `userEdited=true` → skipped; `force` → written), `stageResolvesNamesLinksItemsAndSurfacesUnknownPlacements`
+(a real book, the location "The Gilded Tankard" with aliases `the Tankard` / `the taproom`, store items `cup` / `scarred corner table`
+enrolled, charPersons Mira Vale / Tobin Ashgrove in `scene.characters` (`collectCast` → `SCENE_MEMBERS`, 2 members), a hand-built reply
+naming Mira ("hero", "left foreground", description `"n/a"`), "Old Gaffer Pim" ("supporting", placed "upstairs") and a crowd of "bar
+patrons" `count "3 or 4"`, plus elements "a tall cupboard", "two cups poured", "the scarred corner table": `openContext` → `collectCast`
+→ `applyReply` → `stage` → `persist` → readback — 3 actors (Mira HERO resolved with a null description, Pim NAMED_BACKGROUND `character
+= null` with `"Old Gaffer Pim - leaning…"` as description and a default slot, crowd CROWD `count = 3`; Tobin is enrolled but the reply
+did not name him, so no row), focal index 0 from the word "Mira", MEDIUM / EYE_LEVEL, the scene's own mood and setting kept, 3 elements
+with the cupboard unlinked (`cup` must not match inside `cupboard`), `two cups poured` → `cup` by plural whole word, the table by the
+longest name; `unrecognizedPlacements` contains `upstairs` and not `left foreground`, `unresolvedNames = [Old Gaffer Pim]`; the rows read
+back by `listActors` / `listElements` carry the same FKs; then `composeMigrated(u, bk, scene, true)` over that LLM composition → MIGRATED
+revision 2, 2 actors (the roster), 0 elements — the verifier's MEDIUM, exercised). `TestPbComposeSceneLive` (1,
+`composeStagesARealSceneThenRecomposesInPlace`): a real book, scene text naming Mira and Tobin at the scarred corner table of the Gilded
+Tankard on a rainy night, the store item `scarred corner table` enrolled, `composeScene` with the get-or-create `P43 Live Cfg` on the
+gate's connection → not `hardFailure`, not `migratedFallback`, `source = LLM`, `purpose = SCENE`, `revision = 1`, `castTier =
+SCENE_MEMBERS`, the composition in the scene's group carrying scene/book/location FKs, shot and viewpoint not UNKNOWN, ≥ 1 actor row, every
+HERO/SUPPORTING actor a resolved cast member and Mira or Tobin among the resolved (no actor outside the cast), every unresolved figure
+kept as a NAMED_BACKGROUND row with a description, the scene's mood/setting/action kept, no `promptOverride`, the `scarred corner table`
+element linked when the LLM names it; `force` re-compose → revision 2, same composition id; `userEdited = true` → `skipped`; timings
+logged, never asserted; everything deleted in `finally`.
+**Run 1** (`C:/tmp/p43-junit.log`, 20:13:03 → 20:15:39; `TestPbComposeFallback` 10 at the time + `TestPbV4Schema` + `TestPictureBookFull` +
+`TestPromptLibrary`): `[ERROR] Tests run: 10, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 49.93 s <<< FAILURE! -- in
+…TestPbComposeFallback`; `needsComposeFlagsOnlyAnUneditedMigratedSceneComposition … java.lang.AssertionError: a null purpose reads as
+SCENE`; `Tests run: 33, Failures: 1`; `BUILD FAILURE`; `Total time: 02:34 min` — mine: `needsCompose` treated an `UNKNOWN` purpose as
+SCENE (⚠ 187 a). **Run 2** (`p43-junit2.log`, → 20:23:39): same test `<<< ERROR!` `java.lang.ClassCastException: class java.lang.String
+cannot be cast to class [C` — mine: `String.valueOf(record.get(...))` resolved to the `char[]` overload through the generic `get`; fixed
+by assigning to a `String` local first. **Run 3** (`p43-junit3.log`, 20:24:15 → 20:26:27): `TestPbV4Schema` 8/0/0/0 (59.04 s),
+`TestPictureBookFull` 1/0/0/0 (0.928 s), `TestPromptLibrary` 14/0/0/0 (21.35 s), `TestPbComposeFallback` 10/0/0/0 (45.55 s); `Tests run:
+33, Failures: 0, Errors: 0, Skipped: 0`; `BUILD SUCCESS`; `Total time: 02:10 min`; `Finished at: 2026-10-18T20:26:27-05:00`. **Live run**
+(`p43-live.log`, 20:26:59 → 20:27:59): `[p43-live] compose 1 (5442 ms): written=true source=LLM tier=SCENE_MEMBERS … actors=2 elements=1
+unresolved=[] unrecognized=[] location=The Gilded Tankard; sameAs=The Gilded Tankard; variant=rainy night`; `compose 2 forced (4456 ms):
+… actors=2 elements=1`; `compose 3 (userEdited): written=false … skipped=true`; `timings: compose=5442 ms recompose=4456 ms (recorded,
+not asserted)`; `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 54.92 s`; `BUILD SUCCESS`; `Total time: 58.410 s`.
+**Verifier's run** (`p43-verifier-junit.log`, 20:30:28 → 20:31:40): `TestPbComposeFallback` 10/0/0/0 (57.69 s), `TestPbLayoutUtil` 17/0/0/0;
+`Tests run: 27`; `BUILD SUCCESS`. **Run 4** (test-author's, `p43-junit4.log`, 21:02:12 → 21:05:12, after the three new tests and the
+seams): `TestPbV4Schema` 8/0 (60.41 s), `TestPictureBookFull` 1/0, `TestPromptLibrary` 14/0 (25.49 s), `TestPbComposeFallback` **13**/0/0/0
+(87.29 s; `[p43-stage] persist: … actors=3 elements=3 unresolved=[Old Gaffer Pim] unrecognized=[upstairs] location=The Gilded Tankard;
+sameAs=the taproom; variant=night`; `migrated refresh: … source=MIGRATED … actors=2 elements=0`), `TestPbLayoutUtil` 17/0; `Tests run: 53,
+Failures: 0, Errors: 0, Skipped: 0`; `BUILD SUCCESS`; `Total time: 02:58 min`. **Run 5** (`p43-junit5.log`, 21:09:04 → 21:11:30, after the
+`integer()` fix; Fallback + Live together): `TestPbComposeFallback` `Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 93.91 s`;
+`[p43-live] compose 1 (9467 ms): … actors=2 elements=1 … variant=rainy night`; `compose 2 forced (4465 ms)`; `compose 3 (userEdited):
+… skipped=true`; `timings: compose=9467 ms recompose=4465 ms (recorded, not asserted)`; `TestPbComposeSceneLive` `Tests run: 1, Failures:
+0, Errors: 0, Skipped: 0, Time elapsed: 52.95 s`; `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`; `BUILD SUCCESS`; `Total time: 02:30
+min`; `Finished at: 2026-10-18T21:11:30-05:00`. ERROR lines in the green logs, classified: the `AccessPoint could not be authorized` ×3 per
+run on `olio.llm.promptTemplate` = DENY-as-miss for the absent DB template (classpath fallback at WARN, ⚠ 187 e); the dead-LLM test's own
+expected connection failures to `127.0.0.1:1`; one pre-existing `system.audit` `WriterException` (`description` too long) in the dead-LLM
+path (⚠ 187 r); `Failed to find root location` / `Root Epoch is null` fixture noise as in §12.1. No skip in any run.
+
+**LLM tier and SD.** Every DB-backed log carries `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr
+server=http://127.0.0.1:4000` — in words: the **in-stack Ollama container, reached through LiteLLM**, was selected (not Azure, not
+`.42`); `TestPbComposeSceneLive` made **two real LLM round-trips per run** (compose and the forced re-compose; the `userEdited` pass
+makes none) to `qwen3:8b` (the `qwen3:8b-ctr` LiteLLM alias) — 5442 / 4456 ms in the 20:27 run, 9467 / 4465 ms in the 21:11 run,
+recorded not asserted; probes `3c` and `3d` (`[4c]`) show `qwen3:8b` resident in the container at `size == size_vram` (6186378198,
+on the GPU). The Fallback class makes no LLM call that can answer (dead connection). `SdTestGate` resolved `http://192.168.1.39:7801` (HTTP 302) with
+`OfficialStableDiffusion/sd_xl_base_1.0.safetensors`; **no SD call was made** and no PNG was produced. Nothing gated (⚠ 187 o).
+
+**Security review (prompt + diff, read-only; 18:39:58 → 18:48:34) — PASS WITH CORRECTIONS.** H1 `PbRenderPlanUtil.actorDescription`
+was `public` (a text surface callable from anywhere) → package-private, adopted; H2 `requireBookUpdate` must treat any non-PERMIT as a
+denial → strict PERMIT, adopted; L1 cap every LLM-derived list and string before persisting → the six caps, adopted; L2
+`PictureBookUtil.callLlmInternal` (`:4890-4928`) logs the full prompt and reply at INFO, so scene text and cast descriptions land in the
+server log on every compose — pre-existing, shared with P3 and ChapBook → ⚠ 187 m, separate task; L3 the cast/item reads are org-only
+`id IN` queries (`AccessPoint.list` is not a per-record boundary) → accepted as the standing PB pattern, 187 m; L4 a partial persist must
+flag the composition for re-compose → `flagForRecompose`, adopted; L5 the system text must confine the LLM to the given text → adopted
+("Use ONLY what the scene text, setting and action state; do not invent people, props or events the text does not give, and do not
+describe the art style" is in the system text; it ends `/no_think`). The prompt itself: ten placeholders (`{style}`, `{sceneIndex}`,
+`{title}`, `{setting}`, `{action}`, `{mood}`, `{sceneText}`, `{cast}`, `{locations}`, `{items}`), all sanitised through
+`PbLocationUtil.sanitizeForPrompt`; no user-controlled text reaches a shell, a URL or a query; the reply is parsed
+as JSON only, never evaluated; names are resolved against the book's own records, never free text into a FK.
+
+**Install / compile / deploy (serial).** `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` 21:11:46 (`C:/tmp/p43-install.log`,
+WARNING lines only; jar 3385423 bytes); `mvn -o -pl AccountManagerService7 compile` → `BUILD SUCCESS`, `Total time: 2.062 s`, `Finished
+at: 2026-10-18T21:11:51-05:00` (`p43-s7compile.log`). `C:/tmp/p43-deploy.sh` (`p43-deploy.log`, 21:11:56 → 21:12:52): `javap -v -p`
+stub check on 21 classes (`PbComposeUtil` + 10 inner, `PbLayoutUtil` + `Placement`, `PbBookUtil`, `PbLocationUtil`, `PbRenderPlanUtil`,
+`ChatUtil`, `PbWatchedFields`, `PbDeleteUtil`, `OlioFieldNames`, `OlioModelNames`) all `unresolved=0`, and again on `ChatUtil` extracted
+from the jar; jar content check 11 `PbComposeUtil*.class`, `compose-scene resources: 2 (expect 2)`, `PbLayoutUtil classes: 7`; md5 local
+`f55658b92df02f83e461841624e2e0ec`, container before `93653a21…` (the P4-2 jar) → after `docker cp` `f55658b9…`; `docker restart
+am7test-am7-1` 21:12:13; `setup/state=200 after 36 s (21:12:51)`; `Server startup in [9902] milliseconds`; md5 final local == container.
+The script's `ChatUtil compose-scene constant refs: 0` line is a `javap -constants` limitation (it lists only constant-valued static
+fields, and the list entry is an array element) — re-checked by hand on `ChatUtil.class` extracted from the same jar: `javap -v -p`
+finds the `pictureBook.compose-scene` constant **3** times (and 5 in `PbComposeUtil.class`); the script's check is corrected for P4-4.
+
+**Live proof.** No route and no model changes in P4-3, so nothing REST-reachable until P4-4 (⚠ 187 u): the live proof is the deployed
+jar's contents inside the container (the 11 `PbComposeUtil` classes, both `compose-scene` resources, the `ChatUtil` constant-pool entry;
+md5 local == container) and Tomcat back at `setup/state=200`. The REST live script comes with P4-4's routes.
+
+**Test-author review (read-only, 20:29:45 → 20:36:45)** — the Live test's hero bound and unresolved-names loop were vacuous or flaky on a
+free LLM reply → the hero assertion relaxed to the resolved-character invariant (⚠ 187 q) and the deterministic rows moved into the
+Fallback class via the four seams; `/no_think` and the twin were unasserted → `composeScenePromptSystemTextsAgreeAndEndWithNoThink`;
+uncovered rows (unresolved → NAMED_BACKGROUND, item link, unknown placement) → `stageResolvesNamesLinksItemsAndSurfacesUnknownPlacements`;
+still uncovered → ⚠ 187 s; the Live test's missing env gate → 187 o. **Verifier (independent, own Maven run 27/0/0/0; 20:30:28 →
+20:37:14): PASS WITH FINDINGS (no blocking defects; all findings low/medium, none a spec violation)** — `1. MEDIUM: composeMigrated(force=true)
+… overwrites an existing LLM/USER composition (and a userEdited one) with MIGRATED. Intended for P4-10 but is a destructive override …
+Untested.` → kept by design, now exercised by the stage test (187 l); `2. LOW: persist delete-then-recreate is non-transactional; if the
+FIRST delete fails … flagForRecompose is skipped` → fixed, `flagForRecompose` on every failure path including the first delete;
+`3. LOW: non-forced composeScene on an existing non-edited LLM composition re-runs the LLM and bumps revision … P4-4 must gate on
+needsCompose.` → kept, 187 n; `4. LOW: integer() digit-concatenation; matchItem substring false positives` → both fixed (first run of
+digits; whole-word / optional plural / longest match) and locked by the 9th count row and the stage test's `cup` vs `cupboard`-free
+link. My own defect found afterwards by the test-author: `integer()` truncated the phrase to 16 chars before scanning (`"a dozen or so,
+12 figures"` → 1) → `text(v, MAX_FIELD_CHARS)`, fixed and locked (187 p).
+
+**Serial timeline:** §3 (`3a` 20:12:46 … gate run 22 launch 21:13:37). The agent work before 19:50:14 (planner, architect,
+security-reviewer) was read-only and ran no Maven, no probe and no DB beside gate run 21; the three existing-class edits waited for it
+to end. From 20:04:17 on, every Maven invocation was serial (one at a time, each behind a probe), the two read-only reviews overlapped
+only each other and the verifier's own Maven run, and the test-author's writing session ran its own probe (`3e`) and Maven run
+(`p43-junit4`) while nothing else of mine ran. Gate run 22 (`C:/tmp/o7verify` copy, merged P4-2 + P4-3, ⚠ 186 a) started 21:13:37 and
+is classified in §4.4 row 22 when it ends; no existing Objects7 class or resource is edited while it runs.
+
+**DECISION AUDIT:** ✓ compose as a separate step that never blocks rendering (§9.1 A); MIGRATED only for a missing composition (§29,
+D7); `scene.characters` first (§28 step 4); `isMeaningful` on every field; `PbLayoutUtil` placements; `userEdited` never overwritten
+unless `force`; names via `findCharPersonByNameInGroup` shadow-then-baseline; unresolved never dropped; store items → `item`; prompt in
+`prompts/` + twin + `ChatUtil` list; security-reviewer on the prompt; non-admin test user; real LLM through the gate; no reset;
+per-task reviews; jar redeploy; this doc. ⚠ (a) strict SCENE purpose, (b) row naming / no `displayName`, (c) the cast fallback tiers
+and no back-fill — **the one that may need a dated design edit, held for your yes**, (e) classpath-fallback template, (f)
+delete-and-recreate, (g) no emulator fixture, (j) blank reply → MIGRATED, (m) L2 logging left, (n) permissive re-compose, (o) ungated
+Live test, (r) the audit `WriterException` left — all under §6.C 187 with defaults and the asks spelled out. Row status IMPLEMENTED +
+TESTS GREEN + reviewed — DONE is yours (159 b).
+
+**Gate run 22 result (classified 2026-10-19 01:17:25 → 01:35 local; §4.4 row 22).** `VERIFY_FAILED` — `Tests run: 1301, Failures: 4,
+Errors: 0, Skipped: 16`, 197 surefire XMLs newer than the stamp. The three P4-2/P4-3 classes are green inside the gate (`TestPbLayoutUtil`
+17/0 0.16 s, `TestPbComposeFallback` 13/0 86.717 s, `TestPbComposeSceneLive` 1/0 50.081 s — two real LLM round-trips on the local
+container tier through LiteLLM); `TestGameUtil` 25/0 this run. The reds are the §6.A ×3 (yours, byte-identical to rows 17–21) plus one
+new: `TestPbDeleteComplete#testFullFootprintStrangerDeniedOwnerDeletesSecondCall404 :303` — diagnosed as a DB-row-order dependence in
+committed `PbDeleteUtil.deleteWorkflowGraph` (heap-TID node order decides whether the fixture's binding is audited under `bindingsByNode`
+or `bindingsBySourceNode`), green on an immediate rerun (`C:/tmp/p43-deletecomplete.log`, 2/0/0/0, 130.1 s). Not a P4-2/P4-3 regression —
+none of the code or the test changed — but it is red in my gate, so a fix is proposed rather than deferred: **§6.C 188** (three passes in
+`deleteWorkflowGraph` + `findByFk` ordered by `id`; product code outside this row, so asked with default "apply"). P4-2/P4-3 stand as
+IMPLEMENTED + TESTS GREEN + reviewed; the DONE marks are yours (159 b).
+
+### 12.4 P4-4 results — `pb.compose` job + lazy fallback + Quick start + `proposeLocations` job (2026-10-19, 01:38 → 07:53 local; gate run 23 §4.4 row 23 from 07:53:29, result in the closing paragraph)
+
+**Read-first:** `llm-conduct.md`, `architecture.md` (read paths never create; per-org config never into a singleton; the one permitted
+read-path write), `model-api.md` (`AccessPoint.list` is not a per-record boundary; typed query values; cache invalidation), `troubleshooting.md`
+(`AUDIT DENY` as a miss; the Playwright/Docker four), this doc §5.6 / §5.7 / §6.C 182 (6, 9, 13, 15–22) / 186 / 187 / §12.1–§12.3, design
+§9.1 A (:440-488 — compose is its own job kind, story order straight after `createFromScenes`, ends with the whole-book location pass,
+lazy per-scene fallback recorded as a degradation + "re-compose in order", Quick start toggle), §19, §21 (:1053-1132 — cooperative cancel
+at stage boundaries, discard in-flight output, progress in the job token), §28 (:1479; :1530 PB1 note-blob books through the PB2
+dual-write), §29, §30; then `AsyncJobRegistry` (submit / cancel / `bindCancelScope` / `isShuttingDown`; `MAX_ACTIVE_JOBS_PER_PRINCIPAL=4`),
+`PbRenderJobUtil` (`Work.run` :693-709 cancel reclassification, `KIND_*`), `PbNodeInflight` (the per-JVM claim-map precedent),
+`PbRenderLanes.acquire`, `PbNodeExecutor.renderPlannedScene` / `executeNodeRun`, `PbRenderPlanUtil.buildScenePlan` / `PlanOptions`,
+`PbServiceFacade.requestRenderPlanScene` / `proposeLocations` / `createFromScenes` callers, `PbLocationUtil.proposeLocations`,
+`PbComposeUtil` (P4-3), `PbPipelineUtil.SceneGraph`, `PictureBookService` (`bodyMap` / `malformedBody` / `handlePictureBookException`
+idiom, `pb.extractScenes` route), Ux752 `workflows/pictureBookWorkflow.js`, `features/pictureBookLocations.js`, `sceneExtractor.js`
+(`pollJob`), `e2e/helpers/{api,chapbook}.js`, `e2e/pictureBookLocations.spec.js` (P3 spec shape). Probes: §3 `4a` 02:45:41 … `4aa`
+07:52:56 — stack GREEN throughout, **Swarm `.39:7801` down from `4b` 04:19:41 to the end** (`.42:7801` answering 302; not repointed, §6.N).
+
+**Flow:** planner (01:38:20 → 01:50:24; D1–D11, plan adopted with the architect's changes) → architect (01:59:14 → 02:08:07; **CHANGES
+NEEDED** — M1: a cancel landing inside `composeScene` would persist a MIGRATED row and be reported as an LLM outage, against §21 →
+adopted as a `composeScene(…, SummarizeProgress)` overload that returns `cancelled=true` with no persist, and the same check in
+`PbLocationUtil.proposeLocations`'s hard-out branch; M2: the auto-submit after `createFromScenes` is policy, not HTTP mapping → moved into
+Objects7 as `PbServiceFacade.createFromScenesAndCompose`; S1–S5 and N1–N5 below) → implement (02:08 → 03:01: `PbComposeJobUtil`, the
+seams, the facade, the three routes, `ensureComposition`) → **test-author (writing + runs)** (03:01:04 → 04:19:07) ∥ **ux-specialist**
+(03:08:41 → 03:17:43; Vitest + `vite build` only, no Playwright — its node runs ended before the test-author's first Maven run at
+03:30:45) → `4a` → JUnit run 1 (red, mine) → fix → run 2 (green) → the remaining classes and the regressions (`4c` … `4l`) → install /
+Service7 route tests (run 1 error, mine → run 2 green) / package / deploy / live proof (run 1 misconfigured, run 2 my script's text, `live2`
+ALL PASS) → `vite build` + `docker cp` → Playwright (`4m`) → **security-reviewer** (06:04:56 → 06:11:44; **PASS**, three should-fix) ∥
+**verifier** (06:05:34 → 06:19:57; **PASS-with-notes**, nine findings) → the post-review slice (06:20 → 06:50: should-fix 1, verifier 1 /
+3 / 4 / 7, plus the import-time dual write that the auto-submit turned out to need) → `4n` … `4v` reruns (two reds, both in my new tests)
+→ `p44-install2` / `p44-service7-routes3` / `p44-package2` / `p44-deploy2` / `p44-live3` → Playwright compose spec (two spec-only reds,
+mine) → `p44-pw-compose5` green → `p44-pw-scenetext` → `o7verify` refresh → gate run 23.
+
+**What changed.** Untracked, yours to add: `olio/picturebook/PbComposeJobUtil.java` (725 lines), `src/test/.../olio/picturebook/
+TestPbComposeJob.java` (1219 lines, 10 cases), `TestPbComposeLazyRender.java` (532 lines, 3 cases), `TestPbQuickStart.java` (487 lines,
+1 SD-gated case), Service7 `src/test/.../TestPictureBookComposeRoutes.java` (802 lines, 8 H2 tests), Ux752 `e2e/pictureBookCompose.spec.js`
+(677 lines, 12 tests in three tiers). The P4-1 … P4-3 untracked files grew: `PbComposeUtil.java` 1616 → 1752 (`ensureComposition`,
+the `SummarizeProgress` overload of `composeScene`, `parseStagedProposal` returning null for an empty-but-parseable reply so the one
+`RETRY_HINT` retry fires, `listSceneCompositions` `groupId`-constrained). Tracked diff over P4-0 … P4-3, `28 files changed, 1515
+insertions(+), 117 deletions(-)` (excluding this doc; the P4-4 share is most of it): `RenderPlan` +13 (`Degradation.COMPOSED_OUT_OF_ORDER`,
+`withDegradations(List)` copy), `ChatUtil` +2/−1, `PbBookUtil` +22, `PbDeleteUtil` 12, `PbLocationUtil` 80 (`settingTextOf` in the filter
+and the prompt line; the `SummarizeProgress` overload with per-chunk phases and a cancel check before `hardFailure`), `PbNodeExecutor` 44
+(the lazy hook; `PlanOptions` read from the graph), `PbPipelineUtil` +175 (`SceneGraph.planOptions`; `dualWriteImportedScenes` →
+`patchImportedSceneText` → `enrolImportedCast`), `PbRenderJobUtil` +4 (`KIND_COMPOSE = "pb.compose"`, `KIND_PROPOSE_LOCATIONS =
+"pb.proposeLocations"`), `PbRenderPlanUtil` 2, `PbServiceFacade` 217 (`requestCompose`, `composeScene`, `requestProposeLocations`,
+`createFromScenesAndCompose`, `requireNotComposing`, `composeResultDto`), `PbWatchedFields` 54, `PictureBookUtil` 13, `OlioFieldNames` +30,
+`OlioModelNames` +9, Service7 `PictureBookService` 123 (three routes; `createFromScenes` delegating to the facade; `unexpectedFailure`
+→ 500 JSON on `compose` / `composeScene` / `proposeLocations` / create-from-scenes), `TestPictureBookLocationRoutes` 51 (propose 200 →
+202 + poll), Ux752 `workflows/pictureBookWorkflow.js` +186, `features/pictureBookLocations.js` 42, `src/test/pictureBookLocations.test.js`
++162, `e2e/pictureBookLocations.spec.js` 63, `e2e/helpers/chapbook.js` (`scenesByGroup` normalises `sceneIndex || 0`), and the four test
+classes touched for expectations (`TestPbCreateFromScenesRerun` +129 — `testImportDualWritesSceneRowsForCompose`; `TestPbLocationProposal`
++92 — `case11_pagesUseSdPromptThenStanzaAsSetting`; `TestPbRenderPlanExecutor` 21; `TestPbScenePlanLocation` 64).
+
+**`PbComposeJobUtil`, per design §9.1 / §21.** `submitCompose(user, book, quickStart, force, chatConfigName, sdApiType, sdServer)`:
+`PbLocationUtil.requireBookContext` (409 on a world-less book, before anything is counted) → `ChatUtil.resolveConfig` as the caller (404
+`Chat config not found: <name>` before any job exists) → `quickStart` with no SD server → 500 → `PbBookUtil.listScenes` once, tally
+`scenesToCompose` (`needsCompose(existing) || force`; ChapBook pages → `pagesSkipped`) against `listSceneCompositions` (now
+`groupId`-constrained, security should-fix 1) → `scenesToCompose == 0` → `{submitted:false, reason:"Every scene is composed" | "The book has
+no scenes"}` → `submitExclusive` (`:250-307`): a per-JVM `INFLIGHT` claim map keyed by book objectId — same owner with a live job →
+`{reused:true, jobId}`; another owner → 409 `A compose job is already running for this book` without the jobId; stale same-owner claims
+repaired from the registry's terminal state; release-by-value in the worker's `finally` and `onCancelledBeforeStart`; the cross-JVM bound
+(Console7 / a second Service7 may run a parallel compose — harmless because compositions are idempotent) documented at
+`PbComposeJobUtil.java:60-64` → `AsyncJobRegistry.submit(user, KIND_COMPOSE, …)` (429 at `MAX_ACTIVE_JOBS_PER_PRINCIPAL=4`; **no
+`olio.pb.run` row**). The DTO: `{bookObjectId, kind, quickStart, force, sceneCount, scenesToCompose, scenesCurrent, pagesSkipped, submitted,
+reused, jobId, jobStatus | reason}`. `Work.run`: `progress.setTotal(scenesToCompose + 1)`; scenes in `sceneIndex` order (`listScenes` ASC,
+cache off); per scene `isShuttingDown()` → `interrupted:true`, `progress.isCancelled()` → stop; re-read `findSceneComposition` (state may
+have moved since submit) → `setPhase("compose i/N <title>")` → `PbComposeUtil.composeScene(user, book, scene, cfg, force, progress)` →
+per-scene row `{sceneObjectId, sceneIndex, title, status composed | current | migrated | skippedUserEdited | hardFailure | cancelled,
+compositionObjectId, source, castTier, actorCount, elementCount, elapsedMs}`; Quick start: when the scene was written and not a hard
+failure, `PbRenderLanes.acquire(sdServer, progress)` → a DRAFT render on the RENDER_PLAN node path with `PlanOptions{preset=DRAFT}` set on
+the `SceneGraph` (S2 — no new public overloads of `executeNodeRun` / `openNodeGraph`, no facade extraction) → `release` in `finally`;
+`acquire == false` is interrupted/cancelled, never a per-scene failure; a render failure is `quickStartFailed++` + `draftRenderError` on
+the row, never the job's; then `setPhase("locations")` → `PbLocationUtil.proposeLocations(user, book, cfg, progress)` → `locationPass{passRun,
+scenesConsidered, …, proposals[]}` (ChapBook pages included through `settingTextOf` = `setting` → `sdPrompt` → `poemStanza`, S5 / 182
+(15–22)). Result map: `sceneCount, visited, composed, current, skippedUserEdited, migrated, hardFailures, pagesSkipped, quickStartRendered,
+quickStartFailed, lastSceneIndex, cancelled, interrupted, locationPassRan, locationPass, scenes[], durationMs`. The job is COMPLETED
+through compose/LLM/render failures (each a per-scene status), CANCELLED when the flag is set, FAILED only for a `Throwable` outside the
+loop. `submitProposeLocations` — the same gates, kind `pb.proposeLocations`, work = the location pass with the job's progress, result = the
+pass DTO; `PbServiceFacade.proposeLocations` (synchronous) kept for the JUnit callers. `composeNow(…)` is the JUnit seam. D11: `Work.run`
+opens with the documented no-op `migrate` position for P4-10.
+
+**Lazy fallback, Quick start, routes, auto-submit.** `PbComposeUtil.ensureComposition(user, book, scene)` → `openContext` (so
+`requireBookUpdate` runs first — a reader cannot trigger the write) → `findSceneComposition`; none → `composeScene(…, null chatConfig →
+`generalChat`, force=false)`; `{composition, composedNow, result}`; never throws for an LLM failure. Hook in
+`PbNodeExecutor.renderPlannedScene` (D6 — not in `buildScenePlan`, which `planScene`'s read path also calls), non-ChapBook only; when
+`composedNow`, `RenderPlan.Degradation(COMPOSED_OUT_OF_ORDER, "scene composed at render time, out of story order; re-compose in order",
+null, STAGE_BASE)` is appended through `withDegradations` and persisted on the plan artifact — which **vetoes auto-approve until P4-7**
+narrows the veto set (N2; 182 (13) does not list it). In-order renders never carry it (`TestPbQuickStart` asserts so; SD-gated this run).
+Routes (transport only, `@RolesAllowed({"admin","user"})`, `bodyMap` → 400 `Malformed request body`): `POST /{book}/compose`
+`{quickStart?, force?, chatConfigName?}` → 202 when submitted, 200 `{submitted:false, reason}` otherwise (idempotent — a client may call it on
+every V3 open); `POST /{book}/scene/{scene}/compose` `{force?, chatConfigName?}` → **synchronous 200** with the composition DTO (D10 — one
+LLM call, 4–10 s measured; 409 `A compose job is running for this book; wait for it to finish or cancel it first` while the job holds the
+book); `POST /{book}/locations/propose` `{chatConfigName?}` → 202 (D4; the synchronous form is gone from REST; `TestPictureBookLocationRoutes`
+and the P3 Playwright spec poll `GET /rest/job/{id}`). Gate order everywhere: `requireBook` (404 as the caller, so a stranger cannot probe the
+claim map) → `PbRenderPath.requireV3` (409) → `requireBookUpdate` (403) → `requireSceneOfBook` → `requireNotComposing` (409) → util.
+Auto-submit: `PbServiceFacade.createFromScenesAndCompose` (M2) wraps `PictureBookUtil.createFromScenes` and, when the meta carries a bound
+`pb2BookObjectId`, submits a compose job as the caller and merges `composeJob{…}` into the body; `composeJobSkipped:"no PictureBook was
+bound to the import"` when unbound; `composeJobError{status, message}` on a refusal — the create never fails because of it. The response body
+moved from `toFullString()` to `JSONUtil.exportObject` (NON_EMPTY; ⚠ 189 g) and carries `bookObjectId` = the PB1 **note-book** and
+`pb2BookObjectId` = the bound V3 `olio.pb.book`, as before. **The auto-submit was dead on arrival** on a fresh import: the PB2 import had no
+`olio.pb.scene` rows yet (they were written lazily by the first render), so `scenesToCompose` was 0 — hence the import-time dual write
+(`PbPipelineUtil.dualWriteImportedScenes` → `patchImportedSceneText` → `enrolImportedCast`, ⚠ 189 h): `createFromScenes` now writes the V3
+scene rows (text, setting, `sceneIndex`, `characters` enrolment via `MemberUtil.member`, `isMember`-guarded on re-run) for a bound book, so
+the job it queues has scenes to compose. Existing books imported before this change have no rows until their first render — P4-10's
+backfill. Reset/delete does not cancel a running compose job: the job fails cleanly (`Failed to create composition` → `Book not found` →
+`Async job FAILED: kind=pb.compose … elapsed=8s`, job `26503ce8-17e8-46e1-98dc-7d24d612a6eb`, 12:47:10 → 12:47:18 UTC; ⚠ 189 k).
+Ux752: thin client only (`composeBook`, `composeScene`, `proposeLocations` → 202 DTO, `awaitLocationPass`, `locationPassFromJob`,
+`normalizeComposeResult`, `normalizeComposeJobResult`, `isComposeJobRefusal`); the Propose button polls and shows the phase; **the compose
+board / compose-on-first-open trigger is P4-9** (verifier 5). `createFromScenes` still ends with `OllamaModelUtil.unloadAll()`
+(`PictureBookUtil.java:9677`) — the job's first scene reloads the model (measured: first scene 7156 / 8807 ms, second 3066 / 3818 ms).
+
+**Tests (all real; LLM through the gate; `testUser1` non-admin on `am7db`; Playwright as `e2etest_shared`; no reset).** Objects7
+(`cd src && mvn -o -pl AccountManagerObjects7 -Dtest=<Class> -DskipTests=false test`), every log carrying `[LLM-GATE]
+http://127.0.0.1:4000/health/liveliness answered HTTP 200` then `[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr
+pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000`:
+- `TestPbComposeJob` — **Run 1** `C:/tmp/p44-composejob.log`: `[ERROR] Tests run: 8, Failures: 1, Errors: 0, Skipped: 0, Time elapsed:
+  405.9 s <<< FAILURE! -- in …TestPbComposeJob`, `case06_liveComposeTwoScenesThenLocationPass -- Time elapsed: 53.20 s <<< FAILURE!`,
+  `expected:<2> but was:<1>`, `BUILD FAILURE`, `Total time: 06:50 min`, `Finished at: 2026-10-19T03:37:31-05:00` — the LLM's first reply
+  for scene 1 was parseable but staged no actors and no elements; `composeScene` retried only on *no* object, so the scene went MIGRATED.
+  Product fix: `parseStagedProposal` returns null for an empty-but-parseable staging so the `RETRY_HINT` retry fires (§12.3 sentence
+  updated); test: case06 tolerates a first-pass MIGRATED with a bounded (<5) non-forced resubmit loop proving the re-pick semantics (⚠ 189
+  o). **Run 2** `p44-composejob2.log`: `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 447.8 s -- in …TestPbComposeJob`,
+  `BUILD SUCCESS`, `Total time: 07:31 min`, `Finished at: 2026-10-19T04:29:07-05:00` (case06 `migrated=0` — the resubmit loop body never
+  ran live). **case09 alone** `p44-composejob-quickstart.log`: 1/0/0/0 79.77 s, `01:23 min`, `05:39:20` (Quick start with the SD server set
+  to the dead `http://127.0.0.1:1`: 2 DRAFT refusals `INVENTORY_UNAVAILABLE`, `quickStartFailed=2`, job COMPLETED). **Run 3** (post-review,
+  +case09 +case10) `p44-composejob3.log`: `[ERROR] Tests run: 10, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 450.5 s`,
+  `case10_tallyIgnoresACompositionFromAnotherGroup -- Time elapsed: 33.54 s <<< FAILURE!`, `java.lang.AssertionError: the sibling-group
+  composition is created`, `Total time: 07:33 min`, `Finished at: 2026-10-19T06:58:48-05:00` — my test built the foreign group from
+  `dataPath()` (`test.datagen.path`, a filesystem path) → `~/Data/P44 Foreign <id>`. **Run 4** `p44-composejob4.log`: `Tests run: 10,
+  Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 447.3 s`, `BUILD SUCCESS`, `Total time: 07:31 min`, `Finished at:
+  2026-10-19T07:13:24-05:00`, `exit=0` — `case01_noScenesIsNotSubmitted` 32.772 s, `case02_chapBookIsNotComposed` 33.433,
+  `case03_unknownChatConfigIs404` 31.891, `case04_quickStartWithoutSdIs500` 57.957, `case05_oneLiveJobPerBook` 63.982 (same-owner
+  `reused:true`; the other owner's 409; both jobs cancelled before starting: `Async job CANCELLED: kind=pb.compose … elapsed=0s`,
+  `kind=pb.proposeLocations … elapsed=0s`), `case06_liveComposeTwoScenesThenLocationPass` 60.973, `case07_liveCancelMidCompose` 38.199
+  (cancel during `compose 1/2` → CANCELLED, partial result kept, claim released), `case08_proposeLocationsJob` 43.321 (`MEASURED: P4-4
+  case08 propose job wall 10006 ms (from pool release) -> COMPLETED error=null`), `case09_…` 49.039, `case10_…` 35.725 (`MEASURED: P4-4
+  case10 compose job wall 2282 ms -> COMPLETED`; `composed 0`, `migrated 1` — `testUser1` has no chat config in that case, so MIGRATED, as
+  the test allows; the foreign-group composition is **not** counted).
+- `TestPbComposeLazyRender` — `p44-lazyrender.log` 1/0/0/1 23.67 s `05:20:27` (SD-gated skip only; `case00` not yet written);
+  `p44-lazyrender2.log`: `[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 1, Time elapsed: 61.72 s`,
+  `case00_ensureCompositionComposesOnceThenFindsOrRecomposesAndNeverForces -- Time elapsed: 37.57 s <<< FAILURE!`,
+  `java.lang.AssertionError: a MIGRATED row is re-composed by the next ensure`, `05:28:24` — my assertion was wrong (with no chat config the
+  second ensure is a `hardFailure` that leaves the row untouched; the product is right); rewritten → `p44-lazyrender3.log` 2/0/0/1 60.05 s,
+  `01:03 min`, `05:31:03`. Post-review `case02` (verifier 3 — the LLM branch of the hook): `p44-lazy4.log` `[ERROR] Tests run: 3, Failures:
+  1, Errors: 0, Skipped: 1, Time elapsed: 61.43 s`, `case02_ensureCompositionComposesFromTheLlmWhenGeneralChatExists -- Time elapsed:
+  2.319 s <<< FAILURE!`, `java.lang.AssertionError: the hook's fallback lookup resolves the user's generalChat`, `07:21:09` — the
+  policy-decision cache (`CachePolicyUtil`, query-hash key, `decisionAge` 120 s) served the earlier group-less `resolveConfig` miss as
+  DENY after the config was created; `CacheUtil.clearCache()` in the test (⚠ 189 i) → `p44-lazy5.log` `Tests run: 3, Failures: 0,
+  Errors: 0, Skipped: 1, Time elapsed: 113.4 s`, `01:57 min`, `07:29:37`, `exit=0` — `case00_ensureCompositionComposesOnceThenFindsAndNeverForces`
+  44.411 s, `case02_…` 44.41 s (**source `LLM`**, `COMPOSED_OUT_OF_ORDER` + LLM now proven), `case01_firstRenderComposesOutOfOrderAndVetoesAutoApprove`
+  0.0 s — `SKIPPED: test.swarm.server=http://192.168.1.39:7801 did not answer, so nothing live can be exercised here (off the LAN?). This is
+  NOT a pass.`
+- `TestPbQuickStart` — `p44-quickstart.log` 1/0/0/1 24.09 s `05:32:06`; `p44-quickstart2.log` 1/0/0/1 23.96 s `07:32:13`:
+  `case01_quickStartRendersADraftPerComposedScene` 0.0 s, the same SD-gated skip message. **Not run; not a pass.**
+- `TestPbLocationProposal` (+`case11_pagesUseSdPromptThenStanzaAsSetting` 34.557 s) — `p44-locationproposal.log`: `Tests run: 11,
+  Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 470.6 s`, `07:53 min`, `04:57:22`.
+- `TestPbCreateFromScenesRerun` (+`testImportDualWritesSceneRowsForCompose` 17.58 s) — `p44-rerun1.log`: `Tests run: 7, Failures: 0,
+  Errors: 0, Skipped: 0, Time elapsed: 164.2 s`, `02:47 min`, `07:17:20` (one false `Import dual write … was not enrolled` WARN on the re-run:
+  `MemberUtil.member` returns false for an existing membership → `isMember` guard, ⚠ 189 j); `p44-rerun2.log`: 7/0/0/0 160.4 s, `02:44 min`,
+  `07:39:54`, zero WARN lines.
+- `TestPbRenderPlanExecutor` (expectation: exactly one degradation on render 1, starting `COMPOSED_OUT_OF_ORDER: `) —
+  `p44-renderplanexecutor.log`: 7/0/0/5 100.9 s, `01:44 min`, `05:41:46`: `strangerAndV1AreRefusedBeforeAnyWork` 36.387 s and
+  `unreachableRendererIsA503BeforeRendering` 36.639 s ran; the five render cases SD-gated skips.
+- `TestPbScenePlanLocation` (case08 now pre-composes scene A in order through the LLM and expects B to carry `LOCATION_TEXT_ONLY` +
+  `COMPOSED_OUT_OF_ORDER`) — `p44-sceneplanlocation.log`: 13/0/0/1 544.5 s, `09:07 min`, `05:51:40`; 12 ran (32.5–69.7 s each), case08 the
+  SD-gated skip.
+- Regressions: `p44-composeregress.log` `TestPbComposeFallback` 13/0/0/0 113.2 s + `TestPbComposeSceneLive` 1/0/0/0 51.85 s, `Tests run:
+  14`, `02:48 min`, `04:45:10`; re-run after the post-review edits `p44-composeregress2.log` 13/0 103.9 s + 1/0 46.39 s, `Tests run: 14`,
+  `02:34 min`, `07:35:53`. `p44-autoapprove-renderjob.log` `TestPbAutoApprove` 7/0/0/0 245.8 s + `TestPbRenderJob` 11/0/0/3 723.1 s, `Tests
+  run: 18, Failures: 0, Errors: 0, Skipped: 3`, `16:13 min`, `05:15:21`.
+Service7 (`mvn -o -pl AccountManagerService7 -Dtest=… -DskipTests=false test`, H2 harness, admin for fixture entitlements only; actors
+owner / reader / stranger): **Run 1** `p44-service7-routes.log`: `[ERROR] Tests run: 8, Failures: 0, Errors: 1 … TestPictureBookComposeRoutes`,
+`TestOwnerComposeJobLifecycle -- Time elapsed: 1.061 s <<< ERROR!`, `java.lang.ClassCastException: class java.lang.String cannot be cast to
+class [C` (my `String.valueOf(char[])` overload at `:700`), `TestPictureBookLocationRoutes` 11/0, `Tests run: 19, Failures: 0, Errors: 1`,
+`05:52:45`. **Run 2** `p44-service7-routes2.log`: `TestPictureBookComposeRoutes` 8/0/0/0 13.37 s + `TestPictureBookLocationRoutes` 11/0/0/0
+17.85 s, `Tests run: 19, Failures: 0, Errors: 0, Skipped: 0`, `35.394 s`, `05:54:05`. **Run 3** (against the 07:40 jar) `p44-service7-routes3.log`:
+`TestPictureBookComposeRoutes` 8/0/0/0 13.67 s, `16.841 s`, `07:41:01`, `exit=0` — `TestOwnerValueChecksAndSceneLessNoOp` 9.12 s,
+`TestStrangerIs404OnEveryRoute`, `TestOwnerComposeJobLifecycle` 1.576 s (submit → reuse → the MIGRATED re-pick on a plain resubmit ends in
+`hardFailure` on H2 — the only place that branch ran, ⚠ 189 o), `TestNoPrincipalIs401`, `TestReaderIs403OnEveryRoute`,
+`TestBareBookIs409BeforeAnythingIsQueued`, `TestMalformedBodyIs400`, `TestV1BookRefusesComposeButNotPropose`. Ux752 Vitest:
+`p44-vitest-locations.log` `Test Files 1 passed (1)` / `Tests 75 passed (75)`; `p44-vitest-all.log` `Test Files 94 passed (94)` / `Tests 1298
+passed (1298)`, no `Errors` line; `p44-vite-build.log` EXIT 0. Playwright (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test
+e2e/<spec> --workers=1 --retries=0 --project=chromium`, `PB_LLM_TESTS=1`, WebSocket stubbed, every log `[e2e-llm] route=litellm
+server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr`): `p44-pw-locations.log` `6 skipped / 17 passed (36.3s)`;
+`p44-pw-compose.log` `Error: expect(received).toBe(expected) // Object.is equality`, `1 failed / 1 skipped / 5 passed (7.0s)` (my 409 text
+at `pictureBookCompose.spec.js:288`); `p44-pw-compose2.log` `1 skipped / 9 passed (25.9s)`; `p44-pw-locations2.log` (+`PB_LOC_DB_PROOF=1`)
+`5 skipped / 18 passed (31.1s)`; post-review `p44-pw-compose3.log` `Error: meta bookObjectId is the bound V3 book`, `1 failed / 1 skipped / 5
+passed (26.7s)`, `exit=1` (spec-only: the wire's `bookObjectId` is the PB1 note-book, `pb2BookObjectId` the V3 book); `p44-pw-compose4.log`
+`Error: row 0 sceneIndex`, `1 failed / 1 skipped / 5 passed (15.1s)`, `exit=1` (spec-only: the wire omits a zero `sceneIndex`, ⚠ 189 m);
+**`p44-pw-compose5.log` `1 skipped / 11 passed (49.6s)`, `exit=0`** — :184 the stack is on the V3 render path; :191 scene-less compose 200
+`"reason":"The book has no scenes"`; :213 malformed 400 / unknown book 404 / unknown scene 404; :228 unknown chat config 404; :323 unbound
+import → `"composeJobSkipped":"no PictureBook was bound to the import"`; :342 bound import (book `p44impmvf95mnk`, objectId
+`05bce919-eed3-4953-9175-6c2384c2608b`, groupId 46137) → `"bookObjectId":"8077737c-78d1-455a-8958-9247b97e9b31"`, `"pb2BookObjectId":
+"05bce919-…"`, `"composeJob":{… "scenesToCompose":2 … "submitted":true,"reused":false,"jobId":"e108e3a8-d3b3-4675-9161-f75fd2411c09",
+"jobStatus":"queued"}` → `"composed":2 … "locationPassRan":true`, proposals `Foyer` (INTERIOR) / `Driveway` (EXTERIOR), scenes `Get Out`
+7156 ms / `The Nexon` 3066 ms, `"durationMs":13659` — `MEASURED import compose composed=2 migrated=0 durationMs=13659` (the two scenes are
+the dual-written rows; the auto-submit is proven end to end here); :456 scenes created (book `p44cmpmvf95h8v`, `3eb58f52-ba19-450b-87b7-78307b5b7236`,
+id 1336, groupId 46094); :474 compose submit job `5263c820-75e5-42e8-bf08-fd89b6a5d996` → `"composed":2`, proposals `Harbour Road`
+(aliases `the quay`) / `Scriptorium` (aliases `the copyist`), scenes `Dawn on the Quay` 3834 ms / `The Copyist` 4026 ms, `"durationMs":10742`;
+:556 two compositions in group 46094, rev 1, not user-edited; :573 composed book → `"scenesToCompose":0,"scenesCurrent":2,"submitted":false …
+"reason":"Every scene is composed"`; :598 per-scene `{force:true}` → `"source":"LLM"`, `"revision":2`, `shotType MEDIUM`, `viewpoint
+EYE_LEVEL`, `mood brisk`, 2 actors (`fishwife in worn coat and bonnet`, `boy with rope` role CROWD), `elapsedMs 3758`; :637 Quick start —
+the SD-gated skip. `p44-pw-scenetext.log` (`pictureBookSceneText.spec.js`, regression for the create-from-scenes body change) `1 skipped / 1
+passed (9.0s)`, `exit=0` — and its default-tier import now queues a background compose job (job `eab2c706-6af3-46a8-89d2-21baa48e8d8d`,
+slug `bwo-scene-text-mvf97hyf`, `2 composed … location pass ran`, `COMPLETED … elapsed=14s`; ⚠ 189 l). PNGs: none produced this run — every
+image-producing case was SD-gated (listed, not counted).
+
+**LLM tier and SD.** Every JUnit and Playwright LLM call went to the **in-stack Ollama container through LiteLLM** (`route=litellm
+tier=local`, `qwen3:8b` for analysis/compose, `JOSIEFIED-Qwen3:8b` for the PB prompts) — not Azure, not `.42`. **No SD server was hit live**:
+`192.168.1.39:7801` answered nothing from `4b` 04:19:41 through `4aa` 07:52:56 (`.42:7801` answered 302 and was not used — §6.N precedent,
+your call); the only "SD URL" exercised was the deliberately dead `http://127.0.0.1:1` of `TestPbComposeJob` case05 / case09 (503
+`INVENTORY_UNAVAILABLE`, the accounting path). SD-gated and therefore **not run, not passes**: `TestPbComposeLazyRender` case01,
+`TestPbQuickStart` case01, `TestPbRenderPlanExecutor` ×5, `TestPbScenePlanLocation` case08, `TestPbRenderJob` ×3, Playwright compose :637
+(Quick start), locations ×5/×6.
+
+**Security review (06:04:56 → 06:11:44; PASS, three should-fix).** (1) `listSceneCompositions` by book FK + `organizationId` only — a
+same-org user could skew another owner's tally through generic `POST /rest/model/olio.pb.composition` → **applied** (`groupId` added; `case10`
+proves it; `PbBookUtil.listScenes` / `countScenes` share the shape and are left, ⚠ 189 a / d). (2) raw `RuntimeException.getMessage()` in
+owner-visible job results / `composeJobError` — curated `PictureBookException` text never carries a URL; the residual is non-curated client
+exceptions, owner-only audience → **kept** (⚠ 189 b). (3) the compose prompt lacks the `TRAINING BIAS OVERCORRECTION` directive — as does
+every sibling PB prompt; the directive lives in `prompts/compliance.json` (detection) only; the rules-file one-liner on which it is, is yours
+(⚠ 189 c). Clean: `@RolesAllowed` on all three routes; `requireBook` before `requireV3` / `requireBookUpdate` / `requireNotComposing`;
+`requireSceneOfBook`; work captures the submitting user and re-runs `requireBookUpdate` on the worker; owner-aware INFLIGHT; registry
+get/cancel keyed by owner; 429 under lock; `ensureComposition` → `requireBookUpdate` first; every persist via `AccessPoint` as the user;
+`PbRenderLanes` phase text never carries `sdServer`; no per-org value in process-global state; no admin in tests beyond fixture
+entitlements; no reset. Notes: Console7 `tmp.bat` carries `-password password` and a `http://localhost:15430/ollama` URL — **kept out of
+staging**; `escapeJson` does not escape control characters in the echoed `Chat config not found: <name>` (client-breaking only).
+
+**Install / compile / deploy (serial).** Round 1: `p44-install` → 05:51:52, `p44-package` → 05:54:13, `p44-deploy` 05:54:29 → 05:55:31.
+Round 2 (post-review): `cd src; mvn -o -q -pl AccountManagerObjects7 install -DskipTests` (`p44-install2.log`, WARNING lines only, `exit=0`,
+jar `AccountManagerObjects7-7.0.0-SNAPSHOT.jar` 3417307 bytes 07:40) → `mvn -o -q -pl AccountManagerService7 package -DskipTests`
+(`p44-package2.log`, `exit=0`) → `bash /c/tmp/p44-deploy.sh` (`p44-deploy2.log`, 07:41:26 → 07:42:30): `javap -v` stub check on 29 classes
+(`PbComposeUtil` + 6 inner, `PbComposeJobUtil` + 5 inner, `PbLayoutUtil`, `PbBookUtil`, `PbLocationUtil`, `PbRenderPlanUtil`,
+`PbRenderJobUtil`, `PbNodeExecutor`, `PbPipelineUtil`, `PbServiceFacade`, `PbDeleteUtil`, `PbWatchedFields`, `RenderPlan`, `ChatUtil`,
+`OlioFieldNames`, `OlioModelNames`, `PictureBookService` + `$1`) all `unresolved=0`; `compose-scene resources: 2 (expect 2)`, `P4-1 models:
+3 (expect 3)`, `P4-1 enums: 9 (expect 9)`, `jar classes checked: 47`; md5 before — local jar `7a3ada47c28dc7c30b534bca5eceb523`, container
+jar `6a24e9ad50caaf594aefe41d52cb2183`, container `PictureBookService.class` `2712d3e74cc5e72de8da1809f8b1b7f4`; after `docker cp` — jar
+`7a3ada47…` and class `12ad95724284358c98a000192229b26a` local == container; `docker restart` 07:42:00; `setup/state=200 after 26 s
+(07:42:28)`; `Server startup in [10076] milliseconds`; md5 final equal; unauthenticated `POST …/compose`, `…/locations/propose`,
+`…/scene/…/compose` → 403.
+
+**Live proof** (`cd C:/tmp && PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 PB_LLM_TESTS=1 node p44-live.mjs`, `e2etest_shared`; run 1
+`ECONNREFUSED :8899` with `PLAYWRIGHT_BASE_URL` omitted, run 2 `RESULT 1 FAIL` on my script's 409 text — both in `p44-live.log`; `p44-live2.log`
+ALL PASS against the 05:55 deploy; **`p44-live3.log` ALL PASS against the 07:42 deploy, → 12:46:05Z = 07:46:05 local, `exit=0`**): `GET
+/config/render-path` 200; `POST /chapter` → book `168b076f-3256-4c06-8f2f-3857a84f3ea1` (id 1331, groupId 45882, slug `p44livemvf8z2wl`);
+scene-less `POST /compose {}` 200 `scenesToCompose 0`; `{force:true}` `submitted=false`; malformed bodies on `/compose` and `/scene/…/compose`
+400 `Malformed request body`; `/NIL/compose` 404 `Book not found`; `/NIL/scene/NIL/compose` 404; `/{book}/scene/NIL/compose` 404 `Scene
+00000000-… not found in this book`; `/NIL/locations/propose` 404; bad `chatConfigName` 404 `Chat config not found: p44-no-such-config-mvf8z2wl`;
+`POST /locations/propose` 202 job `da740951-fd4b-429a-9f13-94fa93fd3c93` → `completed`, `scenesConsidered=0`, `warnings=["No scene of
+p44livemvf8z2wl has a setting to cluster"]`; two scenes created; `/pages` rows=2; compositions rows=0; `ensureChatConfig -> e2e-chapbook-llm`;
+`POST /compose {chatConfigName}` 202 `scenesToCompose 2` job `dbe86694-c4de-4f49-98f0-c7d4cdcb554a`; re-POST `reused=true sameJob=true`;
+per-scene compose during the job 409 `A compose job is running for this book; wait for it to finish or cancel it first`; progress
+`phase=compose 1/2 Dawn on the Quay 0/3` → `completed 3/3 elapsed=15`; `MEASURED compose job wall=20s durationMs=15809 composed=2
+migrated=0 hardFailures=0`; counters `{"sceneCount":2,"visited":2,"composed":2,"migrated":0,"current":0,"hardFailures":0,"cancelled":false,
+"interrupted":false,"lastSceneIndex":2,"pagesSkipped":0,"quickStartRendered":0}`; location pass `ran=true scenesConsidered=2 proposed=2`;
+story order `[[1,"composed","LLM","NONE",2,0,8807],[2,"composed","LLM","NONE",2,1,3818]]`; composition rows — scene 1
+`d2774710-65ba-4a2a-a4b5-ae93a5f1c1ee` settingText "The harbour road at dawn, gulls over the fishing boats", scene 2
+`f83ee7f7-72f1-4984-b47d-b7997f420f3f` "A cramped scriptorium in the abbey, candles guttering"; idempotent re-submit 200 `scenesToCompose
+0`; `POST /scene/{s1}/compose {force:true}` 200 `written=true`, `MEASURED per-scene force wall=4s elapsedMs=3667 source=LLM … actors=2
+elements=0`, revision 1 → 2 on the same objectId; cleanup `DELETE /{book}/reset` 200.
+
+**Test-author (03:01:04 → 04:19:07) and verifier (06:05:34 → 06:19:57) dispositions.** Test-author: wrote `TestPbComposeJob` (8 cases),
+`TestPbComposeLazyRender` case01, `TestPbQuickStart`, `TestPbLocationProposal` case11, the `TestPbRenderPlanExecutor` /
+`TestPbScenePlanLocation` expectation edits; ran run 1 only; agreed on the case06 diagnosis; ⚠ its judgement to keep case06 tolerant of a
+first-pass MIGRATED (kept, ⚠ 189 o) and to pre-compose case08's scene A with a bounded 3-attempt loop (kept). Verifier findings: (1) test
+evidence predated the 06:15–06:17 edits → **every P4-4 class re-run on the final code** (`p44-composejob4`, `p44-lazy5`, `p44-quickstart2`,
+`p44-composeregress2`, `p44-rerun2`, `p44-service7-routes3`, `p44-pw-compose5`); (2) case06 relaxed after a red run — design-sanctioned,
+bounded; the re-pick-to-LLM loop never ran live → recorded "H2 only" (⚠ 189 o); (3) the hook's LLM branch unproven → `case02` added, green
+(source `LLM`); (4) auto-submit untested + body serialization changed → proven live by Playwright :323 / :342 and `p44-pw-scenetext`, with
+the import dual write it exposed; the Service7 H2 harness has no `createFromScenes` fixture, so that layer is Playwright-only (⚠ 189 g);
+(5) no UI trigger for compose-on-first-open → **P4-9** (named in the row); (6) different-owner claim has no liveness check → left (⚠ 189 e);
+(7) `compose` / `composeScene` caught only `PictureBookException` → `unexpectedFailure` → 500 JSON added to all three routes; (8) SD-gated
+JUnit skips have no per-case label → noted (⚠ 189 q); (9) `settingTextOf` also changes non-ChapBook scenes with a blank `setting` + an
+`sdPrompt` → design-justified, no action. Ux-specialist (03:08:41 → 03:17:43): thin client + propose poll + Vitest; Playwright edited only,
+run by me after the deploy (`p44-pw-locations`, `p44-pw-locations2`).
+
+**Serial timeline:** §3 (`4a` … `4aa`). One Maven / one Playwright / one probe at a time; the two read-only reviews overlapped only each
+other and the verifier's own `test-compile`s; the ux-specialist's node runs ended before the test-author's first Maven run; no JUnit LLM
+run beside a Playwright LLM run. Gate run 23 (`C:/tmp/o7verify` copy, refreshed 07:52:35 → 07:52:41 `DIFF_OK (0 lines)`, `POM_SAME`)
+started 07:53:29; nothing of mine ran beside it.
+
+**DECISION AUDIT:** ✓ compose as its own job kind, story order, straight after `createFromScenes`, ending with the location pass (§9.1 A,
+ratified); cooperative cancel that discards in-flight output (§21; M1); progress in the job token; lazy fallback as a degradation +
+"re-compose in order"; Quick start DRAFT per composed scene; `proposeLocations` as a job (182 (9)); pages in the location pass (182 (15–22));
+transport-only routes with `@RolesAllowed`; policy in Objects7 (M2); every write as the caller through `AccessPoint`; non-admin test users;
+real LLM through the gate; no reset; per-task reviews; jar redeploy + live proof; this doc. ⚠ (a) `listSceneCompositions` `groupId` + 409 on
+a world-less book, (b) raw exception text in owner-only results, (c) compose prompt without the bias directive (rules note yours), (d)
+`listScenes` / `countScenes` shape left, (e) no liveness check on a foreign claim, (f) lazy compose uses `generalChat` not the book config,
+(g) create-from-scenes body via `JSONUtil.exportObject` NON_EMPTY, (h) import-time `olio.pb.scene` dual write incl. `characters` — **the one
+that may need a dated design edit (§28 :1530 says the dual-write happens on the PB1 → PB2 path; it now also happens at import)**, (i)
+policy-decision cache serving a group-less miss as DENY ≤ 120 s, (j) `enrolImportedCast` WARN fix, (k) reset/delete does not cancel a running
+compose job, (l) default-tier scene-text spec now queues a background LLM job, (m) wire omits zero `sceneIndex`, (n) case08 / executor
+expectation changes, (o) case06 tolerance + re-pick-to-LLM proven H2 only, (p) architect N5 rules gap on per-JVM claim maps (yours), (q)
+SD-gated JUnit skips without a per-case label — all under §6.C 189 with defaults and the asks spelled out. Row status IMPLEMENTED + TESTS
+GREEN + reviewed — DONE is yours (159 b).
+
+**Gate run 23 result (07:53:29 → 11:32:55, 3 h 39 m 26 s; `C:/tmp/o7verify-gate-p44.log`; full classification §4.4 row 23).** `PASS (build)`;
+`FAIL (test) in AccountManagerObjects7`; `VERIFY_FAILED`; `exit=1` — `Tests run: 1317, Failures: 4, Errors: 9, Skipped: 90`. **No P4-4 red.** The
+13 reds are §6.A ×3 (yours, byte-identical to rows 17–22) plus **ten environment reds from Swarm `.39` being down for the whole run** (04:19 →
+~10:50): `ConnectException: Connection timed out` to `http://192.168.1.39:7801` in `TestPbCanvas` ×3, `TestPictureBookCustom` ×2,
+`TestPictureBookWorkflow` ×4, and `TestPbSceneGenerationGuards#testLandscapeFailureIsNonFatal:437`, whose `assertTrue("Swarm must be reachable…")`
+is an ungated assert rather than an `SdTestGate` skip (§6.C 189 r). None of the four classes is touched by P4-4 (`git status`); all were green in
+row 22. 90 skips = 15 non-SD (row 22's list) + **75 SD-gated `This is NOT a pass.`** skips, of which the P4-4 ones are `TestPbComposeLazyRender`
+case01, `TestPbQuickStart` case09, `TestPbRenderPlanExecutor` ×5 and `TestPbScenePlanLocation` case08. Every P4-4 class green inside the gate:
+`TestPbComposeJob` 10/0/0/0 502.485 s, `TestPbComposeLazyRender` 3/0/0/1, `TestPbQuickStart` 1/0/0/1, `TestPbCreateFromScenesRerun` 7/0,
+`TestPbLocationProposal` 11/0 424.941 s, `TestPbRenderPlanExecutor` 7/0/0/5, `TestPbScenePlanLocation` 13/0/0/1; `TestPbDeleteComplete` 2/0 (§6.C
+188 did not recur). LLM tier for the gate, confirmed from `TEST-…TestPbComposeJob.xml` because `verify.sh` discards all but the last 60 Maven
+lines: `route=litellm tier=local server=http://127.0.0.1:4000 model=qwen3:8b-ctr` — the in-stack Ollama container through LiteLLM, not Azure, not
+`.42`. SD: `SdTestGate - Swarm http://192.168.1.39:7801 not reachable`.
+
+**Swarm `.39` back; SD re-run A — the SD-gated P4-4 cases, executed live (you: ".39 is back up now"; probe `4ab` 11:34:57 `Swarm .39: http=200`,
+in-container `swarm39=302`).** `C:/tmp/p44-sd-p44.log`, 11:35:23 → 11:57:38 (`Total time: 22:12 min`), one Maven:
+`-Dtest='TestPbComposeLazyRender,TestPbQuickStart,TestPbRenderPlanExecutor,TestPbScenePlanLocation' -DskipTests=false` — **`Tests run: 24,
+Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`, `exit=0`.** Gate lines: `SdTestGate - http://192.168.1.39:7801 answered HTTP 302`, `Live SD
+checkpoint for http://192.168.1.39:7801 = 'OfficialStableDiffusion/sd_xl_base_1.0.safetensors' [olio.sd.config schema default]`, `[LLM-GATE]
+route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` (in-stack container via LiteLLM). Per class, with
+every render on `http://192.168.1.39:7801` and checkpoint `sd_xl_base_1.0`:
+- `TestPbComposeLazyRender` **3/0/0/0, 221.4 s** (case01 ran for the first time): `MEASURED: P4-4 lazy render 1 of p44lazy37570fed wall 35743 ms`
+  → `durationMs=32764 bytes=1887169 seed=1800833509 png=…\target\p44-lazy-p44lazy37570fed-1.png`; `lazy compose source=MIGRATED (the
+  organization's generalChat fallback did not answer; §29 MIGRATED row)` — in the JUnit org `testUser1` has no `generalChat`, so the lazy
+  path wrote the MIGRATED composition and the render carried `degradations: ["COMPOSED_OUT_OF_ORDER: Composed by this render, out of story order
+  (MIGRATED: LLM unavailable; wrote a MIGRATED composition from the scene's own fields); re-compose in order to clear"]` with
+  `autoApproveSkipped: "degraded: COMPOSED_OUT_OF_ORDER…"` — the veto works live; `lazy render 2 … wall 15911 ms … durationMs=14589
+  bytes=2075683 seed=1411738144 png=…-2.png`; case02 `ensureComposition first call 587 ms source=MIGRATED`, `second call 127 ms
+  composedNow=false hardFailure=true reason=LLM unavailable; existing composition left untouched`; case03 `(generalChat present) 23484 ms
+  written=true hardFailure=false migratedFallback=false reason=null actors=2`.
+- `TestPbQuickStart` **1/0/0/0, 66.58 s** (case09 ran for the first time): `quick start job wall 24079 ms -> COMPLETED error=null`; `composed=2
+  migrated=0 quickStartRendered=2 quickStartFailed=0 durationMs=23244`; scene 1 `status=composed composeMs=4642 draftRenderMs=6651 draftRender=
+  {… nodeStatus=DONE_UNVERIFIED … strategy=TEXT_ONLY, stagesPlanned=[BASE], stagesRendered=[BASE], autoApproved=false, autoApproveSkipped=off …}`
+  → `preset=DRAFT steps=12 canvas=512x512 durationMs=5576 bytes=458651 seed=333111466 png=…\target\p44-quickstart-p44qs6f30dddb-1.png`; scene 2
+  `composeMs=4137 draftRenderMs=3479` → `durationMs=2847 bytes=382773 seed=2120853277 png=…-2.png`. Both compositions came from the LLM
+  (`migrated=0`), both DRAFTs are real 512×512 images.
+- `TestPbRenderPlanExecutor` **7/0/0/0, 378.7 s** (the five SD cases ran; §6.C 189 n's rewritten expectations executed): `empty-scene refusal:
+  409 Scene 0 has no text to render…`; `NO_CANDIDATE refusal: 409 No installed model for scene 0: OVERRIDE 'p25-bogus-override.safetensors'
+  NOT_INSTALLED; DEPLOYMENT_DEFAULT 'p25-nonexistent-deployment.safetensors' NOT_INSTALLED…`; `P2-5 p26-defaults … durationMs=17341
+  bytes=1582326 seed=659135582 png=…\target\p25-render-plan-p26c5d778af8-p26-defaults.png` with `configNotApplied=[HIRES…, DEFAULT_NEGATIVE…]`;
+  `p26-override … durationMs=14926 bytes=1633818 seed=2042265215 png=…-p26-override.png` with `configNotApplied=[STYLE_CLAUSE…]`;
+  `unreachable refusal in 1496 ms: 503 Renderer inventory unavailable…INVENTORY_UNAVAILABLE`; `P2-5 first … durationMs=16961 bytes=1576784
+  seed=130913982 png=…\target\p25-render-plan-p25h74a6cc2b-first.png`; `second … durationMs=14640 bytes=1474899 seed=988068108 png=…-second.png`;
+  `degraded … durationMs=14631 bytes=1736964 seed=1991273203 png=…\target\p25-render-plan-p25dea663733-degraded.png` with `degradations=
+  [MODEL_SUBSTITUTED: p25-bogus-override.safetensors not installed; using DEPLOYMENT_DEFAULT → OfficialStableDiffusion/sd_xl_base_1.0.safetensors,
+  COMPOSED_OUT_OF_ORDER: …]`. Every executor render in this org carries `COMPOSED_OUT_OF_ORDER` (lazy MIGRATED compose, no `generalChat`), as
+  the P4-4 expectation change predicted.
+- `TestPbScenePlanLocation` **13/0/0/0, 661.8 s** (case08 ran): `P3-5 case08 pre-compose of scene A attempt 1 wallMs=8712 … written=true
+  source=LLM migrated=false hardFailure=false reason=null warnings=[Scene has no description, summary or blurb; composing from
+  setting/action/mood only]`; `located scene render … wallMs=18289` → `renderPath: v3`, `nodeStatus: DONE_UNVERIFIED`, `artifactRevision: 1`,
+  `byteLength: 1846952`, `png=…\target\p35-located-p35he04741a3.png`; `unrendered-location scene render … wallMs=16409 … byteLength: 1472866
+  png=…\target\p35-unrendered-p35he04741a3.png` with `degradations: ["LOCATION_TEXT_ONLY: No approved render for location The Unpainted Chapel
+  13e9acd1; setting described in text", "COMPOSED_OUT_OF_ORDER: …"]`.
+**PNGs opened (all eleven, Read tool):** the two lazy renders are 1024×1024 coastal scenes matching the fixture text (a hooded figure on a storm
+breakwater with coiled rope; a block seawall under grey surf); the two Quick-start DRAFTs are 512×512 12-step lighthouse images (a tower
+against a halo sky; a lighthouse seen through a glazed gallery) — recognisable, lower-fidelity, as a DRAFT should be; the five executor renders
+are lighthouse-and-gulls scenes at dusk (the `p26-override` one in a monochrome, bordered style — the override config's style applied; the
+`degraded` one rendered on the substituted `sd_xl_base_1.0`); case08's located scene is a rain-soaked half-timbered tavern street with two
+figures, and the unrendered-location scene a white domed chapel with gulls on wet flagstones. No blank, black or garbage image among them.
+
+**SD re-run B — the ten `.39`-outage reds of gate run 23, same code, `.39` back** (`C:/tmp/p44-sd-env.log`; probe `4ac` 11:57:57 §3; one Maven:
+`-Dtest='TestPbSceneGenerationGuards,TestPbCanvas,TestPictureBookCustom,TestPictureBookWorkflow' -DskipTests=false`, 11:58:41 → 12:53:41,
+`Total time: 54:58 min`): **`Tests run: 23, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`, `exit=0`** — `TestPbCanvas` 5/0/0/0 197.3 s
+(the three `ConnectException` errors of the gate now render), `TestPictureBookCustom` 7/0/0/0 537.2 s, `TestPictureBookWorkflow` 5/0/0/0 2445 s
+(40 min 45 s; the four gate errors now render — the slowest class of the whole suite, as in row 22's 2425 s), `TestPbSceneGenerationGuards`
+6/0/0/0 115.0 s (`testLandscapeFailureIsNonFatal:437` passes once `.39` answers). Gate lines: `SdTestGate - http://192.168.1.39:7801 answered
+HTTP 302`, `Live SD checkpoint … = 'OfficialStableDiffusion/sd_xl_base_1.0.safetensors'`, `[LLM-GATE] route=litellm tier=local
+analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000`. So the ten gate-23 reds were the `.39` outage and nothing else; the
+code under them is unchanged since row 22 (`git status`). Noted, not chased (outside P4-4): `TestPictureBookCustom` / `TestPbCanvas` log
+ERROR-level `RecordValidator - description value 'PERMIT system.user pbCustomTestUser to READ … ' …` + `WriterException: Record failed validation`
+(a `system.audit` record written by `MemoryWriter` whose generated `description` — the full query text — `exceeds maximum length 2048`; the
+audit row is dropped, the read proceeds) and `AccessPoint - One or more query fields were not or could not be authorized: …
+olio.llm.promptTemplate …` lines while passing — pre-existing noise in those fixtures, not P4-4's.
+
+**Playwright, Quick start live (`C:/tmp/p44-pw-compose-sd.log`; probe `4ad` 12:54:12 §3; `PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443
+PB_LLM_TESTS=1 PB_SD_TESTS=1 npx playwright test e2e/pictureBookCompose.spec.js --workers=1 --retries=0 --project=chromium`, the whole spec,
+no dist change since the 06:00 copy — `container dist index.html identical to local build` at `4ad`; 12:54:31 → 12:56:13, `.start`/`.end`
+stamps):** `Running 12 tests using 1 worker` → **`12 passed (1.6m)`, `exit=0`**, no skip, no retry. Every tier ran: the four default-tier route
+cases (V3 path, scene-less no-op 200, 400/404/404, named-chat-config 404); the two `createFromScenes` cases — the unbound import is a 200 naming
+why nothing was queued, the bound import wrote its `olio.pb.scene` rows and ran the compose job to terminal (`MEASURED import compose composed=2
+migrated=0 durationMs=16393`, `locationPassRan:true`, two `PROPOSED` locations "Foyer"/"Driveway"); the five `PB_LLM_TESTS=1` job cases
+(scenes created in the book group as `e2etest_shared`; `POST /compose` 202 + immediate re-submit reuses the job + story order,
+`MEASURED composed=2 migrated=0 durationMs=12406`, locations "Harbour Road"/"Scriptorium"; one `olio.pb.composition` per scene, revision 1,
+not user-edited; compose-on-open idempotent 200 no-op + MIGRATED row re-picked; `POST /scene/{scene}/compose {force}` synchronous,
+`MEASURED scene compose source=LLM migratedFallback=false castTier=NONE actors=2 elements=0`, revision 2); and the `PB_SD_TESTS=1` Quick-start
+case (35.4 s): `POST /compose {quickStart:true, force:true}` → `quickStartRendered:2, quickStartFailed:0`, each scene `draftRender` with
+`strategy:"TEXT_ONLY"`, `stagesPlanned:["BASE"]`, `stagesRendered:["BASE"]`, `nodeStatus:"DONE_UNVERIFIED"`, `autoApproved:false`,
+`autoApproveSkipped:"off"`, `configNotApplied` = HIRES + DEFAULT_NEGATIVE (the known DRAFT-path notes), first `draftRenderMs:17555` (the
+second is past the spec's console truncation). LLM: `[e2e-llm] route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr
+pb=qwen3:8b-jos-ctr` — the in-stack Ollama container through LiteLLM (not Azure, not `.42`). SD: `http://192.168.1.39:7801`, checkpoint
+`OfficialStableDiffusion/sd_xl_base_1.0.safetensors` (the stack's `sd.server`; probe `4ad` `[5] http=200`). **PNGs written and opened
+(Read tool):** `src/AccountManagerUx752/test-results/p44-quickstart-scene1.png` (418,687 bytes, 512×512 — a quayside at dawn: a woman in a
+long coat on wet flagstones beside a sea wall, a basket of fish, gulls, a moored fishing boat, headland behind) and `p44-quickstart-scene2.png`
+(406,555 bytes, 512×512 — a tonsured monk bent over a manuscript with a quill, two lit candles, a leaded stained-glass window). Both are real
+DRAFT renders of the LLM-composed scenes ("Dawn on the Quay", "The Copyist"), not placeholders.

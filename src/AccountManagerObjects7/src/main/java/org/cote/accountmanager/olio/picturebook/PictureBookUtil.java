@@ -9336,12 +9336,13 @@ public class PictureBookUtil {
         // pb2BookObjectId stamp all degrade to exactly the old 8-arg behaviour. When present, resolve the
         // PB2 book's world context as before.
         OlioContext pb2OlioCtx = null;
+        BaseRecord pb2Book = null;
         String pb2GroupName = null;
         Integer chapterStart = null;
         Integer chapterEnd = null;
         if (pb2BookObjectId != null && !pb2BookObjectId.isBlank()) {
             long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-            BaseRecord pb2Book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
+            pb2Book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
             if (pb2Book == null) {
                 throw new PictureBookException(404, "PB2 book not found: " + pb2BookObjectId);
             }
@@ -9672,6 +9673,16 @@ public class PictureBookUtil {
             PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
             throw new PictureBookException(500, "The book's scene list (" + metaScenes.size()
                     + " scene(s)) was built but .pictureBookMeta could not be written to " + bookGroupPath);
+        }
+        // The PB2 half of the dual write, at import rather than at first render: the compose job that
+        // follows a V3 import (PbServiceFacade.createFromScenesAndCompose) tallies olio.pb.scene rows, and
+        // without these it would find none. Never fails the import - the meta above is already saved.
+        if (pb2Book != null) {
+            int rows = PbPipelineUtil.dualWriteImportedScenes(user, pb2Book, sceneList, metaScenes);
+            if (rows != metaScenes.size()) {
+                logger.warn("createFromScenes(pb2): " + rows + " of " + metaScenes.size() + " olio.pb.scene row(s) written for book "
+                        + pb2BookObjectId + " - see the preceding errors; the missing rows are created on first render or by Repair");
+            }
         }
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();

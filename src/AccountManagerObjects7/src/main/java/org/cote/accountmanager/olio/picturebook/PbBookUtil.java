@@ -15,6 +15,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.WorldUtil;
@@ -33,6 +34,7 @@ import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 
 /**
@@ -612,6 +614,26 @@ public class PbBookUtil {
 		q.setRequest(bookRequest());
 		q.setCache(false);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/// Re-reads the book by objectId as the user and requires UPDATE on the persisted record, so a write into
+	/// the book's graph is gated on the stored book and never on a world/group FK carried by a caller-supplied record.
+	/// 401 without a user or book, 404 when the user cannot read it, 403 when the user may read but not update it.
+	public static BaseRecord requireBookUpdate(BaseRecord user, BaseRecord book, String what) {
+		if(user == null || book == null) {
+			throw new PictureBookException(401, "No user");
+		}
+		Long orgId = book.get(FieldNames.FIELD_ORGANIZATION_ID);
+		String oid = book.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord fresh = (orgId != null ? readBook(user, oid, orgId.longValue()) : null);
+		if(fresh == null) {
+			throw new PictureBookException(404, "Book not found");
+		}
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, fresh);
+		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			throw new PictureBookException(403, "Not permitted to " + what + " of book " + fresh.get(OlioFieldNames.FIELD_PB_SLUG));
+		}
+		return fresh;
 	}
 
 	/**

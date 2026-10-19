@@ -36,6 +36,8 @@ import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
+import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
 import org.cote.service.util.ServiceUtil;
@@ -58,7 +60,8 @@ import jakarta.ws.rs.core.Response;
 ///   POST   /{book}/location/{id}/variants                      createLocationVariant
 ///   POST   /{book}/location/{id}/render?variant=&force=        renderLocation (gates only - see below)
 ///   POST   /{book}/location/{id}/lock                          lockLocation
-///   POST   /{book}/locations/propose                           proposeLocations
+///   POST   /{book}/locations/propose                           proposeLocations -> 202 {jobId} since P4-4 (the pass runs
+///                                                              as a pb.proposeLocations job; the gates are unchanged)
 ///   GET    /{book}/locations/proposed?status=                  listLocationProposals
 ///   POST   /{book}/locations/proposed/{id}/accept              acceptLocationProposal
 ///   POST   /{book}/locations/proposed/{id}/reject              rejectLocationProposal
@@ -388,6 +391,30 @@ public class TestPictureBookLocationRoutes extends BaseTest {
 		return out;
 	}
 
+	/// The owner's pb.proposeLocations job, polled through the registry (owner + jobId is the composite key GET
+	/// /rest/job/{id} resolves) until terminal; the parsed result is the location-pass DTO plus bookObjectId / kind /
+	/// durationMs. Fails on a FAILED job or on the ceiling - never on how long the job took. No LLM is reachable on this
+	/// harness, so the job is DB work only; the ceiling just keeps a hung registry from hanging the suite.
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> awaitProposeJob(String jobId, String what) throws Exception {
+		assertNotEquals(what + ": jobId is reported", "null", jobId);
+		AsyncJob job = AsyncJobRegistry.get(owner, jobId);
+		assertNotNull(what + ": the owner must see job " + jobId, job);
+		long started = System.currentTimeMillis();
+		long ceiling = 5L * 60L * 1000L;
+		while(!job.isTerminal() && System.currentTimeMillis() - started < ceiling) {
+			Thread.sleep(100L);
+		}
+		long elapsed = System.currentTimeMillis() - started;
+		assertTrue(what + ": job " + jobId + " did not finish within the ceiling (" + elapsed + " ms)", job.isTerminal());
+		logger.info(what + ": job " + jobId + " " + job.getStatus() + " after " + elapsed + " ms");
+		assertEquals(what + ": job completed (error: " + job.getError() + ")", AsyncJob.Status.COMPLETED, job.getStatus());
+		assertNotNull(what + ": a completed job carries a result", job.getResult());
+		Map<String, Object> result = JSONUtil.importObject(job.getResult(), LinkedHashMap.class);
+		assertNotNull(what + ": job result did not parse as JSON: " + job.getResult(), result);
+		return result;
+	}
+
 	private static boolean containsIgnoreCase(List<String> in, String s) {
 		for(String i : in) {
 			if(i != null && i.equalsIgnoreCase(s)) {
@@ -664,15 +691,25 @@ public class TestPictureBookLocationRoutes extends BaseTest {
 		}
 	}
 
-	/// The proposal routes on a book with no scenes: the pass returns without touching the LLM, the proposed list is
-	/// empty and accept / reject of an unknown proposal is a 404 after the book gate.
+	/// The proposal routes on a book with no scenes. Since P4-4 the pass is a pb.proposeLocations job: the route answers
+	/// 202 with the job, and the pass result is the job's result (read here through the registry as the submitting
+	/// user, which is what GET /rest/job/{id} resolves). On a scene-less book the pass returns without touching the
+	/// LLM, the proposed list is empty and accept / reject of an unknown proposal is a 404 after the book gate.
 	@Test
 	public void TestOwnerProposalsOnSceneLessBook() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
 			HttpServletRequestMock o = requestAs(owner);
-			Map<String, Object> pass = ok(service.proposeLocations(f.bookOid, "{}", o), "propose");
+			Response pr = service.proposeLocations(f.bookOid, "{}", o);
+			assertEquals("propose is accepted as a job, body: " + pr.getEntity(), 202, pr.getStatus());
+			Map<String, Object> submit = body(pr);
+			assertEquals(f.bookOid, submit.get("bookObjectId"));
+			assertEquals("pb.proposeLocations", submit.get("kind"));
+			assertEquals(Boolean.TRUE, submit.get("submitted"));
+			assertNotNull("the job id is reported", submit.get("jobId"));
+			Map<String, Object> pass = awaitProposeJob(String.valueOf(submit.get("jobId")), "propose job");
 			assertEquals(f.bookOid, pass.get("bookObjectId"));
+			assertEquals("pb.proposeLocations", pass.get("kind"));
 			assertNotNull("passRun is reported", pass.get("passRun"));
 			assertEquals("no scene has a setting, so none were considered", 0, ((Number) pass.get("scenesConsidered")).intValue());
 			assertEquals("no LLM chunk was built", 0, ((Number) pass.get("chunks")).intValue());
@@ -686,7 +723,11 @@ public class TestPictureBookLocationRoutes extends BaseTest {
 			}
 			assertTrue("the pass says why it proposed nothing: " + warnings, saidWhy);
 			assertTrue("nothing proposed", list(pass, "proposals").isEmpty());
-			Map<String, Object> alsoNull = ok(service.proposeLocations(f.bookOid, null, o), "propose with no body");
+			Response pr2 = service.proposeLocations(f.bookOid, null, o);
+			assertEquals("propose with no body is accepted too, body: " + pr2.getEntity(), 202, pr2.getStatus());
+			Map<String, Object> submit2 = body(pr2);
+			assertNotEquals("a finished job is never reused", submit.get("jobId"), submit2.get("jobId"));
+			Map<String, Object> alsoNull = awaitProposeJob(String.valueOf(submit2.get("jobId")), "propose job with no body");
 			assertEquals(0, ((Number) alsoNull.get("scenesConsidered")).intValue());
 
 			Map<String, Object> proposed = ok(service.listLocationProposals(f.bookOid, null, o), "proposed list");

@@ -96,6 +96,10 @@ public final class PbRenderJobUtil {
 	public static final String KIND_RENDER_ALL = "pb.renderAll";
 	/** Job kind for the resume of an INTERRUPTED run (its {@code requestedNodeIds} are the terminals). */
 	public static final String KIND_RESUME = "pb.resume";
+	/** Job kind for the whole-book compose pass (V3 §9.1), run by {@link PbComposeJobUtil}; keyed by the book. */
+	public static final String KIND_COMPOSE = "pb.compose";
+	/** Job kind for the whole-book location pass alone (V3 §7.1), run by {@link PbComposeJobUtil}; keyed by the book. */
+	public static final String KIND_PROPOSE_LOCATIONS = "pb.proposeLocations";
 
 	private static final Set<PbNodeStatusEnumType> EXECUTE_WHEN = Collections.unmodifiableSet(new HashSet<>(List.of(
 		PbNodeStatusEnumType.PENDING, PbNodeStatusEnumType.READY, PbNodeStatusEnumType.STALE,
