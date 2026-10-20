@@ -14,12 +14,17 @@ import java.util.regex.Pattern;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PbLayoutUtil.Placement;
@@ -39,6 +44,7 @@ import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
 import org.cote.accountmanager.schema.type.PbImportanceEnumType;
 import org.cote.accountmanager.schema.type.PbShotTypeEnumType;
 import org.cote.accountmanager.schema.type.PbViewpointEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 
 /**
@@ -130,6 +136,12 @@ public class PbComposeUtil {
 		 * stream): nothing was written, and an existing composition is left as it was. Not a failure.
 		 */
 		public boolean cancelled;
+		/** Outfit changes the LLM reported: alternates created, existing alternates reused, and ones that could not be built (warned). */
+		public int outfitsCreated;
+		public int outfitsReused;
+		public int outfitsSkipped;
+		/** Actor rows that kept the pin of the composition being replaced (same character). */
+		public int pinsPreserved;
 
 		public boolean isWritten() {
 			return composition != null && !skippedUserEdited && !hardFailure && !cancelled;
@@ -177,6 +189,8 @@ public class PbComposeUtil {
 		String placement;
 		String description;
 		Integer count;
+		/** What the figure wears, only when the scene text states it (design §6.1); null otherwise. */
+		String outfit;
 	}
 
 	static final class ElementSpec {
@@ -198,6 +212,9 @@ public class PbComposeUtil {
 		int count = 1;
 		Placement placement;
 		boolean placementRecognized;
+		String outfit;
+		/** The wardrobe entry this row is pinned to: a preserved pin, or the alternate built for {@link #outfit}. Null = resolved at read time. */
+		BaseRecord apparel;
 	}
 
 	static final class ResolvedElement {
@@ -434,9 +451,25 @@ public class PbComposeUtil {
 	 * @param progress null when not running under a job
 	 */
 	public static ComposeResult composeScene(BaseRecord user, BaseRecord book, BaseRecord scene, BaseRecord chatConfig, boolean force, SummarizeProgress progress) {
+		return composeScene(user, book, scene, chatConfig, force, progress, null);
+	}
+
+	/**
+	 * As {@link #composeScene(BaseRecord, BaseRecord, BaseRecord, BaseRecord, boolean, SummarizeProgress)}, able to
+	 * build wardrobe alternates for outfit changes the LLM reports (design §6.1): an actor whose reply row carries
+	 * {@code outfit} gets an alternate created in the book world's Apparel group (or an existing one reused) and
+	 * is pinned to it. That needs the world's {@link org.cote.accountmanager.olio.OlioContext}, opened from
+	 * {@code dataPath} unless a session already holds it; without either, outfits are skipped with a warning and
+	 * the compose otherwise proceeds. Pins of the composition being replaced are preserved per character.
+	 *
+	 * @param dataPath the deployment's {@code datagen.path}, or null
+	 */
+	public static ComposeResult composeScene(BaseRecord user, BaseRecord book, BaseRecord scene, BaseRecord chatConfig, boolean force, SummarizeProgress progress, String dataPath) {
 		long t0 = System.currentTimeMillis();
 		ComposeResult result = new ComposeResult();
 		Context ctx = openContext(user, book, scene, "compose scenes");
+		ctx.chatConfig = chatConfig;
+		ctx.dataPath = dataPath;
 		BaseRecord existing = findSceneComposition(user, ctx.scene, ctx.bookGroupId, ctx.orgId);
 		if(existing != null && !force && Boolean.TRUE.equals(existing.get(OlioFieldNames.FIELD_PB_USER_EDITED))) {
 			return skipped(user, existing, result, t0);
@@ -444,6 +477,7 @@ public class PbComposeUtil {
 		if(isCancelled(progress)) {
 			return cancelled(user, existing, result, ctx, t0);
 		}
+		ctx.pins = pinsOf(user, existing);
 		Cast cast = collectCast(user, ctx, result);
 		result.castTier = cast.tier;
 
@@ -509,9 +543,46 @@ public class PbComposeUtil {
 		}
 		Cast cast = collectCast(user, ctx, result);
 		result.castTier = cast.tier;
-		persist(user, ctx, existing, migratedStaging(ctx.scene, cast.members), result);
+		ctx.pins = pinsOf(user, existing);
+		Staging staging = migratedStaging(ctx.scene, cast.members);
+		preservePins(ctx, staging, result);
+		persist(user, ctx, existing, staging, result);
 		result.elapsedMs = System.currentTimeMillis() - t0;
 		return result;
+	}
+
+	/// The pins of the composition about to be replaced, by character id. Rows are deleted and recreated on a
+	/// recompose; a user's pin survives it (design §6.2) by being carried onto the new row for the same character.
+	static Map<Long, BaseRecord> pinsOf(BaseRecord user, BaseRecord existing) {
+		Map<Long, BaseRecord> pins = new HashMap<>();
+		if(existing == null) {
+			return pins;
+		}
+		for(BaseRecord row : listActors(user, existing)) {
+			long apparelId = PbWardrobeUtil.pinnedApparelId(row);
+			BaseRecord cref = (row.hasField(OlioFieldNames.FIELD_PB_CHARACTER) ? row.get(OlioFieldNames.FIELD_PB_CHARACTER) : null);
+			long charId = (cref != null ? PbWardrobeUtil.idOf(cref) : 0L);
+			if(apparelId > 0L && charId > 0L) {
+				pins.putIfAbsent(charId, row.get(OlioFieldNames.FIELD_APPAREL));
+			}
+		}
+		return pins;
+	}
+
+	private static void preservePins(Context ctx, Staging s, ComposeResult result) {
+		if(ctx.pins == null || ctx.pins.isEmpty()) {
+			return;
+		}
+		for(ResolvedActor ra : s.actors) {
+			if(ra.character == null || ra.apparel != null) {
+				continue;
+			}
+			BaseRecord pin = ctx.pins.get(PbWardrobeUtil.idOf(ra.character));
+			if(pin != null) {
+				ra.apparel = pin;
+				result.pinsPreserved++;
+			}
+		}
 	}
 
 	private static ComposeResult skipped(BaseRecord user, BaseRecord existing, ComposeResult result, long t0) {
@@ -578,6 +649,16 @@ public class PbComposeUtil {
 		int sceneIndex;
 		/** The location's store items, read once per compose (prompt block and element matching both use them). */
 		List<BaseRecord> items;
+		/** The chat config of this compose; the wardrobe step's outfit guess uses the same one. */
+		BaseRecord chatConfig;
+		/** The deployment's {@code datagen.path}, when the caller had one; opens the world for alternates. */
+		String dataPath;
+		/** Pins of the composition being replaced, by character id (see {@link PbComposeUtil#pinsOf}). */
+		Map<Long, BaseRecord> pins = new HashMap<>();
+		/** The world's Olio context, resolved lazily on the first outfit; {@code octxTried} stops repeated failures. */
+		OlioContext octx;
+		boolean octxTried;
+		String octxFailure;
 
 		String label() {
 			return slug + ":scene" + sceneIndex;
@@ -905,52 +986,71 @@ public class PbComposeUtil {
 			return Collections.emptyList();
 		}
 		try {
-			BaseRecord loc = PbLocationUtil.readLocation(user, str(locRef.get(FieldNames.FIELD_OBJECT_ID)), ctx.orgId);
-			BaseRecord poiRef = (loc != null && loc.hasField(OlioFieldNames.FIELD_PB_POI) ? loc.get(OlioFieldNames.FIELD_PB_POI) : null);
-			if(poiRef == null) {
-				return Collections.emptyList();
-			}
-			Query pq = QueryUtil.createQuery(OlioModelNames.MODEL_POI, FieldNames.FIELD_ID, (long) poiRef.get(FieldNames.FIELD_ID));
-			pq.field(FieldNames.FIELD_ORGANIZATION_ID, ctx.orgId);
-			pq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-				FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_STORE });
-			pq.setCache(false);
-			BaseRecord poi = IOSystem.getActiveContext().getAccessPoint().find(user, pq);
-			BaseRecord store = (poi != null && poi.hasField(FieldNames.FIELD_STORE) ? poi.get(FieldNames.FIELD_STORE) : null);
+			BaseRecord store = poiStoreOf(user, locRef, ctx.orgId);
 			if(store == null) {
 				return Collections.emptyList();
 			}
-			List<BaseRecord> parts = IOSystem.getActiveContext().getMemberUtil().findMembers(store, OlioFieldNames.FIELD_ITEMS,
-				OlioModelNames.MODEL_ITEM, 0L);
-			if(parts == null || parts.isEmpty()) {
-				return Collections.emptyList();
-			}
-			List<String> ids = new ArrayList<>();
-			for(BaseRecord part : parts) {
-				Object pid = part.get(FieldNames.FIELD_PARTICIPANT_ID);
-				if(pid instanceof Number) {
-					ids.add(Long.toString(((Number) pid).longValue()));
-				}
-			}
-			if(ids.isEmpty()) {
-				return Collections.emptyList();
-			}
-			Query iq = QueryUtil.createQuery(OlioModelNames.MODEL_ITEM);
-			iq.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, String.join(",", ids));
-			iq.field(FieldNames.FIELD_ORGANIZATION_ID, ctx.orgId);
-			iq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-				FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_DESCRIPTION });
-			iq.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
-			iq.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
-			iq.setCache(false);
-			BaseRecord[] recs = IOSystem.getActiveContext().getAccessPoint().list(user, iq).getResults();
-			return (recs != null ? PbGraphUtil.restoreSchema(Arrays.asList(recs), OlioModelNames.MODEL_ITEM) : Collections.emptyList());
+			return storeItems(user, store, ctx.orgId);
 		}
 		catch(Exception e) {
 			result.warnings.add("Could not read the location's items: " + e.getMessage());
 			logger.warn("compose-scene " + ctx.label() + ": item read failed: " + e.getMessage());
 			return Collections.emptyList();
 		}
+	}
+
+	/// {@code olio.pb.location} ref -> its POI (read as the caller, cache off) -> the POI's {@code store} ref.
+	/// Null when the location, its POI or the POI's store is absent.
+	static BaseRecord poiStoreOf(BaseRecord user, BaseRecord locRef, long orgId) {
+		if(locRef == null) {
+			return null;
+		}
+		return poiStoreOfLocation(user, PbLocationUtil.readLocation(user, str(locRef.get(FieldNames.FIELD_OBJECT_ID)), orgId), orgId);
+	}
+
+	/// Same as {@link #poiStoreOf} for a location already read with {@link PbBookUtil#locationRequest()}.
+	static BaseRecord poiStoreOfLocation(BaseRecord user, BaseRecord loc, long orgId) {
+		BaseRecord poiRef = (loc != null && loc.hasField(OlioFieldNames.FIELD_PB_POI) ? loc.get(OlioFieldNames.FIELD_PB_POI) : null);
+		if(poiRef == null) {
+			return null;
+		}
+		Query pq = QueryUtil.createQuery(OlioModelNames.MODEL_POI, FieldNames.FIELD_ID, (long) poiRef.get(FieldNames.FIELD_ID));
+		pq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		pq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_STORE });
+		pq.setCache(false);
+		BaseRecord poi = IOSystem.getActiveContext().getAccessPoint().find(user, pq);
+		return (poi != null && poi.hasField(FieldNames.FIELD_STORE) ? poi.get(FieldNames.FIELD_STORE) : null);
+	}
+
+	/// The store's {@code items} participations resolved to {@code olio.item} rows (name order), read as the caller.
+	/// {@code AccessPoint.list} filters nothing per record: the id set is bounded by a store the caller already read through PBAC.
+	static List<BaseRecord> storeItems(BaseRecord user, BaseRecord store, long orgId) throws IndexException, ReaderException {
+		List<BaseRecord> parts = IOSystem.getActiveContext().getMemberUtil().findMembers(store, OlioFieldNames.FIELD_ITEMS,
+			OlioModelNames.MODEL_ITEM, 0L);
+		if(parts == null || parts.isEmpty()) {
+			return Collections.emptyList();
+		}
+		List<String> ids = new ArrayList<>();
+		for(BaseRecord part : parts) {
+			Object pid = part.get(FieldNames.FIELD_PARTICIPANT_ID);
+			if(pid instanceof Number) {
+				ids.add(Long.toString(((Number) pid).longValue()));
+			}
+		}
+		if(ids.isEmpty()) {
+			return Collections.emptyList();
+		}
+		Query iq = QueryUtil.createQuery(OlioModelNames.MODEL_ITEM);
+		iq.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, String.join(",", ids));
+		iq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		iq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_DESCRIPTION });
+		iq.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+		iq.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING.toString());
+		iq.setCache(false);
+		BaseRecord[] recs = IOSystem.getActiveContext().getAccessPoint().list(user, iq).getResults();
+		return (recs != null ? PbGraphUtil.restoreSchema(Arrays.asList(recs), OlioModelNames.MODEL_ITEM) : Collections.emptyList());
 	}
 
 	// ─────────────────────────────── parse ───────────────────────────────
@@ -1039,6 +1139,7 @@ public class PbComposeUtil {
 				a.placement = text(am.get("placement"), MAX_FIELD_CHARS);
 				a.description = text(am.get("description"), MAX_FIELD_CHARS);
 				a.count = integer(am.get("count"));
+				a.outfit = text(am.get("outfit"), MAX_FIELD_CHARS);
 				if(a.name == null && a.description == null && a.pose == null && a.action == null) {
 					continue;
 				}
@@ -1205,6 +1306,7 @@ public class PbComposeUtil {
 				ra.character = resolveCharacter(user, a.name, cast, groups);
 				if(ra.character != null) {
 					ra.displayName = str(ra.character.get(FieldNames.FIELD_NAME));
+					ra.outfit = a.outfit;
 					if(word != null && word != PbActorRoleEnumType.CROWD) {
 						ra.role = word;
 					}
@@ -1241,6 +1343,8 @@ public class PbComposeUtil {
 			}
 			s.actors.add(ra);
 		}
+		preservePins(ctx, s, result);
+		resolveOutfits(user, ctx, s, result);
 		int n = s.actors.size();
 		s.shot = PbLayoutUtil.resolveShotType(PbLayoutUtil.parseShotType(p.shotWord), n);
 		s.viewpoint = PbLayoutUtil.resolveViewpoint(PbLayoutUtil.parseViewpoint(p.viewpointWord));
@@ -1286,6 +1390,67 @@ public class PbComposeUtil {
 		}
 		result.locationHint = locationHint(p);
 		return s;
+	}
+
+	/**
+	 * The wardrobe step of a compose (design §6.1): for each cast actor whose reply row carried {@code outfit}
+	 * and that holds no pin, build (or reuse) an alternate in the character's wardrobe and pin the row to it.
+	 * A pinned actor keeps its pin - the user's choice outranks the text. Every failure here is a warning and a
+	 * skipped outfit, never a failed compose: the composition is worth writing without its outfits.
+	 */
+	private static void resolveOutfits(BaseRecord user, Context ctx, Staging s, ComposeResult result) {
+		for(ResolvedActor ra : s.actors) {
+			if(ra.character == null || ra.apparel != null || !NarrativeUtil.isMeaningful(ra.outfit)) {
+				continue;
+			}
+			OlioContext octx = olioContextFor(user, ctx);
+			if(octx == null) {
+				result.outfitsSkipped++;
+				result.warnings.add("Outfit \"" + ra.outfit + "\" for " + ra.displayName + " skipped: " + ctx.octxFailure);
+				continue;
+			}
+			try {
+				BaseRecord cp = PbWardrobeUtil.readCharacterById(user, PbWardrobeUtil.idOf(ra.character), ctx.orgId);
+				BaseRecord store = (cp != null ? PbWardrobeUtil.storeOf(user, cp) : null);
+				if(store == null) {
+					throw new PictureBookException(400, "character has no store");
+				}
+				PbWardrobeUtil.CreateResult cr = PbWardrobeUtil.createAlternateUnchecked(user, ctx.chatConfig, octx, cp, store, ra.outfit);
+				ra.apparel = cr.apparel;
+				if(cr.reused) {
+					result.outfitsReused++;
+				}
+				else {
+					result.outfitsCreated++;
+				}
+			}
+			catch(RuntimeException e) {
+				result.outfitsSkipped++;
+				result.warnings.add("Outfit \"" + ra.outfit + "\" for " + ra.displayName + " skipped: " + PbServiceFacade.curatedMessage(e));
+				logger.warn("compose-scene " + ctx.label() + ": outfit for " + ra.displayName + " skipped", e);
+			}
+		}
+	}
+
+	/// Opened once per compose, on the first outfit; a failure is remembered so later actors do not retry it.
+	private static OlioContext olioContextFor(BaseRecord user, Context ctx) {
+		if(ctx.octxTried) {
+			return ctx.octx;
+		}
+		ctx.octxTried = true;
+		try {
+			ctx.octx = PbWardrobeUtil.resolveOlioContext(user, ctx.book, ctx.bctx, ctx.dataPath);
+		}
+		catch(OlioException e) {
+			/// OlioException text is written by this module and PbOlioContextUtil (slug, role path); safe for the owner
+			ctx.octxFailure = (e.getMessage() != null ? e.getMessage() : "the book's world could not be opened");
+			logger.warn("compose-scene " + ctx.label() + ": no Olio context for wardrobe alternates", e);
+		}
+		catch(RuntimeException e) {
+			ctx.octxFailure = PbServiceFacade.curatedMessage(e);
+			logger.warn("compose-scene " + ctx.label() + ": no Olio context for wardrobe alternates", e);
+		}
+		return ctx.octx;
 	}
 
 	/**
@@ -1628,6 +1793,9 @@ public class PbComposeUtil {
 			row.set(OlioFieldNames.FIELD_PB_COMPOSITION, comp);
 			if(ra.character != null) {
 				row.set(OlioFieldNames.FIELD_PB_CHARACTER, ra.character);
+				if(ra.apparel != null) {
+					row.set(OlioFieldNames.FIELD_APPAREL, ra.apparel);
+				}
 			}
 			row.set(OlioFieldNames.FIELD_PB_ROLE, ra.role.toString());
 			row.set(OlioFieldNames.FIELD_PB_PRIORITY, Integer.valueOf(index));
@@ -1699,6 +1867,391 @@ public class PbComposeUtil {
 		q.setRequest(compositionRequest());
 		q.setCache(false);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	public static BaseRecord readElement(BaseRecord user, String objectId, long orgId) {
+		if(user == null || objectId == null) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_SCENE_ELEMENT, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(elementRequest());
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	// ─────────────────────────────── promote (design §7.2 rule 4) ───────────────────────────────
+
+	/** {@code olio.item.type} of an item promoted from a scene element; the world catalogue rows are {@code "template"}. */
+	public static final String ITEM_TYPE_PROP = "prop";
+	public static final int ITEM_NAME_MAX = 64;
+	public static final int ITEM_DESCRIPTION_MAX = 512;
+	static final String[] ITEM_TEXT_REQUEST = new String[] {
+		FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+		FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_DESCRIPTION, OlioFieldNames.FIELD_MATERIALS,
+		OlioFieldNames.FIELD_COLOR, OlioFieldNames.FIELD_COMPLEMENT_COLOR, OlioFieldNames.FIELD_ACCENT_COLOR
+	};
+
+	/** Outcome of one {@link #promoteElement}. Public plain fields so Service7 can shape its DTO from it. */
+	public static final class PromoteResult {
+		public BaseRecord element;
+		public BaseRecord item;
+		public BaseRecord scene;
+		/** The element now references an existing {@code olio.item} row. */
+		public boolean promoted;
+		/** A new item row was written for this call. */
+		public boolean created;
+		/** The element was linked to an item that already existed (store match, same-name prop, or an earlier promote). */
+		public boolean reused;
+		/** {@link #elementText(BaseRecord, BaseRecord)} of the element after the link, from the freshly loaded item. */
+		public String elementText;
+		/** 1 when the scene's node was marked STALE by this call, else 0. */
+		public int staled;
+		public final List<String> warnings = new ArrayList<>();
+	}
+
+	/**
+	 * Promote one scene element to an {@code olio.item} held by the scene's location (design §7.2 rule 4):
+	 * the item is created as the olio principal <b>after</b> the caller has been authorized to update the
+	 * book, enrolled in the location's POI {@code store.items} as the caller through
+	 * {@code AccessPoint.member} (never the bare {@code MemberUtil} write), and {@code sceneElement.item} is
+	 * set by a row-level patch as the caller.
+	 * <p>
+	 * Order: (1) book update authorization, (2) world context, (3) composition belongs to the book else 404,
+	 * (4) element belongs to the composition else 404, (5) idempotent when the element already links an
+	 * item whose row still exists, (6) scene, (7) location = the composition's else the scene's, and its
+	 * POI store - none is a 409 (no orphan item is ever written), (8) {@code canUpdate(user, store)} before
+	 * any write else 403, (9) reuse the store item the description names, (10) else reuse a same-name
+	 * {@code type=prop} item of the world Items group, else create one as the olio principal, (11) enrol,
+	 * (12) link, (13) mark the scene node stale ({@code sceneElement.item} is a watched field).
+	 * <p>
+	 * Self-heal: when step 11 or 12 fails after a create, the item row stays in the Items group as a
+	 * {@code type=prop} orphan and the next promote of the same element finds it by name at step 10
+	 * instead of writing a second one.
+	 */
+	public static PromoteResult promoteElement(BaseRecord user, BaseRecord book, String compositionObjectId, String elementObjectId) {
+		BaseRecord fresh = PbBookUtil.requireBookUpdate(user, book, "promote an element");
+		long orgId = ((Number) fresh.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		if(compositionObjectId == null || compositionObjectId.isBlank()) {
+			throw new PictureBookException(400, "A composition objectId is required");
+		}
+		if(elementObjectId == null || elementObjectId.isBlank()) {
+			throw new PictureBookException(400, "An element objectId is required");
+		}
+		BookContext bctx = PbLocationUtil.requireBookContext(user, fresh);
+
+		BaseRecord comp = readComposition(user, compositionObjectId, orgId);
+		if(comp == null || PbHealthUtil.fkId(comp, OlioFieldNames.FIELD_PB_BOOK) != PbHealthUtil.idOf(fresh)) {
+			throw new PictureBookException(404, "Composition " + compositionObjectId + " not found in this book");
+		}
+		BaseRecord element = readElement(user, elementObjectId, orgId);
+		if(element == null || PbHealthUtil.fkId(element, OlioFieldNames.FIELD_PB_COMPOSITION) != PbHealthUtil.idOf(comp)) {
+			throw new PictureBookException(404, "Element " + elementObjectId + " not found in this composition");
+		}
+		PromoteResult result = new PromoteResult();
+		result.element = element;
+		String elementOid = str(element.get(FieldNames.FIELD_OBJECT_ID));
+		String description = str(element.get(FieldNames.FIELD_DESCRIPTION));
+
+		long linkedId = PbHealthUtil.fkId(element, OlioFieldNames.FIELD_ITEM);
+		if(linkedId > 0L) {
+			if(itemExists(linkedId, orgId)) {
+				result.item = readItemById(user, linkedId, orgId);
+				result.promoted = true;
+				result.reused = true;
+				result.elementText = elementText(user, element);
+				return result;
+			}
+			result.warnings.add("Element " + elementOid + " linked item #" + linkedId + " which no longer exists; re-promoting");
+		}
+
+		String sceneOid = fkObjectId(comp, OlioFieldNames.FIELD_PB_SCENE);
+		BaseRecord scene = (sceneOid != null ? PbBookUtil.readScene(user, sceneOid, orgId) : null);
+		if(scene == null) {
+			result.warnings.add("Composition " + compositionObjectId + " has no readable scene; the scene node cannot be marked stale");
+		}
+		result.scene = scene;
+
+		BaseRecord locRef = locationRefOf(comp, scene);
+		if(locRef == null) {
+			throw new PictureBookException(409, "Composition " + compositionObjectId + " has no location to hold the item");
+		}
+		/// Same-world rule of P3-4 (PbLocationUtil.requireLocationOfBook): a location of another world is "not found" here
+		BaseRecord loc = PbLocationUtil.readLocation(user, str(locRef.get(FieldNames.FIELD_OBJECT_ID)), orgId);
+		if(loc == null || !PbLocationUtil.sameWorld(fresh, loc)) {
+			throw new PictureBookException(404, "Location not found in this book's world");
+		}
+		BaseRecord storeRef = poiStoreOfLocation(user, loc, orgId);
+		BaseRecord store = (storeRef != null ? readStoreById(user, PbHealthUtil.idOf(storeRef), orgId) : null);
+		if(store == null) {
+			String locName = str(loc.get(FieldNames.FIELD_NAME));
+			throw new PictureBookException(409, "Location " + (locName != null ? "'" + locName + "'" : str(loc.get(FieldNames.FIELD_OBJECT_ID)))
+				+ " has no point of interest store to hold the item");
+		}
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, store);
+		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			throw new PictureBookException(403, "Not authorized to update the location's store");
+		}
+
+		BaseRecord item = null;
+		boolean enrol = true;
+		try {
+			item = matchItem(description, storeItems(user, store, orgId));
+		}
+		catch(IndexException | ReaderException e) {
+			logger.error("promoteElement " + elementOid + ": could not read the store's items: " + e.getMessage(), e);
+			throw new PictureBookException(500, "Could not read the location's items");
+		}
+		if(item != null) {
+			result.reused = true;
+			enrol = false;
+		}
+		else {
+			String name = itemNameOf(description);
+			if(name == null) {
+				throw new PictureBookException(409, "Element " + elementOid + " has no description to name an item from");
+			}
+			BaseRecord itemsGroup = bctx.getGroup(OlioFieldNames.FIELD_ITEMS);
+			String itemsPath = bctx.getGroupPath(OlioFieldNames.FIELD_ITEMS);
+			if(itemsGroup == null || itemsPath == null) {
+				throw new PictureBookException(409, "Book " + fresh.get(OlioFieldNames.FIELD_PB_SLUG) + " has no world Items group");
+			}
+			item = findPropByName(user, name, PbHealthUtil.idOf(itemsGroup), orgId);
+			if(item != null) {
+				result.reused = true;
+			}
+			else {
+				item = createProp(user, name, description, itemsPath, orgId);
+				result.created = true;
+			}
+		}
+		String itemName = str(item.get(FieldNames.FIELD_NAME));
+		if(enrol) {
+			/// AccessPoint.member: canRead(user, item) + canUpdate(user, store), audited - never the bare MemberUtil write
+			if(!IOSystem.getActiveContext().getAccessPoint().member(user, store, OlioFieldNames.FIELD_ITEMS, item, null, true)) {
+				throw new PictureBookException(500, "Item '" + itemName + "' was " + (result.created ? "created" : "found")
+					+ " but could not be added to the location's store");
+			}
+		}
+
+		BaseRecord patch = PbGraphUtil.patchOf(element, OlioModelNames.MODEL_PB_SCENE_ELEMENT, OlioFieldNames.FIELD_ITEM);
+		setQuiet(patch, OlioFieldNames.FIELD_ITEM, item);
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to link element " + elementOid + " to item '" + itemName + "'");
+		}
+		PbStaleUtil.touch(element);
+		result.item = item;
+		result.promoted = true;
+		if(scene != null && PbBookUtil.markSceneNodeStale(user, scene)) {
+			result.staled = 1;
+		}
+		setQuiet(element, OlioFieldNames.FIELD_ITEM, item);
+		result.elementText = elementText(user, element);
+		return result;
+	}
+
+	/**
+	 * The text the render plan carries for one element: from the freshly loaded {@code olio.item} when the
+	 * element is promoted ({@code "<colour> <materials> <name>, <description> with <complement> and <accent>
+	 * accents"}), else the element's own description when meaningful, else {@code ""}. Never the literal
+	 * {@code "null"}.
+	 */
+	public static String elementText(BaseRecord user, BaseRecord element) {
+		if(element == null) {
+			return "";
+		}
+		String description = str(element.hasField(FieldNames.FIELD_DESCRIPTION) ? element.get(FieldNames.FIELD_DESCRIPTION) : null);
+		long itemId = PbHealthUtil.fkId(element, OlioFieldNames.FIELD_ITEM);
+		if(itemId > 0L && user != null) {
+			BaseRecord item = readItemById(user, itemId, PbGraphUtil.orgId(element));
+			if(item != null) {
+				String text = itemText(str(item.get(FieldNames.FIELD_NAME)), str(item.get(FieldNames.FIELD_DESCRIPTION)),
+					colourNames(item), item.hasField(OlioFieldNames.FIELD_MATERIALS) ? item.get(OlioFieldNames.FIELD_MATERIALS) : null);
+				if(!text.isEmpty()) {
+					return text;
+				}
+			}
+		}
+		return (NarrativeUtil.isMeaningful(description) ? tidy(description) : "");
+	}
+
+	/**
+	 * Pure composition of an item's prompt text (no I/O): {@code colours[0] + materials + name}, then
+	 * {@code ", " + description} when meaningful and not just the name again, then
+	 * {@code " with <c1> and <c2> accents"} for any further colours. Lower-cased, parentheticals removed,
+	 * whitespace collapsed; {@code ""} when the name is not meaningful.
+	 */
+	static String itemText(String name, String description, List<String> colourNames, List<String> materials) {
+		if(!NarrativeUtil.isMeaningful(name)) {
+			return "";
+		}
+		List<String> colours = new ArrayList<>();
+		if(colourNames != null) {
+			for(String c : colourNames) {
+				if(NarrativeUtil.isMeaningful(c)) {
+					colours.add(tidy(c));
+				}
+			}
+		}
+		List<String> mats = new ArrayList<>();
+		if(materials != null) {
+			for(String m : materials) {
+				if(NarrativeUtil.isMeaningful(m)) {
+					mats.add(tidy(m));
+				}
+			}
+		}
+		StringBuilder sb = new StringBuilder();
+		if(!colours.isEmpty()) {
+			sb.append(colours.get(0)).append(' ');
+		}
+		if(!mats.isEmpty()) {
+			sb.append(String.join(" and ", mats)).append(' ');
+		}
+		String tname = tidy(name);
+		sb.append(tname);
+		if(NarrativeUtil.isMeaningful(description)) {
+			String tdesc = tidy(description);
+			if(!tdesc.isEmpty() && !tdesc.equals(tname)) {
+				sb.append(", ").append(tdesc);
+			}
+		}
+		if(colours.size() > 1) {
+			sb.append(" with ").append(String.join(" and ", colours.subList(1, colours.size()))).append(" accents");
+		}
+		return sb.toString().replaceAll("\\s+", " ").trim();
+	}
+
+	/// Item name from an element description: trimmed, whitespace collapsed, leading article dropped,
+	/// lower-cased, capped at ITEM_NAME_MAX; null when nothing meaningful remains.
+	static String itemNameOf(String description) {
+		if(!NarrativeUtil.isMeaningful(description)) {
+			return null;
+		}
+		String s = tidy(description);
+		s = s.replaceFirst("^(?:a|an|the|some)\\s+", "");
+		if(s.length() > ITEM_NAME_MAX) {
+			s = s.substring(0, ITEM_NAME_MAX).trim();
+		}
+		return (s.isEmpty() ? null : s);
+	}
+
+	private static String tidy(String s) {
+		if(s == null) {
+			return "";
+		}
+		return s.replaceAll("\\([^)]*\\)", " ").replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT);
+	}
+
+	private static List<String> colourNames(BaseRecord item) {
+		List<String> names = new ArrayList<>();
+		for(String f : new String[] { OlioFieldNames.FIELD_COLOR, OlioFieldNames.FIELD_COMPLEMENT_COLOR, OlioFieldNames.FIELD_ACCENT_COLOR }) {
+			BaseRecord c = (item.hasField(f) ? item.get(f) : null);
+			String n = (c != null && c.hasField(FieldNames.FIELD_NAME) ? str(c.get(FieldNames.FIELD_NAME)) : null);
+			names.add(n);
+		}
+		return names;
+	}
+
+	/// The composition's own location ref when it carries an objectId, else the scene's; null when neither does.
+	private static BaseRecord locationRefOf(BaseRecord comp, BaseRecord scene) {
+		BaseRecord ref = (comp.hasField(FieldNames.FIELD_LOCATION) ? comp.get(FieldNames.FIELD_LOCATION) : null);
+		if(ref != null && str(ref.get(FieldNames.FIELD_OBJECT_ID)) != null) {
+			return ref;
+		}
+		ref = (scene != null && scene.hasField(FieldNames.FIELD_LOCATION) ? scene.get(FieldNames.FIELD_LOCATION) : null);
+		return (ref != null && str(ref.get(FieldNames.FIELD_OBJECT_ID)) != null ? ref : null);
+	}
+
+	private static String fkObjectId(BaseRecord rec, String field) {
+		BaseRecord fk = (rec != null && rec.hasField(field) ? rec.get(field) : null);
+		return (fk != null ? str(fk.get(FieldNames.FIELD_OBJECT_ID)) : null);
+	}
+
+	/// The store re-read as the caller with just what PBAC needs; null when unreadable.
+	private static BaseRecord readStoreById(BaseRecord user, long storeId, long orgId) {
+		if(storeId <= 0L) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_STORE, FieldNames.FIELD_ID, storeId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/// Existence only (no PBAC): a deleted FK target reads back as an id-only stub, so "linked" means the row is still there.
+	private static boolean itemExists(long itemId, long orgId) {
+		if(itemId <= 0L) {
+			return false;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_ITEM, FieldNames.FIELD_ID, itemId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID });
+		q.setCache(false);
+		return IOSystem.getActiveContext().getSearch().findRecord(q) != null;
+	}
+
+	/// The item with its text fields and colour names, read as the caller; null when absent or unreadable.
+	static BaseRecord readItemById(BaseRecord user, long itemId, long orgId) {
+		if(user == null || itemId <= 0L) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_ITEM, FieldNames.FIELD_ID, itemId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(ITEM_TEXT_REQUEST);
+		q.planField(OlioFieldNames.FIELD_COLOR, new String[] { FieldNames.FIELD_NAME });
+		q.planField(OlioFieldNames.FIELD_COMPLEMENT_COLOR, new String[] { FieldNames.FIELD_NAME });
+		q.planField(OlioFieldNames.FIELD_ACCENT_COLOR, new String[] { FieldNames.FIELD_NAME });
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/// A same-name type=prop item of the world Items group, read as the caller with an explicit groupId
+	/// (the group-only PBAC shortcut). Catalogue rows are type=template and are never reused here.
+	private static BaseRecord findPropByName(BaseRecord user, String name, long itemsGroupId, long orgId) {
+		if(itemsGroupId <= 0L) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_ITEM, FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_GROUP_ID, itemsGroupId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.field(FieldNames.FIELD_TYPE, ITEM_TYPE_PROP);
+		q.setRequest(ITEM_TEXT_REQUEST);
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/// Writes the item as the olio principal (the book has already authorized the caller for update) and
+	/// re-reads it as the caller so the returned record is what the caller is allowed to see.
+	private static BaseRecord createProp(BaseRecord user, String name, String description, String itemsPath, long orgId) {
+		BaseRecord olioUser = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		if(olioUser == null) {
+			throw new PictureBookException(500, "No olio principal in organization " + orgId);
+		}
+		BaseRecord item;
+		try {
+			item = RecordFactory.newInstance(OlioModelNames.MODEL_ITEM);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(olioUser, item, name, itemsPath, orgId);
+			item.set(FieldNames.FIELD_NAME, name);
+			item.set(FieldNames.FIELD_TYPE, ITEM_TYPE_PROP);
+			item.set(FieldNames.FIELD_DESCRIPTION, cap(description, ITEM_DESCRIPTION_MAX));
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to assemble item '" + name + "': " + e.getMessage(), e);
+			throw new PictureBookException(500, "Failed to assemble item '" + name + "'");
+		}
+		if(!IOSystem.getActiveContext().getRecordUtil().createRecord(item)) {
+			throw new PictureBookException(500, "Failed to create item '" + name + "'");
+		}
+		BaseRecord readBack = readItemById(user, PbHealthUtil.idOf(item), orgId);
+		if(readBack == null) {
+			logger.error("Item '" + name + "' (#" + PbHealthUtil.idOf(item) + ") was created in " + itemsPath + " but is not readable by "
+				+ user.get(FieldNames.FIELD_NAME));
+			throw new PictureBookException(500, "Item '" + name + "' was created but is not readable by the caller");
+		}
+		return readBack;
 	}
 
 	// ─────────────────────────────── small helpers ───────────────────────────────

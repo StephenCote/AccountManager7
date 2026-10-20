@@ -35,6 +35,7 @@ import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
+import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -3580,10 +3581,20 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestCompose(BaseRecord user, String bookObjectId, boolean quickStart, boolean force,
 			String chatConfigName, String sdApiType, String sdServer) {
+		return requestCompose(user, bookObjectId, quickStart, force, chatConfigName, sdApiType, sdServer, null);
+	}
+
+	/**
+	 * {@link #requestCompose(BaseRecord, String, boolean, boolean, String, String, String)} with the deployment's
+	 * {@code datagen.path}, which lets the job build a wardrobe alternate when the LLM reports an outfit change
+	 * (V3 §6.1, P4-5); without it an outfit is honoured only when the book world is already open in this JVM.
+	 */
+	public static Map<String, Object> requestCompose(BaseRecord user, String bookObjectId, boolean quickStart, boolean force,
+			String chatConfigName, String sdApiType, String sdServer, String dataPath) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "compose scenes");
-		return PbComposeJobUtil.submitCompose(user, book, quickStart, force, chatConfigName, sdApiType, sdServer);
+		return PbComposeJobUtil.submitCompose(user, book, quickStart, force, chatConfigName, sdApiType, sdServer, dataPath);
 	}
 
 	/**
@@ -3594,12 +3605,19 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> composeScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String chatConfigName, boolean force) {
+		return composeScene(user, bookObjectId, sceneObjectId, chatConfigName, force, null);
+	}
+
+	/** {@link #composeScene(BaseRecord, String, String, String, boolean)} with {@code datagen.path} for outfit changes (§6.1). */
+	public static Map<String, Object> composeScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String chatConfigName, boolean force, String dataPath) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "compose scenes");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
 		PbComposeJobUtil.requireNotComposing(bookObjectId);
-		PbComposeUtil.ComposeResult r = PbComposeUtil.composeScene(user, book, scene, chatConfigName, force);
+		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
+		PbComposeUtil.ComposeResult r = PbComposeUtil.composeScene(user, book, scene, cfg, force, null, dataPath);
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
@@ -3640,7 +3658,7 @@ public class PbServiceFacade {
 				return out;
 			}
 			requireBookUpdate(user, book, "compose scenes");
-			out.put("composeJob", PbComposeJobUtil.submitCompose(user, book, false, false, chatConfigName, null, null));
+			out.put("composeJob", PbComposeJobUtil.submitCompose(user, book, false, false, chatConfigName, null, null, dataPath));
 		}
 		catch(PictureBookException e) {
 			Map<String, Object> err = new LinkedHashMap<>();
@@ -3677,6 +3695,10 @@ public class PbServiceFacade {
 		m.put("unresolvedNames", (r.unresolvedNames != null ? new ArrayList<>(r.unresolvedNames) : new ArrayList<>()));
 		m.put("unrecognizedPlacements", (r.unrecognizedPlacements != null ? new ArrayList<>(r.unrecognizedPlacements) : new ArrayList<>()));
 		m.put("locationHint", r.locationHint);
+		m.put("outfitsCreated", Integer.valueOf(r.outfitsCreated));
+		m.put("outfitsReused", Integer.valueOf(r.outfitsReused));
+		m.put("outfitsSkipped", Integer.valueOf(r.outfitsSkipped));
+		m.put("pinsPreserved", Integer.valueOf(r.pinsPreserved));
 		m.put("elapsedMs", Long.valueOf(r.elapsedMs));
 		m.put("compositionObjectId", (r.composition != null ? r.composition.get(FieldNames.FIELD_OBJECT_ID) : null));
 		m.put("composition", (r.composition != null ? compositionDto(r.composition) : null));
@@ -3723,6 +3745,7 @@ public class PbServiceFacade {
 		m.put("objectId", a.get(FieldNames.FIELD_OBJECT_ID));
 		m.put("name", a.get(FieldNames.FIELD_NAME));
 		m.put("characterObjectId", fkObjectId(a, OlioFieldNames.FIELD_PB_CHARACTER, null));
+		m.put("apparelObjectId", fkObjectId(a, OlioFieldNames.FIELD_APPAREL, null));
 		m.put("role", enumString(a, OlioFieldNames.FIELD_PB_ROLE));
 		m.put("priority", a.get(OlioFieldNames.FIELD_PB_PRIORITY));
 		m.put("pose", a.get(OlioFieldNames.FIELD_PB_POSE));
@@ -4234,6 +4257,281 @@ public class PbServiceFacade {
 			out.add(w);
 		}
 		return out;
+	}
+
+	// ─────────────────────────────── wardrobe (V3 §6, §6.1, §6.2; P4-5) ───────────────────────────────
+
+	/**
+	 * A character's wardrobe as the caller reads it (V3 §6): every apparel of the character's store with its
+	 * wearables and reference gallery, which one is the default ({@code inuse}), and the legacy {@code sceneIndex}
+	 * tag when one is still carried. The character must belong to the book (404 otherwise).
+	 */
+	public static Map<String, Object> listWardrobe(BaseRecord user, String bookObjectId, String characterObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbWardrobeUtil.Wardrobe w = PbWardrobeUtil.listWardrobe(user, book, characterObjectId);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("characterObjectId", w.character.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("characterName", w.character.get(FieldNames.FIELD_NAME));
+		out.put("storeObjectId", (w.store != null ? w.store.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("defaultApparelObjectId", (w.defaultEntry != null ? w.defaultEntry.apparel.get(FieldNames.FIELD_OBJECT_ID) : null));
+		List<Map<String, Object>> entries = new ArrayList<>();
+		for(PbWardrobeUtil.WardrobeEntry e : w.entries) {
+			entries.add(wardrobeEntryDto(e));
+		}
+		out.put("entries", entries);
+		out.put("entryCount", Integer.valueOf(entries.size()));
+		out.put("warnings", new ArrayList<>(w.warnings));
+		return out;
+	}
+
+	/**
+	 * Add an alternate outfit to a character's wardrobe from a free-text description (V3 §6.1 user-created
+	 * alternate): the LLM picks catalog items, the apparel generator builds the apparel as the olio principal with
+	 * {@code inuse = false}, and the store membership is written as the caller. A description already in the
+	 * wardrobe is reused ({@code reused:true}), not duplicated.
+	 *
+	 * @param dataPath the deployment's {@code datagen.path}; the book's world is opened with it (409 without one)
+	 * @throws PictureBookException 400 blank description; 403 no update grant; 404 character; 409 wardrobe full or
+	 *                              no world context; 502 the LLM produced nothing usable
+	 */
+	public static Map<String, Object> createAlternate(BaseRecord user, String bookObjectId, String characterObjectId, String description,
+			String chatConfigName, String dataPath) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "modify the wardrobe");
+		PbWardrobeUtil.CreateResult r = PbWardrobeUtil.createAlternate(user, book, characterObjectId, description, chatConfigName, dataPath);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("characterObjectId", characterObjectId);
+		out.put("apparelObjectId", (r.apparel != null ? r.apparel.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("name", (r.apparel != null ? r.apparel.get(FieldNames.FIELD_NAME) : null));
+		out.put("description", r.description);
+		out.put("reused", Boolean.valueOf(r.reused));
+		out.put("items", new ArrayList<>(r.items));
+		out.put("unmatched", new ArrayList<>(r.unmatched));
+		out.put("wearables", Integer.valueOf(r.wearables));
+		out.put("colorsResolved", Integer.valueOf(r.colorsResolved));
+		out.put("elapsedMs", Long.valueOf(r.elapsedMs));
+		return out;
+	}
+
+	/**
+	 * Make one wardrobe entry the character's default (V3 §6.1): {@code inuse} moves to it as the caller, and only
+	 * the scenes whose outfit for this character resolved to the default - not pinned, not carried from a pin -
+	 * are marked stale. Rendering never changes the default.
+	 */
+	public static Map<String, Object> setDefaultApparel(BaseRecord user, String bookObjectId, String characterObjectId, String apparelObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "modify the wardrobe");
+		PbWardrobeUtil.SetDefaultResult r = PbWardrobeUtil.setDefault(user, book, characterObjectId, apparelObjectId);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("characterObjectId", characterObjectId);
+		out.put("apparelObjectId", (r.apparel != null ? r.apparel.get(FieldNames.FIELD_OBJECT_ID) : null));
+		List<String> prev = new ArrayList<>();
+		for(BaseRecord p : r.previous) {
+			prev.add(p.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		out.put("previousApparelObjectIds", prev);
+		out.put("changed", Boolean.valueOf(r.changed));
+		out.put("scenesScanned", Integer.valueOf(r.scenesScanned));
+		out.put("staled", Integer.valueOf(r.staled));
+		out.put("warnings", new ArrayList<>(r.warnings));
+		return out;
+	}
+
+	/**
+	 * Queue the reference-image job for one wardrobe entry (V3 §6.2, 182 (12)): the apparel's wearables are
+	 * rendered on a mannequin by the book's effective style at the PORTRAIT task and linked into
+	 * {@code apparel.gallery}. The character and the apparel are checked against the book <b>before</b> the
+	 * job is claimed, so a wrong id answers 404/400 here rather than as a failed job. One live job per apparel
+	 * (409 while it runs); the result is the job's.
+	 *
+	 * @return {@link PbComposeJobUtil#submitApparelReference}'s map ({@code jobId}, {@code jobStatus}, {@code reused})
+	 * @throws PictureBookException 403 no update grant; 404 character / apparel; 400 apparel of another character;
+	 *                              409 a live job; 500 no SD backend
+	 */
+	public static Map<String, Object> requestApparelReference(BaseRecord user, String bookObjectId, String characterObjectId,
+			String apparelObjectId, String sdApiType, String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "render a wardrobe reference");
+		BaseRecord cp = PbWardrobeUtil.requireCharacterOfBook(user, book, characterObjectId);
+		BaseRecord apparel = PbWardrobeUtil.requireApparelOfCharacter(user, cp, apparelObjectId);
+		SDUtil sdu;
+		try {
+			sdu = PbNodeExecutor.toSdUtil(sdApiType, sdServer);
+		}
+		catch(IllegalArgumentException e) {
+			logger.error("SD server API type '" + sdApiType + "' is not recognised");
+			throw new PictureBookException(500, "SD server API type is not recognised");
+		}
+		if(sdu == null) {
+			throw new PictureBookException(500, "SD server not configured; a wardrobe reference is rendered by the SD backend");
+		}
+		return PbComposeJobUtil.submitApparelReference(user, book, cp.get(FieldNames.FIELD_OBJECT_ID), apparel.get(FieldNames.FIELD_OBJECT_ID), sdu, sdServer);
+	}
+
+	/**
+	 * Pin ({@code apparelObjectId}) or unpin (null / blank) a scene actor's outfit (V3 §6.1): the apparel must be in
+	 * the actor's character's wardrobe (400 otherwise); the scene and every later scene that carried from it are
+	 * marked stale. A pin does not mark the composition user-edited and survives a recompose.
+	 */
+	public static Map<String, Object> pinActorApparel(BaseRecord user, String bookObjectId, String compositionObjectId, String actorObjectId,
+			String apparelObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "pin an outfit");
+		if(compositionObjectId == null || compositionObjectId.isBlank()) {
+			throw new PictureBookException(400, "A composition objectId is required");
+		}
+		if(actorObjectId == null || actorObjectId.isBlank()) {
+			throw new PictureBookException(400, "An actor objectId is required");
+		}
+		String target = (apparelObjectId != null && !apparelObjectId.isBlank() ? apparelObjectId.trim() : null);
+		PbWardrobeUtil.PinResult r = PbWardrobeUtil.pinActorApparel(user, book, compositionObjectId.trim(), actorObjectId.trim(), target);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("compositionObjectId", compositionObjectId.trim());
+		out.put("actorObjectId", (r.actor != null ? r.actor.get(FieldNames.FIELD_OBJECT_ID) : actorObjectId.trim()));
+		out.put("apparelObjectId", (r.apparel != null ? r.apparel.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("pinned", Boolean.valueOf(r.pinned));
+		out.put("staled", Integer.valueOf(r.staled));
+		out.put("affectedSceneIndexes", new ArrayList<>(r.affectedSceneIndexes));
+		return out;
+	}
+
+	/**
+	 * The resolved outfit of every actor of one composition (V3 §6.1 carry-forward, read-only): pinned, carried
+	 * from an earlier scene's pin, the character's default, or none - with the label the board shows
+	 * ({@code (pinned)}, {@code (from scene N)}, {@code (default)}, {@code (none)}). The composition must belong
+	 * to the book (404 otherwise).
+	 */
+	public static Map<String, Object> compositionOutfits(BaseRecord user, String bookObjectId, String compositionObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord comp = requireCompositionOfBook(user, book, compositionObjectId);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("compositionObjectId", comp.get(FieldNames.FIELD_OBJECT_ID));
+		BaseRecord scene = comp.get(OlioFieldNames.FIELD_PB_SCENE);
+		out.put("sceneObjectId", (scene != null ? scene.get(FieldNames.FIELD_OBJECT_ID) : null));
+		List<Map<String, Object>> actors = new ArrayList<>();
+		for(PbWardrobeUtil.ResolvedOutfit ro : PbWardrobeUtil.resolveOutfits(user, book, comp)) {
+			actors.add(resolvedOutfitDto(ro));
+		}
+		out.put("actors", actors);
+		return out;
+	}
+
+	/**
+	 * Turn the legacy {@code sceneIndex} apparel tags of the book's characters into pins on the matching scene
+	 * actors (V3 §6.1 migration, P4-5; the compose job's first-open migration calls the same utility). Idempotent;
+	 * an existing pin is never overwritten; the tag attribute is kept.
+	 */
+	public static Map<String, Object> migrateSceneTags(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "migrate wardrobe tags");
+		PbWardrobeUtil.MigrationResult r = PbWardrobeUtil.migrateSceneTags(user, book);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("scanned", Integer.valueOf(r.scanned));
+		out.put("pinned", Integer.valueOf(r.pinned));
+		out.put("skippedPinned", Integer.valueOf(r.skippedPinned));
+		out.put("skippedNoActor", Integer.valueOf(r.skippedNoActor));
+		out.put("skippedNoScene", Integer.valueOf(r.skippedNoScene));
+		out.put("skippedNoComposition", Integer.valueOf(r.skippedNoComposition));
+		out.put("ambiguous", Integer.valueOf(r.ambiguous));
+		out.put("warnings", new ArrayList<>(r.warnings));
+		return out;
+	}
+
+	/**
+	 * Promote a scene element to an {@code olio.item} held by the scene's location (V3 §7.2 rule 4, P4-6):
+	 * the item is written as the olio principal after the book authorization, enrolled in the location's POI
+	 * store as the caller, and the element is linked to it. Idempotent for an already-promoted element. The
+	 * composition must belong to the book and the element to the composition (404 otherwise); a composition
+	 * with no location or no POI store is a 409 and writes nothing.
+	 */
+	public static Map<String, Object> promoteElement(BaseRecord user, String bookObjectId, String compositionObjectId, String elementObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "promote an element");
+		if(compositionObjectId == null || compositionObjectId.isBlank()) {
+			throw new PictureBookException(400, "A composition objectId is required");
+		}
+		if(elementObjectId == null || elementObjectId.isBlank()) {
+			throw new PictureBookException(400, "An element objectId is required");
+		}
+		PbComposeUtil.PromoteResult r = PbComposeUtil.promoteElement(user, book, compositionObjectId.trim(), elementObjectId.trim());
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("compositionObjectId", compositionObjectId.trim());
+		out.put("elementObjectId", (r.element != null ? r.element.get(FieldNames.FIELD_OBJECT_ID) : elementObjectId.trim()));
+		out.put("promoted", Boolean.valueOf(r.promoted));
+		out.put("created", Boolean.valueOf(r.created));
+		out.put("reused", Boolean.valueOf(r.reused));
+		out.put("itemObjectId", (r.item != null ? r.item.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("itemName", (r.item != null ? r.item.get(FieldNames.FIELD_NAME) : null));
+		out.put("elementText", r.elementText);
+		out.put("staled", Integer.valueOf(r.staled));
+		out.put("warnings", new ArrayList<>(r.warnings));
+		return out;
+	}
+
+	/** A composition readable by {@code user} that belongs to {@code book}; 404 otherwise. */
+	private static BaseRecord requireCompositionOfBook(BaseRecord user, BaseRecord book, String compositionObjectId) {
+		if(compositionObjectId == null || compositionObjectId.isBlank()) {
+			throw new PictureBookException(400, "A composition objectId is required");
+		}
+		BaseRecord comp = PbComposeUtil.readComposition(user, compositionObjectId.trim(), PbGraphUtil.orgId(book));
+		BaseRecord compBook = (comp != null ? comp.get(OlioFieldNames.FIELD_PB_BOOK) : null);
+		Long compBookId = (compBook != null ? compBook.get(FieldNames.FIELD_ID) : null);
+		Long bookId = book.get(FieldNames.FIELD_ID);
+		if(comp == null || compBookId == null || !compBookId.equals(bookId)) {
+			throw new PictureBookException(404, "Composition " + compositionObjectId + " not found in this book");
+		}
+		return comp;
+	}
+
+	private static Map<String, Object> wardrobeEntryDto(PbWardrobeUtil.WardrobeEntry e) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("objectId", e.apparel.get(FieldNames.FIELD_OBJECT_ID));
+		m.put("name", e.apparel.get(FieldNames.FIELD_NAME));
+		m.put("description", e.apparel.get(FieldNames.FIELD_DESCRIPTION));
+		m.put("isDefault", Boolean.valueOf(e.isDefault));
+		m.put("sceneIndex", e.sceneIndex);
+		List<Map<String, Object>> wears = new ArrayList<>();
+		for(BaseRecord w : e.wearables) {
+			Map<String, Object> wm = new LinkedHashMap<>();
+			wm.put("objectId", (w.hasField(FieldNames.FIELD_OBJECT_ID) ? w.get(FieldNames.FIELD_OBJECT_ID) : null));
+			wm.put("name", (w.hasField(FieldNames.FIELD_NAME) ? w.get(FieldNames.FIELD_NAME) : null));
+			wm.put("level", (w.hasField(OlioFieldNames.FIELD_LEVEL) ? enumString(w, OlioFieldNames.FIELD_LEVEL) : null));
+			wm.put("fabric", (w.hasField(OlioFieldNames.FIELD_FABRIC) ? w.get(OlioFieldNames.FIELD_FABRIC) : null));
+			wears.add(wm);
+		}
+		m.put("wearables", wears);
+		List<Map<String, Object>> gallery = new ArrayList<>();
+		for(BaseRecord g : e.gallery) {
+			Map<String, Object> gm = new LinkedHashMap<>();
+			gm.put("objectId", g.get(FieldNames.FIELD_OBJECT_ID));
+			gm.put("name", g.get(FieldNames.FIELD_NAME));
+			gallery.add(gm);
+		}
+		m.put("gallery", gallery);
+		m.put("referenceObjectId", (gallery.isEmpty() ? null : gallery.get(gallery.size() - 1).get("objectId")));
+		return m;
+	}
+
+	private static Map<String, Object> resolvedOutfitDto(PbWardrobeUtil.ResolvedOutfit ro) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("actorObjectId", (ro.actor != null ? ro.actor.get(FieldNames.FIELD_OBJECT_ID) : null));
+		m.put("actorName", (ro.actor != null ? ro.actor.get(FieldNames.FIELD_NAME) : null));
+		m.put("characterObjectId", (ro.character != null ? ro.character.get(FieldNames.FIELD_OBJECT_ID) : null));
+		m.put("apparelObjectId", (ro.apparel != null ? ro.apparel.get(FieldNames.FIELD_OBJECT_ID) : null));
+		m.put("apparelName", (ro.apparel != null ? ro.apparel.get(FieldNames.FIELD_NAME) : null));
+		m.put("apparelDescription", (ro.apparel != null && ro.apparel.hasField(FieldNames.FIELD_DESCRIPTION) ? ro.apparel.get(FieldNames.FIELD_DESCRIPTION) : null));
+		m.put("source", ro.source.name().toLowerCase());
+		m.put("fromSceneIndex", Integer.valueOf(ro.fromSceneIndex));
+		m.put("label", ro.label());
+		m.put("warning", ro.warning);
+		return m;
 	}
 
 	// ─────────────────────────────── health check + self-heal ───────────────────────────────

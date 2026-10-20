@@ -469,7 +469,7 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 	public void TestNoPrincipalIs401() {
 		HttpServletRequestMock anon = new HttpServletRequestMock();
 		refused(service.compose(NIL_UUID, "{}", anon, SD_CONTEXT), 401, "No authenticated principal", "anonymous compose");
-		refused(service.composeScene(NIL_UUID, NIL_UUID, "{}", anon), 401, "No authenticated principal", "anonymous scene compose");
+		refused(service.composeScene(NIL_UUID, NIL_UUID, "{}", anon, NO_SD_CONTEXT), 401, "No authenticated principal", "anonymous scene compose");
 		refused(service.proposeLocations(NIL_UUID, "{}", anon), 401, "No authenticated principal", "anonymous propose");
 	}
 
@@ -480,7 +480,7 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 		String bad = "[1,2]";
 		String mb = "Malformed request body";
 		refused(service.compose(NIL_UUID, bad, o, SD_CONTEXT), 400, mb, "malformed compose");
-		refused(service.composeScene(NIL_UUID, NIL_UUID, bad, o), 400, mb, "malformed scene compose");
+		refused(service.composeScene(NIL_UUID, NIL_UUID, bad, o, NO_SD_CONTEXT), 400, mb, "malformed scene compose");
 		refused(service.proposeLocations(NIL_UUID, bad, o), 400, mb, "malformed propose");
 		/// a missing / blank body is an empty body, not a malformed one: it reaches the book gate
 		refused(service.compose(NIL_UUID, null, o, SD_CONTEXT), 404, "Book not found", "compose with no body");
@@ -497,11 +497,11 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			String nf = "Book not found";
 			v3();
 			refused(service.compose(f.bookOid, "{}", s, SD_CONTEXT), 404, nf, "stranger compose (v3)");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", s), 404, nf, "stranger scene compose (v3)");
+			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", s, NO_SD_CONTEXT), 404, nf, "stranger scene compose (v3)");
 			refused(service.proposeLocations(f.bookOid, "{}", s), 404, nf, "stranger propose (v3)");
 			v1();
 			refused(service.compose(f.bookOid, "{}", s, SD_CONTEXT), 404, nf, "stranger compose (v1)");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", s), 404, nf, "stranger scene compose (v1)");
+			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", s, NO_SD_CONTEXT), 404, nf, "stranger scene compose (v1)");
 			refused(service.proposeLocations(f.bookOid, "{}", s), 404, nf, "stranger propose (v1)");
 		}
 		finally {
@@ -520,7 +520,7 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			v1();
 			refused(service.compose(f.bookOid, "{}", o, SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "v1 compose");
 			refused(service.compose(f.bookOid, json("quickStart", Boolean.TRUE, "force", Boolean.TRUE), o, SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "v1 compose with options");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", o), 409, PbRenderPath.REFUSAL_PREFIX, "v1 scene compose");
+			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", o, NO_SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "v1 scene compose");
 
 			Map<String, Object> submit = accepted(service.proposeLocations(f.bookOid, "{}", o), "v1 propose");
 			assertEquals(f.bookOid, submit.get("bookObjectId"));
@@ -550,13 +550,13 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			v3();
 			refused(service.compose(f.bookOid, "{}", r, SD_CONTEXT), 403, na + "compose scenes in this book", "reader compose");
 			refused(service.compose(f.bookOid, json("chatConfigName", MISSING_CONFIG, "quickStart", Boolean.TRUE), r, NO_SD_CONTEXT), 403, na + "compose scenes in this book", "reader compose is the 403, not the 404 config or the 500 SD");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", r), 403, na + "compose scenes in this book", "reader scene compose");
-			refused(service.composeScene(f.bookOid, NIL_UUID, json("chatConfigName", MISSING_CONFIG, "force", Boolean.TRUE), r), 403, na + "compose scenes in this book", "reader scene compose is the 403, not the 404");
+			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", r, NO_SD_CONTEXT), 403, na + "compose scenes in this book", "reader scene compose");
+			refused(service.composeScene(f.bookOid, NIL_UUID, json("chatConfigName", MISSING_CONFIG, "force", Boolean.TRUE), r, NO_SD_CONTEXT), 403, na + "compose scenes in this book", "reader scene compose is the 403, not the 404");
 			refused(service.proposeLocations(f.bookOid, "{}", r), 403, na + "propose locations in this book", "reader propose");
 			refused(service.proposeLocations(f.bookOid, json("chatConfigName", MISSING_CONFIG), r), 403, na + "propose locations in this book", "reader propose is the 403, not the 404 config");
 			v1();
 			refused(service.compose(f.bookOid, "{}", r, SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "reader compose under v1");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", r), 409, PbRenderPath.REFUSAL_PREFIX, "reader scene compose under v1");
+			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", r, NO_SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "reader scene compose under v1");
 			refused(service.proposeLocations(f.bookOid, "{}", r), 403, na + "propose locations in this book", "reader propose under v1");
 			/// and nothing was queued for the book
 			assertEquals("no job runs for the book", 0, AsyncJobRegistry.list(reader).stream().filter(j -> !j.isTerminal()).count());
@@ -580,7 +580,7 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			refused(service.compose(oid(bare), "{}", o, SD_CONTEXT), 409, noWorld, "bare compose");
 			refused(service.compose(oid(bare), json("force", Boolean.TRUE), o, SD_CONTEXT), 409, noWorld, "bare forced compose");
 			refused(service.proposeLocations(oid(bare), "{}", o), 409, noWorld, "bare propose");
-			refused(service.composeScene(oid(bare), NIL_UUID, "{}", o), 404, "not found in this book", "bare scene compose");
+			refused(service.composeScene(oid(bare), NIL_UUID, "{}", o, NO_SD_CONTEXT), 404, "not found in this book", "bare scene compose");
 			assertEquals("nothing queued", 0, AsyncJobRegistry.list(owner).stream().filter(j -> !j.isTerminal()).count());
 		}
 		finally {
@@ -627,7 +627,7 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			assertEquals(Boolean.TRUE, echoed.get("force"));
 			assertEquals("The book has no scenes", echoed.get("reason"));
 			/// per-scene: an unknown scene is a 404 after the book and grant gates
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", o), 404, "not found in this book", "scene compose of unknown scene");
+			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", o, NO_SD_CONTEXT), 404, "not found in this book", "scene compose of unknown scene");
 		}
 		finally {
 			cleanup(f);
@@ -731,8 +731,8 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			assertEquals(Boolean.TRUE, result2.get("locationPassRan"));
 
 			/// 3. the synchronous per-scene route on the same scene
-			refused(service.composeScene(f.bookOid, sceneOid, json("chatConfigName", MISSING_CONFIG), o), 404, "Chat config not found: " + MISSING_CONFIG, "scene compose with unknown config");
-			Map<String, Object> one = ok(service.composeScene(f.bookOid, sceneOid, "{}", o), "scene compose");
+			refused(service.composeScene(f.bookOid, sceneOid, json("chatConfigName", MISSING_CONFIG), o, NO_SD_CONTEXT), 404, "Chat config not found: " + MISSING_CONFIG, "scene compose with unknown config");
+			Map<String, Object> one = ok(service.composeScene(f.bookOid, sceneOid, "{}", o, NO_SD_CONTEXT), "scene compose");
 			assertEquals(f.bookOid, one.get("bookObjectId"));
 			assertEquals(sceneOid, one.get("sceneObjectId"));
 			assertEquals(1, num(one, "sceneIndex"));
@@ -750,13 +750,13 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 
 			/// 4. the user edits the composition: the per-scene route steps aside, force overrides, the book is "composed"
 			markUserEdited(compOid);
-			Map<String, Object> skipped = ok(service.composeScene(f.bookOid, sceneOid, "{}", o), "scene compose of a user-edited composition");
+			Map<String, Object> skipped = ok(service.composeScene(f.bookOid, sceneOid, "{}", o, NO_SD_CONTEXT), "scene compose of a user-edited composition");
 			assertEquals(Boolean.TRUE, skipped.get("skippedUserEdited"));
 			assertEquals(Boolean.FALSE, skipped.get("written"));
 			assertEquals(Boolean.FALSE, skipped.get("hardFailure"));
 			assertEquals(compOid, skipped.get("compositionObjectId"));
 			assertNull("nothing failed, so no reason", skipped.get("failureReason"));
-			Map<String, Object> forced = ok(service.composeScene(f.bookOid, sceneOid, json("force", Boolean.TRUE), o), "forced scene compose of a user-edited composition");
+			Map<String, Object> forced = ok(service.composeScene(f.bookOid, sceneOid, json("force", Boolean.TRUE), o, NO_SD_CONTEXT), "forced scene compose of a user-edited composition");
 			assertEquals(Boolean.FALSE, forced.get("skippedUserEdited"));
 			assertEquals(Boolean.TRUE, forced.get("hardFailure"));
 			assertEquals(compOid, forced.get("compositionObjectId"));

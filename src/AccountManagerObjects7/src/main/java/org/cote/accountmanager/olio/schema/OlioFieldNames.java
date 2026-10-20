@@ -120,6 +120,7 @@ public class OlioFieldNames {
 	public static final String FIELD_CATEGORY = "category";
 	public static final String FIELD_COLOR = "color";
 	public static final String FIELD_COMPLEMENT_COLOR = "complementColor";
+	public static final String FIELD_ACCENT_COLOR = "accentColor";
 	public static final String FIELD_FABRIC = "fabric";
 	
 	public static final String FIELD_QUALITIES = "qualities";

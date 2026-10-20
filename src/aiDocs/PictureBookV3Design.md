@@ -201,6 +201,31 @@ A character changing clothes during the story is a first-class case:
 - **Each alternate has its own reference image** (mannequin or outfit render in `apparel.gallery`)
   with the same review/approve flow as other assets.
 
+> **Built (P4-5, 2026-10-19):** `PbWardrobeUtil` (Objects7) over `PbServiceFacade`. **From the story:** the
+> `pictureBook.compose-scene` reply row gained an `outfit` key ("a short phrase for what the figure is wearing
+> ONLY when the scene text states a change of outfit or describes the figure's clothing, else null"); for each cast
+> actor whose row carries one and that holds no pin, the compose step builds the alternate (or reuses one — same
+> store + normalised description) **and pins the actor row to it**, so a story-detected change is an explicit pin on
+> that scene and carry-forward (§6.2) covers the scenes after it. The alternate is built by the shipped
+> `pictureBook.guess-apparel` → `ApparelUtil.constructApparel` / `designApparel` / `applyGuessedColors` sequence, as
+> the **olio principal** in the book world's Apparel group (so the compose and user routes need the deployment's
+> `datagen.path`), `inuse=false`; the store membership is written **as the caller** through `AccessPoint.member`
+> after a `canUpdate(store)` pre-check (403 before the LLM call). (2026-10-20: the guess receives the character's
+> **physical** description only — `physicalAppearance`: the narrative's `physicalDescription`, fallback `actorDescription` —
+> and the request is prefixed with `REQUEST_FRAME` so it outranks the clothing in the character's own description; live
+> run 4 had dressed the character from her default outfit — implementation doc §6.C 191 (b).) The LLM's item names are normalised onto the
+> catalog (exact, else the longest catalog name contained as whole words), asked once more with a format hint when
+> nothing resolves, then refused with 502 — **no `randomApparel` fallback** for a described outfit; names the catalog
+> could not express come back as `unmatched[]`. A wardrobe failure inside a compose is a warning + `outfitsSkipped`,
+> never a failed composition. **By the user:** `POST /{book}/character/{id}/wardrobe {description, chatConfigName?}`
+> (201 new / 200 reused; 409 at 24 outfits); the existing apparel wizard is untouched. **Default:**
+> `PUT …/wardrobe/{apparel}/default` flips `inuse` as the caller (`AccessPoint.update`, `copyRecord([id, objectId,
+> inuse])`, new default first then the old ones). **Reference image:** `POST …/wardrobe/{apparel}/reference` → 202 job
+> (`pb.apparelReference`, one per apparel) running `SDUtil.generateMannequinImages` with the book's effective
+> PORTRAIT-task config into `~/Gallery/Apparel/<name>`; the images land in `apparel.gallery` and the last is the
+> wardrobe entry's `referenceObjectId`. **Not built:** the "same review/approve flow as other assets" — they are gallery
+> images, not `olio.pb.artifact` rows, so §10 does not see them (implementation doc §6.C 190 (b)). Judgement calls: §6.C 190.
+
 #### 6.2 Per-scene outfit and continuity
 
 - `sceneActor.apparel` is an FK to any apparel in **that character's** wardrobe; validation rejects
@@ -220,6 +245,24 @@ A character changing clothes during the story is a first-class case:
 - **Supersedes:** `tagApparelSceneIndex` and the `sceneIndex` attribute. Migration converts an
   existing tag "apparel X from scene N" into explicit `sceneActor.apparel` on scene N, and lets
   carry-forward cover the scenes after it (§28).
+
+> **Built (P4-5, 2026-10-19):** `PbWardrobeUtil.pinActorApparel` / `resolveOutfits` / `setDefault` /
+> `migrateSceneTags`. **Validation:** a pin must name an apparel in the actor's character's own store (400 otherwise;
+> `requireApparelOfCharacter`), and the character must belong to the book (world Population group, chapter shadow
+> group, or legacy `<bookGroup>/Characters`; 404 otherwise). **Carry-forward** is resolved at read time over the
+> book's compositions in `sceneIndex` order: pinned → `(pinned)`; an earlier scene's pin for the same character →
+> `(from scene N)`; else the store's `inuse` default → `(default)`; none → `(none)`. `GET
+> /{book}/composition/{id}/outfits` returns it per actor with `source` + `label`. A pin (or unpin — empty body) marks
+> the scene and every later scene that carried from it stale; it does **not** set `composition.userEdited` and a
+> re-compose (including `force`) preserves pins. **Rendering never mutates `inuse`:** nothing in P4-5 flips it;
+> the legacy render-time flip in `PbNodeExecutor`/`selectSceneApparel` is left for P4-7, whose `RenderPlan` reads the
+> resolved outfit from the freshly loaded apparel (G-5). **Default change** stales only the scenes that resolved to
+> `(default)` for that character — computed before the flip — via `markSceneNodeStale` + `PbStaleUtil.touch`, since the
+> `watched/v4` set cannot see store membership or another record's `inuse`. **Migration:** `POST
+> /{book}/wardrobe/migrate-scene-tags` (also the P4-10 one-off's utility) turns each `sceneIndex` tag into a pin on
+> scene N's actor; idempotent, never overwrites a pin, marks nothing stale, **keeps the attribute** until the legacy
+> flip goes with P4-7; a chapter book's shared-Population characters are counted `ambiguous`, not guessed.
+> `tagApparelSceneIndex` is deprecated, not deleted. Judgement calls: §6.C 190.
 
 ### 7. Locations — `olio.pb.location` + `olio.pb.locationVariant` (new)
 
@@ -1456,7 +1499,7 @@ Ux implementation follows Ux752 patterns. Read `features/pictureBook.js`,
 | `POST /location/{id}/render?variant=` (async) | Render a location. **[2026-10-16 (P3-4), as built: `POST /{book}/location/{id}/render` with `variant` in the body → `202 {jobId}`; 409 when locked, pinned (an approved render on the subject) or in flight.]** |
 | `PUT /{book}/scene/{sceneId}/location` | **[2026-10-17 (P3-7), as built:** point a scene (or ChapBook page) at a location, `{ locationObjectId?, variantObjectId? }` — both absent clears both FKs (stored as column `0`, read back as null); naming only the variant resolves its parent location. Gate order: 404 book unreadable, 403 unless the caller may update the book, 404 scene outside the book, 404 location outside the book's world (D4) or variant under a different location than the one named; non-string ids 400. Writes both FKs as the caller through `AccessPoint` and then `markSceneNodeStale` (§24 P3-6 (c) — a pointer edit is a staleness event); returns `{sceneObjectId, locationObjectId, locationName, variantObjectId, variantName, updated, nodeStale, pinned, nodeStatus}`. A pinned node is marked STALE like any other and echoed `pinned:true`, not a 409 — only `nextRunnable` honours the pin. `GET /{book}/pages` now carries `locationObjectId`, `locationName`, `locationVariantObjectId`, `locationVariantName` per page.]** |
 | `POST /{book}/compose` → 202, `POST /{book}/scene/{id}/compose` | Whole-book, in-order composition job (§9.1); single-scene re-compose. Both respect `userEdited` |
-| `GET/POST /character/{id}/wardrobe`, `PATCH /scene-actor/{id}/apparel` | Wardrobe alternates; per-scene outfit (§6) |
+| `GET/POST /character/{id}/wardrobe`, `PATCH /scene-actor/{id}/apparel` | Wardrobe alternates; per-scene outfit (§6). **[2026-10-19 (P4-5), as built: every wardrobe route is book-scoped, the book being the authorization anchor — `GET|POST /{book}/character/{id}/wardrobe`, `PUT /{book}/character/{id}/wardrobe/{apparel}/default`, `POST /{book}/character/{id}/wardrobe/{apparel}/reference` (202 job), `PUT /{book}/composition/{comp}/actor/{actor}/apparel` `{apparelObjectId}` (empty body = unpin; replaces the `PATCH /scene-actor/{id}/apparel` shape), `GET /{book}/composition/{comp}/outfits`, `POST /{book}/wardrobe/migrate-scene-tags`. Gate order: 404 book → 403 unless the caller may update the book (reads need only read) → 404 character/composition outside the book → 400 apparel outside the character's wardrobe.]** |
 | `GET/PUT /{book}/settings/auto-approve` | Auto-approve toggle (§10 rule 5) |
 | `GET/PATCH /composition/{id}`, `POST/PATCH/DELETE /composition/{id}/actor[/{aid}]`, same for `/element` | Composition editing |
 | `POST /composition/{id}/plan` | Dry-run: build and return the plan (strategy, models, compiled prompts, degradations, estimate) without rendering |

@@ -3595,7 +3595,12 @@ public class PictureBookUtil {
      * @param charObjectId the owning character; required, and the thing actually authorized
      * @throws PictureBookException 404 when the character or apparel is absent/unreadable, 403 when
      *         the owning book denies the write, 400 when the apparel is not this character's
+     * @deprecated V3 §6.1: an outfit is a pin on the scene's composition row
+     *             ({@link PbWardrobeUtil#pinActorApparel}), carried forward by scene order at read
+     *             time; {@link PbWardrobeUtil#migrateSceneTags} turns existing tags into pins. Kept
+     *             for the legacy route and the PB2 render path ({@link #selectSceneApparel}).
      */
+    @Deprecated
     public static boolean tagApparelSceneIndex(BaseRecord user, String charObjectId, String apparelObjectId,
             int sceneIndex) {
         // PB1 guard: identical pattern to persistBookSdConfigFk. Characters in a PB1 world have no

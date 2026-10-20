@@ -73,7 +73,11 @@ public final class PbComposeJobUtil {
 	static final String NOTE_RESUME = "Re-submitting the compose job resumes from the first scene without a composition;"
 		+ " a Quick-start render interrupted by shutdown is reconciled by the next boot's recovery sweep.";
 
-	/** The live job on a book: who submitted it, what kind, and - once the registry has it - its id. */
+	/**
+	 * The live job on a claim key: who submitted it, what kind, and - once the registry has it - its id. The
+	 * key is the book's objectId for the compose and location-pass jobs and the apparel's objectId for a
+	 * wardrobe reference ({@link #submitApparelReference}); the field keeps its original name.
+	 */
 	static final class Claim {
 		final String bookObjectId;
 		final String ownerObjectId;
@@ -120,6 +124,19 @@ public final class PbComposeJobUtil {
 	 */
 	public static Map<String, Object> submitCompose(BaseRecord user, BaseRecord book, boolean quickStart, boolean force,
 			String chatConfigName, String sdApiType, String sdServer) {
+		return submitCompose(user, book, quickStart, force, chatConfigName, sdApiType, sdServer, null);
+	}
+
+	/**
+	 * {@link #submitCompose(BaseRecord, BaseRecord, boolean, boolean, String, String, String)} with the
+	 * deployment's {@code datagen.path}, which the compose job needs to open the book's world as an
+	 * {@link org.cote.accountmanager.olio.OlioContext} when the LLM reports an outfit change (V3 §6.1): the
+	 * alternate is built by the apparel generator as the olio principal. Without it (null) an outfit is
+	 * still honoured when the world context is already cached in this JVM, and otherwise recorded as a
+	 * skipped outfit on the scene's outcome - never a failed composition.
+	 */
+	public static Map<String, Object> submitCompose(BaseRecord user, BaseRecord book, boolean quickStart, boolean force,
+			String chatConfigName, String sdApiType, String sdServer, String dataPath) {
 		BaseRecord cfg = resolveChatConfig(user, chatConfigName);
 		SDUtil sdu = null;
 		if(quickStart) {
@@ -134,7 +151,7 @@ public final class PbComposeJobUtil {
 				throw new PictureBookException(500, "SD server not configured; Quick start renders a draft of every composed scene");
 			}
 		}
-		return submitCompose(user, book, quickStart, force, cfg, sdu, sdServer);
+		return submitCompose(user, book, quickStart, force, cfg, sdu, sdServer, dataPath);
 	}
 
 	/**
@@ -144,6 +161,11 @@ public final class PbComposeJobUtil {
 	 */
 	static Map<String, Object> submitCompose(BaseRecord user, BaseRecord book, boolean quickStart, boolean force,
 			BaseRecord chatConfig, SDUtil sdu, String sdServer) {
+		return submitCompose(user, book, quickStart, force, chatConfig, sdu, sdServer, null);
+	}
+
+	static Map<String, Object> submitCompose(BaseRecord user, BaseRecord book, boolean quickStart, boolean force,
+			BaseRecord chatConfig, SDUtil sdu, String sdServer, String dataPath) {
 		if(user == null || book == null) {
 			throw new PictureBookException(400, "A user and a book are required");
 		}
@@ -177,7 +199,7 @@ public final class PbComposeJobUtil {
 			return out;
 		}
 
-		ComposeWork work = new ComposeWork(user, book, chatConfig, force, quickStart, sdu, sdServer);
+		ComposeWork work = new ComposeWork(user, book, chatConfig, force, quickStart, sdu, sdServer, dataPath);
 		Submission s = submitExclusive(user, bookOid, PbRenderJobUtil.KIND_COMPOSE, work);
 		out.put("submitted", Boolean.TRUE);
 		out.put("reused", Boolean.valueOf(s.reused));
@@ -217,6 +239,52 @@ public final class PbComposeJobUtil {
 		return out;
 	}
 
+	// ─────────────────────────────── submit: wardrobe reference ───────────────────────────────
+
+	/**
+	 * Submit the mannequin reference render of one wardrobe entry as a job
+	 * ({@link PbRenderJobUtil#KIND_APPAREL_REFERENCE}; V3 §6.2, ruling 182 (12)). The claim is keyed by the
+	 * <b>apparel</b> objectId, not the book, so references of different alternates run independently of each
+	 * other and of the book's compose job, while a second submit for the same apparel is answered with the
+	 * caller's live job ({@code reused:true}) or a 409. {@link PbWardrobeUtil#referenceImage} runs on the
+	 * worker under the backend's {@link PbRenderLanes} permit; its 4xx/409 checks (book updatable, character
+	 * of the book, apparel in the wardrobe, style complete) run there too, so a refused reference is a failed
+	 * job whose message is {@link PbServiceFacade#curatedMessage curated}.
+	 *
+	 * @return {@code submitted}, {@code jobId}, {@code jobStatus}, {@code kind}, {@code reused},
+	 *         {@code bookObjectId}, {@code characterObjectId}, {@code apparelObjectId}
+	 * @throws PictureBookException 400 missing input; 409 another live job on this apparel; 429 the
+	 *         principal's job cap; 500 no SD backend or the principal cannot be keyed
+	 */
+	public static Map<String, Object> submitApparelReference(BaseRecord user, BaseRecord book, String characterObjectId,
+			String apparelObjectId, SDUtil sdu, String sdServer) {
+		if(user == null || book == null) {
+			throw new PictureBookException(400, "A user and a book are required");
+		}
+		if(characterObjectId == null || characterObjectId.isBlank() || apparelObjectId == null || apparelObjectId.isBlank()) {
+			throw new PictureBookException(400, "A character and an apparel are required");
+		}
+		if(sdu == null) {
+			throw new PictureBookException(500, "SD server not configured; a wardrobe reference is rendered by the SD backend");
+		}
+		String bookOid = book.get(FieldNames.FIELD_OBJECT_ID);
+		if(bookOid == null || bookOid.isBlank()) {
+			throw new PictureBookException(400, "The book has no objectId");
+		}
+		ReferenceWork work = new ReferenceWork(user, book, characterObjectId.trim(), apparelObjectId.trim(), sdu, sdServer);
+		Submission s = submitExclusive(user, apparelObjectId.trim(), PbRenderJobUtil.KIND_APPAREL_REFERENCE, work);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", bookOid);
+		out.put("characterObjectId", characterObjectId.trim());
+		out.put("apparelObjectId", apparelObjectId.trim());
+		out.put("kind", PbRenderJobUtil.KIND_APPAREL_REFERENCE);
+		out.put("submitted", Boolean.TRUE);
+		out.put("reused", Boolean.valueOf(s.reused));
+		out.put("jobId", s.job.getJobId());
+		out.put("jobStatus", s.job.getStatus().name().toLowerCase());
+		return out;
+	}
+
 	// ─────────────────────────────── the per-book claim ───────────────────────────────
 
 	/** True when a compose job is queued or running for the book in this JVM (any principal). */
@@ -247,11 +315,12 @@ public final class PbComposeJobUtil {
 	/// its finally and in onCancelledBeforeStart - remove(key, value) so a claim that was already replaced is
 	/// never removed by the wrong job. A claim whose job the registry no longer reports live is stale and is
 	/// replaced; a live claim of the caller's own, same kind, is the answer; anything else is a 409.
-	private static Submission submitExclusive(BaseRecord user, String bookOid, String kind, ClaimedWork work) {
+	static Submission submitExclusive(BaseRecord user, String bookOid, String kind, ClaimedWork work) {
 		String owner = user.get(FieldNames.FIELD_OBJECT_ID);
 		if(owner == null || owner.isBlank()) {
 			throw new PictureBookException(500, "The principal could not be keyed for an async job");
 		}
+		String what = (PbRenderJobUtil.KIND_APPAREL_REFERENCE.equals(kind) ? "this wardrobe entry" : "this book");
 		synchronized(SUBMIT_LOCK) {
 			Claim live = INFLIGHT.get(bookOid);
 			if(live != null) {
@@ -265,13 +334,13 @@ public final class PbComposeJobUtil {
 							return s;
 						}
 						throw new PictureBookException(409, "Your " + live.kind + " job " + live.jobId
-							+ " is still running for this book; wait for it to finish or cancel it first");
+							+ " is still running for " + what + "; wait for it to finish or cancel it first");
 					}
 					/// The job finished (or never registered) and its claim was not removed: stale, replace it.
 					INFLIGHT.remove(bookOid, live);
 				}
 				else {
-					throw new PictureBookException(409, "A job is already running for this book");
+					throw new PictureBookException(409, "A job is already running for " + what);
 				}
 			}
 			int active = AsyncJobRegistry.activeCount(user);
@@ -385,8 +454,10 @@ public final class PbComposeJobUtil {
 		private final boolean quickStart;
 		private final SDUtil sdu;
 		private final String sdServer;
+		private final String dataPath;
 
-		ComposeWork(BaseRecord user, BaseRecord book, BaseRecord chatConfig, boolean force, boolean quickStart, SDUtil sdu, String sdServer) {
+		ComposeWork(BaseRecord user, BaseRecord book, BaseRecord chatConfig, boolean force, boolean quickStart, SDUtil sdu, String sdServer,
+				String dataPath) {
 			this.user = user;
 			this.book = book;
 			this.chatConfig = chatConfig;
@@ -394,12 +465,13 @@ public final class PbComposeJobUtil {
 			this.quickStart = quickStart;
 			this.sdu = sdu;
 			this.sdServer = sdServer;
+			this.dataPath = dataPath;
 		}
 
 		@Override
 		public String run(AsyncJob job) {
 			try {
-				return JSONUtil.exportObject(composeNow(user, book, chatConfig, force, quickStart, sdu, sdServer, job.getProgress()));
+				return JSONUtil.exportObject(composeNow(user, book, chatConfig, force, quickStart, sdu, sdServer, job.getProgress(), dataPath));
 			}
 			finally {
 				releaseClaim(getClaim());
@@ -414,9 +486,11 @@ public final class PbComposeJobUtil {
 	 * ago); a 401/403/404 here fails the job.
 	 *
 	 * @param progress the job's token; null when driven synchronously and uncancellable
+	 * @param dataPath the deployment's {@code datagen.path}, so a compose-detected outfit change can open the
+	 *        world as an {@code OlioContext}; null leaves outfits to the cached context or skips them
 	 */
 	static Map<String, Object> composeNow(BaseRecord user, BaseRecord book, BaseRecord chatConfig, boolean force,
-			boolean quickStart, SDUtil sdu, String sdServer, SummarizeProgress progress) {
+			boolean quickStart, SDUtil sdu, String sdServer, SummarizeProgress progress, String dataPath) {
 		long started = System.currentTimeMillis();
 		BaseRecord fresh = PbBookUtil.requireBookUpdate(user, book, "compose scenes");
 		String slug = fresh.get(OlioFieldNames.FIELD_PB_SLUG);
@@ -482,7 +556,7 @@ public final class PbComposeJobUtil {
 			}
 			ComposeResult r;
 			try {
-				r = PbComposeUtil.composeScene(user, fresh, scene, chatConfig, force, progress);
+				r = PbComposeUtil.composeScene(user, fresh, scene, chatConfig, force, progress, dataPath);
 			}
 			catch(RuntimeException e) {
 				String msg = PbServiceFacade.curatedMessage(e);
@@ -535,6 +609,10 @@ public final class PbComposeJobUtil {
 			outcome.put("castTier", r.castTier.name());
 			outcome.put("actorCount", Integer.valueOf(r.actors.size()));
 			outcome.put("elementCount", Integer.valueOf(r.elements.size()));
+			outcome.put("outfitsCreated", Integer.valueOf(r.outfitsCreated));
+			outcome.put("outfitsReused", Integer.valueOf(r.outfitsReused));
+			outcome.put("outfitsSkipped", Integer.valueOf(r.outfitsSkipped));
+			outcome.put("pinsPreserved", Integer.valueOf(r.pinsPreserved));
 			outcome.put("warnings", PbServiceFacade.stripRaw(r.warnings));
 			outcome.put("elapsedMs", Long.valueOf(r.elapsedMs));
 			if(idx != null) {
@@ -700,6 +778,100 @@ public final class PbComposeJobUtil {
 		out.putAll(PbServiceFacade.locationPassDto(lp));
 		out.put("durationMs", Long.valueOf(System.currentTimeMillis() - started));
 		return out;
+	}
+
+	// ─────────────────────────────── the worker: wardrobe reference ───────────────────────────────
+
+	static final class ReferenceWork extends ClaimedWork {
+		private final BaseRecord user;
+		private final BaseRecord book;
+		private final String characterObjectId;
+		private final String apparelObjectId;
+		private final SDUtil sdu;
+		private final String sdServer;
+
+		ReferenceWork(BaseRecord user, BaseRecord book, String characterObjectId, String apparelObjectId, SDUtil sdu, String sdServer) {
+			this.user = user;
+			this.book = book;
+			this.characterObjectId = characterObjectId;
+			this.apparelObjectId = apparelObjectId;
+			this.sdu = sdu;
+			this.sdServer = sdServer;
+		}
+
+		@Override
+		public String run(AsyncJob job) {
+			try {
+				return JSONUtil.exportObject(referenceNow(user, book, characterObjectId, apparelObjectId, sdu, sdServer, job.getProgress()));
+			}
+			finally {
+				releaseClaim(getClaim());
+			}
+		}
+	}
+
+	/**
+	 * The wardrobe-reference job's body: {@link PbWardrobeUtil#referenceImage} under the backend's render
+	 * lane. A cancel while waiting for the lane, or a {@link PbStageCancelledException} from the render, ends
+	 * the job {@code cancelled} with nothing linked; any other failure is re-thrown with its message curated
+	 * so the registry records it as the job's error and the owner never sees a raw exception text.
+	 */
+	static Map<String, Object> referenceNow(BaseRecord user, BaseRecord book, String characterObjectId, String apparelObjectId,
+			SDUtil sdu, String sdServer, SummarizeProgress progress) {
+		long started = System.currentTimeMillis();
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("characterObjectId", characterObjectId);
+		out.put("apparelObjectId", apparelObjectId);
+		out.put("kind", PbRenderJobUtil.KIND_APPAREL_REFERENCE);
+		if(progress != null) {
+			progress.setTotal(1);
+			progress.setCurrent(0);
+			progress.setPhase("wardrobe reference");
+		}
+		boolean laneHeld = false;
+		try {
+			laneHeld = PbRenderLanes.acquire(sdServer, progress);
+			if(!laneHeld) {
+				out.put("cancelled", Boolean.TRUE);
+				out.put("error", (shuttingDown()
+					? "interrupted by shutdown while waiting for the render lane"
+					: "cancelled while waiting for the render lane"));
+				return out;
+			}
+			PbWardrobeUtil.ReferenceResult rr = PbWardrobeUtil.referenceImage(user, book, characterObjectId, apparelObjectId, sdu);
+			out.put("cancelled", Boolean.FALSE);
+			out.put("referenceObjectId", rr.referenceObjectId);
+			List<String> ids = new ArrayList<>();
+			for(BaseRecord img : rr.images) {
+				ids.add(img.get(FieldNames.FIELD_OBJECT_ID));
+			}
+			out.put("imageObjectIds", ids);
+			out.put("imageCount", Integer.valueOf(ids.size()));
+			out.put("groupPath", rr.groupPath);
+			out.put("renderMs", Long.valueOf(rr.elapsedMs));
+			tick(progress);
+			return out;
+		}
+		catch(PbStageCancelledException e) {
+			out.put("cancelled", Boolean.TRUE);
+			out.put("error", "cancelled: " + PbServiceFacade.curatedMessage(e));
+			return out;
+		}
+		catch(PictureBookException e) {
+			logger.warn("wardrobe reference " + apparelObjectId + " refused: " + detailOf(e));
+			throw e;
+		}
+		catch(RuntimeException e) {
+			logger.warn("wardrobe reference " + apparelObjectId + " failed: " + detailOf(e));
+			throw new PictureBookException(500, PbServiceFacade.curatedMessage(e), e);
+		}
+		finally {
+			if(laneHeld) {
+				PbRenderLanes.release(sdServer);
+			}
+			out.put("durationMs", Long.valueOf(System.currentTimeMillis() - started));
+		}
 	}
 
 	// ─────────────────────────────── helpers ───────────────────────────────

@@ -2620,7 +2620,8 @@ public class PictureBookService {
         try {
             Map<String, Object> out = PbServiceFacade.requestCompose(user, bookObjectId,
                 bodyBoolean(body, "quickStart", false), bodyBoolean(body, "force", false),
-                bodyString(body, "chatConfigName"), resolveSdApiType(context), resolveSdServer(context));
+                bodyString(body, "chatConfigName"), resolveSdApiType(context), resolveSdServer(context),
+                context.getInitParameter("datagen.path"));
             boolean submitted = Boolean.TRUE.equals(out.get("submitted"));
             return Response.status(submitted ? 202 : 200).entity(JSONUtil.exportObject(out)).build();
         } catch (PictureBookException e) {
@@ -2643,19 +2644,227 @@ public class PictureBookService {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response composeScene(@PathParam("bookObjectId") String bookObjectId,
             @PathParam("sceneObjectId") String sceneObjectId, String json,
-            @Context HttpServletRequest request) {
+            @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         Map<String, Object> body = bodyMap(json);
         if (body == null) return malformedBody();
         try {
             return Response.status(200)
                 .entity(JSONUtil.exportObject(PbServiceFacade.composeScene(user, bookObjectId, sceneObjectId,
-                    bodyString(body, "chatConfigName"), bodyBoolean(body, "force", false))))
+                    bodyString(body, "chatConfigName"), bodyBoolean(body, "force", false),
+                    context.getInitParameter("datagen.path"))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         } catch (RuntimeException e) {
             return unexpectedFailure("composeScene", e);
+        }
+    }
+
+    // ----- Wardrobe (V3 §6, §6.1, §6.2; P4-5). Transport only; PbServiceFacade/PbWardrobeUtil own every rule -----
+
+    /**
+     * GET /{bookObjectId}/character/{characterObjectId}/wardrobe
+     * The character's wardrobe: every store apparel with its wearables and reference gallery, the default
+     * (inuse) and any legacy sceneIndex tag. 404 when the character is not of this book.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/character/{characterObjectId:[0-9A-Za-z\\-]+}/wardrobe")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listWardrobe(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("characterObjectId") String characterObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.listWardrobe(user, bookObjectId, characterObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("listWardrobe", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/character/{characterObjectId}/wardrobe
+     * Body: { description, chatConfigName? }. Adds an alternate outfit from the description (LLM item pick +
+     * apparel generator, inuse=false) and answers 201 { apparelObjectId, name, description, reused, items, ... };
+     * 200 with reused:true when the description is already in the wardrobe. 400 blank description; 409 wardrobe
+     * full or no world context; 502 the LLM produced nothing usable.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/character/{characterObjectId:[0-9A-Za-z\\-]+}/wardrobe")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createWardrobeAlternate(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("characterObjectId") String characterObjectId, String json,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            Map<String, Object> out = PbServiceFacade.createAlternate(user, bookObjectId, characterObjectId,
+                bodyString(body, "description"), bodyString(body, "chatConfigName"),
+                context.getInitParameter("datagen.path"));
+            boolean reused = Boolean.TRUE.equals(out.get("reused"));
+            return Response.status(reused ? 200 : 201).entity(JSONUtil.exportObject(out)).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("createWardrobeAlternate", e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/character/{characterObjectId}/wardrobe/{apparelObjectId}/default
+     * Makes the apparel the character's default (inuse); only scenes whose outfit resolved to the default are
+     * marked stale. 400 apparel not in this character's wardrobe; 404 character / apparel.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/character/{characterObjectId:[0-9A-Za-z\\-]+}/wardrobe/{apparelObjectId:[0-9A-Za-z\\-]+}/default")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response setDefaultApparel(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("characterObjectId") String characterObjectId, @PathParam("apparelObjectId") String apparelObjectId,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.setDefaultApparel(user, bookObjectId, characterObjectId, apparelObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("setDefaultApparel", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/character/{characterObjectId}/wardrobe/{apparelObjectId}/reference
+     * Queues the apparel's reference-image job (mannequin render by the book's style, linked into
+     * apparel.gallery) and answers 202 { jobId, jobStatus, kind, reused }; poll GET /rest/job/{jobId}.
+     * 404 character / apparel; 400 apparel of another character; 409 a job is already running for the
+     * apparel; 500 no SD backend.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/character/{characterObjectId:[0-9A-Za-z\\-]+}/wardrobe/{apparelObjectId:[0-9A-Za-z\\-]+}/reference")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response requestApparelReference(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("characterObjectId") String characterObjectId, @PathParam("apparelObjectId") String apparelObjectId,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(202)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestApparelReference(user, bookObjectId, characterObjectId,
+                    apparelObjectId, resolveSdApiType(context), resolveSdServer(context))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("requestApparelReference", e);
+        }
+    }
+
+    /**
+     * PUT /{bookObjectId}/composition/{compositionObjectId}/actor/{actorObjectId}/apparel
+     * Body: { apparelObjectId } to pin, or {} / { apparelObjectId: null } to unpin. The apparel must be in the
+     * actor's character's wardrobe (400). The scene and every later scene that carried the outfit from it are
+     * marked stale. 404 composition / actor not of this book.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PUT
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/actor/{actorObjectId:[0-9A-Za-z\\-]+}/apparel")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response pinActorApparel(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId, @PathParam("actorObjectId") String actorObjectId,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = (json == null || json.trim().isEmpty()) ? new LinkedHashMap<>() : bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.pinActorApparel(user, bookObjectId, compositionObjectId, actorObjectId,
+                    bodyString(body, "apparelObjectId"))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("pinActorApparel", e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/composition/{compositionObjectId}/outfits
+     * The resolved outfit of each actor of the composition: pinned, carried from an earlier scene's pin, the
+     * character's default, or none - with its label. 404 composition not of this book.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/outfits")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response compositionOutfits(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.compositionOutfits(user, bookObjectId, compositionObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("compositionOutfits", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/composition/{compositionObjectId}/element/{elementObjectId}/promote
+     * Promote a scene element to an olio.item held by the scene's location (V3 §7.2 rule 4): the item is
+     * written as the olio principal after the book authorization, added to the location's POI store as the
+     * caller, and the element is linked to it. Idempotent. 404 composition/element not of this book;
+     * 409 no location or POI store; 403 no update on the book or the store.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/element/{elementObjectId:[0-9A-Za-z\\-]+}/promote")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response promoteElement(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId,
+            @PathParam("elementObjectId") String elementObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.promoteElement(user, bookObjectId, compositionObjectId, elementObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("promoteElement", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/wardrobe/migrate-scene-tags
+     * Turns the legacy sceneIndex apparel tags of the book's characters into pins on the matching scene actors.
+     * Idempotent; never overwrites an existing pin. 409 when the book has no world.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/wardrobe/migrate-scene-tags")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response migrateSceneTags(@PathParam("bookObjectId") String bookObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.migrateSceneTags(user, bookObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("migrateSceneTags", e);
         }
     }
 
