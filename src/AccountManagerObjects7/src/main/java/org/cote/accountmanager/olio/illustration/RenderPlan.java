@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
@@ -33,8 +34,16 @@ public final class RenderPlan {
 	public static final String STAGE_BASE = "BASE";
 	public static final String STAGE_UPSCALE = "UPSCALE";
 
+	/// Actor roles. The five §12 roles (HERO, SUPPORTING, NAMED_BACKGROUND, EXTRA, CROWD) are the values
+	/// olio.pb.sceneActor.role carries; FOREGROUND / BACKGROUND are the pre-P4-7 aliases, kept so plans
+	/// written before the composition seam still round-trip. A plan with no role means FOREGROUND.
 	public static final String ROLE_FOREGROUND = "FOREGROUND";
 	public static final String ROLE_BACKGROUND = "BACKGROUND";
+	public static final String ROLE_HERO = "HERO";
+	public static final String ROLE_SUPPORTING = "SUPPORTING";
+	public static final String ROLE_NAMED_BACKGROUND = "NAMED_BACKGROUND";
+	public static final String ROLE_EXTRA = "EXTRA";
+	public static final String ROLE_CROWD = "CROWD";
 
 	public static final String PRIORITY_HIGH = "HIGH";
 	public static final String PRIORITY_MEDIUM = "MEDIUM";
@@ -138,6 +147,35 @@ public final class RenderPlan {
 
 	public Map<String, String> getInputs() {
 		return inputs;
+	}
+
+	/// One line for the plan DTO and the node describe map (§12 planSummary): "N characters: R referenced,
+	/// T text" plus ", U unresolved" when any ACTOR_UNRESOLVED degradation is recorded; "no characters"
+	/// for an empty actor list. Unresolved actors are counted among the text actors (they render from the
+	/// row's text) and again in U, so R + T == N always.
+	public String actorSummary() {
+		int n = actors.size();
+		if(n == 0) {
+			return "no characters";
+		}
+		int referenced = 0;
+		for(Actor a : actors) {
+			if(a.isReferenced()) {
+				referenced++;
+			}
+		}
+		int unresolved = 0;
+		for(Degradation d : degradations) {
+			if(Degradation.ACTOR_UNRESOLVED.equals(d.getCode())) {
+				unresolved++;
+			}
+		}
+		StringBuilder sb = new StringBuilder();
+		sb.append(n).append(" characters: ").append(referenced).append(" referenced, ").append(n - referenced).append(" text");
+		if(unresolved > 0) {
+			sb.append(", ").append(unresolved).append(" unresolved");
+		}
+		return sb.toString();
 	}
 
 	/// The model pick a stage renders with. TEXT_ONLY and the Phase 2 strategies render the BASE
@@ -634,23 +672,188 @@ public final class RenderPlan {
 		}
 	}
 
+	/// A normalised placement box (V3 §12): fractions of the canvas, 0..1, origin top-left.
+	public static final class Box {
+		private final double x;
+		private final double y;
+		private final double w;
+		private final double h;
+
+		public Box(double x, double y, double w, double h) {
+			this.x = x;
+			this.y = y;
+			this.w = w;
+			this.h = h;
+		}
+
+		public double getX() {
+			return x;
+		}
+
+		public double getY() {
+			return y;
+		}
+
+		public double getW() {
+			return w;
+		}
+
+		public double getH() {
+			return h;
+		}
+
+		Map<String, Object> toMap() {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("x", x);
+			m.put("y", y);
+			m.put("w", w);
+			m.put("h", h);
+			return m;
+		}
+
+		static Box fromMap(Map<?, ?> m) {
+			if(m == null) {
+				return null;
+			}
+			return new Box(doubleOf(m, "x", 0.0), doubleOf(m, "y", 0.0), doubleOf(m, "w", 0.0), doubleOf(m, "h", 0.0));
+		}
+	}
+
+	/// What an actor wears in this plan (§12 actor.outfit): the olio.apparel objectId the row pinned or the
+	/// resolver chose, its text, and the approved outfit-reference artifact when one exists.
+	public static final class Outfit {
+		private final String apparelId;
+		private final String text;
+		private final String refArtifactId;
+
+		public Outfit(String apparelId, String text, String refArtifactId) {
+			this.apparelId = apparelId;
+			this.text = text;
+			this.refArtifactId = refArtifactId;
+		}
+
+		public String getApparelId() {
+			return apparelId;
+		}
+
+		public String getText() {
+			return text;
+		}
+
+		public String getRefArtifactId() {
+			return refArtifactId;
+		}
+
+		Map<String, Object> toMap() {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("apparelId", apparelId);
+			m.put("text", text);
+			m.put("refArtifactId", refArtifactId);
+			return m;
+		}
+
+		static Outfit fromMap(Map<?, ?> m) {
+			if(m == null) {
+				return null;
+			}
+			return new Outfit(str(m, "apparelId"), str(m, "text"), str(m, "refArtifactId"));
+		}
+	}
+
+	/// Who an actor is (§12 actor.identity): the approved portrait / full-body artifacts the renderer may
+	/// bind as references, and the text the prompt falls back to (or uses alongside them).
+	public static final class Identity {
+		private final String portraitArtifactId;
+		private final String fullbodyArtifactId;
+		private final String text;
+
+		public Identity(String portraitArtifactId, String fullbodyArtifactId, String text) {
+			this.portraitArtifactId = portraitArtifactId;
+			this.fullbodyArtifactId = fullbodyArtifactId;
+			this.text = text;
+		}
+
+		public String getPortraitArtifactId() {
+			return portraitArtifactId;
+		}
+
+		public String getFullbodyArtifactId() {
+			return fullbodyArtifactId;
+		}
+
+		public String getText() {
+			return text;
+		}
+
+		Map<String, Object> toMap() {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("portraitArtifactId", portraitArtifactId);
+			m.put("fullbodyArtifactId", fullbodyArtifactId);
+			m.put("text", text);
+			return m;
+		}
+
+		static Identity fromMap(Map<?, ?> m) {
+			if(m == null) {
+				return null;
+			}
+			return new Identity(str(m, "portraitArtifactId"), str(m, "fullbodyArtifactId"), str(m, "text"));
+		}
+	}
+
+	/// One staged character (§12 actors[]). {@code actorId} is the olio.pb.sceneActor row's objectId (or,
+	/// for a plan built without a composition, whatever the caller keyed the actor by); {@code characterId}
+	/// the olio.charPerson it stages, null for a text-only extra/crowd row. {@code referenced} is the
+	/// selector-independent fact "this plan carries a reference for the actor" and is always written.
+	///
+	/// Wire shape: the P4-7 fields only. The pre-P4-7 top-level {@code description} is read by
+	/// {@link #fromMap} into identity.text and never written back, so a legacy plan round-trips to the new
+	/// shape once and is stable from then on.
 	public static final class Actor {
 		private final String actorId;
+		private final String characterId;
 		private final String name;
 		private final String role;
-		private final String description;
+		private final int priority;
+		private final Box box;
+		private final int depth;
+		private final String pose;
+		private final String expression;
+		private final String action;
+		private final String facing;
+		private final Outfit outfit;
+		private final Identity identity;
+		private final String policy;
 		private final boolean referenced;
 
 		public Actor(String actorId, String name, String role, String description, boolean referenced) {
-			this.actorId = actorId;
-			this.name = name;
-			this.role = (role == null ? ROLE_FOREGROUND : role);
-			this.description = description;
-			this.referenced = referenced;
+			this(new Builder(actorId).name(name).role(role).identity(description == null ? null : new Identity(null, null, description)).referenced(referenced));
+		}
+
+		private Actor(Builder b) {
+			this.actorId = b.actorId;
+			this.characterId = b.characterId;
+			this.name = b.name;
+			this.role = (b.role == null ? ROLE_FOREGROUND : b.role);
+			this.priority = b.priority;
+			this.box = b.box;
+			this.depth = b.depth;
+			this.pose = b.pose;
+			this.expression = b.expression;
+			this.action = b.action;
+			this.facing = b.facing;
+			this.outfit = b.outfit;
+			this.identity = b.identity;
+			this.policy = b.policy;
+			this.referenced = b.referenced;
 		}
 
 		public String getActorId() {
 			return actorId;
+		}
+
+		public String getCharacterId() {
+			return characterId;
 		}
 
 		public String getName() {
@@ -661,12 +864,54 @@ public final class RenderPlan {
 			return role;
 		}
 
+		/// Foreground = any role but the background ones (BACKGROUND, NAMED_BACKGROUND, EXTRA, CROWD).
 		public boolean isForeground() {
-			return !ROLE_BACKGROUND.equals(role);
+			return !(ROLE_BACKGROUND.equals(role) || ROLE_NAMED_BACKGROUND.equals(role) || ROLE_EXTRA.equals(role) || ROLE_CROWD.equals(role));
 		}
 
+		public int getPriority() {
+			return priority;
+		}
+
+		public Box getBox() {
+			return box;
+		}
+
+		public int getDepth() {
+			return depth;
+		}
+
+		public String getPose() {
+			return pose;
+		}
+
+		public String getExpression() {
+			return expression;
+		}
+
+		public String getAction() {
+			return action;
+		}
+
+		public String getFacing() {
+			return facing;
+		}
+
+		public Outfit getOutfit() {
+			return outfit;
+		}
+
+		public Identity getIdentity() {
+			return identity;
+		}
+
+		public String getPolicy() {
+			return policy;
+		}
+
+		/// identity.text verbatim (the pre-P4-7 accessor; compilers still read the actor's text through it).
 		public String getDescription() {
-			return description;
+			return identity == null ? null : identity.text;
 		}
 
 		public boolean isReferenced() {
@@ -676,27 +921,174 @@ public final class RenderPlan {
 		Map<String, Object> toMap() {
 			Map<String, Object> m = new LinkedHashMap<>();
 			m.put("actorId", actorId);
+			m.put("characterId", characterId);
 			m.put("name", name);
 			m.put("role", role);
-			m.put("description", description);
+			m.put("priority", priority);
+			m.put("box", box == null ? null : box.toMap());
+			m.put("depth", depth);
+			m.put("pose", pose);
+			m.put("expression", expression);
+			m.put("action", action);
+			m.put("facing", facing);
+			m.put("outfit", outfit == null ? null : outfit.toMap());
+			m.put("identity", identity == null ? null : identity.toMap());
+			m.put("policy", policy);
 			m.put("referenced", referenced);
 			return m;
 		}
 
 		static Actor fromMap(Map<?, ?> m) {
-			return new Actor(str(m, "actorId"), str(m, "name"), str(m, "role"), str(m, "description"), boolOf(m, "referenced"));
+			Builder b = new Builder(str(m, "actorId"))
+				.characterId(str(m, "characterId"))
+				.name(str(m, "name"))
+				.role(str(m, "role"))
+				.priority(intOf(m, "priority", 0))
+				.box(Box.fromMap(mapOf(m, "box")))
+				.depth(intOf(m, "depth", 0))
+				.pose(str(m, "pose"))
+				.expression(str(m, "expression"))
+				.action(str(m, "action"))
+				.facing(str(m, "facing"))
+				.outfit(Outfit.fromMap(mapOf(m, "outfit")))
+				.policy(str(m, "policy"))
+				.referenced(boolOf(m, "referenced"));
+			Identity identity = Identity.fromMap(mapOf(m, "identity"));
+			if(identity == null) {
+				String legacy = str(m, "description");
+				if(legacy != null) {
+					identity = new Identity(null, null, legacy);
+				}
+			}
+			return b.identity(identity).build();
+		}
+
+		public static final class Builder {
+			private final String actorId;
+			private String characterId;
+			private String name;
+			private String role;
+			private int priority;
+			private Box box;
+			private int depth;
+			private String pose;
+			private String expression;
+			private String action;
+			private String facing;
+			private Outfit outfit;
+			private Identity identity;
+			private String policy;
+			private boolean referenced;
+
+			public Builder(String actorId) {
+				this.actorId = actorId;
+			}
+
+			public Builder characterId(String characterId) {
+				this.characterId = characterId;
+				return this;
+			}
+
+			public Builder name(String name) {
+				this.name = name;
+				return this;
+			}
+
+			public Builder role(String role) {
+				this.role = role;
+				return this;
+			}
+
+			public Builder priority(int priority) {
+				this.priority = priority;
+				return this;
+			}
+
+			public Builder box(Box box) {
+				this.box = box;
+				return this;
+			}
+
+			public Builder depth(int depth) {
+				this.depth = depth;
+				return this;
+			}
+
+			public Builder pose(String pose) {
+				this.pose = pose;
+				return this;
+			}
+
+			public Builder expression(String expression) {
+				this.expression = expression;
+				return this;
+			}
+
+			public Builder action(String action) {
+				this.action = action;
+				return this;
+			}
+
+			public Builder facing(String facing) {
+				this.facing = facing;
+				return this;
+			}
+
+			public Builder outfit(Outfit outfit) {
+				this.outfit = outfit;
+				return this;
+			}
+
+			public Builder identity(Identity identity) {
+				this.identity = identity;
+				return this;
+			}
+
+			public Builder policy(String policy) {
+				this.policy = policy;
+				return this;
+			}
+
+			public Builder referenced(boolean referenced) {
+				this.referenced = referenced;
+				return this;
+			}
+
+			public Actor build() {
+				return new Actor(this);
+			}
 		}
 	}
 
+	/// One staged non-character element (§12 elements[]). {@code importance} is the olio.pb.sceneElement
+	/// importance (HIGH / MEDIUM / LOW); {@link #getPriority()} is its pre-P4-7 name and reads the same
+	/// value. Wire shape writes {@code importance} only; {@link #fromMap} reads {@code importance} and falls
+	/// back to the legacy {@code priority} key.
 	public static final class Element {
+		private final String type;
 		private final String name;
-		private final String priority;
 		private final String description;
+		private final Box box;
+		private final int depth;
+		private final String importance;
+		private final String itemId;
 
 		public Element(String name, String priority, String description) {
+			this(null, name, description, null, 0, priority, null);
+		}
+
+		public Element(String type, String name, String description, Box box, int depth, String importance, String itemId) {
+			this.type = type;
 			this.name = name;
-			this.priority = (priority == null ? PRIORITY_MEDIUM : priority);
 			this.description = description;
+			this.box = box;
+			this.depth = depth;
+			this.importance = (importance == null ? PRIORITY_MEDIUM : importance);
+			this.itemId = itemId;
+		}
+
+		public String getType() {
+			return type;
 		}
 
 		public String getName() {
@@ -704,23 +1096,47 @@ public final class RenderPlan {
 		}
 
 		public String getPriority() {
-			return priority;
+			return importance;
+		}
+
+		public String getImportance() {
+			return importance;
 		}
 
 		public String getDescription() {
 			return description;
 		}
 
+		public Box getBox() {
+			return box;
+		}
+
+		public int getDepth() {
+			return depth;
+		}
+
+		public String getItemId() {
+			return itemId;
+		}
+
 		Map<String, Object> toMap() {
 			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("type", type);
 			m.put("name", name);
-			m.put("priority", priority);
 			m.put("description", description);
+			m.put("box", box == null ? null : box.toMap());
+			m.put("depth", depth);
+			m.put("importance", importance);
+			m.put("itemId", itemId);
 			return m;
 		}
 
 		static Element fromMap(Map<?, ?> m) {
-			return new Element(str(m, "name"), str(m, "priority"), str(m, "description"));
+			String importance = str(m, "importance");
+			if(importance == null) {
+				importance = str(m, "priority");
+			}
+			return new Element(str(m, "type"), str(m, "name"), str(m, "description"), Box.fromMap(mapOf(m, "box")), intOf(m, "depth", 0), importance, str(m, "itemId"));
 		}
 	}
 
@@ -1001,6 +1417,15 @@ public final class RenderPlan {
 		/// without the story-order context the compose job gives it. Re-compose in order to clear it.
 		public static final String COMPOSED_OUT_OF_ORDER = "COMPOSED_OUT_OF_ORDER";
 
+		/// Every code a plan can carry. Consumers that classify a degradation string by its prefix
+		/// (PbArtifactUtil.autoApprove) treat anything outside this set as free-form and do not waive it.
+		public static final Set<String> CODES = Set.of(ACTOR_TEXT_ONLY, ACTOR_UNRESOLVED, ACTOR_FAILED, LOCATION_TEXT_ONLY,
+			MODEL_SUBSTITUTED, PROMPT_TRUNCATED, QA_WARN, COMPOSED_OUT_OF_ORDER);
+
+		public static boolean isKnownCode(String code) {
+			return code != null && CODES.contains(code);
+		}
+
 		private final String code;
 		private final String message;
 		private final String actorId;
@@ -1069,6 +1494,25 @@ public final class RenderPlan {
 		if(o instanceof String) {
 			try {
 				return Integer.parseInt(((String) o).trim());
+			}
+			catch(NumberFormatException e) {
+				return def;
+			}
+		}
+		return def;
+	}
+
+	static double doubleOf(Map<?, ?> m, String key, double def) {
+		if(m == null) {
+			return def;
+		}
+		Object o = m.get(key);
+		if(o instanceof Number) {
+			return ((Number) o).doubleValue();
+		}
+		if(o instanceof String) {
+			try {
+				return Double.parseDouble(((String) o).trim());
 			}
 			catch(NumberFormatException e) {
 				return def;

@@ -41,7 +41,9 @@ import org.cote.accountmanager.schema.type.PbActorRoleEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
 import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
+import org.cote.accountmanager.schema.type.PbFacingEnumType;
 import org.cote.accountmanager.schema.type.PbImportanceEnumType;
+import org.cote.accountmanager.schema.type.PbReferencePolicyEnumType;
 import org.cote.accountmanager.schema.type.PbShotTypeEnumType;
 import org.cote.accountmanager.schema.type.PbViewpointEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
@@ -73,6 +75,8 @@ public class PbComposeUtil {
 
 	public static final String PROMPT_COMPOSE_SCENE = "pictureBook.compose-scene";
 	public static final String COMPOSITION_NAME_PREFIX = "composition.";
+	/** A ChapBook page's {@code CHAPBOOK_PAGE} composition is named {@code page.<sceneObjectId>} (P4-8). */
+	public static final String PAGE_COMPOSITION_NAME_PREFIX = "page.";
 	public static final String ACTOR_NAME_PREFIX = "actor.";
 	public static final String ELEMENT_NAME_PREFIX = "element.";
 
@@ -285,7 +289,17 @@ public class PbComposeUtil {
 	 * one is a defect that is logged and resolved to the lowest id so the caller still gets a deterministic answer.
 	 */
 	public static BaseRecord findSceneComposition(BaseRecord user, BaseRecord scene, long bookGroupId, long orgId) {
-		if(user == null || scene == null) {
+		return findSceneComposition(user, scene, bookGroupId, orgId, PbCompositionPurposeEnumType.SCENE);
+	}
+
+	/**
+	 * The scene's composition of the given {@code purpose} ({@code SCENE} for an illustrated scene,
+	 * {@code CHAPBOOK_PAGE} for a ChapBook page) as {@code user} reads it, or null. Uncached. Rows of any other
+	 * purpose — including an unset one, which reads {@code UNKNOWN} — are ignored. More than one is a defect that
+	 * is logged and resolved to the lowest id so the caller still gets a deterministic answer.
+	 */
+	public static BaseRecord findSceneComposition(BaseRecord user, BaseRecord scene, long bookGroupId, long orgId, PbCompositionPurposeEnumType purpose) {
+		if(user == null || scene == null || purpose == null) {
 			return null;
 		}
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_COMPOSITION, OlioFieldNames.FIELD_PB_SCENE, scene);
@@ -303,8 +317,8 @@ public class PbComposeUtil {
 		BaseRecord hit = null;
 		int hits = 0;
 		for(BaseRecord c : comps) {
-			String purpose = str(c.get(OlioFieldNames.FIELD_PB_PURPOSE));
-			if(!PbCompositionPurposeEnumType.SCENE.toString().equalsIgnoreCase(purpose)) {
+			String cp = str(c.get(OlioFieldNames.FIELD_PB_PURPOSE));
+			if(!purpose.toString().equalsIgnoreCase(cp)) {
 				continue;
 			}
 			hits++;
@@ -314,7 +328,7 @@ public class PbComposeUtil {
 		}
 		if(hits > 1) {
 			logger.warn("Scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + " has " + hits
-				+ " SCENE compositions; using the lowest id " + hit.get(FieldNames.FIELD_ID));
+				+ " " + purpose + " compositions; using the lowest id " + hit.get(FieldNames.FIELD_ID));
 		}
 		return hit;
 	}
@@ -378,11 +392,14 @@ public class PbComposeUtil {
 		if(user == null || composition == null) {
 			return Collections.emptyList();
 		}
-		Query q = QueryUtil.createQuery(model, OlioFieldNames.FIELD_PB_COMPOSITION, composition);
-		Long gid = composition.get(FieldNames.FIELD_GROUP_ID);
-		if(gid != null) {
-			q.field(FieldNames.FIELD_GROUP_ID, gid.longValue());
+		Object gidObj = (composition.hasField(FieldNames.FIELD_GROUP_ID) ? composition.get(FieldNames.FIELD_GROUP_ID) : null);
+		long gid = (gidObj instanceof Number ? ((Number) gidObj).longValue() : 0L);
+		if(gid <= 0L) {
+			/// Rows are group-scoped; an unconstrained list would read across the organization (189 d).
+			throw new PictureBookException(409, "Composition " + str(composition.get(FieldNames.FIELD_OBJECT_ID)) + " has no group");
 		}
+		Query q = QueryUtil.createQuery(model, OlioFieldNames.FIELD_PB_COMPOSITION, composition);
+		q.field(FieldNames.FIELD_GROUP_ID, gid);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, PbGraphUtil.orgId(composition));
 		q.setRequest(request);
 		q.setValue(FieldNames.FIELD_SORT_FIELD, sortField);
@@ -1880,6 +1897,726 @@ public class PbComposeUtil {
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
 
+	public static BaseRecord readActor(BaseRecord user, String objectId, long orgId) {
+		if(user == null || objectId == null) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_SCENE_ACTOR, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(actorRequest());
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	// ─────────────────────────────── row-level edits (design §8, §24, §27; P4-8) ───────────────────────────────
+
+	/**
+	 * Outcome of one row-level edit through the board: the composition's revision after the edit and what
+	 * happened to the scene's render node. {@code nodeStale} is false when the scene has no node, the node is
+	 * RUNNING, or the stale write failed; {@code nodeStatus} is the node's status as re-read (null without a node).
+	 */
+	public static class EditResult {
+		public int revision;
+		public boolean nodeStale;
+		public String nodeStatus;
+	}
+
+	/** Composition fields the board may change; {@code focalActorObjectId} is the wire name of {@code focalActor}. */
+	static final List<String> COMPOSITION_EDITABLE = Arrays.asList(
+		OlioFieldNames.FIELD_PB_SETTING_TEXT, OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_MOOD,
+		OlioFieldNames.FIELD_PB_SHOT_TYPE, OlioFieldNames.FIELD_PB_VIEWPOINT, OlioFieldNames.FIELD_PB_CAMERA_TEXT,
+		OlioFieldNames.FIELD_PB_PROPS, OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE,
+		OlioFieldNames.FIELD_PB_PROMPT_LOCKED, "focalActorObjectId");
+	static final List<String> ACTOR_EDITABLE = Arrays.asList(
+		OlioFieldNames.FIELD_PB_ROLE, OlioFieldNames.FIELD_PB_PRIORITY, OlioFieldNames.FIELD_PB_POSE, FieldNames.FIELD_EXPRESSION,
+		OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_FACING, OlioFieldNames.FIELD_PB_X, OlioFieldNames.FIELD_PB_Y,
+		OlioFieldNames.FIELD_PB_W, OlioFieldNames.FIELD_PB_H, OlioFieldNames.FIELD_PB_DEPTH, FieldNames.FIELD_DESCRIPTION,
+		FieldNames.FIELD_COUNT, OlioFieldNames.FIELD_PB_REFERENCE_POLICY);
+	static final List<String> ELEMENT_EDITABLE = Arrays.asList(
+		OlioFieldNames.FIELD_PB_ELEMENT_TYPE, FieldNames.FIELD_DESCRIPTION, OlioFieldNames.FIELD_PB_X, OlioFieldNames.FIELD_PB_Y,
+		OlioFieldNames.FIELD_PB_W, OlioFieldNames.FIELD_PB_H, OlioFieldNames.FIELD_PB_DEPTH, OlioFieldNames.FIELD_PB_IMPORTANCE);
+	/** Fields a client may name but this path refuses, with where the change belongs (400 "<field> cannot be set here; <where>"). */
+	static final Map<String, String> COMPOSITION_REFUSED = refusedMap(
+		OlioFieldNames.FIELD_PB_BOOK, "a composition's book is fixed",
+		OlioFieldNames.FIELD_PB_SCENE, "a composition's scene is fixed",
+		OlioFieldNames.FIELD_PB_PURPOSE, "a composition's purpose is fixed",
+		OlioFieldNames.FIELD_PB_SOURCE, "source is set by the composer and by edits",
+		OlioFieldNames.FIELD_PB_REVISION, "revision is bumped by every edit",
+		OlioFieldNames.FIELD_PB_USER_EDITED, "userEdited is set by every edit",
+		FieldNames.FIELD_NAME, "a composition's name is its handle",
+		FieldNames.FIELD_LOCATION, "point the scene at a location with PUT /scene/{id}/location",
+		OlioFieldNames.FIELD_PB_LOCATION_VARIANT, "point the scene at a location with PUT /scene/{id}/location",
+		OlioFieldNames.FIELD_PB_FOCAL_ACTOR, "name the actor as focalActorObjectId");
+	static final Map<String, String> ACTOR_REFUSED = refusedMap(
+		OlioFieldNames.FIELD_PB_COMPOSITION, "an actor's composition is fixed",
+		FieldNames.FIELD_NAME, "an actor's name is its handle",
+		OlioFieldNames.FIELD_PB_CHARACTER, "an actor's character is fixed; add a new actor instead",
+		"characterObjectId", "an actor's character is fixed; add a new actor instead",
+		OlioFieldNames.FIELD_APPAREL, "pin an outfit with PUT .../actor/{id}/apparel",
+		"apparelObjectId", "pin an outfit with PUT .../actor/{id}/apparel");
+	static final Map<String, String> ELEMENT_REFUSED = refusedMap(
+		OlioFieldNames.FIELD_PB_COMPOSITION, "an element's composition is fixed",
+		FieldNames.FIELD_NAME, "an element's name is its handle",
+		OlioFieldNames.FIELD_ITEM, "link a world item with POST .../element/{id}/promote",
+		"itemObjectId", "link a world item with POST .../element/{id}/promote");
+
+	private static Map<String, String> refusedMap(String... kv) {
+		Map<String, String> m = new LinkedHashMap<>();
+		for(int i = 0; i + 1 < kv.length; i += 2) {
+			m.put(kv[i], kv[i + 1]);
+		}
+		return m;
+	}
+
+	/**
+	 * The next free numeric handle suffix for rows named {@code <prefix><compositionObjectId>.<n>}: one more
+	 * than the largest suffix in {@code rows}, never below 1, so a row added after a middle delete never reuses
+	 * a name a sibling still carries (the row name is unique per group).
+	 */
+	static int nextHandleIndex(List<BaseRecord> rows) {
+		int max = -1;
+		if(rows != null) {
+			for(BaseRecord r : rows) {
+				String name = str(r.get(FieldNames.FIELD_NAME));
+				int dot = (name != null ? name.lastIndexOf('.') : -1);
+				if(dot < 0 || dot + 1 >= name.length()) {
+					continue;
+				}
+				try {
+					max = Math.max(max, Integer.parseInt(name.substring(dot + 1)));
+				}
+				catch(NumberFormatException e) {
+					/// a hand-named row carries no suffix to count from
+				}
+			}
+		}
+		return Math.max(1, max + 1);
+	}
+
+	/**
+	 * Adds one actor row to {@code comp} from a client map ({@code characterObjectId} or a {@code description},
+	 * plus any {@link #ACTOR_EDITABLE} field), as {@code user} through {@code AccessPoint}, in the composition's
+	 * own group; the caller has already authorized the book for update and matched the composition to the book.
+	 * Defaults: role SUPPORTING, priority = the handle index, count 1, referencePolicy AUTO, and a box from
+	 * {@link PbLayoutUtil#defaultPlacement} under the composition's shot type when none is given.
+	 *
+	 * @return the row as re-read (never the create stub)
+	 * @throws PictureBookException 409 when the composition is a ChapBook page (G-35: actors are off on pages);
+	 *         400 on an unknown, refused, mistyped or out-of-range field, or an actor with neither a character nor
+	 *         a description; 404 when {@code characterObjectId} is not a character of this book
+	 */
+	public static BaseRecord createActorRow(BaseRecord user, BaseRecord book, BaseRecord comp, Map<String, Object> in) {
+		if(user == null || book == null || comp == null) {
+			throw new PictureBookException(400, "A composition is required");
+		}
+		if(PbCompositionPurposeEnumType.CHAPBOOK_PAGE.toString().equalsIgnoreCase(str(comp.get(OlioFieldNames.FIELD_PB_PURPOSE)))) {
+			throw new PictureBookException(409, "Actors are not enabled on ChapBook pages");
+		}
+		Map<String, Object> body = (in != null ? in : Collections.emptyMap());
+		checkKeys(body, ACTOR_EDITABLE, ACTOR_REFUSED, Arrays.asList("characterObjectId"));
+		long orgId = PbGraphUtil.orgId(comp);
+		String compOid = str(comp.get(FieldNames.FIELD_OBJECT_ID));
+		List<BaseRecord> rows = listActors(user, comp);
+		int n = nextHandleIndex(rows);
+		String name = ACTOR_NAME_PREFIX + compOid + "." + n;
+
+		String characterOid = stringField(body, "characterObjectId", 0);
+		BaseRecord character = (characterOid != null ? PbWardrobeUtil.requireCharacterOfBook(user, book, characterOid) : null);
+		String description = stringField(body, FieldNames.FIELD_DESCRIPTION, MAX_FIELD_CHARS);
+		if(character == null && description == null) {
+			throw new PictureBookException(400, "An actor without a character needs a description");
+		}
+		PbActorRoleEnumType role = enumField(body, OlioFieldNames.FIELD_PB_ROLE, PbActorRoleEnumType.values());
+		if(role == null) {
+			role = PbActorRoleEnumType.SUPPORTING;
+		}
+		Integer priority = intField(body, OlioFieldNames.FIELD_PB_PRIORITY);
+		Integer count = intField(body, FieldNames.FIELD_COUNT);
+		PbReferencePolicyEnumType refPolicy = enumField(body, OlioFieldNames.FIELD_PB_REFERENCE_POLICY, PbReferencePolicyEnumType.values());
+		PbFacingEnumType facing = enumField(body, OlioFieldNames.FIELD_PB_FACING, PbFacingEnumType.values());
+		String pose = stringField(body, OlioFieldNames.FIELD_PB_POSE, MAX_FIELD_CHARS);
+		String expression = stringField(body, FieldNames.FIELD_EXPRESSION, MAX_EXPRESSION_CHARS);
+		String action = stringField(body, OlioFieldNames.FIELD_PB_ACTION, 0);
+		Placement dflt = PbLayoutUtil.defaultPlacement(rows.size(), rows.size() + 1, shotTypeOf(comp), role);
+		double[] box = boxFields(body, dflt);
+		Integer depth = intField(body, OlioFieldNames.FIELD_PB_DEPTH);
+
+		BaseRecord row;
+		try {
+			row = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE_ACTOR);
+			ownRow(user, row, comp, orgId, name);
+			row.set(OlioFieldNames.FIELD_PB_COMPOSITION, comp);
+			if(character != null) {
+				row.set(OlioFieldNames.FIELD_PB_CHARACTER, character);
+			}
+			row.set(OlioFieldNames.FIELD_PB_ROLE, role.toString());
+			row.set(OlioFieldNames.FIELD_PB_PRIORITY, Integer.valueOf(priority != null ? priority.intValue() : n));
+			row.set(OlioFieldNames.FIELD_PB_POSE, pose);
+			row.set(FieldNames.FIELD_EXPRESSION, expression);
+			row.set(OlioFieldNames.FIELD_PB_ACTION, action);
+			row.set(FieldNames.FIELD_DESCRIPTION, description);
+			if(facing != null) {
+				row.set(OlioFieldNames.FIELD_PB_FACING, facing.toString());
+			}
+			row.set(FieldNames.FIELD_COUNT, Integer.valueOf(clampCount(count != null ? count.intValue() : 1)));
+			row.set(OlioFieldNames.FIELD_PB_REFERENCE_POLICY, (refPolicy != null ? refPolicy : PbReferencePolicyEnumType.AUTO).toString());
+			row.set(OlioFieldNames.FIELD_PB_X, Double.valueOf(box[0]));
+			row.set(OlioFieldNames.FIELD_PB_Y, Double.valueOf(box[1]));
+			row.set(OlioFieldNames.FIELD_PB_W, Double.valueOf(box[2]));
+			row.set(OlioFieldNames.FIELD_PB_H, Double.valueOf(box[3]));
+			row.set(OlioFieldNames.FIELD_PB_DEPTH, Integer.valueOf(depth != null ? depth.intValue() : dflt.depth()));
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to assemble actor row " + name + ": " + e.getMessage(), e);
+			throw new PictureBookException(500, "Failed to assemble actor row " + name);
+		}
+		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, row);
+		if(created == null) {
+			throw new PictureBookException(500, "Failed to create actor row " + name);
+		}
+		BaseRecord fresh = readActor(user, str(created.get(FieldNames.FIELD_OBJECT_ID)), orgId);
+		if(fresh == null) {
+			throw new PictureBookException(500, "Actor row " + name + " was created but cannot be read back");
+		}
+		return fresh;
+	}
+
+	/**
+	 * Adds one element row to {@code comp} from a client map ({@code elementType} and {@code description}
+	 * required, plus any {@link #ELEMENT_EDITABLE} field). Same ownership, naming, defaults and errors as
+	 * {@link #createActorRow}; importance defaults to MEDIUM. Allowed on every composition purpose.
+	 */
+	public static BaseRecord createElementRow(BaseRecord user, BaseRecord comp, Map<String, Object> in) {
+		if(user == null || comp == null) {
+			throw new PictureBookException(400, "A composition is required");
+		}
+		Map<String, Object> body = (in != null ? in : Collections.emptyMap());
+		checkKeys(body, ELEMENT_EDITABLE, ELEMENT_REFUSED, Collections.emptyList());
+		long orgId = PbGraphUtil.orgId(comp);
+		String compOid = str(comp.get(FieldNames.FIELD_OBJECT_ID));
+		List<BaseRecord> rows = listElements(user, comp);
+		int n = nextHandleIndex(rows);
+		String name = ELEMENT_NAME_PREFIX + compOid + "." + n;
+
+		PbElementTypeEnumType type = enumField(body, OlioFieldNames.FIELD_PB_ELEMENT_TYPE, PbElementTypeEnumType.values());
+		if(type == null) {
+			throw new PictureBookException(400, "elementType is required");
+		}
+		String description = stringField(body, FieldNames.FIELD_DESCRIPTION, MAX_FIELD_CHARS);
+		if(description == null) {
+			throw new PictureBookException(400, "An element needs a description");
+		}
+		PbImportanceEnumType importance = enumField(body, OlioFieldNames.FIELD_PB_IMPORTANCE, PbImportanceEnumType.values());
+		Placement dflt = PbLayoutUtil.defaultPlacement(rows.size(), rows.size() + 1, shotTypeOf(comp), null);
+		double[] box = boxFields(body, dflt);
+		Integer depth = intField(body, OlioFieldNames.FIELD_PB_DEPTH);
+
+		BaseRecord row;
+		try {
+			row = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE_ELEMENT);
+			ownRow(user, row, comp, orgId, name);
+			row.set(OlioFieldNames.FIELD_PB_COMPOSITION, comp);
+			row.set(OlioFieldNames.FIELD_PB_ELEMENT_TYPE, type.toString());
+			row.set(FieldNames.FIELD_DESCRIPTION, description);
+			row.set(OlioFieldNames.FIELD_PB_IMPORTANCE, (importance != null ? importance : PbImportanceEnumType.MEDIUM).toString());
+			row.set(OlioFieldNames.FIELD_PB_X, Double.valueOf(box[0]));
+			row.set(OlioFieldNames.FIELD_PB_Y, Double.valueOf(box[1]));
+			row.set(OlioFieldNames.FIELD_PB_W, Double.valueOf(box[2]));
+			row.set(OlioFieldNames.FIELD_PB_H, Double.valueOf(box[3]));
+			row.set(OlioFieldNames.FIELD_PB_DEPTH, Integer.valueOf(depth != null ? depth.intValue() : dflt.depth()));
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to assemble element row " + name + ": " + e.getMessage(), e);
+			throw new PictureBookException(500, "Failed to assemble element row " + name);
+		}
+		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, row);
+		if(created == null) {
+			throw new PictureBookException(500, "Failed to create element row " + name);
+		}
+		BaseRecord fresh = readElement(user, str(created.get(FieldNames.FIELD_OBJECT_ID)), orgId);
+		if(fresh == null) {
+			throw new PictureBookException(500, "Element row " + name + " was created but cannot be read back");
+		}
+		return fresh;
+	}
+
+	/**
+	 * Applies a client map of {@link #COMPOSITION_EDITABLE} fields to {@code comp} as one sparse patch (identity +
+	 * the fields named). {@code focalActorObjectId} must name one of this composition's own actor rows (null
+	 * clears it); {@code configOverride} must parse as sparse {@code olio.sd.config} JSON carrying its schema
+	 * (null or blank clears it). Does not bump the revision - the caller follows with {@link #touchEdited}.
+	 *
+	 * @throws PictureBookException 400 on an empty map, an unknown or refused key, a mistyped value, an enum
+	 *         outside its set, a focal actor of another composition, or a non-sparse configOverride; 500 when the
+	 *         write is refused
+	 */
+	public static void patchCompositionFields(BaseRecord user, BaseRecord comp, Map<String, Object> in) {
+		if(user == null || comp == null) {
+			throw new PictureBookException(400, "A composition is required");
+		}
+		if(in == null || in.isEmpty()) {
+			throw new PictureBookException(400, "No fields to update");
+		}
+		checkKeys(in, COMPOSITION_EDITABLE, COMPOSITION_REFUSED, Collections.emptyList());
+		List<String> changed = new ArrayList<>();
+		Map<String, Object> values = new LinkedHashMap<>();
+		for(String key : in.keySet()) {
+			switch(key) {
+				case OlioFieldNames.FIELD_PB_SETTING_TEXT:
+				case OlioFieldNames.FIELD_PB_ACTION:
+				case OlioFieldNames.FIELD_PB_CAMERA_TEXT:
+				case OlioFieldNames.FIELD_PB_PROPS:
+				case OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE:
+					values.put(key, stringField(in, key, 0));
+					break;
+				case OlioFieldNames.FIELD_PB_MOOD:
+					values.put(key, stringField(in, key, MAX_MOOD_CHARS));
+					break;
+				case OlioFieldNames.FIELD_PB_SHOT_TYPE:
+					values.put(key, requiredEnum(enumField(in, key, PbShotTypeEnumType.values()), key, PbShotTypeEnumType.values()).toString());
+					break;
+				case OlioFieldNames.FIELD_PB_VIEWPOINT:
+					values.put(key, requiredEnum(enumField(in, key, PbViewpointEnumType.values()), key, PbViewpointEnumType.values()).toString());
+					break;
+				case OlioFieldNames.FIELD_PB_PROMPT_LOCKED:
+					values.put(key, booleanField(in, key));
+					break;
+				case OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE: {
+					String cfg = stringField(in, key, 0);
+					if(cfg != null && PbConfigUtil.parseOverride(cfg) == null) {
+						throw new PictureBookException(400, "configOverride must be sparse " + OlioModelNames.MODEL_SD_CONFIG + " JSON carrying its schema");
+					}
+					values.put(key, cfg);
+					break;
+				}
+				case "focalActorObjectId": {
+					String actorOid = stringField(in, key, 0);
+					BaseRecord actor = null;
+					if(actorOid != null) {
+						actor = readActor(user, actorOid, PbGraphUtil.orgId(comp));
+						if(actor == null || PbHealthUtil.fkId(actor, OlioFieldNames.FIELD_PB_COMPOSITION) != PbHealthUtil.idOf(comp)) {
+							throw new PictureBookException(400, "focalActor must be an actor of this composition");
+						}
+					}
+					values.put(OlioFieldNames.FIELD_PB_FOCAL_ACTOR, actor);
+					break;
+				}
+				default:
+					throw new PictureBookException(400, "Unknown field " + key);
+			}
+		}
+		changed.addAll(values.keySet());
+		BaseRecord patch = PbGraphUtil.patchOf(comp, OlioModelNames.MODEL_PB_COMPOSITION, changed.toArray(new String[0]));
+		for(Map.Entry<String, Object> e : values.entrySet()) {
+			setQuiet(patch, e.getKey(), e.getValue());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist composition " + comp.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		for(Map.Entry<String, Object> e : values.entrySet()) {
+			setQuiet(comp, e.getKey(), e.getValue());
+		}
+	}
+
+	/**
+	 * Applies a client map of {@link #ACTOR_EDITABLE} fields to one actor row as one sparse patch. The character
+	 * and apparel are refused here (400): a character is fixed for the row's life, an outfit is pinned through
+	 * the wardrobe route. {@code count} is clamped to 1..{@link #MAX_CROWD_COUNT}; a box value outside 0..1 is a
+	 * 400, not clamped; an actor without a character keeps needing a description.
+	 */
+	public static void patchActorRow(BaseRecord user, BaseRecord actor, Map<String, Object> in) {
+		if(user == null || actor == null) {
+			throw new PictureBookException(400, "An actor is required");
+		}
+		if(in == null || in.isEmpty()) {
+			throw new PictureBookException(400, "No fields to update");
+		}
+		checkKeys(in, ACTOR_EDITABLE, ACTOR_REFUSED, Collections.emptyList());
+		Map<String, Object> values = new LinkedHashMap<>();
+		for(String key : in.keySet()) {
+			switch(key) {
+				case OlioFieldNames.FIELD_PB_ROLE:
+					values.put(key, requiredEnum(enumField(in, key, PbActorRoleEnumType.values()), key, PbActorRoleEnumType.values()).toString());
+					break;
+				case OlioFieldNames.FIELD_PB_FACING:
+					values.put(key, requiredEnum(enumField(in, key, PbFacingEnumType.values()), key, PbFacingEnumType.values()).toString());
+					break;
+				case OlioFieldNames.FIELD_PB_REFERENCE_POLICY:
+					values.put(key, requiredEnum(enumField(in, key, PbReferencePolicyEnumType.values()), key, PbReferencePolicyEnumType.values()).toString());
+					break;
+				case OlioFieldNames.FIELD_PB_PRIORITY:
+				case OlioFieldNames.FIELD_PB_DEPTH:
+					values.put(key, requiredInt(in, key));
+					break;
+				case FieldNames.FIELD_COUNT:
+					values.put(key, Integer.valueOf(clampCount(requiredInt(in, key).intValue())));
+					break;
+				case OlioFieldNames.FIELD_PB_X:
+				case OlioFieldNames.FIELD_PB_Y:
+				case OlioFieldNames.FIELD_PB_W:
+				case OlioFieldNames.FIELD_PB_H:
+					values.put(key, unitField(in, key));
+					break;
+				case OlioFieldNames.FIELD_PB_POSE:
+					values.put(key, stringField(in, key, MAX_FIELD_CHARS));
+					break;
+				case FieldNames.FIELD_EXPRESSION:
+					values.put(key, stringField(in, key, MAX_EXPRESSION_CHARS));
+					break;
+				case OlioFieldNames.FIELD_PB_ACTION:
+					values.put(key, stringField(in, key, 0));
+					break;
+				case FieldNames.FIELD_DESCRIPTION: {
+					String d = stringField(in, key, MAX_FIELD_CHARS);
+					if(d == null && PbHealthUtil.fkId(actor, OlioFieldNames.FIELD_PB_CHARACTER) <= 0L) {
+						throw new PictureBookException(400, "An actor without a character needs a description");
+					}
+					values.put(key, d);
+					break;
+				}
+				default:
+					throw new PictureBookException(400, "Unknown field " + key);
+			}
+		}
+		writeRowPatch(user, actor, OlioModelNames.MODEL_PB_SCENE_ACTOR, values, "actor");
+	}
+
+	/** Applies a client map of {@link #ELEMENT_EDITABLE} fields to one element row as one sparse patch; see {@link #patchActorRow}. */
+	public static void patchElementRow(BaseRecord user, BaseRecord element, Map<String, Object> in) {
+		if(user == null || element == null) {
+			throw new PictureBookException(400, "An element is required");
+		}
+		if(in == null || in.isEmpty()) {
+			throw new PictureBookException(400, "No fields to update");
+		}
+		checkKeys(in, ELEMENT_EDITABLE, ELEMENT_REFUSED, Collections.emptyList());
+		Map<String, Object> values = new LinkedHashMap<>();
+		for(String key : in.keySet()) {
+			switch(key) {
+				case OlioFieldNames.FIELD_PB_ELEMENT_TYPE:
+					values.put(key, requiredEnum(enumField(in, key, PbElementTypeEnumType.values()), key, PbElementTypeEnumType.values()).toString());
+					break;
+				case OlioFieldNames.FIELD_PB_IMPORTANCE:
+					values.put(key, requiredEnum(enumField(in, key, PbImportanceEnumType.values()), key, PbImportanceEnumType.values()).toString());
+					break;
+				case OlioFieldNames.FIELD_PB_DEPTH:
+					values.put(key, requiredInt(in, key));
+					break;
+				case OlioFieldNames.FIELD_PB_X:
+				case OlioFieldNames.FIELD_PB_Y:
+				case OlioFieldNames.FIELD_PB_W:
+				case OlioFieldNames.FIELD_PB_H:
+					values.put(key, unitField(in, key));
+					break;
+				case FieldNames.FIELD_DESCRIPTION: {
+					String d = stringField(in, key, MAX_FIELD_CHARS);
+					if(d == null) {
+						throw new PictureBookException(400, "An element needs a description");
+					}
+					values.put(key, d);
+					break;
+				}
+				default:
+					throw new PictureBookException(400, "Unknown field " + key);
+			}
+		}
+		writeRowPatch(user, element, OlioModelNames.MODEL_PB_SCENE_ELEMENT, values, "element");
+	}
+
+	/**
+	 * Deletes one actor row as {@code user}. When the composition's {@code focalActor} is this row it is cleared
+	 * first (the FK would otherwise dangle), which the result reports.
+	 *
+	 * @return true when the focal actor was cleared
+	 */
+	public static boolean deleteActorRow(BaseRecord user, BaseRecord comp, BaseRecord actor) {
+		if(user == null || comp == null || actor == null) {
+			throw new PictureBookException(400, "An actor is required");
+		}
+		boolean cleared = false;
+		if(PbHealthUtil.fkId(comp, OlioFieldNames.FIELD_PB_FOCAL_ACTOR) == PbHealthUtil.idOf(actor)) {
+			BaseRecord patch = PbGraphUtil.patchOf(comp, OlioModelNames.MODEL_PB_COMPOSITION, OlioFieldNames.FIELD_PB_FOCAL_ACTOR);
+			setQuiet(patch, OlioFieldNames.FIELD_PB_FOCAL_ACTOR, null);
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				throw new PictureBookException(500, "Failed to clear the focal actor of composition " + comp.get(FieldNames.FIELD_OBJECT_ID));
+			}
+			setQuiet(comp, OlioFieldNames.FIELD_PB_FOCAL_ACTOR, null);
+			cleared = true;
+		}
+		if(!IOSystem.getActiveContext().getAccessPoint().delete(user, actor)) {
+			throw new PictureBookException(500, "Failed to delete actor " + actor.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		PbStaleUtil.touch(actor);
+		return cleared;
+	}
+
+	/** Deletes one element row as {@code user}; 500 when the delete is refused. */
+	public static void deleteElementRow(BaseRecord user, BaseRecord element) {
+		if(user == null || element == null) {
+			throw new PictureBookException(400, "An element is required");
+		}
+		if(!IOSystem.getActiveContext().getAccessPoint().delete(user, element)) {
+			throw new PictureBookException(500, "Failed to delete element " + element.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		PbStaleUtil.touch(element);
+	}
+
+	/**
+	 * Records that a user edited {@code comp} or one of its rows: {@code userEdited = true}, {@code source = USER},
+	 * {@code revision + 1}, the in-process stale cache touched, and the scene's render node marked STALE through
+	 * {@link PbBookUtil#markSceneNodeStale} (never a 409 on a RUNNING node - the write lands, the result says the
+	 * node did not go stale). {@code scene} may be null (a composition without a scene); then no node is touched.
+	 *
+	 * @throws PictureBookException 500 when the composition patch is refused
+	 */
+	public static EditResult touchEdited(BaseRecord user, BaseRecord comp, BaseRecord scene) {
+		if(user == null || comp == null) {
+			throw new PictureBookException(400, "A composition is required");
+		}
+		Object rev = comp.get(OlioFieldNames.FIELD_PB_REVISION);
+		int next = (rev instanceof Number ? ((Number) rev).intValue() : 0) + 1;
+		BaseRecord patch = PbGraphUtil.patchOf(comp, OlioModelNames.MODEL_PB_COMPOSITION,
+			OlioFieldNames.FIELD_PB_USER_EDITED, OlioFieldNames.FIELD_PB_SOURCE, OlioFieldNames.FIELD_PB_REVISION);
+		setQuiet(patch, OlioFieldNames.FIELD_PB_USER_EDITED, Boolean.TRUE);
+		setQuiet(patch, OlioFieldNames.FIELD_PB_SOURCE, PbCompositionSourceEnumType.USER.toString());
+		setQuiet(patch, OlioFieldNames.FIELD_PB_REVISION, Integer.valueOf(next));
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist composition " + comp.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		setQuiet(comp, OlioFieldNames.FIELD_PB_USER_EDITED, Boolean.TRUE);
+		setQuiet(comp, OlioFieldNames.FIELD_PB_SOURCE, PbCompositionSourceEnumType.USER.toString());
+		setQuiet(comp, OlioFieldNames.FIELD_PB_REVISION, Integer.valueOf(next));
+		PbStaleUtil.touch(comp);
+		EditResult out = new EditResult();
+		out.revision = next;
+		if(scene != null) {
+			out.nodeStale = PbBookUtil.markSceneNodeStale(user, scene);
+			BaseRecord nodeRef = (scene.hasField(OlioFieldNames.FIELD_PB_SCENE_NODE) ? scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE) : null);
+			long nodeId = (nodeRef != null ? PbHealthUtil.idOf(nodeRef) : 0L);
+			BaseRecord node = (nodeId > 0L ? PbGraphUtil.readNodeById(user, nodeId, PbGraphUtil.orgId(comp)) : null);
+			out.nodeStatus = (node != null ? str(node.get(OlioFieldNames.FIELD_PB_NODE_STATUS)) : null);
+		}
+		return out;
+	}
+
+	/**
+	 * The ChapBook page's {@code CHAPBOOK_PAGE} composition, created on first use (design §27, P4-8): named
+	 * {@code page.<sceneObjectId>}, in the book's group (the same group every SCENE composition and every reader
+	 * of a page composition keys on), as {@code user} through {@code AccessPoint}, with the given {@code source},
+	 * {@code revision = 1}, {@code userEdited = false} and no rows - a page composition exists to carry the
+	 * page's {@code promptOverride}/{@code promptLocked}, nothing more (G-35). Only write paths call this; a
+	 * read of a page without one gets null from {@link #findSceneComposition}.
+	 *
+	 * @throws PictureBookException 409 when the book has no group; 500 when the create or read-back fails
+	 */
+	public static BaseRecord getCreatePageComposition(BaseRecord user, BaseRecord book, BaseRecord scene, PbCompositionSourceEnumType source) {
+		if(user == null || book == null || scene == null) {
+			throw new PictureBookException(400, "A scene is required");
+		}
+		long orgId = PbGraphUtil.orgId(book);
+		Object gid = (book.hasField(FieldNames.FIELD_GROUP_ID) ? book.get(FieldNames.FIELD_GROUP_ID) : null);
+		long groupId = (gid instanceof Number ? ((Number) gid).longValue() : 0L);
+		String sceneOid = str(scene.get(FieldNames.FIELD_OBJECT_ID));
+		if(groupId <= 0L) {
+			throw new PictureBookException(409, "Book " + str(book.get(OlioFieldNames.FIELD_PB_SLUG)) + " has no group");
+		}
+		BaseRecord existing = findSceneComposition(user, scene, groupId, orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE);
+		if(existing != null) {
+			return existing;
+		}
+		String name = PAGE_COMPOSITION_NAME_PREFIX + sceneOid;
+		BaseRecord comp;
+		try {
+			comp = RecordFactory.newInstance(OlioModelNames.MODEL_PB_COMPOSITION);
+			IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, comp, orgId);
+			comp.set(FieldNames.FIELD_GROUP_ID, Long.valueOf(groupId));
+			comp.set(FieldNames.FIELD_NAME, name);
+			comp.set(OlioFieldNames.FIELD_PB_BOOK, book);
+			comp.set(OlioFieldNames.FIELD_PB_PURPOSE, PbCompositionPurposeEnumType.CHAPBOOK_PAGE.toString());
+			comp.set(OlioFieldNames.FIELD_PB_SCENE, scene);
+			comp.set(OlioFieldNames.FIELD_PB_SOURCE, (source != null ? source : PbCompositionSourceEnumType.USER).toString());
+			comp.set(OlioFieldNames.FIELD_PB_USER_EDITED, Boolean.FALSE);
+			comp.set(OlioFieldNames.FIELD_PB_REVISION, Integer.valueOf(1));
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.error("Failed to assemble page composition " + name + ": " + e.getMessage(), e);
+			throw new PictureBookException(500, "Failed to assemble page composition " + name);
+		}
+		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, comp);
+		if(created == null) {
+			throw new PictureBookException(500, "Failed to create page composition " + name);
+		}
+		BaseRecord fresh = readComposition(user, str(created.get(FieldNames.FIELD_OBJECT_ID)), orgId);
+		if(fresh == null) {
+			throw new PictureBookException(500, "Page composition " + name + " was created but cannot be read back");
+		}
+		return fresh;
+	}
+
+	/// Group = the composition's group; owner = the caller. None of the row models inherits common.name.
+	private static void ownRow(BaseRecord user, BaseRecord row, BaseRecord comp, long orgId, String name) throws FieldException, ValueException, ModelNotFoundException {
+		IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, row, orgId);
+		Object gid = comp.get(FieldNames.FIELD_GROUP_ID);
+		row.set(FieldNames.FIELD_GROUP_ID, Long.valueOf(gid instanceof Number ? ((Number) gid).longValue() : 0L));
+		row.set(FieldNames.FIELD_NAME, name);
+	}
+
+	private static void writeRowPatch(BaseRecord user, BaseRecord row, String model, Map<String, Object> values, String what) {
+		BaseRecord patch = PbGraphUtil.patchOf(row, model, values.keySet().toArray(new String[0]));
+		for(Map.Entry<String, Object> e : values.entrySet()) {
+			setQuiet(patch, e.getKey(), e.getValue());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist " + what + " " + row.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		for(Map.Entry<String, Object> e : values.entrySet()) {
+			setQuiet(row, e.getKey(), e.getValue());
+		}
+		PbStaleUtil.touch(row);
+	}
+
+	/// Every key must be editable (or in {@code alsoAllowed}); a refused key says where the change belongs.
+	/// {@code alsoAllowed} wins over {@code refused}: it is how a create admits a key its patch refuses.
+	private static void checkKeys(Map<String, Object> in, List<String> editable, Map<String, String> refused, List<String> alsoAllowed) {
+		for(String key : in.keySet()) {
+			if(key == null) {
+				throw new PictureBookException(400, "Unknown field null");
+			}
+			if(alsoAllowed.contains(key)) {
+				continue;
+			}
+			if(refused.containsKey(key)) {
+				throw new PictureBookException(400, key + " cannot be set here; " + refused.get(key));
+			}
+			if(!editable.contains(key)) {
+				throw new PictureBookException(400, "Unknown field " + key);
+			}
+		}
+	}
+
+	/// Absent, null or blank → null (clears); a non-string → 400; longer than {@code max} (when > 0) → 400.
+	private static String stringField(Map<String, Object> in, String key, int max) {
+		Object v = in.get(key);
+		if(v == null) {
+			return null;
+		}
+		if(!(v instanceof String)) {
+			throw new PictureBookException(400, key + " must be a string");
+		}
+		String s = ((String) v).trim();
+		if(s.isEmpty()) {
+			return null;
+		}
+		if(max > 0 && s.length() > max) {
+			throw new PictureBookException(400, key + " must be at most " + max + " characters");
+		}
+		return s;
+	}
+
+	/// Absent or null → null; a non-number → 400.
+	private static Integer intField(Map<String, Object> in, String key) {
+		Object v = in.get(key);
+		if(v == null) {
+			return null;
+		}
+		if(!(v instanceof Number)) {
+			throw new PictureBookException(400, key + " must be a number");
+		}
+		return Integer.valueOf(((Number) v).intValue());
+	}
+
+	private static Integer requiredInt(Map<String, Object> in, String key) {
+		Integer i = intField(in, key);
+		if(i == null) {
+			throw new PictureBookException(400, key + " must be a number");
+		}
+		return i;
+	}
+
+	/// A present box coordinate: a number in 0..1 inclusive, else 400 (never clamped).
+	private static Double unitField(Map<String, Object> in, String key) {
+		Object v = in.get(key);
+		if(!(v instanceof Number)) {
+			throw new PictureBookException(400, key + " must be a number");
+		}
+		double d = ((Number) v).doubleValue();
+		if(Double.isNaN(d) || d < 0.0d || d > 1.0d) {
+			throw new PictureBookException(400, key + " must be between 0 and 1");
+		}
+		return Double.valueOf(d);
+	}
+
+	/// {x, y, w, h}: the default placement with every coordinate the client named replaced (validated 0..1).
+	private static double[] boxFields(Map<String, Object> in, Placement dflt) {
+		double[] box = new double[] { dflt.x(), dflt.y(), dflt.w(), dflt.h() };
+		String[] keys = new String[] { OlioFieldNames.FIELD_PB_X, OlioFieldNames.FIELD_PB_Y, OlioFieldNames.FIELD_PB_W, OlioFieldNames.FIELD_PB_H };
+		for(int i = 0; i < keys.length; i++) {
+			if(in.containsKey(keys[i]) && in.get(keys[i]) != null) {
+				box[i] = unitField(in, keys[i]).doubleValue();
+			}
+		}
+		return box;
+	}
+
+	private static Boolean booleanField(Map<String, Object> in, String key) {
+		Object v = in.get(key);
+		if(!(v instanceof Boolean)) {
+			throw new PictureBookException(400, key + " must be a boolean");
+		}
+		return (Boolean) v;
+	}
+
+	/// Absent or null → null; a non-string or a name outside the set → 400 "<key> must be one of A, B, C".
+	private static <E extends Enum<E>> E enumField(Map<String, Object> in, String key, E[] values) {
+		Object v = in.get(key);
+		if(v == null) {
+			return null;
+		}
+		if(v instanceof String) {
+			String s = ((String) v).trim();
+			for(E e : values) {
+				if(e.name().equalsIgnoreCase(s)) {
+					return e;
+				}
+			}
+		}
+		throw new PictureBookException(400, key + " must be one of " + enumNames(values));
+	}
+
+	private static <E extends Enum<E>> E requiredEnum(E value, String key, E[] values) {
+		if(value == null) {
+			throw new PictureBookException(400, key + " must be one of " + enumNames(values));
+		}
+		return value;
+	}
+
+	private static <E extends Enum<E>> String enumNames(E[] values) {
+		StringBuilder sb = new StringBuilder();
+		for(E e : values) {
+			if(sb.length() > 0) {
+				sb.append(", ");
+			}
+			sb.append(e.name());
+		}
+		return sb.toString();
+	}
+
+	private static int clampCount(int count) {
+		return Math.min(MAX_CROWD_COUNT, Math.max(1, count));
+	}
+
+	static PbShotTypeEnumType shotTypeOf(BaseRecord comp) {
+		String s = (comp != null && comp.hasField(OlioFieldNames.FIELD_PB_SHOT_TYPE) ? str(comp.get(OlioFieldNames.FIELD_PB_SHOT_TYPE)) : null);
+		if(s != null) {
+			for(PbShotTypeEnumType e : PbShotTypeEnumType.values()) {
+				if(e.name().equalsIgnoreCase(s)) {
+					return e;
+				}
+			}
+		}
+		return PbShotTypeEnumType.UNKNOWN;
+	}
+
 	// ─────────────────────────────── promote (design §7.2 rule 4) ───────────────────────────────
 
 	/** {@code olio.item.type} of an item promoted from a scene element; the world catalogue rows are {@code "template"}. */
@@ -2112,7 +2849,8 @@ public class PbComposeUtil {
 		sb.append(tname);
 		if(NarrativeUtil.isMeaningful(description)) {
 			String tdesc = tidy(description);
-			if(!tdesc.isEmpty() && !tdesc.equals(tname)) {
+			// the prop's name is its description minus the article, so compare both sides bare
+			if(!tdesc.isEmpty() && !tdesc.equals(tname) && !bare(tdesc).equals(bare(tname))) {
 				sb.append(", ").append(tdesc);
 			}
 		}
@@ -2128,12 +2866,15 @@ public class PbComposeUtil {
 		if(!NarrativeUtil.isMeaningful(description)) {
 			return null;
 		}
-		String s = tidy(description);
-		s = s.replaceFirst("^(?:a|an|the|some)\\s+", "");
+		String s = bare(tidy(description));
 		if(s.length() > ITEM_NAME_MAX) {
 			s = s.substring(0, ITEM_NAME_MAX).trim();
 		}
 		return (s.isEmpty() ? null : s);
+	}
+
+	private static String bare(String tidied) {
+		return tidied.replaceFirst("^(?:a|an|the|some)\\s+", "");
 	}
 
 	private static String tidy(String s) {

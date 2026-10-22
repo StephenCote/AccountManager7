@@ -23,7 +23,7 @@ import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererAdapter;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
-import org.cote.accountmanager.olio.illustration.SdxlCompiler;
+import org.cote.accountmanager.olio.illustration.PromptCompilers;
 import org.cote.accountmanager.olio.illustration.StageImage;
 import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StageResult;
@@ -217,10 +217,9 @@ public final class ChatSceneRenderUtil {
 		plan = plan.withStrategy(strategy, out);
 
 		out = new ArrayList<>();
-		SdxlCompiler compiler = new SdxlCompiler();
 		Map<String, CompiledPrompt> compiled = new LinkedHashMap<>();
 		for(String stage : strategy.getStages()) {
-			compiled.put(stage, compiler.compile(plan, stage, out));
+			compiled.put(stage, PromptCompilers.forPick(plan.pickForStage(stage)).compile(plan, stage, out));
 		}
 		return plan.withCompiled(compiled, out);
 	}

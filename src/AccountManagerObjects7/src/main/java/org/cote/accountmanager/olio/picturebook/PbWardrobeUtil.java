@@ -25,6 +25,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
@@ -128,6 +129,8 @@ public class PbWardrobeUtil {
 	public static final class ResolvedOutfit {
 		public BaseRecord actor;
 		public BaseRecord character;
+		/// true when character is the row's FK stub because the character itself could not be read as the user
+		public boolean characterUnread;
 		public BaseRecord apparel;
 		public OutfitSource source = OutfitSource.NONE;
 		public int fromSceneIndex = -1;
@@ -832,6 +835,7 @@ public class PbWardrobeUtil {
 			ro.character = characters.computeIfAbsent(charId, id -> readCharacterById(user, id, orgId));
 			if(ro.character == null) {
 				ro.character = charRef;
+				ro.characterUnread = true;
 			}
 			long pinnedId = pinnedApparelId(actor);
 			if(pinnedId > 0L) {
@@ -1173,6 +1177,60 @@ public class PbWardrobeUtil {
 		q.setRequest(APPAREL_REQUEST);
 		q.setCache(false);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/**
+	 * The outfit text of one apparel for a prompt (P4-7): {@code "wearing <a>, <b>, and <c>"} over its in-use
+	 * wearables ordered as {@link ApparelUtil#getWearing} orders them (outermost level first), each described by
+	 * {@link NarrativeUtil#describeWearable}; the apparel's description when it has no in-use wearables; null when
+	 * neither is meaningful. Read fresh ({@code planMost}, no cache) so a just-edited wardrobe is what renders.
+	 */
+	public static String describeApparel(BaseRecord user, BaseRecord apparel, long orgId) {
+		if(apparel == null) {
+			return null;
+		}
+		long id = idOf(apparel);
+		if(id <= 0L) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_ID, id);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.planMost(true);
+		q.setCache(false);
+		BaseRecord full = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(full == null) {
+			return null;
+		}
+		List<BaseRecord> wears = new ArrayList<>();
+		if(full.hasField(OlioFieldNames.FIELD_WEARABLES)) {
+			List<BaseRecord> all = full.get(OlioFieldNames.FIELD_WEARABLES);
+			if(all != null) {
+				for(BaseRecord w : all) {
+					Boolean inUse = (w.hasField(OlioFieldNames.FIELD_IN_USE) ? w.get(OlioFieldNames.FIELD_IN_USE) : null);
+					if(inUse != null && inUse.booleanValue() && w.hasField(OlioFieldNames.FIELD_LEVEL) && w.get(OlioFieldNames.FIELD_LEVEL) != null) {
+						wears.add(w);
+					}
+				}
+			}
+		}
+		if(wears.isEmpty()) {
+			String desc = (full.hasField(FieldNames.FIELD_DESCRIPTION) ? full.get(FieldNames.FIELD_DESCRIPTION) : null);
+			return (NarrativeUtil.isMeaningful(desc) ? desc.trim() : null);
+		}
+		wears.sort((f1, f2) -> WearLevelEnumType.compareTo(f1.getEnum(OlioFieldNames.FIELD_LEVEL), f2.getEnum(OlioFieldNames.FIELD_LEVEL)));
+		Collections.reverse(wears);
+		StringBuilder buff = new StringBuilder("wearing");
+		String andl = " ";
+		for(int i = 0; i < wears.size(); i++) {
+			String item = NarrativeUtil.describeWearable(wears.get(i));
+			if(!NarrativeUtil.isMeaningful(item)) {
+				continue;
+			}
+			buff.append(andl).append(item.trim());
+			andl = "," + (i == wears.size() - 2 ? " and " : " ");
+		}
+		String text = buff.toString();
+		return (text.equals("wearing") ? null : text);
 	}
 
 	private static BaseRecord readActor(BaseRecord user, String objectId, long orgId) {

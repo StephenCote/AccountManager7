@@ -256,4 +256,184 @@ public class TestRenderPlan {
 		assertNull(RenderPlan.fromJson("   "));
 		assertNull(RenderPlan.fromJson("not json"));
 	}
+
+	/// P4-7: the §12 actor (characterId, priority, box, depth, pose, expression, action, facing, outfit,
+	/// identity, policy, referenced) and element (type, box, depth, importance, itemId) shapes are exact on
+	/// the wire and hash-stable through fromJson(toJson()).
+	@Test
+	public void newActorAndElementShapeRoundTripsWithAStableHash() {
+		RenderPlan.Actor hero = new RenderPlan.Actor.Builder("row-1").characterId("ch-1").name("Jideon").role(RenderPlan.ROLE_HERO).priority(1)
+			.box(new RenderPlan.Box(0.1, 0.2, 0.3, 0.4)).depth(2).pose("standing").expression("scowling").action("drawing a sword").facing("left")
+			.outfit(new RenderPlan.Outfit("ap-1", "wearing a grey cloak", "art-outfit"))
+			.identity(new RenderPlan.Identity("art-portrait", "art-body", "a tall man"))
+			.policy("REQUIRE_REFERENCE").referenced(true).build();
+		RenderPlan.Actor crowd = new RenderPlan.Actor.Builder("row-2").role(RenderPlan.ROLE_CROWD).priority(9)
+			.identity(new RenderPlan.Identity(null, null, "3 dockhands")).build();
+		RenderPlan.Element lantern = new RenderPlan.Element("PROP", "lantern", "a brass lantern", new RenderPlan.Box(0.5, 0.5, 0.1, 0.1), 1, RenderPlan.PRIORITY_HIGH, "item-7");
+		RenderPlan.Element gulls = new RenderPlan.Element("gulls", RenderPlan.PRIORITY_LOW, null);
+		RenderPlan a = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE)
+			.location(new RenderPlan.Location(null, "a quay"))
+			.actor(hero).actor(crowd).element(lantern).element(gulls)
+			.build();
+		String json = a.toJson();
+		assertTrue(json, json.contains("\"actors\":[{\"actorId\":\"row-1\",\"characterId\":\"ch-1\",\"name\":\"Jideon\",\"role\":\"HERO\",\"priority\":1,"
+			+ "\"box\":{\"x\":0.1,\"y\":0.2,\"w\":0.3,\"h\":0.4},\"depth\":2,\"pose\":\"standing\",\"expression\":\"scowling\",\"action\":\"drawing a sword\",\"facing\":\"left\","
+			+ "\"outfit\":{\"apparelId\":\"ap-1\",\"text\":\"wearing a grey cloak\",\"refArtifactId\":\"art-outfit\"},"
+			+ "\"identity\":{\"portraitArtifactId\":\"art-portrait\",\"fullbodyArtifactId\":\"art-body\",\"text\":\"a tall man\"},"
+			+ "\"policy\":\"REQUIRE_REFERENCE\",\"referenced\":true},"));
+		assertTrue(json, json.contains("{\"actorId\":\"row-2\",\"role\":\"CROWD\",\"priority\":9,\"depth\":0,\"identity\":{\"text\":\"3 dockhands\"},\"referenced\":false}"));
+		assertTrue(json, json.contains("\"elements\":[{\"type\":\"PROP\",\"name\":\"lantern\",\"description\":\"a brass lantern\",\"box\":{\"x\":0.5,\"y\":0.5,\"w\":0.1,\"h\":0.1},"
+			+ "\"depth\":1,\"importance\":\"HIGH\",\"itemId\":\"item-7\"},{\"name\":\"gulls\",\"depth\":0,\"importance\":\"LOW\"}]"));
+		assertFalse("the legacy element key is never written", json.contains("\"priority\":\"HIGH\""));
+		assertFalse(json.contains("\"priority\":\"LOW\""));
+
+		RenderPlan back = RenderPlan.fromJson(json);
+		assertNotNull(back);
+		assertEquals(json, back.toJson());
+		assertEquals(a.contentHash(), back.contentHash());
+		RenderPlan.Actor h = back.getActors().get(0);
+		assertEquals("row-1", h.getActorId());
+		assertEquals("ch-1", h.getCharacterId());
+		assertEquals(RenderPlan.ROLE_HERO, h.getRole());
+		assertTrue(h.isForeground());
+		assertEquals(1, h.getPriority());
+		assertEquals(0.3, h.getBox().getW(), 0.0);
+		assertEquals(2, h.getDepth());
+		assertEquals("standing", h.getPose());
+		assertEquals("scowling", h.getExpression());
+		assertEquals("drawing a sword", h.getAction());
+		assertEquals("left", h.getFacing());
+		assertEquals("ap-1", h.getOutfit().getApparelId());
+		assertEquals("wearing a grey cloak", h.getOutfit().getText());
+		assertEquals("art-outfit", h.getOutfit().getRefArtifactId());
+		assertEquals("art-portrait", h.getIdentity().getPortraitArtifactId());
+		assertEquals("art-body", h.getIdentity().getFullbodyArtifactId());
+		assertEquals("a tall man", h.getIdentity().getText());
+		assertEquals("a tall man", h.getDescription());
+		assertEquals("REQUIRE_REFERENCE", h.getPolicy());
+		assertTrue(h.isReferenced());
+		RenderPlan.Actor c = back.getActors().get(1);
+		assertNull(c.getCharacterId());
+		assertNull(c.getName());
+		assertFalse(c.isForeground());
+		assertNull(c.getBox());
+		assertNull(c.getOutfit());
+		assertEquals("3 dockhands", c.getDescription());
+		RenderPlan.Element l = back.getElements().get(0);
+		assertEquals("PROP", l.getType());
+		assertEquals(RenderPlan.PRIORITY_HIGH, l.getImportance());
+		assertEquals(RenderPlan.PRIORITY_HIGH, l.getPriority());
+		assertEquals("item-7", l.getItemId());
+		assertEquals(1, l.getDepth());
+		assertEquals(0.5, l.getBox().getX(), 0.0);
+		RenderPlan.Element g = back.getElements().get(1);
+		assertNull(g.getType());
+		assertNull(g.getBox());
+		assertNull(g.getItemId());
+		assertEquals(RenderPlan.PRIORITY_LOW, g.getImportance());
+
+		/// a missing importance is MEDIUM, and an actor built without a role is FOREGROUND
+		assertEquals(RenderPlan.PRIORITY_MEDIUM, new RenderPlan.Element("PROP", "x", null, null, 0, null, null).getImportance());
+		assertEquals(RenderPlan.ROLE_FOREGROUND, new RenderPlan.Actor.Builder("r").build().getRole());
+		assertNull(new RenderPlan.Actor.Builder("r").build().getDescription());
+	}
+
+	/// A plan persisted before P4-7 carried actor.description (no role, no identity) and element.priority.
+	/// It parses to identity.text / FOREGROUND / importance and never writes the legacy keys back, so the
+	/// migrated form is stable from the first re-serialisation on.
+	@Test
+	public void legacyActorAndElementJsonMigratesAndIsNeverWrittenBack() {
+		String old = "{\"planVersion\":\"illustration/1\",\"purpose\":\"scene\",\"config\":{},"
+			+ "\"location\":{\"description\":\"a lighthouse at dusk\"},"
+			+ "\"actors\":[{\"actorId\":\"c01\",\"name\":\"Jideon\",\"referenced\":true},"
+			+ "{\"actorId\":\"c02\",\"name\":\"Mara\",\"description\":\"a hooded figure\",\"referenced\":false}],"
+			+ "\"elements\":[{\"name\":\"lantern\",\"priority\":\"HIGH\"},{\"name\":\"gulls\",\"priority\":\"LOW\",\"description\":\"wheeling gulls\"}],"
+			+ "\"intent\":{\"raw\":false},\"models\":{}}";
+		RenderPlan back = RenderPlan.fromJson(old);
+		assertNotNull(back);
+		assertEquals(2, back.getActors().size());
+		RenderPlan.Actor j = back.getActors().get(0);
+		assertEquals(RenderPlan.ROLE_FOREGROUND, j.getRole());
+		assertTrue(j.isForeground());
+		assertNull(j.getIdentity());
+		assertNull(j.getDescription());
+		assertNull(j.getCharacterId());
+		assertEquals(0, j.getPriority());
+		assertTrue(j.isReferenced());
+		RenderPlan.Actor m = back.getActors().get(1);
+		assertEquals(RenderPlan.ROLE_FOREGROUND, m.getRole());
+		assertNotNull(m.getIdentity());
+		assertEquals("a hooded figure", m.getIdentity().getText());
+		assertEquals("a hooded figure", m.getDescription());
+		assertNull(m.getIdentity().getPortraitArtifactId());
+		assertFalse(m.isReferenced());
+		assertEquals(2, back.getElements().size());
+		assertEquals(RenderPlan.PRIORITY_HIGH, back.getElements().get(0).getImportance());
+		assertEquals(RenderPlan.PRIORITY_HIGH, back.getElements().get(0).getPriority());
+		assertEquals(RenderPlan.PRIORITY_LOW, back.getElements().get(1).getImportance());
+		assertEquals("wheeling gulls", back.getElements().get(1).getDescription());
+
+		String migrated = back.toJson();
+		assertFalse(migrated, migrated.contains("\"description\":\"a hooded figure\""));
+		assertTrue(migrated, migrated.contains("\"identity\":{\"text\":\"a hooded figure\"}"));
+		assertTrue(migrated, migrated.contains("\"role\":\"FOREGROUND\""));
+		assertFalse(migrated, migrated.contains("\"priority\":\"HIGH\""));
+		assertFalse(migrated, migrated.contains("\"priority\":\"LOW\""));
+		assertTrue(migrated, migrated.contains("\"importance\":\"HIGH\""));
+		assertTrue(migrated, migrated.contains("\"importance\":\"LOW\""));
+		/// a legacy plan with an explicit identity map ignores the stray description
+		RenderPlan both = RenderPlan.fromJson("{\"planVersion\":\"illustration/1\",\"purpose\":\"scene\",\"config\":{},"
+			+ "\"actors\":[{\"actorId\":\"c02\",\"description\":\"stale\",\"identity\":{\"text\":\"current\"}}],\"intent\":{\"raw\":false},\"models\":{}}");
+		assertEquals("current", both.getActors().get(0).getDescription());
+		/// the migrated form is stable: a second round trip is byte-identical
+		RenderPlan again = RenderPlan.fromJson(migrated);
+		assertEquals(migrated, again.toJson());
+		assertEquals(back.contentHash(), again.contentHash());
+	}
+
+	@Test
+	public void actorSummaryCountsReferencedTextAndUnresolved() {
+		assertEquals("no characters", RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE).build().actorSummary());
+		RenderPlan mixed = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE)
+			.actor(new RenderPlan.Actor.Builder("r1").name("Jideon").referenced(true).build())
+			.actor(new RenderPlan.Actor.Builder("r2").name("Mara").referenced(true).role(RenderPlan.ROLE_NAMED_BACKGROUND).build())
+			.actor(new RenderPlan.Actor.Builder("r3").role(RenderPlan.ROLE_CROWD).identity(new RenderPlan.Identity(null, null, "dockhands")).build())
+			.build();
+		assertEquals("3 characters: 2 referenced, 1 text", mixed.actorSummary());
+		assertEquals("1 characters: 0 referenced, 1 text", RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE)
+			.actor(new RenderPlan.Actor.Builder("r1").name("Jideon").build()).build().actorSummary());
+
+		RenderPlan unresolved = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE)
+			.actor(new RenderPlan.Actor.Builder("r1").name("Jideon").referenced(true).build())
+			.actor(new RenderPlan.Actor.Builder("r2").name("Mara").build())
+			.actor(new RenderPlan.Actor.Builder("ch-gone").name("Old Bes").build())
+			.degradation(new Degradation(Degradation.ACTOR_TEXT_ONLY, "Mara rendered from description (no approved portrait)", "r2", "BASE"))
+			.degradation(new Degradation(Degradation.ACTOR_UNRESOLVED, "Old Bes rendered from the row's text (character ch-gone could not be read)", "ch-gone", "BASE"))
+			.build();
+		assertEquals("3 characters: 1 referenced, 2 text, 1 unresolved", unresolved.actorSummary());
+		/// the summary survives the wire and the copy-on-write helpers
+		assertEquals(unresolved.actorSummary(), RenderPlan.fromJson(unresolved.toJson()).actorSummary());
+		assertEquals("3 characters: 1 referenced, 2 text, 1 unresolved",
+			unresolved.withStrategy(new RenderPlan.Strategy(PbStrategyEnumType.TEXT_ONLY, Arrays.asList("BASE"), "x"), null).actorSummary());
+		assertEquals("3 characters: 1 referenced, 2 text, 2 unresolved", unresolved.withStrategy(null,
+			Arrays.asList(new Degradation(Degradation.ACTOR_UNRESOLVED, "another", "r2", "BASE"))).actorSummary());
+	}
+
+	@Test
+	public void degradationCodesAreTheClosedSet() {
+		assertEquals(8, Degradation.CODES.size());
+		for(String code : new String[] {Degradation.ACTOR_TEXT_ONLY, Degradation.ACTOR_UNRESOLVED, Degradation.ACTOR_FAILED, Degradation.LOCATION_TEXT_ONLY,
+				Degradation.MODEL_SUBSTITUTED, Degradation.PROMPT_TRUNCATED, Degradation.QA_WARN, Degradation.COMPOSED_OUT_OF_ORDER}) {
+			assertTrue(code, Degradation.CODES.contains(code));
+			assertTrue(code, Degradation.isKnownCode(code));
+		}
+		assertEquals("MODEL_SUBSTITUTED", Degradation.MODEL_SUBSTITUTED);
+		assertFalse(Degradation.isKnownCode(null));
+		assertFalse(Degradation.isKnownCode(""));
+		assertFalse(Degradation.isKnownCode("upscale"));
+		assertFalse("codes are case-sensitive", Degradation.isKnownCode("actor_text_only"));
+		assertFalse(Degradation.isKnownCode("ACTOR_TEXT_ONLY: Mara rendered from description"));
+		assertEquals("ACTOR_UNRESOLVED@BASE[ch-gone]: gone", new Degradation(Degradation.ACTOR_UNRESOLVED, "gone", "ch-gone", "BASE").toString());
+		assertEquals("QA_WARN: soft", new Degradation(Degradation.QA_WARN, "soft", null, null).toString());
+	}
 }

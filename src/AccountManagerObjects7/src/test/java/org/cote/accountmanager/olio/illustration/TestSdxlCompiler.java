@@ -233,7 +233,7 @@ public class TestSdxlCompiler {
 			assertTrue(d.getMessage(), d.getMessage().matches(".* \\(\\d+ tokens over budget 225\\)"));
 			order.add(d.getMessage().substring(0, d.getMessage().indexOf(" (")));
 		}
-		assertEquals(Arrays.asList("ELEM_LOW dropped", "ELEM_MEDIUM dropped", "PALETTE dropped", "CAMERA dropped", "ACTOR_BG detail dropped"), order);
+		assertEquals(Arrays.asList("ELEM_LOW dropped: gulls", "ELEM_MEDIUM dropped: rubble", "PALETTE dropped: amber and teal", "CAMERA dropped: wide shot low angle", "ACTOR_BG detail dropped: Mara"), order);
 
 		String prompt = cp.getPrompt();
 		assertTrue(prompt.startsWith(words("m", 100) + ", Jideon, a tall man, Mara, lantern"));

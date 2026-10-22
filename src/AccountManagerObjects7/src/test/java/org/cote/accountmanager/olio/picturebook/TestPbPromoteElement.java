@@ -88,6 +88,10 @@ public class TestPbPromoteElement extends BaseTest {
 		assertEquals("pewter cup", PbComposeUtil.itemText("  Pewter   Cup ", null, new ArrayList<>(), new ArrayList<>()));
 		assertEquals("a description equal to the name is not repeated", "pewter cup",
 			PbComposeUtil.itemText("Pewter Cup", "pewter cup", null, null));
+		assertEquals("a description that is the name plus its article is not repeated either", "dented pewter cup",
+			PbComposeUtil.itemText("dented pewter cup", "A dented pewter cup", null, null));
+		assertEquals("the article-only rule still keeps a real description", "cup, a dented pewter cup",
+			PbComposeUtil.itemText("Cup", "A dented pewter cup", null, null));
 	}
 
 	@Test
@@ -195,7 +199,7 @@ public class TestPbPromoteElement extends BaseTest {
 			assertNotNull("item", r.item);
 			assertEquals("item name from the description", "dented pewter cup", r.item.get(FieldNames.FIELD_NAME));
 			assertNotNull("elementText", r.elementText);
-			assertTrue("elementText carries the item name: " + r.elementText, r.elementText.contains("dented pewter cup"));
+			assertEquals("elementText is the item once, not name plus the description it was named from", "dented pewter cup", r.elementText);
 			assertFalse("elementText never says null: " + r.elementText, r.elementText.contains("null"));
 
 			/// the row: olio-owned, type=prop, in the world Items group

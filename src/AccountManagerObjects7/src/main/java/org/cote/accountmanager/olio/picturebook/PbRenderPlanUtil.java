@@ -2,6 +2,8 @@ package org.cote.accountmanager.olio.picturebook;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,26 +11,25 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.illustration.CanvasResolver;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.PromptCompilers;
 import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
-import org.cote.accountmanager.olio.illustration.SdxlCompiler;
 import org.cote.accountmanager.olio.illustration.StrategySelector;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
-import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
+import org.cote.accountmanager.schema.type.PbReferencePolicyEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 
 /**
@@ -38,9 +39,10 @@ import org.cote.accountmanager.util.AttributeUtil;
  * artifact ({@link #persistPlanArtifact}) is the caller's explicit choice (the live render test and the
  * P2-5 executor); the plan-inspector route never persists.
  * <p>
- * Seams, stated per §5 of the tracking doc: {@code olio.pb.scene.characters} has no writer yet, so
- * {@code actors} is empty on every current scene; a scene with no text at all yields an empty compiled
- * prompt, which the P2-5 executor refuses before rendering. Since P3-5 the plan's {@code location} is the
+ * Since P4-7 the plan's {@code actors} and {@code elements} come from the scene's SCENE-purpose
+ * {@code olio.pb.composition} ({@link #sceneActors}, {@link #sceneElements}): a scene with no composition
+ * plans with no actors and no degradation, and the plan never composes one. A scene with no text at all
+ * yields an empty compiled prompt, which the P2-5 executor refuses before rendering. Since P3-5 the plan's {@code location} is the
  * scene's {@code olio.pb.location} / {@code locationVariant} when the scene names one
  * ({@link #resolveSceneLocation}): the record's identity, watched-field hash and approved render travel on
  * the plan and its {@code inputs}, and the setting text is the location's subject text followed by the
@@ -119,10 +121,26 @@ public final class PbRenderPlanUtil {
 		String sceneObjectId = scene.get(FieldNames.FIELD_OBJECT_ID);
 
 		Scaffold s = scaffold(user, book, node, opts, apiType, sdServer, "scene " + sceneObjectId);
+		s.builder.purpose(RenderPlan.PURPOSE_SCENE);
+		List<RenderPlan.Degradation> out = new ArrayList<>();
+		/// Resolved before the location: a ChapBook page's composition carries the page prompt (P4-8)
+		BaseRecord composition = findComposition(user, book, scene, out);
+		String renderOid = resolveSceneLocation(user, book, scene, composition, s.builder);
+
 		s.builder
-			.purpose(RenderPlan.PURPOSE_SCENE)
-			.actors(sceneActors(user, scene));
-		resolveSceneLocation(user, book, scene, s.builder);
+			.actors(actorsOf(user, book, composition, s.caps, renderOid != null, out))
+			.elements(elementsOf(user, composition, out));
+		/// A SCENE composition's promptOverride is the intent; a CHAPBOOK_PAGE's is the page's own text and
+		/// already went into the location clause above (P2-6), so it is not repeated as an intent.
+		if(!NarrativeUtil.isMeaningful(opts.getPromptOverride()) && !isPageComposition(composition)) {
+			String compOverride = strField(composition, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+			if(NarrativeUtil.isMeaningful(compOverride)) {
+				s.builder.intent(new RenderPlan.Intent(compOverride.trim(), opts.isRaw()));
+			}
+		}
+		for(RenderPlan.Degradation d : out) {
+			s.builder.degradation(d);
+		}
 		return finish(s);
 	}
 
@@ -157,13 +175,15 @@ public final class PbRenderPlanUtil {
 	 *     ({@code PbBookUtil.bookRequest()} does); a book that carries none has no locations, so every named
 	 *     location is refused.</li>
 	 * </ul>
+	 * Returns the objectId of the render the plan carries, or null when the scene names no location or no
+	 * render is carried - the actor resolver counts it against the renderer's reference slots (P4-7).
 	 */
-	static void resolveSceneLocation(BaseRecord user, BaseRecord book, BaseRecord scene, RenderPlan.Builder builder) {
-		String sceneText = locationText(scene);
+	static String resolveSceneLocation(BaseRecord user, BaseRecord book, BaseRecord scene, BaseRecord composition, RenderPlan.Builder builder) {
+		String sceneText = locationText(scene, composition);
 		String locOid = fkObjectId(scene, FieldNames.FIELD_LOCATION);
 		if(locOid == null) {
 			builder.location(new RenderPlan.Location(null, null, null, null, sceneText));
-			return;
+			return null;
 		}
 		String varOid = fkObjectId(scene, OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
 		long orgId = ((Number) scene.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
@@ -217,6 +237,7 @@ public final class PbRenderPlanUtil {
 			builder.degradation(new RenderPlan.Degradation(RenderPlan.Degradation.LOCATION_TEXT_ONLY,
 				why + "; setting described in text", null, RenderPlan.STAGE_BASE));
 		}
+		return renderOid;
 	}
 
 	/// The objectId of a projected FK, or null when the field is absent, null, or carries no objectId.
@@ -332,7 +353,8 @@ public final class PbRenderPlanUtil {
 		return new Scaffold(b, caps);
 	}
 
-	/// Strategy selection and per-stage compilation, identical for every purpose.
+	/// Strategy selection and per-stage compilation, identical for every purpose. The compiler is the
+	/// stage pick's family ({@link PromptCompilers#forPick}): FLUX2 picks compile as prose, everything else as SDXL.
 	private static RenderPlan finish(Scaffold s) {
 		RenderPlan plan = s.builder.build();
 		List<RenderPlan.Degradation> out = new ArrayList<>();
@@ -340,10 +362,9 @@ public final class PbRenderPlanUtil {
 		plan = plan.withStrategy(strategy, out);
 
 		out = new ArrayList<>();
-		SdxlCompiler compiler = new SdxlCompiler();
 		Map<String, CompiledPrompt> compiled = new LinkedHashMap<>();
 		for(String stage : strategy.getStages()) {
-			compiled.put(stage, compiler.compile(plan, stage, out));
+			compiled.put(stage, PromptCompilers.forPick(plan.pickForStage(stage)).compile(plan, stage, out));
 		}
 		return plan.withCompiled(compiled, out);
 	}
@@ -384,6 +405,21 @@ public final class PbRenderPlanUtil {
 
 	// ─── helpers ─────────────────────────────────────────────────────────────────
 
+	/// A ChapBook page's prompt lives on its CHAPBOOK_PAGE composition (P4-8); the scene's own sdPrompt is
+	/// the pre-P4-8 copy and the fallback. SCENE compositions never supply location text.
+	static String locationText(BaseRecord scene, BaseRecord composition) {
+		if(isPageComposition(composition)) {
+			String pagePrompt = strField(composition, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+			if(NarrativeUtil.isMeaningful(pagePrompt)) return pagePrompt.trim();
+		}
+		return locationText(scene);
+	}
+
+	static boolean isPageComposition(BaseRecord composition) {
+		if(composition == null || !composition.hasField(OlioFieldNames.FIELD_PB_PURPOSE)) return false;
+		return PbCompositionPurposeEnumType.CHAPBOOK_PAGE.toString().equalsIgnoreCase(strField(composition, OlioFieldNames.FIELD_PB_PURPOSE));
+	}
+
 	/// The scene's own text, nearest-to-a-prompt first. Empty is allowed: the plan is a read.
 	static String locationText(BaseRecord scene) {
 		String sdPrompt = strField(scene, OlioFieldNames.FIELD_CB_SD_PROMPT);
@@ -414,40 +450,345 @@ public final class PbRenderPlanUtil {
 		return sb.toString();
 	}
 
-	/// The scene's cast as FOREGROUND, text-only actors. Mirrors PbCastUtil.listCastMembers: findMembers
-	/// resolves the participantModel override, the ids come from a scene the caller already read, and
-	/// the IN query runs as the caller. Empty on any error - a roster read never aborts a plan.
-	private static List<RenderPlan.Actor> sceneActors(BaseRecord user, BaseRecord scene) {
+	// ─── composition -> actors / elements (P4-7) ─────────────────────────────────
+
+	/**
+	 * The scene's actors from its SCENE-purpose composition (V3 §12, §29; P4-7). No composition (none
+	 * exists in the book's group as {@code user} lists it) means no actors and no degradation - the plan
+	 * never composes one.
+	 * Each {@code olio.pb.sceneActor} row becomes one {@link RenderPlan.Actor}:
+	 * <ul>
+	 * <li>a row with no {@code character} is a text actor (EXTRA / CROWD style): the row's name and
+	 *     description, the count folded in front of the description, never referenced, no degradation;</li>
+	 * <li>a row whose character cannot be read as {@code user} (the outfit resolver substituted the row's FK
+	 *     stub, or the stub carries no name) is
+	 *     {@code ACTOR_UNRESOLVED} on BASE - actorId is the character's objectId when the stub carries one,
+	 *     else the row's - and is planned from the row's text;</li>
+	 * <li>a resolved character carries its name, its outfit ({@link PbWardrobeUtil#resolveOutfits} for the
+	 *     apparel, {@link PbWardrobeUtil#describeApparel} for the text), its identity text (the narrative's
+	 *     physical description alone when an outfit text resolved, else {@link #actorDescription}) and its
+	 *     approved PORTRAIT artifact when the book's workflow has one.</li>
+	 * </ul>
+	 * {@code referenced} is decided here, not by the compiler: a HERO / SUPPORTING (or FOREGROUND) actor whose
+	 * policy is not TEXT_ONLY and who has an approved portrait is a candidate (NAMED_BACKGROUND only under
+	 * REQUIRE_REFERENCE); candidates fill {@code caps.maxReferences} slots less one when the scene carries a
+	 * location render, REQUIRE_REFERENCE first, then by priority. Every other candidate is
+	 * {@code ACTOR_TEXT_ONLY} with the reason (no approved portrait, reference limit, REQUIRE_REFERENCE not
+	 * met); a renderer with no reference slots at all makes every actor text with no per-actor degradation.
+	 * A composition or actor-row read that throws never aborts a plan: the actors are empty and one
+	 * {@code ACTOR_UNRESOLVED} (no actorId) says the rows were not read, so the render cannot auto-approve.
+	 */
+	static List<RenderPlan.Actor> sceneActors(BaseRecord user, BaseRecord book, BaseRecord scene, RendererCapabilities caps,
+			boolean hasLocationRef, List<RenderPlan.Degradation> out) {
+		return actorsOf(user, book, findComposition(user, book, scene, out), caps, hasLocationRef, out);
+	}
+
+	/// The scene's elements from its SCENE-purpose composition; empty without one. No degradation is raised.
+	static List<RenderPlan.Element> sceneElements(BaseRecord user, BaseRecord book, BaseRecord scene, List<RenderPlan.Degradation> out) {
+		return elementsOf(user, findComposition(user, book, scene, out), out);
+	}
+
+	/// The scene's SCENE-purpose composition as {@code user} reads it, or null (none, no book group). A read that
+	/// throws is null too, with an ACTOR_UNRESOLVED on {@code out} so the plan says the rows were not read.
+	private static BaseRecord findComposition(BaseRecord user, BaseRecord book, BaseRecord scene, List<RenderPlan.Degradation> out) {
+		if(book == null || scene == null) return null;
+		long groupId = (book.hasField(FieldNames.FIELD_GROUP_ID) ? longOf(book.get(FieldNames.FIELD_GROUP_ID)) : 0L);
+		if(groupId <= 0L) {
+			logger.warn("Book " + book.get(FieldNames.FIELD_OBJECT_ID) + " carries no groupId; scene planned without a composition");
+			return null;
+		}
+		/// A ChapBook page plans from its CHAPBOOK_PAGE composition; a scene from its SCENE composition (P4-8)
+		PbCompositionPurposeEnumType purpose = (PbNodeExecutor.isChapBook(book) ? PbCompositionPurposeEnumType.CHAPBOOK_PAGE : PbCompositionPurposeEnumType.SCENE);
 		try {
-			List<BaseRecord> parts = IOSystem.getActiveContext().getMemberUtil().findMembers(scene,
-				OlioFieldNames.FIELD_PB_CHARACTERS, OlioModelNames.MODEL_CHAR_PERSON, 0L);
-			if(parts == null || parts.isEmpty()) return Collections.emptyList();
-			List<String> ids = new ArrayList<>();
-			for(BaseRecord part : parts) {
-				Object pid = part.get(FieldNames.FIELD_PARTICIPANT_ID);
-				if(pid instanceof Number) ids.add(Long.toString(((Number) pid).longValue()));
-			}
-			if(ids.isEmpty()) return Collections.emptyList();
-			long organizationId = ((Number) scene.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
-			q.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, String.join(",", ids));
-			q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
-			q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-				FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, OlioFieldNames.FIELD_NARRATIVE, FieldNames.FIELD_ATTRIBUTES });
-			q.setCache(false);
-			BaseRecord[] recs = IOSystem.getActiveContext().getAccessPoint().list(user, q).getResults();
-			if(recs == null) return Collections.emptyList();
-			List<RenderPlan.Actor> actors = new ArrayList<>();
-			for(BaseRecord cp : recs) {
-				actors.add(new RenderPlan.Actor(cp.get(FieldNames.FIELD_OBJECT_ID), cp.get(FieldNames.FIELD_NAME),
-					RenderPlan.ROLE_FOREGROUND, actorDescription(cp), false));
-			}
-			return actors;
+			return PbComposeUtil.findSceneComposition(user, scene, groupId, PbGraphUtil.orgId(book), purpose);
 		}
 		catch(Exception e) {
-			logger.warn("Failed to list characters of scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+			logger.warn("Failed to read the composition of scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+			unreadRows(out, "composition of scene " + scene.get(FieldNames.FIELD_OBJECT_ID));
+			return null;
+		}
+	}
+
+	/// Records that a composition's rows could not be read: the actors are unresolved, so auto-approve is vetoed.
+	private static void unreadRows(List<RenderPlan.Degradation> out, String what) {
+		if(out == null) return;
+		out.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_UNRESOLVED,
+			"The " + what + " could not be read; the scene is planned without its actors", null, RenderPlan.STAGE_BASE));
+	}
+
+	/// One actor row on its way to an immutable Actor: the builder plus what the reference decision needs.
+	private static final class ActorEntry {
+		final RenderPlan.Actor.Builder builder;
+		final String name;
+		final String actorId;
+		final int priority;
+		final int order;
+		final boolean requireReference;
+		boolean candidate;
+		boolean referenced;
+
+		ActorEntry(RenderPlan.Actor.Builder builder, String name, String actorId, int priority, int order, boolean requireReference) {
+			this.builder = builder;
+			this.name = name;
+			this.actorId = actorId;
+			this.priority = priority;
+			this.order = order;
+			this.requireReference = requireReference;
+		}
+	}
+
+	private static List<RenderPlan.Actor> actorsOf(BaseRecord user, BaseRecord book, BaseRecord composition,
+			RendererCapabilities caps, boolean hasLocationRef, List<RenderPlan.Degradation> out) {
+		if(composition == null) return Collections.emptyList();
+		List<BaseRecord> rows;
+		Map<Long, PbWardrobeUtil.ResolvedOutfit> outfits = new HashMap<>();
+		try {
+			rows = PbComposeUtil.listActors(user, composition);
+			for(PbWardrobeUtil.ResolvedOutfit ro : PbWardrobeUtil.resolveOutfits(user, book, composition)) {
+				if(ro.actor != null) outfits.put(PbWardrobeUtil.idOf(ro.actor), ro);
+			}
+		}
+		catch(Exception e) {
+			logger.warn("Failed to read the actors of composition " + composition.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+			unreadRows(out, "actor rows of composition " + composition.get(FieldNames.FIELD_OBJECT_ID));
 			return Collections.emptyList();
 		}
+		if(rows == null || rows.isEmpty()) return Collections.emptyList();
+
+		long orgId = PbGraphUtil.orgId(book);
+		int slots = (caps == null ? 0 : Math.max(0, caps.getMaxReferences() - (hasLocationRef ? 1 : 0)));
+		BaseRecord[] workflow = new BaseRecord[] { null };
+		boolean[] workflowRead = new boolean[] { false };
+
+		List<ActorEntry> entries = new ArrayList<>();
+		int order = 0;
+		for(BaseRecord row : rows) {
+			String rowOid = strField(row, FieldNames.FIELD_OBJECT_ID);
+			String rowName = rowDisplayName(row);
+			String rowText = meaningful(strField(row, FieldNames.FIELD_DESCRIPTION));
+			String role = enumStr(strField(row, OlioFieldNames.FIELD_PB_ROLE));
+			if(role == null) role = RenderPlan.ROLE_FOREGROUND;
+			String policy = enumStr(strField(row, OlioFieldNames.FIELD_PB_REFERENCE_POLICY));
+			String facing = enumStr(strField(row, OlioFieldNames.FIELD_PB_FACING));
+			int priority = intOf(row, OlioFieldNames.FIELD_PB_PRIORITY, 0);
+			boolean textOnly = PbReferencePolicyEnumType.TEXT_ONLY.name().equals(policy);
+			boolean requireRef = PbReferencePolicyEnumType.REQUIRE_REFERENCE.name().equals(policy);
+
+			String charOid = fkObjectId(row, OlioFieldNames.FIELD_PB_CHARACTER);
+			long charId = PbHealthUtil.fkId(row, OlioFieldNames.FIELD_PB_CHARACTER);
+
+			RenderPlan.Actor.Builder b;
+			String name;
+			String actorId;
+			ActorEntry entry;
+			if(charId <= 0L) {
+				/// A text row: EXTRA / CROWD style, named or not, never a reference. The count is spoken only when it
+				/// is a crowd (the compose step stores at least 1 on every row).
+				int count = intOf(row, FieldNames.FIELD_COUNT, 0);
+				String text = (count > 1 && rowText != null ? count + " " + rowText : rowText);
+				actorId = rowOid;
+				name = rowName;
+				b = new RenderPlan.Actor.Builder(actorId).name(name).identity(new RenderPlan.Identity(null, null, text));
+				entry = new ActorEntry(b, name, actorId, priority, order, false);
+			}
+			else {
+				PbWardrobeUtil.ResolvedOutfit ro = outfits.get(PbWardrobeUtil.idOf(row));
+				BaseRecord cp = (ro != null ? ro.character : PbWardrobeUtil.readCharacterById(user, charId, orgId));
+				if(cp == null || !cp.hasField(FieldNames.FIELD_NAME) || (ro != null && ro.characterUnread)) {
+					actorId = (charOid != null ? charOid : rowOid);
+					name = rowName;
+					String label = (rowName != null ? rowName : (rowText != null ? rowText : actorId));
+					out.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_UNRESOLVED,
+						label + " rendered from the row's text (character " + (charOid != null ? charOid : "#" + charId) + " could not be read)",
+						actorId, RenderPlan.STAGE_BASE));
+					b = new RenderPlan.Actor.Builder(actorId).characterId(charOid).name(name)
+						.identity(new RenderPlan.Identity(null, null, rowText));
+					entry = new ActorEntry(b, name, actorId, priority, order, false);
+				}
+				else {
+					String cpOid = strField(cp, FieldNames.FIELD_OBJECT_ID);
+					actorId = (cpOid != null ? cpOid : rowOid);
+					name = meaningful(strField(cp, FieldNames.FIELD_NAME));
+					RenderPlan.Outfit outfit = null;
+					String outfitText = null;
+					if(ro != null && ro.apparel != null) {
+						try {
+							outfitText = PbWardrobeUtil.describeApparel(user, ro.apparel, orgId);
+						}
+						catch(Exception e) {
+							logger.warn("Could not describe the apparel of " + name + ": " + e.getMessage());
+						}
+						outfit = new RenderPlan.Outfit(strField(ro.apparel, FieldNames.FIELD_OBJECT_ID), outfitText, null);
+					}
+					String identityText = (NarrativeUtil.isMeaningful(outfitText) ? physicalDescription(cp) : actorDescription(cp));
+					String portraitOid = null;
+					if(!textOnly) {
+						if(!workflowRead[0]) {
+							workflowRead[0] = true;
+							try {
+								workflow[0] = PbGraphUtil.findWorkflow(user, book);
+							}
+							catch(Exception e) {
+								logger.warn("Could not read the workflow of book " + book.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+							}
+						}
+						portraitOid = approvedPortrait(user, workflow[0], cpOid);
+					}
+					b = new RenderPlan.Actor.Builder(actorId).characterId(cpOid).name(name).outfit(outfit)
+						.identity(new RenderPlan.Identity(portraitOid, null, identityText));
+					entry = new ActorEntry(b, name, actorId, priority, order, requireRef);
+					boolean eligibleRole = RenderPlan.ROLE_HERO.equals(role) || RenderPlan.ROLE_SUPPORTING.equals(role)
+						|| RenderPlan.ROLE_FOREGROUND.equals(role) || (RenderPlan.ROLE_NAMED_BACKGROUND.equals(role) && requireRef);
+					if(!textOnly && eligibleRole) {
+						if(portraitOid != null) {
+							entry.candidate = true;
+						}
+						else {
+							out.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_TEXT_ONLY,
+								label(name, actorId) + " rendered from description (" + (requireRef ? "REQUIRE_REFERENCE not met" : "no approved portrait") + ")",
+								actorId, RenderPlan.STAGE_BASE));
+						}
+					}
+				}
+			}
+			b.role(role).priority(priority).box(boxOf(row)).depth(intOf(row, OlioFieldNames.FIELD_PB_DEPTH, 0))
+				.pose(meaningful(strField(row, OlioFieldNames.FIELD_PB_POSE)))
+				.expression(meaningful(strField(row, FieldNames.FIELD_EXPRESSION)))
+				.action(meaningful(strField(row, OlioFieldNames.FIELD_PB_ACTION)))
+				.facing(facing != null ? facing.toLowerCase() : null)
+				.policy(policy);
+			entries.add(entry);
+			order++;
+		}
+
+		/// Slot assignment: REQUIRE_REFERENCE first, then priority, then row order (listActors is already by priority).
+		List<ActorEntry> candidates = new ArrayList<>();
+		for(ActorEntry e : entries) {
+			if(e.candidate) candidates.add(e);
+		}
+		candidates.sort(Comparator.<ActorEntry>comparingInt(e -> e.requireReference ? 0 : 1)
+			.thenComparingInt(e -> e.priority).thenComparingInt(e -> e.order));
+		int used = 0;
+		for(ActorEntry e : candidates) {
+			if(used < slots) {
+				e.referenced = true;
+				used++;
+			}
+			else if(e.requireReference) {
+				out.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_TEXT_ONLY,
+					label(e.name, e.actorId) + " rendered from description (REQUIRE_REFERENCE not met)", e.actorId, RenderPlan.STAGE_BASE));
+			}
+			else if(slots > 0) {
+				out.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_TEXT_ONLY,
+					label(e.name, e.actorId) + " rendered from description (reference limit " + slots + ")", e.actorId, RenderPlan.STAGE_BASE));
+			}
+		}
+
+		List<RenderPlan.Actor> actors = new ArrayList<>();
+		for(ActorEntry e : entries) {
+			actors.add(e.builder.referenced(e.referenced).build());
+		}
+		return actors;
+	}
+
+	private static List<RenderPlan.Element> elementsOf(BaseRecord user, BaseRecord composition, List<RenderPlan.Degradation> out) {
+		if(composition == null) return Collections.emptyList();
+		try {
+			List<BaseRecord> rows = PbComposeUtil.listElements(user, composition);
+			if(rows == null || rows.isEmpty()) return Collections.emptyList();
+			List<RenderPlan.Element> elements = new ArrayList<>();
+			for(BaseRecord row : rows) {
+				String text = PbComposeUtil.elementText(user, row);
+				elements.add(new RenderPlan.Element(
+					enumStr(strField(row, OlioFieldNames.FIELD_PB_ELEMENT_TYPE)),
+					meaningful(strField(row, FieldNames.FIELD_NAME)),
+					(NarrativeUtil.isMeaningful(text) ? text.trim() : null),
+					boxOf(row),
+					intOf(row, OlioFieldNames.FIELD_PB_DEPTH, 0),
+					enumStr(strField(row, OlioFieldNames.FIELD_PB_IMPORTANCE)),
+					fkObjectId(row, OlioFieldNames.FIELD_ITEM)));
+			}
+			return elements;
+		}
+		catch(Exception e) {
+			logger.warn("Failed to read the elements of composition " + composition.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+			return Collections.emptyList();
+		}
+	}
+
+	/// The objectId of the first APPROVED artifact in the character's PORTRAIT chain, or null.
+	private static String approvedPortrait(BaseRecord user, BaseRecord workflow, String charOid) {
+		if(workflow == null || charOid == null) return null;
+		try {
+			BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, PbPipelineUtil.portraitHandle(charOid));
+			if(node == null) return null;
+			for(BaseRecord a : PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_PORTRAIT)) {
+				if(PbArtifactUtil.reviewStatusOf(a) == PbReviewStatusEnumType.APPROVED) {
+					return a.get(FieldNames.FIELD_OBJECT_ID);
+				}
+			}
+		}
+		catch(Exception e) {
+			logger.warn("Could not read the portrait chain of " + charOid + ": " + e.getMessage());
+		}
+		return null;
+	}
+
+	/// The narrative's physical description alone (the outfit is spoken by the plan's Outfit), else actorDescription.
+	private static String physicalDescription(BaseRecord cp) {
+		BaseRecord narrative = (cp.hasField(OlioFieldNames.FIELD_NARRATIVE) ? cp.get(OlioFieldNames.FIELD_NARRATIVE) : null);
+		if(narrative != null) {
+			try {
+				IOSystem.getActiveContext().getReader().populate(narrative, new String[] { "physicalDescription" });
+			}
+			catch(Exception e) {
+				logger.warn("Could not populate narrative of " + cp.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+			}
+			String v = strField(narrative, "physicalDescription");
+			if(NarrativeUtil.isMeaningful(v)) return v.trim();
+		}
+		return actorDescription(cp);
+	}
+
+	/// The row's box when it has any extent, else null (an unset box reads back as four zeros).
+	private static RenderPlan.Box boxOf(BaseRecord row) {
+		double w = doubleOf(row, OlioFieldNames.FIELD_PB_W);
+		double h = doubleOf(row, OlioFieldNames.FIELD_PB_H);
+		if(w <= 0 && h <= 0) return null;
+		return new RenderPlan.Box(doubleOf(row, OlioFieldNames.FIELD_PB_X), doubleOf(row, OlioFieldNames.FIELD_PB_Y), w, h);
+	}
+
+	private static String label(String name, String actorId) {
+		return (name != null ? name : actorId);
+	}
+
+	/// The row's display name, or null when its name is the compose step's handle (actor.<composition>.<n>),
+	/// which identifies the row and must never be spoken in a prompt.
+	private static String rowDisplayName(BaseRecord row) {
+		String n = meaningful(strField(row, FieldNames.FIELD_NAME));
+		return (n != null && n.startsWith(PbComposeUtil.ACTOR_NAME_PREFIX) ? null : n);
+	}
+
+	/// Trimmed when meaningful, else null.
+	private static String meaningful(String s) {
+		return (NarrativeUtil.isMeaningful(s) ? s.trim() : null);
+	}
+
+	/// An enum field's name, upper-cased, or null when unset / UNKNOWN.
+	private static String enumStr(String s) {
+		if(s == null) return null;
+		String u = s.trim().toUpperCase();
+		return (u.isEmpty() || "UNKNOWN".equals(u) ? null : u);
+	}
+
+	private static double doubleOf(BaseRecord rec, String field) {
+		if(rec == null || !rec.hasField(field)) return 0.0;
+		Object v = rec.get(field);
+		return (v instanceof Number ? ((Number) v).doubleValue() : 0.0);
+	}
+
+	private static long longOf(Object v) {
+		return (v instanceof Number ? ((Number) v).longValue() : 0L);
 	}
 
 	/// pbDescription attribute first, then the narrative's physical (+ outfit) description. The

@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -17,6 +18,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
@@ -453,8 +455,12 @@ public class PbArtifactUtil {
 	 * {@code artifact} (the new revision) is approved via {@link #approve} with {@link #APPROVED_BY_AUTO} -
 	 * selected, APPROVED, node pinned - unless one of the guards holds. The guards, in order:
 	 * <ol>
-	 * <li><b>degraded</b>: the executor reported a degradation (an unresolved reference role, a fallback
-	 * prompt). A render that did not consume what the graph bound is not a result to pin.</li>
+	 * <li><b>degraded</b>: the executor reported a degradation that vetoes (P4-7). Each entry is read as
+	 * {@code "<CODE>: <detail>"}; an entry whose code is a known {@link RenderPlan.Degradation#CODES} code outside
+	 * {@link #AUTO_APPROVE_VETO_CODES} (an actor planned from text, a substituted model, a QA warning) is a
+	 * reported-and-accepted shortfall and does not veto. Every other entry does: a veto code, an unknown code,
+	 * or a free-form entry such as the executor's {@code "upscale: ..."} pseudo-entry. A render that did not
+	 * consume what the graph bound is not a result to pin.</li>
 	 * <li><b>existing-approved</b>: another revision of the same {@code (node, role)} is APPROVED. The auto-approver
 	 * never replaces an approval, human or auto; {@link #approve} would demote it, so this is checked first.</li>
 	 * </ol>
@@ -468,15 +474,16 @@ public class PbArtifactUtil {
 	 * (the window is one query); the async job layer (P1-6) inherits it unchanged and it is recorded as such.
 	 *
 	 * @param degradations the executor's {@code degradations} list for this attempt; null reads as empty
-	 * @return null when the artifact was approved, else the skip reason ({@code "degraded: ..."},
-	 *         {@code "existing-approved: <name>"}, {@code "failed: <message>"})
+	 * @return null when the artifact was approved, else the skip reason ({@code "degraded: ..."} naming only the
+	 *         vetoing entries, {@code "existing-approved: <name>"}, {@code "failed: <message>"})
 	 */
 	public static String autoApprove(BaseRecord user, BaseRecord artifact, List<String> degradations) {
 		if(artifact == null) {
 			return "failed: no artifact";
 		}
-		if(degradations != null && !degradations.isEmpty()) {
-			return "degraded: " + String.join("; ", degradations);
+		List<String> vetoing = vetoingDegradations(degradations);
+		if(!vetoing.isEmpty()) {
+			return "degraded: " + String.join("; ", vetoing);
 		}
 		try {
 			BaseRecord node = chainNode(artifact);
@@ -493,6 +500,39 @@ public class PbArtifactUtil {
 			logger.error("Auto-approve of " + artifact.get(FieldNames.FIELD_NAME) + " failed: " + e.getMessage());
 			return "failed: " + e.getMessage();
 		}
+	}
+
+	/**
+	 * The degradation codes that veto auto-approval (P4-7): a character that could not be read or rendered, a
+	 * setting rendered without its approved render, a prompt the compiler had to cut, and a composition written
+	 * out of order. {@code ACTOR_TEXT_ONLY}, {@code MODEL_SUBSTITUTED} and {@code QA_WARN} are reported on the
+	 * plan but accepted.
+	 */
+	public static final Set<String> AUTO_APPROVE_VETO_CODES = Set.of(
+		RenderPlan.Degradation.ACTOR_UNRESOLVED,
+		RenderPlan.Degradation.ACTOR_FAILED,
+		RenderPlan.Degradation.LOCATION_TEXT_ONLY,
+		RenderPlan.Degradation.PROMPT_TRUNCATED,
+		RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER);
+
+	/// The entries of {@code degradations} that veto auto-approval, in order; empty when none (or null) do.
+	static List<String> vetoingDegradations(List<String> degradations) {
+		if(degradations == null || degradations.isEmpty()) {
+			return Collections.emptyList();
+		}
+		List<String> vetoing = new ArrayList<>();
+		for(String entry : degradations) {
+			if(entry == null) {
+				continue;
+			}
+			int colon = entry.indexOf(':');
+			String code = (colon > 0 ? entry.substring(0, colon).trim() : entry.trim());
+			if(RenderPlan.Degradation.isKnownCode(code) && !AUTO_APPROVE_VETO_CODES.contains(code)) {
+				continue;
+			}
+			vetoing.add(entry);
+		}
+		return vetoing;
 	}
 
 	/**

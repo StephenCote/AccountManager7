@@ -566,7 +566,7 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 			assertNotEquals("itemObjectId is reported: " + d, "null", itemOid);
 			assertEquals("the item is named from the description", "dented pewter cup", d.get("itemName"));
 			String text = String.valueOf(d.get("elementText"));
-			assertTrue("elementText carries the item name: " + text, text.contains("dented pewter cup"));
+			assertEquals("elementText is the item once, not name plus the description it was named from", "dented pewter cup", text);
 			assertFalse("elementText never says null: " + text, text.contains("null"));
 
 			BaseRecord it = item(itemOid);

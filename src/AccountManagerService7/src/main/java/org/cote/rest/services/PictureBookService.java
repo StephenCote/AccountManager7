@@ -2846,6 +2846,210 @@ public class PictureBookService {
         }
     }
 
+    // ----- Composition board (V3 §8, §24, §27; P4-8). Transport only; PbServiceFacade/PbComposeUtil own every rule -----
+
+    /**
+     * GET /{bookObjectId}/scene/{sceneObjectId}/composition
+     * The scene's composition (SCENE for a PictureBook, CHAPBOOK_PAGE for a ChapBook page) with its actor and
+     * element rows. 404 when the scene is not of the book or has no composition yet.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/composition")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getSceneComposition(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.getSceneComposition(user, bookObjectId, sceneObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("getSceneComposition", e);
+        }
+    }
+
+    /**
+     * PATCH /{bookObjectId}/scene/{sceneObjectId}/composition
+     * Row-level edit of the composition's own fields (settingText, action, mood, shotType, viewpoint, cameraText,
+     * props, configOverride, promptOverride, promptLocked, focalActorObjectId). Marks the scene node STALE.
+     * 400 unknown or invalid field; 403 no update on the book; 404 scene/composition not of the book.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PATCH
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/composition")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response patchSceneComposition(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.patchSceneComposition(user, bookObjectId, sceneObjectId, body)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("patchSceneComposition", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/composition/{compositionObjectId}/actor
+     * Adds an actor row (characterObjectId or description; a character is fixed for the row's life).
+     * 409 on a ChapBook page composition (G-35).
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/actor")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response addCompositionActor(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.addActor(user, bookObjectId, compositionObjectId, body)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("addCompositionActor", e);
+        }
+    }
+
+    /**
+     * PATCH /{bookObjectId}/composition/{compositionObjectId}/actor/{actorObjectId}
+     * Row-level edit of one actor (pose, expression, action, facing, x/y/w/h, depth, count, description,
+     * role, priority, referencePolicy). Character and apparel are refused here (400): the outfit is pinned
+     * through PUT .../actor/{actorObjectId}/apparel. 404 actor not of the composition.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PATCH
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/actor/{actorObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response patchCompositionActor(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId,
+            @PathParam("actorObjectId") String actorObjectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.patchActor(user, bookObjectId, compositionObjectId, actorObjectId, body)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("patchCompositionActor", e);
+        }
+    }
+
+    /**
+     * DELETE /{bookObjectId}/composition/{compositionObjectId}/actor/{actorObjectId}
+     * Removes one actor row; a focal actor is un-set from the composition first.
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/actor/{actorObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteCompositionActor(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId,
+            @PathParam("actorObjectId") String actorObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.deleteActor(user, bookObjectId, compositionObjectId, actorObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("deleteCompositionActor", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/composition/{compositionObjectId}/element
+     * Adds an element row (elementType + description required). Allowed on ChapBook page compositions.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/element")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response addCompositionElement(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.addElement(user, bookObjectId, compositionObjectId, body)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("addCompositionElement", e);
+        }
+    }
+
+    /**
+     * PATCH /{bookObjectId}/composition/{compositionObjectId}/element/{elementObjectId}
+     * Row-level edit of one element (elementType, description, x/y/w/h, depth, importance). The item is
+     * refused here (400): it is bound through POST .../element/{elementObjectId}/promote.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PATCH
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/element/{elementObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response patchCompositionElement(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId,
+            @PathParam("elementObjectId") String elementObjectId, String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.patchElement(user, bookObjectId, compositionObjectId, elementObjectId, body)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("patchCompositionElement", e);
+        }
+    }
+
+    /**
+     * DELETE /{bookObjectId}/composition/{compositionObjectId}/element/{elementObjectId}
+     * Removes one element row.
+     */
+    @RolesAllowed({"admin", "user"})
+    @DELETE
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/composition/{compositionObjectId:[0-9A-Za-z\\-]+}/element/{elementObjectId:[0-9A-Za-z\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteCompositionElement(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("compositionObjectId") String compositionObjectId,
+            @PathParam("elementObjectId") String elementObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.deleteElement(user, bookObjectId, compositionObjectId, elementObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("deleteCompositionElement", e);
+        }
+    }
+
     /**
      * POST /{bookObjectId}/wardrobe/migrate-scene-tags
      * Turns the legacy sceneIndex apparel tags of the book's characters into pins on the matching scene actors.

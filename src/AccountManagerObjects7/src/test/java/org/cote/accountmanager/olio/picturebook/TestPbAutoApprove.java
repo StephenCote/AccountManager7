@@ -22,6 +22,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
@@ -355,6 +356,109 @@ public class TestPbAutoApprove extends BaseTest {
 		catch(PictureBookException pbe) {
 			assertEquals(404, pbe.getStatus());
 		}
+	}
+
+	// ─────────────────────────────── P4-7: the veto set over the plan's degradation codes ───────────────────────────────
+
+	/**
+	 * P4-7: the plan degradations an attempt carries are classified by their {@code CODE: message} prefix. The three
+	 * accepted codes never veto, each of the five {@link PbArtifactUtil#AUTO_APPROVE_VETO_CODES} does, the executor's
+	 * {@code upscale:} pseudo-entry and any free-form entry veto (they are not known codes), and a mixed list is
+	 * reduced to exactly its vetoing entries, in order. Pure classification: no artifact, no DB write.
+	 */
+	@Test
+	public void case08_vetoSetIsTheFiveCodesPlusAnythingUnknown() {
+		assertTrue(PbArtifactUtil.vetoingDegradations(null).isEmpty());
+		assertTrue(PbArtifactUtil.vetoingDegradations(List.of()).isEmpty());
+
+		String textOnly = RenderPlan.Degradation.ACTOR_TEXT_ONLY + ": Mara rendered from description (no approved portrait)";
+		String substituted = RenderPlan.Degradation.MODEL_SUBSTITUTED + ": location model substituted (flux2Klein_9b not installed)";
+		String qaWarn = RenderPlan.Degradation.QA_WARN + ": soft QA warning";
+		assertTrue("the three accepted codes never veto", PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn)).isEmpty());
+		for(String code : new String[] { RenderPlan.Degradation.ACTOR_TEXT_ONLY, RenderPlan.Degradation.MODEL_SUBSTITUTED, RenderPlan.Degradation.QA_WARN }) {
+			assertTrue(code + " is a known code", RenderPlan.Degradation.isKnownCode(code));
+			assertFalse(code + " is not in the veto set", PbArtifactUtil.AUTO_APPROVE_VETO_CODES.contains(code));
+			assertTrue("a bare code with no message is still accepted", PbArtifactUtil.vetoingDegradations(List.of(code)).isEmpty());
+		}
+
+		assertEquals(5, PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size());
+		String[] vetoes = new String[] {
+			RenderPlan.Degradation.ACTOR_UNRESOLVED + ": Old Bes rendered from the row's text (character abc could not be read)",
+			RenderPlan.Degradation.ACTOR_FAILED + ": Jideon reference could not be bound",
+			RenderPlan.Degradation.LOCATION_TEXT_ONLY + ": the tavern rendered from text (no approved render)",
+			RenderPlan.Degradation.PROMPT_TRUNCATED + ": ELEM_LOW dropped: gulls (12 tokens over budget 512)",
+			RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": composed lazily by the render" };
+		for(String entry : vetoes) {
+			String code = entry.substring(0, entry.indexOf(':'));
+			assertTrue(code + " is a known code", RenderPlan.Degradation.isKnownCode(code));
+			assertTrue(code + " is in the veto set", PbArtifactUtil.AUTO_APPROVE_VETO_CODES.contains(code));
+			assertEquals("each veto code vetoes on its own", List.of(entry), PbArtifactUtil.vetoingDegradations(List.of(entry)));
+			assertEquals("a bare veto code vetoes too", List.of(code), PbArtifactUtil.vetoingDegradations(List.of(code)));
+		}
+
+		String upscale = "upscale: UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)";
+		assertEquals("the executor's upscale pseudo-entry is not a known code and vetoes", List.of(upscale), PbArtifactUtil.vetoingDegradations(List.of(upscale)));
+		String freeForm = PbPipelineUtil.ROLE_PORTRAIT_1 + ": no selected artifact";
+		assertEquals("a free-form executor entry vetoes", List.of(freeForm), PbArtifactUtil.vetoingDegradations(List.of(freeForm)));
+		assertEquals("no colon at all: the whole entry is the code", List.of("something went sideways"),
+			PbArtifactUtil.vetoingDegradations(List.of("something went sideways")));
+		assertEquals("codes are case-sensitive: a lowercased accepted code is unknown and vetoes", List.of("actor_text_only: x"),
+			PbArtifactUtil.vetoingDegradations(List.of("actor_text_only: x")));
+		assertEquals("a leading colon leaves an empty code, which is unknown", List.of(": no code"), PbArtifactUtil.vetoingDegradations(List.of(": no code")));
+
+		List<String> mixed = new java.util.ArrayList<>();
+		mixed.add(textOnly);
+		mixed.add(vetoes[3]);
+		mixed.add(null);
+		mixed.add(substituted);
+		mixed.add(upscale);
+		mixed.add(qaWarn);
+		mixed.add(vetoes[0]);
+		assertEquals("only the vetoing entries, in list order, nulls skipped", List.of(vetoes[3], upscale, vetoes[0]), PbArtifactUtil.vetoingDegradations(mixed));
+	}
+
+	/**
+	 * P4-7, the real outcome once: on a fresh PORTRAIT node, an attempt carrying only accepted codes is approved
+	 * ({@code null}, APPROVED, {@code approvedBy=AUTO}, pinned); a second attempt carrying one veto code is refused
+	 * with {@code degraded:} naming only that entry and stays GENERATED; a third, clean attempt is refused with
+	 * {@code existing-approved: <first>}; and no artifact at all is {@code failed: no artifact} before any
+	 * classification. No SD server: the artifacts are solid Java2D PNGs.
+	 */
+	@Test
+	public void case09_autoApproveOutcomeFollowsTheVetoSet() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = withAutoApprove(u, book(u), true);
+		BaseRecord wf = workflow(u, bk);
+		long orgId = orgOf(u);
+		BaseRecord node = node(u, wf, "p47-c09", PbNodeTypeEnumType.PORTRAIT);
+
+		String textOnly = RenderPlan.Degradation.ACTOR_TEXT_ONLY + ": Mara rendered from description (no approved portrait)";
+		String substituted = RenderPlan.Degradation.MODEL_SUBSTITUTED + ": portrait model substituted";
+		String truncated = RenderPlan.Degradation.PROMPT_TRUNCATED + ": main description cut (40 tokens over budget 225)";
+
+		assertEquals("failed: no artifact", PbArtifactUtil.autoApprove(u, null, List.of(truncated)));
+
+		BaseRecord first = imageArtifact(u, node, "c09-a", 64, 96, 0x225588);
+		assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(first));
+		assertNull("accepted codes only: approved", PbArtifactUtil.autoApprove(u, first, List.of(textOnly, substituted)));
+		BaseRecord firstFresh = reread(u, first, orgId);
+		assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(firstFresh));
+		assertEquals(PbArtifactUtil.APPROVED_BY_AUTO, firstFresh.get(OlioFieldNames.FIELD_PB_APPROVED_BY));
+		assertTrue("approve implies select", selected(firstFresh));
+		assertTrue("auto-approve pins the node", pinned(u, node, orgId));
+
+		BaseRecord second = imageArtifact(u, node, "c09-b", 64, 96, 0x885522);
+		String reason = PbArtifactUtil.autoApprove(u, second, List.of(textOnly, truncated, substituted));
+		assertEquals("the veto wins before the chain is consulted, and names only the vetoing entry", "degraded: " + truncated, reason);
+		assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(reread(u, second, orgId)));
+		assertNull(reread(u, second, orgId).get(OlioFieldNames.FIELD_PB_APPROVED_BY));
+		assertEquals("the first approval is untouched", PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(reread(u, first, orgId)));
+
+		BaseRecord third = imageArtifact(u, node, "c09-c", 64, 96, 0x558822);
+		assertEquals("a clean attempt is refused by the existing approval",
+			"existing-approved: " + first.get(FieldNames.FIELD_NAME), PbArtifactUtil.autoApprove(u, third, List.of(textOnly)));
+		assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(reread(u, third, orgId)));
+		assertEquals("exactly one approved on the chain", 1, approvedCount(u, node, PbPipelineUtil.ROLE_PORTRAIT));
 	}
 
 	// ─────────────────────────────── fixture ───────────────────────────────

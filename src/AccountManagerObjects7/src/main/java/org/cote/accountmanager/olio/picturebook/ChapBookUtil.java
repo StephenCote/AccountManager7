@@ -25,6 +25,7 @@ import org.cote.accountmanager.olio.picturebook.PictureBookProgressNotifier;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.thread.AsyncJob;
@@ -2418,14 +2419,95 @@ public class ChapBookUtil {
 	 * asserted, never discarded — a swallowed null there would turn a persistent failure into a silent
 	 * no-op (mirrors {@link PbBookUtil#setSceneConfigOverride}).
 	 *
+	 * In-process form: a partial write (scene copy landed, page composition refused) is a 500 so a caller
+	 * such as {@link #renderChapBookScene} never renders against a composition that still carries the
+	 * previous prompt. The transport form is {@link #setSceneLandscapePromptResult}.
+	 *
 	 * @param user          the acting user (must have WRITE access to the scene)
 	 * @param sceneObjectId objectId of the {@code olio.pb.scene}
 	 * @param sdPrompt      the human-edited landscape prompt; null/blank clears the field
-	 * @return true when the scene was updated; false when the authorized update returned null (logged)
+	 * @return true when the scene and its page composition were updated; false when the authorized scene
+	 *         update returned null (logged; nothing was written)
 	 * @throws PictureBookException 400 when args are missing, 404 when the scene is not readable by
-	 *         {@code user}, 500 when the patch could not be assembled
+	 *         {@code user}, 500 when the patch could not be assembled or when the scene copy was written
+	 *         but the page composition was not (the message says so; the page node is already STALE)
 	 */
 	public static boolean setSceneLandscapePrompt(BaseRecord user, String sceneObjectId, String sdPrompt)
+			throws PictureBookException {
+		PromptWriteResult result = setSceneLandscapePromptResult(user, sceneObjectId, sdPrompt);
+		if (result.isPartial()) {
+			throw new PictureBookException(500, result.getError());
+		}
+		return result.isUpdated();
+	}
+
+	/**
+	 * What a page-prompt write landed where, for the transport layer to report as one body instead of a
+	 * status: {@code updated} is the scene copy, {@code compositionUpdated} the page composition, and a
+	 * partial write ({@code updated} without {@code compositionUpdated}) carries the refusal in
+	 * {@code error} with the scene copy already ahead of the composition and the page node STALE.
+	 */
+	public static final class PromptWriteResult {
+		private final String prompt;
+		private final boolean locked;
+		private final boolean updated;
+		private final boolean compositionUpdated;
+		private final String compositionObjectId;
+		private final String error;
+
+		private PromptWriteResult(String prompt, boolean locked, boolean updated, boolean compositionUpdated,
+				String compositionObjectId, String error) {
+			this.prompt = prompt;
+			this.locked = locked;
+			this.updated = updated;
+			this.compositionUpdated = compositionUpdated;
+			this.compositionObjectId = compositionObjectId;
+			this.error = error;
+		}
+
+		static PromptWriteResult nothingWritten(String prompt, boolean locked) {
+			return new PromptWriteResult(prompt, locked, false, false, null, null);
+		}
+
+		static PromptWriteResult partial(String prompt, boolean locked, String error) {
+			return new PromptWriteResult(prompt, locked, true, false, null, error);
+		}
+
+		static PromptWriteResult complete(String prompt, boolean locked, String compositionObjectId) {
+			return new PromptWriteResult(prompt, locked, true, true, compositionObjectId, null);
+		}
+
+		public String getPrompt() { return prompt; }
+		public boolean isLocked() { return locked; }
+		public boolean isUpdated() { return updated; }
+		public boolean isCompositionUpdated() { return compositionUpdated; }
+		public String getCompositionObjectId() { return compositionObjectId; }
+		public String getError() { return error; }
+		public boolean isPartial() { return updated && !compositionUpdated; }
+
+		/** The wire shape; {@code compositionObjectId} and {@code error} are present only when they have a value. */
+		public Map<String, Object> toMap() {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("updated", Boolean.valueOf(updated));
+			m.put("compositionUpdated", Boolean.valueOf(compositionUpdated));
+			m.put("promptLocked", Boolean.valueOf(locked));
+			if (compositionObjectId != null) {
+				m.put("compositionObjectId", compositionObjectId);
+			}
+			if (error != null) {
+				m.put("error", error);
+			}
+			return m;
+		}
+	}
+
+	/**
+	 * Transport form of {@link #setSceneLandscapePrompt}: the same write, but a partial write is reported on
+	 * the result ({@code updated:true, compositionUpdated:false, error}) instead of thrown, so the route can
+	 * answer 200 with a body that says exactly what landed. Argument, lookup and patch-assembly failures
+	 * are still thrown (400/404/500) — nothing was written in those cases.
+	 */
+	public static PromptWriteResult setSceneLandscapePromptResult(BaseRecord user, String sceneObjectId, String sdPrompt)
 			throws PictureBookException {
 		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
 			throw new PictureBookException(400, "user and sceneObjectId are required");
@@ -2459,10 +2541,73 @@ public class ChapBookUtil {
 		}
 		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			logger.warn("Failed to persist landscape sdPrompt on scene " + sceneObjectId);
-			return false;
+			return PromptWriteResult.nothingWritten(value, locked);
 		}
+		// The scene copy is now new, so the page node is stale from this point whether or not the
+		// composition write below succeeds; marking it here keeps a refused second write reviewable.
 		PbBookUtil.markSceneNodeStale(user, scene);
-		return true;
+		// P4-8: the page prompt also lives on the page's CHAPBOOK_PAGE composition (design §27). A failure
+		// here leaves the scene copy ahead of the composition until the next set/regenerate re-syncs it,
+		// and is reported on the result as a partial write that says so — a plain false would read as
+		// "nothing written" when the scene copy was. A human edit is USER-sourced and marks the
+		// composition userEdited.
+		try {
+			String compOid = writePageComposition(user, scene, value, locked, PbCompositionSourceEnumType.USER, true);
+			return PromptWriteResult.complete(value, locked, compOid);
+		}
+		catch (PictureBookException e) {
+			String msg = "Scene " + sceneObjectId + " sdPrompt persisted but its page composition was not: " + e.getMessage();
+			logger.error(msg);
+			return PromptWriteResult.partial(value, locked, msg);
+		}
+	}
+
+	/**
+	 * Mirror a page prompt onto the page's {@code CHAPBOOK_PAGE} composition (created on first write through
+	 * {@link PbComposeUtil#getCreatePageComposition}): {@code promptOverride}, {@code promptLocked},
+	 * {@code source}, {@code revision + 1}, and {@code userEdited = true} for a human edit (an LLM regenerate
+	 * leaves {@code userEdited} as it was). As the acting user through {@code AccessPoint}; the update result
+	 * is asserted.
+	 *
+	 * @return the composition's objectId
+	 * @throws PictureBookException 500 when the scene's book is unreadable or the write is refused
+	 */
+	private static String writePageComposition(BaseRecord user, BaseRecord scene, String prompt, boolean locked,
+			PbCompositionSourceEnumType source, boolean humanEdit) {
+		long orgId = ((Number) scene.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord bookRef = (scene.hasField(OlioFieldNames.FIELD_PB_BOOK) ? scene.get(OlioFieldNames.FIELD_PB_BOOK) : null);
+		String bookOid = (bookRef != null ? bookRef.get(FieldNames.FIELD_OBJECT_ID) : null);
+		BaseRecord book = (bookOid != null ? PbBookUtil.readBook(user, bookOid, orgId) : null);
+		if (book == null) {
+			throw new PictureBookException(500, "Scene " + sceneOid + " has no readable book");
+		}
+		BaseRecord comp = PbComposeUtil.getCreatePageComposition(user, book, scene, source);
+		Object rev = comp.get(OlioFieldNames.FIELD_PB_REVISION);
+		int next = (rev instanceof Number ? ((Number) rev).intValue() : 0) + 1;
+		List<String> fields = new ArrayList<>(Arrays.asList(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE,
+			OlioFieldNames.FIELD_PB_PROMPT_LOCKED, OlioFieldNames.FIELD_PB_SOURCE, OlioFieldNames.FIELD_PB_REVISION));
+		if (humanEdit) {
+			fields.add(OlioFieldNames.FIELD_PB_USER_EDITED);
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(comp, OlioModelNames.MODEL_PB_COMPOSITION, fields.toArray(new String[0]));
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, prompt);
+			patch.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, locked);
+			patch.set(OlioFieldNames.FIELD_PB_SOURCE, source.toString());
+			patch.set(OlioFieldNames.FIELD_PB_REVISION, next);
+			if (humanEdit) {
+				patch.set(OlioFieldNames.FIELD_PB_USER_EDITED, Boolean.TRUE);
+			}
+		}
+		catch (FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble a page composition patch: " + e.getMessage());
+		}
+		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to persist page composition " + comp.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		PbStaleUtil.touch(comp);
+		return comp.get(FieldNames.FIELD_OBJECT_ID);
 	}
 
 	/**
@@ -2489,12 +2634,30 @@ public class ChapBookUtil {
 	 * @param sceneObjectId objectId of the {@code olio.pb.scene} to regenerate a prompt for
 	 * @param chatConfig    the resolved {@code olio.llm.chatConfig} (the transport layer resolves the org
 	 *                      default and returns 503 when none exists, mirroring {@link #analyzePoemTheme})
+	 * In-process form: a partial write (scene copy landed, page composition refused) is a 500. The transport
+	 * form is {@link #regenerateSceneLandscapePromptResult}.
+	 *
 	 * @return the new landscape prompt that was persisted
 	 * @throws PictureBookException 400 for missing args or a scene with no stanza; 404 when the scene is
-	 *         not readable; 503 when {@code chatConfig} is null; 500 when the LLM produced no usable prompt
-	 *         or the patch failed
+	 *         not readable; 503 when {@code chatConfig} is null; 500 when the LLM produced no usable prompt,
+	 *         the patch failed, or the scene copy was written but the page composition was not
 	 */
 	public static String regenerateSceneLandscapePrompt(BaseRecord user, String sceneObjectId, BaseRecord chatConfig) {
+		PromptWriteResult result = regenerateSceneLandscapePromptResult(user, sceneObjectId, chatConfig);
+		if (result.isPartial()) {
+			throw new PictureBookException(500, result.getError());
+		}
+		return result.getPrompt();
+	}
+
+	/**
+	 * Transport form of {@link #regenerateSceneLandscapePrompt}: the same LLM step and the same writes, but a
+	 * refused page-composition write is reported on the result ({@code updated:true, compositionUpdated:false,
+	 * error}) instead of thrown. The result's {@code prompt} is the persisted LLM prompt and {@code locked} is
+	 * always false. Every failure before the scene write (args, lookup, no stanza, no chatConfig, no usable
+	 * LLM prompt, refused scene patch) is still thrown — nothing was written in those cases.
+	 */
+	public static PromptWriteResult regenerateSceneLandscapePromptResult(BaseRecord user, String sceneObjectId, BaseRecord chatConfig) {
 		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
 			throw new PictureBookException(400, "user and sceneObjectId are required");
 		}
@@ -2532,8 +2695,19 @@ public class ChapBookUtil {
 		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
 			throw new PictureBookException(500, "Failed to persist regenerated sdPrompt on scene " + sceneObjectId);
 		}
+		// The scene copy is new: stale the page node before the composition write so a refused second
+		// write still leaves the page reviewable.
 		PbBookUtil.markSceneNodeStale(user, scene);
-		return newPrompt;
+		// P4-8: the regenerated prompt is LLM-sourced on the page composition, unlocked, userEdited untouched.
+		try {
+			String compOid = writePageComposition(user, scene, newPrompt, false, PbCompositionSourceEnumType.LLM, false);
+			return PromptWriteResult.complete(newPrompt, false, compOid);
+		}
+		catch (PictureBookException e) {
+			String msg = "Scene " + sceneObjectId + " sdPrompt regenerated but its page composition was not: " + e.getMessage();
+			logger.error(msg);
+			return PromptWriteResult.partial(newPrompt, false, msg);
+		}
 	}
 
 	/**

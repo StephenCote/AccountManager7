@@ -43,6 +43,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
@@ -636,7 +637,7 @@ public class PbNodeExecutor {
 			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt");
 		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
 			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
-		bindSceneLocation(g, node, r.plan);
+		bindSceneLocation(g, node, r.plan, r.degradations);
 
 		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
 		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
@@ -657,14 +658,23 @@ public class PbNodeExecutor {
 	 * the watched set carries only what contributed to the render, so another world's edits or approvals
 	 * cannot stale this scene. A scene re-pointed at another location, or at none, between two renders drops
 	 * the stale binding ({@link PbPipelineUtil#syncRecordBinding}); so does a pointer that became refused.
+	 * <p>
+	 * The image is already recorded when this runs, so a binding failure is a degradation on the result, not
+	 * a failed render (P4-8): the scene keeps its image and the message says the watch was not updated.
 	 */
-	private static void bindSceneLocation(SceneGraph g, BaseRecord node, RenderPlan plan) {
+	private static void bindSceneLocation(SceneGraph g, BaseRecord node, RenderPlan plan, List<String> degradations) {
 		RenderPlan.Location pl = (plan != null ? plan.getLocation() : null);
 		String locOid = (pl != null && pl.getRevisionHash() != null ? pl.getLocationId() : null);
 		String varOid = (locOid != null && pl.getVariantId() != null
 			&& plan.getInputs().get(PbRenderPlanUtil.INPUT_LOCATION_VARIANT) != null ? pl.getVariantId() : null);
-		PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 0, OlioModelNames.MODEL_PB_LOCATION, locOid);
-		PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 1, OlioModelNames.MODEL_PB_LOCATION_VARIANT, varOid);
+		try {
+			PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 0, OlioModelNames.MODEL_PB_LOCATION, locOid);
+			PbPipelineUtil.syncRecordBinding(g, node, PbPipelineUtil.ROLE_LOCATION, 1, OlioModelNames.MODEL_PB_LOCATION_VARIANT, varOid);
+		}
+		catch(RuntimeException e) {
+			logger.warn("bindSceneLocation: node {} location binding could not be updated: {}", node.get(OlioFieldNames.FIELD_PB_HANDLE), e.getMessage());
+			degradations.add(PbPipelineUtil.ROLE_LOCATION + ": location binding could not be updated; a later approve or edit of the location may not stale this scene");
+		}
 	}
 
 	// ─── location (LOCATION node; V3 §7, §7.1, §10, P3-4) ──────────────────
@@ -759,13 +769,16 @@ public class PbNodeExecutor {
 		}
 
 		/// The plan keys every plan-driven node reports (§12): which plan, its hash, the strategy and stages,
-		/// and the effective-config values a plan never carries ({@link #KEY_CONFIG_NOT_APPLIED}).
+		/// the one-line actor summary (P4-7) and the effective-config values a plan never carries
+		/// ({@link #KEY_CONFIG_NOT_APPLIED}).
 		void describe(Map<String, Object> out) {
+			String strategy = plan.getStrategy().getName().name();
 			out.put("planArtifactObjectId", planOid);
 			out.put("planContentHash", plan.contentHash());
-			out.put("strategy", plan.getStrategy().getName().name());
+			out.put("strategy", strategy);
 			out.put("stagesPlanned", plan.getStrategy().getStages());
 			out.put("stagesRendered", List.of(RenderPlan.STAGE_BASE));
+			out.put("planSummary", plan.actorSummary() + "; strategy " + strategy);
 			out.put(KEY_CONFIG_NOT_APPLIED, configNotApplied);
 		}
 	}
@@ -1016,10 +1029,18 @@ public class PbNodeExecutor {
 		}
 		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
 		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		/// The page prompt is the CHAPBOOK_PAGE composition's promptOverride (P4-8); scene.sdPrompt is the
+		/// pre-P4-8 copy. The plan builder makes the same choice (PbRenderPlanUtil.locationText); this gate
+		/// only refuses a page that has neither.
 		String sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
 		if(!NarrativeUtil.isMeaningful(sdPrompt)) {
-			throw new PictureBookException(409, "Page " + sceneIndex
-				+ " has no prompt; set or generate its landscape prompt before rendering it");
+			BaseRecord pageComp = findPageComposition(user, book, scene, orgId);
+			String pagePrompt = (pageComp != null && pageComp.hasField(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE)
+				? pageComp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) : null);
+			if(!NarrativeUtil.isMeaningful(pagePrompt)) {
+				throw new PictureBookException(409, "Page " + sceneIndex
+					+ " has no prompt; set or generate its landscape prompt before rendering it");
+			}
 		}
 		String sceneLabel = "page " + (sceneIndex != null ? sceneIndex.toString() : sceneOid);
 
@@ -1049,7 +1070,7 @@ public class PbNodeExecutor {
 		}
 
 		/// After the page patch, so a binding failure cannot leave the page pointing at its previous image.
-		bindSceneLocation(g, node, r.plan);
+		bindSceneLocation(g, node, r.plan, degradations);
 
 		/// completeNode (not a bare persistStatus) so the page node gets its inputHash/lastRunAt: the drift
 		/// scan never marks a node with inputHash == null, and a page that cannot go STALE cannot be reviewed.
@@ -1061,6 +1082,21 @@ public class PbNodeExecutor {
 		out.put("imageObjectId", imageOid);
 		r.describe(out);
 		return out;
+	}
+
+	/// The page's CHAPBOOK_PAGE composition, or null when it has none or it cannot be read (P4-8). Keyed on
+	/// the book's group — the group every composition is created in — not the scene's.
+	private static BaseRecord findPageComposition(BaseRecord user, BaseRecord book, BaseRecord scene, long orgId) {
+		long groupId = (book.hasField(FieldNames.FIELD_GROUP_ID) && book.get(FieldNames.FIELD_GROUP_ID) != null
+			? ((Number) book.get(FieldNames.FIELD_GROUP_ID)).longValue() : 0L);
+		if(groupId <= 0L) return null;
+		try {
+			return PbComposeUtil.findSceneComposition(user, scene, groupId, orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE);
+		}
+		catch(RuntimeException e) {
+			logger.warn("findPageComposition: page {} composition unreadable: {}", scene.get(FieldNames.FIELD_OBJECT_ID), e.getMessage());
+			return null;
+		}
 	}
 
 	// ─── prompt nodes (SCENE_PROMPT / LANDSCAPE_PROMPT) ──────────────────────────

@@ -1,16 +1,12 @@
 package org.cote.accountmanager.olio.illustration;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
-import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.illustration.RenderPlan.Actor;
 import org.cote.accountmanager.olio.illustration.RenderPlan.Degradation;
 import org.cote.accountmanager.olio.illustration.RenderPlan.Element;
 import org.cote.accountmanager.olio.sd.SDUtil;
-import org.cote.accountmanager.util.DocumentUtil;
 
 /// The SDXL prompt compiler (PictureBook V3 design §14, §38.1: Swarm parameters, not a Comfy graph).
 ///
@@ -23,7 +19,8 @@ import org.cote.accountmanager.util.DocumentUtil;
 ///
 /// Budget: the family's promptTokenBudget for the stage's model pick. Over budget, groups are
 /// dropped in the order ELEM_LOW, ELEM_MEDIUM, PALETTE, CAMERA, ACTOR_BG detail, each recorded as
-/// one PROMPT_TRUNCATED degradation; if still over, MAIN is cut at its last ", " boundaries (then
+/// one PROMPT_TRUNCATED degradation naming what was dropped ("ELEM_LOW dropped: gulls (20 tokens over
+/// budget 225)", CompilerSupport.recordDrop); if still over, MAIN is cut at its last ", " boundaries (then
 /// words) down to the remaining budget, keeping at least its first segment. ELEM_HIGH, ACTOR_FG,
 /// STYLE and PHOTOREAL are never dropped. The compiler emits no (term:weight) syntax of its own.
 ///
@@ -89,8 +86,12 @@ public final class SdxlCompiler implements PromptCompiler {
 		List<String> elemHigh = new ArrayList<>();
 		List<String> elemMedium = new ArrayList<>();
 		List<String> elemLow = new ArrayList<>();
+		List<String> elemMediumNames = new ArrayList<>();
+		List<String> elemLowNames = new ArrayList<>();
 		for(Element e : plan.getElements()) {
-			String text = joinMeaningful(clean(e.getName()), clean(e.getDescription()));
+			String name = clean(e.getName());
+			String desc = clean(e.getDescription());
+			String text = joinMeaningful(name, desc);
 			if(text == null) {
 				continue;
 			}
@@ -99,9 +100,11 @@ public final class SdxlCompiler implements PromptCompiler {
 			}
 			else if(RenderPlan.PRIORITY_LOW.equalsIgnoreCase(e.getPriority())) {
 				elemLow.add(text);
+				elemLowNames.add(name != null ? name : desc);
 			}
 			else {
 				elemMedium.add(text);
+				elemMediumNames.add(name != null ? name : desc);
 			}
 		}
 
@@ -129,31 +132,31 @@ public final class SdxlCompiler implements PromptCompiler {
 		int tokens = PromptBudget.estimateTokens(joined);
 
 		if(tokens > budget && !elemLow.isEmpty()) {
-			record(out, GROUP_ELEM_LOW + " dropped", tokens - budget, budget, stg);
+			CompilerSupport.recordDrop(out, GROUP_ELEM_LOW + " dropped", elemLowNames, tokens - budget, budget, stg);
 			keepLow = false;
 			joined = assemble(main, fg, bgFull, elemHigh, elemMedium, null, camera, palette, styleText, photoreal);
 			tokens = PromptBudget.estimateTokens(joined);
 		}
 		if(tokens > budget && !elemMedium.isEmpty()) {
-			record(out, GROUP_ELEM_MEDIUM + " dropped", tokens - budget, budget, stg);
+			CompilerSupport.recordDrop(out, GROUP_ELEM_MEDIUM + " dropped", elemMediumNames, tokens - budget, budget, stg);
 			keepMedium = false;
 			joined = assemble(main, fg, bgFull, elemHigh, null, null, camera, palette, styleText, photoreal);
 			tokens = PromptBudget.estimateTokens(joined);
 		}
 		if(tokens > budget && palette != null) {
-			record(out, GROUP_PALETTE + " dropped", tokens - budget, budget, stg);
+			CompilerSupport.recordDrop(out, GROUP_PALETTE + " dropped", List.of(palette), tokens - budget, budget, stg);
 			keepPalette = false;
 			joined = assemble(main, fg, bgFull, elemHigh, null, null, camera, null, styleText, photoreal);
 			tokens = PromptBudget.estimateTokens(joined);
 		}
 		if(tokens > budget && camera != null) {
-			record(out, GROUP_CAMERA + " dropped", tokens - budget, budget, stg);
+			CompilerSupport.recordDrop(out, GROUP_CAMERA + " dropped", List.of(camera), tokens - budget, budget, stg);
 			keepCamera = false;
 			joined = assemble(main, fg, bgFull, elemHigh, null, null, null, null, styleText, photoreal);
 			tokens = PromptBudget.estimateTokens(joined);
 		}
 		if(tokens > budget && !bgFull.isEmpty() && !bgFull.equals(bgNames)) {
-			record(out, GROUP_ACTOR_BG + " detail dropped", tokens - budget, budget, stg);
+			CompilerSupport.recordDrop(out, GROUP_ACTOR_BG + " detail dropped", bgNames, tokens - budget, budget, stg);
 			bgDetail = false;
 			joined = assemble(main, fg, bgNames, elemHigh, null, null, null, null, styleText, photoreal);
 			tokens = PromptBudget.estimateTokens(joined);
@@ -182,7 +185,7 @@ public final class SdxlCompiler implements PromptCompiler {
 				}
 			}
 			if(!cut.equals(main)) {
-				record(out, MAIN_CUT, over, budget, stg);
+				CompilerSupport.recordDrop(out, MAIN_CUT, null, over, budget, stg);
 				main = cut;
 				joined = assemble(main, fg, bg, elemHigh, keepMedium ? elemMedium : null, keepLow ? elemLow : null,
 					keepCamera ? camera : null, keepPalette ? palette : null, styleText, photoreal);
@@ -190,11 +193,11 @@ public final class SdxlCompiler implements PromptCompiler {
 			}
 		}
 		if(tokens > budget) {
-			record(out, OVER_BUDGET_UNCUT, tokens - budget, budget, stg);
+			CompilerSupport.recordDrop(out, OVER_BUDGET_UNCUT, null, tokens - budget, budget, stg);
 		}
 
-		String prompt = SDUtil.appendLoraTags(joined, loras(plan.getConfig()));
-		String negative = negative(style == null ? null : style.getExclusions(), configString(plan.getConfig(), "negativePrompt"));
+		String prompt = SDUtil.appendLoraTags(joined, CompilerSupport.loras(plan.getConfig()));
+		String negative = CompilerSupport.negative(style, plan.getConfig());
 		return new CompiledPrompt(prompt, negative, tokens);
 	}
 
@@ -229,69 +232,15 @@ public final class SdxlCompiler implements PromptCompiler {
 	}
 
 	static String negative(String exclusions, String configNegative) {
-		Map<String, String> seen = new LinkedHashMap<>();
-		for(String src : new String[] {exclusions, configNegative}) {
-			if(src == null) {
-				continue;
-			}
-			for(String term : src.split(",")) {
-				String t = clean(term);
-				if(t == null) {
-					continue;
-				}
-				seen.putIfAbsent(t.toLowerCase(), t);
-			}
-		}
-		return String.join(SEP, seen.values());
+		return CompilerSupport.negative(exclusions, configNegative);
 	}
 
 	/// Smart-quote normalised and trimmed, or null when not meaningful (null, blank, "null", "n/a", ...).
 	static String clean(String s) {
-		if(s == null) {
-			return null;
-		}
-		String t = DocumentUtil.replaceSmartQuotes(s).trim();
-		return NarrativeUtil.isMeaningful(t) ? t : null;
+		return CompilerSupport.clean(s);
 	}
 
 	private static String joinMeaningful(String a, String b) {
-		if(a == null) {
-			return b;
-		}
-		if(b == null) {
-			return a;
-		}
-		return a + SEP + b;
-	}
-
-	private static void record(List<Degradation> out, String what, int over, int budget, String stage) {
-		if(out == null) {
-			return;
-		}
-		out.add(new Degradation(Degradation.PROMPT_TRUNCATED, what + " (" + over + " tokens over budget " + budget + ")", null, stage));
-	}
-
-	private static List<String> loras(Map<String, Object> config) {
-		List<String> out = new ArrayList<>();
-		if(config == null) {
-			return out;
-		}
-		Object o = config.get("loras");
-		if(o instanceof List) {
-			for(Object e : (List<?>) o) {
-				if(e != null && !String.valueOf(e).isBlank()) {
-					out.add(String.valueOf(e));
-				}
-			}
-		}
-		return out;
-	}
-
-	private static String configString(Map<String, Object> config, String key) {
-		if(config == null) {
-			return null;
-		}
-		Object o = config.get(key);
-		return (o == null ? null : String.valueOf(o));
+		return CompilerSupport.joinMeaningful(a, b);
 	}
 }

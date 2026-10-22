@@ -1,7 +1,9 @@
 package org.cote.rest.services;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -550,7 +552,12 @@ public class ChapBookService {
      * verbatim. It is read via ObjectMapper — NOT parseParams — because {@code sdPrompt} is not a field
      * on {@code olio.pictureBookRequest}, so schema-driven deserialization would silently drop it
      * (KI-24). All authoritative-edit semantics (persist verbatim, no "landscape, " discriminator),
-     * authorization, and PATCH-shaped persistence live in {@link ChapBookUtil#setSceneLandscapePrompt}.
+     * authorization, and PATCH-shaped persistence live in {@link ChapBookUtil#setSceneLandscapePromptResult}.
+     *
+     * <p>Response: {@code {updated, compositionUpdated, promptLocked[, compositionObjectId][, error]}} —
+     * {@code updated} is the scene copy, {@code compositionUpdated} the page composition. A partial write
+     * (scene copy landed, composition refused) is a 200 with {@code updated:true, compositionUpdated:false}
+     * and the refusal in {@code error}; the page node is already STALE in that case.
      */
     @RolesAllowed({"admin", "user"})
     @PUT
@@ -571,10 +578,13 @@ public class ChapBookService {
             }
         }
         try {
-            boolean updated = ChapBookUtil.setSceneLandscapePrompt(user, sceneObjectId, sdPrompt);
-            return Response.status(200).entity("{\"updated\":" + updated + "}").build();
+            ChapBookUtil.PromptWriteResult result = ChapBookUtil.setSceneLandscapePromptResult(user, sceneObjectId, sdPrompt);
+            return Response.status(200).entity(new ObjectMapper().writeValueAsString(result.toMap())).build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("setSceneLandscapePrompt failed for " + sceneObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Failed to set scene prompt: " + e.getMessage());
         }
     }
 
@@ -588,7 +598,11 @@ public class ChapBookService {
      * default is used ({@link ChapBookUtil#resolveDefaultChatConfig}), and a 503 is returned if none.
      * <p>
      * Transport only: parse the optional chatConfig, resolve it (named → org default), and delegate to
-     * {@link ChapBookUtil#regenerateSceneLandscapePrompt}. All LLM/persistence logic lives in Objects7.
+     * {@link ChapBookUtil#regenerateSceneLandscapePromptResult}. All LLM/persistence logic lives in Objects7.
+     *
+     * <p>Response: {@code {sdPrompt, promptLocked:false, updated, compositionUpdated[, compositionObjectId][, error]}}
+     * — the same partial-write shape as {@code PUT …/prompt}: a refused page-composition write after the scene
+     * copy landed is a 200 with {@code compositionUpdated:false} and the refusal in {@code error}.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -619,11 +633,13 @@ public class ChapBookService {
         }
 
         try {
-            String sdPrompt = ChapBookUtil.regenerateSceneLandscapePrompt(user, sceneObjectId, chatConfig);
-            // JSON-encode the prompt string (may contain quotes/newlines) via Jackson; promptLocked is
-            // always false on a regenerate (the value is LLM-authored, not a locked human edit).
-            String sdPromptJson = new ObjectMapper().writeValueAsString(sdPrompt);
-            return Response.status(200).entity("{\"sdPrompt\":" + sdPromptJson + ",\"promptLocked\":false}").build();
+            ChapBookUtil.PromptWriteResult result = ChapBookUtil.regenerateSceneLandscapePromptResult(user, sceneObjectId, chatConfig);
+            // promptLocked is always false on a regenerate (the value is LLM-authored, not a locked human
+            // edit); toMap() carries it, plus the scene/composition write flags.
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("sdPrompt", result.getPrompt());
+            body.putAll(result.toMap());
+            return Response.status(200).entity(new ObjectMapper().writeValueAsString(body)).build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());
         } catch (Exception e) {

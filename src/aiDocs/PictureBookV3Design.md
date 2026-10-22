@@ -378,6 +378,22 @@ How it works without a map — the facts that make it possible:
    `name`/`description`/colours/`materials` join the element's watched set; a change marks the
    scenes that reference it stale (§11). Items are **not** reference images in V3 (§8) — the
    win is stable, identical prompt text and a record to hang a reference on later.
+   > **Built (P4-6, 2026-10-20):** `PbComposeUtil.promoteElement(user, book, compositionObjectId, elementObjectId)` over
+   > `PbServiceFacade`, `POST /{book}/composition/{id}/element/{elementId}/promote`. **One correction to the wording above:**
+   > `ItemUtil.addNewInventory` writes an `olio.inventoryEntry` into `store.inventory` (quantities for the game economy); the
+   > composer reads `store.items`, so the promoted item is enrolled in **`store.items`** (`AccessPoint.member(user, store, "items",
+   > item, null, true)`, audited; no `MemberUtil` fallback — a refusal is a 500 and the retry reuses the item by name) and no inventory
+   > entry is written (tracking 192 a). **Containment:** book update → composition of the book → element of the composition → the
+   > composition's location, else the scene's (none → 409) → of the book's world (`PbLocationUtil.sameWorld`, 404) → the POI store
+   > (none → 409) → `canUpdate(store)`; nothing is written before the last check. **Reuse before create:** an already-linked element
+   > returns `reused` and writes nothing; else the description is matched whole-word against the store's items (`matchItem`) and by
+   > exact name (`type="prop"`) in the world Items group; else a minimal `olio.item` is created as the olio principal (`name` = the
+   > description minus its leading article, 64 chars; `description` 512; `type="prop"`; group = world Items; no colours/materials
+   > invented — catalogue `type="template"` rows are never reused). The scene node goes STALE on every link write. **Prompt text:**
+   > `PbComposeUtil.elementText(user, element)` = `"<colour> <materials> <name>, <description> with <c1> and <c2> accents"` from a
+   > fresh load of the linked item (never "null"; a description that is just the name plus its article is not repeated), falling
+   > back to the element's own description; its compile-side caller is P4-7's `PbRenderPlanUtil.sceneElements` — until then no
+   > prompt reads `sceneElement.item`. Items are still not reference images.
 5. **Deletion / orphans:** a POI created by V3 is owned by the world and dies with it;
    `PbOrphanUtil`/`PbHealthUtil` gain one check — a `pb.location.poi` that points at a deleted
    POI is repaired by re-creating it (rule 1), not reported.
@@ -448,6 +464,27 @@ integrity, PBAC and watched-field hashing. Making them bindable inputs is the po
 **Two-character limit (G-1): removed from the model.** A composition has any number of actors.
 How many of them become image references is a renderer decision (§13). Nothing is ever dropped
 silently (§19).
+
+> **Built (P4-8, 2026-10-21):** the composition and its rows are edited **row by row** over REST (§27) through
+> `PbComposeUtil`'s row API: `patchCompositionFields` (editable: `settingText`, `action`, `mood`, `shotType`,
+> `viewpoint`, `cameraText`, `props`, `configOverride`, `promptOverride`, `promptLocked`, `focalActorObjectId`;
+> `purpose`/`scene`/`book`/`location`/`locationVariant`/`source`/`userEdited`/`revision` are refused with the
+> route that owns them), `createActorRow` (`characterObjectId` **or** `description`; the handle is
+> `actor.<composition>.<max suffix + 1>`, the box from `PbLayoutUtil.defaultPlacement`), `patchActorRow`
+> (`role`, `priority`, `pose`, `expression`, `action`, `facing`, `x/y/w/h`, `depth`, `description`, `count`,
+> `referencePolicy`; `character` and `apparel` are refused — the character is fixed for the row's life, the
+> outfit is pinned through the P4-5 apparel route), `deleteActorRow` (a focal actor is unfocused first),
+> `createElementRow`/`patchElementRow`/`deleteElementRow` (`item` only through the P4-6 promote route). Every
+> write is one PATCH against the row itself (the PATCH caveat above holds; nothing cascades), then
+> `touchEdited` sets `userEdited`, `source=USER`, `revision`+1 on the composition and marks the scene node
+> STALE. Over-length text is a 400, not truncated; a null or blank enum on PATCH is a 400, never a reset to
+> UNKNOWN. A `CHAPBOOK_PAGE` composition refuses actor rows (G-35 off) but accepts elements. The camera fields
+> are editable here but not yet compiled into the plan (Implementation §6.C 193 p), and neither are `settingText`,
+> `action`, `mood`, `props` or `configOverride` — the planner still reads those from the scene (`PbRenderPlanUtil`
+> `locationText`), so an edit here is persisted and marks the scene STALE but does not change the next render until
+> the planner is wired to the composition (Implementation §6.C 194 jj — ruled 2026-10-21 "fix as suggested": P4-10, with
+> the scene-copy retirement; until then P4-9's inspector shows the compiled `/plan` prompt beside the fields). Implementation
+> §6.C 194, 195.
 
 ### 9. Getting a composition: "AI proposes"
 
@@ -791,6 +828,20 @@ RenderPlan
    ordinal 1 — a key naming that binding, not a role of its own). A pre-P3-5 SCENE manifest carried the
    **scene's** objectId in `locationId`; the first re-plan of such a scene is a one-time hash inequality, not
    a re-roll. Built by `PbRenderPlanUtil.resolveSceneLocation`; Implementation §6.C 178 (D1, D6).]**
+5. **[2026-10-20 (P4-7), as built — `actors`, `elements`, `intent`:** `actors[]` carry the shape above plus `name` (the compilers and
+   the scene card name people; a row named only by its P4-5 handle `actor.<composition>.<n>` carries no `name`, and a row `count` is
+   spoken only when > 1) and an explicit `referenced` boolean decided by `PbRenderPlanUtil.actorsOf`, not derived from
+   `identity.portraitArtifactId`; `role` is one of `HERO, SUPPORTING, NAMED_BACKGROUND, EXTRA, CROWD` with the Phase 2
+   `FOREGROUND`/`BACKGROUND` kept as legacy aliases; a pre-P4-7 manifest's `description` reads into `identity.text` and is never
+   written back (one-time hash inequality, as the P3-5 `location` precedent). `elements[]` are `{type, name, description, box, depth,
+   importance, itemId}` — `description` is `PbComposeUtil.elementText` (the promoted item's text when one is linked, P4-6), legacy
+   `priority` reads into `importance`. `intent` is `{promptOverride, raw}`: the composition's `promptOverride` when the request names
+   none; `raw` is still a request-level toggle (no composition field yet — `promptLocked` does not map to it). `camera` is not yet
+   filled from the composition's shot/viewpoint fields (P4-8). Rows are read as the planning user through the book's `groupId`; a
+   character the user cannot read is planned from the row's own text as `ACTOR_UNRESOLVED`; a composition that cannot be read at all is
+   one `ACTOR_UNRESOLVED` with no actorId. On the wire an empty `actors`/`elements`/`degradations` is absent, not `[]` (every
+   PictureBook route serialises `NON_EMPTY`) — consumers default to `[]`. Implementation §6.C 193 (a)–(d), (j), (o), (p), (ff), (kk),
+   (ss), (tt).]**
 
 ### 13. Strategy selection
 
@@ -823,6 +874,13 @@ string in the plan.
   `SEQUENTIAL_INPAINT` / `DIRECT_REFERENCE`, which arrive in Phase 5; `PbNodeExecutor` and `StageRequest` are
   unchanged. A render carried but not used by the stage is **not** a degradation and does not change the
   strategy name or reason. Implementation §6.C 178 (D4, option A).]**
+- **[2026-10-20 (P4-7), as built — top-k:** the slot count and the reference decision live in `PbRenderPlanUtil.actorsOf`, not the
+  selector: `maxReferences − (hasLocationRef ? 1 : 0)` slots (`hasLocationRef` = the scene's location has an approved render) are
+  filled by HERO / SUPPORTING (and legacy FOREGROUND) actors with an approved PORTRAIT and a policy other than TEXT_ONLY —
+  NAMED_BACKGROUND only under `REQUIRE_REFERENCE` — ordered REQUIRE_REFERENCE first, then priority, then row order. Every candidate left
+  out is `ACTOR_TEXT_ONLY` with its reason (`no approved portrait`, `reference limit N`, `REQUIRE_REFERENCE not met` — a degradation,
+  not a refusal); EXTRA and CROWD are always text and raise nothing. The selector keeps its Phase 2 role (strategy name, stages, reason)
+  and is TEXT_ONLY-only until Phase 5. Implementation §6.C 193 (f), (x), (aa), (bb), (mm).]**
 
 ### 14. Prompt compilers
 
@@ -849,6 +907,23 @@ in §38 — the compilers above are stage-level inputs to it, not alternatives t
 - Smart quotes are normalized and LoRAs appended (the existing `appendLoras`).
 - A configurable token budget per family. On overflow, drop in this order: elements LOW → elements
   MEDIUM → extras → background-actor detail, and record the drop as a degradation.
+
+> **Built (P4-7, 2026-10-20):** `PromptCompilers.forPick(pick)` picks the compiler by the pick's recorded family (`flux2*` →
+> `Flux2Compiler`, else `SdxlCompiler`; `RendererCapabilities.forModel` only for a legacy pick without one); `PbNodeExecutor`,
+> `ChatSceneRenderUtil` and the plan route all go through it. `Flux2Compiler` is prose: an opening that names the referenced actors by
+> ordinal ("the first reference image" …, the location's ordinal after the actors) **only** under `DIRECT_REFERENCE` and only for actors
+> the planner marked `referenced`; otherwise "Place the people described below in …" and every actor as text. Every actor gets a
+> sentence by role — a referenced actor in a background role keeps its ordinal there, in the full and the detail-dropped sentence alike;
+> elements are grouped HIGH / MEDIUM / LOW; style once (suppressed when the main text already ends with it);
+> `SWUtil`'s identity-fidelity and "do not draw the reference images" rules verbatim (ASCII hyphen, KI-68) and only when a reference is
+> spoken of; "No extra people." only when no extras/crowds were asked for; exclusions always; LoRAs appended outside the budget; `raw`
+> = the override + LoRAs. Budget 512 tokens for the FLUX.2 family; the drop order above, then a MAIN cut at sentence then word
+> boundaries, each step one `PROMPT_TRUNCATED` naming what was dropped (`"ELEM_LOW dropped: gulls (20 tokens over budget 512)"`); a
+> prompt still over budget with nothing left to drop is recorded uncut. `SdxlCompiler`'s drop messages now name the drop the same way.
+> The shared helpers (`isMeaningful` on every field, smart quotes, `appendLoras`, ordinals, `recordDrop`) are `CompilerSupport`,
+> package-private and DB-free. No compiler carries policy or bias wording (tracking 189 c) and none logs a prompt. The ordinal wording
+> is exercised by `TestFlux2Compiler` alone until Phase 5 — the selector is TEXT_ONLY-only in Phase 4. `InpaintRegionCompiler` and
+> `RegionalPromptCompiler` are not built. Implementation §6.C 193 (e), (l), (n), (nn), (u).
 
 **The LLM never writes the final prompt.** It writes composition fields (§9). The landscape-prompt
 LLM call survives only as **location description authoring**: "describe this location visually" is
@@ -1078,6 +1153,20 @@ still binds whatever the scene points at; the binding is a watched-set pointer, 
 same-world rule and the facade routes (`requireLocationOfBook`, `requireVariantOfBook`) are the write-side
 guards; this is the read-side one. Implementation §6.C 178 (t).]**
 
+**[2026-10-20 (P4-7), as built — the closed set, the actor codes, the summary, the veto:** `RenderPlan.Degradation.CODES` is the
+seven codes above plus `COMPOSED_OUT_OF_ORDER` (P4-4); an entry whose prefix is not one of them is "unknown" and vetoes auto-approve.
+`ACTOR_TEXT_ONLY` reads `"<name> rendered from description (no approved portrait | reference limit N | REQUIRE_REFERENCE not met)"`;
+`ACTOR_UNRESOLVED` reads `"<row name or text> rendered from the row's text (character <objectId> could not be read)"` (the example
+above was written before the composition model gave every row its own text — a row with no character is a text row, not an
+unresolved one) and, for a composition or actor-row read that throws, `"The … could not be read; the scene is planned without its
+actors"`; `ACTOR_FAILED` is defined and never raised before Phase 5; `PROMPT_TRUNCATED` names the drop (§14). The scene-card line is
+`RenderPlan.actorSummary()`: `"N characters: R referenced, T text[, U unresolved]"` (`"no characters"` for none; "text" rather than
+"regional" — there is no regional strategy yet), exposed as `planSummary` on the plan DTO and the planned node's describe map (with
+`"; strategy <name>"`). The auto-approve veto is one constant, `PbArtifactUtil.AUTO_APPROVE_VETO_CODES` = `{ACTOR_UNRESOLVED,
+ACTOR_FAILED, LOCATION_TEXT_ONLY, PROMPT_TRUNCATED, COMPOSED_OUT_OF_ORDER}` (182 (13) + the P4-4 code); `ACTOR_TEXT_ONLY`,
+`MODEL_SUBSTITUTED` and `QA_WARN` are waived. `REQUIRE_REFERENCE` not met is filed as `ACTOR_TEXT_ONLY` and therefore waived — open
+question, Implementation §6.C 193 (mm). Implementation §6.C 193 (g), (h), (i), (k), (v), (kk).]**
+
 ### 20. Failure semantics
 
 | Failure | Behaviour |
@@ -1249,6 +1338,34 @@ What this gives ChapBook for free:
 
 `imageStale` maps onto node STALE. Character support in ChapBook (G-35) is just "allow actors on
 CHAPBOOK_PAGE"; it is off by default.
+
+**[2026-10-21 (P4-8), as built — the page composition exists and carries the prompt; the scene copy stays until P4-10.**
+A page's `CHAPBOOK_PAGE` composition is created lazily on the first prompt write, as the request user through
+`AccessPoint`, named `page.<sceneObjectId>` **in the book's group** (not the scene's — a chapter-group scene would
+otherwise put it where the planner and the board never look), with `source` USER (a human set) or LLM (regenerate);
+no GET, planner or executor creates one. `ChapBookUtil.setSceneLandscapePrompt` and `regenerateSceneLandscapePrompt`
+write **scene first** (`sdPrompt`/`promptLocked`, the pre-P4-8 fields), mark the page's node STALE, then write the
+composition's `promptOverride`/`promptLocked` (a human set also sets `userEdited`); a second write that fails is
+reported, never hidden (ruled 2026-10-21 "richer body"): the routes answer `200 {updated:true, compositionUpdated:false,
+error:"Scene <id> sdPrompt persisted but its page composition was not: …"}` (`PUT …/prompt`; regenerate adds `sdPrompt`), a
+complete write `{updated:true, compositionUpdated:true, compositionObjectId}`, nothing written `{updated:false,
+compositionUpdated:false}` — never a bare `200 {updated:false}` for a partial; the in-process `setSceneLandscapePrompt` /
+`regenerateSceneLandscapePrompt` keep the 500 so a render never follows a partial write (Implementation §6.C 194 ee, 195 a, b).
+`PbNodeExecutor.executeChapBookPage` reads the composition's `promptOverride` when the scene copy is not meaningful
+(the state a board edit or the P4-10 migration leaves behind) and refuses with 409 "Page N has no prompt; set or
+generate its landscape prompt before rendering it" when neither carries one; the plan's `location.description` is
+then the composition text verbatim. On a page, `promptLocked` is only the regeneration guard; the text renders
+either way. The ChapBook recovery path and a board PATCH of the page's `promptOverride` still move only one copy
+(scene, resp. composition) — the mirror is re-synced on the next set/regenerate, and P4-10 retires the scene copy.
+`bindSceneLocation` (P3-6) now catches a binding failure and records it as a `location:` degradation on the
+result instead of failing a rendered page. Verified by `TestChapBookPageComposition` (Objects7, `am7db` + the
+in-stack LLM; the executor case against a dead renderer), `TestChapBookServiceRenderPath` (Service7 H2) and the
+render-path suites against live `.39` — `PictureBookV3Implementation.md` §12.8, §6.C 194 (b), (c), (g), (k), (x), (ee).
+Two edges found by the (ee) live proof, both open: the prompt routes have no ChapBook check, so on a STORY scene they create an
+unread `CHAPBOOK_PAGE` row beside the SCENE one (the board reads SCENE for a STORY book) — left for P4-10 with the scene-copy
+retirement; and `…/prompt/regenerate` with no `chatConfig` in the body uses the library `contentAnalysis` connection, which on the
+Docker stack has no LiteLLM key, so callers pass the user's config name as the Ux752 editor does — `PictureBookV3Implementation.md`
+§6.C 196, §6.G 4.]**
 
 **Other ChapBook specifics:**
 - **Locations:** a ChapBook book has its own world, so the same world-scoped location library
@@ -1501,7 +1618,7 @@ Ux implementation follows Ux752 patterns. Read `features/pictureBook.js`,
 | `POST /{book}/compose` → 202, `POST /{book}/scene/{id}/compose` | Whole-book, in-order composition job (§9.1); single-scene re-compose. Both respect `userEdited` |
 | `GET/POST /character/{id}/wardrobe`, `PATCH /scene-actor/{id}/apparel` | Wardrobe alternates; per-scene outfit (§6). **[2026-10-19 (P4-5), as built: every wardrobe route is book-scoped, the book being the authorization anchor — `GET|POST /{book}/character/{id}/wardrobe`, `PUT /{book}/character/{id}/wardrobe/{apparel}/default`, `POST /{book}/character/{id}/wardrobe/{apparel}/reference` (202 job), `PUT /{book}/composition/{comp}/actor/{actor}/apparel` `{apparelObjectId}` (empty body = unpin; replaces the `PATCH /scene-actor/{id}/apparel` shape), `GET /{book}/composition/{comp}/outfits`, `POST /{book}/wardrobe/migrate-scene-tags`. Gate order: 404 book → 403 unless the caller may update the book (reads need only read) → 404 character/composition outside the book → 400 apparel outside the character's wardrobe.]** |
 | `GET/PUT /{book}/settings/auto-approve` | Auto-approve toggle (§10 rule 5) |
-| `GET/PATCH /composition/{id}`, `POST/PATCH/DELETE /composition/{id}/actor[/{aid}]`, same for `/element` | Composition editing |
+| `GET/PATCH /composition/{id}`, `POST/PATCH/DELETE /composition/{id}/actor[/{aid}]`, same for `/element` | Composition editing | **[2026-10-20 (P4-6), as built: `POST /{book}/composition/{id}/element/{elementId}/promote` → `{promoted, created, reused, itemObjectId, itemName, elementText, staled, warnings}`; the actor/element CRUD routes themselves are P4-8.]** **[2026-10-21 (P4-8), as built: all book-scoped — `GET|PATCH /{book}/scene/{sceneId}/composition` (the board read/write: `{compositionObjectId, composition, actors[], elements[], nodeStatus, nodeStale}`; 404 when the scene has no composition yet — "run compose first" / "set its prompt first" for a page; PATCH takes the §8 editable fields and refuses the rest with the owning route), `POST /{book}/composition/{id}/actor` (`characterObjectId` or `description`; 409 on a CHAPBOOK_PAGE composition), `PATCH|DELETE …/actor/{aid}` (character/apparel refused → `PUT …/actor/{aid}/apparel`), `POST …/element`, `PATCH|DELETE …/element/{eid}` (`itemObjectId` refused → `…/element/{eid}/promote`). Every write answers the row DTO plus `actorObjectId`/`elementObjectId`, `revision`, `nodeStatus`, `nodeStale`, and bumps `revision` by one. Gate order: 404 book → 403 unless the caller may update the book (GET needs read) → 404 scene/composition/row outside the book → 409 → 400. The P4-5 apparel pin answers 400 for an outfit outside the actor's character's wardrobe — as the row above already says; an earlier wording here claimed the row said 404, which was wrong (Implementation §6.C 194 i, ruled ok 2026-10-21; 195 c — no code change).]** |
 | `POST /composition/{id}/plan` | Dry-run: build and return the plan (strategy, models, compiled prompts, degradations, estimate) without rendering |
 | `POST /composition/{id}/render` → 202 `{jobId, runId}` | Render an attempt (`preset`, sparse `override`, `target`: scene \| actor:{id} \| region:{box} \| faces \| clothing \| background) |
 | `POST /{book}/render-all` → 202 | Render all stale/unrendered compositions **[2026-10-11 (P1-6): built on `PictureBookService` — terminals are every scene's `sceneNode`; `scenesWithoutNode` lists the skipped ones; 409 when no scene has a node]** |

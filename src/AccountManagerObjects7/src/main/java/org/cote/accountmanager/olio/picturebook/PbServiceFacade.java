@@ -44,6 +44,7 @@ import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
@@ -2145,6 +2146,15 @@ public class PbServiceFacade {
 		return (oid != null ? oid : fallback);
 	}
 
+	/// The FK stub's name when it carries one; null for an absent or nameless reference.
+	private static String fkName(BaseRecord rec, String field) {
+		if(!rec.hasField(field)) {
+			return null;
+		}
+		BaseRecord fk = rec.get(field);
+		return (fk != null && fk.hasField(FieldNames.FIELD_NAME) ? fk.get(FieldNames.FIELD_NAME) : null);
+	}
+
 	/**
 	 * The objectId of {@code workflow.lastRun}, or null when no run has ever been submitted.
 	 * <p>
@@ -2739,6 +2749,7 @@ public class PbServiceFacade {
 		RenderPlan.ModelPick base = plan.pickForStage(RenderPlan.STAGE_BASE);
 		out.put("estimate", RenderEstimate.estimate(plan, RenderCalibration.sample(sdServer, base != null ? base.getFamily() : null)));
 		out.put("contentHash", plan.contentHash());
+		out.put("planSummary", plan.actorSummary());
 		return out;
 	}
 
@@ -3745,6 +3756,7 @@ public class PbServiceFacade {
 		m.put("objectId", a.get(FieldNames.FIELD_OBJECT_ID));
 		m.put("name", a.get(FieldNames.FIELD_NAME));
 		m.put("characterObjectId", fkObjectId(a, OlioFieldNames.FIELD_PB_CHARACTER, null));
+		m.put("characterName", fkName(a, OlioFieldNames.FIELD_PB_CHARACTER));
 		m.put("apparelObjectId", fkObjectId(a, OlioFieldNames.FIELD_APPAREL, null));
 		m.put("role", enumString(a, OlioFieldNames.FIELD_PB_ROLE));
 		m.put("priority", a.get(OlioFieldNames.FIELD_PB_PRIORITY));
@@ -4473,6 +4485,213 @@ public class PbServiceFacade {
 		out.put("staled", Integer.valueOf(r.staled));
 		out.put("warnings", new ArrayList<>(r.warnings));
 		return out;
+	}
+
+	// ─────────────────────────────── composition board (V3 §8, §24, §27; P4-8) ───────────────────────────────
+
+	/**
+	 * The scene's composition and its rows for the board: the SCENE composition of a PictureBook scene, the
+	 * CHAPBOOK_PAGE composition of a ChapBook page. A read needs only the book; rows are listed within the
+	 * book's group (189 d). {@code locationObjectId}/{@code variantObjectId} are the SCENE's pointers - the
+	 * composition's own FK is not patchable here and the scene's is what the plan resolves.
+	 *
+	 * @throws PictureBookException 404 when the scene has no composition yet
+	 */
+	public static Map<String, Object> getSceneComposition(BaseRecord user, String bookObjectId, String sceneObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		BaseRecord comp = findCompositionOfScene(user, book, scene);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("compositionObjectId", comp.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("composition", boardCompositionDto(comp, scene));
+		List<Map<String, Object>> actors = new ArrayList<>();
+		for(BaseRecord a : PbComposeUtil.listActors(user, comp)) {
+			actors.add(actorDto(a));
+		}
+		out.put("actors", actors);
+		List<Map<String, Object>> elements = new ArrayList<>();
+		for(BaseRecord e : PbComposeUtil.listElements(user, comp)) {
+			elements.add(elementDto(e));
+		}
+		out.put("elements", elements);
+		return out;
+	}
+
+	/**
+	 * Row-level edit of the scene's composition fields (settingText, action, mood, shotType, viewpoint,
+	 * cameraText, props, configOverride, promptOverride, promptLocked, focalActorObjectId). Writes land on a
+	 * RUNNING node too; the result says whether the node went STALE.
+	 */
+	public static Map<String, Object> patchSceneComposition(BaseRecord user, String bookObjectId, String sceneObjectId, Map<String, Object> body) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit the composition");
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		BaseRecord comp = findCompositionOfScene(user, book, scene);
+		PbComposeUtil.patchCompositionFields(user, comp, body);
+		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, scene);
+		Map<String, Object> out = editResultDto(book, scene, comp, r);
+		out.put("updated", Boolean.TRUE);
+		return out;
+	}
+
+	/** Add an actor row to a composition of the book; 409 on a ChapBook page (G-35). */
+	public static Map<String, Object> addActor(BaseRecord user, String bookObjectId, String compositionObjectId, Map<String, Object> body) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit the composition");
+		BaseRecord comp = requireCompositionOfBook(user, book, compositionObjectId);
+		BaseRecord scene = sceneOfComposition(user, comp);
+		BaseRecord actor = PbComposeUtil.createActorRow(user, book, comp, body);
+		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, scene);
+		Map<String, Object> out = editResultDto(book, scene, comp, r);
+		out.put("actorObjectId", actor.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("actor", actorDto(actor));
+		out.put("created", Boolean.TRUE);
+		return out;
+	}
+
+	public static Map<String, Object> patchActor(BaseRecord user, String bookObjectId, String compositionObjectId, String actorObjectId, Map<String, Object> body) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit the composition");
+		BaseRecord comp = requireCompositionOfBook(user, book, compositionObjectId);
+		BaseRecord actor = requireActorOfComposition(user, comp, actorObjectId);
+		BaseRecord scene = sceneOfComposition(user, comp);
+		PbComposeUtil.patchActorRow(user, actor, body);
+		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, scene);
+		Map<String, Object> out = editResultDto(book, scene, comp, r);
+		out.put("actorObjectId", actor.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("actor", actorDto(actor));
+		out.put("updated", Boolean.TRUE);
+		return out;
+	}
+
+	/** Remove an actor row; a focal actor is un-set from the composition first ({@code focalActorCleared}). */
+	public static Map<String, Object> deleteActor(BaseRecord user, String bookObjectId, String compositionObjectId, String actorObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit the composition");
+		BaseRecord comp = requireCompositionOfBook(user, book, compositionObjectId);
+		BaseRecord actor = requireActorOfComposition(user, comp, actorObjectId);
+		BaseRecord scene = sceneOfComposition(user, comp);
+		boolean cleared = PbComposeUtil.deleteActorRow(user, comp, actor);
+		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, scene);
+		Map<String, Object> out = editResultDto(book, scene, comp, r);
+		out.put("actorObjectId", actor.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("deleted", Boolean.TRUE);
+		out.put("focalActorCleared", Boolean.valueOf(cleared));
+		return out;
+	}
+
+	public static Map<String, Object> addElement(BaseRecord user, String bookObjectId, String compositionObjectId, Map<String, Object> body) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit the composition");
+		BaseRecord comp = requireCompositionOfBook(user, book, compositionObjectId);
+		BaseRecord scene = sceneOfComposition(user, comp);
+		BaseRecord element = PbComposeUtil.createElementRow(user, comp, body);
+		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, scene);
+		Map<String, Object> out = editResultDto(book, scene, comp, r);
+		out.put("elementObjectId", element.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("element", elementDto(element));
+		out.put("created", Boolean.TRUE);
+		return out;
+	}
+
+	public static Map<String, Object> patchElement(BaseRecord user, String bookObjectId, String compositionObjectId, String elementObjectId, Map<String, Object> body) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit the composition");
+		BaseRecord comp = requireCompositionOfBook(user, book, compositionObjectId);
+		BaseRecord element = requireElementOfComposition(user, comp, elementObjectId);
+		BaseRecord scene = sceneOfComposition(user, comp);
+		PbComposeUtil.patchElementRow(user, element, body);
+		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, scene);
+		Map<String, Object> out = editResultDto(book, scene, comp, r);
+		out.put("elementObjectId", element.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("element", elementDto(element));
+		out.put("updated", Boolean.TRUE);
+		return out;
+	}
+
+	public static Map<String, Object> deleteElement(BaseRecord user, String bookObjectId, String compositionObjectId, String elementObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "edit the composition");
+		BaseRecord comp = requireCompositionOfBook(user, book, compositionObjectId);
+		BaseRecord element = requireElementOfComposition(user, comp, elementObjectId);
+		BaseRecord scene = sceneOfComposition(user, comp);
+		PbComposeUtil.deleteElementRow(user, element);
+		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, scene);
+		Map<String, Object> out = editResultDto(book, scene, comp, r);
+		out.put("elementObjectId", element.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("deleted", Boolean.TRUE);
+		return out;
+	}
+
+	/// The composition the board edits: CHAPBOOK_PAGE for a ChapBook page, SCENE otherwise; 404 when absent.
+	private static BaseRecord findCompositionOfScene(BaseRecord user, BaseRecord book, BaseRecord scene) {
+		boolean page = PbNodeExecutor.isChapBook(book);
+		PbCompositionPurposeEnumType purpose = (page ? PbCompositionPurposeEnumType.CHAPBOOK_PAGE : PbCompositionPurposeEnumType.SCENE);
+		Object gid = book.get(FieldNames.FIELD_GROUP_ID);
+		long groupId = (gid instanceof Number ? ((Number) gid).longValue() : 0L);
+		BaseRecord comp = (groupId > 0L ? PbComposeUtil.findSceneComposition(user, scene, groupId, orgOf(user), purpose) : null);
+		if(comp == null) {
+			String oid = scene.get(FieldNames.FIELD_OBJECT_ID);
+			throw new PictureBookException(404, page
+				? "Page " + oid + " has no composition; set its prompt first"
+				: "Scene " + oid + " has no composition; compose it first");
+		}
+		return comp;
+	}
+
+	/// The composition's scene re-read as the caller, or null for a composition without one (no node to stale).
+	private static BaseRecord sceneOfComposition(BaseRecord user, BaseRecord comp) {
+		String sceneOid = fkObjectId(comp, OlioFieldNames.FIELD_PB_SCENE, null);
+		return (sceneOid != null ? PbBookUtil.readScene(user, sceneOid, orgOf(user)) : null);
+	}
+
+	/** An actor row readable by {@code user} that belongs to {@code comp}; 404 otherwise. */
+	private static BaseRecord requireActorOfComposition(BaseRecord user, BaseRecord comp, String actorObjectId) {
+		if(actorObjectId == null || actorObjectId.isBlank()) {
+			throw new PictureBookException(400, "An actor objectId is required");
+		}
+		BaseRecord actor = PbComposeUtil.readActor(user, actorObjectId.trim(), orgOf(user));
+		if(actor == null || PbHealthUtil.fkId(actor, OlioFieldNames.FIELD_PB_COMPOSITION) != PbHealthUtil.idOf(comp)) {
+			throw new PictureBookException(404, "Actor " + actorObjectId + " not found in this composition");
+		}
+		return actor;
+	}
+
+	/** An element row readable by {@code user} that belongs to {@code comp}; 404 otherwise. */
+	private static BaseRecord requireElementOfComposition(BaseRecord user, BaseRecord comp, String elementObjectId) {
+		if(elementObjectId == null || elementObjectId.isBlank()) {
+			throw new PictureBookException(400, "An element objectId is required");
+		}
+		BaseRecord element = PbComposeUtil.readElement(user, elementObjectId.trim(), orgOf(user));
+		if(element == null || PbHealthUtil.fkId(element, OlioFieldNames.FIELD_PB_COMPOSITION) != PbHealthUtil.idOf(comp)) {
+			throw new PictureBookException(404, "Element " + elementObjectId + " not found in this composition");
+		}
+		return element;
+	}
+
+	private static Map<String, Object> editResultDto(BaseRecord book, BaseRecord scene, BaseRecord comp, PbComposeUtil.EditResult r) {
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneObjectId", (scene != null ? scene.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("compositionObjectId", comp.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("revision", Integer.valueOf(r.revision));
+		out.put("nodeStale", Boolean.valueOf(r.nodeStale));
+		out.put("nodeStatus", r.nodeStatus);
+		return out;
+	}
+
+	/// The compose-result composition DTO plus the editable text/config fields, with the SCENE's location pointers.
+	private static Map<String, Object> boardCompositionDto(BaseRecord c, BaseRecord scene) {
+		Map<String, Object> m = compositionDto(c);
+		m.put("props", c.get(OlioFieldNames.FIELD_PB_PROPS));
+		m.put("promptOverride", c.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+		m.put("configOverride", c.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+		m.put("locationObjectId", fkObjectId(scene, FieldNames.FIELD_LOCATION, null));
+		m.put("variantObjectId", fkObjectId(scene, OlioFieldNames.FIELD_PB_LOCATION_VARIANT, null));
+		m.remove("locationVariant");
+		return m;
 	}
 
 	/** A composition readable by {@code user} that belongs to {@code book}; 404 otherwise. */

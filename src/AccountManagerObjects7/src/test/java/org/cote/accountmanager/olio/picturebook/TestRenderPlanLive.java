@@ -167,7 +167,7 @@ public class TestRenderPlanLive extends BaseTest {
 		assertTrue("location text comes from the scene's setting: " + plan.getLocation().getDescription(),
 			plan.getLocation().getDescription().contains(SETTING));
 		assertTrue("...and action", plan.getLocation().getDescription().contains(ACTION));
-		assertTrue("olio.pb.scene.characters has no writer in Phase 2, so actors are empty (seam, §5)", plan.getActors().isEmpty());
+		assertTrue("no SCENE composition, so actors are empty", plan.getActors().isEmpty());
 		assertNotNull(plan.getStrategy());
 		assertEquals(PbStrategyEnumType.TEXT_ONLY, plan.getStrategy().getName());
 		assertTrue("Phase 2 strategy stages begin with BASE: " + plan.getStrategy().getStages(),
