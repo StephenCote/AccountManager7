@@ -10,6 +10,8 @@
  *   /picture-book/:bookObjectId/review   — V3 review queue (features/pictureBookReview.js; spread in below)
  *   /picture-book/:bookObjectId/style    — V3 book style editor (features/pictureBookStyle.js; spread in below)
  *   /picture-book/:bookObjectId/locations — V3 locations library (features/pictureBookLocations.js; spread in below)
+ *   /picture-book/:bookObjectId/compose  — V3 composition board, first scene (features/pictureBookCompose.js; spread in below)
+ *   /picture-book/:bookObjectId/compose/:sceneObjectId — V3 composition board for one scene
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -30,11 +32,13 @@ import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { routes as reviewRoutes } from './pictureBookReview.js';
 import { routes as styleRoutes } from './pictureBookStyle.js';
 import { routes as locationRoutes } from './pictureBookLocations.js';
+import { routes as composeRoutes } from './pictureBookCompose.js';
 import {
     listPb2Books, listSeriesBooks, bookPages,
     bookHealth, healBook, orgHealth, healOrg, summarizeHealth,
     listOrphans, purgeOrphans, countOrphans,
-    workflowView, renderScene, renderAll, getRun, resumeRun, cancelRun,
+    workflowView, nodeView, loadNodePlan, degradationSummary,
+    renderScene, renderAll, getRun, resumeRun, cancelRun,
     getAutoApprove, setAutoApprove, unpinNode, isPinnedRefusal,
     planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS,
     deriveStageList, runSummaryText
@@ -1139,8 +1143,30 @@ let pb2RunAbort = null;        // stops WATCHING only - the server job keeps goi
 let pb2ResumeRun = null;       // normalized run DTO when the book's last run is INTERRUPTED and resumable
 let pb2Submitting = false;
 let pb2PollIntervalMs = undefined; // pollJob default (3s); Vitest shortens it through the test seam
+// P4-9: degradation summary of each scene's last renderPlan artifact, keyed by sceneNodeObjectId:
+// {loading, summary: degradationSummary() | null, error}. Emptied by pb2RefreshPages (a render or
+// compose may have produced a new plan); a scene whose node has no renderPlan yet caches a null summary.
+let pb2SceneDegradations = {};
 
 function pb2TotalPages() { return pb2Pages.length + 1; } // cover + scenes
+
+/** Read (once per refresh) the degradation summary of the open scene's last compiled plan; nothing to read without a node. */
+async function pb2EnsureSceneDegradations(scene) {
+    let bookId = pb2BookObjectId;
+    let nodeOid = scene && scene.sceneNodeObjectId;
+    if (!bookId || !nodeOid || pb2RenderPath !== 'v3' || pb2SceneDegradations[nodeOid]) return;
+    let entry = { loading: true, summary: null, error: null };
+    pb2SceneDegradations[nodeOid] = entry;
+    try {
+        let nv = await nodeView(bookId, nodeOid);
+        let loaded = await loadNodePlan(bookId, nv && nv.artifacts);
+        entry.summary = loaded && loaded.plan ? degradationSummary(loaded.plan) : null;
+    } catch (e) {
+        entry.error = (e && e.message) || String(e);
+    }
+    entry.loading = false;
+    m.redraw();
+}
 
 // ── V3 pure helpers (exported for Vitest) ───────────────────────────────
 
@@ -1204,6 +1230,7 @@ async function pb2RefreshPages(bookId) {
     am7client.clearCache('olio.pb.scene', true);
     am7client.clearCache('olio.pb.artifact', true);
     am7client.clearCache('olio.pb.node', true);
+    pb2SceneDegradations = {};
     if (!bookId || bookId !== pb2BookObjectId) return;
     try {
         let loaded = await Promise.all([
@@ -1214,6 +1241,7 @@ async function pb2RefreshPages(bookId) {
         pb2Pages = Array.isArray(loaded[0]) ? loaded[0] : [];
         pb2Health = loaded[1] || null;
         pb2CurrentPage = Math.max(0, Math.min(pb2CurrentPage, pb2TotalPages() - 1));
+        pb2EnsureSceneDegradations(pb2CurrentScene());
     } catch (e) {
         page.toast('error', 'Failed to reload pages: ' + ((e && e.message) || ''));
     }
@@ -1633,7 +1661,7 @@ export function renderPb2RunProgress() {
 }
 
 export function __pb2V3StateForTest() {
-    return { pb2RenderPath, pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId };
+    return { pb2RenderPath, pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations };
 }
 export function __setPb2V3StateForTest(patch) {
     patch = patch || {};
@@ -1648,6 +1676,7 @@ export function __setPb2V3StateForTest(patch) {
     if ('pb2BookObjectId' in patch) pb2BookObjectId = patch.pb2BookObjectId;
     if ('pb2BookName' in patch) pb2BookName = patch.pb2BookName;
     if ('pb2PollIntervalMs' in patch) pb2PollIntervalMs = patch.pb2PollIntervalMs;
+    if ('pb2SceneDegradations' in patch) pb2SceneDegradations = patch.pb2SceneDegradations && typeof patch.pb2SceneDegradations === 'object' ? patch.pb2SceneDegradations : {};
 }
 export { pb2SubmitRenderScene as __pb2SubmitRenderSceneForTest, pb2SubmitRenderAll as __pb2SubmitRenderAllForTest,
     pb2ResumeInterrupted as __pb2ResumeInterruptedForTest, pb2ReattachRun as __pb2ReattachRunForTest,
@@ -1701,6 +1730,7 @@ function pb2CurrentScene() { return pb2CurrentPage > 0 ? pb2Pages[pb2CurrentPage
 function pb2GoToPage(n) {
     let max = pb2TotalPages() - 1;
     pb2CurrentPage = Math.max(0, Math.min(n, max));
+    pb2EnsureSceneDegradations(pb2CurrentScene());
     m.redraw();
 }
 
@@ -1909,6 +1939,47 @@ export function renderPb2LocationChip(scene) {
     }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'location_on'), text]);
 }
 
+/** Pure: the cached degradation entry of a page's node, or null when there is nothing cached. */
+export function pb2SceneDegradationEntry(scene, cache) {
+    let nodeOid = scene && scene.sceneNodeObjectId;
+    if (!nodeOid || !cache) return null;
+    return cache[nodeOid] || null;
+}
+
+/**
+ * Degradation chip of the open scene page (P4-9): the count and codes of the scene's last compiled
+ * plan, read from the renderPlan artifact (never recompiled here). Null until the plan is read, when
+ * the node has no plan yet, or when the plan degraded nothing.
+ */
+export function renderPb2DegradationChip(scene) {
+    let entry = pb2SceneDegradationEntry(scene, pb2SceneDegradations);
+    if (entry && entry.error) {
+        return m('span', {
+            'data-testid': 'pb2-scene-degradations-error',
+            class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-amber-300 text-amber-800 bg-amber-50 dark:border-amber-700 dark:text-amber-200 dark:bg-amber-900/30',
+            title: entry.error
+        }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'warning'), 'plan not read']);
+    }
+    let s = entry && entry.summary;
+    if (!s || !s.count) return null;
+    return m('span', {
+        'data-testid': 'pb2-scene-degradations',
+        'data-count': s.count,
+        'data-codes': s.codes.join(','),
+        class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-amber-300 text-amber-800 bg-amber-50 dark:border-amber-700 dark:text-amber-200 dark:bg-amber-900/30',
+        title: 'The last compiled plan degraded ' + s.count + ' thing' + (s.count === 1 ? '' : 's') + ': ' + s.codes.join(', ')
+    }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'warning'), s.count + ' degraded']);
+}
+
+/** The verbatim PROMPT_TRUNCATED "dropped: …" lines of the open scene's last plan; null when none. */
+export function renderPb2TruncatedLines(scene) {
+    let entry = pb2SceneDegradationEntry(scene, pb2SceneDegradations);
+    let s = entry && entry.summary;
+    if (!s || !s.truncatedDropped.length) return null;
+    return m('div', { 'data-testid': 'pb2-scene-truncated', class: 'max-w-2xl w-full px-4 mb-3 text-xs text-amber-700 dark:text-amber-300 text-center' },
+        s.truncatedDropped.map(function (line, i) { return m('div', { key: i }, line); }));
+}
+
 export function renderPb2ScenePage() {
     let scene = pb2CurrentScene();
     if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
@@ -1944,6 +2015,13 @@ export function renderPb2ScenePage() {
             }, scene.title || 'Scene ' + (pb2CurrentPage)),
             renderPb2SceneChip(scene),
             renderPb2LocationChip(scene),
+            v3 ? renderPb2DegradationChip(scene) : null,
+            v3 ? m('button', {
+                'data-testid': 'pb2-scene-compose',
+                class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700',
+                title: 'Open the composition board for this scene (camera, actors, elements, wardrobe)',
+                onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/compose/' + scene.objectId); }
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'view_in_ar'), 'Compose']) : null,
             v3 ? m('button', {
                 'data-testid': 'pb2-scene-render',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
@@ -1959,6 +2037,8 @@ export function renderPb2ScenePage() {
                 onclick: function () { pb2OpenPlanDialog(scene); }
             }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'route'), 'Plan & generate']) : null
         ]),
+
+        v3 ? renderPb2TruncatedLines(scene) : null,
 
         m('div', { class: 'max-w-2xl w-full px-4' },
             m('p', {
@@ -2041,6 +2121,12 @@ export function renderPb2Header() {
             title: 'Locations library (settings, variants, renders)',
             onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/locations'); }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'location_on')) : null,
+        v3 ? m('button', {
+            'data-testid': 'pb2-compose-link',
+            class: 'text-gray-500 hover:text-purple-600',
+            title: 'Composition board (camera, actors, elements, wardrobe)',
+            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/compose'); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'view_in_ar')) : null,
 
         // Edit (wizard) and Characters — same pair the book list rows offer.
         pb2BookObjectId ? renderPb2EditButton(
@@ -2248,6 +2334,7 @@ export const routes = {
     ...reviewRoutes,
     ...styleRoutes,
     ...locationRoutes,
+    ...composeRoutes,
     '/picture-book': {
         oninit: function () { workSelectorView.oninit(); },
         view: function () { return layout(pageLayout(workSelectorView.view())); }

@@ -3909,6 +3909,71 @@ C:              944G  531G  413G  57% /c
 `8c`/`8d` verbatim differ in `[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True`, `[5] Swarm .39: http=200`, `[6] in-container
 llm42=200 swarm39=302 litellm=200`, the `[2]` uptimes (`Up 5 hours` / `Up 6 hours`) and `C:` (`534G` used, `410G`–`411G` free).
 
+### Probes 2026-10-22 14:03:37 → 18:51:44 local (`C:/tmp/probe-p4-9a.log` … `probe-p4-9h.log`) — P4-9 — stack, `.39` Swarm and `.42` Ollama GREEN throughout
+
+Eight probes, none beside a run. **`9a` 14:03:37** stood for the read-first pass over Ux752 (`features/pictureBook.js`, `chapBook.js`,
+`workflows/pictureBookCharacters.js`, `pictureBookWorkflow.js`, `components/PbPlanInspector.js`, `picker.js`, `dialogCore.js`) and legacy
+Ux7, and for the plan; **`9b` 14:21:42** for the Vitest baseline (`p49-vitest-baseline` 14:22:06 → 14:22:23, **94 files / 1298 tests**)
+and the implementation (by file mtime: `pictureBookWorkflow.js` 14:43, `pictureBook.js` 15:24, `chapBook.js` 15:34, `pictureBookCharacters.js`
+16:04, `pictureBookCompose.js` last 17:31; builds `p49-build1` 15:24, `build2` 15:31:42 → 15:31:56; `p49-vitest-cb` 15:36:00 → 15:36:06
+17/17; `p49-vitest-wd-helpers` 16:04:27 → 16:04:32 **exit 1** (2 of 44 red — the keyed `WardrobeThumb` vnode, a product defect of mine,
+and a render-reference test race) → `wd-helpers2` 16:05:02 → 16:05:08 44/44; `p49-vitest-cmp` 16:20:20 → 16:20:25 **exit 1** (7 of 53
+red, all test-side: the three canvas cases, Save, Unpin, unnamed actor, Start) → `cmp2` 16:21:50 → 16:21:55 53/53; `p49-vitest-all`
+16:22:02 → 16:22:14 **exit 1** (2 of 1404 red — my call-budget regressions in `pictureBookCharactersAffected` and
+`pictureBookPlanInspector`, fixed by tightening those two tests to the new counts) → `all2` 16:23:45 → 16:23:57 1404/1404; `build3`
+16:24:06 → 16:24:14 and the dist copy); **`9c` 16:30:45** after that dist refresh (`container dist index.html identical to local build`);
+**`9d` 16:50:37** for the default-tier Playwright runs (`p49-pw-default` 16:50:54 → 16:51:13, `default2` 16:55:38 → 16:56:13, `default3`
+16:56:53 → 16:57:18 — three spec defects of mine (a `sceneIndex` the board GET never carried, a user-edited count, a PATCH path), each
+`exit=1`; `default4` 16:58:50 → 16:59:25 **9 passed / 3 skipped, exit=0**); **`9e` 16:59:41** for the LLM tier (`p49-pw-llm` 16:59:58 →
+17:15:36 **exit 1** after 15.6 min — the board sent no `chatConfigName`, the server resolved the keyless library config and the compose
+ended `source=MIGRATED actors=0 elements=0` → the header's Chat Config control; `llm2` 17:34:44 → 17:35:35 **exit 1** — the picker row
+`e2e-chapbook-llm` is not on the picker's first page → `000-p49-board-llm`); **`9f` 17:34:23** for the final build (`p49-build4` 17:32,
+`p49-vitest-cmp3` **60/60** + `p49-vitest-all3` **97 files / 1411 tests**, dist copied 17:32:37), `llm3` 17:41:39 → 17:42:37 (**11 passed /
+1 skipped, exit=0**) and the full tier (`p49-pw-sd` 17:44:41 → 17:45:54 **exit 1** — Playwright strict mode on text duplicated in the
+counter and the toast; `sd2` 17:49:35 → 17:50:41 **exit 1** — `GET /pages` carries no DRAFT; `sd3` 17:52:35 → 17:53:45 **12 passed /
+0 failed / 0 skipped, exit=0**). No Maven in P4-9 (no backend change); one Playwright at a time; every Playwright run as
+`e2etest_shared` on `https://127.0.0.1:9443`. `9a` verbatim:
+
+```
+--- 2026-10-22 14:03:37 ---
+[1] postgres3 :15432 tcp open
+[2] am7test setup state http=200   am7test-am7-1 Up 18 hours;am7-pg Up 28 hours (healthy)
+[3] Vite 8899 http=0  Vite 8898 http=0  8898-proxy setup/state=0
+[4] LLM .42: 14 models; qwen3:8b True ; dryad3-vision True
+[4b] Ollama container :11435: ['goekdenizguelmez/JOSIEFIED-Qwen3:8b', 'nomic-embed-text:latest', 'qwen3:8b']
+[4c] Ollama container /api/ps loaded (name,size,size_vram): none loaded (GPU use measured on first call)
+[5] Swarm .39: http=200
+[6] in-container llm42=200 swarm39=302 litellm=200
+    container dist index.html identical to local build
+C:              944G  544G  400G  58% /c
+```
+
+`9b` … `9f` differ only in the header time (14:21:42, 16:30:45, 16:50:37, 16:59:41, 17:34:23), the `[2]` uptimes (`Up 18 hours;Up 29
+hours` → `Up 21 hours;Up 32 hours` — no restart in P4-9) and `C:` (`545G` used from `9b`; `399G` free at `9f`). `[4c]` read `none loaded`
+in all six: every probe ran between runs, after the container had evicted `qwen3:8b`.
+
+**`9g` 18:22:21** (`C:/tmp/probe-p4-9g.log`) stood for the review fixes and the re-runs: after the test-author's two confirmed defects and
+the security-reviewer's three acted-on Low items (§12.9) — `p49-vitest-fix1` 103/103, `fix2` 121/121, `p49-vitest-all4` **98 files / 1436
+tests**, `p49-build4` (6.45 s), dist copied 18:19:34 (`container dist index.html identical to local build` in `9g`) — then `p49-pw-default5`
+18:25:16 → 18:25:47 **10 passed / 0 failed / 3 skipped, exit=0**; `p49-pw-llm4` 18:26:15 → 18:27:05 **12 / 0 / 1 skipped, exit=0**
+(`[e2e-llm] route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr` — the in-stack Ollama container through
+LiteLLM, not Azure, not `.42`); `p49-pw-sd4-noflag` 18:27:17 → 18:27:46 (**10 / 0 / 3 skipped** — I set `PB_SD_TESTS=1` alone and the SD
+describe needs both flags, spec :877–:878; a mis-invocation of mine, kept under that name); `p49-pw-sd4` 18:28:10 → 18:29:24
+**13 passed / 0 failed / 0 skipped, exit=0** (same LLM line; SD = Swarm `http://192.168.1.39:7801`, container log 23:28:57Z/23:29:11Z
+`txt2img sdConfig: model=juggernautXL_ragnarokBy.safetensors steps=12 cfgScale=7.0 sampler=dpmpp_2m scheduler=karras width=512 height=512`,
+two `Stage BASE rendered 1 image(s)` in 9532 ms and 2962 ms; job result `composed 2, drafts rendered 2`, `quickStartFailed:0`). `9g`
+differs from `9a` in the header time, `[2]` `Up 22 hours;Up 33 hours` (still no restart) and `C:` `546G` used / `398G` free; `[4c]`
+`none loaded` again.
+
+**`9h` 18:51:44** (`C:/tmp/probe-p4-9h.log`) stood for the verifier-finding fixes (§6.C 197 ss/tt/vv) and the third re-run set:
+`p49-vitest-fix3` 128/131 (three expectations of mine still on the old 0..1 depth / blank-enum behaviour), `fix4` 131/131, `fix5` 107/107
+(after the `enumSelect` `unknown → (unset)` mapping), `p49-vitest-all5` **98 files / 1439 tests, exit=0** (`C:/tmp/p49-vitest-all5.log`),
+`p49-build5` (5.89 s), dist copied 18:51:44 (`container dist index.html identical to local build` in `9h`) — then `p49-pw-default6`
+18:52:00 → 18:52:37 **11 passed / 0 failed / 3 skipped, exit=0** (`C:/tmp/p49-pw-default6.log`); `p49-pw-llm5` 18:53:26 → 18:54:21 **13 passed / 0 failed / 1 skipped, exit=0** (`C:/tmp/p49-pw-llm5.log`;
+`[e2e-llm] route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr` — the in-stack Ollama container through
+LiteLLM, not Azure, not `.42`); `p49-pw-sd5` 18:54:50 → 18:56:10 **14 passed / 0 failed / 0 skipped, exit=0** (`C:/tmp/p49-pw-sd5.log`; same LLM line; SD = Swarm
+`http://192.168.1.39:7801`, container log 23:55:41Z/23:55:58Z `txt2img sdConfig: model=juggernautXL_ragnarokBy.safetensors steps=12 cfgScale=7.0 sampler=dpmpp_2m scheduler=karras width=512 height=512`, two `Stage BASE rendered 1 image(s)` in 6716 ms and 3198 ms; job result `composed 2, drafts rendered 2`, `quickStartFailed:0`, `locationPassRan:true` with 2 proposals; the new `(unset)` round trip and the `depth 2.6 → 3 / z-index 997` actor assert ran in all three tiers). `9h` differs from `9g` only in the header time and `C:` `547G` used.
+
 ## 4. Verification per phase
 
 | Phase | `verify.sh` | verifier | architect | security-reviewer |
@@ -5696,7 +5761,7 @@ P3-5 (2026-10-17):
   persisted `location` FK the reader cannot read is itself unreadable to the reader. No product path creates that state (approve pins an
   artifact of the approver's own book); `TestPbScenePlanLocation.case05` sets the FK in memory to reach "(not readable)" (⚠ 177, 178 m).
 
-### 5.7 Phase 4 recorded facts (2026-10-18 → 2026-10-21) — P4-1 … P4-8
+### 5.7 Phase 4 recorded facts (2026-10-18 → 2026-10-22) — P4-1 … P4-9
 
 Facts, not design changes; design §8 is implemented field-for-field (verifier: "models match §8 field-for-field, only extra is `name`"),
 §32 as written. No dated design edit in P4-1. P4-2 and P4-3 likewise record facts; the one P4-3 item that may need a dated
@@ -6052,6 +6117,64 @@ rows and §24's page mapping are implemented as written, with the as-built notes
   server log (cost one false start on the composition-32 cleanup).
 - **Every `olio.pb.book` on the Docker stack is owned by the olio principal** (`olioUser`), not the request user — never filter books
   by `ownerId`; scenes and compositions are owned by the creating user.
+
+**P4-9 (2026-10-22) — Ux752 board + wardrobe.** Facts, not design changes; §26's board, wardrobe panel and reader chips are built as
+written, with the as-built notes in design §26 and the judgments in §6.C 197. No backend change in this task.
+- **The REST helpers live in `workflows/pictureBookWorkflow.js`** (`getSceneComposition` :1428 … `setDefaultApparel` :1634), beside the
+  Phase 2/3 PB helpers, not in `core/am7client.js`; `components/PbPlanInspector.js`, `core/am7client.js` and `components/dialogCore.js`
+  are untouched (mtimes 2026-10-17 / 2026-10-11 / 2026-09-26). The board is `features/pictureBookCompose.js` (new, LF, 1295 lines) on
+  the sub-route `#!/picture-book/{book}/compose[/{scene}]` — two route entries (`:1282`, `:1287`) because Mithril has no optional
+  route-parameter syntax — spread into `features/pictureBook.js`'s route table (`:2330`) and reached from the reader by `pb2-compose-link`.
+- **Every board write is a delta PATCH of the changed keys only** against the P4-8 row routes (`saveCompositionKeys` :417, `saveActor`
+  :447, `saveElement` :472); an unchanged Save makes no request. The board re-reads the composition after each write and reseeds its row
+  drafts from the server rows (197 z). The Playwright default tier records the wire (`recordWrites`) and asserts the PATCH bodies
+  carry only the edited keys and that the server's refusals surface verbatim (400 `settingText` non-string, 400 `shotType` listing the
+  values).
+- **The board must send a `chatConfigName` on every compose path.** With none, the server resolves the shared library `contentAnalysis`
+  → `generalChat` connection, which on this stack has no LiteLLM key (§6.G 4), and the compose job completes with `source=MIGRATED`,
+  0 actors — no error reaches the page (run `p49-pw-llm`, 15.6 min). The header carries one Chat Config control (`renderChatConfigControl`
+  :554; `ObjectPicker.openLibrary({libraryType:'chatConfig'})`; default resolved library-only through `LLMConnector.resolveConfig`, never
+  created) and `withChatConfig` :75 adds the pick's NAME to `composeScene`, `composeBook` and re-compose — the same shape design L1364–1368
+  ratified for P4-8 (ee). The same gap stands in `features/pictureBookLocations.js` :375 (`proposeLocations` sends no config) — out of
+  scope, noted, not fixed.
+- **The ObjectPicker lists `~/Chat` name-ascending, 25 per page, with no search**, and the shared test user's `~/Chat` holds seven pages
+  of earlier specs' configs, so `e2e-chapbook-llm` is not on page 1 (`p49-pw-llm2` red). The spec provisions `000-p49-board-llm` through
+  `ensureChatConfig(request, null, {configName})` — the `000-` device `pictureBookChapteredManuscriptUx.spec.js` already uses
+  (`000-pbux-llm`). `ensureChatConfig` returns the config NAME; the spec asserts the compose POST body carries exactly that name.
+- **`GET /pages` never carries a Quick-start DRAFT.** Its `imageObjectId` is the scene's approved image; a DRAFT is a render-node artifact.
+  The route to the bytes is the compose POST's `202 {jobId}` → `GET /rest/job/{jobId}` → `result.scenes[].draftRender.artifactObjectId`
+  → `GET /olio/picture-book/{book}/artifact/{oid}` → `{dataObjectId, artifactType:'IMAGE'}` → media bytes (the
+  `pictureBookCompose.spec.js` device). The board's run panel shows no job id, so the spec captures the POST response with
+  `page.waitForResponse` (`p49-pw-sd2` red on the `/pages` assumption; `sd3` green).
+- **Playwright strict mode:** the compose counter (`pb-cmp-compose-counter`) and the completion toast carry the same "Done: composed …"
+  text, so `getByText` throws a strict-mode violation (`p49-pw-sd` red); assert on the testid.
+- **Measured (full tier, `p49-pw-sd3`, 17:52:35 → 17:53:45, 12 passed):** compose of 2 scenes + 2 DRAFT renders terminal on the page in
+  23214 ms; LLM = the in-stack Ollama container through LiteLLM (`[e2e-llm] route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr
+  pb=qwen3:8b-jos-ctr`, chat config `000-p49-board-llm`), re-compose revisions 1 → 12 observed on `source=LLM`; SD = Swarm
+  `http://192.168.1.39:7801` (`PbRenderLanes - Render lane created for http://192.168.1.39:7801 with 1 permit(s)`), DRAFT
+  `juggernautXL_ragnarokBy.safetensors steps=12 cfgScale=7.0 sampler=dpmpp_2m scheduler=karras 512x512`, `Stage BASE rendered 1 image(s)
+  in` 5304 ms / 2803 ms (run `sd3`; 12335 / 3331 ms in run `sd`). Both drafts inspected (`test-results/p49-board-quickstart-scene1.png`
+  407462 B — a woman in a headscarf on wet quay steps at sunrise, gulls, a red bucket, for "Dawn on the Quay"; `-scene2.png` 416035 B — a
+  bald monk writing at a desk in a stone room, for "The Copyist").
+- **Server-log reading:** `docker logs --since/--until` take local time while the app's log lines are UTC (local + 5 h); grepping the
+  log for `ERROR` is useless (AccessPoint JSON dumps, 755 KB for one hour) — grep for the class (`PbRenderLanes`, `SwarmRendererAdapter`,
+  `txt2img sdConfig`). Background-task completion notices misreported `exit=0` for runs `sd` and `sd2` whose logs end `exit=1` — the
+  log's `exit=` line is the record.
+- **Vitest:** the suite is `environment: 'node'`; the board test is `// @vitest-environment jsdom` per file (canvas/pointer events), and
+  the RAF shim in `src/test/setup.js` stays. `am7model.getModel('olio.pb.composition')` is null on the client (no modelDef), so the
+  board's enum lists fall back to the design's value lists (197 g). Two existing call-budget tests (`pictureBookCharactersAffected`,
+  `pictureBookPlanInspector`) went red on my new reads and were tightened to the new counts, not loosened (197 y).
+- **Found, not fixed (197 jj, backend):** the element handle `element.<compositionOid>.<n>` (`PbComposeUtil.ELEMENT_NAME_PREFIX` :81,
+  `nextHandleIndex` :1976) is carried as the element's `name` into `PbRenderPlanUtil.elementsOf` :694–:705 and joined into the SDXL
+  prompt by `SdxlCompiler` :90–:93 (`joinMeaningful(name, description)`); `Flux2Compiler` :162–:165 prefers the description. Default: fix
+  in P4-10 with the planner wiring, `TestRenderPlan` asserting no `element.` token in a compiled prompt.
+- **Reviews (17:55 → 18:56):** test-author found two product defects of mine (a refused PATCH reverted the draft; an untouched config-panel
+  Save wrote `configOverride:""`), both fixed and covered (`pictureBookComposeEdges.test.js`, spec :623/:672); security-reviewer PASS with
+  four Low items (three acted on: outfits-read error chip, reader "plan not read" chip, chapBook regen gated on the outcome; path encoding
+  left as built); verifier PASS WITH FINDINGS — two more product defects of mine (`depth` edited as a 0..1 fraction over the model's int
+  Z-order; `(unset)` never saved), both fixed and proved live, `waitForPlan` tightened (197 ss/tt/vv). Re-runs after the fixes: Vitest
+  98 files / 1436 then 1439, `default5` 10/0/3 → `default6` 11/0/3, `llm4` 12/0/1 → `llm5` 13/0/1, `sd4` 13/0/0 → `sd5` 14/0/0
+  (197 kk–ww).
 
 ## 6. Blocked / waiting on Stephen
 
@@ -11442,6 +11565,190 @@ blocking item), 12, 13 and 15 are ⚠ MY JUDGMENT.
      same). The live proof and the specs pass `{chatConfig: "e2e-chapbook-llm"}` from `ensureChatConfig()`. Default: no code change —
      recorded so P4-9's editor keeps sending the user's chosen `chatConfig` name as `chapBook.js` :451 does today. Alternative: have
      `resolveDefaultChatConfig` prefer a user-owned config over the library one.
+
+197. ⚠ **2026-10-22 (P4-9 board + wardrobe) — judgments taken while building the Ux752 composition board, the wardrobe panel,
+     the ChapBook page-editor consumers and the board's chat-config control; one backend finding (jj) left for P4-10.** Defaults
+     applied as built; each one is a plain question at phase end. Nothing here changes a ratified design decision.
+     (a) ⚠ **Where the REST helpers live.** The §1 row lists `core/am7client.js`; the P3 wardrobe/compose helpers already live in
+     `workflows/pictureBookWorkflow.js` (`composeBook` :994, `composeScene` :1029, `proposeLocations` :938, `getWardrobe` :1604,
+     `addWardrobeEntry` :1614, `setDefaultApparel` :1634), so the P4-8 row helpers went beside them (`getSceneComposition` :1428,
+     `patchComposition` :1440, `addActor`/`patchActor`/`deleteActor` :1450–:1462, `addElement`/`patchElement`/`deleteElement`
+     :1468–:1480, `promoteElement` :1489, `pinActorApparel` :1511, `getCompositionOutfits` :1543, the `normalize*Row` readers
+     :1318–:1368) and `core/am7client.js` is untouched (mtime 2026-10-11). `components/PbPlanInspector.js` (2026-10-17) and
+     `components/dialogCore.js` are also untouched: the board renders the compiled prompt itself (`renderPlanSide` :1137,
+     `planHeadlinePrompt` :224) from the same `/plan` body the inspector shows, and the dialogs use `dialogCore` as is. Default:
+     accept; the row's file list is corrected in §1. Alternative: move the row helpers into `am7client.js`.
+     (b) ⚠ **Board placement.** A sub-route of the picture-book feature — `#!/picture-book/{book}/compose[/{scene}]`
+     (`pictureBookCompose.js` `routes`, `pictureBook.js` :2330), reached from the reader's scene page (`pb2-compose-link`,
+     `pictureBook.js` :2117, icon `view_in_ar`) and from the board's own header (`pb-cmp-back`, prev/select/next scene) — not a tab
+     inside the reader. Default: accept. Alternative: a reader tab.
+     (c) ⚠ **Reference image is render-only.** The wardrobe panel's "Render reference" (`pb-wd-render-ref`, `doRenderReference`
+     `pictureBookCharacters.js` :401) submits the P3 reference-render job and shows its progress (`pb-wd-render-progress`); there is
+     no upload of a user's own file (design §26 says "reference image upload"). Default: accept for P4-9 — the server has no
+     upload-a-reference route; add one with the route in Phase 5. Alternative: a `data.data` upload wired to the apparel record now.
+     (d) ⚠ **Canvas interaction.** Numeric `x/y/w/h` fields plus drag-to-move of a box (`dragMove` :129, `canvasBox` :1095) on a
+     neutral 0–1 canvas; no resize handles, no snapping. Default: accept. Alternative: resize handles.
+     (e) ⚠ **Playwright fixture.** The default tier seeds a SCENE composition by generic `POST /rest/model` (`olio.pb.composition`,
+     `source:'user'`) and adds one text actor + one element through the P4-8 row routes, so the board has rows without an LLM; the
+     LLM tier composes for real. Default: accept. Alternative: seed through `POST …/compose` only (LLM-gated for every row).
+     (f) ⚠ **Reader degradation source.** The scene card's degradation chip (`pb2-scene-degradations`) and the `PROMPT_TRUNCATED`
+     "dropped: …" lines (`pb2-scene-truncated`) read the LAST renderPlan artifact through `loadNodePlan` (`pictureBook.js`
+     `pb2EnsureSceneDegradations` :1154), not a fresh `/plan` — the board compiles fresh (q). Default: accept. Alternative: `/plan`
+     per card (one LLM-free but SD-inventory-touching call per scene on open).
+     (g) ⚠ **Enum lists.** `shotType`/`viewpoint`/`role`/`facing`/`elementType`/`importance`/`referencePolicy` options come from
+     `am7model.getModel('olio.pb.composition' …)` when present and from a literal fallback list otherwise (`options` :251;
+     `getModel` returns null silently); `UNKNOWN` is hidden from the lists. Default: accept. Alternative: fail loudly when the model
+     is missing.
+     (h) ⚠ **Wardrobe panel only for V3 books.** `renderDetail` (`pictureBookCharacters.js` :1039) shows the wardrobe panel when the
+     book is V3 (`bookType` story/chapbook with a workflow); legacy books keep the P1 character manager unchanged. Default: accept.
+     (i) ⚠ **One delta PATCH per row Save.** `saveActor`/`saveElement`/`saveCompositionKeys` diff the draft against the server row
+     and PATCH only changed keys; an unchanged Save makes no request (spec test 4). Default: accept. Alternative: full-row PATCH.
+     (j) ⚠ **ChapBook partial-write presentation.** `promptWriteOutcome` (`chapBook.js` :480): `updated:false` → error toast, the
+     prompt stays dirty; `updated:true` + `compositionUpdated:false` (or `error`) → warn toast with the server's reason verbatim and
+     the prompt shown as saved; absent flags read as success. Default: accept. Alternative: treat `compositionUpdated:false` as a
+     failure too (prompt stays dirty).
+     (k) ⚠ **Neutral canvas.** No draft image behind the boxes (the DRAFT is a node artifact; see (q)). Default: accept.
+     (l) ⚠ **No suggested vocabulary** for pose/expression/action (free text). Default: accept.
+     (m) ⚠ **No Scenes card list on the board** (design §26 L1586–1587 puts the card list on the reader, which has it). Default: accept.
+     (n) ⚠ **COVER / empty composition unreachable** from a scene-keyed route — the board is per scene; a COVER composition has no
+     scene id. Default: accept; a COVER board is Phase 5 with the cover work. Alternative: a `/compose/cover` route now.
+     (o) ⚠ **Reference-render review/approve not built** — the panel surfaces the P3 note (`pb-wd-note`) and the rendered thumb;
+     approving a reference is not a V3 route. Default: accept.
+     (p) ⚠ **Compose-job progress on the page** (`pb-cmp-compose-run`, `renderComposeRun` :885) after the dialog closes, with a
+     per-scene status list and `Open` links; "Dismiss" stops following, the job keeps running. Default: accept.
+     (q) ⚠ **Two degradation sources.** The board's chips come from a freshly compiled `/plan` (`loadPlan` :275, after every write);
+     the reader card from the last renderPlan artifact (f). Default: accept.
+     (r) ⚠ **Empty-state "Compose this scene"** is the synchronous single-scene `POST …/scene/{id}/compose` (`composeFirst` :588),
+     not the book job. Default: accept.
+     (s) ⚠ **Header icon** `view_in_ar` for the board link. Default: accept.
+     (t) ⚠ **"Add alternate" sends no `chatConfigName`** — the wardrobe `addWardrobeEntry` call (`doAddWardrobeEntry` :381) lets
+     the server resolve its default; the board's chat-config control (ee) does not reach the character manager. Default: accept for
+     P4-9; the same control on the wardrobe panel is a Phase 5 line. Alternative: pass the board's pick through `openCharacterManager`.
+     (u) ⚠ **After a reference render completes** the panel clears the `olio.apparel`/`data.data` client caches and re-reads the
+     wardrobe (`doRenderReference` :401). Default: accept.
+     (v) ⚠ **Save-all partial-prompt warnings** toast once per page, prefixed with the page title (`chapBook.js` :3464–:3503).
+     Default: accept. Alternative: one summary toast.
+     (w) ⚠ **Headline prompt** = the first compiled stage with a non-blank prompt (`planHeadlinePrompt` :224) — fixes the first
+     cut's JSON dump of the whole plan in the side panel. Default: accept.
+     (x) ⚠ **`WardrobeThumb` re-resolves on `objectId` change via `onupdate`** (`pictureBookCharacters.js` :443) — the keyed vnode
+     kept the first thumb when the entry under it changed. Default: accept.
+     (y) ⚠ **Two existing call-budget tests updated** (`pictureBookCharactersAffected.test.js`, `pictureBookPlanInspector.test.js`):
+     the wardrobe panel adds one `getWardrobe` read on select and the board's inspector reuse adds none; the budgets were tightened
+     to the new exact counts, not loosened. Default: accept.
+     (z) ⚠ **Row drafts are copies of the server rows** (`compositionDraft`/`actorDraft`/`elementDraft` :392–:403), reseeded on every
+     refetch; an in-progress edit is lost on a refetch triggered by another row's Save. Default: accept. Alternative: keep dirty
+     drafts across refetch.
+     (aa) ⚠ **Spec fixture seeds via generic `POST /rest/model`** (`olio.pb.composition` with `source:'user'`) + the P4-8 actor/element
+     POSTs — see (e). Default: accept.
+     (bb) ⚠ **Spec asserts `render stale` conditionally** on the PATCH response's `nodeStale` (no render node yet → no chip).
+     Default: accept.
+     (cc) ⚠ **Spec registers the `/plan` waiter before each action** and treats "no headline prompt" as a compiled plan (a plan with
+     every stage prompt blank is still a plan). Default: accept.
+     (dd) ⚠ **Spec does not assert a `sceneIndex` on the board GET** — the P4-8 DTO has none (`bookObjectId, sceneObjectId,
+     compositionObjectId, composition[, actors, elements, nodeStatus, nodeStale]`). Default: accept.
+     (ee) ⚠ **The board carries one "Chat Config" control** (header, `pb-cmp-chatconfig`, `renderChatConfigControl` :554; the
+     `ObjectPicker.openLibrary({libraryType:'chatConfig'})` picker as `chapBook.js` :1329 uses; default `contentAnalysis` →
+     `generalChat` resolved library-only through `LLMConnector.resolveConfig`, `ensureChatConfigDefault` :523; a user pick wins and is
+     reset per book) and EVERY compose path sends its NAME as `chatConfigName` (`withChatConfig` :75 on `composeScene`,
+     `composeBook`, the empty-state compose, the dialog shows the pick read-only in `pb-cmp-compose-chatconfig`) — per design
+     L1364–1368 / 196 (b): without it the server falls to the org's `generalChat`, keyless on this stack → LiteLLM 401 → `Null LLM
+     response` → "LLM unavailable; existing composition left untouched" (LLM run 1). The same gap remains in
+     `features/pictureBookLocations.js` :375 `proposeLocations(bookObjectId)` (P3-7; out of scope — noted, not fixed). Default:
+     accept; fix `pictureBookLocations.js` in P4-11's sweep or Phase 5. Alternative: a per-book persisted chatConfig on the book.
+     (ff) ⚠ **Under `PB_LLM_TESTS=1` tests 10/11 require `source === 'llm'`** and the POST body's `chatConfigName`; a MIGRATED /
+     keyless fallback is red, not a pass. Default: accept.
+     (gg) ⚠ **The post-fix regression run was the `PB_LLM_TESTS=1` run alone** (`p49-pw-llm3`: the serial file runs tests 1–9 first,
+     a superset of the default tier) instead of a separate default-only run after the chat-config fix. Default: accept. Say the word
+     for `p49-pw-default5`.
+     (hh) ⚠ **The spec provisions its own picker-reachable config `000-p49-board-llm`** (`ensureChatConfig(request, null,
+     {configName})`) on the SHARED `e2e-chapbook-conn` connection (300 s budget) — the `000-` prefix device of
+     `chapBookChatConfigPicker.spec.js` / `pictureBookChapteredManuscriptUx.spec.js`, because the picker lists `~/Chat` name-ascending,
+     25 rows a page, and the shared user's `~/Chat` holds dozens of leftover e2e configs (7 pages on 2026-10-22), so `e2e-chapbook-llm`
+     is not on page 1 (LLM run 2 red at the picker). Not an own connection with a larger timeout as the manuscript spec does — one
+     scene compose fits 300 s. Default: accept. Alternative: page the picker in the spec, or an own connection.
+     (ii) ⚠ **The SD tier also picks the config**, asserts `{quickStart:true, force:true, chatConfigName}` on the wire, requires every
+     scene row `composed` (a `migrated` row is red), and verifies the drafts through the job result (`GET /rest/job/{jobId}` →
+     `scenes[].draftRender.artifactObjectId` → `GET …/artifact/{oid}` → `dataObjectId` bytes), the device of
+     `pictureBookCompose.spec.js` — `GET /pages` does not carry a DRAFT (its `imageObjectId` is the scene's approved image; SD run 2
+     red on that wrong assumption of mine). Default: accept.
+     (jj) ⚠ **Element handle leaks into the SDXL compiled prompt** (backend; found in `p49-board-scene2-composed.png`: `candles on
+     shelf, element.355aac42-4113-4011-ac54-02e386b6586c.0, desk`). `PbComposeUtil.createElement` names rows
+     `element.<compOid>.<n>` (`ELEMENT_NAME_PREFIX` :81, `nextHandleIndex` :1976 — the P4-1 "name unique per book" fact);
+     `PbRenderPlanUtil.elementsOf` :694–:705 passes that `name` into `RenderPlan.Element`; `SdxlCompiler` :90–:93
+     `joinMeaningful(name, desc)` joins it ahead of the description. `Flux2Compiler` :162–:165 prefers `desc` and does not leak.
+     Default: fix in P4-10 with the 194 (jj) planner wiring — `elementsOf` passes a null `name` when it is the row handle (actors
+     already go by their identity text), and `TestRenderPlan` asserts no `element.` token in a compiled prompt. Alternative: make
+     `SdxlCompiler` prefer the description as Flux2 does.
+     (kk) ⚠ **Drafts and the open image-config panel survive a refused write** (test-author defect 1, confirmed and fixed; `pictureBookCompose.js` 18:18:08).
+     `act()` (`pictureBookCompose.js` :392–:407) re-reads the board after every save; `loadBoard()` reset `edits`, so a 400 reverted the
+     user's typed values. Now `act` calls `refetch(!ok)`, `loadBoard(keepEdits)` :334/:346 keeps `edits` and `refetch` :384/:388 keeps
+     `overrideInst` when the write was refused. The re-read itself still happens on failure (`pictureBookCompose.test.js` :647 asserts
+     the three reads; the server's revision is the truth). Default: accept. Alternative: skip the re-read on a refused write (one GET
+     fewer; a revision another tab advanced would then stay hidden until the next successful save).
+     (ll) ⚠ **A successful row Save re-reads the whole board and drops OTHER rows' unsaved drafts.** One board state, one revision; the
+     fresh read replaces every row. Pre-existing P4-9 shape, not changed by (kk). Default: leave as built. Alternative: keep a per-row
+     dirty map and re-apply the untouched rows' drafts over the fresh read.
+     (mm) ⚠ **Path-segment ids are not `encodeURIComponent`-ed** in the 16 P4-9 `wfFetch('/' + id …)` helpers of `pictureBookWorkflow.js`
+     (:1428–:1662) — security-reviewer Low (a). Consistent with the 37 pre-existing helpers in HEAD (encoding only at :279/:355/:523/
+     :667/:900/:1111); every id on these paths is a server-issued objectId. Default: leave as built. Alternative: encode in every
+     helper in one sweep (touches HEAD code outside P4-9; P4-11 or later).
+     (nn) ⚠ **A failed outfits read is shown**, as a warn chip `pb-cmp-outfits-error` on the Actors header (`pictureBookCompose.js` :51,
+     `loadOutfits` :317–:332, :1080) with the server's `(status) message`, instead of silently rendering every actor outfit as `(none)`
+     — security-reviewer Low (b), acted on. Default: accept. Alternative: a toast.
+     (oo) ⚠ **The reader's degradation chip says "plan not read"** (`pb2-scene-degradations-error`, `pictureBook.js`
+     `renderPb2DegradationChip` :1954–:1960) when the node read failed; before, `entry.error` was stored and never rendered —
+     security-reviewer Low (c), acted on. Default: accept. Alternative: no chip.
+     (pp) ⚠ **`doRegeneratePagePrompt` adopts `res.sdPrompt` only when the outcome is not `error`** (`chapBook.js` :3487–:3497; the
+     `promptWriteOutcome` is computed first) — security-reviewer Low (d), acted on. The `error` branch is unreachable server-side today
+     (`ChapBookUtil.java:2660` writes or throws), so there is no direct Vitest for the handler; the helper's three outcomes are
+     covered (`chapBookScenePromptAnalyze.test.js`). Default: accept. Alternative: adopt always (the previous behaviour — a partial
+     write would show the server's text as if saved).
+     (qq) ⚠ **The e2e Promote step exercises the 409 branch, not the link** (`pictureBookComposition.spec.js` :538–:621; test-author
+     nit). On this fixture the seeded scene has no location, so `POST …/promote` answers `409 {"error":"Composition … has no location
+     to hold the item"}` in every run (`default4`, `default5`, `llm3`/`llm4`, `sd3`/`sd4`); the spec asserts the refusal is shown
+     verbatim and the row stays, then branches on `pr.ok()` for `promoted`/`itemObjectId`. The success branch is covered by Vitest
+     (`pictureBookCompose.test.js`) and the P4-7 JUnit, not by Playwright. Default: accept for P4-9. Alternative: seed a location on
+     the fixture scene (P4-10, once the migration/location pass is live) and assert the success branch live.
+     (rr) ⚠ **Two test-author nits left as-is:** `chapBook.js` carries an `updated:false` branch the server cannot produce today
+     (`ChapBookUtil.java:2660`), kept because the P4-8 (ee) body shape allows it; spec `:412–:427` gates the plan-inspector asserts
+     on `planned` (whether the `/plan` POST answered) — in every recorded run `/plan` was 200 and the asserts ran (`[pictureBookComposition]
+     … POST /plan 200 → prompt shown in N ms` lines). Default: leave. Alternative: make the plan asserts unconditional (a legitimately
+     plan-less row would then be red). **Spec half superseded by (vv)** after the verifier's finding 4: the asserts are now
+     unconditional; the `chapBook.js` half stands.
+     (ss) ⚠ **`depth` was a 0..1 fraction on the board; it is the model's int Z-order (0 = front-most) — fixed on the verifier's
+     finding 1, a defect of mine.** `sceneActorModel.json:96-98` / `sceneElementModel.json:61-63` declare `depth` `int` ("Layer order,
+     0 = front-most"), design L444 says the same, and `PbComposeUtil.intField` (:2517–:2526) truncates any `Number` through `intValue()`
+     with no 400 — so the board's `{min:0, max:1, step:0.01}` input and `zIndex = 100 − depth×100` sent `0.5` and the server stored `0`
+     silently. Now: `boxStyle` (`pictureBookCompose.js`) maps `z = 1000 − depth` (non-finite/negative → 0, > 1000 bottoms out at 0),
+     both Depth inputs are `{min:0, step:1}`, and `normalizeEditValue` rounds the three int keys (`depth`, `priority`, `count`,
+     `INT_KEYS` in `pictureBookWorkflow.js`) **before** the PATCH so the server never truncates a value the user did not type. Covered
+     by `pictureBookComposeHelpers.test.js` (3 `boxStyle` tests), `pictureBookComposeEdges.test.js` (`int fields … are rounded`),
+     `pictureBookCompose.test.js` (`step` 1, no `max`, z `999` for the fixture's depth 1) and live by the spec's actor test (`fill
+     '2.6'` → PATCH `depth: 3` → box `z-index: 997` → GET `a.depth === 3`). Default: accept. Alternative: send the raw value and let
+     the server truncate (rejected — silent data loss) or make `intField` answer 400 on a non-integer (a P4-x server change; ask).
+     (tt) ⚠ **`(unset)` on an enum that had a value is now sent as `unknown` — fixed on the verifier's finding 3.** `boardDelta`
+     dropped every blank enum, so the `(unset)` option could never be saved (the select showed it, Save said "Nothing changed").
+     `PbComposeUtil.enumField` (:2570–:2584) matches `equalsIgnoreCase` and every composition enum carries `UNKNOWN`, so `unknown` is
+     a valid wire value while a bare `''` answers 400 `"<key> must be one of …"`. Now a blanked enum on a row that had a value sends
+     `'unknown'`; an unchanged `UNKNOWN`/null/`''` stays untouched (`sameEnum`); and `enumSelect` maps a stored `unknown` back to the
+     `(unset)` option (a non-matching `value` would otherwise leave the browser select blank with no option selected). Covered by
+     `pictureBookComposeEdges.test.js` (`(unset) on a row that had a value is sent as "unknown"`), `pictureBookCompose.test.js`
+     (actor facing `''` → `facing:'unknown'`; stored `UNKNOWN`/null/`'unknown'` select `(unset)`) and live by the spec's new
+     `(unset) … round trip` test (PATCH `{shotType:'unknown'}` → GET `unknown` → unchanged Save "Nothing changed" → `wide` again).
+     Default: accept. Alternative: drop the `(unset)` option (no way to clear a shot type once set).
+     (uu) ⚠ **`loadBoard`'s catch still resets `edits` regardless of `keepEdits` (`pictureBookCompose.js` :353) — the verifier's
+     finding 5, left as built.** The error view has no retry button (Refresh is a deliberate fresh read that discards drafts anyway),
+     so a draft-preserving catch would be unreachable. Default: leave. Alternative: keep `edits` in the catch and add a "Retry" that
+     re-reads with `keepEdits`.
+     (vv) ⚠ **Spec asserts tightened on the verifier's finding 4:** `waitForPlan` now asserts the `/plan` POST is 200 (every recorded
+     run was — 75 of 75 `POST /plan 200 → prompt shown` lines across `default5`/`llm4`/`sd4`), and the seeded-scene test asserts the
+     headline prompt is compiled and runs the inspector asserts unconditionally (the fixture scene carries a setting, an actor and an
+     element, so a blank-prompt plan would be a defect). Default: accept. Alternative: back to informational (a plan-less seeded scene
+     passes silently).
+     (ww) ⚠ **No live e2e for "Add actor" with a real character + outfit pin.** The fixture book has no characters, so the spec's add-
+     actor test adds by description only; the character/outfit path is Vitest-only (`pictureBookCompose.test.js` add-actor dialog
+     tests). Default: accept for P4-9. Alternative: seed a `olio.charPerson` on the fixture book in P4-10's migration fixture and
+     assert the pinned outfit reaches `GET …/composition` live.
 
 ### 6.G Found in Slice C transport (P0-10c), left alone under scope discipline — your call on each
 
@@ -19051,7 +19358,7 @@ reviewed. Standing permission 182 (6): the Docker stack DB and its test data may
 | P4-6 | Elements → POI items — `PbComposeUtil.promoteElement(user, book, elementObjectId)`: `olio.item` (name/description/colours/materials) as the olio principal after book authorization, added to the scene's location's POI `store.items` via `MemberUtil` in the `ItemUtil.addNewInventory` shape, `sceneElement.item` set; compile element text from the freshly-loaded item when set; `POST /{book}/composition/{id}/element/{elementId}/promote`. | §7.2 rule 4 | `PbComposeUtil` (`promoteElement` :1932, `PromoteResult` :1896, `readElement` :1872, `elementText` :2059, `itemText` :2084, `itemNameOf` :2127, `findPropByName`, `createProp`, `poiStoreOf`/`poiStoreOfLocation`/`storeItems` :1004-1028 package-private), `PbServiceFacade.promoteElement` :4453, `PictureBookService.promoteElement` :2824 (`PbLocationUtil.sameWorld` and `PbBookUtil.markSceneNodeStale` reused, not changed) | **IMPLEMENTED + TESTS GREEN + reviewed + documented 2026-10-20** — as built: `promoteElement(user, book, compositionObjectId, elementObjectId)` (four args, 192 b) → `requireBookUpdate` 403 → composition-of-book / element-of-composition 404 → location (composition's, else scene's; none → 409, 192 d) must be of the book's world (`sameWorld` 404, 192 k) → POI store (none → 409) → `canUpdate(store)` 403 → already linked and the item still exists → `reused` (no write) → else `matchItem` over the store's items, then exact name `type="prop"` in the world Items group, else `createProp` as the olio principal (`name` = description minus article, 64; `description` 512; `type="prop"`; group = world Items; 192 g) → `AccessPoint.member(user, store, "items", item, null, true)` (refusal → 500, no `MemberUtil` fallback, 192 h) → element `item` FK patched (`patchOf`, result checked) → `markSceneNodeStale` → `staled`. **The row's "`MemberUtil` in the `ItemUtil.addNewInventory` shape" is wrong for what the rule needs: `addNewInventory` writes `store.inventory` entries; the item is enrolled in `store.items`, which is what the compose reader (P4-3) and rule 4 read — 192 (a).** "Compile element text from the freshly-loaded item" is delivered as `PbComposeUtil.elementText(user, element)` (fresh item load as the caller: name, description, colours by name, materials; falls back to the element's description; never "null") with **no compile-path consumer yet** — P4-7's `PbRenderPlanUtil.sceneElements` is the caller (192 i); nothing in a prompt reads `sceneElement.item` until then. Response DTO `{bookObjectId, compositionObjectId, elementObjectId, promoted, created, reused, itemObjectId, itemName, elementText, staled, warnings}` (192 c). Verifier finding fixed in-task: `itemText` repeated the description when it was the name plus its article (`"dented pewter cup, a dented pewter cup"` on live run 1) — both sides are now compared article-stripped (`bare`), asserted exactly by `TestPbPromoteElement`, `TestPictureBookPromoteRoutes` and the live script. Tests: Objects7 `TestPbPromoteElement` 15/0/0/0 (run 1 471.2 s, run 2 after the fix 15/0/0/0, 495.2 s, 10:35:12 → 10:43:33), Service7 `TestPictureBookPromoteRoutes` 6/0/0/0 (run 1 16.79 s, run 2 6/0/0/0, 26.92 s, 10:44:38 → 10:45:11), regressions `TestPbComposeFallback` 13/0/0/0 (118.9 s), `TestPictureBookComposeRoutes` 8/0/0/0 (17.58 s); LLM = in-stack Ollama container through LiteLLM (`[LLM-GATE] route=litellm tier=local`), no SD call, `.39` unavailable; jar `8daad1a3…` + `PictureBookService.class` deployed to `am7test-am7-1`; live proof `C:/tmp/p46-promote-live.mjs` as `e2etest_shared` 29 PASS / 0 FAIL (run 1) then 25 PASS / 0 FAIL (run 2 — the four location-creation checks did not run because the book kept its location, JUnit covers that branch; `elementText="dented pewter cup"`); security-reviewer PASS (H1–H3 adopted, 192 k); verifier PASS with findings (1 fixed, the rest 192 i/l/m); code committed by you in `b67af035` (2026-10-20 07:40) except the fix; gate run 26 §4.4 row 26 HELD (`.39` away); DONE yours, 159 b; §12.6 | 2026-10-20 | 2026-10-20 | — |
 | P4-7 | RenderPlan + `Flux2Compiler` + degradations — `RenderPlan.Actor` → §12 shape (`actorId, characterId, role, priority, box, depth, pose, expression, action, facing, outfit{apparelId,text,refArtifactId}, identity{portraitArtifactId,fullbodyArtifactId,text}, policy`), `Element` (`type, description, box, importance, itemId`), `intent` = `promptOverride`; `PbRenderPlanUtil.sceneActors` reads composition rows (identity = approved PORTRAIT artifact else `ACTOR_TEXT_ONLY`; outfit text from the resolved apparel freshly loaded — G-5), membership only via the lazy compose; `Flux2Compiler` (positional reference wording, identity rules, KI-68, every actor listed, referenced by ordinal); shared rules (style once, exclusions always, `isMeaningful`, smart quotes, `appendLoras`, `PromptBudget` drop order elements LOW → MEDIUM → extras → background-actor detail, each drop a `PROMPT_TRUNCATED` with what was dropped); degradations `ACTOR_TEXT_ONLY`/`ACTOR_UNRESOLVED`/`ACTOR_FAILED`/`PROMPT_TRUNCATED` persisted on the plan; scene-card summary line; auto-approve veto set 182 (13) as one constant; unreadable pointer → unlocated + degradation (182 (15–22)). | §12, §13, §14, §19, §20 | `olio/illustration/RenderPlan`, `Flux2Compiler`, `SdxlCompiler`, `PromptBudget`, `PbRenderPlanUtil`, `PbArtifactUtil` **IMPLEMENTED + TESTS GREEN + reviewed + proved live + documented 2026-10-20 → 2026-10-21** — as built: `RenderPlan.Actor` (`:812`, immutable + `Builder` `:966`; `actorId, characterId, name, role, priority, box, depth, pose, expression, action, facing, outfit{apparelId,text,refArtifactId}, identity{portraitArtifactId,fullbodyArtifactId,text}, policy, referenced`; `fromMap` reads the Phase 2 `description` into `identity.text`), `Element` (`:1067`; `type, name, description, box, depth, importance, itemId`; legacy `priority` read, never written), `Intent(promptOverride, raw)` `:1235`, `Degradation` `:1408` with the closed `CODES` `:1422` (§19's seven + `COMPOSED_OUT_OF_ORDER`, 193 g), `actorSummary()` `:156` (`"N characters: R referenced, T text[, U unresolved]"` / `"no characters"`); `PbRenderPlanUtil.buildScenePlan` `:114` → `findComposition` `:474` → `actorsOf` `:519` (rows via `PbComposeUtil.listActors` + `PbWardrobeUtil.resolveOutfits`; a row named only by its P4-5 handle `actor.<composition>.<n>` carries no name and a count is spoken only when > 1 — `rowDisplayName` `:746`, 193 tt; a character the user cannot read → `ACTOR_UNRESOLVED` from the row's text; resolved → outfit text via `describeApparel`, identity = narrative physical description when an outfit resolved, approved PORTRAIT via `approvedPortrait` `:699`; `referenced` decided here: eligible role + portrait + a slot of `maxReferences − (hasLocationRef ? 1 : 0)`, REQUIRE_REFERENCE first then priority; the rest `ACTOR_TEXT_ONLY` with the reason) / `elementsOf` `:673` (`PbComposeUtil.elementText` — P4-6's first caller) / composition `promptOverride` as `intent` when `PlanOptions` has none; a composition or row read that throws → one `ACTOR_UNRESOLVED` (193 kk), none → nothing; `Flux2Compiler` (prose: opening with the ordinals only under `DIRECT_REFERENCE` **and** `actor.referenced`, every actor listed, roles sentenced — a referenced background actor keeps its ordinal through the detail drop, 193 nn —, elements HIGH/MEDIUM/LOW, style once, SWUtil rules verbatim incl. the ASCII hyphen (KI-68), "No extra people." only without extras/crowds; budget 512, drop order ELEM_LOW → ELEM_MEDIUM → EXTRAS → ACTOR_BG detail → MAIN cut, each a `PROMPT_TRUNCATED` naming the drop; `raw` = override + LoRAs); `PromptCompilers.forPick` (family, else `RendererCapabilities.forModel`) used by `PbNodeExecutor`, `ChatSceneRenderUtil` and the plan route; `CompilerSupport` (package-private, DB-free); `SdxlCompiler` drop messages name what was dropped; `PbArtifactUtil.AUTO_APPROVE_VETO_CODES` `:511` = `{ACTOR_UNRESOLVED, ACTOR_FAILED, LOCATION_TEXT_ONLY, PROMPT_TRUNCATED, COMPOSED_OUT_OF_ORDER}` read by `autoApprove` `:480` (known codes outside it waived, anything else vetoes); `planSummary` on the `POST …/scene/{id}/plan` DTO (`PbServiceFacade.planScene` `:2742`) and the node describe map (`PbNodeExecutor` `:771`). **Not in this row, deferred:** camera fields (193 p, P4-8), the `inuse` flip (193 q), `promptLocked` → `raw` (193 o). Tests: pure `TestFlux2Compiler` 15/0/0/0, `TestRenderPlan` 13/0/0/0, `TestSdxlCompiler` 12/0/0/0, `TestStrategySelector` 5/0/0/0, `TestPbAutoApprove` 9/0/0/0 (case09 live on `am7db`); live `TestPbRenderPlanActors` 3/0/0/0 (×4: after the `characterUnread` fix 193 ff, after the `unreadRows` hardening 193 kk, after the handle/count fix 193 tt), `TestChatSceneRenderUtil` 10/0/0/1, `TestPbRenderPlanExecutor` 7/0/0/5, `TestPbScenePlanLocation` 13/0/0/1 (skips are the SD cases, never counted); `TestRenderPlanLive`, `TestPbComposeLazyRender`, `TestChapBookV3Render` HELD (Swarm); LLM = in-stack Ollama container through LiteLLM; no SD call, `.39` unavailable; jar `348b2532…` deployed (`C:/tmp/p47-deploy-2.log`); live proof `C:/tmp/p47-plan-live.mjs` as `e2etest_shared` **43 PASS / 0 FAIL** (`C:/tmp/p47-plan-live-3.log`, 2026-10-21 09:41 → 09:48; `MODEL_SUBSTITUTED … INVENTORY_UNAVAILABLE` expected — `.39` down; run 1 found 193 ss + tt, run 2 was cut by the 09:09 `docker stop`); security-reviewer PASS (193 jj–mm); verifier PASS (should-fix 193 nn applied); gate run 27 §4.4 HELD; DONE yours, 159 b; §12.7 | 2026-10-20 | 2026-10-21 | — |
 | P4-8 | Service7 routes + ChapBook switch — `GET/PATCH /{book}/scene/{id}/composition`; `POST/PATCH/DELETE /{book}/composition/{id}/actor[/{actorId}]` and `…/element[/{elementId}]` (row-level); `PUT …/actor/{actorId}/apparel`; `GET/POST /{book}/character/{id}/wardrobe`; P4-4/P4-6 routes; all through `PbServiceFacade`, `@RolesAllowed({"admin","user"})`, Phase 2/3 refusal vocabulary; scene routes constrained by the book's `groupId` (182 (15–22)); ChapBook page prompt editor + `executeChapBookPage` read/write the composition's `promptOverride`/`promptLocked`; `bindSceneLocation` failure caught and degraded. | §8, §24, §27 | `PictureBookService`, `PbServiceFacade`, `PbNodeExecutor`, `ChapBookUtil` **IMPLEMENTED + TESTS GREEN + reviewed + proved live + documented 2026-10-21; (ee) richer body ruled 15:48, built, tests green (Objects7 14/0/0/0, Service7 14/0/0/0), redeployed, proved live 16 PASS / 0 FAIL (run 3); gate run 28 1388/4/0/16 with only the standing reds (§4.4 row 28, §12.8, §6.C 194 ee, 195 a/b, 196)** — as built: `PictureBookService` :2857–:3058 (eight routes, `@RolesAllowed({"admin","user"})`, body → `Map`, `PictureBookException` → `errorResponse(status, curatedMessage)`, `RuntimeException` → `unexpectedFailure`): `GET /{book}/scene/{id}/composition` → `{compositionObjectId, composition, actors[], elements[], nodeStatus, nodeStale}` (404 "Scene <id> has no composition; run compose first" / "…set its prompt first" for a page, 194 a), `PATCH` same → the same DTO after `PbComposeUtil.patchCompositionFields` :2153 (`COMPOSITION_EDITABLE` :1925 = settingText, action, mood, shotType, viewpoint, cameraText, props, configOverride, promptOverride, promptLocked, focalActorObjectId; `COMPOSITION_REFUSED` :1939 = purpose/scene/book/location/variant/source/userEdited/revision → 400 naming the owning route; `configOverride` through `PbConfigUtil.parseOverride`), `POST …/composition/{id}/actor` → `createActorRow` :2008 (`characterObjectId` **or** `description`; handle `actor.<comp>.<max suffix + 1>` via `nextHandleIndex` :1976; box from `PbLayoutUtil.defaultPlacement`; 409 on a CHAPBOOK_PAGE composition, 194 j), `PATCH …/actor/{aid}` → `patchActorRow` :2227 (`ACTOR_EDITABLE` :1930 = role, priority, pose, expression, action, facing, x/y/w/h, depth, description, count, referencePolicy; `ACTOR_REFUSED` :1950 character/apparel → 400 pointing at `PUT …/actor/{aid}/apparel`), `DELETE …/actor/{aid}` → `deleteActorRow` :2332 (a focal actor is unfocused first), `POST|PATCH|DELETE …/element[/{eid}]` → `createElementRow` :2089 / `patchElementRow` :2285 (`ELEMENT_EDITABLE` :1935; `item` refused → `POST …/element/{eid}/promote`) / `deleteElementRow` :2354; every write ends in `touchEdited` :2372 (`userEdited`, `source=USER`, `revision`+1, `PbBookUtil.markSceneNodeStale`) and the response echoes the row DTO + `revision`/`nodeStatus`/`nodeStale`; `checkKeys` :2480 (`alsoAllowed` wins over `refused`, 194 dd); `listRows` :391 always constrains `groupId` and 409s a groupless composition (194 u). Facade `PbServiceFacade` :4500–:4625 (`getSceneComposition`, `patchSceneComposition`, `addActor`, `patchActor`, `deleteActor`, `addElement`, `patchElement`, `deleteElement`; gate order `requireBook` → `requireBookUpdate` on writes → `requireSceneOfBook`/`requireCompositionOfBook`/row-of-composition 404 → 400). ChapBook switch: `ChapBookUtil.setSceneLandscapePrompt` :2431 and `regenerateSceneLandscapePrompt` :2560 write the scene, mark the page node STALE (194 s), then `writePageComposition` :2494 → `PbComposeUtil.getCreatePageComposition` :2412 (`page.<sceneObjectId>` in **`book.groupId`**, 194 t; `source` USER / LLM; `userEdited` on a human set) and patch `promptOverride`/`promptLocked`; a failed second write is a 500 "Scene <id> sdPrompt persisted but its page composition was not: …" (194 ee); `PbNodeExecutor.executeChapBookPage` :1011 reads the page composition through `findPageComposition` :1089 (find-only, `book.groupId`) when `scene.sdPrompt` is not meaningful and 409s "Page N has no prompt; set or generate its landscape prompt before rendering it" when neither carries one; `bindSceneLocation` :665 catches and degrades (`location: location binding could not be updated; … may not stale this scene`, 194 y). Not in this row: camera fields into the plan (193 p), `inuse` flip (193 q), the board Ux (P4-9), the scene-copy retirement (P4-10, 194 b/x). Tests (all real, `am7db` / Service7 H2 / live `.39`): `TestPbCompositionRows` 12/0/0/0 (`C:/tmp/p48-test-rows-5.log`; owner `testUser1`, reader `SECOND_USER`; board PATCH, refusals, actor/element lifecycle, focal unset, handle after delete, groupless 409, revision count), `TestChapBookPageComposition` 6/0/0/0 (`p48-test-cbpage-4.log`; set → page composition USER, regenerate → LLM, lock respected, stale before the second write, 409 with no prompt, composition-only fallback to a dead renderer → 503 after the plan is built, 194 ff), Service7 `TestPictureBookCompositionRoutes` 7/0/0/0 + `TestChapBookServiceRenderPath` 6/0/0/0 (`p48-test-routes-5.log`, after the H2 fixture repair 194 ii), render-path regressions `TestChapBookV3Render` 17/0/0/0, `TestChapBookPageLocation` 5/0/0/0, `TestRenderPlanLive` 4/0/0/0, `TestPbComposeLazyRender` 3/0/0/0 (`p48-test-{cbv3render,cbpageloc,rplive,lazyrender}-1.log`, SD `http://192.168.1.39:7801`); LLM = in-stack Ollama container through LiteLLM every run; jar `df39c5c3…` deployed (`C:/tmp/p48-deploy-1.log`); live proof `C:/tmp/p48-rows-live.mjs` as `e2etest_shared` **83 PASS / 0 FAIL** (`C:/tmp/p48-rows-live.log`); planner/architect 2 must-fix (194 s, t) + 1 note (194 y) applied, security-reviewer PASS (194 u, v, w, r, o), verifier PASS (194 ee, ff); gate run 28 (§4.4) 15:32:59 → 20:07:42 **1388/4/0/16 `VERIFY_FAILED`** — only the standing reds (§6.A ×3 + 188 flake), every P4-5/6/7/8 class green, rows 26/27 covered (⚠ 194 hh); (ee) richer body (ruled 15:48) tests green 14/0 + 14/0, jar `01e8945e…` deployed, live run 3 **16 PASS / 0 FAIL** (`C:/tmp/p48-ee-live-3.log`); ⚠ 196 (STORY-scene prompt write; regenerate `chatConfig`) open, default leave for P4-10; DONE yours, 159 b; §12.8 | 2026-10-21 | 2026-10-21 | — |
-| P4-9 | Ux752 board + wardrobe — composition board per scene (camera; actor rows with role/priority/pose/expression/action/facing, outfit chip `(from scene N)`/`(default)` + wardrobe picker, placement box on a simple canvas + numeric fields; element rows + "Promote to item"; prompt override + lock; "Re-compose" with the `userEdited` warning; degradation summary + `PROMPT_TRUNCATED` "dropped: …" on the scene card); compose dialog with Quick start + live job progress; "Re-compose in order"; wardrobe panel on a character (alternates, set default, reference image upload); ChapBook page editor on the composition fields **and consuming the P4-8 (ee) bodies of `PUT …/scene/{id}/prompt` and `POST …/prompt/regenerate` (`updated`, `compositionUpdated`, `error` — a partial write is shown to the user, not swallowed; `chapBook.js` :451–:461, :3186–:3190, :3461)**; **`PbPlanInspector` shows the compiled `/plan` prompt beside the composition fields (194 jj, ruled 2026-10-21: the planner wiring is P4-10, so until then the board must make visible which edits reach the plan)**; consumers default absent `actors`/`elements`/`degradations` to `[]` (193 ss). Every edit a row-level PATCH. | §26 | `features/pictureBook.js`, `features/pictureBookCompose.js` (new), `workflows/pictureBookCharacters.js`, `components/PbPlanInspector.js`, `features/chapBook.js`, `core/am7client.js` | TODO | — | — | — |
+| P4-9 | Ux752 board + wardrobe — composition board per scene (camera; actor rows with role/priority/pose/expression/action/facing, outfit chip `(from scene N)`/`(default)` + wardrobe picker, placement box on a simple canvas + numeric fields; element rows + "Promote to item"; prompt override + lock; "Re-compose" with the `userEdited` warning; degradation summary + `PROMPT_TRUNCATED` "dropped: …" on the scene card); compose dialog with Quick start + live job progress; "Re-compose in order"; wardrobe panel on a character (alternates, set default, reference image upload); ChapBook page editor on the composition fields **and consuming the P4-8 (ee) bodies of `PUT …/scene/{id}/prompt` and `POST …/prompt/regenerate` (`updated`, `compositionUpdated`, `error` — a partial write is shown to the user, not swallowed; `chapBook.js` :451–:461, :3186–:3190, :3461)**; **`PbPlanInspector` shows the compiled `/plan` prompt beside the composition fields (194 jj, ruled 2026-10-21: the planner wiring is P4-10, so until then the board must make visible which edits reach the plan)**; consumers default absent `actors`/`elements`/`degradations` to `[]` (193 ss). Every edit a row-level PATCH. | §26 | `features/pictureBookCompose.js` (new), `features/pictureBook.js`, `features/chapBook.js`, `workflows/pictureBookWorkflow.js` (REST helpers — not `core/am7client.js`), `workflows/pictureBookCharacters.js`; `components/PbPlanInspector.js`, `core/am7client.js`, `components/dialogCore.js` untouched | **IMPLEMENTED + TESTS GREEN + proved live + documented + REVIEWED 2026-10-22 (test-author 2 defects fixed; security-reviewer PASS; verifier PASS WITH FINDINGS, 2 more defects fixed; re-runs after the fixes Vitest 1439/1439, Playwright 11/0/3 · 13/0/1 · 14/0/0)** — as built: board `features/pictureBookCompose.js` on `#!/picture-book/{book}/compose[/{scene}]` (`:1282`/`:1287`, spread into `pictureBook.js` `:2330`; reader deep-link `pb2-compose-link` `:2117`): header with scene prev/select/next, one Chat Config control (`renderChatConfigControl` `:554`, `ObjectPicker.openLibrary({libraryType:'chatConfig'})`, default `contentAnalysis` → `generalChat` resolved library-only via `LLMConnector.resolveConfig`; every compose call carries the pick's name — `withChatConfig` `:75`), "Compose book…" dialog (Quick start + force + the pick read-only; `startComposeBook` `:634`, `watchCompose` `:604` polling `GET /rest/job/{id}` into the run panel `renderComposeRun` `:885` with per-scene status rows), status chips, camera (`renderCamera` `:944`: shot/viewpoint/focal/cameraText), scene fields, prompt override + lock (`renderPrompt` `:968`), sparse `configOverride` editor (`parseConfigOverride` `:176`, `computeOverrideDelta` `:194`), actor rows (`renderActorRow` `:1014`: role/priority/pose/expression/action/facing, outfit chip `(from scene N)`/`(default)` + wardrobe picker `openOutfitDialog` `:740` → `pinActorApparel`, x/y/w/h/depth), element rows (`renderElementRow` `:1060`) + Promote to item (`promote` `:497`), drag-to-move canvas (`renderCanvas` `:1126`, `dragMove` `:129` clamped to 0..1), compiled-`/plan` side panel (`renderPlanSide` `:1137`, `planHeadlinePrompt` `:224`, degradations), Re-compose with the `userEdited` warning (`USER_EDITED_WARNING` `:92`, `recomposeScene` `:569` sends `{force:true, chatConfigName}`); every Save a delta PATCH of the changed keys only (`saveCompositionKeys` `:417`, `saveActor` `:447`, `saveElement` `:472`); REST helpers + normalizers in `pictureBookWorkflow.js` `:1318`–`:1634` (absent `actors`/`elements`/`degradations` → `[]`, 193 ss); reader scene card degradation chip `pb2-scene-degradations` + `PROMPT_TRUNCATED` "dropped: …" lines `pb2-scene-truncated` from the last renderPlan artifact (`pb2EnsureSceneDegradations` `:1154`); wardrobe panel on a character (`pictureBookCharacters.js` `:310`–`:573`: entries with kind chips, set default, add alternate, migrate scene tags, render reference with job progress, `WardrobeThumb` `:443`); ChapBook page editor consumes the P4-8 (ee) bodies (`promptWriteOutcome` `chapBook.js` `:480`: `updated:false` → error toast + prompt stays dirty, `compositionUpdated:false`/`error` → warn toast with the server reason, save-all per-page toasts `:3464`–`:3503`). Tests: Vitest `pictureBookCompose.test.js` 60 (jsdom), `pictureBookComposeHelpers.test.js`, `pictureBookWardrobe.test.js`, `chapBookScenePromptAnalyze.test.js` (+113), two call-budget tests tightened — suite **97 files / 1411 tests** (`C:/tmp/p49-vitest-all3.log`); Playwright `e2e/pictureBookComposition.spec.js` (new, serial, as `e2etest_shared` on the Docker stack): default tier **9 passed / 3 skipped** (`p49-pw-default4.log`), `PB_LLM_TESTS=1` **11 passed / 1 skipped** (`p49-pw-llm3.log`), `PB_LLM_TESTS=1 PB_SD_TESTS=1` **12 passed / 0 failed / 0 skipped** (`p49-pw-sd3.log`, 17:52:35 → 17:53:45): LLM = the in-stack Ollama container through LiteLLM (`[e2e-llm] route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr`, config `000-p49-board-llm`), SD = `http://192.168.1.39:7801` (`juggernautXL_ragnarokBy.safetensors` 512×512 steps=12, BASE 5304 / 2803 ms), two DRAFT images fetched from the job result's artifacts and inspected; no backend change, no Maven, no gate run (§4.9 is P4-11's); ⚠ 197 (a)–(jj) open with defaults (jj = element-handle prompt leak, default P4-10); DONE yours, 159 b; §12.9 | Vitest 1411/0 (`p49-vitest-all3`); Playwright 9/0/3 · 11/0/1 · 12/0/0 (`p49-pw-default4` / `-llm3` / `-sd3`) | 2026-10-22 17:53 | 2026-10-22 |
 | P4-10 | Migration one-off — `source=MIGRATED` compositions from setting/action/mood/characters; `scene.sdPrompt`/`promptLocked` → `promptOverride`/`promptLocked`; `scene.configOverride` → `composition.configOverride`; `sceneIndex` apparel tags → alternates; idempotent; never overwrites `userEdited`; runs inside the first-open compose job; logs counts. **Plus 194 jj (ruled 2026-10-21 "fix as suggested"): the planner reads the composition first — `PbRenderPlanUtil.buildScenePlan` / `locationText` take the composition's `settingText`/`action`/`mood`/`props` (scene fields as the fallback for an un-composed scene), `cameraText` + shot/viewpoint words into `RenderPlan.Camera` (193 p), and the effective config applies the composition's `configOverride` between the scene's and the node's (`PbBookUtil` ~:1004, `PbConfigUtil` ~:415); the scene-copy retirement (design §24: the page reads the composition, `scene.sdPrompt`/`promptLocked` become the migrated-from fields); `TestPbScenePlanLocation`, `TestRenderPlan`, `TestRenderPlanLive`, `TestPbCompositionRows` extended to assert the plan follows the board.** | §9.1, §28, §8, §24 | `PbMigrationUtil`, `PbComposeUtil`, `PbRenderPlanUtil`, `PbBookUtil`/`PbConfigUtil` (config precedence), `PbNodeExecutor`, `ChapBookUtil` | TODO | — | — | — |
 | P4-11 | Phase gate and STOP — Objects7 + Service7 quick gates after each backend slice; full Ux752 gate (chromium + chromium-vite, 2 workers, `:8898`, SD/LLM flags set) — `VERIFY_OK` or not done; expected pre-existing reds only with unchanged counts (Objects7 §6.A ×3, Service7 §6.H, the §4.8 e2e set minus whatever P4-0 fixed); architect + security-reviewer + verifier phase passes; §4.9; §12.11; §1 cell; STOP. | §31 | — | TODO | — | — | — |
 
@@ -20643,3 +20950,173 @@ skies …","updated":true,"compositionUpdated":true,"promptLocked":false,"compos
 unauthenticated PUT 403; restore 200; bookless scene and ChapBook deleted (`{"deleted":true}`). ⚠ 194 (a)–(jj) open except (ee), (hh),
 (i), (jj) — ruled 15:48 (defaults in §6.C); ⚠ 195 (a)–(c) open; ⚠ 196 open (default: leave for P4-10);
 next §6.C number 197.
+
+### 12.9 P4-9 results — Ux752 board + wardrobe (2026-10-22 14:03 → 17:54 build; reviews + fixes + re-runs 17:55 → 18:56 local; no gate run — §4.9 is P4-11's)
+
+**Read-first:** design §26 (COVER L1555; the Scenes card list L1586–1587; the board L1588–1594; the Ux rule L1604–1608), L1364–1368 (the
+P4-8 chatConfig note the board follows), §24 (page mapping), §27 (row routes), §8; tracking §6.C 193 (ss) (empty lists absent on the
+wire), 194 (ee) (the richer prompt bodies), (jj) (planner wiring is P4-10 — the inspector shows the compiled prompt beside the fields
+until then), 196 (a)/(b); Ux752 `features/pictureBook.js` (reader, routes, `pb2*` helpers), `features/chapBook.js` (page prompt editor
+:451–:461, save-all), `workflows/pictureBookCharacters.js` (character detail), `workflows/pictureBookWorkflow.js` (Phase 2/3 helpers,
+`composeBody` :978), `components/PbPlanInspector.js` (P4-7 inspector), `components/picker.js` (`openLibrary` :317), `components/dialogCore.js`;
+legacy Ux7 `client/` for the dialog/list patterns; `e2e/pictureBookCompose.spec.js` (Quick-start draft device L633–677, `pollJob` L78),
+`e2e/pictureBookChapteredManuscriptUx.spec.js` (`000-` picker device), `e2e/helpers/api.js` (`ensureSharedTestUser`, `ensureChatConfig`,
+`resolveChatRoute`); `.claude/rules/troubleshooting.md` (Playwright on the Docker stack: `127.0.0.1`, WebSocket stub, dist refresh).
+
+**Flow (file mtimes for the implementation, `.start`/`.end` stamps in `C:/tmp/p49-stamps.log` for the runs):** 14:03:37 probe `9a` →
+read-first + plan → 14:21:42 probe `9b` → `p49-vitest-baseline` 14:22:06 → 14:22:23 (94 files / 1298) → 14:43 `pictureBookWorkflow.js`
+(REST helpers + normalizers) → 15:24 `pictureBook.js` (reader chips, deep-link, routes; `p49-build1`) → 15:31 `build2` → 15:34
+`chapBook.js` (`promptWriteOutcome` + save-all) → 15:35 `chapBookScenePromptAnalyze.test.js` → `p49-vitest-cb` 15:36:00 → 15:36:06 (17/17)
+→ 16:00 `pictureBookComposeHelpers.test.js` → 16:04 `pictureBookCharacters.js` (wardrobe panel) + `pictureBookWardrobe.test.js` →
+`p49-vitest-wd-helpers` 16:04:27 → 16:04:32 (**2/44 red**: the keyed `WardrobeThumb` vnode — product defect of mine, fixed with `onupdate`;
+a render-reference test race — test-side) → `wd-helpers2` 16:05:02 → 16:05:08 (44/44) → `pictureBookCompose.js` (board) +
+`pictureBookCompose.test.js` → `p49-vitest-cmp` 16:20:20 → 16:20:25 (**7/53 red**, all test-side) → `cmp2` 16:21:50 → 16:21:55 (53/53) →
+`p49-vitest-all` 16:22:02 → 16:22:14 (**2/1404 red** — my new reads broke the call budgets asserted by `pictureBookCharactersAffected`
+:opening-a-detail and `pictureBookPlanInspector` :Generate-success; both tests tightened to the new counts, 197 y) → `all2` 16:23:45 →
+16:23:57 (1404/1404) → `build3` 16:24:06 → 16:24:14 + dist copy → 16:30:45 probe `9c` → `e2e/pictureBookComposition.spec.js` → 16:50:37
+probe `9d` → `p49-pw-default` 16:50:54 → 16:51:13 (**exit 1**: spec asserted a `sceneIndex` the board GET never carried, 197 dd) →
+`default2` 16:55:38 → 16:56:13 (**exit 1**: the user-edited count) → `default3` 16:56:53 → 16:57:18 (**exit 1**: the PATCH path regex) →
+`default4` 16:58:50 → 16:59:25 (**9 passed / 3 skipped, exit=0**) → 16:59:41 probe `9e` → `p49-pw-llm` 16:59:58 → 17:15:36 (**exit 1**
+after 15.6 min: the board sent no `chatConfigName`; the compose ended `source=MIGRATED actors=0 elements=0`) → the Chat Config control
+(`renderChatConfigControl`, `withChatConfig`, `openComposeDialog` read-only pick; `pictureBookCompose.js` 17:31, `pictureBookCompose.test.js`
+17:31 → 60 tests) → `p49-build4` 17:32 + `p49-vitest-cmp3` (60/60) + `p49-vitest-all3` (97 files / 1411) + dist copy 17:32:37 → 17:34:23
+probe `9f` → `llm2` 17:34:44 → 17:35:35 (**exit 1**: `e2e-chapbook-llm` not on the picker's first page) → spec: `000-p49-board-llm` →
+`llm3` 17:41:39 → 17:42:37 (**11 passed / 1 skipped, exit=0**) → `p49-pw-sd` 17:44:41 → 17:45:54 (**exit 1**: strict-mode violation,
+`getByText(/^Done: composed/)` matched the counter and the toast) → `sd2` 17:49:35 → 17:50:41 (**exit 1**: `GET /pages` `imageObjectId`
+undefined for both scenes — a DRAFT is not the approved image) → spec: compose POST `202 {jobId}` captured with `page.waitForResponse`,
+job result → artifact → bytes → `sd3` 17:52:35 → 17:53:45 (**12 passed / 0 failed / 0 skipped, exit=0**) → both DRAFT images and the
+done-state board screenshot inspected → §6.C 197 (a)–(jj) → §3 / §5.7 / §1 / §12.9 → design §26 as-built notes → test-author → verifier →
+security-reviewer (below). No Maven in P4-9; one Playwright at a time; no probe beside a run.
+
+**What was built (line refs as of 17:31):** `features/pictureBookCompose.js` (new, LF, 1295 lines): `DEFAULT_CHAT_CONFIG_NAMES` :72,
+`withChatConfig` :75, `chatConfigLabel` :82, `COMPOSITION_KEYS`/`PROMPT_KEYS`/`ACTOR_KEYS`/`ELEMENT_KEYS` :87–:90, `USER_EDITED_WARNING`
+:92, `canvasAspect` :95, `boxStyle` :112, `dragMove` :129, `sceneLabel` :145, `composeCounterText` :153, `parseConfigOverride` :176,
+`computeOverrideDelta` :194, `userEditedWarning` :215, `planHeadlinePrompt` :224, `options` :251, `loadPlan` :275, `loadOutfits` :294,
+`loadBoard` :309, `loadPages` :342, `refetch` :358, `act` :366, drafts :392–:403, `saveCompositionKeys` :417, `saveActor` :447,
+`saveElement` :472, `promote` :497, `pinOutfit` :509, `ensureChatConfigDefault` :523, `openChatConfigPicker` :541,
+`renderChatConfigControl` :554, `recomposeScene` :569, `composeFirst` :588, `watchCompose` :604, `startComposeBook` :634,
+`openComposeDialog` :660, `openAddActorDialog` :691, `openOutfitDialog` :740, `openAddElementDialog` :786, `renderHeader` :865,
+`renderComposeRun` :885, `renderEmpty` :914, `renderStatus` :921, `renderDegradations` :935, `renderCamera` :944, `renderPrompt` :968,
+`renderConfigOverride` :998, `renderActorRow` :1014, `renderElementRow` :1060, `canvasBox` :1095, `renderCanvas` :1126, `renderPlanSide`
+:1137, `renderBoard` :1154, `init` :1203, routes :1282/:1287. `workflows/pictureBookWorkflow.js` (+466, CRLF kept): `normalizeComposeJobResult`
+:1075, `isComposeJobRefusal` :1104, `normalizeBoardComposition` :1318, `normalizeActorRow` :1343, `normalizeElementRow` :1368,
+`isNoCompositionYet` :1419, `getSceneComposition` :1428, `patchComposition` :1440, `addActor`/`patchActor`/`deleteActor` :1450–:1462,
+`addElement`/`patchElement`/`deleteElement` :1468–:1480, `promoteElement` :1489, `pinActorApparel` :1511, `normalizeResolvedOutfit` :1526,
+`getCompositionOutfits` :1543, `normalizeWardrobeEntry` :1573, `normalizeWardrobe` :1588, `getWardrobe` :1604, `addWardrobeEntry` :1614,
+`setDefaultApparel` :1634; `composeBody` :978 forwards `quickStart`/`force`/`chatConfigName`. `workflows/pictureBookCharacters.js` (+312,
+CRLF kept): wardrobe panel :310–:573 (`wardrobeEntryKind` :313, `loadWardrobe` :344, `wardrobeAct` :361, `doAddWardrobeEntry` :381,
+`doSetDefault` :391, `doMigrateSceneTags` :396, `doRenderReference` :401, `WardrobeThumb` :443, `renderWardrobeEntry` :464), mounted in
+`renderDetail` :1039 for V3 books only (197 h). `features/pictureBook.js` (+84, CRLF kept): `pb2EnsureSceneDegradations` :1154,
+`renderPb2DegradationChip`/`renderPb2TruncatedLines` ~:1942–:1975, `pb2-compose-link` :2117, routes :2330. `features/chapBook.js` (+66,
+CRLF kept): `regenerateScenePrompt(sceneObjectId, chatConfigName)` :474, `promptWriteOutcome(res, verb)` :480, consumers :3202,
+:3405–:3420, :3464–:3503. Untouched: `components/PbPlanInspector.js`, `core/am7client.js`, `components/dialogCore.js` (197 a).
+`git diff --stat` over the tracked files: 7 files, 1025 insertions, 33 deletions; plus the new board, three new Vitest files and the spec.
+
+**Tests (every one real; Playwright touches the live stack with nothing mocked; Vitest stubs `fetch`, `am7client.clearCache`, `page.toast`,
+`Dialog.confirm`, `m.route.set` and `LLMConnector.resolveConfig` and asserts on the recorded calls and the rendered DOM — no LLM/SD):**
+Vitest `pictureBookCompose.test.js` **60 passed** (`C:/tmp/p49-vitest-cmp3.log`, jsdom: header/picker/compose dialog, status chips,
+camera/prompt/configOverride Saves send one PATCH of the changed keys only and none when unchanged, actor/element rows, promote, outfit
+pin/unpin, canvas boxes + drag + ignore, run panel polling to terminal, `composeCounterText`, `planHeadlinePrompt`, `computeOverrideDelta`,
+`dragMove` clamping, `withChatConfig` with and without a pick), `pictureBookComposeHelpers.test.js` + `pictureBookWardrobe.test.js` 44
+(`p49-vitest-wd-helpers2.log`: normalizers with absent lists, wardrobe panel states, set default, add alternate, migrate, render reference
+with job polling + cache clears + error toast), `chapBookScenePromptAnalyze.test.js` 17 (`p49-vitest-cb.log`: `promptWriteOutcome` three
+branches, regenerate forwards `chatConfig`, save-all toasts); whole suite **97 files / 1411 tests passed** (`C:/tmp/p49-vitest-all3.log`,
+17:32). Playwright `e2e/pictureBookComposition.spec.js` (new, LF, 872 lines at 17:31, 960 after the review additions at 18:22, 1010 after the verifier-finding additions at 18:48, `mode: 'serial'`, `--workers=1 --retries=0 --project=chromium`,
+`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443`, every test as `ensureSharedTestUser()` = `e2etest_shared`, org 2): default tier (tests 1–9:
+fixture book + two scenes + a hand-seeded composition with two actors via generic `POST /rest/model`, 197 aa; board GET; camera/mood Save →
+one PATCH with only the changed keys, read back through `GET …/composition`; refusals verbatim; add element → promote → delete; add actor
+by description; the reader chip) **9 passed / 3 skipped (31.0 s)** (`C:/tmp/p49-pw-default4.log`); `PB_LLM_TESTS=1` (tests 10–11: the
+header picker picks `000-p49-board-llm` through the real ObjectPicker; empty-state "Compose this scene" → POST body `{chatConfigName}` →
+`source=llm`; Re-compose → `{force:true, chatConfigName}`, revision up) **11 passed / 1 skipped (55.6 s)** (`C:/tmp/p49-pw-llm3.log`:
+`MEASURED scene 2 compose source=LLM actors=2 elements=1 revision=1`, `MEASURED scene 1 re-compose source=LLM actors=2 elements=0
+revision=12`); `PB_LLM_TESTS=1 PB_SD_TESTS=1` (test 12: Compose book… with Quick start + force → `202 {jobId}` → run panel to
+`Done: composed 2, drafts rendered 2` on the page in 23214 ms → two `composed` rows → job result `quickStartRendered 2`,
+`quickStartFailed 0`, `migrated 0`, `hardFailures 0` → `scenes[].draftRender.artifactObjectId` → `GET …/artifact/{oid}` →
+`artifactType IMAGE` → bytes fetched and saved) **12 passed / 0 failed / 0 skipped (1.1 m)** (`C:/tmp/p49-pw-sd3.log`, 17:52:35 → 17:53:45).
+LLM tier in every LLM/SD run: **the in-stack Ollama container through LiteLLM** (`[e2e-llm] route=litellm server=http://litellm:4000
+analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr`; `LLM tier chat config: 000-p49-board-llm`) — not Azure, not `.42`. SD: **`http://192.168.1.39:7801`**
+(server log `PbRenderLanes - Render lane created for http://192.168.1.39:7801 with 1 permit(s)`; `txt2img sdConfig: model=juggernautXL_ragnarokBy.safetensors
+steps=12 cfgScale=7.0 sampler=dpmpp_2m scheduler=karras … 512x512`; `SwarmRendererAdapter - Stage BASE rendered 1 image(s) in` 5304 ms /
+2803 ms). Gated skips, listed not counted: default tier skips tests 10, 11, 12 (`PB_LLM_TESTS`/`PB_SD_TESTS` unset); LLM tier skips test 12.
+Images inspected: `test-results/p49-board-quickstart-scene1.png` (407462 B; a woman in a headscarf on wet quay steps at sunrise, gulls,
+a red bucket — "Dawn on the Quay"), `-scene2.png` (416035 B; a bald monk writing at a desk in a stone room — "The Copyist"),
+`p49-board-quickstart-done.png` (the board: run panel "Done: composed 2, drafts rendered 2", rows `composed`, chips `rev 13 · llm · scene ·
+prompt locked · no location`, Chat Config `000-p49-board-llm`, camera medium / eye_level, compiled BASE prompt `a fishwife on wet stone
+steps at dawn, gulls, painterly, fishwife with basket of herring, boy coiling rope`, `TEXT_ONLY: no referenced actors`, estimate `1 scene ·
+1 stage · 2 variants · 20 steps · ~70 s`).
+
+**Deploy + live proof.** No backend change: no jar, no Service7 class, no restart. Frontend `dist` rebuilt and copied into
+`am7test-am7-1:/opt/ux752/dist/` after each build (`p49-build2` 15:31, `build3` 16:24, `build4` 17:32:37; probes `9c`–`9f` `container dist
+index.html identical to local build`). The live proof is the Playwright spec above, through the served `dist` on `https://127.0.0.1:9443`
+— the wire bodies recorded by `recordWrites` (every PATCH carries only the changed keys; every compose POST carries `chatConfigName`),
+the server's responses (400 reasons verbatim on the board; 202 + job result), and the DB-visible state read back through the row routes.
+
+**DECISION AUDIT:** ✓ FOLLOWING INSTRUCTIONS — read Ux752 and legacy Ux7 before writing UI; every edit a row-level PATCH against the
+P4-8 routes; the ChapBook editor consumes the (ee) bodies and shows a partial write; `PbPlanInspector`'s compiled prompt beside the fields
+(the board's `renderPlanSide` shows the `/plan` result the inspector already builds; the component file itself needed no change);
+consumers default absent lists to `[]`; Vitest for the pure pieces + Playwright against the Docker stack as `ensureSharedTestUser()`; dist
+refreshed after every build; never admin; no commit; `.42`/`.39`/the container used as they stood (no "can't test"); every red fixed then
+re-run, never loosened. ⚠ MY JUDGMENT — 197 (a)–(jj), each with a default in §6.C, asked at phase end; none changes a ratified design
+decision ((b) the sub-route instead of a tab, (c) reference image render-only, (m)/(n)/(o) the §26 pieces not built in this slice, and
+(ee) the chat-config control are the ones nearest a design reading and each is flagged in design §26 as built). Product code outside the
+task was NOT touched: `features/pictureBookLocations.js` :375 (`proposeLocations` sends no chat config — the same gap) and the backend
+element-handle leak (jj) are recorded, not fixed.
+
+**Honest record of the defects, all mine:** product — the keyed `WardrobeThumb` vnode (`renderWardrobeEntry` :461 threw in Mithril's
+`normalizeChildren`; fixed via a component with `onupdate`, 197 x); `renderPlanSide` first dumped the plan JSON — replaced by
+`planHeadlinePrompt` (197 w); the board's first LLM run sent no `chatConfigName` and fell to a MIGRATED composition (→ the Chat Config
+control, 197 ee). Tests — Vitest `cmp` 7 red and `wd-helpers` 1 red were test-side; `all` 2 red were my call budgets (tightened); Playwright
+`default` 1–3 (`sceneIndex` never on the board GET, 197 dd; user-edited count; PATCH path regex), `llm2` (picker page; 197 hh), `sd`
+(strict mode), `sd2` (`/pages` has no DRAFT; 197 ii). Observed, recorded, not fixed: 197 (jj).
+
+**Reviews (17:55 → 18:56), in the §2 order test-author → security-reviewer → verifier; every agent claim re-read in the code before it
+was acted on or repeated here.**
+
+*Test-author* (independent; wrote `src/test/pictureBookComposeEdges.test.js`, LF, now 24 tests, and reviewed the spec) — **two product
+defects, both confirmed in the code and both mine:** (1) `act()` re-read the board after every save and `loadBoard()` reset `edits`, so a
+refused PATCH (400) reverted the user's typed values — the board *said* "the draft stays dirty" only in Vitest, where the mocked PATCH never
+failed; (2) `saveConfigOverride` had no "Nothing changed" guard, so a Save click on an untouched image-config panel PATCHed
+`{configOverride:""}` and the server bumped `revision`/set `userEdited` (`PbServiceFacade.java:4532-4533`). Three nits, not acted on
+(197 qq/rr): the spec's Promote step branches on `pr.ok()` and this fixture answers 409; the plan-inspector asserts at spec :412–:427 are
+gated on `planned`; `chapBook.js` carries an `updated:false` branch the server cannot produce. **Fixes (18:17 → 18:18):**
+`pictureBookCompose.js` — `refetch(keepEdits)` :384–:390 / `loadBoard(keepEdits)` :334–:346 (drafts and `overrideInst` survive a refused
+write; the re-read still happens), `act` :392–:407 passes `!ok`; pure `overrideUnchanged(prevText, delta)` :215–:236 (identity/schema keys
+ignored, array values compared by JSON) and the guard in `saveConfigOverride` :457 (`'Nothing changed'`, no request; a stored `{"steps":20}`
+with a blanked panel still PATCHes `''` = "cleared"). Covered by `pictureBookComposeEdges.test.js` :294 (stored override + untouched panel →
+no call, info toast, panel kept), :304 (refused 400 keeps `overrideInst.entity.steps === 999`), :326 (refused camera PATCH keeps the typed
+values after the re-read) and `pictureBookComposeHelpers.test.js` :130–:170 (`overrideUnchanged`, 2 tests), and live by the spec's
+:623 test (UI: element `x=5` → `400 x must be between 0 and 1` toast, field still `5`, revision unchanged — shot
+`p49-board-refused-draft-kept`) and the new :672 test (untouched Save → 'Nothing changed' + zero PATCHes + revision unchanged; `steps` 17 →
+one PATCH whose `configOverride` parses to `{steps:17, schema:'olio.sd.config'}`, board GET agrees, revision +1, `pb-cmp-config-set` chip,
+shot `p49-board-config-override-set`; Clear → PATCH `{configOverride:''}`, revision +2, chip gone).
+
+*Security-reviewer* — **PASS**, four Low items: (a) path-segment ids unencoded in the new `wfFetch` helpers — verified Low, LEFT AS BUILT
+(197 mm); (b) `loadOutfits` swallowed its error and the board rendered every outfit `(none)` — fixed, `outfitsError` + the
+`pb-cmp-outfits-error` chip (`pictureBookCompose.js` :51, :317–:332, :1080; `pictureBookComposeEdges.test.js` :314 drives
+`composeView.oninit` with a 403 outfits read and expects `'Outfits not read: (403) not permitted'` with the actor chip `data-source='none'`;
+197 nn); (c) the reader stored `entry.error` and never rendered it — fixed, `pb2-scene-degradations-error` "plan not read"
+(`pictureBook.js` :1954–:1960; `pictureBookComposeEdges.test.js` :427 asserts the chip with title `'nodeView failed: 500'`; 197 oo);
+(d) `doRegeneratePagePrompt` adopted `res.sdPrompt` before reading the outcome — fixed, gated on `outcome.level !== 'error'`
+(`chapBook.js` :3496–:3497; no direct Vitest, the branch is unreachable server-side, 197 pp). Confirmed OK by the reviewer and re-read by
+me: no `m.trust`/innerHTML; URLs carry only ids; no secrets; the spec uses `ensureSharedTestUser()` only; authorization server-side; only
+`chatConfigName` goes on the wire (no client-built prompt). Noted, not a defect: `doAddWardrobeEntry` sends no `chatConfigName` (no LLM
+call); the `pictureBookWorkflow.js` header comment about false booleans is inaccurate (wording, not behaviour); module-level
+`board`/`chatConfigRef` survive a same-tab re-login (reset on route `oninit`); the pre-existing `ChatUtil.getConfig` create-on-read
+(`ChatUtil.java:1575`, out of scope); unrelated dirty working-tree items.
+
+*After the fixes:* `p49-vitest-fix1` 103/103 (3 files), `fix2` 121/121 (4 files), `p49-vitest-all4` **98 files / 1436 passed / 0 failed,
+exit=0** (`C:/tmp/p49-vitest-all4.log`), `p49-build4` built in 6.45 s, dist copied 18:19:34, probe `9g` 18:22:21 (§3). Playwright, every run
+as `e2etest_shared` on `https://127.0.0.1:9443`, `--workers=1 --retries=0 --project=chromium`: `p49-pw-default5` **10 passed / 0 failed /
+3 skipped, exit=0** (`C:/tmp/p49-pw-default5.log`); `p49-pw-llm4` **12 / 0 / 1 skipped, exit=0** (`C:/tmp/p49-pw-llm4.log`; `[e2e-llm]
+route=litellm server=http://litellm:4000 analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr` — the in-stack Ollama container through LiteLLM; not
+Azure, not `.42`); `p49-pw-sd4-noflag` 10 / 0 / 3 skipped (my mis-invocation: `PB_SD_TESTS=1` without `PB_LLM_TESTS=1`; the SD describe
+needs both, spec :877–:878; kept for the record); `p49-pw-sd4` **13 passed / 0 failed / 0 skipped, exit=0** (`C:/tmp/p49-pw-sd4.log`; same
+LLM line; SD = Swarm `http://192.168.1.39:7801`, `juggernautXL_ragnarokBy.safetensors steps=12 cfgScale=7.0 sampler=dpmpp_2m
+scheduler=karras 512x512`, two BASE stages 9532 ms / 2962 ms, job `composed 2, drafts rendered 2, quickStartFailed 0`). The skipped rows are
+the flag-gated describes, listed, never counted as passes.
+
+*Verifier* — **PASS WITH FINDINGS** (independent; it re-ran the gate itself rather than reading my logs: `npx vitest run` **98 files / 1436 tests, exit 0** (`C:/tmp/verif-vitest.log`), `npx vite build` `built in 7.57s` (`C:/tmp/verif-build.log`), default-tier Playwright **10 passed / 3 skipped, exit 0** (`C:/tmp/verif-pw-default.log`); confirmed both test-author fixes are in the code and exercised by real tests, no fake tests — Vitest stubs only `fetch`/`page.toast`/`m.route.set`/`am7client.clearCache`/`LLMConnector.resolveConfig` and asserts bodies and URLs exactly — no admin user, no client-built prompts, no full-record writes). Six findings, each re-read in the code before anything was done: **(1) Confirmed, a product defect of mine — `depth` was edited as a 0..1 fraction (`{min:0,max:1,step:0.01}`, `zIndex = depth×100`) while the model is an int Z-order and `PbComposeUtil.intField` truncates `0.5 → 0` with no 400, so a typed `0.5` read back as `0` after a success toast and any real depth ≥ 1 rendered at z 0 — FIXED** (197 ss: `boxStyle` z = 1000 − depth, integer inputs, client-side rounding of `depth`/`priority`/`count`; helper/edge/compose Vitest updated, the spec's actor test now PATCHes `depth: 3` from a typed `2.6` and asserts `z-index: 997` and the stored 3). **(2) Confirmed — a successful save re-reads the board and drops every other row's unsaved draft** — already 197 (ll), left as built (the wire stays row-level; the UI drop is the open question). **(3) Confirmed — the `(unset)` enum option could never be saved** (`boardDelta` dropped blank enums; Save answered "Nothing changed") — FIXED (197 tt: `unknown` on the wire, `(unset)` on read-back; edges/compose Vitest and the spec's new `(unset) … round trip` test). **(4) Confirmed — the spec's Promote step never runs live (409 "has no location", 197 qq) and `waitForPlan` never asserted a plan compiled** — the `waitForPlan`/seeded-scene half FIXED (197 vv: `/plan` must be 200 and the seeded scene must show a headline prompt, inspector asserts unconditional); Promote stays 197 (qq). **(5) Suspected — `loadBoard`'s catch resets `edits` regardless of `keepEdits`** — confirmed in the code, left as built because the error view has no retry (197 uu). **(6) Confirmed — the three security-reviewer hardening edits are present and covered; the `pictureBook.js`/`chapBook.js` diffs are additive/outcome-only, no regression found.** Of its six "missing edge cases": depth live (now the actor test), `(unset)` live (now its own test), `waitForPlan` asserting (now), Promote-409 (197 qq), add-actor with a real character + outfit pin (197 ww, Vitest only), and "edit actor A and the camera, save only A → the camera draft must survive" (197 ll — not added, since the current behaviour drops it by design until Stephen rules). Third fix round and re-runs after these: `p49-vitest-all5` **98 files / 1439 tests, exit=0**; `p49-build5`; dist 18:51:44; probe `9h`; `p49-pw-default6` **11 passed / 0 failed / 3 skipped, exit=0** (`C:/tmp/p49-pw-default6.log`); `p49-pw-llm5` **13 passed / 0 failed / 1 skipped, exit=0** (`C:/tmp/p49-pw-llm5.log`); `p49-pw-sd5` **14 passed / 0 failed / 0 skipped, exit=0** (`C:/tmp/p49-pw-sd5.log`) — details in §3 `9h`.
+
+⚠ 197 (a)–(ww) open (defaults in §6.C; (jj) default P4-10; (kk)–(ww) from the reviews); ⚠ 194 (a)–(dd), (ff), (gg), (ii) open; ⚠ 195 (a)–(c)
+open; ⚠ 196 (a)/(b) open (default: leave for P4-10);
+next §6.C number 198.

@@ -1223,3 +1223,473 @@ export function runSummaryText(job) {
     if (r.error) text += ' — ' + r.error;
     return text;
 }
+
+// ── Composition board + wardrobe (V3 §6, §8, §26, §27; P4-9 S1) ──────────
+// The board routes (PbServiceFacade.getSceneComposition / patchSceneComposition / add|patch|deleteActor /
+// add|patch|deleteElement, P4-8) answer with Include.NON_EMPTY bodies: absent lists, false booleans and
+// null strings vanish from the wire. Every normalizer below restores them once so the board never tests
+// for a missing array. The enum vocabularies are the server's (PbShotTypeEnumType, …) minus UNKNOWN; the
+// composition models have no client modelDef entries today, so these lists are the operative ones.
+
+export const COMPOSITION_ENUMS = {
+    shotType: ['close_up', 'medium', 'full_body', 'wide', 'establishing'],
+    viewpoint: ['eye_level', 'high', 'low', 'over_shoulder', 'birds_eye'],
+    role: ['hero', 'supporting', 'named_background', 'extra', 'crowd'],
+    facing: ['left', 'right', 'toward', 'away', 'profile'],
+    referencePolicy: ['auto', 'require_reference', 'text_only'],
+    elementType: ['prop', 'furniture', 'animal', 'vehicle', 'structure', 'nature', 'other'],
+    importance: ['low', 'medium', 'high']
+};
+
+/**
+ * Pure: the option list for one composition enum. `limit` is a model-registry `limit` array when the
+ * client has a modelDef for the model (none today - am7model.getModel('olio.pb.composition') is null),
+ * else the fallback vocabulary. Lower-cased, UNKNOWN hidden, order kept.
+ */
+export function enumOptions(limit, fallback) {
+    let src = Array.isArray(limit) && limit.length ? limit : (Array.isArray(fallback) ? fallback : []);
+    let out = [];
+    src.forEach(function (v) {
+        let s = String(v == null ? '' : v).trim().toLowerCase();
+        if (!s || s === 'unknown' || out.indexOf(s) >= 0) return;
+        out.push(s);
+    });
+    return out;
+}
+
+/** Pure: enum values compare case-insensitively (lowercase on the wire, UPPERCASE in Java); null/''/UNKNOWN are one value. */
+export function sameEnum(a, b) {
+    let x = String(a == null ? '' : a).trim().toLowerCase();
+    let y = String(b == null ? '' : b).trim().toLowerCase();
+    if (x === 'unknown') x = '';
+    if (y === 'unknown') y = '';
+    return x === y;
+}
+
+const ENUM_KEYS = { shotType: 1, viewpoint: 1, role: 1, facing: 1, referencePolicy: 1, elementType: 1, importance: 1 };
+const NUMERIC_KEYS = { x: 1, y: 1, w: 1, h: 1, depth: 1, priority: 1, count: 1 };
+// int on the model (sceneActorModel/sceneElementModel); the server's intField truncates silently, so round here.
+const INT_KEYS = { depth: 1, priority: 1, count: 1 };
+
+function normalizeEditValue(key, v) {
+    if (ENUM_KEYS[key]) {
+        let s = String(v == null ? '' : v).trim().toLowerCase();
+        return (s === 'unknown' ? '' : s);
+    }
+    if (NUMERIC_KEYS[key]) {
+        if (v === '' || v == null) return null;
+        let n = Number(v);
+        if (isNaN(n)) return null;
+        return INT_KEYS[key] ? Math.round(n) : n;
+    }
+    if (typeof v === 'boolean') return v;
+    if (v == null) return '';
+    return String(v);
+}
+
+/**
+ * Pure: the row-level PATCH body for one Save - only the `keys` whose edited value differs from the
+ * persisted row. Enums compare case-insensitively; a blanked enum on a row that had a value is sent as
+ * 'unknown' (every composition enum's no-value member; a bare '' answers 400), an unchanged UNKNOWN stays
+ * untouched; numbers are sent as numbers (an emptied numeric field is skipped, never sent as null; int
+ * fields are rounded); strings are sent as typed, so clearing a text field sends ''. Returns {} when
+ * nothing changed.
+ */
+export function boardDelta(orig, edited, keys) {
+    let o = orig || {};
+    let e = edited || {};
+    let delta = {};
+    (Array.isArray(keys) ? keys : []).forEach(function (k) {
+        if (!(k in e)) return;
+        let before = normalizeEditValue(k, o[k]);
+        let after = normalizeEditValue(k, e[k]);
+        if (ENUM_KEYS[k]) {
+            if (sameEnum(before, after)) return;
+            delta[k] = after === '' ? 'unknown' : after;
+            return;
+        }
+        if (NUMERIC_KEYS[k]) {
+            if (after === null || before === after) return;
+            delta[k] = after;
+            return;
+        }
+        if (before === after) return;
+        delta[k] = after;
+    });
+    return delta;
+}
+
+export function normalizeBoardComposition(c) {
+    c = c || {};
+    return Object.assign({}, c, {
+        objectId: c.objectId != null ? c.objectId : null,
+        name: c.name != null ? c.name : null,
+        source: c.source != null ? String(c.source).toLowerCase() : null,
+        purpose: c.purpose != null ? String(c.purpose).toLowerCase() : null,
+        shotType: c.shotType != null ? String(c.shotType).toLowerCase() : null,
+        viewpoint: c.viewpoint != null ? String(c.viewpoint).toLowerCase() : null,
+        cameraText: c.cameraText != null ? c.cameraText : '',
+        mood: c.mood != null ? c.mood : '',
+        settingText: c.settingText != null ? c.settingText : '',
+        action: c.action != null ? c.action : '',
+        props: c.props != null ? c.props : '',
+        promptOverride: c.promptOverride != null ? c.promptOverride : '',
+        configOverride: c.configOverride != null ? c.configOverride : '',
+        locationObjectId: c.locationObjectId != null ? c.locationObjectId : null,
+        variantObjectId: c.variantObjectId != null ? c.variantObjectId : null,
+        focalActorObjectId: c.focalActorObjectId != null ? c.focalActorObjectId : null,
+        userEdited: !!c.userEdited,
+        promptLocked: !!c.promptLocked,
+        revision: c.revision != null ? c.revision : 0
+    });
+}
+
+export function normalizeActorRow(a) {
+    a = a || {};
+    return Object.assign({}, a, {
+        objectId: a.objectId != null ? a.objectId : null,
+        name: a.name != null ? a.name : null,
+        characterObjectId: a.characterObjectId != null ? a.characterObjectId : null,
+        characterName: a.characterName != null ? a.characterName : null,
+        apparelObjectId: a.apparelObjectId != null ? a.apparelObjectId : null,
+        role: a.role != null ? String(a.role).toLowerCase() : null,
+        referencePolicy: a.referencePolicy != null ? String(a.referencePolicy).toLowerCase() : null,
+        facing: a.facing != null ? String(a.facing).toLowerCase() : null,
+        priority: a.priority != null ? a.priority : 0,
+        pose: a.pose != null ? a.pose : '',
+        expression: a.expression != null ? a.expression : '',
+        action: a.action != null ? a.action : '',
+        description: a.description != null ? a.description : '',
+        x: a.x != null ? a.x : 0,
+        y: a.y != null ? a.y : 0,
+        w: a.w != null ? a.w : 0,
+        h: a.h != null ? a.h : 0,
+        depth: a.depth != null ? a.depth : 0,
+        count: a.count != null ? a.count : 1
+    });
+}
+
+export function normalizeElementRow(e) {
+    e = e || {};
+    return Object.assign({}, e, {
+        objectId: e.objectId != null ? e.objectId : null,
+        elementType: e.elementType != null ? String(e.elementType).toLowerCase() : null,
+        importance: e.importance != null ? String(e.importance).toLowerCase() : null,
+        description: e.description != null ? e.description : '',
+        itemObjectId: e.itemObjectId != null ? e.itemObjectId : null,
+        x: e.x != null ? e.x : 0,
+        y: e.y != null ? e.y : 0,
+        w: e.w != null ? e.w : 0,
+        h: e.h != null ? e.h : 0,
+        depth: e.depth != null ? e.depth : 0
+    });
+}
+
+/** Pure: GET /{book}/scene/{scene}/composition body → {bookObjectId, sceneObjectId, compositionObjectId, composition, actors[], elements[]}. */
+export function normalizeBoard(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        bookObjectId: r.bookObjectId != null ? r.bookObjectId : null,
+        sceneObjectId: r.sceneObjectId != null ? r.sceneObjectId : null,
+        compositionObjectId: r.compositionObjectId != null ? r.compositionObjectId : null,
+        composition: normalizeBoardComposition(r.composition),
+        actors: (Array.isArray(r.actors) ? r.actors : []).map(normalizeActorRow),
+        elements: (Array.isArray(r.elements) ? r.elements : []).map(normalizeElementRow)
+    });
+}
+
+/** Pure: an edit route's body → every flag boolean, `actor`/`element` rows normalized when present. */
+export function normalizeEditResult(r) {
+    r = r || {};
+    return Object.assign({}, r, {
+        bookObjectId: r.bookObjectId != null ? r.bookObjectId : null,
+        sceneObjectId: r.sceneObjectId != null ? r.sceneObjectId : null,
+        compositionObjectId: r.compositionObjectId != null ? r.compositionObjectId : null,
+        revision: r.revision != null ? r.revision : 0,
+        nodeStale: !!r.nodeStale,
+        nodeStatus: r.nodeStatus != null ? r.nodeStatus : null,
+        updated: !!r.updated,
+        created: !!r.created,
+        deleted: !!r.deleted,
+        focalActorCleared: !!r.focalActorCleared,
+        actorObjectId: r.actorObjectId != null ? r.actorObjectId : null,
+        elementObjectId: r.elementObjectId != null ? r.elementObjectId : null,
+        actor: r.actor && typeof r.actor === 'object' ? normalizeActorRow(r.actor) : null,
+        element: r.element && typeof r.element === 'object' ? normalizeElementRow(r.element) : null
+    });
+}
+
+/** Pure: a board-route 404 that means "no composition yet" (compose it / set the page prompt), not an unknown scene. */
+export function isNoCompositionYet(err) {
+    if (!err || err.status !== 404) return false;
+    return /has no composition/i.test(String(err.message || '') + ' ' + String(err.body || ''));
+}
+
+/**
+ * GET /{book}/scene/{scene}/composition → normalizeBoard. 404 when the scene has no composition yet
+ * (isNoCompositionYet - the board shows an empty state with Compose) or the scene is not of the book.
+ */
+export async function getSceneComposition(pb2BookObjectId, sceneObjectId) {
+    return normalizeBoard(await wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/composition',
+        { method: 'GET' }, 'getSceneComposition failed'));
+}
+
+/**
+ * PATCH /{book}/scene/{scene}/composition {settingText?, action?, mood?, shotType?, viewpoint?, cameraText?, props?,
+ * configOverride?, promptOverride?, promptLocked?, focalActorObjectId?} - a row-level delta (boardDelta). 400 for a
+ * refused field (book, scene, purpose, source, revision, userEdited, name, location, locationVariant, focalActor),
+ * a blank enum, a non-sparse configOverride or a focalActorObjectId that is not this composition's actor.
+ * → editResult {…, updated:true, revision, nodeStale, nodeStatus}.
+ */
+export async function patchComposition(pb2BookObjectId, sceneObjectId, delta) {
+    return normalizeEditResult(await wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/composition',
+        { method: 'PATCH', body: delta || {} }, 'patchComposition failed'));
+}
+
+/**
+ * POST /{book}/composition/{comp}/actor {characterObjectId | description, role?, priority?, pose?, expression?, action?,
+ * facing?, x?, y?, w?, h?, depth?, count?, referencePolicy?} → editResult + {actorObjectId, actor, created:true}.
+ * 409 on a ChapBook page ("Actors are not enabled on ChapBook pages"), 404 character not of the book.
+ */
+export async function addActor(pb2BookObjectId, compositionObjectId, body) {
+    return normalizeEditResult(await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/actor',
+        { method: 'POST', body: body || {} }, 'addActor failed'));
+}
+
+/** PATCH /{book}/composition/{comp}/actor/{actor} {role?, priority?, pose?, expression?, action?, facing?, x?, y?, w?, h?, depth?, description?, count?, referencePolicy?} → editResult + {actorObjectId, actor, updated:true}. x/y/w/h outside 0..1 is a 400. */
+export async function patchActor(pb2BookObjectId, compositionObjectId, actorObjectId, delta) {
+    return normalizeEditResult(await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/actor/' + actorObjectId,
+        { method: 'PATCH', body: delta || {} }, 'patchActor failed'));
+}
+
+/** DELETE /{book}/composition/{comp}/actor/{actor} → editResult + {actorObjectId, deleted:true, focalActorCleared}. */
+export async function deleteActor(pb2BookObjectId, compositionObjectId, actorObjectId) {
+    return normalizeEditResult(await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/actor/' + actorObjectId,
+        { method: 'DELETE' }, 'deleteActor failed'));
+}
+
+/** POST /{book}/composition/{comp}/element {elementType, description, x?, y?, w?, h?, depth?, importance?} → editResult + {elementObjectId, element, created:true}. Allowed on every purpose. */
+export async function addElement(pb2BookObjectId, compositionObjectId, body) {
+    return normalizeEditResult(await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/element',
+        { method: 'POST', body: body || {} }, 'addElement failed'));
+}
+
+/** PATCH /{book}/composition/{comp}/element/{el} {elementType?, description?, x?, y?, w?, h?, depth?, importance?} → editResult + {elementObjectId, element, updated:true}. */
+export async function patchElement(pb2BookObjectId, compositionObjectId, elementObjectId, delta) {
+    return normalizeEditResult(await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/element/' + elementObjectId,
+        { method: 'PATCH', body: delta || {} }, 'patchElement failed'));
+}
+
+/** DELETE /{book}/composition/{comp}/element/{el} → editResult + {elementObjectId, deleted:true}. */
+export async function deleteElement(pb2BookObjectId, compositionObjectId, elementObjectId) {
+    return normalizeEditResult(await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/element/' + elementObjectId,
+        { method: 'DELETE' }, 'deleteElement failed'));
+}
+
+/**
+ * POST /{book}/composition/{comp}/element/{el}/promote → {elementObjectId, promoted, created, reused, itemObjectId, itemName,
+ * elementText, staled, warnings[]}. 409 when the composition's scene has no location or the location has no POI store.
+ */
+export async function promoteElement(pb2BookObjectId, compositionObjectId, elementObjectId) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/element/' + elementObjectId + '/promote',
+        { method: 'POST' }, 'promoteElement failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        elementObjectId: r.elementObjectId != null ? r.elementObjectId : null,
+        promoted: !!r.promoted,
+        created: !!r.created,
+        reused: !!r.reused,
+        itemObjectId: r.itemObjectId != null ? r.itemObjectId : null,
+        itemName: r.itemName != null ? r.itemName : null,
+        elementText: r.elementText != null ? r.elementText : null,
+        staled: r.staled != null ? r.staled : 0,
+        warnings: Array.isArray(r.warnings) ? r.warnings : []
+    });
+}
+
+/**
+ * PUT /{book}/composition/{comp}/actor/{actor}/apparel {apparelObjectId} pins; `{}` (apparelObjectId null) unpins.
+ * 400 when the apparel is not in the actor's character's wardrobe. → {actorObjectId, apparelObjectId, pinned, staled,
+ * affectedSceneIndexes[]}. A pin does not mark the composition user-edited.
+ */
+export async function pinActorApparel(pb2BookObjectId, compositionObjectId, actorObjectId, apparelObjectId) {
+    let body = {};
+    if (apparelObjectId != null && String(apparelObjectId).trim()) body.apparelObjectId = String(apparelObjectId).trim();
+    let r = await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/actor/' + actorObjectId + '/apparel',
+        { method: 'PUT', body: body }, 'pinActorApparel failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        actorObjectId: r.actorObjectId != null ? r.actorObjectId : null,
+        apparelObjectId: r.apparelObjectId != null ? r.apparelObjectId : null,
+        pinned: !!r.pinned,
+        staled: r.staled != null ? r.staled : 0,
+        affectedSceneIndexes: Array.isArray(r.affectedSceneIndexes) ? r.affectedSceneIndexes : []
+    });
+}
+
+export function normalizeResolvedOutfit(o) {
+    o = o || {};
+    return Object.assign({}, o, {
+        actorObjectId: o.actorObjectId != null ? o.actorObjectId : null,
+        actorName: o.actorName != null ? o.actorName : null,
+        characterObjectId: o.characterObjectId != null ? o.characterObjectId : null,
+        apparelObjectId: o.apparelObjectId != null ? o.apparelObjectId : null,
+        apparelName: o.apparelName != null ? o.apparelName : null,
+        apparelDescription: o.apparelDescription != null ? o.apparelDescription : null,
+        source: o.source != null ? String(o.source).toLowerCase() : 'none',
+        fromSceneIndex: o.fromSceneIndex != null ? o.fromSceneIndex : 0,
+        label: o.label != null ? o.label : '',
+        warning: o.warning != null ? o.warning : null
+    });
+}
+
+/** GET /{book}/composition/{comp}/outfits → {compositionObjectId, sceneObjectId, actors[resolvedOutfit]} (source: pinned|carried|default|none). */
+export async function getCompositionOutfits(pb2BookObjectId, compositionObjectId) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/composition/' + compositionObjectId + '/outfits',
+        { method: 'GET' }, 'getCompositionOutfits failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        compositionObjectId: r.compositionObjectId != null ? r.compositionObjectId : null,
+        sceneObjectId: r.sceneObjectId != null ? r.sceneObjectId : null,
+        actors: (Array.isArray(r.actors) ? r.actors : []).map(normalizeResolvedOutfit)
+    });
+}
+
+/**
+ * Pure: the outfit chip text for one actor row from the resolved outfits. The server's `label` is the
+ * board's text ("(pinned)", "(from scene N)", "(default)", "(none)"); the apparel name precedes it when
+ * one resolved. Absent resolution → "(none)".
+ */
+export function outfitChipText(outfit) {
+    if (!outfit) return '(none)';
+    let name = outfit.apparelName ? String(outfit.apparelName) : '';
+    let label = outfit.label ? String(outfit.label) : '';
+    if (!label) {
+        let src = String(outfit.source || 'none').toLowerCase();
+        if (src === 'pinned') label = '(pinned)';
+        else if (src === 'carried') label = '(from scene ' + (outfit.fromSceneIndex != null ? outfit.fromSceneIndex : '?') + ')';
+        else if (src === 'default') label = '(default)';
+        else label = '(none)';
+    }
+    return (name ? name + ' ' : '') + label;
+}
+
+export function normalizeWardrobeEntry(e) {
+    e = e || {};
+    return Object.assign({}, e, {
+        objectId: e.objectId != null ? e.objectId : null,
+        name: e.name != null ? e.name : null,
+        description: e.description != null ? e.description : '',
+        isDefault: !!e.isDefault,
+        sceneIndex: e.sceneIndex != null ? e.sceneIndex : null,
+        wearables: Array.isArray(e.wearables) ? e.wearables : [],
+        gallery: Array.isArray(e.gallery) ? e.gallery : [],
+        referenceObjectId: e.referenceObjectId != null ? e.referenceObjectId : null
+    });
+}
+
+/** Pure: GET wardrobe body → {characterObjectId, characterName, storeObjectId, defaultApparelObjectId, entries[], entryCount, warnings[]}. */
+export function normalizeWardrobe(r) {
+    r = r || {};
+    let entries = (Array.isArray(r.entries) ? r.entries : []).map(normalizeWardrobeEntry);
+    return Object.assign({}, r, {
+        bookObjectId: r.bookObjectId != null ? r.bookObjectId : null,
+        characterObjectId: r.characterObjectId != null ? r.characterObjectId : null,
+        characterName: r.characterName != null ? r.characterName : null,
+        storeObjectId: r.storeObjectId != null ? r.storeObjectId : null,
+        defaultApparelObjectId: r.defaultApparelObjectId != null ? r.defaultApparelObjectId : null,
+        entries: entries,
+        entryCount: r.entryCount != null ? r.entryCount : entries.length,
+        warnings: Array.isArray(r.warnings) ? r.warnings : []
+    });
+}
+
+/** GET /{book}/character/{char}/wardrobe → normalizeWardrobe. 404 when the character is not of the book. */
+export async function getWardrobe(pb2BookObjectId, characterObjectId) {
+    return normalizeWardrobe(await wfFetch('/' + pb2BookObjectId + '/character/' + characterObjectId + '/wardrobe',
+        { method: 'GET' }, 'getWardrobe failed'));
+}
+
+/**
+ * POST /{book}/character/{char}/wardrobe {description, chatConfigName?} → 201 {apparelObjectId, name, description, reused:false,
+ * items[], unmatched[], wearables, colorsResolved, elapsedMs}; 200 reused:true when the description is already in the wardrobe.
+ * 400 blank description, 409 wardrobe full / no world context, 502 the LLM produced nothing usable.
+ */
+export async function addWardrobeEntry(pb2BookObjectId, characterObjectId, description, chatConfigName) {
+    let body = { description: description };
+    if (chatConfigName) body.chatConfigName = chatConfigName;
+    let r = await wfFetch('/' + pb2BookObjectId + '/character/' + characterObjectId + '/wardrobe',
+        { method: 'POST', body: body }, 'addWardrobeEntry failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        apparelObjectId: r.apparelObjectId != null ? r.apparelObjectId : null,
+        name: r.name != null ? r.name : null,
+        description: r.description != null ? r.description : '',
+        reused: !!r.reused,
+        items: Array.isArray(r.items) ? r.items : [],
+        unmatched: Array.isArray(r.unmatched) ? r.unmatched : [],
+        wearables: r.wearables != null ? r.wearables : 0,
+        colorsResolved: r.colorsResolved != null ? r.colorsResolved : 0,
+        elapsedMs: r.elapsedMs != null ? r.elapsedMs : 0
+    });
+}
+
+/** PUT /{book}/character/{char}/wardrobe/{apparel}/default → {apparelObjectId, previousApparelObjectIds[], changed, scenesScanned, staled, warnings[]}. */
+export async function setDefaultApparel(pb2BookObjectId, characterObjectId, apparelObjectId) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/character/' + characterObjectId + '/wardrobe/' + apparelObjectId + '/default',
+        { method: 'PUT' }, 'setDefaultApparel failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        apparelObjectId: r.apparelObjectId != null ? r.apparelObjectId : null,
+        previousApparelObjectIds: Array.isArray(r.previousApparelObjectIds) ? r.previousApparelObjectIds : [],
+        changed: !!r.changed,
+        scenesScanned: r.scenesScanned != null ? r.scenesScanned : 0,
+        staled: r.staled != null ? r.staled : 0,
+        warnings: Array.isArray(r.warnings) ? r.warnings : []
+    });
+}
+
+/**
+ * POST /{book}/character/{char}/wardrobe/{apparel}/reference → 202 job submit {jobId, jobStatus, kind, reused}; poll
+ * GET /rest/job/{jobId}. The render lands in apparel.gallery (re-read the wardrobe). 409 while a job runs for the
+ * apparel, 500 no SD backend. There is no upload route: a reference is rendered, never uploaded.
+ */
+export async function renderApparelReference(pb2BookObjectId, characterObjectId, apparelObjectId) {
+    return normalizeJobSubmit(await wfFetch('/' + pb2BookObjectId + '/character/' + characterObjectId + '/wardrobe/' + apparelObjectId + '/reference',
+        { method: 'POST' }, 'renderApparelReference failed'));
+}
+
+/** POST /{book}/wardrobe/migrate-scene-tags → {scanned, pinned, skippedPinned, skippedNoActor, skippedNoScene, skippedNoComposition, ambiguous, warnings[]}. Idempotent. */
+export async function migrateSceneTags(pb2BookObjectId) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/wardrobe/migrate-scene-tags', { method: 'POST' }, 'migrateSceneTags failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        scanned: r.scanned != null ? r.scanned : 0,
+        pinned: r.pinned != null ? r.pinned : 0,
+        skippedPinned: r.skippedPinned != null ? r.skippedPinned : 0,
+        skippedNoActor: r.skippedNoActor != null ? r.skippedNoActor : 0,
+        skippedNoScene: r.skippedNoScene != null ? r.skippedNoScene : 0,
+        skippedNoComposition: r.skippedNoComposition != null ? r.skippedNoComposition : 0,
+        ambiguous: r.ambiguous != null ? r.ambiguous : 0,
+        warnings: Array.isArray(r.warnings) ? r.warnings : []
+    });
+}
+
+/**
+ * Pure: the degradation summary a scene card / the board shows from a normalized render plan (normalizePlan):
+ * {count, codes[], truncatedDropped[]} where truncatedDropped is the message of every PROMPT_TRUNCATED entry
+ * ("<group> dropped: a, b (N tokens over budget B)", CompilerSupport.recordDrop) taken verbatim from the plan -
+ * the client composes no prompt and infers nothing about what was cut.
+ */
+export function degradationSummary(plan) {
+    let list = plan && Array.isArray(plan.degradations) ? plan.degradations : [];
+    let codes = [];
+    let dropped = [];
+    list.forEach(function (d) {
+        if (!d) return;
+        let code = String(d.code || '').toUpperCase();
+        if (code && codes.indexOf(code) < 0) codes.push(code);
+        if (code === 'PROMPT_TRUNCATED') dropped.push(String(d.message || ''));
+    });
+    return { count: list.length, codes: codes, truncatedDropped: dropped };
+}

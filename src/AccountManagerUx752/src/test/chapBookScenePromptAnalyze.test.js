@@ -9,13 +9,19 @@
  * renders an SD image.
  *
  * Contracts under test (built by the backend agent, wired verbatim here):
- *   1) POST /rest/olio/chap-book/scene/{oid}/prompt/regenerate  body { chatConfig? } → { sdPrompt, promptLocked }
+ *   1) POST /rest/olio/chap-book/scene/{oid}/prompt/regenerate  body { chatConfig? }
+ *        → { sdPrompt, promptLocked:false, updated, compositionUpdated[, compositionObjectId][, error] }
  *   2) POST /rest/olio/chap-book/scene/{oid}/analyze            body { chatConfig? } → { success, mood }
+ *   3) PUT  /rest/olio/chap-book/scene/{oid}/prompt             body { sdPrompt|null }
+ *        → { updated, compositionUpdated, promptLocked[, compositionObjectId][, error] }
+ *   4) promptWriteOutcome(body, verb) — the P4-8 (ee) classifier the review view feeds (1) and (3) through:
+ *        updated:false → error; compositionUpdated:false (or an error) → warn carrying the server's reason
+ *        verbatim; otherwise success. A partial write must reach the user, never be read as "saved".
  *
  * What is asserted (with a stubbed global.fetch — no live backend):
- *   - correct URL suffix + POST method + JSON content-type + credentials:'include'
+ *   - correct URL suffix + method + JSON content-type + credentials:'include'
  *   - chatConfig is present in the body ONLY when a name is supplied (never sent as undefined/null)
- *   - the parsed JSON body is returned as-is on 200
+ *   - the parsed JSON body is returned as-is on 200 (all of its P4-8 flags intact)
  *   - a non-2xx response throws an Error whose `.status` carries the HTTP status (so the caller can
  *     surface a 503 "no org chat config" distinctly from a generic failure instead of silently no-oping)
  *
@@ -51,7 +57,8 @@ afterEach(() => {
 describe('regenerateScenePrompt (per-scene landscape-prompt regenerate — prompt only)', () => {
     it('POSTs to /scene/{oid}/prompt/regenerate with the chatConfig when a name is supplied', async () => {
         let { regenerateScenePrompt } = await import('../features/chapBook.js');
-        global.__cbNextResponse = jsonResponse(200, { sdPrompt: 'a moonlit shore, painterly', promptLocked: false });
+        let body = { sdPrompt: 'a moonlit shore, painterly', promptLocked: false, updated: true, compositionUpdated: true, compositionObjectId: 'comp-1' };
+        global.__cbNextResponse = jsonResponse(200, body);
         let res = await regenerateScenePrompt('scene-oid-1', 'contentAnalysis');
         expect(calls).toHaveLength(1);
         expect(calls[0].url.endsWith('/rest/olio/chap-book/scene/scene-oid-1/prompt/regenerate')).toBe(true);
@@ -59,13 +66,25 @@ describe('regenerateScenePrompt (per-scene landscape-prompt regenerate — promp
         expect(calls[0].opts.headers['Content-Type']).toBe('application/json');
         expect(calls[0].opts.credentials).toBe('include');
         expect(calls[0].body).toEqual({ chatConfig: 'contentAnalysis' });
-        // The parsed response is returned verbatim so the caller can update scene.sdPrompt/promptLocked.
-        expect(res).toEqual({ sdPrompt: 'a moonlit shore, painterly', promptLocked: false });
+        // The parsed response is returned verbatim — sdPrompt/promptLocked for the card, and the P4-8
+        // updated/compositionUpdated/compositionObjectId flags for promptWriteOutcome.
+        expect(res).toEqual(body);
+    });
+
+    it('returns a partial-write body verbatim (compositionUpdated:false + error) rather than dropping the flags', async () => {
+        let { regenerateScenePrompt } = await import('../features/chapBook.js');
+        let body = { sdPrompt: 'x', promptLocked: false, updated: true, compositionUpdated: false,
+            error: 'Scene scene-oid-2 sdPrompt regenerated but its page composition was not: refused' };
+        global.__cbNextResponse = jsonResponse(200, body);
+        let res = await regenerateScenePrompt('scene-oid-2', 'contentAnalysis');
+        expect(res).toEqual(body);
+        expect(res.compositionUpdated).toBe(false);
+        expect(res.error).toContain('page composition was not');
     });
 
     it('omits chatConfig from the body entirely when no name is supplied (never sends undefined/null)', async () => {
         let { regenerateScenePrompt } = await import('../features/chapBook.js');
-        global.__cbNextResponse = jsonResponse(200, { sdPrompt: 'x', promptLocked: true });
+        global.__cbNextResponse = jsonResponse(200, { sdPrompt: 'x', promptLocked: false, updated: true, compositionUpdated: true });
         await regenerateScenePrompt('scene-oid-2', null);
         expect(calls[0].body).toEqual({});
         expect('chatConfig' in calls[0].body).toBe(false);
@@ -127,5 +146,85 @@ describe('analyzeScene (per-scene mood analysis — analysis only)', () => {
         // The scene endpoint has the '/scene/' segment before the objectId; the poem endpoint does not.
         expect(calls[0].url).toContain('/scene/scene-oid-12/analyze');
         expect(calls[0].url).not.toMatch(/\/analyze\/scene-oid-12$/);
+    });
+});
+
+describe('putSceneLandscapePrompt (per-scene landscape-prompt PUT — verbatim store or clear)', () => {
+    it('PUTs { sdPrompt } to /scene/{oid}/prompt and returns the P4-8 body verbatim', async () => {
+        let { putSceneLandscapePrompt } = await import('../features/chapBook.js');
+        let body = { updated: true, compositionUpdated: true, promptLocked: true, compositionObjectId: 'comp-7' };
+        global.__cbNextResponse = jsonResponse(200, body);
+        let res = await putSceneLandscapePrompt('scene-oid-20', '  a rain-slick quay at dusk  ');
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url.endsWith('/rest/olio/chap-book/scene/scene-oid-20/prompt')).toBe(true);
+        expect(calls[0].opts.method).toBe('PUT');
+        expect(calls[0].opts.headers['Content-Type']).toBe('application/json');
+        expect(calls[0].opts.credentials).toBe('include');
+        // Non-blank is sent exactly as given — the backend trims and persists verbatim.
+        expect(calls[0].body).toEqual({ sdPrompt: '  a rain-slick quay at dusk  ' });
+        expect(res).toEqual(body);
+    });
+
+    it('sends sdPrompt:null for a blank value (a clear) — never an empty string', async () => {
+        let { putSceneLandscapePrompt } = await import('../features/chapBook.js');
+        global.__cbNextResponse = jsonResponse(200, { updated: true, compositionUpdated: true, promptLocked: false });
+        await putSceneLandscapePrompt('scene-oid-21', '   ');
+        expect(calls[0].body).toEqual({ sdPrompt: null });
+        await putSceneLandscapePrompt('scene-oid-21', null);
+        expect(calls[1].body).toEqual({ sdPrompt: null });
+    });
+
+    it('throws on a non-2xx response', async () => {
+        let { putSceneLandscapePrompt } = await import('../features/chapBook.js');
+        global.__cbNextResponse = jsonResponse(404, { error: 'Scene not found' });
+        let err = null;
+        try { await putSceneLandscapePrompt('scene-oid-22', 'x'); }
+        catch (e) { err = e; }
+        expect(err).toBeInstanceOf(Error);
+        expect(err.message).toContain('404');
+    });
+});
+
+describe('promptWriteOutcome (P4-8 prompt-write body → toast; a partial write is never read as saved)', () => {
+    it('is success when both the scene copy and the page composition landed', async () => {
+        let { promptWriteOutcome } = await import('../features/chapBook.js');
+        expect(promptWriteOutcome({ updated: true, compositionUpdated: true, promptLocked: true, compositionObjectId: 'c' }, 'saved'))
+            .toEqual({ level: 'success', message: 'Prompt saved' });
+        expect(promptWriteOutcome({ sdPrompt: 'x', promptLocked: false, updated: true, compositionUpdated: true }, 'regenerated'))
+            .toEqual({ level: 'success', message: 'Prompt regenerated' });
+    });
+
+    it('is a warning carrying the server reason verbatim when the scene copy landed but the composition did not', async () => {
+        let { promptWriteOutcome } = await import('../features/chapBook.js');
+        let reason = 'Scene s-1 sdPrompt persisted but its page composition was not: Composition update refused';
+        let out = promptWriteOutcome({ updated: true, compositionUpdated: false, promptLocked: true, error: reason }, 'saved');
+        expect(out.level).toBe('warn');
+        expect(out.message).toBe('Prompt saved, composition not updated: ' + reason);
+        // Regenerate uses the same shape with its own verb.
+        let out2 = promptWriteOutcome({ sdPrompt: 'x', promptLocked: false, updated: true, compositionUpdated: false, error: reason }, 'regenerated');
+        expect(out2.level).toBe('warn');
+        expect(out2.message).toBe('Prompt regenerated, composition not updated: ' + reason);
+    });
+
+    it('is a warning (not success) when an error is present even if compositionUpdated is absent', async () => {
+        let { promptWriteOutcome } = await import('../features/chapBook.js');
+        let out = promptWriteOutcome({ updated: true, error: 'something was refused' }, 'saved');
+        expect(out.level).toBe('warn');
+        expect(out.message).toContain('something was refused');
+    });
+
+    it('is an error when nothing landed (updated:false) so the prompt stays dirty', async () => {
+        let { promptWriteOutcome } = await import('../features/chapBook.js');
+        expect(promptWriteOutcome({ updated: false, compositionUpdated: false, promptLocked: true }, 'saved'))
+            .toEqual({ level: 'error', message: 'Prompt was not saved' });
+        expect(promptWriteOutcome({ updated: false, compositionUpdated: false, error: 'db refused' }, 'regenerated'))
+            .toEqual({ level: 'error', message: 'Prompt was not regenerated: db refused' });
+    });
+
+    it('reads absent flags / an empty body as success and defaults the verb to saved (never fabricates a failure)', async () => {
+        let { promptWriteOutcome } = await import('../features/chapBook.js');
+        expect(promptWriteOutcome({}, 'saved')).toEqual({ level: 'success', message: 'Prompt saved' });
+        expect(promptWriteOutcome(null)).toEqual({ level: 'success', message: 'Prompt saved' });
+        expect(promptWriteOutcome(undefined, 'regenerated')).toEqual({ level: 'success', message: 'Prompt regenerated' });
     });
 });

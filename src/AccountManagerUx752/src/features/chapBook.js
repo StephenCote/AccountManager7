@@ -449,7 +449,9 @@ function mergeSceneOverlay(overlay, existingOverride) {
 
 // Regenerate ONE scene's landscape (SD) prompt via the LLM — prompt ONLY, no image is produced.
 // Contract: POST /rest/olio/chap-book/scene/{sceneObjectId}/prompt/regenerate, body { chatConfig? },
-// 200 → { sdPrompt: "<new prompt>", promptLocked: false }.
+// 200 → { sdPrompt: "<new prompt>", promptLocked: false, updated, compositionUpdated[, compositionObjectId][, error] }
+// — the P4-8 prompt-write shape (see promptWriteOutcome): the scene copy and the page composition are
+// reported separately, and a refused composition write is a 200 with compositionUpdated:false + error.
 async function regenerateScenePrompt(sceneObjectId, chatConfigName) {
     let body = {};
     if (chatConfigName) body.chatConfig = chatConfigName;
@@ -467,6 +469,23 @@ async function regenerateScenePrompt(sceneObjectId, chatConfigName) {
         throw e;
     }
     return (await resp.json()) || {};
+}
+
+// Classify a P4-8 prompt-write body ({ updated, compositionUpdated, promptLocked[, compositionObjectId][, error] })
+// from PUT …/prompt or POST …/prompt/regenerate into the toast to show. Both routes answer 200 for every
+// outcome, so the flags decide: updated:false → nothing landed (error; the prompt stays dirty);
+// updated:true + compositionUpdated:false → the scene copy landed but the page composition was refused
+// (warn, with the server's reason verbatim — never swallowed); otherwise success. Absent flags (an empty
+// body) read as success so a missing key never fabricates a failure. `verb` is 'saved' or 'regenerated'.
+function promptWriteOutcome(res, verb) {
+    res = res || {};
+    verb = verb || 'saved';
+    let reason = res.error ? ': ' + res.error : '';
+    if (res.updated === false) return { level: 'error', message: 'Prompt was not ' + verb + reason };
+    if (res.compositionUpdated === false || res.error) {
+        return { level: 'warn', message: 'Prompt ' + verb + ', composition not updated' + reason };
+    }
+    return { level: 'success', message: 'Prompt ' + verb };
 }
 
 // Analyze ONE scene's stanza to (re)derive its mood — analysis ONLY, no image is produced.
@@ -3180,7 +3199,9 @@ async function putSceneConfigOverride(sceneObjectId, configOverrideString) {
 // putSceneConfigOverride — same fetch idiom, PUT to the fixed backend contract at
 // /rest/olio/chap-book/scene/{oid}/prompt with body { sdPrompt }. A null / blank value CLEARS the
 // stored prompt (the backend treats absent / JSON-null / blank as a clear); a non-blank value is stored
-// exactly as given. Returns the { updated: bool } contract body.
+// exactly as given. Returns the P4-8 prompt-write body
+// { updated, compositionUpdated, promptLocked[, compositionObjectId][, error] } — callers must classify it
+// with promptWriteOutcome: a 200 can mean nothing landed (updated:false) or a partial write.
 async function putSceneLandscapePrompt(sceneObjectId, sdPrompt) {
     let value = (sdPrompt == null || !String(sdPrompt).trim()) ? null : sdPrompt;
     let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/prompt', {
@@ -3381,13 +3402,24 @@ async function saveSceneRecord(scene, silent) {
         try { await patchSceneFields(scene, changed); }
         catch (e) { failed.push('fields'); }
     }
-    // 2) Landscape prompt (verbatim; blank clears + unlocks — mirrors doSaveSceneLandscapePrompt).
+    // 2) Landscape prompt (verbatim; blank clears + unlocks — mirrors doSavePagePrompt). The 200 body says
+    //    what landed: updated:false keeps the prompt dirty and fails the save; a partial write (scene copy
+    //    landed, page composition refused) is shown even when silent — Save all's aggregate toast would
+    //    otherwise swallow it.
     if (dirty.has('sdPrompt')) {
         try {
             let val = scene.sdPrompt || '';
-            await putSceneLandscapePrompt(scene.objectId, val);
-            scene.sdPrompt = val.trim() ? val : '';
-            scene.promptLocked = !!val.trim();
+            let res = await putSceneLandscapePrompt(scene.objectId, val);
+            let outcome = promptWriteOutcome(res, 'saved');
+            if (outcome.level === 'error') {
+                failed.push('prompt');
+            } else {
+                scene.sdPrompt = val.trim() ? val : '';
+                scene.promptLocked = (res && typeof res.promptLocked === 'boolean') ? res.promptLocked : !!val.trim();
+                if (outcome.level === 'warn') {
+                    page.toast('warn', (scene.title ? scene.title + ': ' : '') + outcome.message);
+                }
+            }
         } catch (e) { failed.push('prompt'); }
     }
     // 3) Sparse SD config override (delta semantics unchanged).
@@ -3429,11 +3461,14 @@ async function doSavePagePrompt(idx) {
     m.redraw();
     try {
         let val = scene.sdPrompt || '';
-        await putSceneLandscapePrompt(scene.objectId, val);
-        scene.sdPrompt = val.trim() ? val : '';
-        scene.promptLocked = !!val.trim();
-        if (scene._dirty) scene._dirty.delete('sdPrompt');
-        page.toast('success', 'Prompt saved');
+        let res = await putSceneLandscapePrompt(scene.objectId, val);
+        let outcome = promptWriteOutcome(res, 'saved');
+        if (outcome.level !== 'error') {
+            scene.sdPrompt = val.trim() ? val : '';
+            scene.promptLocked = (res && typeof res.promptLocked === 'boolean') ? res.promptLocked : !!val.trim();
+            if (scene._dirty) scene._dirty.delete('sdPrompt');
+        }
+        page.toast(outcome.level, outcome.message);
     } catch (e) {
         page.toast('error', 'Save prompt failed: ' + (e.message || ''));
     }
@@ -3446,7 +3481,9 @@ async function doSavePagePrompt(idx) {
 // keyed by scene objectId — scene UUIDs never collide with poem UUIDs). On success replaces the card's
 // in-memory sdPrompt from the response (and clears any pending sdPrompt dirty flag, since the persisted
 // value is now authoritative). A 503 (no org chat config) is surfaced as a warning toast, not a silent
-// no-op. Deliberately NOT the poem-level /analyze — a scene keeps no link to its source poem.
+// no-op; a 200 whose page-composition write was refused (compositionUpdated:false) is a warning naming
+// the reason, not a success. Deliberately NOT the poem-level /analyze — a scene keeps no link to its
+// source poem.
 async function doRegeneratePagePrompt(idx) {
     let scene = reviewScenes[idx];
     if (!scene || !scene.objectId) return;
@@ -3456,12 +3493,13 @@ async function doRegeneratePagePrompt(idx) {
     m.redraw();
     try {
         let res = await regenerateScenePrompt(oid, effectiveChatConfigName());
-        if (res && typeof res.sdPrompt === 'string') {
+        let outcome = promptWriteOutcome(res, 'regenerated');
+        if (outcome.level !== 'error' && res && typeof res.sdPrompt === 'string') {
             scene.sdPrompt = res.sdPrompt;
             scene.promptLocked = !!res.promptLocked;
             if (scene._dirty) scene._dirty.delete('sdPrompt');
         }
-        page.toast('success', 'Prompt regenerated');
+        page.toast(outcome.level, outcome.message);
     } catch (e) {
         if (e && e.status === 503) page.toast('warning', 'Regenerate prompt unavailable: no chat config for this organization');
         else page.toast('error', 'Regenerate prompt failed: ' + ((e && e.message) || ''));
@@ -4594,7 +4632,7 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig, isChapBookPinnedRefusal, coerceSceneRenderResult, v3JobOutcome, mergeSceneOverlay, chapBookRenderPath, renderPageWithPinConfirm, applyPageRenderResult, loadSceneRenderFields, pageLocationLabel, loadSceneOverrides, doSetSceneLocation };
+export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, putSceneLandscapePrompt, promptWriteOutcome, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig, isChapBookPinnedRefusal, coerceSceneRenderResult, v3JobOutcome, mergeSceneOverlay, chapBookRenderPath, renderPageWithPinConfirm, applyPageRenderResult, loadSceneRenderFields, pageLocationLabel, loadSceneOverrides, doSetSceneLocation };
 // Exported for Vitest (P3-7): seed the review view's module state without mounting the route.
 export function __setReviewStateForTest(patch) {
     patch = patch || {};

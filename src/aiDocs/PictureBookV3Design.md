@@ -1365,7 +1365,9 @@ Two edges found by the (ee) live proof, both open: the prompt routes have no Cha
 unread `CHAPBOOK_PAGE` row beside the SCENE one (the board reads SCENE for a STORY book) — left for P4-10 with the scene-copy
 retirement; and `…/prompt/regenerate` with no `chatConfig` in the body uses the library `contentAnalysis` connection, which on the
 Docker stack has no LiteLLM key, so callers pass the user's config name as the Ux752 editor does — `PictureBookV3Implementation.md`
-§6.C 196, §6.G 4.]**
+§6.C 196, §6.G 4. **2026-10-22 (P4-9):** the composition board follows the same rule — its header's Chat Config control sends the
+pick's name as `chatConfigName` on every compose path (empty-state compose, Re-compose, Compose book…); without it the compose job
+ended `source=MIGRATED` with no error on the page (`PictureBookV3Implementation.md` §12.9, §6.C 197 ee).]**
 
 **Other ChapBook specifics:**
 - **Locations:** a ChapBook book has its own world, so the same world-scoped location library
@@ -1584,7 +1586,10 @@ Book ▸ Style | Characters | Locations | Scenes | Cover & Art | Review queue
   and reporting the `nodeStale` / `pinned` outcome; the reader page chip reads `locationName` / `locationVariantName` from
   `/{book}/pages`.]**
 - **Scenes:** a card list with a status chip (stale/review/approved), degradation summary and
-  thumbnail.
+  thumbnail. **[2026-10-22 (P4-9), as built:** the reader's existing scene cards (`features/pictureBook.js`) carry the
+  degradation chip `pb2-scene-degradations` and the `PROMPT_TRUNCATED` "dropped: …" lines `pb2-scene-truncated`, read from the
+  scene's last `renderPlan` artifact (`pb2EnsureSceneDegradations`); the separate board-side Scenes card list is not built — the
+  board's header selects the scene (prev / select / next) — `PictureBookV3Implementation.md` §6.C 197 (f), (m).]**
 - **Scene detail:** Story | Composition | Render | Review. The composition board from the notes
   §19/§43:
   - drag, resize and z-order actor and element boxes over the approved location render, or over a
@@ -1592,6 +1597,23 @@ Book ▸ Style | Characters | Locations | Scenes | Cover & Art | Review queue
   - a side panel for the actor list (role, outfit picker filtered to that character's apparel, pose,
     expression);
   - camera controls.
+  **[2026-10-22 (P4-9), as built:** `features/pictureBookCompose.js` at `/picture-book/:bookObjectId/compose[/:sceneObjectId]`
+  (a sub-route reached from the reader's `pb2-compose-link`, not a Scene-detail tab — Mithril has no optional route parameter, so
+  two route entries), one board per scene: header (scene prev / select / next; one "Chat Config" control whose pick's NAME travels
+  as `chatConfigName` on every compose call — see L1364–1368; "Compose book…" dialog with Quick start + force, the job followed on
+  the page with per-scene status rows; "Re-compose" with the `userEdited` warning, `{force:true}`), status chips (revision, source,
+  purpose, prompt locked, location), camera (shot / viewpoint / focal actor / `cameraText`), setting / action / mood / props,
+  prompt override + lock, the sparse `configOverride` editor (parsed, diffed, sent only as the delta), actor rows (role, priority,
+  pose, expression, action, facing, outfit chip `(from scene N)` / `(default)` with the wardrobe picker → `PUT …/actor/{id}/apparel`,
+  x / y / w / h / depth), element rows + "Promote to item", a neutral drag-to-move canvas at the plan's aspect (no resize / z-order
+  handles — numeric fields for w / h / depth), and the compiled `/plan` beside the fields (headline prompt per stage, degradations)
+  so the edits the planner does not yet read (§8 / P4-10) are visible. **Every edit is one row-level PATCH of the changed keys
+  only** against §27's routes; an unchanged Save sends nothing; the board re-reads the composition after each write. The wardrobe
+  panel sits on the character detail (`workflows/pictureBookCharacters.js`, V3 books): entries with kind chips, set default, add
+  alternate (`POST …/wardrobe`), migrate scene tags, render reference (job progress) — the reference image is render-only in this
+  slice (no upload; §6.C 197 c). Not built here: the COVER / empty-composition entry (197 n), reference-render review / approve
+  (197 o). Playwright `e2e/pictureBookComposition.spec.js` proves it on the Docker stack as the shared test user, default / LLM /
+  SD tiers — `PictureBookV3Implementation.md` §12.9, §6.C 197.]**
 - **Render:** preset, estimate, Generate, plus a live stage progress list from job polling.
 - **Review:** the variant strip with QA ✓/⚠ per check, the degradations list, the plan inspector
   (the compiled prompt per stage: "prompt used"), Use this / Approve / Reject, and targeted

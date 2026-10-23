@@ -5,7 +5,10 @@ import { page } from '../core/pageClient.js';
 import { Dialog } from '../components/dialogCore.js';
 import { renderRange } from '../components/formFieldRenderers.js';
 import { listCharacters, tagApparelSceneIndex, mergeCharacters, deleteCharacter, resolveImageUrl, pollJob } from './sceneExtractor.js';
-import { getAffectedBy, bookPages, renderScene, unpinNode, isPinnedRefusal } from './pictureBookWorkflow.js';
+import {
+    getAffectedBy, bookPages, renderScene, unpinNode, isPinnedRefusal,
+    getWardrobe, addWardrobeEntry, setDefaultApparel, renderApparelReference, migrateSceneTags
+} from './pictureBookWorkflow.js';
 import { reimage } from './reimage.js';
 import { outfitBuilder } from './outfitBuilder.js';
 
@@ -61,6 +64,13 @@ let affected = null;          // { forObjectId, loading, data, error }
 let lastSaveKind = null;      // 'watched' | 'unwatched' | 'none' after the last saveIdentity (caveat text)
 let regen = null;             // { total, done, current, aborted } while "Regenerate" runs
 let regenPollIntervalMs = undefined; // pollJob default; Vitest shortens it through the test seam
+// V3 P4-9: the selected character's wardrobe (GET /{book}/character/{char}/wardrobe), read once per
+// detail open and once after each wardrobe write. Only in standalone + v3, like the affected panel.
+let wardrobe = null;          // { forObjectId, loading, data: normalizeWardrobe(), error }
+let wardrobeBusy = null;      // 'add' | 'migrate' | 'default:<apparelOid>' | 'reference:<apparelOid>' while a write runs
+let wardrobeAddText = '';     // the "Add alternate" description input
+let wardrobeRuns = {};        // apparelOid -> {jobId, job, error} while a reference render job is watched
+let wardrobeAborts = {};      // apparelOid -> AbortController (stops WATCHING only; the server job keeps going)
 
 function resetState() {
     bookObjectId = null;
@@ -82,6 +92,18 @@ function resetState() {
     affected = null;
     lastSaveKind = null;
     regen = null;
+    stopWardrobeWatches();
+    wardrobe = null;
+    wardrobeBusy = null;
+    wardrobeAddText = '';
+    wardrobeRuns = {};
+}
+
+function stopWardrobeWatches() {
+    Object.keys(wardrobeAborts).forEach(function (k) {
+        try { wardrobeAborts[k].abort(); } catch (_) {}
+    });
+    wardrobeAborts = {};
 }
 
 // ── V3 affected-scenes: pure helpers (exported for Vitest) ──────────────
@@ -285,6 +307,270 @@ function renderAffectedPanel() {
     ]);
 }
 
+// ── V3 wardrobe (P4-9) ──────────────────────────────────────────────────
+
+/** Pure: "Default" / "scene N" / "alternate" label of a wardrobe entry. */
+function wardrobeEntryKind(e) {
+    if (!e) return 'alternate';
+    if (e.isDefault) return 'default';
+    if (e.sceneIndex != null) return 'scene ' + e.sceneIndex;
+    return 'alternate';
+}
+
+/** Pure: the wearable names of an entry, comma-joined, or '' when the facade listed none. */
+function wearablesText(e) {
+    let list = e && Array.isArray(e.wearables) ? e.wearables : [];
+    return list.map(function (w) { return w && w.name ? String(w.name) : ''; }).filter(Boolean).join(', ');
+}
+
+/** Pure: the "Set default" result sentence (PUT .../default body). */
+function setDefaultText(r) {
+    r = r || {};
+    if (!r.changed) return 'Already the default outfit';
+    return 'Default outfit set' + (r.staled ? ' — ' + r.staled + ' scene' + (r.staled !== 1 ? 's' : '') + ' marked stale' : ' — no scene wore the previous default');
+}
+
+/** Pure: the migrate-scene-tags result sentence (POST .../wardrobe/migrate-scene-tags body). */
+function migrateText(r) {
+    r = r || {};
+    let skipped = (r.skippedPinned || 0) + (r.skippedNoActor || 0) + (r.skippedNoScene || 0) + (r.skippedNoComposition || 0);
+    return 'Scanned ' + (r.scanned || 0) + ' tagged apparel: pinned ' + (r.pinned || 0)
+        + (skipped ? ', skipped ' + skipped + ' (' + [r.skippedPinned ? r.skippedPinned + ' already pinned' : '', r.skippedNoActor ? r.skippedNoActor + ' no actor' : '',
+            r.skippedNoScene ? r.skippedNoScene + ' no scene' : '', r.skippedNoComposition ? r.skippedNoComposition + ' no composition' : ''].filter(Boolean).join(', ') + ')' : '')
+        + (r.ambiguous ? ', ' + r.ambiguous + ' ambiguous' : '');
+}
+
+/** The ONE wardrobe read for a character detail (open, or after a wardrobe write). */
+async function loadWardrobe(charObjectId) {
+    if (!v3Enabled() || !charObjectId) { wardrobe = null; return; }
+    wardrobe = { forObjectId: charObjectId, loading: true, data: null, error: null };
+    m.redraw();
+    try {
+        let data = await getWardrobe(bookObjectId, charObjectId);
+        if (!wardrobe || wardrobe.forObjectId !== charObjectId) return;
+        wardrobe.data = data;
+    } catch (e) {
+        if (!wardrobe || wardrobe.forObjectId !== charObjectId) return;
+        wardrobe.error = (e && e.message) || 'Could not load the wardrobe';
+    }
+    wardrobe.loading = false;
+    m.redraw();
+}
+
+/** One wardrobe write under a busy key: toast the result (or the server's message verbatim), then the one re-read. */
+async function wardrobeAct(key, fn, successText) {
+    if (wardrobeBusy || !v3Enabled() || !selectedObjectId) return null;
+    let charId = selectedObjectId;
+    wardrobeBusy = key;
+    m.redraw();
+    let out = null;
+    try {
+        out = await fn();
+        let text = typeof successText === 'function' ? successText(out) : successText;
+        if (text) page.toast('success', text);
+        if (out && Array.isArray(out.warnings) && out.warnings.length) page.toast('warning', out.warnings.join(' · '));
+    } catch (e) {
+        page.toast('error', (e && e.message) || String(e));
+    }
+    wardrobeBusy = null;
+    if (selectedObjectId === charId) await loadWardrobe(charId);
+    m.redraw();
+    return out;
+}
+
+function doAddWardrobeEntry() {
+    let text = String(wardrobeAddText || '').trim();
+    if (!text) { page.toast('warning', 'Describe the outfit first'); return; }
+    wardrobeAct('add', function () { return addWardrobeEntry(bookObjectId, selectedObjectId, text); }, function (r) {
+        wardrobeAddText = '';
+        return r.reused ? 'That outfit is already in the wardrobe: ' + (r.name || '')
+            : 'Added ' + (r.name || 'outfit') + ' (' + r.wearables + ' wearable' + (r.wearables !== 1 ? 's' : '') + (r.unmatched.length ? ', unmatched: ' + r.unmatched.join(', ') : '') + ')';
+    });
+}
+
+function doSetDefault(entry) {
+    if (!entry || !entry.objectId) return;
+    wardrobeAct('default:' + entry.objectId, function () { return setDefaultApparel(bookObjectId, selectedObjectId, entry.objectId); }, setDefaultText);
+}
+
+function doMigrateSceneTags() {
+    wardrobeAct('migrate', function () { return migrateSceneTags(bookObjectId); }, migrateText);
+}
+
+/** Submit the reference render (202 + job) and watch it; the image lands in apparel.gallery, so the wardrobe is re-read on terminal. */
+async function doRenderReference(entry) {
+    if (!entry || !entry.objectId || wardrobeRuns[entry.objectId] || !v3Enabled()) return;
+    let charId = selectedObjectId;
+    let oid = entry.objectId;
+    let submit;
+    try {
+        submit = await renderApparelReference(bookObjectId, charId, oid);
+    } catch (e) {
+        page.toast('error', (e && e.message) || 'Reference render failed');
+        return;
+    }
+    if (!submit || !submit.jobId) {
+        page.toast('error', 'Reference render was accepted but no job id was returned');
+        return;
+    }
+    let ctl = new AbortController();
+    wardrobeAborts[oid] = ctl;
+    wardrobeRuns[oid] = { jobId: submit.jobId, job: null, error: null };
+    m.redraw();
+    try {
+        let job = await pollJob(submit.jobId, {
+            signal: ctl.signal,
+            intervalMs: regenPollIntervalMs,
+            onProgress: function (j) { if (wardrobeRuns[oid]) { wardrobeRuns[oid].job = j; m.redraw(); } }
+        });
+        let r = job && job.result;
+        let failed = !!(job && (job.error || job.cancelled)) || !!(r && r.error);
+        page.toast(failed ? 'warning' : 'success', failed
+            ? 'Reference render failed: ' + ((job && job.error) || (r && r.error) || 'cancelled')
+            : 'Reference image rendered' + (r && r.imageCount != null ? ' (' + r.imageCount + ' image' + (r.imageCount !== 1 ? 's' : '') + ')' : ''));
+    } catch (e) {
+        if (!(e && e.name === 'AbortError')) page.toast('error', (e && e.message) || 'Reference render polling failed');
+    }
+    delete wardrobeRuns[oid];
+    if (wardrobeAborts[oid] === ctl) delete wardrobeAborts[oid];
+    am7client.clearCache('olio.apparel', true);
+    am7client.clearCache('data.data', true);
+    if (selectedObjectId === charId) await loadWardrobe(charId);
+    m.redraw();
+}
+
+/** Reference thumbnail of a wardrobe entry: the newest gallery image, resolved the way portraits are. */
+const WardrobeThumb = {
+    oninit: function (vnode) {
+        vnode.state.url = null;
+        vnode.state.forObjectId = vnode.attrs.objectId;
+        resolveImageUrl(vnode.attrs.objectId).then(function (u) { vnode.state.url = u; m.redraw(); });
+    },
+    onupdate: function (vnode) {
+        if (vnode.attrs.objectId === vnode.state.forObjectId) return;
+        let oid = vnode.attrs.objectId;
+        vnode.state.forObjectId = oid;
+        vnode.state.url = null;
+        resolveImageUrl(oid).then(function (u) { if (vnode.state.forObjectId === oid) { vnode.state.url = u; m.redraw(); } });
+    },
+    view: function (vnode) {
+        return vnode.state.url
+            ? m('img', { 'data-testid': 'pb-wd-thumb', src: vnode.state.url, class: 'w-16 h-16 object-cover rounded border border-gray-200 dark:border-gray-700' })
+            : m('div', { 'data-testid': 'pb-wd-thumb-loading', class: 'w-16 h-16 rounded bg-gray-100 dark:bg-gray-800 flex items-center justify-center' },
+                m('span', { class: 'material-symbols-outlined text-gray-400' }, 'image'));
+    }
+};
+
+function renderWardrobeEntry(e) {
+    let kind = wardrobeEntryKind(e);
+    let run = wardrobeRuns[e.objectId];
+    let busyDefault = wardrobeBusy === 'default:' + e.objectId;
+    let wear = wearablesText(e);
+    return m('div', {
+        'data-testid': 'pb-wd-entry-' + e.objectId,
+        'data-apparel-objectid': e.objectId,
+        'data-default': e.isDefault ? '1' : '0',
+        class: 'flex items-start gap-3 p-2 rounded border ' + (e.isDefault ? 'border-purple-300 dark:border-purple-700 bg-purple-50/40 dark:bg-purple-900/10' : 'border-gray-200 dark:border-gray-700')
+    }, [
+        e.referenceObjectId
+            ? m(WardrobeThumb, { objectId: e.referenceObjectId })
+            : m('div', { 'data-testid': 'pb-wd-thumb-none', class: 'w-16 h-16 rounded bg-gray-100 dark:bg-gray-800 flex items-center justify-center', title: 'No reference image yet' },
+                m('span', { class: 'material-symbols-outlined text-gray-400' }, 'checkroom')),
+        m('div', { class: 'flex-1 min-w-0 text-sm' }, [
+            m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+                m('span', { class: 'font-medium truncate' }, e.name || '(apparel)'),
+                e.isDefault ? m('span', { 'data-testid': 'pb-wd-default-chip', class: 'text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200' }, 'Default')
+                    : m('span', { 'data-testid': 'pb-wd-kind-chip', class: 'text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' }, kind),
+                e.gallery.length ? m('span', { class: 'text-xs text-gray-500' }, e.gallery.length + ' image' + (e.gallery.length !== 1 ? 's' : '')) : null
+            ]),
+            e.description ? m('div', { class: 'text-xs text-gray-600 dark:text-gray-300 mt-0.5 line-clamp-2' }, e.description) : null,
+            m('div', { 'data-testid': 'pb-wd-wearables', class: 'text-xs text-gray-500 mt-0.5' }, wear ? wear : 'No wearables listed'),
+            run ? m('div', { 'data-testid': 'pb-wd-render-progress', class: 'text-xs text-blue-600 dark:text-blue-300 mt-0.5' },
+                'Rendering reference… ' + (run.job && run.job.phase ? run.job.phase : 'submitted')) : null
+        ]),
+        m('div', { class: 'flex flex-col gap-1 flex-shrink-0' }, [
+            m('button', {
+                'data-testid': 'pb-wd-set-default',
+                class: 'button text-xs',
+                disabled: e.isDefault || !!wardrobeBusy,
+                title: e.isDefault ? 'This is the default outfit' : 'Make this the outfit scenes wear unless an actor pins another',
+                onclick: function () { doSetDefault(e); }
+            }, busyDefault ? 'Setting…' : 'Set default'),
+            m('button', {
+                'data-testid': 'pb-wd-render-ref',
+                class: 'button text-xs',
+                disabled: !!run || !!wardrobeBusy,
+                title: 'Render a reference image of this outfit on the character (a job; the image lands in the apparel gallery)',
+                onclick: function () { doRenderReference(e); }
+            }, run ? 'Rendering…' : (e.referenceObjectId ? 'Re-render reference' : 'Render reference')),
+            m('a', {
+                href: '#', class: 'text-xs text-blue-600 dark:text-blue-400 hover:underline text-center',
+                onclick: function (ev) { ev.preventDefault(); openInNewTab('olio.apparel', e.objectId); }
+            }, 'Open →')
+        ])
+    ]);
+}
+
+/**
+ * "Wardrobe" panel of a character (V3 + standalone only; null otherwise): the default outfit, the
+ * alternates (with their scene tag when they came from the legacy scene-index tags), a reference
+ * thumbnail per entry, Set default / Render reference per entry, Add alternate (LLM), and the book-wide
+ * "Pin scene tags" migration. References are rendered, never uploaded (no upload route exists), and
+ * there is no review/approve step for them (design §6.1: not built).
+ */
+function renderWardrobePanel() {
+    if (!v3Enabled() || !selectedInst) return null;
+    let w = wardrobe && wardrobe.forObjectId === selectedInst.entity.objectId ? wardrobe : null;
+    let body;
+    if (!w || w.loading) {
+        body = m('div', { 'data-testid': 'pb-wd-loading', class: 'text-xs text-gray-500' }, 'Loading wardrobe…');
+    } else if (w.error) {
+        body = m('div', { 'data-testid': 'pb-wd-error', class: 'text-xs text-red-500' }, w.error);
+    } else {
+        let d = w.data;
+        body = m('div', { class: 'flex flex-col gap-2' }, [
+            d.entries.length
+                ? m('div', { 'data-testid': 'pb-wd-entries', 'data-count': String(d.entries.length), class: 'flex flex-col gap-2' }, d.entries.map(renderWardrobeEntry))
+                : m('div', { 'data-testid': 'pb-wd-empty', class: 'text-xs text-gray-500' }, 'No outfits in the wardrobe yet.'),
+            d.warnings.length ? m('div', { 'data-testid': 'pb-wd-warnings', class: 'text-xs text-amber-700 dark:text-amber-300' }, d.warnings.join(' · ')) : null,
+            m('div', { class: 'flex items-center gap-2 mt-1' }, [
+                m('input', {
+                    type: 'text',
+                    'data-testid': 'pb-wd-add-text',
+                    class: 'text-field-compact flex-1',
+                    placeholder: 'Describe an alternate outfit (e.g. a grey wool coat over a red dress)',
+                    value: wardrobeAddText,
+                    disabled: !!wardrobeBusy,
+                    oninput: function (ev) { wardrobeAddText = ev.target.value; },
+                    onkeydown: function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); doAddWardrobeEntry(); } }
+                }),
+                m('button', {
+                    'data-testid': 'pb-wd-add',
+                    class: 'button text-xs',
+                    disabled: !!wardrobeBusy || !String(wardrobeAddText || '').trim(),
+                    title: 'Build the outfit from this description with the LLM and add it as an alternate',
+                    onclick: doAddWardrobeEntry
+                }, wardrobeBusy === 'add' ? 'Adding…' : 'Add alternate')
+            ]),
+            m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
+                m('button', {
+                    'data-testid': 'pb-wd-migrate',
+                    class: 'button text-xs',
+                    disabled: !!wardrobeBusy,
+                    title: 'Pin every legacy "scene N" apparel tag of this book onto the matching scene actor (idempotent)',
+                    onclick: doMigrateSceneTags
+                }, wardrobeBusy === 'migrate' ? 'Pinning…' : 'Pin scene tags to actors'),
+                m('span', { 'data-testid': 'pb-wd-note', class: 'text-xs text-gray-500' },
+                    'References are rendered on the character, not uploaded; there is no review step for them yet.')
+            ])
+        ]);
+    }
+    return m('div', { 'data-testid': 'pb-wd', class: 'p-2 rounded border border-gray-200 dark:border-gray-700' }, [
+        m('div', { class: 'font-medium mb-1' }, 'Wardrobe'),
+        body
+    ]);
+}
+
 async function refreshList() {
     characters = await listCharacters(bookObjectId);
     m.redraw();
@@ -296,6 +582,8 @@ async function selectCharacter(objectId) {
     selectedInst = null;
     editingIdentity = false;
     affected = null;
+    wardrobe = null;
+    wardrobeAddText = '';
     m.redraw();
     let entity = await am7client.getFull('olio.charPerson', objectId);
     if (!entity) {
@@ -305,7 +593,7 @@ async function selectCharacter(objectId) {
     selectedInst = am7model.prepareInstance(entity, am7model.forms.charPerson);
     m.redraw();
     // Once per detail open (saveIdentity re-opens the detail, which is its one post-save read).
-    await loadAffected(objectId);
+    await Promise.all([loadAffected(objectId), loadWardrobe(objectId)]);
 }
 
 async function patchStatField(statistics, field, value) {
@@ -748,6 +1036,7 @@ function renderDetail() {
             ])
         ]),
         renderAffectedPanel(),
+        renderWardrobePanel(),
         m('div', [
             m('div', { class: 'font-medium mb-1' }, 'Portrait'),
             renderPortraitPanel()
@@ -858,7 +1147,8 @@ async function openCharacterManager(theBookObjectId, opts) {
         content: { view: renderCharacterManagerContent },
         actions: [
             { label: 'Close', icon: 'close', primary: true, onclick: function () { Dialog.close(); } }
-        ]
+        ],
+        onClose: stopWardrobeWatches
     });
     await initCharacterManager(theBookObjectId, opts);
 }
@@ -869,7 +1159,8 @@ export function __pbCharStateForTest() {
         bookObjectId: bookObjectId, standalone: standalone, renderPath: renderPath,
         selectedObjectId: selectedObjectId, selectedInst: selectedInst,
         affected: affected, lastSaveKind: lastSaveKind, regen: regen,
-        editingIdentity: editingIdentity, editName: editName, editDescription: editDescription
+        editingIdentity: editingIdentity, editName: editName, editDescription: editDescription,
+        wardrobe: wardrobe, wardrobeBusy: wardrobeBusy, wardrobeAddText: wardrobeAddText, wardrobeRuns: wardrobeRuns
     };
 }
 export function __setPbCharStateForTest(patch) {
@@ -886,15 +1177,26 @@ export function __setPbCharStateForTest(patch) {
     if ('editName' in patch) editName = patch.editName;
     if ('editDescription' in patch) editDescription = patch.editDescription;
     if ('regenPollIntervalMs' in patch) regenPollIntervalMs = patch.regenPollIntervalMs;
+    if ('wardrobe' in patch) wardrobe = patch.wardrobe;
+    if ('wardrobeBusy' in patch) wardrobeBusy = patch.wardrobeBusy;
+    if ('wardrobeAddText' in patch) wardrobeAddText = patch.wardrobeAddText;
+    if ('wardrobeRuns' in patch) wardrobeRuns = patch.wardrobeRuns && typeof patch.wardrobeRuns === 'object' ? patch.wardrobeRuns : {};
 }
 export const __pbCharSelectCharacterForTest = selectCharacter;
 export const __pbCharSaveIdentityForTest = saveIdentity;
 export const __pbCharRegenerateAffectedForTest = regenerateAffected;
+export const __pbCharLoadWardrobeForTest = loadWardrobe;
+export const __pbCharAddWardrobeEntryForTest = doAddWardrobeEntry;
+export const __pbCharSetDefaultForTest = doSetDefault;
+export const __pbCharRenderReferenceForTest = doRenderReference;
+export const __pbCharMigrateSceneTagsForTest = doMigrateSceneTags;
 
 export {
     openCharacterManager, initCharacterManager, renderCharacterManagerContent,
     // V3 affected-scenes (pure helpers + panel), exported for Vitest
     WATCHED_CHAR_FIELDS, identityChangeKind, affectedCaveat, affectedSummary, scenesForIndexes,
-    renderAffectedPanel
+    renderAffectedPanel,
+    // V3 wardrobe (P4-9) pure helpers + panel, exported for Vitest
+    wardrobeEntryKind, wearablesText, setDefaultText, migrateText, renderWardrobePanel
 };
 export default openCharacterManager;

@@ -428,7 +428,7 @@ describe('reader Plan & generate dialog', () => {
         expect(page.toast).not.toHaveBeenCalledWith('error', expect.anything());
     });
 
-    it('Generate success closes the dialog, toasts the artifact id and re-reads /pages (+health)', async () => {
+    it('Generate success closes the dialog, toasts the artifact id and re-reads /pages (+health, + the scene node for its degradations)', async () => {
         let calls = planFetch([
             { re: /^POST .*\/plan$/, fn: () => jsonResponse(200, PLAN) },
             { re: /^POST .*\/render-plan$/, fn: () => jsonResponse(200, { artifactObjectId: 'art-9', nodeObjectId: 'n1', planArtifactObjectId: PLAN_OID }) },
@@ -446,7 +446,8 @@ describe('reader Plan & generate dialog', () => {
             'POST /rest/olio/picture-book/B1/scene/s1/plan',
             'POST /rest/olio/picture-book/B1/scene/s1/render-plan',
             'GET /rest/olio/picture-book/B1/pages',
-            'GET /rest/olio/picture-book/B1/health'
+            'GET /rest/olio/picture-book/B1/health',
+            'GET /rest/olio/picture-book/B1/workflow/node/n1'
         ]);
         expect(am7client.clearCache).toHaveBeenCalledWith('olio.pb.artifact', true);
         expect(pbf.__pb2V3StateForTest().pb2Pages[0].artifactObjectId).toBe('art-9');

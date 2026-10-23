@@ -215,19 +215,25 @@ describe('renderAffectedPanel — gating and states', () => {
 // ─────────────────────────────── detail open / save → ONE affected-by read each ───────────────────────────────
 
 describe('selectCharacter / saveIdentity — affected-by call budget', () => {
-    it('opening a detail makes exactly one GET affected-by; v1 makes none', async () => {
+    it('opening a detail makes exactly one GET affected-by and one GET wardrobe (P4-9); v1 makes none', async () => {
         let calls = mockStack();
         await pbc.__pbCharSelectCharacterForTest('c1');
         let st = pbc.__pbCharStateForTest();
         expect(st.selectedInst.entity.objectId).toBe('c1');
         expect(st.affected.loading).toBe(false);
         expect(st.affected.data.affectedSceneIndexes).toEqual([3, 5]);
-        expect(seqOf(calls)).toEqual(['GET /rest/olio/picture-book/book-1/affected-by/olio.charPerson/c1']);
+        expect(seqOf(calls)).toEqual([
+            'GET /rest/olio/picture-book/book-1/affected-by/olio.charPerson/c1',
+            'GET /rest/olio/picture-book/book-1/character/c1/wardrobe'
+        ]);
+        expect(st.wardrobe.forObjectId).toBe('c1');
+        expect(st.wardrobe.loading).toBe(false);
 
         pbc.__setPbCharStateForTest({ renderPath: 'v1' });
         await pbc.__pbCharSelectCharacterForTest('c1');
-        expect(seqOf(calls).length).toBe(1);
+        expect(seqOf(calls).length).toBe(2);
         expect(pbc.__pbCharStateForTest().affected).toBeNull();
+        expect(pbc.__pbCharStateForTest().wardrobe).toBeNull();
     });
     it('a 404 (unknown book) / 400 (unknown refModel) lands in the panel error, not a toast', async () => {
         mockStack({ affected: () => jsonResponse(404, { error: 'Book not found' }) });
