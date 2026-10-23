@@ -27,6 +27,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.ChapBookService;
@@ -159,6 +160,11 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 	/// AccessPoint as that user, no admin, no RecordUtil bypass - read back with the book projection so
 	/// the slug (which names the scenes and the workflow group) is present.
 	private BaseRecord createChapBook() throws Exception {
+		return createBook(PbBookTypeEnumType.CHAPBOOK);
+	}
+
+	/// The same bare book of the given type (STORY for the 409 case of the prompt route).
+	private BaseRecord createBook(PbBookTypeEnumType bookType) throws Exception {
 		String slug = "cbrp-" + UUID.randomUUID().toString().substring(0, 12);
 		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, GROUP_PATH, "DATA", orgId);
 		assertNotNull("Fixture group is null", dir);
@@ -167,7 +173,7 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 		book.set(FieldNames.FIELD_NAME, slug);
 		book.set(OlioFieldNames.FIELD_PB_SLUG, slug);
 		book.set(OlioFieldNames.FIELD_PB_BOOK_STATUS, PbBookStatusEnumType.DRAFT.toString());
-		book.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.CHAPBOOK.toString());
+		book.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, bookType.toString());
 		BaseRecord created = IOSystem.getActiveContext().getAccessPoint().create(user, book);
 		assertNotNull("Failed to create the ChapBook fixture", created);
 		String oid = created.get(FieldNames.FIELD_OBJECT_ID);
@@ -378,26 +384,40 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 		}
 	}
 
-	/// PUT /chapbook/scene/{id}/prompt answers 200 with a body that says what landed (P4-8, §6.C 194 ee):
-	/// on a page of a book the first set creates the page composition and names it (updated,
-	/// compositionUpdated, compositionObjectId, promptLocked true, no error); a clear ({} body) is the same
-	/// complete shape unlocked; and a real partial write - a scene the user owns that belongs to no book, so
-	/// no page composition can be created for it - is still a 200, with updated:true, compositionUpdated:false,
-	/// no compositionObjectId and the refusal in error, while the scene really carries the prompt. Failures
-	/// before any write still map to their status (404 for a missing scene).
+	/// PUT /chapbook/scene/{id}/prompt answers 200 with a body that says what landed (P4-8 §6.C 194 ee, re-baselined
+	/// for P4-10, where the page's CHAPBOOK_PAGE composition is the authority and is written FIRST, the scene
+	/// sdPrompt/promptLocked being its mirror): on a page of a ChapBook the first set creates the page
+	/// composition and names it (updated, compositionUpdated, sceneUpdated, compositionObjectId, promptLocked
+	/// true, no error) and the composition AND the scene mirror both carry the prompt; a clear ({} body) is the
+	/// same complete shape unlocked on the same composition. Failures BEFORE any write map to their status and
+	/// write nothing: a scene the user owns that belongs to no book is a 500 ("has no readable book") - under
+	/// P4-8 that was a 200 partial with the scene written first; since P4-10 the composition is written first
+	/// and a bookless scene has no composition to write, so the scene is NOT touched either - a scene of a
+	/// STORY book is a 409 (its prompt is edited on the composition board) with no CHAPBOOK_PAGE composition
+	/// created and the scene untouched, and a missing scene is still a 404.
+	///
+	/// A true partial (composition written, scene mirror refused) is not constructible here: the H2 harness
+	/// has one user who owns the book, the scene and the composition group, so nothing refuses the mirror.
+	/// That branch is pinned in Objects7 by TestChapBookPageComposition against am7db with a second,
+	/// entitlement-limited user.
 	@Test
 	public void TestSetPromptBodyReportsSceneAndCompositionWrites() throws Exception {
 		BaseRecord book = createChapBook();
 		BaseRecord page = addPage(book, 0, null);
 		BaseRecord bookless = createBooklessScene();
+		BaseRecord story = createBook(PbBookTypeEnumType.STORY);
+		BaseRecord storyScene = PbBookUtil.createScene(user, story, 0, "Story scene 0", GROUP_PATH);
+		assertNotNull("Failed to create the story scene", storyScene);
+		long storyGid = ((Number) story.get(FieldNames.FIELD_GROUP_ID)).longValue();
 		BaseRecord comp = null;
 		try {
 			Response rs = service.setSceneLandscapePrompt(oid(page), "{\"sdPrompt\":\"" + GENUINE_PROMPT + "\"}", requestAs(user));
 			assertEquals("set on a page of a book", 200, rs.getStatus());
 			Map<String, Object> b = body(rs);
-			logger.info("[p48] set body: " + b);
+			logger.info("[p410] set body: " + b);
 			assertFlag(b, "updated", true);
 			assertFlag(b, "compositionUpdated", true);
+			assertFlag(b, "sceneUpdated", true);
 			assertFlag(b, "promptLocked", true);
 			String compOid = str(b, "compositionObjectId");
 			assertNotNull("a complete write names the composition: " + b, compOid);
@@ -405,30 +425,61 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 			comp = PbComposeUtil.readComposition(user, compOid, orgId);
 			assertNotNull("the named composition reads back as the user", comp);
 			assertEquals("the composition carries the prompt", GENUINE_PROMPT, comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
-			assertEquals("the scene mirrors it", GENUINE_PROMPT, PbBookUtil.readScene(user, oid(page), orgId).get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("the composition is locked", Boolean.TRUE, comp.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertEquals("a human edit marks the composition userEdited", Boolean.TRUE, comp.get(OlioFieldNames.FIELD_PB_USER_EDITED));
+			BaseRecord pageAfterSet = PbBookUtil.readScene(user, oid(page), orgId);
+			assertEquals("the scene mirrors the prompt", GENUINE_PROMPT, pageAfterSet.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("the scene mirrors the lock", Boolean.TRUE, pageAfterSet.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
 
 			Response rc = service.setSceneLandscapePrompt(oid(page), "{}", requestAs(user));
 			assertEquals("clear", 200, rc.getStatus());
 			Map<String, Object> c = body(rc);
+			logger.info("[p410] clear body: " + c);
 			assertFlag(c, "updated", true);
 			assertFlag(c, "compositionUpdated", true);
+			assertFlag(c, "sceneUpdated", true);
 			assertFlag(c, "promptLocked", false);
 			assertEquals("a clear reuses the same composition", compOid, str(c, "compositionObjectId"));
-			assertNull("the page prompt is cleared", PbBookUtil.readScene(user, oid(page), orgId).get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertFalse("a clear carries no error: " + c, c.containsKey("error"));
+			BaseRecord compAfterClear = PbComposeUtil.readComposition(user, compOid, orgId);
+			assertNull("the composition prompt is cleared", compAfterClear.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals("the composition is unlocked", Boolean.FALSE, compAfterClear.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			BaseRecord pageAfterClear = PbBookUtil.readScene(user, oid(page), orgId);
+			assertNull("the page prompt is cleared", pageAfterClear.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("the page is unlocked", Boolean.FALSE, pageAfterClear.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
 
+			/// A bookless scene: the composition-first write has no book to put a composition in, so the
+			/// request is refused BEFORE any write (P4-8 wrote the scene first and answered a 200 partial).
 			Response rp = service.setSceneLandscapePrompt(oid(bookless), "{\"sdPrompt\":\"" + GENUINE_PROMPT + "\"}", requestAs(user));
-			assertEquals("a partial write is still a 200", 200, rp.getStatus());
 			Map<String, Object> p = body(rp);
-			logger.info("[p48] partial body: " + p);
-			assertFlag(p, "updated", true);
-			assertFlag(p, "compositionUpdated", false);
-			assertFlag(p, "promptLocked", true);
-			assertFalse("no composition to name: " + p, p.containsKey("compositionObjectId"));
+			logger.info("[p410] bookless status=" + rp.getStatus() + " body: " + p);
+			assertEquals("a bookless scene is refused before any write", 500, rp.getStatus());
 			String err = str(p, "error");
 			assertNotNull("the refusal is in the body: " + p, err);
-			assertTrue("the error names the scene write: " + err, err.contains("Scene " + oid(bookless) + " sdPrompt persisted but its page composition was not"));
-			assertTrue("the error names the refusal: " + err, err.contains("has no readable book"));
-			assertEquals("the scene copy really moved", GENUINE_PROMPT, PbBookUtil.readScene(user, oid(bookless), orgId).get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("the error names the scene and the reason", "Scene " + oid(bookless) + " has no readable book", err);
+			assertFalse("no write flags on a refusal: " + p, p.containsKey("updated"));
+			assertFalse("no composition to name: " + p, p.containsKey("compositionObjectId"));
+			BaseRecord booklessAfter = PbBookUtil.readScene(user, oid(bookless), orgId);
+			assertNull("the bookless scene's sdPrompt was NOT written", booklessAfter.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("the bookless scene was not locked", Boolean.FALSE, booklessAfter.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+
+			/// A scene of a STORY book: its prompt lives on the composition board, so the page-prompt route is a
+			/// 409 before any write - no CHAPBOOK_PAGE composition, no scene change.
+			Response ro = service.setSceneLandscapePrompt(oid(storyScene), "{\"sdPrompt\":\"" + GENUINE_PROMPT + "\"}", requestAs(user));
+			Map<String, Object> o = body(ro);
+			logger.info("[p410] story status=" + ro.getStatus() + " body: " + o);
+			assertEquals("a story-book scene is a 409", 409, ro.getStatus());
+			String storyErr = str(o, "error");
+			assertNotNull("the refusal is in the body: " + o, storyErr);
+			assertEquals("Scene " + oid(storyScene) + " belongs to a story book; edit its composition board instead", storyErr);
+			assertFalse("no write flags on a refusal: " + o, o.containsKey("updated"));
+			assertNull("no CHAPBOOK_PAGE composition was created for the story scene",
+				PbComposeUtil.findSceneComposition(user, storyScene, storyGid, orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE));
+			assertNull("no SCENE composition was created for the story scene either",
+				PbComposeUtil.findSceneComposition(user, storyScene, storyGid, orgId));
+			BaseRecord storyAfter = PbBookUtil.readScene(user, oid(storyScene), orgId);
+			assertNull("the story scene's sdPrompt was NOT written", storyAfter.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("the story scene was not locked", Boolean.FALSE, storyAfter.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
 
 			Response rm = service.setSceneLandscapePrompt("no-such-scene", "{\"sdPrompt\":\"x\"}", requestAs(user));
 			assertEquals("a missing scene is still a 404", 404, rm.getStatus());
@@ -439,6 +490,7 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 				logger.warn("Fixture composition was not deleted: " + oid(comp));
 			}
 			deleteFixture(book, page, bookless);
+			deleteFixture(story, storyScene);
 		}
 	}
 

@@ -425,16 +425,32 @@ public class TestPbComposeJob extends BaseTest {
 			assertEquals(Boolean.FALSE, result.get("force"));
 			assertEquals(2, num(result, "sceneCount"));
 			assertEquals(2, num(result, "visited"));
-			/// The live LLM (qwen3:8b at the chatConfig's temperature) does not always return a parseable staging:
-			/// a malformed reply is written as a MIGRATED composition (§29), which is the product's contract, not a
-			/// failure. What the job must guarantee is that every scene was visited and written, in story order,
-			/// with no hard failure; how many came back LLM vs MIGRATED is MEASURED, never asserted.
+			/// P4-10: for a STORY book the job runs PbMigrationUtil.migrateCompositions BEFORE the loop, so every scene
+			/// already holds a MIGRATED row (revision 1) when the loop reaches it and the loop ALWAYS composes over an
+			/// EXISTING row. The live LLM (qwen3:8b at the chatConfig's temperature) does not always return a parseable
+			/// staging: over an existing row a malformed reply is a hardFailure that leaves the MIGRATED row untouched
+			/// (PbComposeUtil.composeScene), never a second MIGRATED write - so "migrated" is 0 on every pass and
+			/// "hardFailures" may be non-zero. What the job must guarantee is that every scene was visited, in story
+			/// order, and is either LLM-composed (revision 2) or reported untouched (still revision 1); how many came
+			/// back parseable is MEASURED, never asserted.
+			/// (Re-baselined from the pre-P4-10 contract, where the loop itself wrote the MIGRATED fallback: then
+			/// composed + migrated == 2, hardFailures == 0 and every row was revision 1.)
+			Map<?, ?> migration = (Map<?, ?>) result.get("migration");
+			assertNotNull("the job reports its migration pass: " + job.getResult(), migration);
+			assertNull("the migration did not throw: " + migration, migration.get("error"));
+			assertEquals("both scenes scanned by the migration", 2, num(migration, "scanned"));
+			assertEquals("a MIGRATED row was written for every scene before the loop", 2, num(migration, "created"));
+			assertEquals(0, num(migration, "failed"));
+			assertEquals(0, num(migration, "skippedExisting"));
+			/// JSONUtil's NON_EMPTY mapper drops an empty list from the job result, so absent-or-empty is "no failures".
+			List<?> failedOnWire = (List<?>) migration.get("failedSceneObjectIds");
+			assertTrue("no migration failures: " + migration, failedOnWire == null || failedOnWire.isEmpty());
 			int composed0 = num(result, "composed");
-			int migrated0 = num(result, "migrated");
-			logger.info("MEASURED: P4-4 case06 first pass composed=" + composed0 + " migrated=" + migrated0);
-			assertEquals("every scene is written on the first pass (composed + migrated): " + job.getResult(), 2, composed0 + migrated0);
+			int hard0 = num(result, "hardFailures");
+			logger.info("MEASURED: P4-4 case06 first pass composed=" + composed0 + " hardFailures=" + hard0);
+			assertEquals("the loop never writes a MIGRATED fallback over the migration's row: " + job.getResult(), 0, num(result, "migrated"));
+			assertEquals("every scene is LLM-composed or reported untouched on the first pass: " + job.getResult(), 2, composed0 + hard0);
 			assertEquals(0, num(result, "current"));
-			assertEquals(0, num(result, "hardFailures"));
 			assertEquals(0, num(result, "skippedUserEdited"));
 			assertEquals(0, num(result, "pagesSkipped"));
 			assertEquals(0, num(result, "quickStartRendered"));
@@ -461,18 +477,28 @@ public class TestPbComposeJob extends BaseTest {
 				assertEquals(label + " story order", oidOf(scene), o.get("sceneObjectId"));
 				assertEquals(label, scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX), o.get("sceneIndex"));
 				String status = (String) o.get("status");
-				assertTrue(label + " status is composed or migrated", "composed".equals(status) || "migrated".equals(status));
-				String expectedSource = ("composed".equals(status) ? PbCompositionSourceEnumType.LLM : PbCompositionSourceEnumType.MIGRATED).name();
+				/// Pre-P4-10 this accepted "composed" or "migrated" with every row at revision 1; now the loop composes
+				/// over the migration's MIGRATED row, so a success is LLM at revision 2 and the only other outcome is a
+				/// hardFailure that leaves the MIGRATED row at revision 1.
+				assertTrue(label + " status is composed or hardFailure", "composed".equals(status) || "hardFailure".equals(status));
+				boolean composedNow = "composed".equals(status);
+				String expectedSource = (composedNow ? PbCompositionSourceEnumType.LLM : PbCompositionSourceEnumType.MIGRATED).name();
 				assertEquals(label, expectedSource, o.get("source"));
+				if(!composedNow) {
+					assertTrue(label + " the hard failure says the existing row was left untouched",
+						String.valueOf(o.get("error")).contains("existing composition left untouched"));
+				}
 				assertTrue(label + " actorCount", num(o, "actorCount") >= 1);
 				assertTrue(label + " elapsedMs", lng(o, "elapsedMs") >= 0L);
 				BaseRecord comp = PbComposeUtil.findSceneComposition(u, scene, gid, orgId);
 				assertNotNull(label + " composition row", comp);
 				assertEquals(label + " compositionObjectId is the scene's row", oidOf(comp), o.get("compositionObjectId"));
 				assertEquals(label + " a MIGRATED row is flagged for re-compose, an LLM row is not",
-					"migrated".equals(status), PbComposeUtil.needsCompose(comp));
+					!composedNow, PbComposeUtil.needsCompose(comp));
 				assertEquals(label, expectedSource, enumWord(comp, OlioFieldNames.FIELD_PB_SOURCE));
-				assertEquals(label, Integer.valueOf(1), comp.get(OlioFieldNames.FIELD_PB_REVISION));
+				assertEquals(label + " LLM over the MIGRATED row is revision 2; an untouched MIGRATED row stays at 1",
+					Integer.valueOf(composedNow ? 2 : 1), comp.get(OlioFieldNames.FIELD_PB_REVISION));
+				assertEquals(label, Boolean.FALSE, comp.get(OlioFieldNames.FIELD_PB_USER_EDITED));
 				assertEquals(label, idOf(scene), fkId(comp, OlioFieldNames.FIELD_PB_SCENE));
 				assertEquals(label + " actors persisted", num(o, "actorCount"), PbComposeUtil.listActors(u, comp).size());
 			}
@@ -482,9 +508,14 @@ public class TestPbComposeJob extends BaseTest {
 			/// leaves the row untouched (PbComposeUtil.composeScene) - so the row stays MIGRATED and pending.
 			/// Repeat until every scene is LLM-composed; the pass count is MEASURED. Bounded so a systematically
 			/// broken prompt/LLM fails instead of looping.
-			int[] revision = { 1, 1 };
+			/// (Pre-P4-10: revision started at {1,1} and pending was the loop's own "migrated" count; now a composed
+			/// row is already at 2 and the pending rows are the first pass's hard failures.)
+			int[] revision = new int[2];
+			for(int i = 0; i < 2; i++) {
+				revision[i] = ("composed".equals(((Map<?, ?>) outcomes.get(i)).get("status")) ? 2 : 1);
+			}
 			int passes = 1;
-			int pending = migrated0;
+			int pending = hard0;
 			while(pending > 0) {
 				assertTrue("the LLM returned no parseable staging for the same scene(s) in " + passes + " consecutive passes; giving up", passes < 5);
 				Map<String, Object> more = PbComposeJobUtil.submitCompose(u, bk, false, false, CFG_NAME, null, null);
@@ -501,6 +532,11 @@ public class TestPbComposeJob extends BaseTest {
 				Map<?, ?> rN = JSONUtil.importObject(jobN.getResult(), Map.class);
 				assertEquals(2, num(rN, "visited"));
 				assertEquals(2 - pending, num(rN, "current"));
+				Map<?, ?> migN = (Map<?, ?>) rN.get("migration");
+				assertNotNull("later passes still report the migration: " + jobN.getResult(), migN);
+				assertEquals("the migration creates nothing once every scene has a row", 0, num(migN, "created"));
+				assertEquals(2, num(migN, "skippedExisting"));
+				assertEquals(0, num(migN, "failed"));
 				assertEquals("a MIGRATED row is never re-migrated over itself", 0, num(rN, "migrated"));
 				assertEquals("every pending scene is either re-composed or reported untouched", pending, num(rN, "composed") + num(rN, "hardFailures"));
 				List<?> oN = (List<?>) rN.get("scenes");
@@ -566,6 +602,7 @@ public class TestPbComposeJob extends BaseTest {
 			assertEquals(2, num(r2, "visited"));
 			assertEquals(0, num(r2, "current"));
 			assertEquals(0, num(r2, "migrated"));
+			assertEquals("forced: the migration still creates nothing", 0, num((Map<?, ?>) r2.get("migration"), "created"));
 			assertEquals("forced: every scene is re-composed or reported as a hard failure: " + job2.getResult(),
 				2, num(r2, "composed") + num(r2, "hardFailures"));
 			assertEquals(Boolean.TRUE, r2.get("locationPassRan"));
@@ -658,14 +695,32 @@ public class TestPbComposeJob extends BaseTest {
 			Map<?, ?> last = (Map<?, ?>) outcomes.get(outcomes.size() - 1);
 			assertEquals("the interrupted scene: " + last, "cancelled", last.get("status"));
 			assertNull("nothing was written for the interrupted scene", last.get("compositionObjectId"));
-			assertEquals("every visited scene but the interrupted one was composed", num(result, "composed") + 1, num(result, "visited"));
+			/// P4-10: a scene visited before the cancel composed over its MIGRATED row - LLM-composed, or a hardFailure
+			/// when the live LLM's reply was unparseable (the row is left untouched). Either is a settled outcome; how
+			/// many parsed is MEASURED. (Pre-P4-10: composed + 1 == visited and hardFailures == 0.)
+			logger.info("MEASURED: P4-4 case07 before the cancel composed=" + num(result, "composed") + " hardFailures=" + num(result, "hardFailures"));
+			assertEquals("every visited scene but the interrupted one settled (composed or untouched)",
+				num(result, "composed") + num(result, "hardFailures") + 1, num(result, "visited"));
 			assertEquals(outcomes.size(), num(result, "visited"));
-			assertEquals(0, num(result, "hardFailures"));
+			assertEquals("the loop never writes a MIGRATED fallback", 0, num(result, "migrated"));
 			assertNull("the claim is released", PbComposeJobUtil.inflightJobId(bkOid));
 			assertFalse(PbComposeJobUtil.isComposing(bkOid));
 			BaseRecord interruptedScene = PbBookUtil.readScene(u, (String) last.get("sceneObjectId"), orgId);
 			assertNotNull(interruptedScene);
-			assertNull("no composition row for the interrupted scene", PbComposeUtil.findSceneComposition(u, interruptedScene, gid, orgId));
+			/// P4-10: the job migrated every scene into a MIGRATED row BEFORE the loop (the cancel landed in a
+			/// "compose " phase, after "migrate compositions"), so the interrupted scene does hold a row - the
+			/// migration's, untouched by the cancelled compose: MIGRATED, revision 1, still flagged for compose.
+			/// (Pre-P4-10 there was no row at all for the interrupted scene.)
+			Map<?, ?> migration = (Map<?, ?>) result.get("migration");
+			assertNotNull("the partial result carries the migration pass: " + done.getResult(), migration);
+			assertEquals("every scene was migrated before the loop", scenes.size(), num(migration, "created"));
+			assertEquals(0, num(migration, "failed"));
+			BaseRecord interruptedComp = PbComposeUtil.findSceneComposition(u, interruptedScene, gid, orgId);
+			assertNotNull("the interrupted scene keeps the migration's row", interruptedComp);
+			interruptedComp = PbComposeUtil.readComposition(u, oidOf(interruptedComp), orgId);
+			assertEquals("the cancelled compose never touched it", PbCompositionSourceEnumType.MIGRATED.name(), enumWord(interruptedComp, OlioFieldNames.FIELD_PB_SOURCE));
+			assertEquals(Integer.valueOf(1), interruptedComp.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertTrue("still pending", PbComposeUtil.needsCompose(interruptedComp));
 
 			/// A fresh submit resumes (the tally still finds something to compose).
 			Map<String, Object> resumed = PbComposeJobUtil.submitCompose(u, bk, false, false, CFG_NAME, null, null);
@@ -798,10 +853,19 @@ public class TestPbComposeJob extends BaseTest {
 			assertNotNull("the result parses: " + job.getResult(), result);
 			assertEquals(Boolean.TRUE, result.get("quickStart"));
 			assertEquals(2, num(result, "visited"));
-			int written = num(result, "composed") + num(result, "migrated");
-			logger.info("MEASURED: P4-4 case09 composed=" + num(result, "composed") + " migrated=" + num(result, "migrated"));
-			assertEquals("every scene is written (composed + migrated): " + job.getResult(), 2, written);
-			assertEquals(0, num(result, "hardFailures"));
+			/// P4-10: the migration wrote a MIGRATED row for every scene before the loop, so the loop composes over an
+			/// existing row - a parseable reply is "composed" (written; its draft is attempted), an unparseable one is a
+			/// "hardFailure" that leaves the MIGRATED row untouched (not written; no draft attempted). "migrated" is 0.
+			/// (Pre-P4-10: written = composed + migrated, hardFailures == 0.)
+			Map<?, ?> migration = (Map<?, ?>) result.get("migration");
+			assertNotNull("migration pass: " + job.getResult(), migration);
+			assertEquals(2, num(migration, "created"));
+			assertEquals(0, num(migration, "failed"));
+			int written = num(result, "composed");
+			int hard = num(result, "hardFailures");
+			logger.info("MEASURED: P4-4 case09 composed=" + written + " hardFailures=" + hard);
+			assertEquals("the loop never writes a MIGRATED fallback over the migration's row", 0, num(result, "migrated"));
+			assertEquals("every scene is composed or reported untouched: " + job.getResult(), 2, written + hard);
 			assertEquals("nothing rendered against a dead renderer", 0, num(result, "quickStartRendered"));
 			assertEquals("one draft failure per written scene", written, num(result, "quickStartFailed"));
 			assertEquals(Boolean.FALSE, result.get("cancelled"));
@@ -817,11 +881,18 @@ public class TestPbComposeJob extends BaseTest {
 				String label = "outcome[" + i + "] " + o;
 				assertEquals(label + " story order", oidOf(scenes.get(i)), o.get("sceneObjectId"));
 				String status = (String) o.get("status");
-				assertTrue(label + " status is composed or migrated", "composed".equals(status) || "migrated".equals(status));
+				assertTrue(label + " status is composed or hardFailure", "composed".equals(status) || "hardFailure".equals(status));
 				BaseRecord comp = PbComposeUtil.findSceneComposition(u, scenes.get(i), gid, orgId);
 				assertNotNull(label + " composition row", comp);
 				assertEquals(label + " the composition is the scene's row", oidOf(comp), o.get("compositionObjectId"));
 				assertNull(label + " no draft render DTO", o.get("draftRender"));
+				if("hardFailure".equals(status)) {
+					assertTrue(label, String.valueOf(o.get("error")).contains("existing composition left untouched"));
+					assertEquals(label + " the untouched row is the migration's", PbCompositionSourceEnumType.MIGRATED.name(), enumWord(comp, OlioFieldNames.FIELD_PB_SOURCE));
+					assertNull(label + " no draft is attempted for an unwritten scene", o.get("draftRenderError"));
+					continue;
+				}
+				assertEquals(label, PbCompositionSourceEnumType.LLM.name(), enumWord(comp, OlioFieldNames.FIELD_PB_SOURCE));
 				String err = (String) o.get("draftRenderError");
 				assertNotNull(label + " draftRenderError", err);
 				assertTrue(label + " the refusal is the executor's pre-render 503", err.contains("Renderer inventory unavailable"));

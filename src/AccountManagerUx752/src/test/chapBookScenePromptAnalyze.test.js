@@ -10,13 +10,15 @@
  *
  * Contracts under test (built by the backend agent, wired verbatim here):
  *   1) POST /rest/olio/chap-book/scene/{oid}/prompt/regenerate  body { chatConfig? }
- *        → { sdPrompt, promptLocked:false, updated, compositionUpdated[, compositionObjectId][, error] }
+ *        → { sdPrompt, promptLocked:false, updated, compositionUpdated, sceneUpdated[, compositionObjectId][, error] }
  *   2) POST /rest/olio/chap-book/scene/{oid}/analyze            body { chatConfig? } → { success, mood }
  *   3) PUT  /rest/olio/chap-book/scene/{oid}/prompt             body { sdPrompt|null }
- *        → { updated, compositionUpdated, promptLocked[, compositionObjectId][, error] }
+ *        → { updated, compositionUpdated, sceneUpdated, promptLocked[, compositionObjectId][, error] }
  *   4) promptWriteOutcome(body, verb) — the P4-8 (ee) classifier the review view feeds (1) and (3) through:
- *        updated:false → error; compositionUpdated:false (or an error) → warn carrying the server's reason
- *        verbatim; otherwise success. A partial write must reach the user, never be read as "saved".
+ *        updated:false → error; compositionUpdated:false → warn naming the composition (pre-P4-10 shape);
+ *        sceneUpdated:false (or an error) → warn naming the scene copy (P4-10: the composition is the
+ *        authority, the scene its mirror) — both carrying the server's reason verbatim; otherwise success.
+ *        A partial write must reach the user, never be read as "saved".
  *
  * What is asserted (with a stubbed global.fetch — no live backend):
  *   - correct URL suffix + method + JSON content-type + credentials:'include'
@@ -204,6 +206,20 @@ describe('promptWriteOutcome (P4-8 prompt-write body → toast; a partial write 
         let out2 = promptWriteOutcome({ sdPrompt: 'x', promptLocked: false, updated: true, compositionUpdated: false, error: reason }, 'regenerated');
         expect(out2.level).toBe('warn');
         expect(out2.message).toBe('Prompt regenerated, composition not updated: ' + reason);
+    });
+
+    it('is a warning naming the scene copy when the composition (authority since P4-10) landed but the scene mirror did not', async () => {
+        let { promptWriteOutcome } = await import('../features/chapBook.js');
+        let reason = 'Page composition c-9 persisted but scene s-1 sdPrompt was not: the scene mirror write was refused';
+        let out = promptWriteOutcome({ updated: true, compositionUpdated: true, sceneUpdated: false, promptLocked: true, compositionObjectId: 'c-9', error: reason }, 'saved');
+        expect(out.level).toBe('warn');
+        expect(out.message).toBe('Prompt saved, scene copy not updated: ' + reason);
+        let out2 = promptWriteOutcome({ sdPrompt: 'x', promptLocked: false, updated: true, compositionUpdated: true, sceneUpdated: false, error: reason }, 'regenerated');
+        expect(out2.level).toBe('warn');
+        expect(out2.message).toBe('Prompt regenerated, scene copy not updated: ' + reason);
+        // The complete P4-10 shape (both flags true) is still success.
+        expect(promptWriteOutcome({ updated: true, compositionUpdated: true, sceneUpdated: true, promptLocked: true, compositionObjectId: 'c-9' }, 'saved'))
+            .toEqual({ level: 'success', message: 'Prompt saved' });
     });
 
     it('is a warning (not success) when an error is present even if compositionUpdated is absent', async () => {

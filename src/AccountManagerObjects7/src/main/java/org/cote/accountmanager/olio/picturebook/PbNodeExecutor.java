@@ -541,11 +541,16 @@ public class PbNodeExecutor {
 		}
 
 		List<String> degradations = new ArrayList<>();
-		String sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		/// P4-10: the SCENE composition is the authority; its promptOverride is read first, the scene's
+		/// mirrored sdPrompt second, the generic fallback last.
+		String sdPrompt = compositionPrompt(findComposition(user, book, scene, orgId, PbCompositionPurposeEnumType.SCENE));
+		if(sdPrompt == null) {
+			sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		}
 		if(sdPrompt == null || sdPrompt.trim().isEmpty()) {
 			String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
 			sdPrompt = "landscape, scenic, painterly, soft light" + (mood != null ? ", " + mood + " atmosphere" : "");
-			logger.warn("executeLandscape: scene {} has no sdPrompt — using generic fallback", scopeRef);
+			logger.warn("executeLandscape: scene {} has no composition promptOverride or sdPrompt — using generic fallback", scopeRef);
 			degradations.add(PbPipelineUtil.ROLE_LANDSCAPE + ": scene has no sdPrompt; generic fallback prompt used");
 		}
 
@@ -841,7 +846,7 @@ public class PbNodeExecutor {
 			throw new PictureBookException(unresolvedModelStatus(pick), unresolvedModelMessage(sceneLabel, pick, plan, planOid));
 		}
 		CompiledPrompt compiled = plan.getCompiled().get(RenderPlan.STAGE_BASE);
-		if(compiled == null || compiled.getPrompt() == null || compiled.getPrompt().isBlank()) {
+		if(!hasSubject(plan) || compiled == null || compiled.getPrompt() == null || compiled.getPrompt().isBlank()) {
 			throw new PictureBookException(409, noTextMessage + " (plan artifact " + planOid + ")");
 		}
 
@@ -914,6 +919,25 @@ public class PbNodeExecutor {
 		return new PlannedRender(plan, planOid, compiled, bytes, data, frozen,
 			(img.isSeedReported() ? Long.valueOf(img.getSeed()) : null), result.getRequestJson(), result.getDurationMs(),
 			degradations, configNotApplied);
+	}
+
+	/**
+	 * Whether {@code plan} depicts anything: an intent, location text, or at least one actor or element with
+	 * a name or description. The compiled BASE prompt is not the test - the compiler also folds the camera
+	 * (P4-10: a MIGRATED composition carries a default shot type and viewpoint), palette, style and photoreal
+	 * boilerplate into it, and those are modifiers of a subject, not one; "medium, eye level" alone is not a
+	 * scene to render.
+	 */
+	static boolean hasSubject(RenderPlan plan) {
+		if(plan.getIntent() != null && NarrativeUtil.isMeaningful(plan.getIntent().getPromptOverride())) return true;
+		if(plan.getLocation() != null && NarrativeUtil.isMeaningful(plan.getLocation().getDescription())) return true;
+		for(RenderPlan.Actor a : plan.getActors()) {
+			if(NarrativeUtil.isMeaningful(a.getName()) || NarrativeUtil.isMeaningful(a.getDescription())) return true;
+		}
+		for(RenderPlan.Element e : plan.getElements()) {
+			if(NarrativeUtil.isMeaningful(e.getName()) || NarrativeUtil.isMeaningful(e.getDescription())) return true;
+		}
+		return false;
 	}
 
 	/// DTO key: effective sd.config values the plan path never applies (§24 as-built), each "CODE: text".
@@ -1029,18 +1053,16 @@ public class PbNodeExecutor {
 		}
 		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
 		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
-		/// The page prompt is the CHAPBOOK_PAGE composition's promptOverride (P4-8); scene.sdPrompt is the
-		/// pre-P4-8 copy. The plan builder makes the same choice (PbRenderPlanUtil.locationText); this gate
-		/// only refuses a page that has neither.
-		String sdPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-		if(!NarrativeUtil.isMeaningful(sdPrompt)) {
-			BaseRecord pageComp = findPageComposition(user, book, scene, orgId);
-			String pagePrompt = (pageComp != null && pageComp.hasField(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE)
-				? pageComp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) : null);
-			if(!NarrativeUtil.isMeaningful(pagePrompt)) {
-				throw new PictureBookException(409, "Page " + sceneIndex
-					+ " has no prompt; set or generate its landscape prompt before rendering it");
-			}
+		/// The page prompt is the CHAPBOOK_PAGE composition's promptOverride - the authority (P4-10); the
+		/// composition is read FIRST and scene.sdPrompt, its mirror, second. The plan builder makes the same
+		/// choice (PbRenderPlanUtil.locationText); this gate only refuses a page that has neither.
+		String pagePrompt = compositionPrompt(findComposition(user, book, scene, orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE));
+		if(pagePrompt == null) {
+			pagePrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		}
+		if(!NarrativeUtil.isMeaningful(pagePrompt)) {
+			throw new PictureBookException(409, "Page " + sceneIndex
+				+ " has no prompt; set or generate its landscape prompt before rendering it");
 		}
 		String sceneLabel = "page " + (sceneIndex != null ? sceneIndex.toString() : sceneOid);
 
@@ -1084,19 +1106,31 @@ public class PbNodeExecutor {
 		return out;
 	}
 
-	/// The page's CHAPBOOK_PAGE composition, or null when it has none or it cannot be read (P4-8). Keyed on
-	/// the book's group — the group every composition is created in — not the scene's.
-	private static BaseRecord findPageComposition(BaseRecord user, BaseRecord book, BaseRecord scene, long orgId) {
+	/// The scene's composition of the given purpose (CHAPBOOK_PAGE for a ChapBook page, SCENE for a story
+	/// scene), or null when it has none or it cannot be read (P4-8 / P4-10). Keyed on the book's group — the
+	/// group every composition is created in — not the scene's. Never throws: the engine readers fall back to
+	/// the scene's mirrored fields.
+	private static BaseRecord findComposition(BaseRecord user, BaseRecord book, BaseRecord scene, long orgId, PbCompositionPurposeEnumType purpose) {
+		if(book == null || scene == null) return null;
 		long groupId = (book.hasField(FieldNames.FIELD_GROUP_ID) && book.get(FieldNames.FIELD_GROUP_ID) != null
 			? ((Number) book.get(FieldNames.FIELD_GROUP_ID)).longValue() : 0L);
 		if(groupId <= 0L) return null;
 		try {
-			return PbComposeUtil.findSceneComposition(user, scene, groupId, orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE);
+			return PbComposeUtil.findSceneComposition(user, scene, groupId, orgId, purpose);
 		}
 		catch(RuntimeException e) {
-			logger.warn("findPageComposition: page {} composition unreadable: {}", scene.get(FieldNames.FIELD_OBJECT_ID), e.getMessage());
+			logger.warn("findComposition: scene {} {} composition unreadable: {}", scene.get(FieldNames.FIELD_OBJECT_ID), purpose, e.getMessage());
 			return null;
 		}
+	}
+
+	/// The composition's promptOverride when it carries a meaningful one (NarrativeUtil.isMeaningful - the
+	/// literal "null"/"none" an LLM may have written counts as absent), else null so the caller falls back to
+	/// the scene's mirrored sdPrompt (P4-10).
+	private static String compositionPrompt(BaseRecord comp) {
+		if(comp == null || !comp.hasField(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE)) return null;
+		String p = comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+		return (NarrativeUtil.isMeaningful(p) ? p : null);
 	}
 
 	// ─── prompt nodes (SCENE_PROMPT / LANDSCAPE_PROMPT) ──────────────────────────
@@ -1124,9 +1158,20 @@ public class PbNodeExecutor {
 			? PbPipelineUtil.ROLE_LANDSCAPE_PROMPT
 			: PbPipelineUtil.ROLE_SCENE_PROMPT;
 
-		String promptText = (nodeType == PbNodeTypeEnumType.LANDSCAPE_PROMPT)
-			? scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT)
-			: scene.get(FieldNames.FIELD_DESCRIPTION);
+		String promptText;
+		if(nodeType == PbNodeTypeEnumType.LANDSCAPE_PROMPT) {
+			/// P4-10: the recorded landscape prompt is what the LANDSCAPE node renders from and drifts on, so
+			/// it resolves the same way executeLandscape / executeChapBookPage do - the composition's
+			/// promptOverride first, the scene's mirrored sdPrompt second.
+			PbCompositionPurposeEnumType purpose = (isChapBook(book) ? PbCompositionPurposeEnumType.CHAPBOOK_PAGE : PbCompositionPurposeEnumType.SCENE);
+			promptText = compositionPrompt(findComposition(user, book, scene, orgId, purpose));
+			if(promptText == null) {
+				promptText = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+			}
+		}
+		else {
+			promptText = scene.get(FieldNames.FIELD_DESCRIPTION);
+		}
 		List<String> degradations = new ArrayList<>();
 		if(promptText == null || promptText.isBlank()) {
 			promptText = (promptText == null ? "" : promptText);
@@ -1264,7 +1309,12 @@ public class PbNodeExecutor {
 		String action = scene.get(OlioFieldNames.FIELD_PB_ACTION);
 		String setting = scene.get(OlioFieldNames.FIELD_PB_SETTING);
 		String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
-		String scenePrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		/// P4-10: the SCENE composition's promptOverride first, the scene's mirrored sdPrompt second, the
+		/// scene description last - this text goes to SD through buildSceneRequest.
+		String scenePrompt = compositionPrompt(findComposition(user, book, scene, orgId, PbCompositionPurposeEnumType.SCENE));
+		if(scenePrompt == null) {
+			scenePrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		}
 		if(scenePrompt == null || scenePrompt.isBlank()) {
 			scenePrompt = scene.get(FieldNames.FIELD_DESCRIPTION);
 		}

@@ -636,10 +636,12 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 
 	/// The whole lifecycle of one scene through the three routes, with the LLM unreachable (no chat config resolvable -
 	/// asserted, see the class comment):
-	///   1. compose           -> 202, the job composes the scene: no LLM, so a MIGRATED composition from the scene's own
-	///                           fields; then the location pass runs and reports its hard failure (the scene has a setting)
-	///   2. compose again     -> 202 again: a MIGRATED, unedited composition still needs a real compose (needsCompose), and
-	///                           this time the LLM miss leaves the existing composition untouched (hardFailure, not migrated)
+	///   1. compose           -> 202; the job's migration pass (P4-10) writes a MIGRATED composition from the scene's own
+	///                           fields BEFORE the loop, so the loop finds an existing row and the LLM miss is a hardFailure
+	///                           that leaves it untouched; then the location pass runs and reports its hard failure (the
+	///                           scene has a setting)
+	///   2. compose again     -> 202 again: a MIGRATED, unedited composition still needs a real compose (needsCompose); the
+	///                           migration now creates nothing and the LLM miss is the same hardFailure on the same row
 	///   3. scene compose     -> 200 hardFailure "existing composition left untouched"; 404 for a named missing config
 	///   4. user-edited       -> scene compose is skippedUserEdited (nothing written); force is the LLM miss again, the
 	///                           edited row untouched; whole-book compose is now 200 "Every scene is composed"
@@ -655,7 +657,7 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			BaseRecord scene = addScene(f, 1);
 			String sceneOid = oid(scene);
 
-			/// 1. first compose: 202 and a MIGRATED fallback
+			/// 1. first compose: 202; the migration pass writes the MIGRATED row and the loop's LLM miss leaves it untouched
 			Map<String, Object> submit = accepted(service.compose(f.bookOid, "{}", o, SD_CONTEXT), "compose");
 			assertEquals(f.bookOid, submit.get("bookObjectId"));
 			assertEquals("pb.compose", submit.get("kind"));
@@ -671,8 +673,16 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			assertEquals(1, num(result, "visited"));
 			assertEquals(0, num(result, "composed"));
 			assertEquals(0, num(result, "current"));
-			assertEquals(1, num(result, "migrated"));
-			assertEquals(0, num(result, "hardFailures"));
+			/// P4-10: the migration pass, not the loop, writes the MIGRATED row, so the loop's own "migrated" fallback count is
+			/// 0 and the LLM miss over that existing row is the one hard failure (mirror of TestPbComposeJob case06).
+			assertEquals(0, num(result, "migrated"));
+			assertEquals(1, num(result, "hardFailures"));
+			Map<String, Object> migration = map(result, "migration");
+			assertNull("the migration did not throw: " + migration, migration.get("error"));
+			assertEquals("the migration scanned the one scene", 1, num(migration, "scanned"));
+			assertEquals("a MIGRATED row was written before the loop", 1, num(migration, "created"));
+			assertEquals(0, num(migration, "failed"));
+			assertEquals(0, num(migration, "skippedExisting"));
 			assertEquals(0, num(result, "skippedUserEdited"));
 			assertEquals(0, num(result, "quickStartRendered"));
 			assertEquals(1, num(result, "lastSceneIndex"));
@@ -685,15 +695,15 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			Map<String, Object> outcome = (Map<String, Object>) scenes.get(0);
 			assertEquals(sceneOid, outcome.get("sceneObjectId"));
 			assertEquals(1, num(outcome, "sceneIndex"));
-			assertEquals("migrated", outcome.get("status"));
+			assertEquals("hardFailure", outcome.get("status"));
 			assertEquals("MIGRATED", outcome.get("source"));
 			assertEquals("NONE", outcome.get("castTier"));
 			assertEquals(0, num(outcome, "actorCount"));
 			assertEquals(0, num(outcome, "elementCount"));
 			String why = String.valueOf(outcome.get("error"));
-			assertTrue("the outcome says why it fell back: " + why, why.contains("LLM unavailable") && why.contains("wrote a MIGRATED composition"));
+			assertTrue("the outcome says why the migration's row was left alone: " + why, why.contains("LLM unavailable") && why.contains("existing composition left untouched"));
 			String compOid = String.valueOf(outcome.get("compositionObjectId"));
-			assertNotEquals("the MIGRATED composition is reported", "null", compOid);
+			assertNotEquals("the migration's MIGRATED composition is reported", "null", compOid);
 			assertNull("no draft render without quickStart", outcome.get("draftRender"));
 			BaseRecord comp = PbComposeUtil.readComposition(owner, compOid, orgId);
 			assertNotNull("the composition reads back as the owner", comp);
@@ -723,6 +733,8 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			assertEquals(0, num(result2, "migrated"));
 			assertEquals(0, num(result2, "composed"));
 			assertEquals(1, num(result2, "hardFailures"));
+			assertEquals("the migration creates nothing once the scene has a row", 0, num(map(result2, "migration"), "created"));
+			assertEquals(1, num(map(result2, "migration"), "skippedExisting"));
 			@SuppressWarnings("unchecked")
 			Map<String, Object> outcome2 = (Map<String, Object>) list(result2, "scenes").get(0);
 			assertEquals("hardFailure", outcome2.get("status"));

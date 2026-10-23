@@ -485,6 +485,17 @@ silently (§19).
 > the planner is wired to the composition (Implementation §6.C 194 jj — ruled 2026-10-21 "fix as suggested": P4-10, with
 > the scene-copy retirement; until then P4-9's inspector shows the compiled `/plan` prompt beside the fields). Implementation
 > §6.C 194, 195.
+>
+> **Built (P4-10, 2026-10-22):** the planner now reads the composition — `settingText`/`action`/`mood` per field with the
+> scene as fallback, `props` appended, the camera fields (`shotType`, `viewpoint`, `cameraText`) compiled into
+> `RenderPlan.Camera` and the SDXL camera stage (the composer also writes its shot/viewpoint words into `cameraText` —
+> `PbComposeUtil.cameraText(Proposal)`, "medium, eye_level" — so the planner drops any comma-separated piece of the free
+> text that is just one of those two words; found by the P4-10 live proof, §6.C 198 v) — and `configOverride` is the composition's, applied between the scene and
+> node tiers by mirroring it onto the node (`PbBookUtil.mirrorSceneOntoNode`; `PbConfigUtil.mergeTiers` unchanged). A
+> composition `configOverride` PATCH also mirrors onto `scene.configOverride`; a page composition's `promptOverride`/
+> `promptLocked` PATCH mirrors onto `scene.sdPrompt`/`promptLocked`; a SCENE composition's `promptOverride` never reaches the
+> scene (board direction, not scene text). The scene's `sdPrompt`, `promptLocked`, `configOverride` are the mirror, the
+> composition the authority (§24 P4-10 block; Implementation §6.C 198, §12.10).
 
 ### 9. Getting a composition: "AI proposes"
 
@@ -1339,7 +1350,7 @@ What this gives ChapBook for free:
 `imageStale` maps onto node STALE. Character support in ChapBook (G-35) is just "allow actors on
 CHAPBOOK_PAGE"; it is off by default.
 
-**[2026-10-21 (P4-8), as built — the page composition exists and carries the prompt; the scene copy stays until P4-10.**
+**[2026-10-21 (P4-8), as built — the page composition exists and carries the prompt; the scene copy stays until P4-10. Superseded by the P4-10 block below where the two differ (write order, partial-write body, the STORY-scene edge).**
 A page's `CHAPBOOK_PAGE` composition is created lazily on the first prompt write, as the request user through
 `AccessPoint`, named `page.<sceneObjectId>` **in the book's group** (not the scene's — a chapter-group scene would
 otherwise put it where the planner and the board never look), with `source` USER (a human set) or LLM (regenerate);
@@ -1368,6 +1379,42 @@ Docker stack has no LiteLLM key, so callers pass the user's config name as the U
 §6.C 196, §6.G 4. **2026-10-22 (P4-9):** the composition board follows the same rule — its header's Chat Config control sends the
 pick's name as `chatConfigName` on every compose path (empty-state compose, Re-compose, Compose book…); without it the compose job
 ended `source=MIGRATED` with no error on the page (`PictureBookV3Implementation.md` §12.9, §6.C 197 ee).]**
+
+**[2026-10-22 (P4-10), as built — the composition is the authority; the scene's `sdPrompt` / `promptLocked` / `configOverride`
+are its server-maintained mirror, kept (not deleted) for the readers that still consult them.** "Retire" was taken as an
+authority flip, not a field deletion (`PictureBookV3Implementation.md` §6.C 198 a): `chapBook.js`, the §28.1 v1 render path,
+`PbWatchedFields` and `PbConfigUtil.mergeTiers` read the scene fields, so each composition write is followed by one PATCH of the
+differing scene fields (`PbBookUtil.mirrorCompositionOntoScene`, as the request user; a refused mirror is reported, never hidden,
+and never fails the authoritative write). **Write order flips:** `setSceneLandscapePrompt` / `regenerateSceneLandscapePrompt`
+and the recovery path write the `CHAPBOOK_PAGE` composition FIRST, then mirror `sdPrompt`/`promptLocked` onto the scene, then
+mark the node STALE; the body is `{updated, compositionUpdated (= updated), sceneUpdated, promptLocked[, compositionObjectId][,
+error]}` where `updated` now means the composition was written and a partial is `updated:true, sceneUpdated:false, error:"Page
+composition <oid> persisted but scene <id> sdPrompt was not: …"`; the in-process setters keep the 500 on a partial. A scene with
+no readable book is 500 before any write; **a STORY scene on these routes is 409** "belongs to a story book; edit its composition
+board instead" (closes the P4-8 edge). `PATCH …/composition` mirrors `configOverride` onto the scene for either purpose and
+`promptOverride`/`promptLocked` for a page only — a SCENE composition's `promptOverride` is a board direction the planner feeds
+the STORY prompt node, never scene text — and answers `sceneMirrored` (+ `sceneMirrorError` when refused). `setSceneConfigOverride`
+writes the composition's `configOverride` first; the composition tier reaches `mergeTiers` through the node mirror
+(`mirrorSceneOntoNode(user, scene, node, book)`: node `configOverride` = the composition's when set, node `promptText` = the page
+composition's `promptOverride` on a ChapBook), so the order is book → scene → composition → node as §8 asks with no lookup on the
+hash path. **Readers are composition-first:** `executeChapBookPage`, `executeLandscape`, the LANDSCAPE_PROMPT node and
+`executeComposite` read the composition's `promptOverride` and fall back to the scene; the facade's render gates use the same
+order. **Migration (§9.1 / §28):** the first compose job on a story book creates a `source=MIGRATED` SCENE composition per legacy
+scene (setting/action/mood/`sdPrompt`→`promptOverride`/`promptLocked`/`configOverride`) in the book's group, idempotent, never
+touching an existing or user-edited one, before the LLM loop so the recompose keeps the legacy prompt/lock/config; the job result
+carries `migration` counts. **Planner:** with a SCENE composition `locationText` takes setting/action/mood per field from the
+composition with the scene as fallback, appends `props`, and excludes the scene's `sdPrompt` (it is the migrated direction);
+`cameraText` (shot type, viewpoint, free text) reaches `RenderPlan.Camera` and the SDXL camera stage; row handles
+(`actor.<oid>.<n>` / `element.<oid>.<n>`) never reach compiled text (197 jj). **Four hardenings from the P4-10 reviews (2026-10-23):**
+the v1 recovery path overlays a page's locked composition `promptOverride` onto the in-memory scene before it decides to regenerate
+(`ChapBookUtil.overlayPageComposition`), so a stale or refused scene mirror can never cause a locked prompt to be regenerated, and it
+skips the scene mirror when the composition write was refused (the mirror never carries text the authority did not take); a board
+`promptOverride` is sanitised exactly like the scene route (`ChapBookUtil.sanitizeText`) before it is mirrored; a scene whose migration
+failed is skipped by the LLM loop (`hardFailure`, `status:"migrationFailed"`) so a fresh LLM row cannot drop its legacy lock; and the
+render gate judges the **plan**, not the compiled string — `PbNodeExecutor.hasSubject` requires a meaningful intent, location text, or an
+actor/element with a name or description, because a MIGRATED composition's default shot/viewpoint (and the style/palette/photoreal
+boilerplate) make the compiled SDXL string non-blank for a scene with nothing to depict (§6.C 198 o–r). `Flux2Compiler` still ignores
+`RenderPlan.Camera` — Phase 5. Results, tests and the live proof: `PictureBookV3Implementation.md` §12.10.]**
 
 **Other ChapBook specifics:**
 - **Locations:** a ChapBook book has its own world, so the same world-scoped location library
@@ -1717,6 +1764,17 @@ path (`olio.pb.scene`), then the steps above.
 > idempotent on re-run) before the §9.1 compose job is auto-submitted — without them the job found no scenes
 > and "straight after `createFromScenes`" was unreachable. Books imported before this date still get their
 > rows lazily at first render; their backfill is the P4-10 one-off (implementation doc §6.C 189 h).
+
+> **Built (P4-10, 2026-10-22) — step 4 only, in part.** `PbMigrationUtil.migrateCompositions` runs inside the first
+> compose job on a story book (`PbComposeJobUtil.composeNow`, before the LLM loop, as the job's user through
+> `AccessPoint`): one `source=MIGRATED` SCENE composition per scene that has none, in the book's group, with
+> `settingText`/`action`/`mood` from the scene, `sdPrompt` → `promptOverride`, `promptLocked` and `configOverride`
+> copied; idempotent (a second run creates nothing); an existing or `userEdited` composition is counted and never
+> touched; `PbWardrobeUtil.migrateSceneTags` (the §6.2 apparel pin step) runs in the same pass. Counts are logged once
+> and returned on the job result as `migration`. **Not built here:** actors from `scene.characters` (step 4's first
+> bullet — the LLM compose that follows proposes them), the composite-render import (step 5) and the dependency
+> bindings (step 6). A ChapBook is skipped — its pages get a `CHAPBOOK_PAGE` composition on the first prompt write
+> (§24). Implementation §6.C 198 b–e, §12.10.
 
 ### 28.1 Retiring PB1 and the old ChapBook render path: disable, verify, then remove
 

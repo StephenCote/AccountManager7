@@ -29,9 +29,12 @@ import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
@@ -735,10 +738,42 @@ public class TestPbCompositionRows extends BaseTest {
 				() -> PbServiceFacade.deleteElement(reader, bookOid, compOid, element));
 			assertNotNull(book);
 
+			/// P4-10 mirror paths: a composition patch carrying the mirrored fields is refused at the same
+			/// requireBookUpdate gate, before the composition write and before any scene mirror - so neither the
+			/// composition nor the scene's sdPrompt/promptLocked/configOverride moves.
+			BaseRecord scene0 = readScene(u, sceneOid, orgId);
+			assertNull("precondition: the scene has no configOverride", scene0.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertNull("precondition: the scene has no sdPrompt", scene0.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			refused("reader patch composition configOverride (mirror path)", 403, REFUSED_EDIT,
+				() -> PbServiceFacade.patchSceneComposition(reader, bookOid, sceneOid, map(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, SPARSE_OVERRIDE)));
+			refused("reader patch composition promptOverride/promptLocked (mirror path)", 403, REFUSED_EDIT,
+				() -> PbServiceFacade.patchSceneComposition(reader, bookOid, sceneOid,
+					map2(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, "stolen prompt", OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.TRUE)));
+			/// The scene-level configOverride entry point as the reader: it reads the scene (Read on the group
+			/// suffices), finds the SCENE composition and tries to patch it as the reader; the authorized update
+			/// is refused and patchCompositionFields reports that as 500 "Failed to persist composition <oid>"
+			/// (observed live 2026-10-22). Nothing may land - asserted on the DB below.
+			try {
+				boolean r = PbBookUtil.setSceneConfigOverride(reader, sceneOid, SPARSE_OVERRIDE);
+				fail("a reader's configOverride write must be refused, but returned " + r);
+			}
+			catch(PictureBookException e) {
+				log("reader setSceneConfigOverride: " + e.getStatus() + " " + e.getMessage());
+				assertEquals("reader setSceneConfigOverride surfaces the refused composition update as 500: " + e.getMessage(), 500, e.getStatus());
+				assertTrue("the 500 names the refused composition persist: " + e.getMessage(),
+					e.getMessage() != null && e.getMessage().contains("Failed to persist composition " + compOid));
+			}
+			BaseRecord scene1 = readScene(u, sceneOid, orgId);
+			assertNull("scene.configOverride untouched by the reader", scene1.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertNull("scene.sdPrompt untouched by the reader", scene1.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertNotEquals("scene.promptLocked untouched by the reader", Boolean.TRUE, scene1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+
 			BaseRecord comp1 = PbComposeUtil.readComposition(u, oidOf(st.comp), orgId);
 			assertEquals("revision unchanged", rev0, intOf(comp1.get(OlioFieldNames.FIELD_PB_REVISION)));
 			assertEquals("mood unchanged", mood0, comp1.get(OlioFieldNames.FIELD_PB_MOOD));
 			assertEquals("source unchanged by the refused calls", source0, status(comp1, OlioFieldNames.FIELD_PB_SOURCE));
+			assertNull("composition configOverride untouched by the reader", comp1.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertNull("composition promptOverride untouched by the reader", comp1.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
 			BaseRecord actorRow = PbComposeUtil.readActor(u, actor, orgId);
 			assertNotNull("actor row still there", actorRow);
 			assertEquals("a gull-watcher on the mole", actorRow.get(FieldNames.FIELD_DESCRIPTION));
@@ -752,6 +787,276 @@ public class TestPbCompositionRows extends BaseTest {
 		finally {
 			deleteBook(u, bk);
 		}
+	}
+
+	// ─────────────────────────────── P4-10: composition is the authority, scene is the mirror ───────────────────────────────
+
+	private static final String PAGE_PROMPT = "a lone heron on a tidal flat at first light, mist over the water";
+	private static final String PAGE_PROMPT_DIRTY = "line one\r\nline\u0000 two\u0007 end";
+	private static final String PAGE_PROMPT_CLEAN = "line one\nline two end";
+	private static final String STEPS_17 = "{\"schema\":\"olio.sd.config\",\"steps\":17}";
+	private static final String STEPS_33 = "{\"schema\":\"olio.sd.config\",\"steps\":33}";
+	private static final String STORY_409 = "belongs to a story book; edit its composition board instead";
+
+	/// A ChapBook page's composition patch through the facade mirrors promptOverride/promptLocked/configOverride
+	/// onto the scene's sdPrompt/promptLocked/configOverride (re-read from the DB); a promptOverride carrying NUL,
+	/// a C0 control and a CRLF is sanitized on the composition AND on the mirrored scene; a blank promptOverride
+	/// clears both; promptLocked false unlocks both; sceneMirrored is true and no sceneMirrorError is reported.
+	@Test
+	public void pagePromptPatchMirrorsToScene() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = makeChapBook(u, newBook(u, "pagemirror"));
+			bookContext(u, bk);
+			BaseRecord scene = addScene(u, bk, 1, "Heron", "a tidal flat", "a heron stands", "still",
+				"Page 1 of the P4-10 page-mirror fixture", null, null);
+			assertNull("precondition: no sdPrompt on the page", scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			BaseRecord page = PbComposeUtil.getCreatePageComposition(u, bk, scene, PbCompositionSourceEnumType.USER);
+			assertNotNull("page composition", page);
+			assertEquals("CHAPBOOK_PAGE purpose", PbCompositionPurposeEnumType.CHAPBOOK_PAGE.toString(), status(page, OlioFieldNames.FIELD_PB_PURPOSE));
+			assertEquals("the page composition is the scene's", idOf(scene), fkId(page, OlioFieldNames.FIELD_PB_SCENE));
+			int rev0 = intOf(PbComposeUtil.readComposition(u, oidOf(page), orgId).get(OlioFieldNames.FIELD_PB_REVISION));
+
+			/// 1. promptOverride + promptLocked -> scene.sdPrompt + scene.promptLocked
+			Map<String, Object> res = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(scene),
+				map2(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, PAGE_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.TRUE));
+			log("page prompt patch " + res);
+			assertEquals(Boolean.TRUE, res.get("updated"));
+			assertEquals("sceneMirrored", Boolean.TRUE, res.get("sceneMirrored"));
+			assertFalse("no sceneMirrorError: " + res.get("sceneMirrorError"), res.containsKey("sceneMirrorError"));
+			assertEquals(oidOf(page), res.get("compositionObjectId"));
+			assertEquals("revision + 1", rev0 + 1, intOf(res.get("revision")));
+			BaseRecord comp1 = PbComposeUtil.readComposition(u, oidOf(page), orgId);
+			assertEquals(PAGE_PROMPT, comp1.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals(Boolean.TRUE, comp1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			BaseRecord s1 = readScene(u, oidOf(scene), orgId);
+			assertEquals("scene.sdPrompt mirrors the composition", PAGE_PROMPT, s1.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("scene.promptLocked mirrors the composition", Boolean.TRUE, s1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+
+			/// 2. Dirty text: NUL + BEL stripped, CRLF -> LF, on the composition and on the mirrored scene.
+			Map<String, Object> res2 = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(scene),
+				map(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, PAGE_PROMPT_DIRTY));
+			assertEquals(Boolean.TRUE, res2.get("sceneMirrored"));
+			BaseRecord comp2 = PbComposeUtil.readComposition(u, oidOf(page), orgId);
+			assertEquals("composition promptOverride sanitized", PAGE_PROMPT_CLEAN, comp2.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals("promptLocked kept (not in the body)", Boolean.TRUE, comp2.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			BaseRecord s2 = readScene(u, oidOf(scene), orgId);
+			assertEquals("scene.sdPrompt sanitized", PAGE_PROMPT_CLEAN, s2.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertFalse("no raw CR on the scene", String.valueOf((Object) s2.get(OlioFieldNames.FIELD_CB_SD_PROMPT)).contains("\r"));
+			assertEquals("scene.promptLocked kept", Boolean.TRUE, s2.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+
+			/// 3. configOverride mirrors too (either purpose).
+			Map<String, Object> res3 = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(scene),
+				map(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, SPARSE_OVERRIDE));
+			assertEquals(Boolean.TRUE, res3.get("sceneMirrored"));
+			assertEquals(SPARSE_OVERRIDE, PbComposeUtil.readComposition(u, oidOf(page), orgId).get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertEquals("scene.configOverride mirrors the composition", SPARSE_OVERRIDE, readScene(u, oidOf(scene), orgId).get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+
+			/// 4. Unlock, then clear: promptLocked false -> scene false; promptOverride "" -> both null.
+			Map<String, Object> res4 = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(scene),
+				map(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.FALSE));
+			assertEquals(Boolean.TRUE, res4.get("sceneMirrored"));
+			BaseRecord s4 = readScene(u, oidOf(scene), orgId);
+			assertEquals("scene unlocked", Boolean.FALSE, s4.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertEquals("scene.sdPrompt kept when only the lock moved", PAGE_PROMPT_CLEAN, s4.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			Map<String, Object> res5 = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(scene),
+				map(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, ""));
+			assertEquals(Boolean.TRUE, res5.get("sceneMirrored"));
+			assertNull("composition promptOverride cleared", PbComposeUtil.readComposition(u, oidOf(page), orgId).get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertNull("scene.sdPrompt cleared with it", readScene(u, oidOf(scene), orgId).get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+
+			/// 5. A patch that carries none of the mirrored keys still reports sceneMirrored true (nothing to mirror).
+			Map<String, Object> res6 = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(scene), map(OlioFieldNames.FIELD_PB_MOOD, "hushed"));
+			assertEquals(Boolean.TRUE, res6.get("sceneMirrored"));
+			assertFalse(res6.containsKey("sceneMirrorError"));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/// A STORY scene's SCENE composition promptOverride/promptLocked is a board-level direction, never the scene
+	/// text: a patch of them leaves scene.sdPrompt/promptLocked exactly as created (a legacy prompt, locked)
+	/// while configOverride in the same body DOES mirror onto the scene. The same holds for the scene-level
+	/// configOverride entry point, which writes the SCENE composition first and mirrors it back.
+	@Test
+	public void storyCompositionPromptPatchDoesNotMirrorToScene() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "storymirror");
+			bookContext(u, bk);
+			String legacy = "legacy locked prompt of the story scene";
+			BaseRecord scene = addScene(u, bk, 1, "Arrival", "a rain-dark harbour street at dusk", "walking toward the tavern door", "wary",
+				"Scene 1 of the P4-10 story-mirror fixture", legacy, Boolean.TRUE);
+			assertEquals("precondition: legacy sdPrompt on the scene", legacy, scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("precondition: locked", Boolean.TRUE, scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			ComposeResult cr = PbComposeUtil.composeMigrated(u, bk, scene, false);
+			assertTrue("MIGRATED composition written: " + cr.failureReason, cr.isWritten());
+			BaseRecord comp = PbComposeUtil.readComposition(u, oidOf(cr.composition), orgId);
+			assertEquals("SCENE purpose", "SCENE", status(comp, OlioFieldNames.FIELD_PB_PURPOSE));
+			assertFalse("the book is a story book", PbNodeExecutor.isChapBook(PbBookUtil.readBook(u, oidOf(bk), orgId)));
+
+			Map<String, Object> body = new LinkedHashMap<>();
+			body.put(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, "board direction: low wide shot, lantern light only");
+			body.put(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.FALSE);
+			body.put(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, STEPS_17);
+			Map<String, Object> res = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(scene), body);
+			log("story patch " + res);
+			assertEquals(Boolean.TRUE, res.get("updated"));
+			assertEquals("sceneMirrored (configOverride mirrored; prompt not a mirror on a story scene)", Boolean.TRUE, res.get("sceneMirrored"));
+			assertFalse(res.containsKey("sceneMirrorError"));
+			BaseRecord comp1 = PbComposeUtil.readComposition(u, oidOf(comp), orgId);
+			assertEquals("board direction: low wide shot, lantern light only", comp1.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals(Boolean.FALSE, comp1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertEquals(STEPS_17, comp1.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			BaseRecord s1 = readScene(u, oidOf(scene), orgId);
+			assertEquals("story scene.sdPrompt untouched by a composition promptOverride", legacy, s1.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("story scene.promptLocked untouched by a composition promptLocked", Boolean.TRUE, s1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertEquals("story scene.configOverride IS mirrored", STEPS_17, s1.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+
+			/// Scene-level entry point on the story scene: composition first, scene mirrored, revision bumped.
+			int rev1 = intOf(comp1.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertTrue("setSceneConfigOverride", PbBookUtil.setSceneConfigOverride(u, oidOf(scene), STEPS_33));
+			BaseRecord comp2 = PbComposeUtil.readComposition(u, oidOf(comp), orgId);
+			assertEquals("the SCENE composition carries the new override", STEPS_33, comp2.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertEquals("touchEdited bumped the revision", rev1 + 1, intOf(comp2.get(OlioFieldNames.FIELD_PB_REVISION)));
+			BaseRecord s2 = readScene(u, oidOf(scene), orgId);
+			assertEquals("scene.configOverride mirrored from the composition", STEPS_33, s2.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertEquals("scene.sdPrompt still untouched", legacy, s2.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertTrue("clear through the scene entry point", PbBookUtil.setSceneConfigOverride(u, oidOf(scene), ""));
+			assertNull("composition override cleared", PbComposeUtil.readComposition(u, oidOf(comp), orgId).get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertNull("scene override cleared with it", readScene(u, oidOf(scene), orgId).get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/// The composition's configOverride reaches the effective config as the node tier through the scene->node
+	/// mirror: with a composition override of steps 17 and a client overlay of steps 33, the effective config is
+	/// 17 (node tier above the overlay); with the composition override cleared and the node re-mirrored, the
+	/// overlay's 33 wins over the book tier; a scene-only override (no composition value) also reaches the node.
+	@Test
+	public void configOverrideTierSitsBetweenOverlayAndNode() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "cfgtier");
+			Stage st = stage(u, bk, 1);
+			BaseRecord wf = workflow(u, bk);
+			BaseRecord node = ensurePageNode(u, bk, wf, oidOf(st.scene));
+			assertNull("precondition: node has no override", node.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			BaseRecord book = PbBookUtil.readBook(u, oidOf(bk), orgId);
+			BaseRecord overlay = PbConfigUtil.parseOverride(STEPS_33);
+			assertNotNull("overlay parses", overlay);
+			int bookSteps = intOf(PbConfigUtil.resolveEffectiveConfig(book, node, false).get("steps"));
+			log("book-tier steps=" + bookSteps);
+			assertNotEquals("fixture: the book tier must not already be 17", 17, bookSteps);
+			assertNotEquals("fixture: the book tier must not already be 33", 33, bookSteps);
+			assertEquals("overlay beats the book tier when the node has no override", 33,
+				intOf(PbConfigUtil.resolveEffectiveConfig(book, node, false, overlay).get("steps")));
+
+			/// Composition override -> scene mirror -> node mirror -> node tier beats the overlay.
+			Map<String, Object> res = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(st.scene), map(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, STEPS_17));
+			assertEquals(Boolean.TRUE, res.get("sceneMirrored"));
+			BaseRecord sceneA = readScene(u, oidOf(st.scene), orgId);
+			assertEquals("scene mirror", STEPS_17, sceneA.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertTrue("mirrorSceneOntoNode", PbBookUtil.mirrorSceneOntoNode(u, sceneA, node, book));
+			BaseRecord nodeA = PbGraphUtil.readNode(u, oidOf(node), orgId);
+			assertEquals("node carries the composition's override", STEPS_17, nodeA.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertEquals("node tier (composition) beats the client overlay", 17,
+				intOf(PbConfigUtil.resolveEffectiveConfig(book, nodeA, false, overlay).get("steps")));
+			assertEquals("node tier beats the book tier without an overlay", 17,
+				intOf(PbConfigUtil.resolveEffectiveConfig(book, nodeA, false).get("steps")));
+
+			/// Composition cleared -> scene cleared -> node cleared -> overlay wins again.
+			Map<String, Object> res2 = PbServiceFacade.patchSceneComposition(u, oidOf(bk), oidOf(st.scene), map(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, ""));
+			assertEquals(Boolean.TRUE, res2.get("sceneMirrored"));
+			BaseRecord sceneB = readScene(u, oidOf(st.scene), orgId);
+			assertNull("scene mirror cleared", sceneB.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertTrue("mirrorSceneOntoNode (clear)", PbBookUtil.mirrorSceneOntoNode(u, sceneB, nodeA, book));
+			BaseRecord nodeB = PbGraphUtil.readNode(u, oidOf(node), orgId);
+			assertNull("node override cleared", nodeB.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertEquals("overlay beats the book tier again", 33,
+				intOf(PbConfigUtil.resolveEffectiveConfig(book, nodeB, false, overlay).get("steps")));
+			assertEquals("book tier alone", bookSteps,
+				intOf(PbConfigUtil.resolveEffectiveConfig(book, nodeB, false).get("steps")));
+
+			/// A scene-only override (patched directly on the scene; the composition stays blank) still reaches
+			/// the node - the mirror falls back to the scene's value when the composition carries none.
+			BaseRecord patch = PbGraphUtil.patchOf(sceneB, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE);
+			patch.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, SPARSE_OVERRIDE);
+			assertNotNull("scene-only override patch", ioContext.getAccessPoint().update(u, patch));
+			BaseRecord sceneC = readScene(u, oidOf(st.scene), orgId);
+			assertEquals(SPARSE_OVERRIDE, sceneC.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertNull("composition still blank", PbComposeUtil.readComposition(u, oidOf(st.comp), orgId).get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertTrue("mirrorSceneOntoNode (scene-only)", PbBookUtil.mirrorSceneOntoNode(u, sceneC, nodeB, book));
+			BaseRecord nodeC = PbGraphUtil.readNode(u, oidOf(node), orgId);
+			assertEquals("node carries the scene-only override", SPARSE_OVERRIDE, nodeC.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			assertEquals("scene-only override (steps 20) beats the overlay", 20,
+				intOf(PbConfigUtil.resolveEffectiveConfig(book, nodeC, false, overlay).get("steps")));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/// The page-prompt entry points refuse a STORY scene with 409 and the exact message, BEFORE any write and
+	/// (for the regenerate route) BEFORE the LLM is called: the scene's sdPrompt is unchanged, no CHAPBOOK_PAGE
+	/// composition is created, and the SCENE composition's revision is unchanged.
+	@Test
+	public void storyScenePromptRouteIs409() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "story409");
+			Stage st = stage(u, bk, 1);
+			assertFalse("the book is a story book", PbNodeExecutor.isChapBook(PbBookUtil.readBook(u, oidOf(bk), orgId)));
+			long groupId = ((Number) bk.get(FieldNames.FIELD_GROUP_ID)).longValue();
+			int rev0 = intOf(st.comp.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertNull("precondition: no page composition", PbComposeUtil.findSceneComposition(u, st.scene, groupId, orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE));
+			assertNull("precondition: no sdPrompt", st.scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			final String sceneOid = oidOf(st.scene);
+
+			refused("set page prompt on a story scene", 409, STORY_409,
+				() -> ChapBookUtil.setSceneLandscapePromptResult(u, sceneOid, "a prompt that must not land"));
+			refused("setSceneLandscapePrompt (throwing form) on a story scene", 409, STORY_409,
+				() -> ChapBookUtil.setSceneLandscapePrompt(u, sceneOid, "a prompt that must not land"));
+			/// An unsaved, never-dispatched chatConfig record: non-null gets past the 503 null check, so the 409
+			/// proves the story-book gate fires before the LLM step (which would need a connection and a model).
+			BaseRecord chatConfig = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_CONFIG);
+			refused("regenerate page prompt on a story scene", 409, STORY_409,
+				() -> ChapBookUtil.regenerateSceneLandscapePromptResult(u, sceneOid, chatConfig));
+
+			BaseRecord s1 = readScene(u, sceneOid, orgId);
+			assertNull("scene.sdPrompt still null", s1.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertNotEquals("scene not locked", Boolean.TRUE, s1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertNull("no page composition was created", PbComposeUtil.findSceneComposition(u, s1, groupId, orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE));
+			BaseRecord comp1 = PbComposeUtil.readComposition(u, oidOf(st.comp), orgId);
+			assertEquals("SCENE composition revision unchanged", rev0, intOf(comp1.get(OlioFieldNames.FIELD_PB_REVISION)));
+			assertNull("SCENE composition promptOverride unchanged", comp1.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/// Turn a freshly created STORY book into a CHAPBOOK as its owner (TestPbComposeJob.makeChapBook's idiom) and
+	/// re-read it so the record carries the type.
+	private BaseRecord makeChapBook(BaseRecord u, BaseRecord bk) throws Exception {
+		BaseRecord patch = PbGraphUtil.patchOf(bk, OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		patch.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.CHAPBOOK.toString());
+		assertNotNull("bookType patch", ioContext.getAccessPoint().update(u, patch));
+		BaseRecord fresh = PbBookUtil.readBook(u, oidOf(bk), orgOf(u));
+		assertNotNull("re-read book", fresh);
+		assertTrue("the book reads back as a ChapBook", PbNodeExecutor.isChapBook(fresh));
+		return fresh;
 	}
 
 	// ─────────────────────────────── handles ───────────────────────────────

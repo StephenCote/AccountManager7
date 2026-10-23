@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,6 +17,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.WorldUtil;
@@ -32,6 +34,8 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
@@ -826,17 +830,33 @@ public class PbBookUtil {
 	 * ChapBook scene has no {@code sceneNode}, so this field is the ONLY way such a scene can feed the top
 	 * tier of the config-precedence merge {@link PbConfigUtil#resolveEffectiveConfig} performs at render.
 	 * <p>
+	 * <b>The composition is the authority (V3 §24, P4-10); the scene field is its mirror.</b> When the scene
+	 * has a composition - the SCENE composition of a story scene (created by the compose job), or the
+	 * CHAPBOOK_PAGE composition of a ChapBook page (created here on first use through
+	 * {@link PbComposeUtil#getCreatePageComposition}) - the override is written to the composition FIRST
+	 * ({@link PbComposeUtil#patchCompositionFields}), then mirrored onto the scene
+	 * ({@link #mirrorCompositionOntoScene}), then the composition is marked user-edited
+	 * ({@link PbComposeUtil#touchEdited}: {@code userEdited}, {@code source=USER}, {@code revision+1}, and
+	 * {@link #markSceneNodeStale}, which re-reads the scene and mirrors the composition's override onto the
+	 * node). A refused composition write is a 500 and nothing else is written; a refused scene mirror is
+	 * logged as a partial write and reported as {@code false} - the composition, which every engine reader
+	 * consults first, already carries the value. A story scene whose book has never been composed has no
+	 * SCENE composition; it keeps the pre-P4-10 scene-only write (the seed the composition migration copies
+	 * when the book is first composed).
+	 * <p>
 	 * PATCH-shaped and authorized: identity + the model's validated {@code name} + the changed field only
 	 * (via {@link PbGraphUtil#patchOf}, so the writer's validation of the patch record does not reject a
-	 * null {@code name}), through {@code AccessPoint.update}. The update result is asserted, never
+	 * null {@code name}), through {@code AccessPoint.update}. Every update result is asserted, never
 	 * discarded — a swallowed null there converts a persistent failure into a silent no-op.
 	 *
 	 * @param user           the acting user (must have WRITE access to the scene)
 	 * @param sceneObjectId  objectId of the {@code olio.pb.scene}
 	 * @param configOverride the sparse override JSON, or null/blank to clear the field
-	 * @return true when the scene was updated
+	 * @return true when the scene carries the override on return (written, or already equal); false when the
+	 *         scene write was refused - on the composition path the composition still carries the value
 	 * @throws PictureBookException 400 when args are missing or a non-blank override is not valid sparse
-	 *         {@code olio.sd.config} JSON; 404 when the scene is not readable by {@code user}
+	 *         {@code olio.sd.config} JSON; 404 when the scene is not readable by {@code user}; 500 when the
+	 *         composition write (or its user-edited touch) is refused
 	 */
 	public static boolean setSceneConfigOverride(BaseRecord user, String sceneObjectId, String configOverride) {
 		if(user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
@@ -855,6 +875,33 @@ public class PbBookUtil {
 			throw new PictureBookException(400,
 				"configOverride must be sparse " + OlioModelNames.MODEL_SD_CONFIG + " JSON carrying its schema");
 		}
+
+		/// P4-10: composition first. A ChapBook page gets its CHAPBOOK_PAGE composition created here when it
+		/// has none; a story scene uses its SCENE composition when the compose job has made one.
+		BaseRecord book = readSceneBook(user, scene);
+		BaseRecord comp = null;
+		if(book != null) {
+			if(PbNodeExecutor.isChapBook(book)) {
+				comp = PbComposeUtil.getCreatePageComposition(user, book, scene, PbCompositionSourceEnumType.USER);
+			}
+			else {
+				comp = findSceneComposition(user, scene, book);
+			}
+		}
+		if(comp != null) {
+			/// patchCompositionFields treats a blank string as "clear" (stringField trims and maps "" to null);
+			/// Map.of refuses a null value, so the clear travels as "".
+			PbComposeUtil.patchCompositionFields(user, comp,
+				Map.of(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, (sparse == null ? "" : sparse)));
+			boolean sceneOk = mirrorCompositionOntoScene(user, scene, comp, false, true);
+			if(!sceneOk) {
+				logger.error("Partial configOverride write: composition " + comp.get(FieldNames.FIELD_OBJECT_ID)
+					+ " carries the override but scene " + sceneObjectId + " could not be mirrored");
+			}
+			PbComposeUtil.touchEdited(user, comp, scene);
+			return sceneOk;
+		}
+
 		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
 			OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE);
 		try {
@@ -869,6 +916,143 @@ public class PbBookUtil {
 		}
 		markSceneNodeStale(user, scene);
 		return true;
+	}
+
+	// ─────────────────────────────── composition <-> scene mirror (V3 §24, P4-10) ───────────────────────────────
+
+	/**
+	 * The scene's book as {@code user} reads it (the {@code book} FK re-read through {@link #readBook}), or null
+	 * when the scene carries no readable book reference. Never throws.
+	 */
+	static BaseRecord readSceneBook(BaseRecord user, BaseRecord scene) {
+		if(user == null || scene == null) {
+			return null;
+		}
+		try {
+			BaseRecord bookRef = (scene.hasField(OlioFieldNames.FIELD_PB_BOOK) ? scene.get(OlioFieldNames.FIELD_PB_BOOK) : null);
+			String bookOid = (bookRef != null ? bookRef.get(FieldNames.FIELD_OBJECT_ID) : null);
+			if(bookOid == null) {
+				return null;
+			}
+			Object org = (scene.hasField(FieldNames.FIELD_ORGANIZATION_ID) ? scene.get(FieldNames.FIELD_ORGANIZATION_ID) : null);
+			long orgId = (org instanceof Number ? ((Number) org).longValue() : ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
+			return readBook(user, bookOid, orgId);
+		}
+		catch(RuntimeException e) {
+			logger.warn("Scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + ": book unreadable: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/** The composition purpose a scene of {@code book} carries: CHAPBOOK_PAGE for a ChapBook page, SCENE otherwise. */
+	static PbCompositionPurposeEnumType compositionPurposeOf(BaseRecord book) {
+		return (PbNodeExecutor.isChapBook(book) ? PbCompositionPurposeEnumType.CHAPBOOK_PAGE : PbCompositionPurposeEnumType.SCENE);
+	}
+
+	/**
+	 * The scene's composition for its book's purpose ({@link #compositionPurposeOf}), looked up in the book's
+	 * group - the group every composition is written in - or null when there is none, the book has no group,
+	 * or the lookup fails (logged at warn: the caller falls back to the scene's own fields). Never throws and
+	 * never creates.
+	 */
+	static BaseRecord findSceneComposition(BaseRecord user, BaseRecord scene, BaseRecord book) {
+		if(user == null || scene == null || book == null) {
+			return null;
+		}
+		Object gid = (book.hasField(FieldNames.FIELD_GROUP_ID) ? book.get(FieldNames.FIELD_GROUP_ID) : null);
+		long groupId = (gid instanceof Number ? ((Number) gid).longValue() : 0L);
+		if(groupId <= 0L) {
+			return null;
+		}
+		try {
+			return PbComposeUtil.findSceneComposition(user, scene, groupId, PbGraphUtil.orgId(book), compositionPurposeOf(book));
+		}
+		catch(RuntimeException e) {
+			logger.warn("Scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + ": composition lookup failed; falling back to the scene fields: " + e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Mirror the authoritative composition fields onto the scene (V3 §24, P4-10): {@code comp.promptOverride}
+	 * to {@code scene.sdPrompt} and {@code comp.promptLocked} to {@code scene.promptLocked} when {@code prompt},
+	 * {@code comp.configOverride} to {@code scene.configOverride} when {@code config}. Only fields that differ
+	 * are written (blank and null are the same value); when nothing differs no write is issued and the result
+	 * is {@code true}. One PATCH as {@code user} through {@code AccessPoint.update}; a refused update is logged
+	 * and reported as {@code false}. Never throws - the composition write that preceded this has already
+	 * succeeded and a failed mirror must not undo that report.
+	 * <p>
+	 * The scene fields stay (the Ux752 ChapBook UI, the v1 render path and {@code PbWatchedFields} read them);
+	 * this is how every composition write keeps them in step.
+	 *
+	 * @return true when the scene matches the composition on return (written, or already equal); false when
+	 *         the write was refused or the patch could not be assembled
+	 */
+	public static boolean mirrorCompositionOntoScene(BaseRecord user, BaseRecord scene, BaseRecord comp, boolean prompt, boolean config) {
+		if(user == null || scene == null || comp == null || !(prompt || config)) {
+			return false;
+		}
+		try {
+			List<String> fields = new ArrayList<>();
+			String compPrompt = null;
+			boolean compLocked = false;
+			String compConfig = null;
+			if(prompt) {
+				compPrompt = blankToNull(comp.hasField(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) ? comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) : null);
+				String scenePrompt = blankToNull(scene.hasField(OlioFieldNames.FIELD_CB_SD_PROMPT) ? scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT) : null);
+				if(!java.util.Objects.equals(compPrompt, scenePrompt)) {
+					fields.add(OlioFieldNames.FIELD_CB_SD_PROMPT);
+				}
+				Boolean cl = (comp.hasField(OlioFieldNames.FIELD_PB_PROMPT_LOCKED) ? comp.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED) : null);
+				Boolean sl = (scene.hasField(OlioFieldNames.FIELD_PB_PROMPT_LOCKED) ? scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED) : null);
+				compLocked = (cl != null && cl.booleanValue());
+				if(compLocked != (sl != null && sl.booleanValue())) {
+					fields.add(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+				}
+			}
+			if(config) {
+				compConfig = blankToNull(comp.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) ? comp.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) : null);
+				String sceneConfig = blankToNull(scene.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) ? scene.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) : null);
+				if(!java.util.Objects.equals(compConfig, sceneConfig)) {
+					fields.add(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE);
+				}
+			}
+			if(fields.isEmpty()) {
+				return true;
+			}
+			BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, fields.toArray(new String[0]));
+			if(fields.contains(OlioFieldNames.FIELD_CB_SD_PROMPT)) {
+				patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, compPrompt);
+			}
+			if(fields.contains(OlioFieldNames.FIELD_PB_PROMPT_LOCKED)) {
+				patch.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.valueOf(compLocked));
+			}
+			if(fields.contains(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE)) {
+				patch.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, compConfig);
+			}
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				logger.error("Failed to mirror composition " + comp.get(FieldNames.FIELD_OBJECT_ID) + " onto scene "
+					+ scene.get(FieldNames.FIELD_OBJECT_ID) + " (" + String.join(", ", fields) + ")");
+				return false;
+			}
+			/// Keep the caller's copy in step so a following re-read-free check sees what was written.
+			for(String f : fields) {
+				if(scene.hasField(f)) {
+					scene.set(f, (OlioFieldNames.FIELD_CB_SD_PROMPT.equals(f) ? compPrompt
+						: OlioFieldNames.FIELD_PB_PROMPT_LOCKED.equals(f) ? Boolean.valueOf(compLocked) : compConfig));
+				}
+			}
+			return true;
+		}
+		catch(FieldException | ValueException | ModelNotFoundException | RuntimeException e) {
+			logger.error("Failed to mirror composition " + comp.get(FieldNames.FIELD_OBJECT_ID) + " onto scene "
+				+ scene.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+			return false;
+		}
+	}
+
+	private static String blankToNull(String s) {
+		return (s == null || s.isBlank() ? null : s);
 	}
 
 	/**
@@ -935,8 +1119,9 @@ public class PbBookUtil {
 	 * bound <i>records</i> are caught by the ref-hash scan, but a scene's text lives on the scene itself, so
 	 * the write sites mark it directly. The page's {@code imageStale} flag maps to node STALE this way.
 	 * <p>
-	 * Reads the scene back fresh (the caller holds the pre-write copy) and mirrors {@code sdPrompt} /
-	 * {@code configOverride} onto the node so the review views show what will render, then marks STALE.
+	 * Reads the scene back fresh (the caller holds the pre-write copy) and mirrors the effective prompt /
+	 * {@code configOverride} onto the node ({@link #mirrorSceneOntoNode}: the composition first, the scene
+	 * as its fallback - P4-10) so the review views and the config tiers show what will render, then marks STALE.
 	 * Never throws and never writes anything but the mirror and the status: a scene with no node is a
 	 * no-op (the v1 path, or a page never rendered on v3), a RUNNING node is left alone (the run in flight
 	 * owns its status, as {@link PbStaleUtil#scan} also treats it), an already STALE node is not rewritten.
@@ -984,14 +1169,49 @@ public class PbBookUtil {
 	}
 
 	/**
-	 * Copy {@code scene.sdPrompt} to {@code node.promptText} and {@code scene.configOverride} to
-	 * {@code node.configOverride} when they differ. The scene stays the authority (the ChapBook executor
-	 * reads the scene); the node carries the copy the graph / review views display. Each copy is one PATCH
-	 * as {@code user}; a failed copy is logged and makes the result {@code false}.
+	 * Copy the scene's effective prompt to {@code node.promptText} and its effective {@code configOverride}
+	 * to {@code node.configOverride} when they differ. Resolves the scene's book from its {@code book} FK;
+	 * see the four-argument overload for the resolution order.
 	 */
 	static boolean mirrorSceneOntoNode(BaseRecord user, BaseRecord scene, BaseRecord node) {
+		return mirrorSceneOntoNode(user, scene, node, null);
+	}
+
+	/**
+	 * Copy the scene's effective prompt to {@code node.promptText} and its effective {@code configOverride}
+	 * to {@code node.configOverride} when they differ. <b>The composition is the authority (V3 §24, P4-10);
+	 * the scene is its mirror; the node carries the copy {@link PbConfigUtil#mergeTiers} reads as the node
+	 * tier, which is how the composition's override reaches the effective config without a lookup on the
+	 * hashed path.</b>
+	 * <p>
+	 * Resolution: the scene's composition for the book's purpose ({@code CHAPBOOK_PAGE} for a ChapBook,
+	 * {@code SCENE} for a story book) is looked up in the book group ({@link #findSceneComposition}; a
+	 * failed lookup is logged and treated as "none"). The effective {@code configOverride} is the
+	 * composition's when non-blank, else the scene's - for both purposes. The effective prompt is the
+	 * composition's {@code promptOverride} when meaningful, else {@code scene.sdPrompt} - for a ChapBook page
+	 * only: a story scene's SCENE composition {@code promptOverride} is a board-level direction the planner
+	 * reads for the STORY node's prompt node, not the scene text, so a STORY node's {@code promptText} keeps
+	 * mirroring {@code scene.sdPrompt}. When {@code book} is null it is resolved from the scene's {@code book}
+	 * FK ({@link #readSceneBook}); when unreadable the scene fields alone are mirrored (logged at warn).
+	 * <p>
+	 * Each copy is one PATCH as {@code user}; a failed copy is logged and makes the result {@code false}.
+	 */
+	static boolean mirrorSceneOntoNode(BaseRecord user, BaseRecord scene, BaseRecord node, BaseRecord book) {
 		boolean ok = true;
+		if(book == null) {
+			book = readSceneBook(user, scene);
+			if(book == null) {
+				logger.warn("Scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + ": book unreadable; mirroring the scene fields alone onto node " + node.get(OlioFieldNames.FIELD_PB_HANDLE));
+			}
+		}
+		BaseRecord comp = (book != null ? findSceneComposition(user, scene, book) : null);
 		String prompt = (scene.hasField(OlioFieldNames.FIELD_CB_SD_PROMPT) ? scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT) : null);
+		if(comp != null && book != null && PbNodeExecutor.isChapBook(book)) {
+			String compPrompt = (comp.hasField(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) ? comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) : null);
+			if(NarrativeUtil.isMeaningful(compPrompt)) {
+				prompt = compPrompt;
+			}
+		}
 		String nodePrompt = (node.hasField(OlioFieldNames.FIELD_PB_PROMPT_TEXT) ? node.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT) : null);
 		boolean promptBlank = (prompt == null || prompt.isBlank());
 		boolean nodePromptBlank = (nodePrompt == null || nodePrompt.isBlank());
@@ -1002,6 +1222,12 @@ public class PbBookUtil {
 			}
 		}
 		String override = (scene.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) ? scene.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) : null);
+		if(comp != null) {
+			String compOverride = (comp.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) ? comp.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) : null);
+			if(compOverride != null && !compOverride.isBlank()) {
+				override = compOverride;
+			}
+		}
 		String nodeOverride = (node.hasField(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) ? node.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE) : null);
 		boolean overrideBlank = (override == null || override.isBlank());
 		boolean nodeOverrideBlank = (nodeOverride == null || nodeOverride.isBlank());

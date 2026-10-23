@@ -13,12 +13,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -30,10 +33,14 @@ import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -69,7 +76,15 @@ public class TestChapBookPageComposition extends BaseTest {
 		"a serene alpine lake at dawn, wide natural vista, soft diffuse light, snow on distant peaks";
 	private static final String SECOND_PROMPT =
 		"a warm cottage hearth at dusk, ochre embers, wide natural vista through a frosted window";
+	/**
+	 * A locked prompt deliberately shaped like the no-LLM fallback ("landscape, ..."): {@code isGenuineStoredPrompt}
+	 * says false for it, so on the render path ONLY the lock carried over from the composition keeps recovery
+	 * from running over it. That makes the P4-10 overlay itself load-bearing in the stale-mirror case.
+	 */
+	private static final String LOCKED_FALLBACK_SHAPE =
+		"landscape, a frozen tarn under charcoal skies, silver veins of ice, wide natural vista";
 
+	private OrganizationContext orgCtx;
 	private BaseRecord testUser;
 
 	@FunctionalInterface
@@ -82,10 +97,10 @@ public class TestChapBookPageComposition extends BaseTest {
 		OlioModelNames.use();
 		assertTrue("resource.properties must put ChapBooks on v3 for this class (BaseTest re-pins it)",
 			PbRenderPath.V3.equals(PbRenderPath.valueFor(chapBookStub())));
-		OrganizationContext ctx = getTestOrganization(ORG_PATH);
-		assertNotNull("organization " + ORG_PATH, ctx);
+		orgCtx = getTestOrganization(ORG_PATH);
+		assertNotNull("organization " + ORG_PATH, orgCtx);
 		testUser = IOSystem.getActiveContext().getFactory()
-			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());
+			.getCreateUser(orgCtx.getAdminUser(), "chapbookTestUser", orgCtx.getOrganizationId());
 		assertNotNull("chapbookTestUser must be created", testUser);
 	}
 
@@ -145,8 +160,9 @@ public class TestChapBookPageComposition extends BaseTest {
 		/// Second set through the transport form: same composition, new prompt on both sides, revision bumped,
 		/// and the result names the composition it wrote.
 		ChapBookUtil.PromptWriteResult second = ChapBookUtil.setSceneLandscapePromptResult(testUser, sceneOid, SECOND_PROMPT);
-		assertTrue("the scene copy was written", second.isUpdated());
-		assertTrue("the composition was written", second.isCompositionUpdated());
+		assertTrue("the composition (the authority since P4-10) was written", second.isUpdated());
+		assertTrue("compositionUpdated is the alias of updated", second.isCompositionUpdated());
+		assertTrue("the scene mirror was written", second.isSceneUpdated());
 		assertFalse("a complete write is not partial", second.isPartial());
 		assertEquals("the result names the page composition", compOid, second.getCompositionObjectId());
 		assertNull("a complete write carries no error", second.getError());
@@ -155,6 +171,7 @@ public class TestChapBookPageComposition extends BaseTest {
 		Map<String, Object> wire = second.toMap();
 		assertEquals(Boolean.TRUE, wire.get("updated"));
 		assertEquals(Boolean.TRUE, wire.get("compositionUpdated"));
+		assertEquals("P4-10 puts the scene mirror on the wire", Boolean.TRUE, wire.get("sceneUpdated"));
 		assertEquals(Boolean.TRUE, wire.get("promptLocked"));
 		assertEquals(compOid, wire.get("compositionObjectId"));
 		assertFalse("no error key on a complete write", wire.containsKey("error"));
@@ -208,54 +225,243 @@ public class TestChapBookPageComposition extends BaseTest {
 	}
 
 	/**
-	 * A partial write, produced for real rather than mocked: an {@code olio.pb.scene} created by the test user
-	 * with no {@code book} (so no page composition can be created for it — {@code writePageComposition} refuses
-	 * with "has no readable book"). The scene patch lands first, so the transport form reports
-	 * {@code updated:true, compositionUpdated:false}, no composition id, and an error naming both the scene
-	 * write and the refusal; the scene really does carry the prompt afterwards. The in-process form turns the
-	 * same state into the 500 the render path relies on. A regenerate on the same scene never reaches the
-	 * write (no stanza → 400), so its partial branch is covered by the shared {@code writePageComposition}.
+	 * P4-10 flipped the order: the page composition is the authority and is written FIRST, so a scene that can
+	 * have no page composition is refused BEFORE anything is written. An {@code olio.pb.scene} created by the
+	 * test user with no {@code book} is exactly that: {@code requireChapBookOfScene} throws 500 "Scene &lt;oid&gt;
+	 * has no readable book" from the set, the in-process set, the clear and the regenerate alike - the
+	 * regenerate with an unsaved chatConfig record, which proves the 500 precedes the stanza check (400) and
+	 * the LLM call. The scene's own {@code sdPrompt}/{@code promptLocked} never move. (Before P4-10 this same
+	 * scene produced a partial write with the scene copy written and the composition refused; that shape is
+	 * now {@link #partialWriteIsReportedOnTheResultAndThrownInProcess}.)
+	 */
+	@Test
+	public void booklessSceneIs500BeforeAnyWrite() throws Exception {
+		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		String sceneOid = createBooklessScene("bookless");
+		String expected = "Scene " + sceneOid + " has no readable book";
+
+		refused("transport-form set on a bookless scene", 500, expected,
+			() -> ChapBookUtil.setSceneLandscapePromptResult(testUser, sceneOid, GENUINE_PROMPT));
+		refused("in-process set on a bookless scene", 500, expected,
+			() -> ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, SECOND_PROMPT));
+		refused("clear on a bookless scene", 500, expected,
+			() -> ChapBookUtil.setSceneLandscapePromptResult(testUser, sceneOid, null));
+		/// An unsaved chatConfig record: non-null so the 503 gate is passed, never persisted and never called -
+		/// the book check must throw before the stanza check and before any LLM call.
+		BaseRecord unsavedChatConfig = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_CONFIG);
+		refused("transport-form regenerate on a bookless scene", 500, expected,
+			() -> ChapBookUtil.regenerateSceneLandscapePromptResult(testUser, sceneOid, unsavedChatConfig));
+		refused("in-process regenerate on a bookless scene", 500, expected,
+			() -> ChapBookUtil.regenerateSceneLandscapePrompt(testUser, sceneOid, unsavedChatConfig));
+
+		BaseRecord scene = PbBookUtil.readScene(testUser, sceneOid, orgId);
+		assertNotNull(scene);
+		assertNull("nothing was written to the scene's sdPrompt", scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+		assertNotEquals("nothing locked the scene", Boolean.TRUE, scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		assertEquals("still no book", 0L, fkId(scene, OlioFieldNames.FIELD_PB_BOOK));
+	}
+
+	/**
+	 * A partial write, produced with real PBAC rather than mocked (P4-10 shape: composition landed, scene mirror
+	 * refused). A second user, {@code chapbookPartialUser}, is granted Read (DATA + GROUP) and Update (DATA only)
+	 * on the fixture's book group plus Read on the book's world. Under the system rules that is enough to
+	 * CREATE in the group ({@code systemCreateRule} admits {@code groupUpdateDataAccess}) and to update records
+	 * it owns, but not to update the test user's scene ({@code systemUpdateRule} needs the GROUP-typed
+	 * {@code /Update}, a DATA {@code /Update} on the scene itself, or ownership). So
+	 * {@code setSceneLandscapePromptResult} creates and writes the page composition as the partial user and the
+	 * scene mirror is refused: {@code updated:true, sceneUpdated:false, compositionObjectId, error} on the
+	 * result and on the wire; the composition really carries the prompt (locked, USER) and the scene really
+	 * does not. The in-process form throws the same text as a 500 - after the composition was written (it
+	 * carries the second prompt afterwards). The owner's next set heals the mirror.
 	 */
 	@Test
 	public void partialWriteIsReportedOnTheResultAndThrownInProcess() throws Exception {
-		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-		String sceneOid = createBooklessScene("partial");
+		Fixture fx = createFixture("partial");
+		String sceneOid = fx.sceneOids.get(0);
+		BaseRecord book = PbBookUtil.readBook(testUser, fx.bookOid, fx.orgId);
+		long groupId = ((Number) book.get(FieldNames.FIELD_GROUP_ID)).longValue();
+		BaseRecord scene0 = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertNull("precondition: a fresh page has no composition",
+			PbComposeUtil.findSceneComposition(testUser, scene0, groupId, fx.orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE));
+		String sdPrompt0 = scene0.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		Boolean locked0 = scene0.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+		assertNotEquals("precondition: the fresh page is not locked", Boolean.TRUE, locked0);
+		assertNotEquals("precondition: the fresh page does not already carry the prompt under test", GENUINE_PROMPT, sdPrompt0);
 
-		ChapBookUtil.PromptWriteResult r = ChapBookUtil.setSceneLandscapePromptResult(testUser, sceneOid, GENUINE_PROMPT);
+		BaseRecord partial = grantedPartialUser(book, fx.orgId);
+		assertNotNull("precondition: the partial user can READ the book", PbBookUtil.readBook(partial, fx.bookOid, fx.orgId));
+		assertNotNull("precondition: the partial user can READ the scene", PbBookUtil.readScene(partial, sceneOid, fx.orgId));
+		PolicyResponseType canUpd = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(partial, partial, scene0);
+		assertFalse("precondition: the partial user must NOT be permitted to update the scene",
+			canUpd != null && canUpd.getType() == PolicyResponseEnumType.PERMIT);
+
+		ChapBookUtil.PromptWriteResult r = ChapBookUtil.setSceneLandscapePromptResult(partial, sceneOid, GENUINE_PROMPT);
 		logger.info("[p48] partial write result: " + r.toMap());
-		assertTrue("the scene copy was written", r.isUpdated());
-		assertFalse("the composition was not", r.isCompositionUpdated());
+		assertTrue("the composition was written", r.isUpdated());
+		assertTrue(r.isCompositionUpdated());
+		assertFalse("the scene mirror was refused", r.isSceneUpdated());
 		assertTrue("that is a partial write", r.isPartial());
-		assertNull("no composition to name", r.getCompositionObjectId());
+		String compOid = r.getCompositionObjectId();
+		assertNotNull("the result names the composition that landed", compOid);
 		assertNotNull("the refusal is on the result", r.getError());
-		assertTrue("the error names the scene write: " + r.getError(), r.getError().contains("Scene " + sceneOid + " sdPrompt persisted but its page composition was not"));
-		assertTrue("the error names the refusal: " + r.getError(), r.getError().contains("has no readable book"));
+		assertTrue("the error names the composition and the scene: " + r.getError(),
+			r.getError().contains("Page composition " + compOid + " persisted but scene " + sceneOid + " sdPrompt was not"));
+		assertTrue("the error says the mirror was refused: " + r.getError(), r.getError().contains("the scene mirror write was refused"));
 		assertEquals(GENUINE_PROMPT, r.getPrompt());
 		assertTrue(r.isLocked());
 		Map<String, Object> wire = r.toMap();
 		assertEquals(Boolean.TRUE, wire.get("updated"));
-		assertEquals(Boolean.FALSE, wire.get("compositionUpdated"));
+		assertEquals(Boolean.TRUE, wire.get("compositionUpdated"));
+		assertEquals(Boolean.FALSE, wire.get("sceneUpdated"));
 		assertEquals(Boolean.TRUE, wire.get("promptLocked"));
-		assertFalse("no composition id on the wire", wire.containsKey("compositionObjectId"));
+		assertEquals(compOid, wire.get("compositionObjectId"));
 		assertEquals(r.getError(), wire.get("error"));
 
-		BaseRecord scene = PbBookUtil.readScene(testUser, sceneOid, orgId);
-		assertNotNull(scene);
-		assertEquals("the scene copy really moved", GENUINE_PROMPT, scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
-		assertEquals(Boolean.TRUE, scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		/// Re-read as the owner, uncached: the composition is ahead of the scene.
+		BaseRecord comp1 = PbComposeUtil.readComposition(testUser, compOid, fx.orgId);
+		assertNotNull("the page composition exists", comp1);
+		assertEquals("the composition carries the prompt", GENUINE_PROMPT, comp1.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+		assertEquals("the composition is locked", Boolean.TRUE, comp1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		assertEquals(PbCompositionSourceEnumType.USER.name(), status(comp1, OlioFieldNames.FIELD_PB_SOURCE));
+		assertEquals("CHAPBOOK_PAGE purpose", PbCompositionPurposeEnumType.CHAPBOOK_PAGE.name(), status(comp1, OlioFieldNames.FIELD_PB_PURPOSE));
+		assertEquals("the composition belongs to the scene", idOf(scene0), fkId(comp1, OlioFieldNames.FIELD_PB_SCENE));
+		assertEquals("the partial user owns the composition it created", ((Number) partial.get(FieldNames.FIELD_ID)).longValue(),
+			((Number) comp1.get(FieldNames.FIELD_OWNER_ID)).longValue());
+		assertEquals("one composition per page", compOid,
+			PbComposeUtil.findSceneComposition(testUser, scene0, groupId, fx.orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE).get(FieldNames.FIELD_OBJECT_ID));
+		BaseRecord scene1 = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertEquals("the scene mirror did not move", sdPrompt0, scene1.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+		assertNotEquals("the scene was not locked", Boolean.TRUE, scene1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
 
-		refused("the in-process form raises the partial write", 500, "Scene " + sceneOid + " sdPrompt persisted but its page composition was not",
-			() -> ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, SECOND_PROMPT));
-		assertEquals("the in-process form still wrote the scene copy before refusing", SECOND_PROMPT,
-			PbBookUtil.readScene(testUser, sceneOid, orgId).get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+		/// In-process form: the composition is written first, then the refused mirror is a 500.
+		refused("the in-process form raises the partial write", 500,
+			"Page composition " + compOid + " persisted but scene " + sceneOid + " sdPrompt was not",
+			() -> ChapBookUtil.setSceneLandscapePrompt(partial, sceneOid, SECOND_PROMPT));
+		BaseRecord comp2 = PbComposeUtil.readComposition(testUser, compOid, fx.orgId);
+		assertEquals("the in-process form wrote the composition before refusing", SECOND_PROMPT, comp2.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+		assertEquals(intOf(comp1.get(OlioFieldNames.FIELD_PB_REVISION)) + 1, intOf(comp2.get(OlioFieldNames.FIELD_PB_REVISION)));
+		assertEquals("the scene mirror still did not move", sdPrompt0,
+			PbBookUtil.readScene(testUser, sceneOid, fx.orgId).get(OlioFieldNames.FIELD_CB_SD_PROMPT));
 
-		/// A clear on the same scene is the same partial shape (updated, composition refused), unlocked.
-		ChapBookUtil.PromptWriteResult cleared = ChapBookUtil.setSceneLandscapePromptResult(testUser, sceneOid, null);
+		/// A clear by the partial user is the same partial shape, unlocked.
+		ChapBookUtil.PromptWriteResult cleared = ChapBookUtil.setSceneLandscapePromptResult(partial, sceneOid, null);
 		assertTrue(cleared.isUpdated());
+		assertFalse(cleared.isSceneUpdated());
 		assertTrue(cleared.isPartial());
 		assertFalse(cleared.isLocked());
 		assertNull(cleared.getPrompt());
-		assertNull(PbBookUtil.readScene(testUser, sceneOid, orgId).get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+		assertEquals(compOid, cleared.getCompositionObjectId());
+		assertNull("the clear landed on the composition", PbComposeUtil.readComposition(testUser, compOid, fx.orgId).get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+
+		/// The owner's set reuses the same composition and brings the mirror in step - a complete write.
+		ChapBookUtil.PromptWriteResult healed = ChapBookUtil.setSceneLandscapePromptResult(testUser, sceneOid, GENUINE_PROMPT);
+		assertTrue(healed.isUpdated());
+		assertTrue("the owner can write the mirror", healed.isSceneUpdated());
+		assertFalse(healed.isPartial());
+		assertEquals("the same composition", compOid, healed.getCompositionObjectId());
+		BaseRecord scene3 = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertEquals(GENUINE_PROMPT, scene3.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+		assertEquals(Boolean.TRUE, scene3.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		assertEquals(GENUINE_PROMPT, PbComposeUtil.readComposition(testUser, compOid, fx.orgId).get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+	}
+
+	/**
+	 * P4-10 render path (security-review change 3): the v1 render decides from the composition, not from the
+	 * scene mirror. A page is given a LOCKED composition prompt shaped like the no-LLM fallback (so only the
+	 * lock can protect it from recovery), then the scene mirror is blanked directly through
+	 * {@code AccessPoint.update} - a stale mirror, sdPrompt null / unlocked. With ChapBooks flipped to v1
+	 * ({@code PbRenderPath.configure(V3, V1)}, the {@code TestChapBookBookSettings} precedent) and a chatConfig
+	 * whose connection points at an unreachable host, {@code renderChapBookScene} must overlay the composition
+	 * onto the in-memory scene and honour the locked prompt verbatim: the capturing {@code SDUtil} receives one
+	 * {@code createImage} whose {@code description} starts with the locked prompt, the result is FAILED (the
+	 * capture returns no image) with {@code llmUnavailable=false} / {@code llmDegraded=false} because recovery
+	 * never ran. Without the overlay the same inputs give SKIPPED_NO_PROMPT with {@code llmUnavailable=true}
+	 * and no {@code createImage} call - a sharp discriminator with no live LLM involved. Afterwards the
+	 * composition is unchanged (same prompt, still locked, same revision, still USER) and the scene mirror is
+	 * still blank: the overlay is in-memory only and recovery never wrote.
+	 */
+	@Test(timeout = LONG_TIMEOUT_MS)
+	public void staleMirrorRendersLockedCompositionPromptOnV1() throws Exception {
+		Fixture fx = createFixture("stale");
+		String sceneOid = fx.sceneOids.get(0);
+		BaseRecord book = PbBookUtil.readBook(testUser, fx.bookOid, fx.orgId);
+		long groupId = ((Number) book.get(FieldNames.FIELD_GROUP_ID)).longValue();
+		assertFalse("the locked prompt must be fallback-shaped so the lock alone protects it",
+			ChapBookUtil.isGenuineStoredPrompt(LOCKED_FALLBACK_SHAPE));
+		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, LOCKED_FALLBACK_SHAPE));
+		BaseRecord scene1 = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertNotNull("precondition: the page carries a stanza (so recovery WOULD be built if the lock were lost)",
+			scene1.get(OlioFieldNames.FIELD_CB_POEM_STANZA));
+		BaseRecord comp = PbComposeUtil.findSceneComposition(testUser, scene1, groupId, fx.orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE);
+		assertNotNull(comp);
+		String compOid = comp.get(FieldNames.FIELD_OBJECT_ID);
+		comp = PbComposeUtil.readComposition(testUser, compOid, fx.orgId);
+		assertEquals(LOCKED_FALLBACK_SHAPE, comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+		assertEquals(Boolean.TRUE, comp.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		int rev0 = intOf(comp.get(OlioFieldNames.FIELD_PB_REVISION));
+		String source0 = status(comp, OlioFieldNames.FIELD_PB_SOURCE);
+		assertEquals(PbCompositionSourceEnumType.USER.name(), source0);
+
+		/// Stale the mirror directly (what a refused mirror write leaves behind): sdPrompt null, unlocked.
+		BaseRecord blank = PbGraphUtil.patchOf(scene1, OlioModelNames.MODEL_PB_SCENE,
+			OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+		blank.set(OlioFieldNames.FIELD_CB_SD_PROMPT, null);
+		blank.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.FALSE);
+		assertNotNull("scene mirror blank patch", IOSystem.getActiveContext().getAccessPoint().update(testUser, blank));
+		BaseRecord scene2 = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertNull("precondition: the scene mirror is blank", scene2.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+		assertNotEquals("precondition: the scene mirror is unlocked", Boolean.TRUE, scene2.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		assertEquals("precondition: the composition still carries the locked prompt", LOCKED_FALLBACK_SHAPE,
+			PbComposeUtil.readComposition(testUser, compOid, fx.orgId).get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+
+		/// A chatConfig whose connection is unreachable: if recovery ran it would hard-fail (llmUnavailable=true).
+		BaseRecord deadLlm = OlioTestUtil.getUnreachableOllamaConfig(testUser, "chapbookP410DeadLlm", DEAD_SERVER, "qwen3:8b", 5);
+		assertNotNull("the unreachable chatConfig must be built", deadLlm);
+
+		final List<BaseRecord> captured = new ArrayList<>();
+		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, DEAD_SERVER) {
+			@Override
+			public List<BaseRecord> createImage(BaseRecord user, String groupPath, BaseRecord sdConfig, String name, int batch, boolean hires, int seed) {
+				captured.add(sdConfig);
+				return new ArrayList<>();
+			}
+		};
+		String savedPb = PbRenderPath.pictureBook();
+		String savedCb = PbRenderPath.chapBook();
+		ChapBookUtil.SceneRenderResult result;
+		long t0 = System.currentTimeMillis();
+		try {
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
+			assertEquals("precondition: ChapBooks are on v1 for this case", PbRenderPath.V1, PbRenderPath.valueFor(book));
+			result = ChapBookUtil.renderChapBookScene(testUser, sceneOid, sdu, deadLlm, null, null);
+		}
+		finally {
+			PbRenderPath.configure(savedPb, savedCb);
+		}
+		logger.info("[p48] stale-mirror render durationMs=" + (System.currentTimeMillis() - t0) + " status=" + result.status
+			+ " llmUnavailable=" + result.llmUnavailable + " llmDegraded=" + result.llmDegraded + " captured=" + captured.size());
+		assertEquals("the renderer was called exactly once (the composition prompt satisfied the pre-step)", 1, captured.size());
+		assertEquals("the capture returns no image, so the render is FAILED - never SKIPPED_NO_PROMPT",
+			ChapBookUtil.SceneRenderStatus.FAILED, result.status);
+		assertFalse("recovery never ran, so the LLM step was not unavailable", result.llmUnavailable);
+		assertFalse("nothing was degraded", result.llmDegraded);
+		String description = captured.get(0).get("description");
+		assertNotNull("the SD config carries a positive prompt", description);
+		assertTrue("the positive prompt is the composition's locked prompt, verbatim, first: " + description,
+			description.startsWith(LOCKED_FALLBACK_SHAPE));
+
+		/// The authority is untouched and the mirror is still stale: the overlay was in-memory only.
+		BaseRecord compAfter = PbComposeUtil.readComposition(testUser, compOid, fx.orgId);
+		assertEquals("composition prompt unchanged", LOCKED_FALLBACK_SHAPE, compAfter.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+		assertEquals("composition still locked", Boolean.TRUE, compAfter.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		assertEquals("composition revision unchanged", rev0, intOf(compAfter.get(OlioFieldNames.FIELD_PB_REVISION)));
+		assertEquals("composition source unchanged", source0, status(compAfter, OlioFieldNames.FIELD_PB_SOURCE));
+		assertEquals("the same composition, not a second one", compOid,
+			PbComposeUtil.findSceneComposition(testUser, scene2, groupId, fx.orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE).get(FieldNames.FIELD_OBJECT_ID));
+		BaseRecord sceneAfter = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
+		assertNull("the scene mirror was not written by the render", sceneAfter.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+		assertNotEquals("the scene mirror is still unlocked", Boolean.TRUE, sceneAfter.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		assertNull("no image was attached", sceneAfter.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID));
 	}
 
 	// ─────────────────────────────── regenerate (live LLM) ───────────────────────────────
@@ -594,6 +800,46 @@ public class TestChapBookPageComposition extends BaseTest {
 		assertEquals("precondition: no page node", 0L, fkId(back, OlioFieldNames.FIELD_PB_SCENE_NODE));
 		logger.info("[p48] bookless scene " + tag + " " + oid);
 		return oid;
+	}
+
+	/**
+	 * {@code chapbookPartialUser}: a second user in the test organization that can land a page composition but
+	 * not the scene mirror. Fixture grants only, applied by the organization's own admin as setup (the
+	 * {@code TestPbCompositionRows} precedent - the test never ACTS as the admin): Read (DATA + GROUP) and
+	 * Update (DATA only) on the book group, and Read (DATA) on the book's world so {@code readBook} succeeds.
+	 * {@code systemCreateRule} admits {@code groupUpdateDataAccess}, so the user may CREATE in the group, and
+	 * it owns what it creates; {@code systemUpdateRule} wants the GROUP-typed {@code /Update}, a DATA
+	 * {@code /Update} on the resource itself, or ownership - none of which it has for the test user's scene.
+	 * The entitlement cache is cleared so the grants are visible to the very next policy evaluation.
+	 */
+	private BaseRecord grantedPartialUser(BaseRecord book, long orgId) throws Exception {
+		BaseRecord partial = IOSystem.getActiveContext().getFactory()
+			.getCreateUser(orgCtx.getAdminUser(), "chapbookPartialUser", orgId);
+		assertNotNull("chapbookPartialUser must be created", partial);
+		assertNotEquals("the partial user is not the test user", idOf(testUser), idOf(partial));
+		BaseRecord olio = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
+		assertNotNull("olio principal", olio);
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		BaseRecord bookGroup = IOSystem.getActiveContext().getPathUtil().findPath(olio, ModelNames.MODEL_GROUP,
+			PbBookUtil.bookGroupPath(slug), GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("book group " + PbBookUtil.bookGroupPath(slug), bookGroup);
+		assertEquals("the book group is the group the pages live in", idOf(bookGroup),
+			((Number) book.get(FieldNames.FIELD_GROUP_ID)).longValue());
+		IOSystem.getActiveContext().getAuthorizationUtil().setEntitlement(orgCtx.getAdminUser(), partial,
+			new BaseRecord[] { bookGroup }, new String[] { "Read" },
+			new String[] { PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString() });
+		IOSystem.getActiveContext().getAuthorizationUtil().setEntitlement(orgCtx.getAdminUser(), partial,
+			new BaseRecord[] { bookGroup }, new String[] { "Update" },
+			new String[] { PermissionEnumType.DATA.toString() });
+		BaseRecord world = book.get(OlioFieldNames.FIELD_PB_WORLD);
+		if(world != null) {
+			IOSystem.getActiveContext().getAuthorizationUtil().setEntitlement(orgCtx.getAdminUser(), partial,
+				new BaseRecord[] { world }, new String[] { "Read" }, new String[] { PermissionEnumType.DATA.toString() });
+		}
+		CacheUtil.clearCache();
+		logger.info("[p48] partial user " + partial.get(FieldNames.FIELD_NAME) + " granted Read(DATA,GROUP)+Update(DATA) on group "
+			+ idOf(bookGroup) + (world != null ? " and Read(DATA) on world " + idOf(world) : " (book has no world)"));
+		return partial;
 	}
 
 	private BaseRecord workflow(BaseRecord book) {

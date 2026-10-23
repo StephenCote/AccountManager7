@@ -130,6 +130,12 @@ public final class PbRenderPlanUtil {
 		s.builder
 			.actors(actorsOf(user, book, composition, s.caps, renderOid != null, out))
 			.elements(elementsOf(user, composition, out));
+		/// A SCENE composition's shot type / viewpoint / cameraText is the plan's camera (P4-10 A2); the compiler
+		/// (SdxlCompiler) already consumes plan.camera, so nothing else changes when there is none.
+		String camera = cameraText(composition);
+		if(camera != null) {
+			s.builder.camera(new RenderPlan.Camera(camera));
+		}
 		/// A SCENE composition's promptOverride is the intent; a CHAPBOOK_PAGE's is the page's own text and
 		/// already went into the location clause above (P2-6), so it is not repeated as an intent.
 		if(!NarrativeUtil.isMeaningful(opts.getPromptOverride()) && !isPageComposition(composition)) {
@@ -405,14 +411,49 @@ public final class PbRenderPlanUtil {
 
 	// ─── helpers ─────────────────────────────────────────────────────────────────
 
-	/// A ChapBook page's prompt lives on its CHAPBOOK_PAGE composition (P4-8); the scene's own sdPrompt is
-	/// the pre-P4-8 copy and the fallback. SCENE compositions never supply location text.
+	/**
+	 * The scene's setting text as the plan carries it (P4-10 A2: the composition is the authority, the scene
+	 * is the fallback).
+	 * <ul>
+	 * <li>A {@code CHAPBOOK_PAGE} composition with a meaningful {@code promptOverride} supplies the page's
+	 *     prompt verbatim (P4-8).</li>
+	 * <li>A {@code SCENE} composition supplies its board text, per field with the scene's own field as the
+	 *     fallback: {@code settingText} else {@code scene.setting}, {@code action} else {@code scene.action},
+	 *     {@code mood} else {@code scene.mood}, plus the composition's {@code props} when meaningful. When none
+	 *     of those is meaningful the scene's text is used <b>without</b> its legacy {@code sdPrompt} - once a
+	 *     composition exists the legacy prompt has already been carried onto it as {@code promptOverride}
+	 *     (the intent clause, {@link #buildScenePlan}) and must not be repeated as the setting.</li>
+	 * <li>No composition: the scene's own text, legacy {@code sdPrompt} first, as before.</li>
+	 * </ul>
+	 */
 	static String locationText(BaseRecord scene, BaseRecord composition) {
 		if(isPageComposition(composition)) {
 			String pagePrompt = strField(composition, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
 			if(NarrativeUtil.isMeaningful(pagePrompt)) return pagePrompt.trim();
+			return locationText(scene);
 		}
-		return locationText(scene);
+		if(composition == null) {
+			return locationText(scene);
+		}
+		List<String> parts = new ArrayList<>();
+		String setting = firstMeaningful(strField(composition, OlioFieldNames.FIELD_PB_SETTING_TEXT), strField(scene, OlioFieldNames.FIELD_PB_SETTING));
+		if(setting != null) parts.add(setting);
+		String action = firstMeaningful(strField(composition, OlioFieldNames.FIELD_PB_ACTION), strField(scene, OlioFieldNames.FIELD_PB_ACTION));
+		if(action != null) parts.add(action);
+		String mood = firstMeaningful(strField(composition, OlioFieldNames.FIELD_PB_MOOD), strField(scene, OlioFieldNames.FIELD_PB_MOOD));
+		if(mood != null) parts.add(mood);
+		String props = strField(composition, OlioFieldNames.FIELD_PB_PROPS);
+		if(NarrativeUtil.isMeaningful(props)) parts.add(props.trim());
+		if(!parts.isEmpty()) return joinSentences(parts);
+		return locationText(scene, false);
+	}
+
+	/// The first meaningful value, trimmed, or null.
+	private static String firstMeaningful(String... values) {
+		for(String v : values) {
+			if(NarrativeUtil.isMeaningful(v)) return v.trim();
+		}
+		return null;
 	}
 
 	static boolean isPageComposition(BaseRecord composition) {
@@ -420,10 +461,63 @@ public final class PbRenderPlanUtil {
 		return PbCompositionPurposeEnumType.CHAPBOOK_PAGE.toString().equalsIgnoreCase(strField(composition, OlioFieldNames.FIELD_PB_PURPOSE));
 	}
 
+	/**
+	 * The camera clause a {@code SCENE} composition contributes (P4-10 A2): the shot type and viewpoint as words
+	 * ({@code CLOSE_UP} → "close up", {@code OVER_SHOULDER} → "over shoulder"; {@code UNKNOWN}/unset contribute
+	 * nothing) followed by the free-text {@code cameraText}, joined with ", ". Null when the composition is null,
+	 * a page composition, or carries nothing meaningful - the plan then has no camera, as before.
+	 * <p>
+	 * The composer writes the shot and viewpoint into {@code cameraText} as well ({@code PbComposeUtil.cameraText},
+	 * "medium, eye_level"), so any comma-separated piece of the free text that is just one of those two words is
+	 * dropped here rather than repeated ("medium, eye level, medium, eye_level" in every LLM-composed scene's
+	 * compiled prompt, found by the P4-10 live proof).
+	 */
+	static String cameraText(BaseRecord composition) {
+		if(composition == null || isPageComposition(composition)) return null;
+		List<String> parts = new ArrayList<>();
+		String shot = words(strField(composition, OlioFieldNames.FIELD_PB_SHOT_TYPE));
+		if(shot != null) parts.add(shot);
+		String view = words(strField(composition, OlioFieldNames.FIELD_PB_VIEWPOINT));
+		if(view != null) parts.add(view);
+		String text = strField(composition, OlioFieldNames.FIELD_PB_CAMERA_TEXT);
+		if(NarrativeUtil.isMeaningful(text)) {
+			List<String> kept = new ArrayList<>();
+			boolean dropped = false;
+			for(String piece : text.split(",")) {
+				String p = piece.trim();
+				if(p.isEmpty()) continue;
+				String norm = p.toLowerCase().replace('_', ' ');
+				if(norm.equals(shot) || norm.equals(view)) {
+					dropped = true;
+					continue;
+				}
+				kept.add(p);
+			}
+			if(!dropped) parts.add(text.trim());
+			else parts.addAll(kept);
+		}
+		return (parts.isEmpty() ? null : String.join(", ", parts));
+	}
+
+	/// An enum name as prompt words: lower-cased, underscores to spaces; null for UNKNOWN or unset
+	/// ({@link #enumStr} does the UNKNOWN/blank filtering).
+	static String words(String enumName) {
+		String n = enumStr(enumName);
+		return (n == null ? null : n.toLowerCase().replace('_', ' '));
+	}
+
 	/// The scene's own text, nearest-to-a-prompt first. Empty is allowed: the plan is a read.
 	static String locationText(BaseRecord scene) {
-		String sdPrompt = strField(scene, OlioFieldNames.FIELD_CB_SD_PROMPT);
-		if(NarrativeUtil.isMeaningful(sdPrompt)) return sdPrompt.trim();
+		return locationText(scene, true);
+	}
+
+	/// The scene's own text; {@code includeSdPrompt} false skips the legacy prompt (it is the composition's
+	/// promptOverride once a composition exists, and goes into the intent clause instead).
+	static String locationText(BaseRecord scene, boolean includeSdPrompt) {
+		if(includeSdPrompt) {
+			String sdPrompt = strField(scene, OlioFieldNames.FIELD_CB_SD_PROMPT);
+			if(NarrativeUtil.isMeaningful(sdPrompt)) return sdPrompt.trim();
+		}
 		List<String> parts = new ArrayList<>();
 		for(String f : new String[] { OlioFieldNames.FIELD_PB_SETTING, OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_MOOD }) {
 			String v = strField(scene, f);
@@ -701,7 +795,7 @@ public final class PbRenderPlanUtil {
 				String text = PbComposeUtil.elementText(user, row);
 				elements.add(new RenderPlan.Element(
 					enumStr(strField(row, OlioFieldNames.FIELD_PB_ELEMENT_TYPE)),
-					meaningful(strField(row, FieldNames.FIELD_NAME)),
+					rowDisplayName(row),
 					(NarrativeUtil.isMeaningful(text) ? text.trim() : null),
 					boxOf(row),
 					intOf(row, OlioFieldNames.FIELD_PB_DEPTH, 0),
@@ -762,11 +856,12 @@ public final class PbRenderPlanUtil {
 		return (name != null ? name : actorId);
 	}
 
-	/// The row's display name, or null when its name is the compose step's handle (actor.<composition>.<n>),
-	/// which identifies the row and must never be spoken in a prompt.
+	/// The row's display name, or null when its name is the compose step's handle (actor.<composition>.<n> or
+	/// element.<composition>.<n>), which identifies the row and must never be spoken in a prompt.
 	private static String rowDisplayName(BaseRecord row) {
 		String n = meaningful(strField(row, FieldNames.FIELD_NAME));
-		return (n != null && n.startsWith(PbComposeUtil.ACTOR_NAME_PREFIX) ? null : n);
+		if(n == null) return null;
+		return (n.startsWith(PbComposeUtil.ACTOR_NAME_PREFIX) || n.startsWith(PbComposeUtil.ELEMENT_NAME_PREFIX) ? null : n);
 	}
 
 	/// Trimmed when meaningful, else null.

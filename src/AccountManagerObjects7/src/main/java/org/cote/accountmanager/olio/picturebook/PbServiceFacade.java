@@ -31,6 +31,7 @@ import org.cote.accountmanager.olio.illustration.RenderEstimate;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -829,7 +830,7 @@ public class PbServiceFacade {
 		requireChapBook(book);
 		requireBookUpdate(user, book, "render a page");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
-		String prompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+		String prompt = effectivePagePrompt(user, book, scene);
 		if(prompt == null || prompt.isBlank()) {
 			throw new PictureBookException(409, "Page " + scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX)
 				+ " has no prompt; set or generate its landscape prompt before rendering it");
@@ -877,7 +878,7 @@ public class PbServiceFacade {
 		List<BaseRecord> prompted = new ArrayList<>();
 		List<String> withoutPrompt = new ArrayList<>();
 		for(BaseRecord scene : scenes) {
-			String prompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+			String prompt = effectivePagePrompt(user, book, scene);
 			if(prompt == null || prompt.isBlank()) {
 				withoutPrompt.add(scene.get(FieldNames.FIELD_OBJECT_ID));
 				continue;
@@ -902,6 +903,24 @@ public class PbServiceFacade {
 		out.putAll(PbRenderJobUtil.submit(user, book, workflow, terminals, sdu, sdServer,
 			PbRenderJobUtil.KIND_RENDER_ALL, true));
 		return out;
+	}
+
+	/**
+	 * The prompt a ChapBook page would render with (V3 §24, P4-10): the page composition's
+	 * {@code promptOverride} when the page has a CHAPBOOK_PAGE composition carrying a meaningful one, else the
+	 * scene's mirrored {@code sdPrompt}. The composition lookup never throws (a failed lookup falls back to
+	 * the scene). This is the same order {@code PbNodeExecutor.executeChapBookPage} resolves, so the render
+	 * gate here and the executor's 409 agree.
+	 */
+	private static String effectivePagePrompt(BaseRecord user, BaseRecord book, BaseRecord scene) {
+		BaseRecord comp = PbBookUtil.findSceneComposition(user, scene, book);
+		if(comp != null) {
+			String compPrompt = (comp.hasField(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) ? comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) : null);
+			if(NarrativeUtil.isMeaningful(compPrompt)) {
+				return compPrompt;
+			}
+		}
+		return scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
 	}
 
 	/** 403 unless the book is a ChapBook - same status and wording as {@code ChapBookUtil}'s guard. */
@@ -937,9 +956,11 @@ public class PbServiceFacade {
 	 * <li>found by handle ({@link PbPipelineUtil#landscapeHandle} of the scene objectId - deterministic, so
 	 *     this is idempotent) or created with {@code scope=scene}, {@code scopeRef=} the scene objectId and
 	 *     {@code sceneIndex} / ordinal = the page index;</li>
-	 * <li>{@code scene.sdPrompt} mirrored to {@code node.promptText} and {@code scene.configOverride} to
-	 *     {@code node.configOverride} when they differ - the scene stays the authority (the executor reads
-	 *     the scene), the node carries the copy the review views show;</li>
+	 * <li>the page's effective prompt mirrored to {@code node.promptText} and its effective
+	 *     {@code configOverride} to {@code node.configOverride} when they differ
+	 *     ({@link PbBookUtil#mirrorSceneOntoNode}) - the page composition is the authority, the scene its
+	 *     mirror (V3 §24, P4-10), and the node carries the copy the review views show and
+	 *     {@code PbConfigUtil.mergeTiers} reads as the node tier;</li>
 	 * <li>{@code scene.sceneNode} patched to the node when it is not already that node.</li>
 	 * </ol>
 	 * Every write is a PATCH as the request user; a failed write is a 500 naming it, never silent.
@@ -962,7 +983,7 @@ public class PbServiceFacade {
 			}
 		}
 
-		if(!PbBookUtil.mirrorSceneOntoNode(user, scene, node)) {
+		if(!PbBookUtil.mirrorSceneOntoNode(user, scene, node, book)) {
 			throw new PictureBookException(500, "Failed to mirror the page prompt / config override onto node " + handle);
 		}
 
@@ -4523,6 +4544,17 @@ public class PbServiceFacade {
 	 * Row-level edit of the scene's composition fields (settingText, action, mood, shotType, viewpoint,
 	 * cameraText, props, configOverride, promptOverride, promptLocked, focalActorObjectId). Writes land on a
 	 * RUNNING node too; the result says whether the node went STALE.
+	 * <p>
+	 * <b>The composition is the authority; the scene is its mirror (V3 §24, P4-10).</b> After the composition
+	 * patch, the mirrored scene fields are brought in step through {@link PbBookUtil#mirrorCompositionOntoScene}:
+	 * a {@code configOverride} in the body mirrors onto {@code scene.configOverride} for either purpose; a
+	 * {@code promptOverride} / {@code promptLocked} in the body mirrors onto {@code scene.sdPrompt} /
+	 * {@code scene.promptLocked} for a CHAPBOOK_PAGE composition only - a SCENE composition's
+	 * {@code promptOverride} is a board-level direction the planner feeds the STORY prompt node, never the
+	 * scene text. The response carries {@code sceneMirrored}: {@code true} when the scene matches the
+	 * composition on return (mirrored, already equal, or nothing in the body is mirrored), {@code false} when
+	 * a mirror write was refused - in which case {@code sceneMirrorError} names it and the composition still
+	 * carries the value every engine reader consults first. A refused mirror is never a failure of the edit.
 	 */
 	public static Map<String, Object> patchSceneComposition(BaseRecord user, String bookObjectId, String sceneObjectId, Map<String, Object> body) {
 		BaseRecord book = requireBook(user, bookObjectId);
@@ -4530,9 +4562,29 @@ public class PbServiceFacade {
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
 		BaseRecord comp = findCompositionOfScene(user, book, scene);
 		PbComposeUtil.patchCompositionFields(user, comp, body);
+		boolean mirrorConfig = (body != null && body.containsKey(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+		boolean mirrorPrompt = (body != null && PbNodeExecutor.isChapBook(book)
+			&& (body.containsKey(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) || body.containsKey(OlioFieldNames.FIELD_PB_PROMPT_LOCKED)));
+		boolean sceneMirrored = true;
+		String sceneMirrorError = null;
+		if(mirrorConfig && !PbBookUtil.mirrorCompositionOntoScene(user, scene, comp, false, true)) {
+			sceneMirrored = false;
+			sceneMirrorError = "scene configOverride could not be mirrored from the composition";
+		}
+		if(mirrorPrompt && !PbBookUtil.mirrorCompositionOntoScene(user, scene, comp, true, false)) {
+			sceneMirrored = false;
+			sceneMirrorError = (sceneMirrorError == null ? "" : sceneMirrorError + "; ") + "scene sdPrompt/promptLocked could not be mirrored from the composition";
+		}
+		if(sceneMirrorError != null) {
+			logger.error("Partial composition edit on scene " + sceneObjectId + ": " + sceneMirrorError);
+		}
 		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, scene);
 		Map<String, Object> out = editResultDto(book, scene, comp, r);
 		out.put("updated", Boolean.TRUE);
+		out.put("sceneMirrored", Boolean.valueOf(sceneMirrored));
+		if(sceneMirrorError != null) {
+			out.put("sceneMirrorError", sceneMirrorError);
+		}
 		return out;
 	}
 

@@ -418,6 +418,12 @@ test.describe('create-from-scenes queues the compose job (default tier: skipped 
             expect(res.scenes.map(s => s.sceneIndex), 'story order').toEqual(rows.map(s => s.sceneIndex));
             expect(res.scenes.map(s => s.sceneObjectId), 'the import-created rows, in order').toEqual(rows.map(s => s.objectId));
             expect(res.locationPassRan, 'the job ends with the whole-book location pass').toBe(true);
+            // P4-10: the first-open job migrates every scene without a composition (a MIGRATED row, revision 1)
+            // before the loop re-picks and composes it (revision 2). The one-off counts live under `migration`;
+            // the loop's `migrated` counts only scenes the loop itself left as the MIGRATED fallback.
+            expect(res.migration, 'migration counters: ' + JSON.stringify(res)).toBeTruthy();
+            expect(res.migration.created, 'every imported scene migrated first: ' + JSON.stringify(res.migration)).toBe(IMPORT_SCENES.length);
+            expect(res.migration.failed).toBe(0);
 
             const comps = await listCompositionsIn(book.groupId);
             expect(comps.length, 'one composition per imported scene: ' + JSON.stringify(comps)).toBe(IMPORT_SCENES.length);
@@ -426,7 +432,7 @@ test.describe('create-from-scenes queues the compose job (default tier: skipped 
                 const c = byScene.get(s.sceneObjectId);
                 expect(c, 'composition for scene ' + s.sceneIndex).toBeTruthy();
                 expect(c.objectId).toBe(s.compositionObjectId);
-                expect(c.revision).toBe(1);
+                expect(c.revision, 'MIGRATED row (revision 1) re-composed by the loop (revision 2): ' + JSON.stringify(c)).toBe(2);
                 expect(c.userEdited).toBe(false);
             }
 
@@ -553,7 +559,10 @@ test.describe('compose job: story order, idempotent re-submit, compositions, per
         }
     });
 
-    test('one olio.pb.composition per scene lives in the book group, revision 1, not user-edited', async () => {
+    test('one olio.pb.composition per scene lives in the book group, revision 2 (migrated first, then composed), not user-edited', async () => {
+        // P4-10: the first-open job writes a MIGRATED row per scene (revision 1), then the loop re-composes it (revision 2).
+        expect(composeResult.migration, 'migration counters: ' + JSON.stringify(composeResult)).toBeTruthy();
+        expect(composeResult.migration.created, JSON.stringify(composeResult.migration)).toBe(2);
         const rows = await listCompositions();
         expect(rows.length).toBe(2);
         const bySceneIndex = new Map(rows.map(c => [c.scene && c.scene.sceneIndex, c]));
@@ -564,7 +573,7 @@ test.describe('compose job: story order, idempotent re-submit, compositions, per
             expect(c.scene.objectId).toBe(s.sceneObjectId);
             expect(String(c.source).toUpperCase()).toBe(String(s.source).toUpperCase());
             expect(c.userEdited).toBe(false);
-            expect(c.revision).toBe(1);
+            expect(c.revision, 'MIGRATED row (revision 1) re-composed by the loop (revision 2): ' + JSON.stringify(c)).toBe(2);
             expect(String(c.purpose).toUpperCase()).toBe('SCENE');
             expect(c.settingText, 'settingText carried from the scene: ' + JSON.stringify(c)).toBeTruthy();
         }

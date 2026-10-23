@@ -3,8 +3,11 @@ package org.cote.accountmanager.olio.picturebook;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -91,6 +94,61 @@ public class PbMigrationUtil {
 				+ (scenesImported + scenesFailed) + ", landscapes=" + landscapesImported
 				+ ", locationProposals=" + (locationPass != null ? locationPass.proposals.size() : "n/a")
 				+ ", warnings=" + warnings.size() + "}";
+		}
+	}
+
+	/**
+	 * Summary of one {@link #migrateCompositions} pass. Fields are public and plain so Service7 can serialize it
+	 * as-is (see {@link #toMap()}); the tag counters come from the {@link PbWardrobeUtil#migrateSceneTags} pass
+	 * that runs once after the scenes.
+	 */
+	public static final class CompositionMigrationResult {
+		/** Scenes examined. */
+		public int scanned;
+		/** {@code MIGRATED} compositions written by this pass. */
+		public int created;
+		/** Scenes that already had a {@code SCENE}-purpose composition (any source) and were left alone. */
+		public int skippedExisting;
+		/** Scenes whose existing composition is user-edited; counted separately from {@link #skippedExisting}, never overwritten. */
+		public int skippedUserEdited;
+		/** Scenes where the migration wrote nothing (compose failure, write failure, or a thrown error). */
+		public int failed;
+		/**
+		 * The objectIds of the {@link #failed} scenes. A compose job must not LLM-compose these: a fresh LLM
+		 * composition carries the scene's legacy sdPrompt/promptLocked only through the MIGRATED path, so composing
+		 * past a failed migration would silently drop a legacy lock.
+		 */
+		public final Set<String> failedSceneObjectIds = new LinkedHashSet<>();
+		/** Legacy scene tags pinned onto actor rows by the wardrobe pass. */
+		public int tagsPinned;
+		/** Legacy scene tags that were already pinned. */
+		public int tagsSkippedPinned;
+		/** Legacy scene tags that could not be resolved to exactly one actor. */
+		public int tagsAmbiguous;
+		public final List<String> warnings = new ArrayList<>();
+
+		/** A serializable view of the counters; the warnings list is copied. */
+		public Map<String, Object> toMap() {
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("scanned", scanned);
+			m.put("created", created);
+			m.put("skippedExisting", skippedExisting);
+			m.put("skippedUserEdited", skippedUserEdited);
+			m.put("failed", failed);
+			m.put("failedSceneObjectIds", new ArrayList<>(failedSceneObjectIds));
+			m.put("tagsPinned", tagsPinned);
+			m.put("tagsSkippedPinned", tagsSkippedPinned);
+			m.put("tagsAmbiguous", tagsAmbiguous);
+			m.put("warnings", new ArrayList<>(warnings));
+			return m;
+		}
+
+		@Override
+		public String toString() {
+			return "CompositionMigrationResult{scanned=" + scanned + ", created=" + created
+				+ ", existing=" + skippedExisting + ", userEdited=" + skippedUserEdited + ", failed=" + failed
+				+ ", tagsPinned=" + tagsPinned + ", tagsSkippedPinned=" + tagsSkippedPinned
+				+ ", tagsAmbiguous=" + tagsAmbiguous + ", warnings=" + warnings.size() + "}";
 		}
 	}
 
@@ -625,5 +683,120 @@ public class PbMigrationUtil {
 			return (List<BaseRecord>) raw;
 		}
 		return Collections.emptyList();
+	}
+
+	// ─────────────────────────────── composition migration (V3 §28 step 4) ───────────────────────────────
+
+	/**
+	 * One-off migration of a STORY book's legacy scene fields into {@code olio.pb.composition} rows
+	 * (design §28 step 4, §9.1). Runs inside the first-open compose job as the job's user, so every write
+	 * goes through {@code AccessPoint} as that user; nothing here runs as the org admin.
+	 * <p>
+	 * For every scene that has no {@code SCENE}-purpose composition in the <b>book's</b> group, a
+	 * {@code MIGRATED} composition is written from the scene's own fields and roster
+	 * ({@link PbComposeUtil#composeMigrated}); {@code sdPrompt} becomes {@code promptOverride},
+	 * {@code promptLocked} and {@code configOverride} are carried across. A scene that already has a composition
+	 * is counted and left alone — a user-edited one is counted separately and is never overwritten. After the
+	 * scenes, {@link PbWardrobeUtil#migrateSceneTags} runs once to pin legacy scene tags onto actor rows.
+	 * <p>
+	 * Idempotent: a second pass over the same book scans every scene, creates nothing, and re-runs only the
+	 * (itself idempotent) tag pass. Per-scene failures are counted and warned, never thrown; the caller's loop
+	 * continues. ChapBooks are not migrated (their page compositions are created by the ChapBook path): the
+	 * result is empty with one warning.
+	 *
+	 * @param user   the job's user; all reads and writes are as this user
+	 * @param book   the book (a fresh read; its {@code groupId} and {@code slug} are used)
+	 * @param scenes the book's scenes, as returned by {@code PbBookUtil.listScenes}
+	 * @return the counters and warnings; never null
+	 */
+	public static CompositionMigrationResult migrateCompositions(BaseRecord user, BaseRecord book, List<BaseRecord> scenes) {
+		CompositionMigrationResult result = new CompositionMigrationResult();
+		if(user == null || book == null) {
+			result.warnings.add("composition migration skipped: user or book is null");
+			return result;
+		}
+		String slug = str(book.get(OlioFieldNames.FIELD_PB_SLUG));
+		if(PbNodeExecutor.isChapBook(book)) {
+			result.warnings.add("composition migration skipped: '" + slug + "' is a ChapBook (page compositions are created by the ChapBook path)");
+			return result;
+		}
+		Long bookGroupId = book.get(FieldNames.FIELD_GROUP_ID);
+		Long orgId = book.get(FieldNames.FIELD_ORGANIZATION_ID);
+		if(bookGroupId == null || orgId == null) {
+			result.warnings.add("composition migration skipped: book '" + slug + "' has no group or organization");
+			return result;
+		}
+		List<BaseRecord> list = (scenes != null ? scenes : Collections.emptyList());
+		for(BaseRecord scene : list) {
+			if(scene == null) {
+				continue;
+			}
+			result.scanned++;
+			String sceneLabel = sceneLabel(scene);
+			try {
+				BaseRecord existing = PbComposeUtil.findSceneComposition(user, scene, bookGroupId.longValue(), orgId.longValue());
+				if(existing != null) {
+					if(Boolean.TRUE.equals(existing.get(OlioFieldNames.FIELD_PB_USER_EDITED))) {
+						result.skippedUserEdited++;
+					}
+					else {
+						result.skippedExisting++;
+					}
+					continue;
+				}
+				PbComposeUtil.ComposeResult r = PbComposeUtil.composeMigrated(user, book, scene, false);
+				for(String w : r.warnings) {
+					result.warnings.add(sceneLabel + ": " + w);
+				}
+				if(r.isWritten()) {
+					result.created++;
+				}
+				else {
+					result.failed++;
+					result.failedSceneObjectIds.add(str(scene.get(FieldNames.FIELD_OBJECT_ID)));
+					result.warnings.add(sceneLabel + ": migrated composition was not written"
+						+ (r.failureReason != null ? " (" + r.failureReason + ")" : ""));
+				}
+			}
+			catch(RuntimeException e) {
+				result.failed++;
+				result.failedSceneObjectIds.add(str(scene.get(FieldNames.FIELD_OBJECT_ID)));
+				result.warnings.add(sceneLabel + ": " + PbServiceFacade.curatedMessage(e));
+				logger.warn("composition migration " + slug + " " + sceneLabel + " failed: " + e.getMessage());
+			}
+		}
+		if(result.scanned > 0) {
+			try {
+				PbWardrobeUtil.MigrationResult tags = PbWardrobeUtil.migrateSceneTags(user, book);
+				if(tags != null) {
+					result.tagsPinned = tags.pinned;
+					result.tagsSkippedPinned = tags.skippedPinned;
+					result.tagsAmbiguous = tags.ambiguous;
+					result.warnings.addAll(tags.warnings);
+				}
+			}
+			catch(RuntimeException e) {
+				result.warnings.add("scene tag migration failed: " + PbServiceFacade.curatedMessage(e));
+				logger.warn("composition migration " + slug + " tag pass failed: " + e.getMessage());
+			}
+		}
+		logger.info("composition migration " + slug + ": " + result.scanned + " scanned, " + result.created + " created, "
+			+ result.skippedExisting + " existing, " + result.skippedUserEdited + " user-edited, " + result.failed + " failed, "
+			+ result.tagsPinned + " tags pinned, " + result.tagsSkippedPinned + " tags already pinned");
+		return result;
+	}
+
+	/** {@code scene <index> '<name>'} for warnings; falls back to the objectId when the scene has no name. */
+	private static String sceneLabel(BaseRecord scene) {
+		Object idx = scene.hasField(OlioFieldNames.FIELD_PB_SCENE_INDEX) ? scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX) : null;
+		String name = str(scene.hasField(FieldNames.FIELD_NAME) ? scene.get(FieldNames.FIELD_NAME) : null);
+		if(name == null) {
+			name = str(scene.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		return "scene " + (idx != null ? idx + " " : "") + "'" + name + "'";
+	}
+
+	private static String str(Object v) {
+		return (v == null ? null : v.toString());
 	}
 }

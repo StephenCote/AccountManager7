@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio.illustration;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -435,5 +436,59 @@ public class TestRenderPlan {
 		assertFalse(Degradation.isKnownCode("ACTOR_TEXT_ONLY: Mara rendered from description"));
 		assertEquals("ACTOR_UNRESOLVED@BASE[ch-gone]: gone", new Degradation(Degradation.ACTOR_UNRESOLVED, "gone", "ch-gone", "BASE").toString());
 		assertEquals("QA_WARN: soft", new Degradation(Degradation.QA_WARN, "soft", null, null).toString());
+	}
+
+	/// samplePlan() with an optional camera clause (P4-10 A2: a SCENE composition's shot/viewpoint/cameraText).
+	private static RenderPlan planWithCamera(String camera) {
+		Map<String, Object> cfg = new LinkedHashMap<>();
+		cfg.put("model", "OfficialStableDiffusion/sd_xl_base_1.0.safetensors");
+		cfg.put("steps", 20);
+		cfg.put("negativePrompt", "blurry");
+		RenderPlan.Builder b = RenderPlan.builder()
+			.purpose(RenderPlan.PURPOSE_SCENE)
+			.canvas(new RenderPlan.Canvas(1024, 1024))
+			.preset(new RenderPlan.PresetValues("STANDARD", 20, 2, false, "CANONICAL"))
+			.config(cfg)
+			.location(new RenderPlan.Location(null, "a flooded cathedral nave at dusk"))
+			.actor(new RenderPlan.Actor("c01", "Jideon", RenderPlan.ROLE_FOREGROUND, null, false))
+			.intent(new RenderPlan.Intent(null, false))
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, "OfficialStableDiffusion/sd_xl_base_1.0.safetensors", "*xl*", "DEPLOYMENT_DEFAULT", "OK", false, null));
+		if(camera != null) {
+			b.camera(new RenderPlan.Camera(camera));
+		}
+		return b.build();
+	}
+
+	/**
+	 * P4-10 A2: the camera clause round-trips through the wire form and the hash, and a plan without one has no
+	 * camera at all (null on the object, no description on the wire) - the pre-P4-10 shape is unchanged.
+	 */
+	@Test
+	public void cameraRoundTripsAndNullCameraIsAbsent() {
+		final String cam = "close up, over shoulder, 35mm, shallow depth of field";
+		RenderPlan with = planWithCamera(cam);
+		assertNotNull("builder.camera lands on the plan", with.getCamera());
+		assertEquals(cam, with.getCamera().getDescription());
+		String json = with.toJson();
+		assertTrue("the camera is on the wire: " + json, json.contains("\"camera\":{\"description\":\"" + cam + "\"}"));
+		RenderPlan back = RenderPlan.fromJson(json);
+		assertNotNull(back);
+		assertNotNull("the camera survives fromJson", back.getCamera());
+		assertEquals("the description is lossless", cam, back.getCamera().getDescription());
+		assertEquals("the wire form is stable across the round trip", json, back.toJson());
+		assertEquals("the hash is stable across the round trip", with.contentHash(), back.contentHash());
+		assertEquals("equal plans hash equal", planWithCamera(cam).contentHash(), with.contentHash());
+
+		RenderPlan without = planWithCamera(null);
+		assertNull("no camera set means null, not an empty Camera", without.getCamera());
+		String bare = without.toJson();
+		assertFalse("no camera description on the wire: " + bare, bare.contains("\"camera\":{"));
+		assertFalse(bare.contains(cam));
+		RenderPlan bareBack = RenderPlan.fromJson(bare);
+		assertNull("absent on the wire reads back as null", bareBack.getCamera());
+		assertEquals(bare, bareBack.toJson());
+
+		assertNotEquals("the camera is part of the plan's identity: with and without hash differently", with.contentHash(), without.contentHash());
+		assertNotEquals("a different camera is a different plan", with.contentHash(), planWithCamera("wide, birds eye").contentHash());
 	}
 }

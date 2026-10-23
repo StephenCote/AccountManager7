@@ -31,7 +31,9 @@ import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.illustration.PromptCompilers;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
+import org.cote.accountmanager.olio.illustration.SdxlCompiler;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -43,10 +45,16 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
+import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
 import org.cote.accountmanager.schema.type.PbLocationKindEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
+import org.cote.accountmanager.schema.type.PbShotTypeEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
+import org.cote.accountmanager.schema.type.PbViewpointEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Before;
@@ -1315,5 +1323,557 @@ public class TestPbScenePlanLocation extends BaseTest {
 		finally {
 			deleteBook(u, bk);
 		}
+	}
+
+	// ═══════════════════════ P4-10: the composition is the authority for the scene's text (A1/A2) ═══════════════════════
+
+	private static final String SCENE_ACTION = "the fiddler draws the first long note";
+	private static final String SCENE_MOOD = "expectant";
+	private static final String LEGACY_SD_PROMPT = "LEGACY a smoky tavern interior, oil lamps, rain on the windows, warm amber light";
+	private static final String COMP_SETTING = "A candle-lit back room behind the taproom, maps pinned to the wall";
+	private static final String COMP_ACTION = "two sailors lean over the table arguing about a route";
+	private static final String COMP_MOOD = "conspiratorial";
+	private static final String COMP_PROPS = "a brass sextant and a half-empty bottle";
+	private static final String PAGE_TEXT = "PAGE a single bare oak tree on a hill, winter dusk, long blue shadows";
+
+	/// One scene field patched as the owner (the TestPbCompositionRows idiom), re-read fresh.
+	private BaseRecord patchScene(BaseRecord u, BaseRecord scene, String field, Object value) throws Exception {
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, field);
+		patch.set(field, value);
+		assertNotNull("scene." + field + " patch", IOSystem.getActiveContext().getAccessPoint().update(u, patch));
+		return readScene(u, oidOf(scene));
+	}
+
+	/// A MIGRATED SCENE composition for the scene (no LLM), re-read uncached through readComposition.
+	private BaseRecord migratedComp(BaseRecord u, BaseRecord bk, BaseRecord scene) {
+		PbComposeUtil.ComposeResult cr = PbComposeUtil.composeMigrated(u, readBook(u, bk), scene, false);
+		assertTrue("MIGRATED composition written: " + cr.failureReason, cr.isWritten());
+		BaseRecord comp = PbComposeUtil.readComposition(u, oidOf(cr.composition), orgOf(u));
+		assertNotNull("composition re-read", comp);
+		/// strOf, not String.valueOf(rec.get(..)): BaseRecord.get is generic and javac picks valueOf(char[]) -> CCE.
+		assertEquals("SCENE purpose", "SCENE", strOf(comp, OlioFieldNames.FIELD_PB_PURPOSE).toUpperCase());
+		assertEquals("the composition is the scene's", idOf(scene), fkId(comp, OlioFieldNames.FIELD_PB_SCENE));
+		return comp;
+	}
+
+	/// patchCompositionFields through the real util, then the composition re-read uncached.
+	private BaseRecord patchComp(BaseRecord u, BaseRecord comp, Map<String, Object> in) {
+		PbComposeUtil.patchCompositionFields(u, comp, in);
+		BaseRecord fresh = PbComposeUtil.readComposition(u, oidOf(comp), orgOf(u));
+		assertNotNull("composition re-read after patch", fresh);
+		return fresh;
+	}
+
+	/// Turn the STORY book into a CHAPBOOK as its owner (TestPbComposeJob.makeChapBook idiom) and re-read it.
+	private BaseRecord makeChapBook(BaseRecord u, BaseRecord bk) throws Exception {
+		BaseRecord patch = PbGraphUtil.patchOf(bk, OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		patch.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.CHAPBOOK.toString());
+		assertNotNull("bookType patch", ioContext.getAccessPoint().update(u, patch));
+		BaseRecord fresh = readBook(u, bk);
+		assertTrue("the book reads back as a ChapBook", PbNodeExecutor.isChapBook(fresh));
+		return fresh;
+	}
+
+	private static String compiledBase(RenderPlan p) {
+		assertNotNull("the plan carries a compiled BASE prompt", p.getCompiled().get(RenderPlan.STAGE_BASE));
+		return p.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt();
+	}
+
+	private static String strOf(BaseRecord rec, String field) {
+		Object v = (rec != null && rec.hasField(field) ? rec.get(field) : null);
+		return (v == null ? null : String.valueOf(v));
+	}
+
+	/**
+	 * A1 (1): a SCENE composition carrying settingText, action and mood that all differ from the scene's own
+	 * fields - the plan's setting text is the composition's three, in order, and none of the scene's words
+	 * appear. Asserted on the pure composer and on the plan the planner builds from the re-read records.
+	 */
+	@Test
+	public void case14SceneCompositionTextWinsOverSceneFields() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "cmpwin");
+		try {
+			BaseRecord scene = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_PB_ACTION, SCENE_ACTION);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_PB_MOOD, SCENE_MOOD);
+			BaseRecord comp = migratedComp(u, bk, scene);
+			assertEquals("precondition: MIGRATED copies the scene's setting", SCENE_SETTING, strOf(comp, OlioFieldNames.FIELD_PB_SETTING_TEXT));
+			assertEquals("precondition: MIGRATED copies the scene's action", SCENE_ACTION, strOf(comp, OlioFieldNames.FIELD_PB_ACTION));
+			assertEquals("precondition: MIGRATED copies the scene's mood", SCENE_MOOD, strOf(comp, OlioFieldNames.FIELD_PB_MOOD));
+
+			Map<String, Object> edit = new java.util.LinkedHashMap<>();
+			edit.put(OlioFieldNames.FIELD_PB_SETTING_TEXT, COMP_SETTING);
+			edit.put(OlioFieldNames.FIELD_PB_ACTION, COMP_ACTION);
+			edit.put(OlioFieldNames.FIELD_PB_MOOD, COMP_MOOD);
+			comp = patchComp(u, comp, edit);
+			assertEquals(COMP_SETTING, strOf(comp, OlioFieldNames.FIELD_PB_SETTING_TEXT));
+			assertEquals(COMP_ACTION, strOf(comp, OlioFieldNames.FIELD_PB_ACTION));
+			assertEquals(COMP_MOOD, strOf(comp, OlioFieldNames.FIELD_PB_MOOD));
+
+			BaseRecord fresh = readScene(u, oidOf(scene));
+			assertEquals("the scene's own fields are untouched by a composition edit", SCENE_SETTING, strOf(fresh, OlioFieldNames.FIELD_PB_SETTING));
+			assertEquals(SCENE_ACTION, strOf(fresh, OlioFieldNames.FIELD_PB_ACTION));
+			assertEquals(SCENE_MOOD, strOf(fresh, OlioFieldNames.FIELD_PB_MOOD));
+
+			String expected = PbRenderPlanUtil.joinSentences(List.of(COMP_SETTING, COMP_ACTION, COMP_MOOD));
+			assertEquals("locationText(scene, comp) is the composition's three fields", expected, PbRenderPlanUtil.locationText(fresh, comp));
+			RenderPlan p = planOf(u, bk, fresh);
+			String desc = p.getLocation().getDescription();
+			assertEquals("the plan's setting text is the composition's", expected, desc);
+			for(String sceneWord : new String[] { SCENE_SETTING, SCENE_ACTION, SCENE_MOOD }) {
+				assertFalse("none of the scene's own text leaks into the plan: " + desc, desc.contains(sceneWord));
+			}
+			String compiled = compiledBase(p);
+			assertTrue("the compiled prompt carries the composition's setting: " + compiled, compiled.contains(COMP_SETTING));
+			assertFalse("the compiled prompt does not carry the scene's setting: " + compiled, compiled.contains(SCENE_SETTING));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/**
+	 * A1 (2): a SCENE composition with only settingText (action and mood cleared) - the setting is the
+	 * composition's and action/mood fall back FIELD BY FIELD to the scene's own values, never all-or-nothing.
+	 */
+	@Test
+	public void case15SceneCompositionFallsBackPerFieldToTheScene() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "cmpfb");
+		try {
+			BaseRecord scene = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_PB_ACTION, SCENE_ACTION);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_PB_MOOD, SCENE_MOOD);
+			BaseRecord comp = migratedComp(u, bk, scene);
+
+			Map<String, Object> edit = new java.util.LinkedHashMap<>();
+			edit.put(OlioFieldNames.FIELD_PB_SETTING_TEXT, COMP_SETTING);
+			edit.put(OlioFieldNames.FIELD_PB_ACTION, "");
+			edit.put(OlioFieldNames.FIELD_PB_MOOD, "");
+			comp = patchComp(u, comp, edit);
+			assertEquals(COMP_SETTING, strOf(comp, OlioFieldNames.FIELD_PB_SETTING_TEXT));
+			assertNull("\"\" clears the composition's action (re-read)", comp.get(OlioFieldNames.FIELD_PB_ACTION));
+			assertNull("\"\" clears the composition's mood (re-read)", comp.get(OlioFieldNames.FIELD_PB_MOOD));
+
+			BaseRecord fresh = readScene(u, oidOf(scene));
+			String expected = PbRenderPlanUtil.joinSentences(List.of(COMP_SETTING, SCENE_ACTION, SCENE_MOOD));
+			assertEquals("setting from the composition, action and mood from the scene", expected, PbRenderPlanUtil.locationText(fresh, comp));
+			RenderPlan p = planOf(u, bk, fresh);
+			assertEquals("the plan composes the same way", expected, p.getLocation().getDescription());
+			assertFalse("the scene's setting is replaced, not appended", p.getLocation().getDescription().contains(SCENE_SETTING));
+
+			/// and the other direction: setting cleared on the composition, action kept
+			Map<String, Object> edit2 = new java.util.LinkedHashMap<>();
+			edit2.put(OlioFieldNames.FIELD_PB_SETTING_TEXT, "");
+			edit2.put(OlioFieldNames.FIELD_PB_ACTION, COMP_ACTION);
+			comp = patchComp(u, comp, edit2);
+			assertNull(comp.get(OlioFieldNames.FIELD_PB_SETTING_TEXT));
+			String expected2 = PbRenderPlanUtil.joinSentences(List.of(SCENE_SETTING, COMP_ACTION, SCENE_MOOD));
+			assertEquals("setting from the scene, action from the composition, mood from the scene", expected2,
+				planOf(u, bk, readScene(u, oidOf(scene))).getLocation().getDescription());
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/**
+	 * A1 (3): once a SCENE composition exists, the scene's legacy {@code sdPrompt} is NOT the setting text. The
+	 * MIGRATED composition carried it as {@code promptOverride}, where it is the plan's INTENT - said once, not
+	 * repeated as the setting.
+	 */
+	@Test
+	public void case16LegacySdPromptIsTheIntentNotTheSettingWhenComposed() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "cmplegacy");
+		try {
+			BaseRecord scene = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_PB_ACTION, SCENE_ACTION);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_CB_SD_PROMPT, LEGACY_SD_PROMPT);
+			assertEquals("precondition: the legacy prompt is the scene's text while no composition exists",
+				LEGACY_SD_PROMPT, PbRenderPlanUtil.locationText(scene, null));
+
+			BaseRecord comp = migratedComp(u, bk, scene);
+			assertEquals("MIGRATED carries the legacy prompt as promptOverride", LEGACY_SD_PROMPT, strOf(comp, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+
+			BaseRecord fresh = readScene(u, oidOf(scene));
+			assertEquals("precondition: the scene still carries its legacy prompt", LEGACY_SD_PROMPT, strOf(fresh, OlioFieldNames.FIELD_CB_SD_PROMPT));
+			String text = PbRenderPlanUtil.locationText(fresh, comp);
+			assertFalse("the legacy prompt is not in the setting text: " + text, text.contains(LEGACY_SD_PROMPT));
+			assertEquals("the setting text is the composition's setting + action", PbRenderPlanUtil.joinSentences(List.of(SCENE_SETTING, SCENE_ACTION)), text);
+
+			RenderPlan p = planOf(u, bk, fresh);
+			assertFalse("the plan's setting text excludes the legacy prompt: " + p.getLocation().getDescription(),
+				p.getLocation().getDescription().contains(LEGACY_SD_PROMPT));
+			assertNotNull("the plan has an intent", p.getIntent());
+			assertEquals("the composition's promptOverride is the plan's intent", LEGACY_SD_PROMPT, p.getIntent().getPromptOverride());
+			assertFalse("not raw", p.getIntent().isRaw());
+			String compiled = compiledBase(p);
+			int first = compiled.indexOf(LEGACY_SD_PROMPT);
+			assertTrue("the legacy prompt is said once in the compiled prompt: " + compiled, first >= 0);
+			assertEquals("...and only once", -1, compiled.indexOf(LEGACY_SD_PROMPT, first + 1));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/**
+	 * A1 (4): with NO composition the pre-P4-10 behaviour is unchanged - the scene's legacy {@code sdPrompt} is
+	 * the setting text, nearest-to-a-prompt first, and the plan has no intent.
+	 */
+	@Test
+	public void case17LegacySdPromptIsTheSettingWhenNotComposed() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "nocomp");
+		try {
+			BaseRecord scene = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_CB_SD_PROMPT, "  " + LEGACY_SD_PROMPT + "  ");
+			BaseRecord book = readBook(u, bk);
+			assertNull("precondition: no composition in the book's group",
+				PbComposeUtil.findSceneComposition(u, scene, ((Number) book.get(FieldNames.FIELD_GROUP_ID)).longValue(), orgOf(u)));
+
+			assertEquals("null composition: the legacy prompt, trimmed", LEGACY_SD_PROMPT, PbRenderPlanUtil.locationText(scene, null));
+			RenderPlan p = planOf(u, bk, scene);
+			assertEquals("the plan's setting text is the legacy prompt", LEGACY_SD_PROMPT, p.getLocation().getDescription());
+			assertFalse("the scene's setting is not appended when a legacy prompt stands", p.getLocation().getDescription().contains(SCENE_SETTING));
+			assertNull("no composition means no intent override", p.getIntent().getPromptOverride());
+			assertNull("no composition means no camera", p.getCamera());
+			assertTrue("no actors", p.getActors().isEmpty());
+			assertTrue("no elements", p.getElements().isEmpty());
+			assertTrue("the compiled prompt opens with the legacy prompt: " + compiledBase(p), compiledBase(p).startsWith(LEGACY_SD_PROMPT));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/**
+	 * A1 (5): a CHAPBOOK_PAGE composition with a promptOverride - the setting text is exactly that text
+	 * (trimmed), nothing composed around it, no intent (it is not repeated), no camera (pages have none).
+	 */
+	@Test
+	public void case18PagePromptOverrideIsTheSettingVerbatim() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "pagetext");
+		try {
+			BaseRecord scene = addScene(u, bk, 0, "Page 0", SCENE_SETTING);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_PB_ACTION, SCENE_ACTION);
+			BaseRecord book = makeChapBook(u, bk);
+			BaseRecord page = PbComposeUtil.getCreatePageComposition(u, book, scene, PbCompositionSourceEnumType.USER);
+			assertNotNull("page composition", page);
+			assertEquals("CHAPBOOK_PAGE purpose", PbCompositionPurposeEnumType.CHAPBOOK_PAGE.toString(),
+				strOf(page, OlioFieldNames.FIELD_PB_PURPOSE).toUpperCase());
+			Map<String, Object> edit = new java.util.LinkedHashMap<>();
+			edit.put(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, "  " + PAGE_TEXT + "  ");
+			edit.put(OlioFieldNames.FIELD_PB_SHOT_TYPE, PbShotTypeEnumType.CLOSE_UP.toString());
+			edit.put(OlioFieldNames.FIELD_PB_CAMERA_TEXT, "50mm");
+			page = patchComp(u, page, edit);
+			assertEquals("stored trimmed", PAGE_TEXT, strOf(page, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertTrue(PbRenderPlanUtil.isPageComposition(page));
+
+			BaseRecord fresh = readScene(u, oidOf(scene));
+			assertEquals("the page prompt, verbatim", PAGE_TEXT, PbRenderPlanUtil.locationText(fresh, page));
+			assertNull("a page composition contributes no camera even with shotType/cameraText set", PbRenderPlanUtil.cameraText(page));
+
+			RenderPlan p = planOf(u, bk, fresh);
+			assertEquals("the plan's setting text is the page prompt, verbatim", PAGE_TEXT, p.getLocation().getDescription());
+			assertFalse(p.getLocation().getDescription().contains(SCENE_SETTING));
+			assertNull("the page prompt is not repeated as the intent", p.getIntent().getPromptOverride());
+			assertNull("no camera on a page plan", p.getCamera());
+			String compiled = compiledBase(p);
+			int first = compiled.indexOf(PAGE_TEXT);
+			assertTrue("the page prompt is in the compiled prompt: " + compiled, first >= 0);
+			assertEquals("...once", -1, compiled.indexOf(PAGE_TEXT, first + 1));
+			assertFalse("the page's camera words never reach the prompt: " + compiled, compiled.contains("close up") || compiled.contains("50mm"));
+
+			/// a page composition WITHOUT a meaningful promptOverride falls back to the scene's own text
+			page = patchComp(u, page, Map.of(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, ""));
+			assertNull(page.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals("no page prompt: the scene's own text", PbRenderPlanUtil.locationText(fresh), PbRenderPlanUtil.locationText(fresh, page));
+			assertEquals(PbRenderPlanUtil.joinSentences(List.of(SCENE_SETTING, SCENE_ACTION)), planOf(u, bk, fresh).getLocation().getDescription());
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/**
+	 * A1 (6): a SCENE composition's {@code props} are appended after setting, action and mood - and a
+	 * props-only composition still composes (props after the scene's own fields).
+	 */
+	@Test
+	public void case19PropsAppendAfterSettingActionMood() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "props");
+		try {
+			BaseRecord scene = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_PB_ACTION, SCENE_ACTION);
+			scene = patchScene(u, scene, OlioFieldNames.FIELD_PB_MOOD, SCENE_MOOD);
+			BaseRecord comp = migratedComp(u, bk, scene);
+			assertNull("precondition: MIGRATED carries no props", comp.get(OlioFieldNames.FIELD_PB_PROPS));
+
+			comp = patchComp(u, comp, Map.of(OlioFieldNames.FIELD_PB_PROPS, " " + COMP_PROPS + " "));
+			assertEquals("props stored trimmed", COMP_PROPS, strOf(comp, OlioFieldNames.FIELD_PB_PROPS));
+			BaseRecord fresh = readScene(u, oidOf(scene));
+			String expected = PbRenderPlanUtil.joinSentences(List.of(SCENE_SETTING, SCENE_ACTION, SCENE_MOOD, COMP_PROPS));
+			assertEquals("props last", expected, PbRenderPlanUtil.locationText(fresh, comp));
+			RenderPlan p = planOf(u, bk, fresh);
+			assertEquals(expected, p.getLocation().getDescription());
+			assertTrue("props end the setting text", p.getLocation().getDescription().endsWith(COMP_PROPS));
+			assertTrue(compiledBase(p).contains(COMP_PROPS));
+
+			/// with the composition's own setting/action/mood, props still come last
+			Map<String, Object> edit = new java.util.LinkedHashMap<>();
+			edit.put(OlioFieldNames.FIELD_PB_SETTING_TEXT, COMP_SETTING);
+			edit.put(OlioFieldNames.FIELD_PB_ACTION, COMP_ACTION);
+			edit.put(OlioFieldNames.FIELD_PB_MOOD, COMP_MOOD);
+			comp = patchComp(u, comp, edit);
+			assertEquals(PbRenderPlanUtil.joinSentences(List.of(COMP_SETTING, COMP_ACTION, COMP_MOOD, COMP_PROPS)),
+				planOf(u, bk, readScene(u, oidOf(scene))).getLocation().getDescription());
+
+			/// clearing props removes them
+			comp = patchComp(u, comp, Map.of(OlioFieldNames.FIELD_PB_PROPS, ""));
+			assertNull(comp.get(OlioFieldNames.FIELD_PB_PROPS));
+			assertEquals(PbRenderPlanUtil.joinSentences(List.of(COMP_SETTING, COMP_ACTION, COMP_MOOD)),
+				planOf(u, bk, readScene(u, oidOf(scene))).getLocation().getDescription());
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/**
+	 * A1 (7): {@code compositionRequest()} projects every field the planner and the mirror read - one read per
+	 * composition is enough (the P3-5 case07 contract, extended to the P4-10 fields).
+	 */
+	@Test
+	public void case20CompositionProjectionCarriesTheP410Fields() {
+		List<String> req = Arrays.asList(PbComposeUtil.compositionRequest());
+		for(String f : new String[] {
+				OlioFieldNames.FIELD_PB_SETTING_TEXT, OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_MOOD,
+				OlioFieldNames.FIELD_PB_PROPS, OlioFieldNames.FIELD_PB_SHOT_TYPE, OlioFieldNames.FIELD_PB_VIEWPOINT,
+				OlioFieldNames.FIELD_PB_CAMERA_TEXT, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE, OlioFieldNames.FIELD_PB_PROMPT_LOCKED,
+				OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, OlioFieldNames.FIELD_PB_PURPOSE, OlioFieldNames.FIELD_PB_SOURCE,
+				OlioFieldNames.FIELD_PB_USER_EDITED, OlioFieldNames.FIELD_PB_REVISION, OlioFieldNames.FIELD_PB_SCENE,
+				OlioFieldNames.FIELD_PB_BOOK, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID }) {
+			assertTrue("compositionRequest() must project " + f, req.contains(f));
+		}
+		assertEquals("no duplicate projection", req.size(), new HashSet<>(req).size());
+	}
+
+	/**
+	 * B (element handle): element rows are NAMED by the compose handle ({@code element.<compOid>.<n>}) through
+	 * the real util; the plan carries them with a null name and their text as the description, and the compiled
+	 * prompt carries the text and never the handle. Same for a description-only actor row ({@code actor.<oid>.<n>}).
+	 */
+	@Test
+	public void case21ElementHandleNameNeverReachesCompiledText() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "handle");
+		final String lantern = "a brass lantern on a hook";
+		final String crate = "a splintered fish crate";
+		final String ferryman = "a hooded ferryman waiting by the steps";
+		try {
+			BaseRecord scene = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
+			BaseRecord comp = migratedComp(u, bk, scene);
+			String compOid = oidOf(comp);
+
+			Map<String, Object> e1 = new java.util.LinkedHashMap<>();
+			e1.put(OlioFieldNames.FIELD_PB_ELEMENT_TYPE, PbElementTypeEnumType.PROP.toString());
+			e1.put(FieldNames.FIELD_DESCRIPTION, lantern);
+			BaseRecord row1 = PbComposeUtil.createElementRow(u, comp, e1);
+			Map<String, Object> e2 = new java.util.LinkedHashMap<>();
+			e2.put(OlioFieldNames.FIELD_PB_ELEMENT_TYPE, "furniture");
+			e2.put(FieldNames.FIELD_DESCRIPTION, crate);
+			BaseRecord row2 = PbComposeUtil.createElementRow(u, comp, e2);
+			BaseRecord actorRow = PbComposeUtil.createActorRow(u, readBook(u, bk), comp, Map.of(FieldNames.FIELD_DESCRIPTION, ferryman));
+
+			String n1 = row1.get(FieldNames.FIELD_NAME);
+			String n2 = row2.get(FieldNames.FIELD_NAME);
+			String na = actorRow.get(FieldNames.FIELD_NAME);
+			logger.info("rows: " + n1 + " / " + n2 + " / " + na);
+			assertEquals("first element handle", PbComposeUtil.ELEMENT_NAME_PREFIX + compOid + ".1", n1);
+			assertEquals("second element handle", PbComposeUtil.ELEMENT_NAME_PREFIX + compOid + ".2", n2);
+			assertEquals("actor handle", PbComposeUtil.ACTOR_NAME_PREFIX + compOid + ".1", na);
+			assertEquals("the row is re-read from the DB, not the create stub", crate, PbComposeUtil.readElement(u, oidOf(row2), orgOf(u)).get(FieldNames.FIELD_DESCRIPTION));
+			assertEquals("two element rows listed", 2, PbComposeUtil.listElements(u, comp).size());
+
+			RenderPlan p = planOf(u, bk, readScene(u, oidOf(scene)));
+			assertEquals("two plan elements", 2, p.getElements().size());
+			Set<String> descs = new HashSet<>();
+			for(RenderPlan.Element e : p.getElements()) {
+				assertNull("a handle-named element row carries no name on the plan (" + e.getDescription() + ")", e.getName());
+				assertNotNull(e.getDescription());
+				descs.add(e.getDescription());
+			}
+			assertTrue("lantern text is the element description: " + descs, descs.contains(lantern));
+			assertTrue("crate text is the element description: " + descs, descs.contains(crate));
+			assertEquals("one plan actor", 1, p.getActors().size());
+			assertNull("a handle-named actor row carries no name", p.getActors().get(0).getName());
+			assertEquals(ferryman, p.getActors().get(0).getDescription());
+
+			String planJson = p.toJson();
+			assertFalse("no element handle on the plan wire: " + planJson, planJson.contains(PbComposeUtil.ELEMENT_NAME_PREFIX + compOid));
+			assertFalse("no actor handle on the plan wire: " + planJson, planJson.contains(PbComposeUtil.ACTOR_NAME_PREFIX + compOid));
+
+			/// the compiler the plan picked for BASE
+			String compiled = compiledBase(p);
+			logger.info("BASE pick family=" + (p.pickForStage(RenderPlan.STAGE_BASE) == null ? null : p.pickForStage(RenderPlan.STAGE_BASE).getFamily()) + " compiled=" + compiled);
+			assertNoHandle(compiled, compOid);
+			assertTrue("compiled carries the lantern: " + compiled, compiled.contains(lantern));
+			assertTrue("compiled carries the crate: " + compiled, compiled.contains(crate));
+			assertTrue("compiled carries the ferryman: " + compiled, compiled.contains(ferryman));
+
+			/// and SdxlCompiler explicitly, whatever family the dead-port pick resolved to
+			List<RenderPlan.Degradation> degs = new ArrayList<>();
+			String sdxl = new SdxlCompiler().compile(p, RenderPlan.STAGE_BASE, degs).getPrompt();
+			assertNoHandle(sdxl, compOid);
+			assertTrue("SDXL carries the lantern: " + sdxl, sdxl.contains(lantern));
+			assertTrue("SDXL carries the crate: " + sdxl, sdxl.contains(crate));
+			assertTrue("SDXL carries the ferryman: " + sdxl, sdxl.contains(ferryman));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	private static void assertNoHandle(String prompt, String compOid) {
+		assertNotNull(prompt);
+		assertFalse("no element handle in the prompt: " + prompt, prompt.contains(PbComposeUtil.ELEMENT_NAME_PREFIX + compOid));
+		assertFalse("no actor handle in the prompt: " + prompt, prompt.contains(PbComposeUtil.ACTOR_NAME_PREFIX + compOid));
+		assertFalse("no bare 'element.' token in the prompt: " + prompt, prompt.contains("element."));
+		assertFalse("no bare 'actor.' token in the prompt: " + prompt, prompt.contains("actor."));
+	}
+
+	/**
+	 * B / A2 (camera): a SCENE composition's shotType, viewpoint and cameraText become the plan's camera -
+	 * enum names as lower-cased words ({@code CLOSE_UP} → "close up", {@code OVER_SHOULDER} → "over shoulder"),
+	 * then the free text, joined with ", " - and reach the SDXL-compiled prompt. A scene with no composition
+	 * plans with no camera at all; an UNKNOWN shot/viewpoint contributes nothing.
+	 */
+	@Test
+	public void case22CameraComesFromTheCompositionAndIsAbsentWithout() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "camera");
+		final String camText = "35mm, shallow depth of field";
+		try {
+			BaseRecord bare = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
+			RenderPlan p0 = planOf(u, bk, bare);
+			assertNull("no composition: no camera", p0.getCamera());
+			assertFalse("no camera on the wire", p0.toJson().contains("\"camera\":{"));
+
+			BaseRecord scene = addScene(u, bk, 1, "Scene 1", SCENE_SETTING);
+			BaseRecord comp = migratedComp(u, bk, scene);
+			String migratedCam = PbRenderPlanUtil.cameraText(comp);
+			logger.info("MIGRATED camera: " + migratedCam + " (shot=" + strOf(comp, OlioFieldNames.FIELD_PB_SHOT_TYPE) + " view=" + strOf(comp, OlioFieldNames.FIELD_PB_VIEWPOINT) + ")");
+			assertEquals("MIGRATED defaults are the layout defaults as words",
+				PbRenderPlanUtil.words(PbLayoutUtil.defaultShotType(0).toString()) + ", " + PbRenderPlanUtil.words(PbLayoutUtil.defaultViewpoint().toString()), migratedCam);
+
+			Map<String, Object> edit = new java.util.LinkedHashMap<>();
+			edit.put(OlioFieldNames.FIELD_PB_SHOT_TYPE, PbShotTypeEnumType.CLOSE_UP.toString());
+			edit.put(OlioFieldNames.FIELD_PB_VIEWPOINT, "over_shoulder");
+			edit.put(OlioFieldNames.FIELD_PB_CAMERA_TEXT, "  " + camText + "  ");
+			comp = patchComp(u, comp, edit);
+			assertEquals("CLOSE_UP", strOf(comp, OlioFieldNames.FIELD_PB_SHOT_TYPE).toUpperCase());
+			assertEquals("OVER_SHOULDER", strOf(comp, OlioFieldNames.FIELD_PB_VIEWPOINT).toUpperCase());
+			assertEquals(camText, strOf(comp, OlioFieldNames.FIELD_PB_CAMERA_TEXT));
+
+			final String expected = "close up, over shoulder, " + camText;
+			assertEquals("cameraText(comp)", expected, PbRenderPlanUtil.cameraText(comp));
+			RenderPlan p = planOf(u, bk, readScene(u, oidOf(scene)));
+			assertNotNull("the plan has a camera", p.getCamera());
+			assertEquals("the plan's camera is the composition's words", expected, p.getCamera().getDescription());
+			assertTrue("camera on the wire", p.toJson().contains("\"camera\":{\"description\":\"" + expected + "\"}"));
+			RenderPlan back = RenderPlan.fromJson(p.toJson());
+			assertEquals("camera survives the plan round trip", expected, back.getCamera().getDescription());
+
+			List<RenderPlan.Degradation> degs = new ArrayList<>();
+			String sdxl = new SdxlCompiler().compile(p, RenderPlan.STAGE_BASE, degs).getPrompt();
+			assertTrue("the SDXL-compiled prompt carries the camera clause: " + sdxl, sdxl.contains(expected));
+			assertFalse("no enum name leaks: " + sdxl, sdxl.contains("CLOSE_UP") || sdxl.contains("OVER_SHOULDER"));
+			RenderPlan.ModelPick pick = p.pickForStage(RenderPlan.STAGE_BASE);
+			String family = (pick == null ? null : pick.getFamily());
+			String compiled = compiledBase(p);
+			logger.info("BASE pick family=" + family + " model=" + (pick == null ? null : pick.getModel()) + " compiled=" + compiled);
+			if(PromptCompilers.forPick(pick) instanceof SdxlCompiler) {
+				assertTrue("the plan's own compiled BASE prompt (SDXL family) carries the camera: " + compiled, compiled.contains(expected));
+			}
+			else {
+				logger.warn("[p410] BASE pick is family " + family + ": " + PromptCompilers.forPick(pick).getClass().getSimpleName()
+					+ " does not consume plan.camera; compiled carries camera=" + compiled.contains(expected));
+			}
+
+			/// UNKNOWN enum values contribute nothing; cameraText alone still composes
+			Map<String, Object> edit2 = new java.util.LinkedHashMap<>();
+			edit2.put(OlioFieldNames.FIELD_PB_SHOT_TYPE, PbShotTypeEnumType.UNKNOWN.toString());
+			edit2.put(OlioFieldNames.FIELD_PB_VIEWPOINT, PbViewpointEnumType.UNKNOWN.toString());
+			comp = patchComp(u, comp, edit2);
+			assertEquals("UNKNOWN shot/viewpoint drop out", camText, PbRenderPlanUtil.cameraText(comp));
+			assertEquals(camText, planOf(u, bk, readScene(u, oidOf(scene))).getCamera().getDescription());
+
+			/// and with cameraText cleared too, the plan has no camera again
+			comp = patchComp(u, comp, Map.of(OlioFieldNames.FIELD_PB_CAMERA_TEXT, ""));
+			assertNull(comp.get(OlioFieldNames.FIELD_PB_CAMERA_TEXT));
+			assertNull("nothing meaningful: cameraText(comp) is null", PbRenderPlanUtil.cameraText(comp));
+			assertNull("...and the plan has no camera", planOf(u, bk, readScene(u, oidOf(scene))).getCamera());
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/**
+	 * B / A2 (camera) - the LLM-composed row: {@code PbComposeUtil.cameraText(Proposal)} stores the shot and
+	 * viewpoint words into {@code cameraText} as well ("medium, eye_level"), so the plan's camera must carry each
+	 * word once. Found by the P4-10 live proof: scene 0's compiled BASE ended "medium, eye level, medium, eye_level".
+	 * Free text that is not one of those words is kept verbatim, in order.
+	 */
+	@Test
+	public void case23ComposerCameraTextIsNotRepeatedInThePlanCamera() throws Exception {
+		BaseRecord u = owner();
+		BaseRecord bk = newBook(u, "camera-dup");
+		try {
+			BaseRecord scene = addScene(u, bk, 0, "Scene 0", SCENE_SETTING);
+			BaseRecord comp = migratedComp(u, bk, scene);
+
+			/// exactly what the composer writes for its shot/viewpoint pick
+			Map<String, Object> edit = new java.util.LinkedHashMap<>();
+			edit.put(OlioFieldNames.FIELD_PB_SHOT_TYPE, PbShotTypeEnumType.MEDIUM.toString());
+			edit.put(OlioFieldNames.FIELD_PB_VIEWPOINT, PbViewpointEnumType.EYE_LEVEL.toString());
+			edit.put(OlioFieldNames.FIELD_PB_CAMERA_TEXT, "medium, eye_level");
+			comp = patchComp(u, comp, edit);
+			assertEquals("medium, eye_level", strOf(comp, OlioFieldNames.FIELD_PB_CAMERA_TEXT));
+			assertEquals("each camera word once", "medium, eye level", PbRenderPlanUtil.cameraText(comp));
+			RenderPlan p = planOf(u, bk, readScene(u, oidOf(scene)));
+			assertNotNull(p.getCamera());
+			assertEquals("medium, eye level", p.getCamera().getDescription());
+			String sdxl = new SdxlCompiler().compile(p, RenderPlan.STAGE_BASE, new ArrayList<>()).getPrompt();
+			logger.info("compiled: " + sdxl);
+			assertEquals("the SDXL-compiled prompt carries the camera clause exactly once: " + sdxl, 1, countOf(sdxl, "medium, eye level"));
+			assertFalse("no raw enum token: " + sdxl, sdxl.contains("eye_level"));
+
+			/// the user appends to the composer's text: the duplicate words drop, the rest survives in order
+			comp = patchComp(u, comp, Map.of(OlioFieldNames.FIELD_PB_CAMERA_TEXT, "medium, eye_level, 35mm lens, shallow depth of field"));
+			assertEquals("medium, eye level, 35mm lens, shallow depth of field", PbRenderPlanUtil.cameraText(comp));
+
+			/// the user changes the shot: the stale composer word is now real text and stays
+			comp = patchComp(u, comp, Map.of(OlioFieldNames.FIELD_PB_SHOT_TYPE, PbShotTypeEnumType.CLOSE_UP.toString(), OlioFieldNames.FIELD_PB_CAMERA_TEXT, "medium, eye_level, 35mm lens"));
+			assertEquals("close up, eye level, medium, 35mm lens", PbRenderPlanUtil.cameraText(comp));
+
+			/// free text with no enum words is untouched (spacing included)
+			comp = patchComp(u, comp, Map.of(OlioFieldNames.FIELD_PB_CAMERA_TEXT, "35mm lens,  shallow depth of field"));
+			assertEquals("close up, eye level, 35mm lens,  shallow depth of field", PbRenderPlanUtil.cameraText(comp));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	private static int countOf(String hay, String needle) {
+		int n = 0;
+		for(int i = hay.indexOf(needle); i >= 0; i = hay.indexOf(needle, i + needle.length())) n++;
+		return n;
 	}
 }

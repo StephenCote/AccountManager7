@@ -703,9 +703,11 @@ public class PbComposeUtil {
 		if(sceneBookId == null || bookId == null || sceneBookId.longValue() != bookId.longValue()) {
 			throw new PictureBookException(400, "Scene " + sceneOid + " does not belong to book " + ctx.slug);
 		}
-		Long gid = fresh.get(FieldNames.FIELD_GROUP_ID);
+		// Compositions are keyed on the BOOK's group, not the scene's: the planner, listSceneCompositions and the
+		// page path all look there, and a chapter-group scene would otherwise write where nothing reads.
+		Long gid = ctx.book.get(FieldNames.FIELD_GROUP_ID);
 		if(gid == null) {
-			throw new PictureBookException(409, "Scene " + sceneOid + " has no group");
+			throw new PictureBookException(409, "Book " + ctx.slug + " has no group");
 		}
 		ctx.scene = fresh;
 		ctx.bookGroupId = gid.longValue();
@@ -1746,6 +1748,15 @@ public class PbComposeUtil {
 		}
 	}
 
+	/**
+	 * Create the scene's {@code SCENE}-purpose composition from the staging. The scene's {@code configOverride}
+	 * is carried onto every new composition regardless of source (the composition is the render's config
+	 * authority, design §9.1, so a scene-level override must not vanish on the first LLM compose). The legacy
+	 * {@code sdPrompt} / {@code promptLocked} pair is carried only for a {@code MIGRATED} composition — the
+	 * P4-10 one-off shape — because an LLM compose is expected to supersede the legacy prompt, and
+	 * {@link #persist} never patches {@code promptOverride}/{@code promptLocked}/{@code configOverride} on an
+	 * existing composition, so values carried here survive later recomposes.
+	 */
 	private static BaseRecord createComposition(BaseRecord user, Context ctx, Staging s) {
 		String name = COMPOSITION_NAME_PREFIX + str(ctx.scene.get(FieldNames.FIELD_OBJECT_ID));
 		BaseRecord comp;
@@ -1758,6 +1769,12 @@ public class PbComposeUtil {
 			comp.set(OlioFieldNames.FIELD_PB_USER_EDITED, Boolean.FALSE);
 			comp.set(OlioFieldNames.FIELD_PB_REVISION, Integer.valueOf(1));
 			applyStagingFields(comp, ctx, s);
+			// Every source: the scene's config override is the composition's from the start.
+			String cfg = str(ctx.scene.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
+			if(cfg != null && !cfg.isBlank()) {
+				comp.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, cfg);
+			}
+			// MIGRATED only: the legacy prompt and its lock.
 			if(s.source == PbCompositionSourceEnumType.MIGRATED) {
 				String sdPrompt = str(ctx.scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
 				if(NarrativeUtil.isMeaningful(sdPrompt)) {
@@ -1765,10 +1782,6 @@ public class PbComposeUtil {
 				}
 				Boolean locked = ctx.scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
 				comp.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.valueOf(Boolean.TRUE.equals(locked)));
-				String cfg = str(ctx.scene.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
-				if(cfg != null && !cfg.isBlank()) {
-					comp.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, cfg);
-				}
 			}
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
@@ -2166,9 +2179,14 @@ public class PbComposeUtil {
 				case OlioFieldNames.FIELD_PB_ACTION:
 				case OlioFieldNames.FIELD_PB_CAMERA_TEXT:
 				case OlioFieldNames.FIELD_PB_PROPS:
-				case OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE:
 					values.put(key, stringField(in, key, 0));
 					break;
+				case OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE: {
+					// Mirrored onto scene.sdPrompt for a ChapBook page: clean it exactly as the scene-only prompt route does.
+					String p = ChapBookUtil.sanitizeText(stringField(in, key, 0));
+					values.put(key, (p == null || p.isBlank() ? null : p.trim()));
+					break;
+				}
 				case OlioFieldNames.FIELD_PB_MOOD:
 					values.put(key, stringField(in, key, MAX_MOOD_CHARS));
 					break;

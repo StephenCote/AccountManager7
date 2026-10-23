@@ -21,11 +21,13 @@ import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.illustration.CancelToken;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.PromptCompilers;
 import org.cote.accountmanager.olio.illustration.RenderCalibration;
 import org.cote.accountmanager.olio.illustration.RenderEstimate;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererAdapter;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
+import org.cote.accountmanager.olio.illustration.SdxlCompiler;
 import org.cote.accountmanager.olio.illustration.StageImage;
 import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StageResult;
@@ -39,7 +41,9 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
+import org.cote.accountmanager.schema.type.PbShotTypeEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
+import org.cote.accountmanager.schema.type.PbViewpointEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Before;
 import org.junit.Test;
@@ -280,6 +284,117 @@ public class TestRenderPlanLive extends BaseTest {
 			RenderPlan back = PbRenderPlanUtil.readPlanArtifact(artifact);
 			assertNotNull(back);
 			assertEquals(plan.contentHash(), back.contentHash());
+			assertEquals(base.getPrompt(), back.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt());
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	// ─── 1b. camera from the composition, rendered live (P4-10 item E) ───────────
+
+	/**
+	 * P4-10 / A2 (camera) on the live node: a SCENE composition's shotType, viewpoint and cameraText become
+	 * the plan's camera, the SDXL compiler puts that clause into the BASE prompt, and the request the adapter
+	 * actually sends to Swarm carries it verbatim - "the prompt shown is the prompt sent" for the camera too.
+	 * The composition is the MIGRATED row {@link PbComposeUtil#composeMigrated} writes (no LLM), edited through
+	 * the real {@link PbComposeUtil#patchCompositionFields}; the plan is built from the re-read records; the
+	 * render is one BASE stage with the gate's installed SDXL checkpoint as the override. The PNG lands under
+	 * {@code target/} for inspection. Skips visibly (NOT a pass) when the node is unreachable or lists no SDXL
+	 * checkpoint.
+	 */
+	@Test
+	public void cameraFromCompositionRendersOnLiveSwarm() throws Exception {
+		BaseRecord renderCfg = SdTestGate.requireRenderConfig(testProperties, server, "P4-10 camera plan render");
+		String installed = renderCfg.get(OlioFieldNames.FIELD_SD_MODEL);
+		final String camText = "35mm lens, shallow depth of field";
+		final String expectedCamera = "close up, over shoulder, " + camText;
+		Fixture f = fixture("p410c");
+		try {
+			/// Precondition: with no composition the plan has no camera at all.
+			RenderPlan p0 = PbRenderPlanUtil.buildScenePlan(f.owner, f.book, f.scene,
+				new PbRenderPlanUtil.PlanOptions(null, false, PbQualityPresetEnumType.DRAFT, installed), SDAPIEnumType.SWARM, server);
+			assertNull("no composition: no camera", p0.getCamera());
+			assertFalse("no camera on the wire", p0.toJson().contains("\"camera\":{"));
+
+			/// The scene's SCENE composition (MIGRATED, no LLM), then the camera edit through the real patch util.
+			BaseRecord book = PbBookUtil.readBook(f.owner, f.bookOid, orgOf(f.owner));
+			assertNotNull("book re-read", book);
+			PbComposeUtil.ComposeResult cr = PbComposeUtil.composeMigrated(f.owner, book, f.scene, false);
+			assertTrue("MIGRATED composition written: " + cr.failureReason, cr.isWritten());
+			BaseRecord comp = PbComposeUtil.readComposition(f.owner, cr.composition.get(FieldNames.FIELD_OBJECT_ID), orgOf(f.owner));
+			assertNotNull("composition re-read", comp);
+			Map<String, Object> edit = new LinkedHashMap<>();
+			edit.put(OlioFieldNames.FIELD_PB_SHOT_TYPE, PbShotTypeEnumType.CLOSE_UP.toString());
+			edit.put(OlioFieldNames.FIELD_PB_VIEWPOINT, PbViewpointEnumType.OVER_SHOULDER.toString());
+			edit.put(OlioFieldNames.FIELD_PB_CAMERA_TEXT, camText);
+			PbComposeUtil.patchCompositionFields(f.owner, comp, edit);
+			comp = PbComposeUtil.readComposition(f.owner, comp.get(FieldNames.FIELD_OBJECT_ID), orgOf(f.owner));
+			assertNotNull("composition re-read after the camera patch", comp);
+			assertEquals("cameraText(comp) after the patch", expectedCamera, PbRenderPlanUtil.cameraText(comp));
+
+			/// The plan from the re-read records carries the camera and compiles it into BASE (SDXL family).
+			BaseRecord scene = PbBookUtil.readScene(f.owner, f.scene.get(FieldNames.FIELD_OBJECT_ID), orgOf(f.owner));
+			assertNotNull("scene re-read", scene);
+			PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, PbQualityPresetEnumType.DRAFT, installed);
+			RenderPlan plan = PbRenderPlanUtil.buildScenePlan(f.owner, book, scene, opts, SDAPIEnumType.SWARM, server);
+			logger.info("PLAN: " + plan.toJson());
+			assertNotNull("the plan has a camera", plan.getCamera());
+			assertEquals("the plan's camera is the composition's words", expectedCamera, plan.getCamera().getDescription());
+			RenderPlan.ModelPick pick = locationPick(plan);
+			assertEquals("the explicit model is the OVERRIDE pick", ModelResolver.Step.OVERRIDE.name(), pick.getStep());
+			assertEquals(ModelResolver.Reason.OK.name(), pick.getReason());
+			assertEquals(installed, pick.getModel());
+			assertFalse("an installed override is not degraded", pick.isDegraded());
+			RendererCapabilities caps = RendererCapabilities.forModel(pick.getModel());
+			assertNotNull("the installed checkpoint is of a known family", caps);
+			assertTrue("the gate's SDXL checkpoint compiles through SdxlCompiler (the only compiler that consumes plan.camera): family="
+				+ pick.getFamily() + " compiler=" + PromptCompilers.forPick(pick).getClass().getSimpleName(),
+				PromptCompilers.forPick(pick) instanceof SdxlCompiler);
+			CompiledPrompt base = plan.getCompiled().get(RenderPlan.STAGE_BASE);
+			assertNotNull("BASE is compiled", base);
+			assertTrue("the compiled BASE prompt carries the camera clause: " + base.getPrompt(), base.getPrompt().contains(expectedCamera));
+			assertTrue("...and the scene text: " + base.getPrompt(), base.getPrompt().contains(SETTING));
+			assertFalse("no enum name leaks: " + base.getPrompt(), base.getPrompt().contains("CLOSE_UP") || base.getPrompt().contains("OVER_SHOULDER"));
+			assertEquals(List.of(RenderPlan.STAGE_BASE), plan.getStrategy().getStages());
+
+			/// One BASE stage on the real node, the compiled prompt sent verbatim.
+			Map<String, Object> cfg = plan.getConfig();
+			StageRequest.Builder rb = StageRequest.builder().plan(plan).stage(RenderPlan.STAGE_BASE).prompt(base)
+				.model(pick.getModel()).width(plan.getCanvas().getWidth()).height(plan.getCanvas().getHeight())
+				.steps(plan.getPreset().getSteps()).images(1).seed(-1).config(cfg);
+			if(cfg.get("cfg") instanceof Number) rb.cfg(((Number) cfg.get("cfg")).doubleValue());
+			if(cfg.get("sampler") != null) rb.sampler(cfg.get("sampler").toString());
+			if(cfg.get("scheduler") != null) rb.scheduler(cfg.get("scheduler").toString());
+			StageRequest req = rb.build();
+			RendererAdapter adapter = new SwarmRendererAdapter(SDAPIEnumType.SWARM, server);
+			StageResult result = adapter.execute(req, CancelToken.NONE);
+			assertNotNull(result);
+			assertTrue("the BASE stage must render on " + server + ": " + result.getError(), result.isOk());
+			assertNotNull("the adapter records the request it sent", result.getRequestJson());
+			assertTrue("the request sent to Swarm carries the camera clause (the prompt shown is the prompt sent): " + result.getRequestJson(),
+				result.getRequestJson().contains(expectedCamera));
+			assertTrue("the request sent carries the scene text", result.getRequestJson().contains(SETTING));
+			assertTrue("the request sent names the picked model", result.getRequestJson().contains(pick.getModel()));
+			assertEquals(1, result.getImages().size());
+			StageImage img = result.getImages().get(0);
+			assertTrue("image bytes", img.getLength() > 0);
+			assertEquals("decoded width matches the canvas", plan.getCanvas().getWidth(), img.getWidth());
+			assertEquals("decoded height matches the canvas", plan.getCanvas().getHeight(), img.getHeight());
+			File out = new File("target", "p410-camera-render-" + f.slug + ".png");
+			Files.write(out.toPath(), img.getBytes());
+			logger.info("MEASURED: camera BASE on " + server + " model=" + pick.getModel() + " family=" + pick.getFamily()
+				+ " canvas=" + plan.getCanvas().getWidth() + "x" + plan.getCanvas().getHeight() + " steps=" + req.getSteps()
+				+ " durationMs=" + result.getDurationMs() + " bytes=" + img.getLength() + " camera='" + expectedCamera + "' png=" + out.getAbsolutePath());
+
+			/// The rendered plan persists with its camera and reads back identical.
+			BaseRecord artifact = PbRenderPlanUtil.persistPlanArtifact(f.owner, f.node, PbBookUtil.artifactGroupPath(f.slug), plan);
+			assertNotNull("plan artifact", artifact);
+			RenderPlan back = PbRenderPlanUtil.readPlanArtifact(artifact);
+			assertNotNull(back);
+			assertEquals(plan.contentHash(), back.contentHash());
+			assertNotNull("camera survives the artifact round trip", back.getCamera());
+			assertEquals(expectedCamera, back.getCamera().getDescription());
 			assertEquals(base.getPrompt(), back.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt());
 		}
 		finally {

@@ -1,9 +1,12 @@
 package org.cote.accountmanager.olio.picturebook;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
@@ -504,6 +507,38 @@ public final class PbComposeJobUtil {
 			progress.setCurrent(0);
 		}
 
+		// P4-10 (design §28 step 4): one-off migration of legacy scene fields into MIGRATED compositions, as the
+		// job's user, before any scene is composed. STORY books only; ChapBook page compositions come from the
+		// ChapBook path. Idempotent, so running it on every compose is safe. Failures are reported, never thrown.
+		Map<String, Object> migration = null;
+		int migratedCompositions = 0;
+		Set<String> migrationFailedScenes = Collections.emptySet();
+		if(!chapBook) {
+			if(progress != null) {
+				progress.setPhase("migrate compositions");
+			}
+			try {
+				PbMigrationUtil.CompositionMigrationResult mig = PbMigrationUtil.migrateCompositions(user, fresh, scenes);
+				migration = mig.toMap();
+				migratedCompositions = mig.created;
+				migrationFailedScenes = mig.failedSceneObjectIds;
+			}
+			catch(RuntimeException e) {
+				logger.warn("compose " + slug + ": composition migration failed: " + e.getMessage());
+				migration = new LinkedHashMap<>();
+				migration.put("error", PbServiceFacade.curatedMessage(e));
+				// A migration that threw before its per-scene loop migrated nothing; every scene is then in the
+				// same position as a per-scene failure and must not be composed without its legacy carry-over.
+				migrationFailedScenes = new HashSet<>();
+				for(BaseRecord scene : scenes) {
+					String soid = scene.get(FieldNames.FIELD_OBJECT_ID);
+					if(soid != null) {
+						migrationFailedScenes.add(soid);
+					}
+				}
+			}
+		}
+
 		int composed = 0;
 		int current = 0;
 		int skippedUserEdited = 0;
@@ -541,12 +576,24 @@ public final class PbComposeJobUtil {
 			outcome.put("title", title);
 			outcomes.add(outcome);
 
-			Long gid = scene.get(FieldNames.FIELD_GROUP_ID);
+			// Compositions live in the book's group (where the planner, listSceneCompositions and the page path
+			// look), not the scene's — chapter-group scenes would otherwise never find their composition.
+			Long gid = fresh.get(FieldNames.FIELD_GROUP_ID);
 			BaseRecord existing = (gid != null ? PbComposeUtil.findSceneComposition(user, scene, gid.longValue(), orgId) : null);
 			if(!force && !PbComposeUtil.needsCompose(existing)) {
 				current++;
 				outcome.put("status", "current");
 				outcome.put("compositionObjectId", existing.get(FieldNames.FIELD_OBJECT_ID));
+				tick(progress);
+				continue;
+			}
+			// A fresh LLM composition carries the scene's legacy sdPrompt/promptLocked only through the MIGRATED
+			// path, so a scene whose migration failed is not composed this run: the next compose retries it.
+			if(existing == null && migrationFailedScenes.contains(scene.get(FieldNames.FIELD_OBJECT_ID))) {
+				hardFailures++;
+				outcome.put("status", "migrationFailed");
+				outcome.put("error", "composition migration failed for this scene; not composed so its legacy prompt and lock are kept");
+				logger.warn("compose job " + slug + " scene " + idx + ": migration failed; skipping the compose");
 				tick(progress);
 				continue;
 			}
@@ -713,6 +760,7 @@ public final class PbComposeJobUtil {
 		result.put("interrupted", Boolean.valueOf(interrupted));
 		result.put("locationPassRan", Boolean.valueOf(locationPass != null));
 		result.put("locationPass", locationPass);
+		result.put("migration", migration);
 		result.put("scenes", outcomes);
 		if(cancelled || interrupted) {
 			result.put("note", NOTE_RESUME);
@@ -721,6 +769,7 @@ public final class PbComposeJobUtil {
 		logger.info("compose job " + slug + ": " + composed + " composed, " + current + " current, " + migrated + " migrated, "
 			+ hardFailures + " failed, " + pages + " page(s) skipped" + (quickStart ? ", " + quickStartRendered + " draft(s) rendered" : "")
 			+ (locationPass != null ? ", location pass ran" : ", location pass skipped")
+			+ ", " + migratedCompositions + " migrated composition(s) created"
 			+ (cancelled ? " CANCELLED" : "") + (interrupted ? " INTERRUPTED" : ""));
 		return result;
 	}

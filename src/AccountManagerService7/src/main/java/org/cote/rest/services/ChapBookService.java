@@ -554,10 +554,14 @@ public class ChapBookService {
      * (KI-24). All authoritative-edit semantics (persist verbatim, no "landscape, " discriminator),
      * authorization, and PATCH-shaped persistence live in {@link ChapBookUtil#setSceneLandscapePromptResult}.
      *
-     * <p>Response: {@code {updated, compositionUpdated, promptLocked[, compositionObjectId][, error]}} —
-     * {@code updated} is the scene copy, {@code compositionUpdated} the page composition. A partial write
-     * (scene copy landed, composition refused) is a 200 with {@code updated:true, compositionUpdated:false}
-     * and the refusal in {@code error}; the page node is already STALE in that case.
+     * <p>Response: {@code {updated, compositionUpdated, sceneUpdated, promptLocked[, compositionObjectId][, error]}}
+     * — the page composition is the authority and the scene its mirror (V3 §24, P4-10): {@code updated}
+     * is the page composition write ({@code compositionUpdated} is its alias, kept for existing clients),
+     * {@code sceneUpdated} the scene mirror. A partial write (composition landed, scene mirror refused) is a
+     * 200 with {@code updated:true, sceneUpdated:false}, the {@code compositionObjectId}, and the refusal in
+     * {@code error}; the page node is already STALE in that case. {@code updated:false} means the
+     * composition write was refused and nothing was written. A scene of a story book is a 409 - its prompt
+     * is edited on the composition board.
      */
     @RolesAllowed({"admin", "user"})
     @PUT
@@ -600,9 +604,11 @@ public class ChapBookService {
      * Transport only: parse the optional chatConfig, resolve it (named → org default), and delegate to
      * {@link ChapBookUtil#regenerateSceneLandscapePromptResult}. All LLM/persistence logic lives in Objects7.
      *
-     * <p>Response: {@code {sdPrompt, promptLocked:false, updated, compositionUpdated[, compositionObjectId][, error]}}
-     * — the same partial-write shape as {@code PUT …/prompt}: a refused page-composition write after the scene
-     * copy landed is a 200 with {@code compositionUpdated:false} and the refusal in {@code error}.
+     * <p>Response: {@code {sdPrompt, promptLocked:false, updated, compositionUpdated, sceneUpdated[, compositionObjectId][, error]}}
+     * — the same shape as {@code PUT …/prompt} (P4-10): {@code updated} is the page composition write
+     * ({@code compositionUpdated} its alias), {@code sceneUpdated} the scene mirror; a refused scene mirror
+     * after the composition landed is a 200 with {@code sceneUpdated:false} and the refusal in {@code error}.
+     * A scene of a story book is a 409.
      */
     @RolesAllowed({"admin", "user"})
     @POST

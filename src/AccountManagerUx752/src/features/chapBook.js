@@ -449,9 +449,9 @@ function mergeSceneOverlay(overlay, existingOverride) {
 
 // Regenerate ONE scene's landscape (SD) prompt via the LLM — prompt ONLY, no image is produced.
 // Contract: POST /rest/olio/chap-book/scene/{sceneObjectId}/prompt/regenerate, body { chatConfig? },
-// 200 → { sdPrompt: "<new prompt>", promptLocked: false, updated, compositionUpdated[, compositionObjectId][, error] }
-// — the P4-8 prompt-write shape (see promptWriteOutcome): the scene copy and the page composition are
-// reported separately, and a refused composition write is a 200 with compositionUpdated:false + error.
+// 200 → { sdPrompt: "<new prompt>", promptLocked: false, updated, compositionUpdated, sceneUpdated[, compositionObjectId][, error] }
+// — the prompt-write shape (see promptWriteOutcome): the page composition (the authority since P4-10) and
+// the scene mirror are reported separately; a refused scene mirror is a 200 with sceneUpdated:false + error.
 async function regenerateScenePrompt(sceneObjectId, chatConfigName) {
     let body = {};
     if (chatConfigName) body.chatConfig = chatConfigName;
@@ -471,19 +471,24 @@ async function regenerateScenePrompt(sceneObjectId, chatConfigName) {
     return (await resp.json()) || {};
 }
 
-// Classify a P4-8 prompt-write body ({ updated, compositionUpdated, promptLocked[, compositionObjectId][, error] })
+// Classify a prompt-write body ({ updated, compositionUpdated, sceneUpdated, promptLocked[, compositionObjectId][, error] })
 // from PUT …/prompt or POST …/prompt/regenerate into the toast to show. Both routes answer 200 for every
-// outcome, so the flags decide: updated:false → nothing landed (error; the prompt stays dirty);
-// updated:true + compositionUpdated:false → the scene copy landed but the page composition was refused
-// (warn, with the server's reason verbatim — never swallowed); otherwise success. Absent flags (an empty
-// body) read as success so a missing key never fabricates a failure. `verb` is 'saved' or 'regenerated'.
+// outcome, so the flags decide: updated:false → nothing landed (error; the prompt stays dirty). Since P4-10
+// the page composition is the authority and `updated` means it was written (`compositionUpdated` is its
+// alias); `sceneUpdated:false` means the scene mirror was refused — a warn naming the scene copy, with the
+// server's reason verbatim. The pre-P4-10 shape (compositionUpdated:false) still reads as a warn naming the
+// composition so an older server is never read as success. Absent flags (an empty body) read as success so
+// a missing key never fabricates a failure. `verb` is 'saved' or 'regenerated'.
 function promptWriteOutcome(res, verb) {
     res = res || {};
     verb = verb || 'saved';
     let reason = res.error ? ': ' + res.error : '';
     if (res.updated === false) return { level: 'error', message: 'Prompt was not ' + verb + reason };
-    if (res.compositionUpdated === false || res.error) {
+    if (res.compositionUpdated === false) {
         return { level: 'warn', message: 'Prompt ' + verb + ', composition not updated' + reason };
+    }
+    if (res.sceneUpdated === false || res.error) {
+        return { level: 'warn', message: 'Prompt ' + verb + ', scene copy not updated' + reason };
     }
     return { level: 'success', message: 'Prompt ' + verb };
 }
@@ -3199,9 +3204,10 @@ async function putSceneConfigOverride(sceneObjectId, configOverrideString) {
 // putSceneConfigOverride — same fetch idiom, PUT to the fixed backend contract at
 // /rest/olio/chap-book/scene/{oid}/prompt with body { sdPrompt }. A null / blank value CLEARS the
 // stored prompt (the backend treats absent / JSON-null / blank as a clear); a non-blank value is stored
-// exactly as given. Returns the P4-8 prompt-write body
-// { updated, compositionUpdated, promptLocked[, compositionObjectId][, error] } — callers must classify it
-// with promptWriteOutcome: a 200 can mean nothing landed (updated:false) or a partial write.
+// exactly as given. Returns the prompt-write body
+// { updated, compositionUpdated, sceneUpdated, promptLocked[, compositionObjectId][, error] } — callers must
+// classify it with promptWriteOutcome: a 200 can mean nothing landed (updated:false) or a partial write
+// (the composition landed, the scene mirror did not).
 async function putSceneLandscapePrompt(sceneObjectId, sdPrompt) {
     let value = (sdPrompt == null || !String(sdPrompt).trim()) ? null : sdPrompt;
     let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/prompt', {
@@ -3481,8 +3487,8 @@ async function doSavePagePrompt(idx) {
 // keyed by scene objectId — scene UUIDs never collide with poem UUIDs). On success replaces the card's
 // in-memory sdPrompt from the response (and clears any pending sdPrompt dirty flag, since the persisted
 // value is now authoritative). A 503 (no org chat config) is surfaced as a warning toast, not a silent
-// no-op; a 200 whose page-composition write was refused (compositionUpdated:false) is a warning naming
-// the reason, not a success. Deliberately NOT the poem-level /analyze — a scene keeps no link to its
+// no-op; a 200 whose scene mirror was refused (sceneUpdated:false — the page composition is the authority)
+// is a warning naming the reason, not a success. Deliberately NOT the poem-level /analyze — a scene keeps no link to its
 // source poem.
 async function doRegeneratePagePrompt(idx) {
     let scene = reviewScenes[idx];
