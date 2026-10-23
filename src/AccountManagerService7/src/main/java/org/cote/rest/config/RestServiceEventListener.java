@@ -39,6 +39,7 @@ import org.cote.accountmanager.olio.llm.OllamaModelUtil;
 import org.cote.accountmanager.util.LLMConnectionManager;
 import org.cote.accountmanager.util.ServerConfigUtil;
 import org.cote.accountmanager.util.StreamUtil;
+import org.cote.accountmanager.util.SetupUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.jaas.AM7LoginModule;
@@ -213,6 +214,32 @@ public class RestServiceEventListener implements ApplicationEventListener {
 					+ " (LiteLLM/Ollama shape). The OPENAI branch is Azure-specific: it sends the `api-key` header (not"
 					+ " Bearer — LiteLLM will 401) and `dimensions`. Use embedding.type=openai_compat with embedding.model set.");
 		}
+	}
+
+	/// Boot-time check that the store and the database agree that setup happened. The two live in
+	/// different places with different lifecycles: .setup.done sits under store.path (a host bind
+	/// mount under Docker) while the latch (SetupUtil.isSetupComplete — marker or admin credential)
+	/// is in Postgres. When the DB is replaced but the store is not, the stack comes up "half set
+	/// up": docker/entrypoint.sh and am7-docker-up see .setup.done and report the deployment as
+	/// configured and mint no token, while the latch is open and the UI routes every visitor to
+	/// /setup, which then cannot be completed. Seen 2026-10-23 when the am7-pg data volume went
+	/// missing and compose created an empty one.
+	///
+	/// ERROR only — never fail boot, never change state. The reverse disagreement (latch closed, no
+	/// .setup.done) is normal for bare Tomcat and for stores provisioned before the setup page
+	/// existed, so it is deliberately silent. isSetupComplete() fails closed (true) on a read error,
+	/// so an unreadable DB cannot produce this message.
+	public static void warnOnSetupStateMismatch(boolean storeSetupDone, boolean dbSetupComplete, String storePath) {
+		if (!storeSetupDone || dbSetupComplete) {
+			return;
+		}
+		logger.error("**** SETUP STATE MISMATCH: " + storePath + "/" + org.cote.rest.services.Setup.SETUP_DONE_FILE
+				+ " says setup was completed, but the database has no setup marker and no administrator credential."
+				+ " The database was most likely replaced or re-initialized (e.g. a missing Docker volume recreated empty)"
+				+ " while the store was kept. The UI will route to /setup, and setup cannot be completed because no token"
+				+ " is minted while " + org.cote.rest.services.Setup.SETUP_DONE_FILE + " exists. Restore the database from a"
+				+ " backup, or do a deliberate full reset of BOTH the database and the store (the keystores in the store"
+				+ " belong to the old database). See aiDocs/dockerDevSetup.md section 7.");
 	}
 
 	private void testVectorStore(IOContext ioContext, OrganizationContext octx) {
@@ -401,6 +428,8 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		props.setRepairColumnTypes(repairColTypes);
 		try {
 			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
+			warnOnSetupStateMismatch(path != null && new File(path, org.cote.rest.services.Setup.SETUP_DONE_FILE).exists(),
+					SetupUtil.isSetupComplete(), path);
 			String authToken = context.getInitParameter("embedding.authorizationToken");
 			if (authToken != null && authToken.length() == 0) authToken = null;
 			/// Deployment server URLs are DB-backed (ServerConfigUtil) with the web.xml init-param

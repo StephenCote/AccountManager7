@@ -569,8 +569,23 @@ destroys a throwaway container plus its bind-mounted directory and its Postgres 
 Since 2026-10-10 the **database is in the named volume `am7test_am7-test-pg`, not `docker-data/pg`**:
 a Docker Desktop for Windows bind mount is served over 9p and Postgres PANICs on WAL writes under
 load (`PANIC: could not write to file "pg_wal/xlogtemp.NN": Interrupted system call`, followed by
-6-8 minute crash recoveries — hit twice during the 2026-10-10 Playwright full gate). The old
-`docker-data/pg` directory is no longer read; migration recipe in the `docker-compose.test.yml` header.
+6-8 minute crash recoveries — hit twice during the 2026-10-10 Playwright full gate).
+
+**Since 2026-10-23 that volume is `external`.** On 2026-10-23 the volume was found missing at boot
+(cause not determined); compose silently created an empty one, so the stack came up with a fresh
+`/System` and no admin password while `docker-data/am7/store/.setup.done` still said "configured". The
+console reported setup complete, the UI routed to `/setup`, and setup could not be finished because no
+token is minted while `.setup.done` exists. Everything written between 2026-10-10 and 2026-10-23 was
+lost. Now:
+- compose **refuses** to start without the volume (`external volume "am7test_am7-test-pg" not found`)
+  and `down -v` **does not** remove it;
+- `am7-docker-up.bat`/`.sh` create it, but **only** when the store has no `.setup.done` (a genuine first
+  run). With `.setup.done` present they stop with restore instructions instead;
+- Service7 logs `**** SETUP STATE MISMATCH` at boot if `.setup.done` exists but the DB has no setup
+  marker and no admin credential.
+
+`docker-data/pg` is the pre-migration cluster (clean shutdown 2026-10-10 17:09Z) and was used to
+re-seed the volume on 2026-10-23. It is the only backup of that state — **do not delete it.**
 
 ```powershell
 Set-Location C:\Projects\GitHub\AccountManager7\src
@@ -578,17 +593,33 @@ docker compose -p am7test -f docker-compose.test.yml down
 
 # keep the old state rather than deleting it; docker-data* is git-ignored
 Move-Item docker-data ("docker-data.reset-" + (Get-Date -Format yyyyMMdd))
-# the DB volume has to go with it (keystores and DB org records are a matched pair, see below)
+# the DB volume has to go with it (keystores and DB org records are a matched pair, see below);
+# it is external, so this is the ONLY way it is removed
 docker volume rm am7test_am7-test-pg
 
-docker compose -p am7test -f docker-compose.test.yml up -d
-# then §3 and §4 again
+.\am7-docker-up.bat         # recreates the volume (no .setup.done any more), then §3 and §4 again
+# or, with raw compose:  docker volume create am7test_am7-test-pg; docker compose ... up -d
 ```
 
-To discard everything instead of keeping the host dir: `docker compose -p am7test -f
-docker-compose.test.yml down -v` (removes every named volume the project declares — including
-`ollama-models` and the Langfuse volumes when those profiles are active) then
-`Remove-Item docker-data -Recurse -Force` (not `rm -rf`).
+To discard everything instead of keeping the host dir: `down -v` (removes the `ollama-models` and
+Langfuse volumes when those profiles are active, but **not** the external DB volume), then
+`docker volume rm am7test_am7-test-pg` and `Remove-Item docker-data -Recurse -Force` (not `rm -rf`).
+
+### Recovery: the browser shows `/setup` but the console says setup is complete
+
+That is the DB/store mismatch above: check `GET /AccountManagerService7/rest/setup/state` (port 9443)
+and the boot log for `SETUP STATE MISMATCH`. Do **not** delete `.setup.done` to get a token. That
+would provision new orgs whose keys collide with the old keystores. Restore the DB instead, with
+`am7-pg` and `am7` stopped:
+
+```powershell
+docker run --rm -v am7test_am7-test-pg:/to -v "C:/Projects/GitHub/AccountManager7/src/docker-data/pg:/from:ro" alpine `
+  sh -c "find /to -mindepth 1 -delete && cp -a /from/. /to/ && chown -R 999:999 /to && chmod 700 /to"
+docker start am7-pg; docker start am7test-am7-1
+```
+
+(`999` is the `postgres` uid in the `am7-pg` image; check with `docker run --rm --entrypoint id am7-pg:latest postgres`.)
+Substitute a newer backup for `docker-data/pg` if you have one.
 
 Omit `--build` on the restart if the source tree is mid-change and you want the current image.
 
@@ -670,7 +701,7 @@ never `olio.llm.connection`; see `ConnectionRefactorPlan.md` "Status 2026-10-07"
 
 | Path A host path | Container path | Holds |
 |---|---|---|
-| named volume `am7test_am7-test-pg` (was `docker-data/pg` until 2026-10-10 — 9p bind mount PANICs Postgres, see §7) | `/var/lib/postgresql/data` | the database |
+| **external** named volume `am7test_am7-test-pg` (was `docker-data/pg` until 2026-10-10 — 9p bind mount PANICs Postgres; external since 2026-10-23, see §7) | `/var/lib/postgresql/data` | the database |
 | `docker-data/am7` | `/data/am7` | **org keystores** (`store/.jks/{orgId}`, `store/.vault/{orgId}`), `store/.streams`, `datagen/`, `sessions/`, setup sentinels |
 | `docker-data/certs` | `/etc/am7/certs` | the self-signed TLS pair nginx + Tomcat share |
 

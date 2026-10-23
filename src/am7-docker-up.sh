@@ -198,6 +198,8 @@ export OLLAMA_HOST_PORT
 # Honour AM7_DATA_DIR the same way the compose file does (default ./docker-data).
 AM7_DATA_ROOT="${AM7_DATA_DIR:-$SRC_DIR/docker-data}"
 STORE_DIR="$AM7_DATA_ROOT/am7/store"
+# Must match the `name:` of the external am7-test-pg volume in docker-compose.test.yml.
+PG_VOLUME="am7test_am7-test-pg"
 # Records which embedding provider a data volume was last booted with. See the
 # sticky-provider WARN below.
 EMBED_MARKER="$AM7_DATA_ROOT/.embedding-provider"
@@ -386,6 +388,38 @@ dc_all() {
     ${CA_FILE_ARGS[@]+"${CA_FILE_ARGS[@]}"} \
     ${ENVFILE_ARGS[@]+"${ENVFILE_ARGS[@]}"} \
     "${ALL_PROFILES[@]}" "$@"
+}
+
+# The am7-pg data volume is `external` in docker-compose.test.yml (2026-10-23), so
+# compose refuses to start without it instead of silently initializing an empty DB -
+# which is how a missing volume once wiped two weeks of data while .setup.done still
+# said "configured" and the UI routed to /setup with no token to finish it. Create it
+# here ONLY for a genuine first run (no .setup.done in the store); a configured store
+# with no volume means the DB is gone, and that must stop the run, not be papered over.
+# (The sudo fallback mirrors store_exists below: on Linux the store is often root-owned.)
+ensure_pg_volume() {
+  docker volume inspect "$PG_VOLUME" >/dev/null 2>&1 && return 0
+  if [ -e "$STORE_DIR/.setup.done" ] || \
+     { command -v sudo >/dev/null 2>&1 && sudo -n test -e "$STORE_DIR/.setup.done" 2>/dev/null; }; then
+    cat >&2 <<EOF
+
+ERROR: the database volume $PG_VOLUME does not exist, but this store is already
+       configured ($STORE_DIR/.setup.done). Starting now would create an EMPTY
+       database that does not match the keystores in $AM7_DATA_ROOT/am7.
+       - Restore the volume from a backup ($AM7_DATA_ROOT/pg holds the 2026-10-10 snapshot):
+           docker volume create $PG_VOLUME
+           docker run --rm -v $PG_VOLUME:/to -v "$AM7_DATA_ROOT/pg":/from:ro alpine \\
+             sh -c 'cp -a /from/. /to/ && chown -R 999:999 /to && chmod 700 /to'
+       - Or do a deliberate full reset: delete $AM7_DATA_ROOT/am7 too, then re-run this script.
+       See aiDocs/dockerDevSetup.md section 7.
+EOF
+    return 1
+  fi
+  echo " First run: creating the database volume $PG_VOLUME ..."
+  if ! docker volume create "$PG_VOLUME" >/dev/null; then
+    echo "ERROR: 'docker volume create $PG_VOLUME' failed." >&2
+    return 1
+  fi
 }
 
 echo "============================================================"
@@ -596,6 +630,8 @@ if [ -n "$LLMPROXY_ONLY" ]; then
   else
     echo "[1/2] Starting the LiteLLM/Langfuse stack only (no app, no build, no seed) ..."
   fi
+  # am7-pg comes along via depends_on (it hosts litellmdb), so the volume guard applies here too.
+  ensure_pg_volume || exit 1
   if ! dc up -d "${SIDECAR_SERVICES[@]}"; then
     echo "ERROR: 'docker compose up' failed." >&2
     exit 1
@@ -665,6 +701,7 @@ fi
 
 echo
 echo "[3/4] Starting containers ..."
+ensure_pg_volume || exit 1
 # --app-only names the two services explicitly; the default (no flag) brings up
 # whatever the file defines outside a profile, which today is exactly these two
 # plus nothing else. Naming them keeps --app-only honest if a non-profile service

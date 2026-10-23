@@ -118,6 +118,8 @@ set "PROJECT=am7test"
 set "COMPOSE_FILE=docker-compose.test.yml"
 set "SRC_DIR=%~dp0"
 set "STORE_DIR=%SRC_DIR%docker-data\am7\store"
+REM  Must match the `name:` of the external am7-test-pg volume in docker-compose.test.yml.
+set "PG_VOLUME=am7test_am7-test-pg"
 
 REM  Every optional compose profile this project defines. Lifecycle actions (--stop,
 REM  --start, ps, the `down` advice) must name ALL of them: compose only acts on
@@ -410,6 +412,12 @@ REM  the Ollama pair is added to the list.
 set "SIDECAR_SERVICES=litellm langfuse-web langfuse-worker"
 if defined OLLAMA set "SIDECAR_SERVICES=%SIDECAR_SERVICES% ollama ollama-init"
 if defined LLMPROXY_ONLY (
+    REM  am7-pg comes along via depends_on (it hosts litellmdb), so the volume guard applies here too.
+    call :ensurepgvolume
+    if errorlevel 1 (
+        popd
+        exit /b 1
+    )
     echo [1/2] Starting the LiteLLM/Langfuse stack only ^(no app, no build, no seed^): %SIDECAR_SERVICES% ...
     docker compose -p %PROJECT% -f %COMPOSE_FILE% %CA_FILE_ARGS% %EXTRA_FILE_ARGS% %ENVFILE_ARGS% %PROFILE_ARGS% up -d %SIDECAR_SERVICES%
     if errorlevel 1 (
@@ -474,6 +482,11 @@ if errorlevel 1 (
 
 echo.
 echo [3/4] Starting containers ...
+call :ensurepgvolume
+if errorlevel 1 (
+    popd
+    exit /b 1
+)
 REM  --app-only names the two services explicitly; the default (no flag) brings up
 REM  whatever the file defines outside a profile, which today is exactly these two
 REM  plus nothing else. Naming them keeps --app-only honest if a non-profile service
@@ -563,6 +576,35 @@ popd
 endlocal
 REM  MUST exit here: without it execution falls straight through into :usage and
 REM  every successful run prints the help block.
+exit /b 0
+
+REM  The am7-pg data volume is `external` in docker-compose.test.yml (2026-10-23), so
+REM  compose refuses to start without it instead of silently initializing an empty DB -
+REM  which is how a missing volume once wiped two weeks of data while .setup.done still
+REM  said "configured" and the UI routed to /setup with no token to finish it. Create it
+REM  here ONLY for a genuine first run (no .setup.done in the store); a configured store
+REM  with no volume means the DB is gone, and that must stop the run, not be papered over.
+:ensurepgvolume
+docker volume inspect %PG_VOLUME% >nul 2>&1
+if not errorlevel 1 exit /b 0
+if exist "%STORE_DIR%\.setup.done" (
+    echo.
+    echo ERROR: the database volume %PG_VOLUME% does not exist, but this store is already
+    echo        configured ^(%STORE_DIR%\.setup.done^). Starting now would create an EMPTY
+    echo        database that does not match the keystores in docker-data\am7.
+    echo        - Restore the volume from a backup ^(docker-data\pg holds the 2026-10-10 snapshot^):
+    echo            docker volume create %PG_VOLUME%
+    echo            docker run --rm -v %PG_VOLUME%:/to -v "%SRC_DIR%docker-data\pg":/from:ro alpine sh -c "cp -a /from/. /to/ && chown -R 999:999 /to && chmod 700 /to"
+    echo        - Or do a deliberate full reset: delete docker-data\am7 too, then re-run this script.
+    echo        See aiDocs\dockerDevSetup.md section 7.
+    exit /b 1
+)
+echo  First run: creating the database volume %PG_VOLUME% ...
+docker volume create %PG_VOLUME% >nul
+if errorlevel 1 (
+    echo ERROR: `docker volume create %PG_VOLUME%` failed.
+    exit /b 1
+)
 exit /b 0
 
 :lifecycleerr

@@ -22,17 +22,23 @@
 # followed by 6-8 minute crash recoveries. A named volume is a real ext4 filesystem and does
 # not do that. The DB and the keystores under ${AM7_DATA_DIR}/am7 are STILL a matched pair
 # (see "Never delete docker-data/am7 while keeping the DB" in aiDocs/dockerDevSetup.md) — a
-# full reset must now remove BOTH the host dir AND the volume, see below.
+# full reset must now remove BOTH the host dir AND the volume, see below. The volume is
+# `external` since 2026-10-23 -- see the am7-pg `volumes:` comment for why (data loss).
 #
 # Usage (explicit project name keeps its network separate from the main compose project):
 #   docker compose -p am7test -f docker-compose.test.yml up --build
 #   docker compose -p am7test -f docker-compose.test.yml down          # stop; data kept
 #   # full reset: stop, delete the host data dir AND the pg volume (matched pair):
-#   docker compose -p am7test -f docker-compose.test.yml down -v; rm -rf ./docker-data
-#   # `down -v` removes every named volume this project declares (am7-test-pg and, when the
-#   # profile is active, the llmproxy/ollama ones below). To reset ONLY the DB + keystores
-#   # and keep the Ollama model cache / Langfuse data: `down`, then
-#   #   docker volume rm am7test_am7-test-pg; rm -rf ./docker-data/am7
+#   docker compose -p am7test -f docker-compose.test.yml down
+#   docker volume rm am7test_am7-test-pg; rm -rf ./docker-data/am7
+#   # am7-pg's volume is EXTERNAL (since 2026-10-23, see the am7-pg `volumes:` comment), so
+#   # `down -v` does NOT remove it -- the `docker volume rm` above is the only way, and that
+#   # is deliberate. A missing volume makes `up` fail ("external volume ... not found")
+#   # rather than initialize an empty DB; am7-docker-up.bat/.sh recreate it, but only when
+#   # docker-data/am7/store has no .setup.done. With raw compose, recreate it yourself:
+#   #   docker volume create am7test_am7-test-pg
+#   # `down -v` still removes the llmproxy/ollama named volumes below when their profile
+#   # is active.
 #   # The `llmproxy` profile's langfuse-clickhouse and langfuse-minio are also NAMED volumes
 #   # (they commit by atomic rename, which fails on a Docker Desktop Windows bind mount):
 #   #   docker compose -p am7test -f docker-compose.test.yml --profile llmproxy down -v
@@ -142,10 +148,23 @@ services:
       # The DB lives in a NAMED volume, not under AM7_DATA_DIR — see the header for why
       # (a Windows bind mount is served over 9p and PANICs Postgres on WAL writes under
       # load). It was `${AM7_DATA_DIR:-./docker-data}/pg:/var/lib/postgresql/data` until
-      # 2026-10-10; the existing cluster was copied into the volume with
-      #   docker run --rm --volumes-from am7-pg -v am7test_am7-test-pg:/to alpine \
-      #     sh -c 'cp -a /var/lib/postgresql/data/. /to/'
-      # (am7-pg stopped first). The old ./docker-data/pg dir is no longer read.
+      # 2026-10-10, when the cluster was copied into the volume and the stack ran on it.
+      #
+      # 2026-10-23: that volume was found MISSING at boot (cause not determined -- the Docker
+      # event log had rolled over), so compose silently created an empty one, initdb ran, and
+      # Service7 provisioned a fresh /System with no admin password while the store's
+      # .setup.done still said "configured" -- the UI routed to /setup with no token to finish
+      # it. Everything written between 2026-10-10 and 2026-10-23 was lost. The volume was
+      # re-seeded from the old ./docker-data/pg (a clean 2026-10-10 17:09Z shutdown, i.e. the
+      # PRE-migration snapshot), so ./docker-data/pg is now the only backup of that state:
+      # do not delete it.
+      #
+      # The volume is therefore `external` (top-level `volumes:` below): compose will REFUSE
+      # to start when it is missing instead of creating an empty one, and `down -v` no longer
+      # removes it. am7-docker-up.bat/.sh create it, but only when the store has no
+      # .setup.done (a genuine first run). Raw `docker compose up` on a fresh machine needs
+      #   docker volume create am7test_am7-test-pg
+      # first.
       #
       # The container path is NOT arbitrary and must not be "modernised" to match
       # the pg18 base image's own PGDATA (/var/lib/postgresql/18/docker): our
@@ -994,7 +1013,12 @@ volumes:
   # profiles use named volumes; everything else in this file is bind-mounted under
   # AM7_DATA_DIR on purpose. See the header (am7-pg) and the comments on
   # langfuse-clickhouse and ollama for why these are the exceptions.
+  # EXTERNAL on purpose (2026-10-23): a missing DB volume must be a hard error, never a
+  # silently-initialized empty database. See the am7-pg `volumes:` comment. `name:` pins the
+  # pre-existing project-prefixed volume, since external volumes are not project-prefixed.
   am7-test-pg:
+    external: true
+    name: am7test_am7-test-pg
   langfuse-clickhouse-data:
   langfuse-clickhouse-logs:
   langfuse-minio-data:

@@ -125,6 +125,10 @@ because a Docker Desktop for Windows bind mount is served over 9p and Postgres P
 under load (`Interrupted system call`, then 6-8 minute crash recoveries — hit twice in one Playwright
 full gate). Consequence: a reset is `down` + `docker volume rm am7test_am7-test-pg` + move/delete
 `docker-data` (keystores and DB org records are a matched pair); recipes in `dockerDevSetup.md` §7.
+**Since 2026-10-23 the volume is `external`** (`name: am7test_am7-test-pg`): it went missing and compose
+silently created an empty one, losing 2026-10-10..23 and stranding the UI on `/setup`. Compose now
+refuses to start without it and `down -v` leaves it alone; the up-scripts create it only when the
+store has no `.setup.done`, and Service7 logs `SETUP STATE MISMATCH` when the two disagree.
 
 ```bash
 # build images + start the app and the dedicated am7-pg pgvector container
