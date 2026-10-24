@@ -24,5 +24,5 @@ Service7 is pure transport over this facade.
 ## Design & reference docs
 
 - `../aiDocs/ISO42001/` — full ISO 42001 design/bias/implementation doc set (see its `README.md` index).
-- `../aiDocs/ISO42001Plan.md` — compliance dashboard design & implementation plan.
+- `../aiDocs/archive/ISO42001Plan.md` — compliance dashboard design & implementation plan (archived; superseded by the `ISO42001/` subdir).
 - `../AccountManagerUx752/aiDocs/Iso42001UxGapAnalysis.md` — UX gap analysis + backend backlog.

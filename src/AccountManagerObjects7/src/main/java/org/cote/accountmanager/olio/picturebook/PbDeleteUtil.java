@@ -201,6 +201,57 @@ public class PbDeleteUtil {
 	}
 
 	/**
+	 * Delete every composition whose {@code scene} FK points at {@code scene} — any purpose — each one child→parent
+	 * ({@link #deleteCompositionTree}), as {@code actor} through {@code AccessPoint}. Stops at the first row that is not
+	 * deleted so the caller can refuse the scene delete instead of leaving a half-torn page behind.
+	 *
+	 * @return {@code null} when every row was deleted, else the first failing per-row result — its {@code authorized}
+	 *         flag tells a PBAC refusal from a persistence failure, which the aggregate {@code res} never records
+	 */
+	static DeleteResult deleteCompositionsByScene(BaseRecord actor, BaseRecord scene, long orgId, DeleteResult res) {
+		for (BaseRecord comp : findByFk(OlioModelNames.MODEL_PB_COMPOSITION, OlioFieldNames.FIELD_PB_SCENE, scene, orgId)) {
+			DeleteResult failed = deleteCompositionTree(actor, comp, orgId, res);
+			if (failed != null) {
+				return failed;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Delete one composition child→parent: its scene elements, then its scene actors (the composition's
+	 * {@code focalActor} FK points at one of them), then the composition itself.
+	 *
+	 * @return {@code null} on success, else the first failing per-row result
+	 */
+	static DeleteResult deleteCompositionTree(BaseRecord actor, BaseRecord comp, long orgId, DeleteResult res) {
+		int n = 0;
+		for (BaseRecord el : findByFk(OlioModelNames.MODEL_PB_SCENE_ELEMENT, OlioFieldNames.FIELD_PB_COMPOSITION, comp, orgId)) {
+			DeleteResult d = deleteOneExplained(actor, el, res);
+			if (d != null) return d;
+			n++;
+		}
+		for (BaseRecord ac : findByFk(OlioModelNames.MODEL_PB_SCENE_ACTOR, OlioFieldNames.FIELD_PB_COMPOSITION, comp, orgId)) {
+			DeleteResult d = deleteOneExplained(actor, ac, res);
+			if (d != null) return d;
+			n++;
+		}
+		DeleteResult d = deleteOneExplained(actor, comp, res);
+		if (d != null) return d;
+		res.step("compositionTree", OlioModelNames.MODEL_PB_COMPOSITION, n + 1, true, null);
+		return null;
+	}
+
+	private static DeleteResult deleteOneExplained(BaseRecord actor, BaseRecord rec, DeleteResult res) {
+		DeleteResult d = PictureBookUtil.deleteRecordExplained(actor, rec);
+		if (!d.deleted) {
+			fail(res, d.reason);
+			return d;
+		}
+		return null;
+	}
+
+	/**
 	 * Delete one workflow and everything hanging off it: bindings (by node and by sourceNode), artifacts
 	 * (by producedByNode), runs, nodes, then the workflow row.
 	 */

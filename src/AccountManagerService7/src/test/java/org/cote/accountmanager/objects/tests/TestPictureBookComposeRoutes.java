@@ -811,4 +811,112 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			cleanup(f);
 		}
 	}
+
+	/// P4-12: the synchronous per-scene route on a NEVER-composed scene whose legacy sdPrompt is locked, with the LLM
+	/// unreachable (no `generalChat` resolvable - asserted). The facade composes migrate-first: the MIGRATED row is
+	/// written from the scene's own fields BEFORE the LLM attempt (the only path that copies sdPrompt -> promptOverride
+	/// and keeps promptLocked), and the LLM miss over it is NOT the "existing composition left untouched" hardFailure
+	/// the raw compose reports - the MIGRATED row stands and the body says so: written, migratedFallback, migratedFirst,
+	/// source MIGRATED, failureReason "...stands". This fixture scene has no render node, so nodeStale is false (present:
+	/// booleans survive NON_EMPTY) and nodeStatus is null (ABSENT on the wire, see the class WIRE NOTE). A second POST
+	/// finds the row: the plain hardFailure, nothing re-migrated (migratedFirst false), revision still 1, nothing staled.
+	@Test
+	public void TestOwnerComposeSceneMigratesLockedPromptFirst() throws Exception {
+		Fixture f = createWorldBook(false);
+		try {
+			HttpServletRequestMock o = requestAs(owner);
+			v3();
+			assertNull("precondition: this case relies on no 'generalChat' chat config being resolvable as the owner on this harness",
+				ChatUtil.resolveConfig(owner, OlioModelNames.MODEL_CHAT_CONFIG, "generalChat", null));
+			BaseRecord scene = addScene(f, 1);
+			String sceneOid = oid(scene);
+			String token = "PBTOKEN-" + UUID.randomUUID().toString().substring(0, 8);
+			String lockedPrompt = "rain on the shutters, a fiddler tuning up, lantern light, " + token;
+			BaseRecord lock = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE, new String[] {
+				FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED });
+			lock.set(FieldNames.FIELD_ID, scene.get(FieldNames.FIELD_ID));
+			lock.set(FieldNames.FIELD_OBJECT_ID, sceneOid);
+			lock.set(FieldNames.FIELD_NAME, scene.get(FieldNames.FIELD_NAME));
+			lock.set(OlioFieldNames.FIELD_CB_SD_PROMPT, lockedPrompt);
+			lock.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.TRUE);
+			assertNotNull("locked legacy prompt patch must persist", IOSystem.getActiveContext().getAccessPoint().update(owner, lock));
+			BaseRecord locked = PbBookUtil.readScene(owner, sceneOid, orgId);
+			assertNotNull("locked page must read back", locked);
+			assertEquals("precondition: sdPrompt stored", lockedPrompt, locked.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("precondition: promptLocked stored", Boolean.TRUE, locked.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			BaseRecord book = PbBookUtil.readBook(owner, f.bookOid, orgId);
+			assertNotNull("the world book must read back as the owner", book);
+			Long bookGroupId = book.get(FieldNames.FIELD_GROUP_ID);
+			assertNotNull("book group", bookGroupId);
+			assertNull("precondition: the scene has never been composed", PbComposeUtil.findSceneComposition(owner, locked, bookGroupId.longValue(), orgId));
+
+			/// 1. migrate-first: the MIGRATED row stands over the LLM miss
+			long t0 = System.currentTimeMillis();
+			Map<String, Object> one = ok(service.composeScene(f.bookOid, sceneOid, "{}", o, NO_SD_CONTEXT), "migrate-first scene compose");
+			logger.info("[p412-route] compose 1 (" + (System.currentTimeMillis() - t0) + " ms, recorded not asserted): " + one);
+			assertEquals(f.bookOid, one.get("bookObjectId"));
+			assertEquals(sceneOid, one.get("sceneObjectId"));
+			assertEquals(1, num(one, "sceneIndex"));
+			assertEquals("P4-12: the MIGRATED row written first is the outcome, so it IS written", Boolean.TRUE, one.get("written"));
+			assertEquals("P4-12: reported as the MIGRATED fallback over the LLM miss", Boolean.TRUE, one.get("migratedFallback"));
+			assertEquals("P4-12: the body says the migration ran first", Boolean.TRUE, one.get("migratedFirst"));
+			assertEquals("P4-12: not the raw 'existing composition left untouched' hard failure", Boolean.FALSE, one.get("hardFailure"));
+			assertEquals(Boolean.FALSE, one.get("skippedUserEdited"));
+			assertEquals(Boolean.FALSE, one.get("cancelled"));
+			assertEquals("MIGRATED", one.get("source"));
+			String reason = String.valueOf(one.get("failureReason"));
+			assertTrue("the reason names the LLM miss and says the MIGRATED row stands: " + reason, reason.contains("LLM unavailable") && reason.endsWith("stands"));
+			assertTrue("the reason is also a warning: " + one.get("warnings"), strings(list(one, "warnings")).contains(reason));
+			assertTrue("nodeStale is on the wire even when false", one.containsKey("nodeStale"));
+			assertEquals("no render node on this fixture scene, so nothing was staled", Boolean.FALSE, one.get("nodeStale"));
+			assertNull("no render node: nodeStatus is null, which NON_EMPTY leaves off the wire", one.get("nodeStatus"));
+			String compOid = String.valueOf(one.get("compositionObjectId"));
+			assertNotEquals("the MIGRATED composition is reported", "null", compOid);
+			Map<String, Object> comp = map(one, "composition");
+			assertEquals(compOid, comp.get("objectId"));
+			assertEquals("MIGRATED", comp.get("source"));
+			assertEquals("SCENE", comp.get("purpose"));
+			assertEquals("a fresh MIGRATED row is revision 1", 1, num(comp, "revision"));
+			assertEquals("P4-12: the lock rode onto the composition", Boolean.TRUE, comp.get("promptLocked"));
+			String override = String.valueOf(comp.get("promptOverride"));
+			assertTrue("P4-12: promptOverride carries the token: " + override, override.contains(token));
+			assertEquals("promptOverride is the scene's sdPrompt verbatim", lockedPrompt, override);
+			assertEquals(SCENE_SETTING, comp.get("settingText"));
+			assertEquals(Boolean.FALSE, comp.get("userEdited"));
+			BaseRecord stored = PbComposeUtil.readComposition(owner, compOid, orgId);
+			assertNotNull("the composition reads back as the owner", stored);
+			assertEquals("MIGRATED", String.valueOf((Object) stored.get(OlioFieldNames.FIELD_PB_SOURCE)).toUpperCase());
+			assertEquals(Integer.valueOf(1), stored.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals("stored promptOverride", lockedPrompt, stored.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals("stored promptLocked", Boolean.TRUE, stored.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertTrue("a MIGRATED, unedited scene composition still needs a real compose", PbComposeUtil.needsCompose(stored));
+
+			/// 2. the second POST finds the row: the plain hard failure, nothing re-migrated, nothing staled
+			t0 = System.currentTimeMillis();
+			Map<String, Object> two = ok(service.composeScene(f.bookOid, sceneOid, "{}", o, NO_SD_CONTEXT), "second scene compose");
+			logger.info("[p412-route] compose 2 (" + (System.currentTimeMillis() - t0) + " ms, recorded not asserted): " + two);
+			assertEquals(Boolean.FALSE, two.get("written"));
+			assertEquals(Boolean.TRUE, two.get("hardFailure"));
+			assertEquals("an existing row is never re-migrated", Boolean.FALSE, two.get("migratedFirst"));
+			assertEquals(Boolean.FALSE, two.get("migratedFallback"));
+			assertEquals(Boolean.FALSE, two.get("skippedUserEdited"));
+			assertEquals(Boolean.FALSE, two.get("nodeStale"));
+			assertNull("nothing written, no node: no status", two.get("nodeStatus"));
+			assertTrue("failureReason: " + two.get("failureReason"), String.valueOf(two.get("failureReason")).contains("existing composition left untouched"));
+			assertEquals(compOid, two.get("compositionObjectId"));
+			assertEquals("MIGRATED", two.get("source"));
+			Map<String, Object> comp2 = map(two, "composition");
+			assertEquals(compOid, comp2.get("objectId"));
+			assertEquals("the untouched row is still revision 1", 1, num(comp2, "revision"));
+			assertEquals(Boolean.TRUE, comp2.get("promptLocked"));
+			assertEquals(lockedPrompt, comp2.get("promptOverride"));
+			BaseRecord still = PbComposeUtil.readComposition(owner, compOid, orgId);
+			assertEquals(Integer.valueOf(1), still.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals(lockedPrompt, still.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals(Boolean.TRUE, still.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
 }

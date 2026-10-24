@@ -1,3 +1,5 @@
+> Archived 2026-10-23: no single superseding section; retained for history (14-issue closeout 2026-08-28; successor state is PictureBookV3Implementation.md §1).
+
 # PictureBook 2 / ChapBook Remediation Plan
 
 **Status:** OPEN — remediation not started.

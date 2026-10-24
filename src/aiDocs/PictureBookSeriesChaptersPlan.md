@@ -1,7 +1,7 @@
 # PictureBook Series / Chapters (N-series) — Implementation Plan
 
 **Status:** IN PROGRESS (2026-09-23) — authored 2026-09-20. Backend + Ux fan-out for the bounded
-per-chapter async extraction (fixes Issue 1's 90-min timeout, `IssueLog-2026-09-22.md`) is landed;
+per-chapter async extraction (fixes Issue 1's 90-min timeout, `archive/IssueLog-2026-09-22.md`) is landed;
 per-chapter scene persistence into each series chapter book (Full N-series) is being completed. Not
 yet end-to-end verified over a full multi-chapter manuscript.
 **Scope:** The "N-series" of `PictureBookWorkflowOverhaul.md` §6 (N1–N4): make series/chapters

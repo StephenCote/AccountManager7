@@ -76,6 +76,9 @@ public final class PbComposeJobUtil {
 	static final String NOTE_RESUME = "Re-submitting the compose job resumes from the first scene without a composition;"
 		+ " a Quick-start render interrupted by shutdown is reconciled by the next boot's recovery sweep.";
 
+	/** A scene whose MIGRATED composition could not be written is not LLM-composed, so its legacy prompt and lock are kept for the retry. */
+	static final String MIGRATION_FAILED_REASON = "composition migration failed for this scene; not composed so its legacy prompt and lock are kept";
+
 	/**
 	 * The live job on a claim key: who submitted it, what kind, and - once the registry has it - its id. The
 	 * key is the book's objectId for the compose and location-pass jobs and the apparel's objectId for a
@@ -544,6 +547,7 @@ public final class PbComposeJobUtil {
 		int skippedUserEdited = 0;
 		int migrated = 0;
 		int hardFailures = 0;
+		int staled = 0;
 		int pages = 0;
 		int quickStartRendered = 0;
 		int quickStartFailed = 0;
@@ -592,7 +596,7 @@ public final class PbComposeJobUtil {
 			if(existing == null && migrationFailedScenes.contains(scene.get(FieldNames.FIELD_OBJECT_ID))) {
 				hardFailures++;
 				outcome.put("status", "migrationFailed");
-				outcome.put("error", "composition migration failed for this scene; not composed so its legacy prompt and lock are kept");
+				outcome.put("error", MIGRATION_FAILED_REASON);
 				logger.warn("compose job " + slug + " scene " + idx + ": migration failed; skipping the compose");
 				tick(progress);
 				continue;
@@ -665,6 +669,12 @@ public final class PbComposeJobUtil {
 			if(idx != null) {
 				lastSceneIndex = idx.intValue();
 			}
+			// A written composition invalidates a DONE render; the Quick-start render below then runs the STALE node.
+			PbComposeUtil.staleAfterCompose(user, scene, r);
+			if(r.nodeStale) {
+				staled++;
+			}
+			outcome.put("nodeStale", Boolean.valueOf(r.nodeStale));
 
 			if(quickStart && r.isWritten()) {
 				if(progress != null) {
@@ -752,6 +762,7 @@ public final class PbComposeJobUtil {
 		result.put("skippedUserEdited", Integer.valueOf(skippedUserEdited));
 		result.put("migrated", Integer.valueOf(migrated));
 		result.put("hardFailures", Integer.valueOf(hardFailures));
+		result.put("staled", Integer.valueOf(staled));
 		result.put("pagesSkipped", Integer.valueOf(pages));
 		result.put("quickStartRendered", Integer.valueOf(quickStartRendered));
 		result.put("quickStartFailed", Integer.valueOf(quickStartFailed));
@@ -767,7 +778,7 @@ public final class PbComposeJobUtil {
 		}
 		result.put("durationMs", Long.valueOf(System.currentTimeMillis() - started));
 		logger.info("compose job " + slug + ": " + composed + " composed, " + current + " current, " + migrated + " migrated, "
-			+ hardFailures + " failed, " + pages + " page(s) skipped" + (quickStart ? ", " + quickStartRendered + " draft(s) rendered" : "")
+			+ hardFailures + " failed, " + staled + " node(s) staled, " + pages + " page(s) skipped" + (quickStart ? ", " + quickStartRendered + " draft(s) rendered" : "")
 			+ (locationPass != null ? ", location pass ran" : ", location pass skipped")
 			+ ", " + migratedCompositions + " migrated composition(s) created"
 			+ (cancelled ? " CANCELLED" : "") + (interrupted ? " INTERRUPTED" : ""));

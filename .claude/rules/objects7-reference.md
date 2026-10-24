@@ -241,6 +241,19 @@ userRole.set("parentId", customRolesGroup.get("id"));
 
 ## Olio
 
+**`CharPersonFactory` placeholders live in the creator's HOME, and PBAC follows them.** A new `olio.charPerson`
+gets its `statistics` / `instinct` / `behavior` / `personality` / `state` / `store` / `profile` placeholder rows
+created at `~/<model group>` (`CharPersonFactory.java:35-50`) — the creating user's home directory, not the
+book/world group the person is in. `PolicyUtil.getSchemaRules` (`:649`) adds a read rule for **every non-null
+foreign field whose schema has `followReference`** (the `FieldSchema` default is `true`), so a second user who was
+granted Read on the book and its world still cannot read the person while any placeholder stays HOME-rooted — the
+symptom is "record not found" on the reader side, not a denial you can grant your way out of.
+`PictureBookUtil.createCharPerson` (`:8166-8178`) detaches `profile` / `statistics` / `store` always, `instinct` /
+`personality` / `state` only when a baseline is supplied, and never `behavior`. Found 2026-10-23; the repro is the
+`TestPbPipelineDualWrite` fixture, which detaches all seven so its reader can see the imported person
+(`aiDocs/PictureBookV3Implementation.md` §6.C 201 k — whether `createCharPerson` should detach all seven is
+Stephen's open question there).
+
 **Character position needs BOTH objects.** Full coordinate resolution requires the geolocation
 record (`state.currentLocation`, type `cell`, a 100 m × 100 m space) **and** the state record
 (`state.currentEast`/`currentNorth`, 1 m resolution inside that cell). Map-system details
@@ -307,6 +320,15 @@ double cooperate = instinct.get("cooperate");
 2. Find the field definition
 3. Check the `type` property (string, int, long, double, boolean, enum, model, list, etc.)
 4. Use the correct Java type in your code
+
+**A generic `get()` handed straight to an overloaded callee binds the *most specific* overload, not the one
+you meant.** `String.valueOf(rec.get(OlioFieldNames.FIELD_PB_PURPOSE))` resolves `<T> T get(String)` against
+`valueOf(char[])` rather than `valueOf(Object)`, so javac emits a `checkcast char[]` and the String the field
+actually holds throws `ClassCastException` at runtime — on the first call, nowhere near a cast you wrote.
+Hit 2026-10-23 in `PbOrphanUtil.isSceneKeyed` (`:587-592`). Bind the inference first: `Object val = rec.get(name);`
+then `val == null ? null : val.toString()` (or an explicitly typed local such as `String p = rec.get(name);`).
+Same trap for any overload set that includes `char[]`, `Object[]` or a boxed primitive (`println`, `Objects.hash`,
+`StringBuilder.append`, `Arrays.asList`).
 
 ## Common Patterns
 

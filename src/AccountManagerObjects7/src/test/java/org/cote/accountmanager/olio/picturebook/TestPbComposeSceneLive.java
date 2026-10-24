@@ -275,6 +275,122 @@ public class TestPbComposeSceneLive extends BaseTest {
 		}
 	}
 
+	/**
+	 * P4-12: a never-composed scene with a locked legacy {@code sdPrompt} composed through the migrate-first entry
+	 * ({@link PbComposeUtil#composeSceneMigratedFirst}) against the real LLM. The MIGRATED row is written first (it
+	 * is the only path that copies {@code sdPrompt} to {@code promptOverride} and keeps {@code promptLocked}), then
+	 * the LLM stages over it: the result reports {@code migratedFirst}, the row is source LLM at revision 2, and the
+	 * locked prompt survives. A second call over the existing row delegates to the plain compose (never re-migrates)
+	 * and the lock survives that recompose too. Without a render node {@code staleAfterCompose} reports
+	 * {@code nodeStale:false, nodeStatus:null} and does not throw.
+	 */
+	@Test(timeout = 1_800_000)
+	public void composeMigratesALockedLegacyPromptFirstThenTheLlmStagesOverIt() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		BaseRecord cfg = null;
+		try {
+			cfg = OlioTestUtil.getOllamaOpenAIConfig(u, CFG_NAME + " MF", testProperties);
+			assertNotNull("chatConfig " + CFG_NAME + " MF", cfg);
+			logger.info("[p43-live-mf] route=" + testProperties.getProperty("test.llm.route") + " tier=" + testProperties.getProperty("test.llm.resolvedTier")
+				+ " server=" + testProperties.getProperty("test.llm.connection.server") + " model=" + (Object) cfg.get("model"));
+
+			bk = newBook(u, "mfirst");
+			BookContext bctx = PbBookUtil.openBookContext(u, bk);
+			assertNotNull("The book must carry a world", bctx);
+			String popPath = bctx.getGroupPath(OlioFieldNames.FIELD_POPULATION);
+			assertNotNull("Population group path", popPath);
+			BaseRecord loc = PbLocationUtil.getCreateLocation(u, bk, LOCATION_NAME, LOCATION_DESC, PbLocationKindEnumType.INTERIOR,
+				Arrays.asList("the Tankard", "the taproom"));
+			assertNotNull("getCreateLocation " + LOCATION_NAME, loc);
+
+			String token = "PBTOKEN-" + shortId();
+			String lockedPrompt = "a low-beamed tavern by the quay, rain on the shutters, lantern light, " + token;
+			BaseRecord scene = addScene(u, bk, 1, "Arrival", SETTING, ACTION, MOOD, SCENE_TEXT, loc);
+			BaseRecord lock = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+			lock.set(OlioFieldNames.FIELD_CB_SD_PROMPT, lockedPrompt);
+			lock.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.TRUE);
+			assertNotNull("lock the scene's legacy prompt", ioContext.getAccessPoint().update(u, lock));
+			scene = PbBookUtil.readScene(u, oidOf(scene), orgId);
+			assertNotNull("scene re-read", scene);
+			String storedPrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
+			assertEquals("precondition: sdPrompt stored", lockedPrompt, storedPrompt);
+			assertEquals("precondition: promptLocked stored", Boolean.TRUE, scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			BaseRecord mira = createCharPerson(u, popPath, "Mira Vale", "Mira", "Vale");
+			BaseRecord tobin = createCharPerson(u, popPath, "Tobin Ashgrove", "Tobin", "Ashgrove");
+			enrol(u, scene, mira);
+			enrol(u, scene, tobin);
+			long gid = idOf(groupOf(scene));
+			assertNull("precondition: the scene has never been composed", PbComposeUtil.findSceneComposition(u, scene, gid, orgId));
+
+			/// 1. Migrate first, then the real LLM stages over the MIGRATED row.
+			long t0 = System.currentTimeMillis();
+			ComposeResult r1 = PbComposeUtil.composeSceneMigratedFirst(u, bk, scene, cfg, false, null, null);
+			long ms1 = System.currentTimeMillis() - t0;
+			logger.info("[p43-live-mf] compose 1 migrate-first (" + ms1 + " ms): " + describe(r1) + " migratedFirst=" + r1.migratedFirst
+				+ " migratedFallback=" + r1.migratedFallback + " failureReason=" + r1.failureReason);
+			assertTrue("P4-12: the MIGRATED row was written first", r1.migratedFirst);
+			assertFalse("compose must not hard-fail: " + r1.failureReason + " " + r1.warnings, r1.hardFailure);
+			assertFalse("the real LLM must not be replaced by the MIGRATED fallback: " + r1.failureReason + " " + r1.warnings, r1.migratedFallback);
+			assertTrue(r1.isWritten());
+			assertEquals("the LLM staging superseded the MIGRATED row", PbCompositionSourceEnumType.LLM, r1.source);
+			assertEquals(CastTier.SCENE_MEMBERS, r1.castTier);
+			BaseRecord comp = r1.composition;
+			assertNotNull("a composition was written", comp);
+			String compOid = oidOf(comp);
+			assertEquals("the LLM compose replaced the MIGRATED row in place (revision 2)", Integer.valueOf(2), comp.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals(PbCompositionSourceEnumType.LLM.toString(), enumWord(comp, OlioFieldNames.FIELD_PB_SOURCE));
+			String override1 = comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+			assertNotNull("P4-12: the legacy sdPrompt rode into promptOverride through the MIGRATED write", override1);
+			assertTrue("promptOverride carries the token: " + override1, override1.contains(token));
+			assertEquals("P4-12: promptLocked survives the LLM compose", Boolean.TRUE, comp.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertTrue("at least one actor row: " + describe(r1), r1.actors.size() >= 1);
+			assertEquals("exactly one SCENE composition", compOid, oidOf(PbComposeUtil.findSceneComposition(u, scene, gid, orgId)));
+			BaseRecord stored = PbComposeUtil.readComposition(u, compOid, orgId);
+			assertNotNull("composition readable", stored);
+			Integer storedRev = stored.get(OlioFieldNames.FIELD_PB_REVISION);
+			String storedOverride = stored.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+			assertEquals("stored revision", Integer.valueOf(2), storedRev);
+			assertEquals("stored source", PbCompositionSourceEnumType.LLM.toString(), enumWord(stored, OlioFieldNames.FIELD_PB_SOURCE));
+			assertEquals("stored promptOverride", lockedPrompt, storedOverride);
+			assertEquals("stored promptLocked", Boolean.TRUE, stored.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+
+			/// No render node: the stale mark is a reported no-op, never a throw.
+			PbComposeUtil.staleAfterCompose(u, scene, r1);
+			assertFalse("no node, nothing staled", r1.nodeStale);
+			assertNull("no node, no status", r1.nodeStatus);
+
+			/// 2. The existing row is never re-migrated: the second migrate-first call is a plain compose, and the
+			/// locked prompt survives that recompose too (persist never patches promptOverride / promptLocked).
+			t0 = System.currentTimeMillis();
+			ComposeResult r2 = PbComposeUtil.composeSceneMigratedFirst(u, bk, scene, cfg, false, null, null);
+			long ms2 = System.currentTimeMillis() - t0;
+			logger.info("[p43-live-mf] compose 2 over the LLM row (" + ms2 + " ms): " + describe(r2) + " migratedFirst=" + r2.migratedFirst
+				+ " migratedFallback=" + r2.migratedFallback + " failureReason=" + r2.failureReason);
+			assertFalse("an existing row is never re-migrated", r2.migratedFirst);
+			assertFalse("compose 2 must not hard-fail: " + r2.failureReason + " " + r2.warnings, r2.hardFailure);
+			assertFalse(r2.migratedFallback);
+			assertTrue(r2.isWritten());
+			assertEquals("same composition record", compOid, oidOf(r2.composition));
+			Integer rev2 = r2.composition.get(OlioFieldNames.FIELD_PB_REVISION);
+			assertEquals("revision 3 after the recompose", Integer.valueOf(3), rev2);
+			String override2 = r2.composition.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+			assertEquals("promptOverride survives the recompose", lockedPrompt, override2);
+			assertEquals("promptLocked survives the recompose", Boolean.TRUE, r2.composition.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+
+			logger.info("[p43-live-mf] timings: migrate-first compose=" + ms1 + " ms recompose=" + ms2 + " ms (recorded, not asserted)");
+		}
+		finally {
+			deleteBook(u, bk);
+			if(cfg != null) {
+				BaseRecord conn = cfg.get("connection");
+				deleteQuietly(u, cfg);
+				deleteQuietly(u, conn);
+			}
+		}
+	}
+
 	// ─────────────────────────────── helpers ───────────────────────────────
 
 	private static boolean NarrativeUtilIsMeaningful(Object o) {

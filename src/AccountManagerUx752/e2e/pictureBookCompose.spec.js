@@ -21,6 +21,10 @@
  *                        compose-on-open is idempotent → one scene re-composed synchronously with force.
  *   PB_SD_TESTS=1      — POST /compose {quickStart:true, force:true} → every composed scene gets one DRAFT
  *                        render; the bytes come back from the MediaServlet as a real image. No timing asserted.
+ *   P4-12 (last)       — a third scene with a locked legacy sdPrompt: POST /scene/{scene}/compose writes the
+ *                        MIGRATED row first (migratedFirst), the row keeps promptOverride/promptLocked whatever
+ *                        the LLM did; with SD, a forced re-compose of a rendered scene marks its node STALE
+ *                        (nodeStale/nodeStatus on the DTO, nodeStatus on GET /pages).
  *
  * Run (Windows / Docker stack — 127.0.0.1, never localhost):
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 PB_LLM_TESTS=1 PB_SD_TESTS=1 \
@@ -98,7 +102,7 @@ async function listCompositions() {
                 { name: 'organizationId', comparator: 'equals', value: 2 }
             ],
             request: ['id', 'objectId', 'name', 'source', 'purpose', 'revision', 'userEdited', 'settingText', 'action',
-                'scene.objectId', 'scene.sceneIndex'],
+                'promptOverride', 'promptLocked', 'scene.objectId', 'scene.sceneIndex'],
             recordCount: 50, cache: false
         }
     });
@@ -563,6 +567,14 @@ test.describe('compose job: story order, idempotent re-submit, compositions, per
         // P4-10: the first-open job writes a MIGRATED row per scene (revision 1), then the loop re-composes it (revision 2).
         expect(composeResult.migration, 'migration counters: ' + JSON.stringify(composeResult)).toBeTruthy();
         expect(composeResult.migration.created, JSON.stringify(composeResult.migration)).toBe(2);
+        // P4-12: a written compose stales the scene's render node; this book has no nodes yet, so nothing to stale,
+        // and the tag pass had nothing to pin, so its outfit snapshot changed nothing.
+        expect(composeResult.staled, 'staled counter present: ' + JSON.stringify(composeResult)).toBe(0);
+        expect(composeResult.migration.tagsAffected, JSON.stringify(composeResult.migration)).toBe(0);
+        expect(composeResult.migration.tagsStaled, JSON.stringify(composeResult.migration)).toBe(0);
+        for (const s of composeResult.scenes) {
+            expect(s.nodeStale, 'scene ' + s.sceneIndex + ' nodeStale (no node yet): ' + JSON.stringify(s)).toBe(false);
+        }
         const rows = await listCompositions();
         expect(rows.length).toBe(2);
         const bySceneIndex = new Map(rows.map(c => [c.scene && c.scene.sceneIndex, c]));
@@ -682,5 +694,132 @@ test.describe('Quick start: a DRAFT render per composed scene (PB_SD_TESTS=1)', 
             n++;
         }
         expect(n).toBe(2);
+    });
+});
+
+// ────────────────────────────── P4-12: migrate-first, and a written compose stales the render ──────────────────────────────
+// Runs after the tiers above so the scene counts they assert are untouched: a third scene is only added here.
+test.describe('P4-12: per-scene compose migrates a locked legacy prompt first; a written compose stales the render node', () => {
+    test.skip(!LLM_ENABLED, 'PB_LLM_TESTS=1 not set — live LLM per-scene compose skipped (a skip, not a pass)');
+
+    let lockedSceneId;
+    let lockedToken;
+
+    test('POST /scene/{scene}/compose on a never-composed scene with a locked sdPrompt writes the MIGRATED row first; the row keeps the locked prompt whatever the LLM did', async () => {
+        test.setTimeout(15 * 60 * 1000);
+        lockedToken = 'PBTOKEN-' + bookSlug;
+        const idx = SCENES.length + 1;
+        const body = {
+            schema: 'olio.pb.scene', name: 'Scene ' + bookSlug + ' ' + idx, groupId: bookGroupId, groupPath: bookGroupPath,
+            book: { schema: 'olio.pb.book', id: bookId, objectId: bookObjectId }, sceneIndex: idx,
+            title: 'The Locked Gate', setting: 'A walled orchard at dusk, the gate chained',
+            action: 'A girl climbs the wall with a lantern in her teeth', mood: 'furtive',
+            description: 'The Locked Gate: a walled orchard at dusk.',
+            sdPrompt: 'a girl on an orchard wall at dusk, lantern light, ' + lockedToken, promptLocked: true
+        };
+        const created = await expectStatus(await api.post(REST + '/model', { data: body }), 200, 'POST olio.pb.scene ' + idx);
+        expect(created && created.objectId, 'scene ' + idx + ' create returned no objectId: ' + JSON.stringify(created)).toBeTruthy();
+        lockedSceneId = created.objectId;
+        const before = (await listCompositions()).filter(c => c.scene && c.scene.objectId === lockedSceneId);
+        expect(before.length, 'no composition before the per-scene compose').toBe(0);
+
+        const t0 = Date.now();
+        const r = await api.post(PB + '/' + bookObjectId + '/scene/' + lockedSceneId + '/compose', { data: { chatConfigName }, timeout: 14 * 60 * 1000 });
+        const out = await expectStatus(r, 200, 'scene compose (migrate-first)');
+        console.log(TAG + ' MEASURED migrate-first scene compose (' + Math.round((Date.now() - t0) / 1000) + ' s): source=' + out.source
+            + ' migratedFirst=' + out.migratedFirst + ' migratedFallback=' + out.migratedFallback + ' nodeStale=' + out.nodeStale
+            + ' nodeStatus=' + out.nodeStatus + ' revision=' + (out.composition && out.composition.revision) + ' ' + JSON.stringify(out).slice(0, 1500));
+        expect(out.sceneObjectId).toBe(lockedSceneId);
+        expect(out.cancelled).toBe(false);
+        expect(out.skippedUserEdited).toBe(false);
+        expect(out.hardFailure, 'hard failure: ' + out.failureReason).toBe(false);
+        expect(out.written, JSON.stringify(out).slice(0, 400)).toBe(true);
+        expect(out.migratedFirst, 'the MIGRATED row is written before the LLM compose on a never-composed scene').toBe(true);
+        expect(['LLM', 'MIGRATED']).toContain(String(out.source).toUpperCase());
+        expect(out.composition, 'composition in the DTO').toBeTruthy();
+        expect(out.composition.promptOverride, 'the locked legacy prompt is carried as promptOverride').toContain(lockedToken);
+        expect(out.composition.promptLocked).toBe(true);
+        if (String(out.source).toUpperCase() === 'LLM') {
+            expect(out.migratedFallback).toBe(false);
+            expect(out.composition.revision, 'M row (revision 1) updated in place by the LLM compose (revision 2)').toBe(2);
+        } else {
+            expect(out.migratedFallback, 'the LLM compose did not land, so the MIGRATED row stands').toBe(true);
+            expect(out.composition.revision).toBe(1);
+            expect(String(out.failureReason || '')).toMatch(/stands$/);
+        }
+        // This scene has never been rendered: nothing to stale. The DTO is serialized NON_EMPTY, so a
+        // null nodeStatus is absent on the wire, not null.
+        expect(out.nodeStale).toBe(false);
+        expect(out.nodeStatus, 'no render node, so no status').toBeUndefined();
+
+        const rows = (await listCompositions()).filter(c => c.scene && c.scene.objectId === lockedSceneId);
+        expect(rows.length, 'exactly one composition for the locked scene').toBe(1);
+        expect(rows[0].objectId).toBe(out.compositionObjectId);
+        expect(rows[0].promptOverride, 'promptOverride on the stored row').toContain(lockedToken);
+        expect(rows[0].promptLocked).toBe(true);
+        expect(String(rows[0].source).toUpperCase()).toBe(String(out.source).toUpperCase());
+        expect(rows[0].revision).toBe(out.composition.revision);
+    });
+
+    test('a forced re-compose of a scene whose render node is linked marks it STALE; GET /pages shows it (PB_SD_TESTS=1)', async () => {
+        test.skip(!SD_ENABLED, 'PB_SD_TESTS=1 not set — needs the Quick start render above (a skip, not a pass)');
+        test.setTimeout(15 * 60 * 1000);
+        // As built (P2-5, asserted in pictureBookV3RenderPlan.spec.js): the Quick start DRAFT render executes the
+        // scene's RENDER_PLAN node but never links it as scene.sceneNode - that pointer is written by the ChapBook
+        // page render and the v1 graph build only. markSceneNodeStale keys on scene.sceneNode, so after Quick
+        // start alone a compose has no node to stale (§6.C 200 r). Measure that first, then link the rendered
+        // node as the fixture step (the precondition TestPbComposeFallback manufactures the same way) and prove
+        // the stale over REST on the product's own path.
+        let pages = await expectStatus(await api.get(PB + '/' + bookObjectId + '/pages'), 200, 'GET /pages before');
+        let page1 = pages.find(p => p.objectId === sceneIds[0]);
+        expect(page1, 'page for scene 1: ' + JSON.stringify(pages).slice(0, 600)).toBeTruthy();
+        console.log(TAG + ' scene 1 page after Quick start, before the link: ' + JSON.stringify(page1));
+        expect(page1.sceneNodeObjectId == null, 'Quick start does not link scene.sceneNode (P2-5 contract): ' + JSON.stringify(page1)).toBe(true);
+
+        const wf = await expectStatus(await api.get(PB + '/' + bookObjectId + '/workflow'), 200, 'GET /workflow');
+        const rp = (wf.nodes || []).filter(n => String(n.nodeType).toUpperCase() === 'RENDER_PLAN' && n.scopeRef === sceneIds[0]);
+        expect(rp.length, 'one RENDER_PLAN node for scene 1 (Quick start rendered it): ' + JSON.stringify(wf.nodes).slice(0, 600)).toBe(1);
+        const nodeOid = rp[0].objectId;
+        console.log(TAG + ' scene 1 RENDER_PLAN node ' + rp[0].handle + ' ' + nodeOid + ' storedStatus=' + rp[0].storedStatus);
+        expect(['DONE', 'DONE_UNVERIFIED'], 'rendered node is done before the compose').toContain(String(rp[0].storedStatus).toUpperCase());
+
+        const nodeRec = await expectStatus(await api.get(REST + '/model/olio.pb.node/' + nodeOid), 200, 'GET olio.pb.node');
+        const sceneRec = await expectStatus(await api.get(REST + '/model/olio.pb.scene/' + sceneIds[0]), 200, 'GET olio.pb.scene');
+        expect(nodeRec.id && sceneRec.id, 'numeric ids for the link patch').toBeTruthy();
+        const linkBody = { schema: 'olio.pb.scene', id: sceneRec.id, objectId: sceneIds[0], sceneNode: { schema: 'olio.pb.node', id: nodeRec.id, objectId: nodeOid } };
+        const linked = await expectStatus(await api.patch(REST + '/model', { data: linkBody }), 200, 'PATCH scene.sceneNode -> RENDER_PLAN node');
+        expect(linked, 'PATCH returned ' + JSON.stringify(linked)).toBe(true);
+
+        pages = await expectStatus(await api.get(PB + '/' + bookObjectId + '/pages'), 200, 'GET /pages after the link');
+        page1 = pages.find(p => p.objectId === sceneIds[0]);
+        console.log(TAG + ' scene 1 page after the link: nodeStatus=' + page1.nodeStatus + ' node=' + page1.sceneNodeObjectId
+            + ' dataObjectId=' + page1.dataObjectId + ' reviewStatus=' + page1.reviewStatus);
+        expect(page1.sceneNodeObjectId, '/pages resolves the linked node').toBe(nodeOid);
+        expect(['DONE', 'DONE_UNVERIFIED'], 'stored status before the compose').toContain(String(page1.nodeStatus).toUpperCase());
+        // Measured, not asserted: even linked, /pages resolves a non-LANDSCAPE page node's image under artifact
+        // role `composite` (PbServiceFacade.pageArtifactRole) while executeRenderPlan records its image under
+        // role `base`, so dataObjectId stays absent here (§6.C 200 r). The stale contract under test does not
+        // depend on it.
+        expect(page1.dataObjectId, 'the RENDER_PLAN image is a `base` artifact, which /pages does not resolve (§6.C 200 r)').toBeUndefined();
+
+        const t0 = Date.now();
+        const r = await api.post(PB + '/' + bookObjectId + '/scene/' + sceneIds[0] + '/compose', { data: { force: true, chatConfigName }, timeout: 14 * 60 * 1000 });
+        const out = await expectStatus(r, 200, 'scene compose force (rendered scene)');
+        console.log(TAG + ' MEASURED forced compose of a rendered scene (' + Math.round((Date.now() - t0) / 1000) + ' s): source=' + out.source
+            + ' written=' + out.written + ' nodeStale=' + out.nodeStale + ' nodeStatus=' + out.nodeStatus);
+        expect(out.hardFailure, 'hard failure: ' + out.failureReason).toBe(false);
+        expect(out.written).toBe(true);
+        expect(out.migratedFirst, 'an already-composed scene does not migrate again').toBe(false);
+        expect(out.nodeStale, 'the written compose staled the DONE render node').toBe(true);
+        expect(String(out.nodeStatus).toUpperCase()).toBe('STALE');
+
+        pages = await expectStatus(await api.get(PB + '/' + bookObjectId + '/pages'), 200, 'GET /pages after');
+        page1 = pages.find(p => p.objectId === sceneIds[0]);
+        expect(page1, 'page for scene 1 after: ' + JSON.stringify(pages).slice(0, 600)).toBeTruthy();
+        expect(page1.sceneNodeObjectId, 'the link survives the compose').toBe(nodeOid);
+        expect(String(page1.nodeStatus).toUpperCase(), 'stored node status after the compose').toBe('STALE');
+        const wfAfter = await expectStatus(await api.get(PB + '/' + bookObjectId + '/workflow'), 200, 'GET /workflow after');
+        const rpAfter = (wfAfter.nodes || []).find(n => n.objectId === nodeOid);
+        expect(String(rpAfter && rpAfter.storedStatus).toUpperCase(), 'the RENDER_PLAN node itself reads STALE').toBe('STALE');
     });
 });

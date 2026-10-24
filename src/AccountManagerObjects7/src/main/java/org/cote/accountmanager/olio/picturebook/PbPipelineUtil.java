@@ -1062,7 +1062,12 @@ public class PbPipelineUtil {
 		}
 	}
 
-	/// Enrol the meta entry's charPerson objectIds as scene.characters; a person the user cannot read is skipped.
+	/**
+	 * Enrol the meta entry's charPerson objectIds as {@code scene.characters}, each through
+	 * {@code AccessPoint.member} so PBAC decides: the user must be able to read the person and update the scene
+	 * row, or the participation is refused (logged, never thrown) and the import carries on. A person the user
+	 * cannot read is skipped before the attempt.
+	 */
 	private static void enrolImportedCast(BaseRecord user, BaseRecord row, BaseRecord entry, long orgId,
 			Map<String, BaseRecord> people, String slug, int idx) {
 		if(entry == null || !entry.hasField(OlioFieldNames.FIELD_PB_CHARACTERS)) {
@@ -1092,9 +1097,10 @@ public class PbPipelineUtil {
 			}
 			try {
 				MemberUtil mu = IOSystem.getActiveContext().getMemberUtil();
-				/// member(..., true) answers false both when the row could not be written and when the
-				/// participation already exists (a re-import); only the former is worth a warning.
-				if(!mu.member(user, row, OlioFieldNames.FIELD_PB_CHARACTERS, person, null, true)
+				/// AccessPoint.member answers false when PBAC refuses (cannot read the person or update the
+				/// scene), when the row could not be written, and when the participation already exists (a
+				/// re-import); only the first two are worth a warning.
+				if(!IOSystem.getActiveContext().getAccessPoint().member(user, row, OlioFieldNames.FIELD_PB_CHARACTERS, person, null, true)
 						&& !mu.isMember(person, row, OlioFieldNames.FIELD_PB_CHARACTERS)) {
 					logger.warn("Import dual write: scene " + idx + " of '" + slug + "': cast member "
 						+ person.get(FieldNames.FIELD_NAME) + " was not enrolled");

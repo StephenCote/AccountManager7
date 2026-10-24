@@ -4358,3 +4358,60 @@ headroom gauge — check `C:` and the vhdx size on the host. The engine restarte
 build's commit reached disk is unknown until `am7db` is back. Triggered by running `TestAuthorization`
 against a populated `am7db`; do not run it (or `admin -db -patch`) on a database with Olio worlds until the
 view is restructured.
+
+## Carried from `archive/IssueLog-2026-09-22.md` "Also found on the way" (archived 2026-10-23, D-1 doc cleanup)
+
+The five items below were recorded on 2026-09-26 in `archive/IssueLog-2026-09-22.md` L693-727 as "not fixed — out of scope" and never
+tracked here or in the V3 docs. Each bullet is copied verbatim from that section (the file moved from `aiDocs/` to `archive/` on 2026-10-23); the status in each
+heading is this doc pass's reading of the current tree, not a test result — three (KI-84/85/86) have fixes present in code that this
+pass did not re-run. Numbering continues from KI-82.
+
+### KI-83. Nested-path `request` projection on a foreign `MODEL` field is rejected server-side and `/rest/model/search` answers 200 with an EMPTY body — OPEN, not re-verified (carried 2026-10-23)
+- A **nested-path `request` projection** (`"connection.serverUrl"` on `olio.llm.chatConfig`) is
+  rejected server-side (`FieldException: Field 'connection.serverUrl' was not found on model
+  olio.llm.chatConfig`, `DBSearch`/`AccessPoint` ERROR lines) and **`/rest/model/search` answers 200
+  with an EMPTY body**, which reads exactly like "no such record". `model-api.md` documents nested path
+  syntax as supported (`profile.portrait`); at least for this foreign `MODEL` field it is not. Work
+  around by projecting the foreign record and resolving its fields with a second search.
+
+### KI-84. `GET /rest/olio/picture-book/{oid}/settings` 404s (`Book not found`) for a series-chapter `olio.pb.book` objectId — carried 2026-10-23; a fix appears present in code (`PictureBookService.java:1054-1064`, "same either-id as /scenes"), NOT re-verified live by this doc pass
+- `GET /rest/olio/picture-book/{oid}/settings` **404s (`Book not found`) for a series-chapter
+  `olio.pb.book` objectId** — the same resolution gap Issue 1/B2 fixed for `/scenes`, `/characters`
+  and reorder via `resolveBookGroupEither`, not applied to `/settings`. Seen from the wizard's Step 4
+  on the `muhpnuzi` ch1 book; the wizard tolerates it.
+
+### KI-85. Scene prompts render `"0 year old boy child"` for adult characters whose `age` was never extracted — carried 2026-10-23; a fix appears present in code (`NarrativeUtil.isAgeUnstated`, `TestNarrativeUnstatedAge`), NOT re-verified by this doc pass
+- **Scene prompts render `"0 year old boy child"` for adult characters whose `age` was never
+  extracted.** Seen in the `muhpnuzi` ch1 scene "Simon and Braevarn in the Factory": `Simon: lean,
+  straight-framed 0 year old boy child …`. `NarrativeUtil.describePhysical` (`:1165`) appends `age +
+  " year old "` unconditionally and `getGenderLabel(gender, 0)` yields `boy child`, so an unknown age
+  (0) tells SD to draw a child. This is a text-faithfulness defect on the same footing as race and it
+  changes the image content. Not fixed here (shared Olio describer + extraction default) — flagged.
+
+### KI-86. Junk duplicate character `"Braevar,"` (trailing list separator) persisted beside the real `Braevarn` — carried 2026-10-23; a fix appears present in code (`PictureBookUtil.CharacterNameResolver` rule 3, `TestPictureBookCharacterNames`), NOT re-verified by this doc pass
+- **Junk duplicate character `"Braevar,"`** (trailing comma, age 0, "translucent wings") persisted
+  alongside the real `Braevarn` (20-year-old man) in the same chapter. Character names coming out of
+  reduce-character are not trimmed of trailing punctuation or de-duplicated by normalised name, so one
+  LLM slip forks a character. Not fixed here — flagged.
+
+### KI-87. Stephen's real DB (`am72db` on `postgres3`) still holds the pre-fix `pictureBook.reduce-character` prompt template — OPEN, Stephen's call (carried 2026-10-23)
+- Stephen's real DB (`am72db` on `postgres3`) still holds the **pre-fix `pictureBook.reduce-character`
+  prompt template**; `populatePromptDefaults` does not overwrite existing templates. Refresh is: delete
+  the template row(s) for the org, then `POST /rest/chat/library/prompt/init` — Stephen's call, not
+  done here. Org 3 on `am7test` was not re-seeded either.
+
+### KI-88. `AccessPoint.authorizeQuery` logs every non-PERMIT policy response at ERROR before the PERMIT one, so a PERMITted read can emit thousands of seven-line `policy.policyResponse` dumps — OPEN, candidate (log volume, not a correctness defect)
+
+**Found 2026-10-23 during the Phase 4 closing gate (PictureBookV3Implementation.md §4.10 / §12.14), not fixed — out of scope,
+pre-existing at HEAD.** `AccessPoint.authorizeQuery` (`client/AccessPoint.java:713-719`, unchanged since 915a1440 2026-10-08)
+calls `logger.error(pr.toFullString())` at `:718` for each policy response that is not PERMIT while walking the responses for a
+query, even when a later response is PERMIT and the audit line for the query is `AUDIT PERMIT`. Each dump is a seven-line
+`policy.policyResponse` JSON (`type: deny`, urn `resource.policy.systemreadobject`). Measured in the `am7test-am7-1` container
+log: `GET /rest/olio/picture-book/books` (`PbServiceFacade.listBooks` → `PictureBookUtil.countScenesForBook` →
+`findMetaNoteByBookLink`, a `data.note` `text LIKE` list per book) iterates 84–85 books × 3 queries and emitted ~10 030 dumps in
+~4 s on one request thread during `pictureBookComposition.spec.js` (02:56:08 → 02:56:12 UTC); two `/health` + two `/books`
+timing calls 46 256; Ux752 full gate run 7 as a whole 92 371; the flagged serial leg 10 528. Every audit line in those windows
+was PERMIT, so this is log volume and some per-call latency, not a denial. Two separate things to decide: (a) whether the
+per-response ERROR belongs at DEBUG/TRACE (or only when the final answer is a denial), and (b) whether `listBooks` should stop
+issuing a per-book `text LIKE` scan for the scene count. Default: leave both; recorded here so the next person reading a flood
+of `type: deny` dumps beside `AUDIT PERMIT` lines does not chase a phantom authorization failure.

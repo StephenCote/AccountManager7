@@ -126,6 +126,16 @@ public class PbComposeUtil {
 		/** Nothing could be written (LLM failed and an existing composition was left untouched, or a write failed). */
 		public boolean hardFailure;
 		public String failureReason;
+		/** The LLM path produced no proposal: {@code hardFailure} was raised at the LLM-miss branch and the existing row was not touched. */
+		public boolean existingLeftUntouched;
+		/** Why the LLM path produced no proposal ({@code LLM unavailable} / {@code empty LLM reply} / {@code unparseable LLM reply}); null when it did. */
+		public String llmFailure;
+		/** This call wrote the scene's {@code MIGRATED} composition before attempting the LLM compose ({@link #composeSceneMigratedFirst}). */
+		public boolean migratedFirst;
+		/** Set by {@link #staleAfterCompose}: the scene's render node was marked STALE by this compose. */
+		public boolean nodeStale;
+		/** Set by {@link #staleAfterCompose}: the node's status as re-read after the mark; null without a node. */
+		public String nodeStatus;
 		public List<String> warnings = new ArrayList<>();
 		/** Names the LLM used that resolved to no character (kept as NAMED_BACKGROUND rows). */
 		public List<String> unresolvedNames = new ArrayList<>();
@@ -525,8 +535,10 @@ public class PbComposeUtil {
 		}
 		else {
 			String why = (hard[0] ? "LLM unavailable" : (reply == null || reply.isBlank() ? "empty LLM reply" : "unparseable LLM reply"));
+			result.llmFailure = why;
 			if(existing != null) {
 				result.hardFailure = true;
+				result.existingLeftUntouched = true;
 				result.failureReason = why + "; existing composition left untouched";
 				result.composition = existing;
 				result.actors = listActors(user, existing);
@@ -566,6 +578,71 @@ public class PbComposeUtil {
 		persist(user, ctx, existing, staging, result);
 		result.elapsedMs = System.currentTimeMillis() - t0;
 		return result;
+	}
+
+	/**
+	 * {@link #composeScene} with the compose job's migrate-first contract (P4-10, design §24) for a scene that has
+	 * no composition yet: its {@code MIGRATED} row is written first from the scene's own fields - which is what
+	 * carries the legacy {@code sdPrompt} into {@code promptOverride} and keeps {@code promptLocked} - and only
+	 * then is the LLM compose attempted over it, so the prompt and lock survive an LLM row exactly as they do
+	 * under the job. A scene that already has a composition, a ChapBook book, or a cancel flag already up
+	 * delegates to {@link #composeScene} unchanged (an existing row is never re-migrated).
+	 * <p>
+	 * When the migration wrote and the LLM then produced nothing, the result reports the outcome the scene
+	 * actually has - {@code migratedFallback} over the MIGRATED row ({@link ComposeResult#isWritten} true,
+	 * revision 1) - rather than the {@code hardFailure} the raw call reports for an untouched existing row. A
+	 * persist-phase failure over the MIGRATED row stays {@code hardFailure}. A cancel after the migration keeps
+	 * {@code cancelled} with the MIGRATED row as the composition. {@code migratedFirst} is set on every result
+	 * that wrote the migration.
+	 */
+	static ComposeResult composeSceneMigratedFirst(BaseRecord user, BaseRecord book, BaseRecord scene, BaseRecord chatConfig, boolean force, SummarizeProgress progress, String dataPath) {
+		Context ctx = openContext(user, book, scene, "compose scenes");
+		BaseRecord existing = findSceneComposition(user, ctx.scene, ctx.bookGroupId, ctx.orgId);
+		if(existing != null || PbNodeExecutor.isChapBook(ctx.book) || isCancelled(progress)) {
+			return composeScene(user, ctx.book, ctx.scene, chatConfig, force, progress, dataPath);
+		}
+		ComposeResult mig = composeMigrated(user, ctx.book, ctx.scene, false);
+		if(!mig.isWritten()) {
+			mig.hardFailure = true;
+			mig.failureReason = PbComposeJobUtil.MIGRATION_FAILED_REASON;
+			logger.warn("compose-scene " + ctx.label() + ": " + mig.failureReason);
+			return mig;
+		}
+		ComposeResult r = composeScene(user, ctx.book, ctx.scene, chatConfig, force, progress, dataPath);
+		r.migratedFirst = true;
+		if(r.hardFailure && r.existingLeftUntouched) {
+			r.hardFailure = false;
+			r.existingLeftUntouched = false;
+			r.migratedFallback = true;
+			r.composition = mig.composition;
+			r.source = PbCompositionSourceEnumType.MIGRATED;
+			r.failureReason = r.llmFailure + "; the MIGRATED composition written first from the scene's own fields stands";
+			r.warnings.add(r.failureReason);
+			logger.warn("compose-scene " + ctx.label() + ": " + r.failureReason);
+		}
+		return r;
+	}
+
+	/**
+	 * Marks the scene's render node STALE after a compose that wrote an LLM composition and records the outcome on
+	 * the result ({@code nodeStale}, {@code nodeStatus}). A composition is not a bound input of the node, so the drift
+	 * scan cannot see the write; this explicit mark is the only thing that invalidates a DONE render (design §24).
+	 * A MIGRATED row standing after an LLM miss ({@link ComposeResult#migratedFallback}) reproduces the scene's own
+	 * fields and stales nothing - the same rule the job's up-front migration follows - but the node's status is
+	 * still reported. Never throws: no node, a RUNNING node or a refused write report {@code nodeStale:false}. The
+	 * lazy render hook ({@link #ensureComposition}) does not call it - the same render executes the node immediately.
+	 */
+	static void staleAfterCompose(BaseRecord user, BaseRecord scene, ComposeResult r) {
+		if(r == null || scene == null || !r.isWritten()) {
+			return;
+		}
+		if(!r.migratedFallback) {
+			r.nodeStale = PbBookUtil.markSceneNodeStale(user, scene);
+		}
+		BaseRecord nodeRef = (scene.hasField(OlioFieldNames.FIELD_PB_SCENE_NODE) ? scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE) : null);
+		long nodeId = (nodeRef != null ? PbHealthUtil.idOf(nodeRef) : 0L);
+		BaseRecord node = (nodeId > 0L ? PbGraphUtil.readNodeById(user, nodeId, PbGraphUtil.orgId(scene)) : null);
+		r.nodeStatus = (node != null ? str(node.get(OlioFieldNames.FIELD_PB_NODE_STATUS)) : null);
 	}
 
 	/// The pins of the composition about to be replaced, by character id. Rows are deleted and recreated on a
@@ -635,8 +712,10 @@ public class PbComposeUtil {
 	 * The lazy per-scene fallback (design §9.1): a render that finds no usable composition composes the
 	 * scene itself, out of story order, with the organization's default chat config. Runs only on an
 	 * authorized write path ({@link #composeScene} re-authorizes through {@link #openContext}); never
-	 * forces over a user-edited row; on cancel returns with nothing written. The caller marks the plan
-	 * {@code COMPOSED_OUT_OF_ORDER} when {@link EnsureResult#composedNow}.
+	 * forces over a user-edited row; on cancel returns with nothing written. A scene with no composition gets
+	 * its {@code MIGRATED} row first ({@link #composeSceneMigratedFirst}) so the legacy prompt and lock survive
+	 * the LLM compose exactly as under the job. The caller marks the plan {@code COMPOSED_OUT_OF_ORDER} when
+	 * {@link EnsureResult#composedNow}; the node is not marked STALE here because this render executes it.
 	 */
 	public static EnsureResult ensureComposition(BaseRecord user, BaseRecord book, BaseRecord scene, SummarizeProgress cancelToken) {
 		EnsureResult out = new EnsureResult();
@@ -646,10 +725,10 @@ public class PbComposeUtil {
 			out.composition = existing;
 			return out;
 		}
-		ComposeResult result = composeScene(user, ctx.book, ctx.scene, (BaseRecord) null, false, cancelToken);
+		ComposeResult result = composeSceneMigratedFirst(user, ctx.book, ctx.scene, null, false, cancelToken, null);
 		out.result = result;
-		out.composedNow = result.isWritten();
-		out.composition = (result.cancelled ? existing : result.composition);
+		out.composedNow = result.isWritten() || result.migratedFirst;
+		out.composition = (result.cancelled && !result.migratedFirst ? existing : result.composition);
 		return out;
 	}
 

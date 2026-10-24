@@ -14,12 +14,13 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `Ux752Plan.md` | Ux752 focused-refactor standing orders / guiding principles (parent doc) | active |
 | `Ux752ImplementationPlan.md` | Ux752 file-by-file implementation plan (4 files) | active |
 | `ConnectionRefactorPlan.md` | Connection model refactor (`system.connection`, shipped — backend complete; Ux752 client migration off inline `serverUrl`/`apiKey`/`requestTimeout` in progress 2026-10-07, caller list in its "Status 2026-10-07" section) + Ux752 list-view bug fixes (2026-06-17) | active |
+| `UxFeatureFlagDesign.md` | Feature profiles / flags design; D1 is the reference for the "read paths must not create" rule (`../.claude/rules/architecture.md`, Ux752 `CLAUDE.md`, `core/featureProfile.js`) | reference |
 
 ## Backend / platform
 
 | File | Purpose | Status |
 |---|---|---|
-| `KnownIssues.md` | **Current** known-issues / backlog (2026-06-26) | active |
+| `KnownIssues.md` | **Current** known-issues / backlog (runs to KI-88; KI-82 2026-10-07; KI-83..87 carried from `archive/IssueLog-2026-09-22.md` and KI-88 from the P4-14 gate, all 2026-10-23) | active |
 | `PageIndexDesign.md` | PageIndex hierarchical TOC index for Objects7 — core engine design (implemented & verified, 2026-07-07) | active |
 | `PageIndexIntegrationPlan.md` | PageIndex REST/chat/MCP/Ux752 integration — phased plan mirroring the vector pattern (prerequisite + Tiers 1-3 all complete and live-verified 2026-07-09; README corrected 2026-10-07, previously said "not started") | reference |
 | `SCIM.md` | SCIM 2.0 → AccountManager model mapping reference | reference |
@@ -32,6 +33,10 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 
 | File | Purpose | Status |
 |---|---|---|
+| `PictureBookV3Design.md` | **PictureBook V3 — canonical design** (composition model, Swarm/Comfy graph compilation, phasing §30, decisions §34, spike contract §38) | active |
+| `PictureBookV3Implementation.md` | **PictureBook V3 — build ledger** (status §1, probes §3, verification §4, deviations §5, rulings ledger §6.C, per-phase task tables §2/§8-§12) — large (~2.7 MB); a split is proposed, not done | active |
+| `PictureBookV3Notes.md` | V3 pre-design notes (input to `PictureBookV3Design.md`) | reference |
+| `PictureBookImageGenerationDesign.md` | G-numbered image-generation gap analysis (§2, with `[Fixed …]` annotations) + decisions (§3); V3 docs cite its G-ids, so it stays a live cross-reference target | reference |
 | `RPG.md` | Turn-based RPG design & build plan (living design document) | reference |
 | `PictureBookDesign.md` | Picture Book feature — surviving design/architecture reference | reference |
 | `PictureBook2Plan.md` | **PictureBook 2.0** — plan for (a) an Olio `Books` universe + one world per book, (b) a persisted workflow DAG (ComfyUI-style provenance + dependent-branch regeneration), (c) an optional ComfyUI backend. Includes the per-book PBAC role model and the security findings that block it. §10 Q1-Q11, Q13-Q14, Q16, Q18, Q20 ratified 2026-08-12/13 (§0); only **Q12, Q15, Q17, Q19** remain open per §0 — README corrected 2026-10-07 (previously "awaiting ratification Q1-Q12"). Build state: `PictureBook2ImplementationState.md` | active |
@@ -39,6 +44,10 @@ implementation plans, dated issue logs, and session handoffs live in `archive/`.
 | `PictureBookWorkflowOverhaul.md` | **Workflow graph overhaul / correction (2026-09-19)** — the PB2 workflow canvas shows nothing because `picturebook.v2` is `false` in the deployed `web.xml`: zero artifacts and zero bindings have ever been written. Records the measured state, disambiguates the two things "PB1/PB2" means (book/world model vs workflow graph), recommends retiring PB1 as the *outcome* of a five-phase sequence rather than the first step, and carries Q1-Q11 for Stephen (**Q6 and Q8 ratified 2026-09-19; Q7/Q9/Q11 ratified 2026-09-20**). **§6 is the long-form/novel workstream** — chapter-at-a-time ingest with a cast shared across the whole work, which needs the ownership inversion (one Olio world per *series*, not per *book*) that reverses `PictureBook2Plan.md` §3.5's copy decision. W-series (W1-W5) done and verified; N-series in progress under `PictureBookSeriesChaptersPlan.md` (README corrected 2026-10-07) | active (W done; N in progress) |
 | `PictureBookSeriesChaptersPlan.md` | **Series / chapters (N-series) implementation plan** (authored 2026-09-20, IN PROGRESS 2026-09-23) — one Olio world per series with baseline + per-chapter shadow cast, `sourceRange` chapters, heading detection, series/chapter canvas views. Re-derived against the post-W-series code; its §1 table lists the overhaul doc's stale `file:line` refs | active |
 | `PictureBookAsyncJobDesign.md` | **Async background jobs** for the long PictureBook/ChapBook operations — shared `AsyncJobRegistry` + `JobService` polling, extraction checkpoint/resume across a restart, ChapBook progress & cancel. Closes KI-49 (the "504 with no server-side error" was nginx's `proxy_read_timeout`, not an app exception) | active |
+| `PictureBook2ImplementationState.md` | PB2/ChapBook build-state log through 2026-09-01 (handoff now in `archive/`); proposed superseded by `PictureBookV3Implementation.md` §1 | uncertain |
+| `PictureBookUxAndOlioModelPlan.md` | Ux + Olio-model plan (Parts A-E; Part D D1-D13 never ratified); proposed superseded by `PictureBookV3Design.md` §7/§8/§34 | uncertain |
+| `imageComposite.md` | Raw prompt for a two-person Flux Kontext composite via SwarmUI; proposed superseded by `PictureBookV3Design.md` §37/§38 | uncertain |
+| `IssueLog.md` | UAT issue log 2026-08-25 (Issues 1-10 fixed/verified; Issue 11 open for the bare legacy call) | uncertain |
 
 ## Chat / prompt / conversation quality
 
@@ -80,6 +89,12 @@ archived — superseded by the `ISO42001/` subdir and `AccountManagerUx752/aiDoc
 | `MCP.md` | MCP integration plan; MCP transport now exists in Service7 — work landed (Stephen's call) |
 | `chatRefactor2.md` | Phase-2 chat plan targeting the now-deprecated `AccountManagerUx7/client/` (Stephen's call) |
 | `MemoryRefactor2.md` | Feb-2026 draft superseded by the May memory decoupling/integration docs (Stephen's call) |
+| `PictureBook2ChapBook-Handoff-2026-09-01.md` | PB2/ChapBook session handoff; superseded by `PictureBookV3Design.md` §28/§30 + `PictureBookV3Implementation.md` §1 (archived 2026-10-23) |
+| `PictureBook2ChapBookGapAnalysis-2026-08-31.md` | PB2/ChapBook gap analysis; superseded by `PictureBookV3Design.md` §30 + `PictureBookImageGenerationDesign.md` §2 (archived 2026-10-23) |
+| `PictureBook2ChapBookRemediationPlan.md` | PB2/ChapBook remediation plan (14-issue closeout 2026-08-28); history only (archived 2026-10-23) |
+| `IssueLog-2026-09-22.md` | N-series UAT issue log; superseded by `PictureBookSeriesChaptersPlan.md` + V3 §7/§28; its five leftover items carried to `KnownIssues.md` KI-83..87 (archived 2026-10-23) |
+| `CanvasLibraryResearchPrompt.md` | Research prompt that answered `PictureBook2Plan.md` Appendix D Q16; history only (archived 2026-10-23) |
+| `cardGameCorrection.md` | Ux752 card-game gap analysis/correction prompt (was `AccountManagerUx752/aiDocs/`); correction applied — `cardGame.js:18`, `e2e/cardGame.spec.js:124-127` (archived 2026-10-23) |
 
 ---
 

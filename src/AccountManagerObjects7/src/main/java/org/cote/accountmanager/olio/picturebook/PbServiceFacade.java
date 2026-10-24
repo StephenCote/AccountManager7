@@ -3633,7 +3633,9 @@ public class PbServiceFacade {
 	 * Compose one scene synchronously (V3 §9.1 lazy / explicit re-compose, P4-4): one LLM call, the result as
 	 * {@link #composeResultDto}. Refused with 409 while a compose job holds the book in this JVM, so a
 	 * per-scene call never races the job on the same rows. Without {@code force} a user-edited composition is
-	 * left alone ({@code skippedUserEdited}); with it, every existing composition of the scene is replaced.
+	 * left alone ({@code skippedUserEdited}); with it, every existing composition of the scene is replaced. A
+	 * scene with no composition is migrated first, as under the job ({@link PbComposeUtil#composeSceneMigratedFirst}),
+	 * and a written compose marks the scene's render node STALE ({@code nodeStale} / {@code nodeStatus}).
 	 */
 	public static Map<String, Object> composeScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String chatConfigName, boolean force) {
@@ -3649,7 +3651,8 @@ public class PbServiceFacade {
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
 		PbComposeJobUtil.requireNotComposing(bookObjectId);
 		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
-		PbComposeUtil.ComposeResult r = PbComposeUtil.composeScene(user, book, scene, cfg, force, null, dataPath);
+		PbComposeUtil.ComposeResult r = PbComposeUtil.composeSceneMigratedFirst(user, book, scene, cfg, force, null, dataPath);
+		PbComposeUtil.staleAfterCompose(user, scene, r);
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
@@ -3719,8 +3722,11 @@ public class PbServiceFacade {
 		m.put("cancelled", Boolean.valueOf(r.cancelled));
 		m.put("skippedUserEdited", Boolean.valueOf(r.skippedUserEdited));
 		m.put("migratedFallback", Boolean.valueOf(r.migratedFallback));
+		m.put("migratedFirst", Boolean.valueOf(r.migratedFirst));
 		m.put("hardFailure", Boolean.valueOf(r.hardFailure));
 		m.put("failureReason", r.failureReason);
+		m.put("nodeStale", Boolean.valueOf(r.nodeStale));
+		m.put("nodeStatus", r.nodeStatus);
 		m.put("source", (r.source != null ? r.source.name() : null));
 		m.put("castTier", (r.castTier != null ? r.castTier.name() : null));
 		m.put("warnings", stripRaw(r.warnings));
@@ -3769,6 +3775,7 @@ public class PbServiceFacade {
 		m.put("userEdited", c.get(OlioFieldNames.FIELD_PB_USER_EDITED));
 		m.put("revision", c.get(OlioFieldNames.FIELD_PB_REVISION));
 		m.put("promptLocked", c.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		m.put("promptOverride", (c.hasField(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) ? c.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) : null));
 		return m;
 	}
 

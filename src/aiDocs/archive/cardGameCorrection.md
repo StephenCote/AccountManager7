@@ -1,3 +1,5 @@
+> Archived 2026-10-23: no single superseding section; retained for history (correction applied — cardGame.js:18 lazy-imports cardGame-v2.css; e2e/cardGame.spec.js:124-127).
+
 # Card Game Gap Analysis: Ux7 → Ux752
 
 ## CRITICAL: Missing CSS Stylesheet

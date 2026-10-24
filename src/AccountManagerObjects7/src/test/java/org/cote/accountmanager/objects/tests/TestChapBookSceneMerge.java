@@ -1,13 +1,16 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
@@ -16,16 +19,21 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
+import org.cote.accountmanager.olio.picturebook.PbComposeUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
+import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -48,13 +56,14 @@ import org.junit.Test;
  *       read-but-not-write state, so the E2E can never exercise it.</li>
  * </ol>
  * <p>
- * <b>Observed denial status.</b> Unlike {@code deleteChapBook} (which has an explicit
- * {@code AuthorizationUtil.canDelete} pre-check that maps a denial to a hardened HTTP 403), the
- * scene-level ops rely on {@code AccessPoint.update}/{@code delete} returning null/false when denied,
- * which {@code mergeSceneUp}/{@code deleteSceneAndReindex} surface as a {@link PictureBookException}
- * with status <b>500</b>. This test asserts the operation FAILS (a real {@link PictureBookException}
- * is thrown) and, most importantly, that it is NON-DESTRUCTIVE — the security-relevant property. It
- * also records the actual status so a future hardening (500 → 403) is a visible, deliberate change.
+ * <b>Denial status.</b> Both ops first sweep the scene's compositions (its CHAPBOOK_PAGE composition
+ * with its scene actors and elements, child→parent, as the user — P4-13 c2) and surface a PBAC refusal
+ * of any of those rows as <b>403</b>, before any scene write. On a scene with no compositions the ops
+ * still rely on {@code AccessPoint.update}/{@code delete} returning null/false, surfaced as <b>500</b>.
+ * This test seeds a page composition on every scene it denies, asserts the operation FAILS with 403
+ * and, most importantly, that it is NON-DESTRUCTIVE — scenes, stanza and composition rows all intact.
+ * The happy paths assert the folded/removed scene's composition and element rows go with it while a
+ * sibling scene's survive.
  * <p>
  * No LLM and no SD server are contacted: {@code createChapBook} is called with {@code chatConfig=null}
  * (stanza-excerpt fallback prompts, no LLM landscape step) and the test never calls
@@ -156,6 +165,34 @@ public class TestChapBookSceneMerge extends BaseTest {
 		}
 	}
 
+	/** The scene's CHAPBOOK_PAGE composition (created as {@code owner}) with one PROP element row; {composition, element}. */
+	private static BaseRecord[] seedPageComposition(BaseRecord owner, BaseRecord book, BaseRecord scene) {
+		BaseRecord comp = PbComposeUtil.getCreatePageComposition(owner, book, scene, PbCompositionSourceEnumType.USER);
+		assertNotNull("page composition created for scene " + scene.get(FieldNames.FIELD_OBJECT_ID), comp);
+		Map<String, Object> in = new HashMap<>();
+		in.put(OlioFieldNames.FIELD_PB_ELEMENT_TYPE, PbElementTypeEnumType.PROP.toString());
+		in.put(FieldNames.FIELD_DESCRIPTION, "a brass harbor lamp");
+		BaseRecord element = PbComposeUtil.createElementRow(owner, comp, in);
+		assertNotNull("element row created on the page composition", element);
+		BaseRecord compScene = comp.get(OlioFieldNames.FIELD_PB_SCENE);
+		assertNotNull("the page composition carries its scene", compScene);
+		assertEquals("the page composition points at its scene", oid(scene), oid(compScene));
+		return new BaseRecord[] { comp, element };
+	}
+
+	/** Raw, unauthorized, uncached row-by-objectId lookup — the ground truth for "is it gone". */
+	private static BaseRecord rawRow(String model, String objectId, long orgId) {
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID });
+		q.setCache(false);
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
+
+	private static String oid(BaseRecord rec) {
+		return rec.get(FieldNames.FIELD_OBJECT_ID);
+	}
+
 	/**
 	 * Happy path — merge folds the next stanza into this one, flags the survivor imageStale, PRESERVES the
 	 * survivor's sdPrompt and promptLocked unchanged, deletes the folded scene, and reindexes the
@@ -186,9 +223,23 @@ public class TestChapBookSceneMerge extends BaseTest {
 		Boolean preLocked = absorbing.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
 		logger.info("scene0 pre-merge sdPrompt present={} ", (prePrompt != null && !prePrompt.isBlank()));
 
+		// P4-13 (c2): the folded scene owns a CHAPBOOK_PAGE composition with an element row; the survivor owns
+		// one too, which must be untouched by the merge.
+		BaseRecord[] foldedPage = seedPageComposition(owner, book, folded);
+		BaseRecord[] survivorPage = seedPageComposition(owner, book, absorbing);
+
 		String survivorOid = ChapBookUtil.mergeSceneUp(owner, scene0Oid);
 		assertEquals("mergeSceneUp returns the surviving (absorbing) scene objectId", scene0Oid, survivorOid);
 		CacheUtil.clearCache();
+
+		assertNull("the folded scene's page composition is deleted with it",
+			rawRow(OlioModelNames.MODEL_PB_COMPOSITION, oid(foldedPage[0]), orgId));
+		assertNull("the folded scene's element row is deleted with it (child before parent)",
+			rawRow(OlioModelNames.MODEL_PB_SCENE_ELEMENT, oid(foldedPage[1]), orgId));
+		assertNotNull("the survivor's page composition is untouched",
+			rawRow(OlioModelNames.MODEL_PB_COMPOSITION, oid(survivorPage[0]), orgId));
+		assertNotNull("the survivor's element row is untouched",
+			rawRow(OlioModelNames.MODEL_PB_SCENE_ELEMENT, oid(survivorPage[1]), orgId));
 
 		// Survivor: merged stanza, imageStale=true, sdPrompt PRESERVED, promptLocked PRESERVED.
 		BaseRecord survivor = PbBookUtil.readScene(owner, scene0Oid, orgId);
@@ -227,10 +278,22 @@ public class TestChapBookSceneMerge extends BaseTest {
 		final int n = before.size();
 		String removedOid = before.get(0).get(FieldNames.FIELD_OBJECT_ID);
 
+		// P4-13 (c2): the removed scene owns a CHAPBOOK_PAGE composition with an element row; a sibling's must survive.
+		BaseRecord[] removedPage = seedPageComposition(owner, book, before.get(0));
+		BaseRecord[] siblingPage = seedPageComposition(owner, book, before.get(1));
+
 		ChapBookUtil.deleteSceneAndReindex(owner, removedOid);
 		CacheUtil.clearCache();
 
 		assertNull("removed scene is deleted", PbBookUtil.readScene(owner, removedOid, orgId));
+		assertNull("the removed scene's page composition is deleted with it",
+			rawRow(OlioModelNames.MODEL_PB_COMPOSITION, oid(removedPage[0]), orgId));
+		assertNull("the removed scene's element row is deleted with it",
+			rawRow(OlioModelNames.MODEL_PB_SCENE_ELEMENT, oid(removedPage[1]), orgId));
+		assertNotNull("the sibling's page composition survives",
+			rawRow(OlioModelNames.MODEL_PB_COMPOSITION, oid(siblingPage[0]), orgId));
+		assertNotNull("the sibling's element row survives",
+			rawRow(OlioModelNames.MODEL_PB_SCENE_ELEMENT, oid(siblingPage[1]), orgId));
 
 		List<BaseRecord> after = PbBookUtil.listScenes(owner, book);
 		assertEquals("one scene fewer after the delete", n - 1, after.size());
@@ -259,6 +322,11 @@ public class TestChapBookSceneMerge extends BaseTest {
 		String scene0Oid = before.get(0).get(FieldNames.FIELD_OBJECT_ID);
 		String stanza0 = before.get(0).get(OlioFieldNames.FIELD_CB_POEM_STANZA);
 
+		// P4-13 (c2): both scenes carry a page composition, so each denied op is stopped at the composition
+		// sweep (403, PBAC) before any scene write — and the sweep itself must not have torn anything down.
+		BaseRecord[] page0 = seedPageComposition(owner, book, before.get(0));
+		BaseRecord[] page1 = seedPageComposition(owner, book, before.get(1));
+
 		// ── Provision a READ-but-not-WRITE grant for the denied user (FIXTURE SETUP as admin) ──────────
 		// Grant Read (DATA + GROUP) on the book's OWN group — scenes live in this same group
 		// (createChapBookScene uses PbBookUtil.bookGroupPath(slug)) — so the denied user can READ the
@@ -276,14 +344,36 @@ public class TestChapBookSceneMerge extends BaseTest {
 			o.getAdminUser(), denied, new BaseRecord[] { bookGroup },
 			new String[] { "Read" },
 			new String[] { PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString() });
+		// The book row additionally needs Read on its world (same fixture shape as TestPbCompositionRows):
+		// without it readBook is DENIED and both ops stop at resolveSceneBook's 404, never reaching the
+		// composition sweep — which is exactly what the earlier revision of this test was silently doing.
+		BaseRecord worldFk = ownerBook.get(OlioFieldNames.FIELD_PB_WORLD);
+		assertNotNull("the book carries its world FK", worldFk);
+		long worldId = ((Number) worldFk.get(FieldNames.FIELD_ID)).longValue();
+		Query wq = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_ID, worldId);
+		wq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		wq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_URN, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
+		wq.setCache(false);
+		BaseRecord world = IOSystem.getActiveContext().getSearch().findRecord(wq);
+		assertNotNull("the book's world must resolve for the fixture grant", world);
+		IOSystem.getActiveContext().getAuthorizationUtil().setEntitlement(
+			o.getAdminUser(), denied, new BaseRecord[] { world },
+			new String[] { "Read" }, new String[] { PermissionEnumType.DATA.toString() });
 		CacheUtil.clearCache();
 
-		// ── POSITIVE CONTROL: the denied user CAN read scene0 via the Read grant ──────────────────────
-		// If this is null the merge/delete calls would take the 404 not-found path, not the write-DENY
-		// path — so assert it loudly rather than mistaking a 404 for an authorization denial.
+		// ── POSITIVE CONTROLS: the denied user CAN read scene0 AND the book via the Read grants ────────
+		// If either is null the merge/delete calls would take the 404 not-found path, not the sweep's
+		// DENY path — so assert it loudly rather than mistaking a 404 for an authorization denial.
 		BaseRecord readByDenied = PbBookUtil.readScene(denied, scene0Oid, orgId);
 		assertNotNull("Positive control: the read-only user must be able to READ scene0 (the Read grant "
 			+ "is real), so merge/delete reach the write-DENY branch and not the 404 path", readByDenied);
+		BaseRecord bookByDenied = PbBookUtil.readBook(denied, bookOid, orgId);
+		assertNotNull("Positive control: the read-only user must be able to READ the book (group + world "
+			+ "Read grants), else resolveSceneBook 404s before the composition sweep", bookByDenied);
+		PolicyResponseType canDel = IOSystem.getActiveContext().getAuthorizationUtil().canDelete(denied, denied, page0[0]);
+		assertFalse("Positive control: the read-only user must NOT be permitted to delete the page composition",
+			canDel != null && canDel.getType() == PolicyResponseEnumType.PERMIT);
 
 		// ── mergeSceneUp is DENIED and non-destructive ───────────────────────────────────────────────
 		int mergeStatus = -1;
@@ -320,10 +410,18 @@ public class TestChapBookSceneMerge extends BaseTest {
 		assertNotNull("scene0 must still exist after the denied operations", survivor0);
 		assertEquals("scene0's stanza must be UNCHANGED after the denied merge",
 			stanza0, survivor0.get(OlioFieldNames.FIELD_CB_POEM_STANZA));
+		for (BaseRecord[] page : new BaseRecord[][] { page0, page1 }) {
+			assertNotNull("the page composition " + oid(page[0]) + " survives the denied ops",
+				rawRow(OlioModelNames.MODEL_PB_COMPOSITION, oid(page[0]), orgId));
+			assertNotNull("the element row " + oid(page[1]) + " survives the denied ops (the sweep is refused "
+				+ "at its first row, not after)", rawRow(OlioModelNames.MODEL_PB_SCENE_ELEMENT, oid(page[1]), orgId));
+		}
 
-		logger.info("Scene-op denial statuses (observed): merge={} delete={} "
-			+ "(scene-level ops surface a denial as PictureBookException(500), not the hardened 403 that "
-			+ "deleteChapBook uses; recorded so a future hardening is a deliberate, visible change).",
-			mergeStatus, deleteStatus);
+		// P4-13 (c2): with a page composition on the scene, the composition sweep runs first and PBAC's
+		// refusal of its rows is surfaced as 403 (DeleteResult.authorized=false), not the 500 a refused
+		// scene patch/delete still yields on a scene that has no compositions.
+		assertEquals("denied merge is refused at the folded scene's composition sweep with 403", 403, mergeStatus);
+		assertEquals("denied delete is refused at the scene's composition sweep with 403", 403, deleteStatus);
+		logger.info("Scene-op denial statuses: merge={} delete={}", mergeStatus, deleteStatus);
 	}
 }

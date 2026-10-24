@@ -106,6 +106,33 @@ describe('composeCounterText', () => {
             composed: 4, current: 2, skippedUserEdited: 1, migrated: 3, hardFailures: 1, pagesSkipped: 2, quickStartRendered: 1, quickStartFailed: 1, interrupted: true
         } })).toBe('Done: composed 4, current 2, kept 1 hand-edited, migrated 3, failed 1, pages skipped 2, drafts rendered 1, drafts failed 1 (interrupted)');
     });
+    it('"migrated N" is the loop count plus the up-front migration pass, and staled renders are counted (P4-12 h2/c1)', () => {
+        expect(cmp.composeCounterText({ terminal: true, result: { composed: 2, migrated: 0, migration: { created: 5 } } })).toBe('Done: composed 2, migrated 5');
+        expect(cmp.composeCounterText({ terminal: true, result: { composed: 2, migrated: 1, migration: { created: 5, failed: 1 } } })).toBe('Done: composed 2, migrated 6');
+        expect(cmp.composeCounterText({ terminal: true, result: { composed: 2, migration: { created: 0 } } })).toBe('Done: composed 2');
+        expect(cmp.composeCounterText({ terminal: true, result: { composed: 3, staled: 3, hardFailures: 1 } })).toBe('Done: composed 3, failed 1, renders staled 3');
+    });
+});
+
+describe('composeSceneText', () => {
+    it('reports a plain compose; source and counts only when asked (the re-compose toast)', () => {
+        expect(cmp.composeSceneText(null, 'composed')).toBe('Scene composed');
+        expect(cmp.composeSceneText({ written: true, source: 'LLM', actors: [1, 2], elements: [1] }, 'composed')).toBe('Scene composed');
+        expect(cmp.composeSceneText({ written: true, source: 'LLM', actors: [1, 2], elements: [1] }, 're-composed', true)).toBe('Scene re-composed (LLM, 2 actors, 1 elements)');
+        expect(cmp.composeSceneText({ written: true }, 're-composed', true)).toBe('Scene re-composed (llm, 0 actors, 0 elements)');
+    });
+    it('reports the failure reason when nothing was written', () => {
+        expect(cmp.composeSceneText({ written: false, failureReason: 'LLM unavailable' }, 'composed')).toBe('Scene was not composed: LLM unavailable');
+        expect(cmp.composeSceneText({ written: false }, 're-composed')).toBe('Scene was not re-composed');
+    });
+    it('names migrate-first, the migrated fallback and the stale render mark, then the warnings (P4-12 h1/c1)', () => {
+        expect(cmp.composeSceneText({ written: true, source: 'LLM', actors: [1], elements: [], migratedFirst: true, nodeStale: true }, 'composed'))
+            .toBe('Scene composed — legacy prompt migrated first; render marked stale');
+        expect(cmp.composeSceneText({ written: true, source: 'MIGRATED', actors: [], elements: [], migratedFirst: true, migratedFallback: true, nodeStale: false, warnings: ['LLM unavailable; the MIGRATED composition written first from the scene\'s own fields stands'] }, 'composed'))
+            .toBe('Scene composed — legacy prompt migrated; the LLM compose did not land, so it stands — LLM unavailable; the MIGRATED composition written first from the scene\'s own fields stands');
+        expect(cmp.composeSceneText({ written: true, source: 'LLM', actors: [], elements: [], nodeStale: true, warnings: ['w1', 'w2'] }, 're-composed', true))
+            .toBe('Scene re-composed (LLM, 0 actors, 0 elements) — render marked stale — w1; w2');
+    });
 });
 
 describe('parseConfigOverride', () => {

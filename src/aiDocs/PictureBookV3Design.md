@@ -496,6 +496,13 @@ silently (§19).
 > `promptLocked` PATCH mirrors onto `scene.sdPrompt`/`promptLocked`; a SCENE composition's `promptOverride` never reaches the
 > scene (board direction, not scene text). The scene's `sdPrompt`, `promptLocked`, `configOverride` are the mirror, the
 > composition the authority (§24 P4-10 block; Implementation §6.C 198, §12.10).
+>
+> **Built (P4-13, 2026-10-23) — where a composition row lives:** every `olio.pb.composition`, `olio.pb.sceneActor` and
+> `olio.pb.sceneElement` is created in the group of the book its `book` FK names (`ctx.bookGroupId` at `PbComposeUtil:1966`, the
+> book's group at `:2529`, the composition's own group for its actor / element rows at `:2557` `ownRow`), never in another book's
+> group. The stale-graph purge (`PbHealthUtil.scanStale`, olio-run) relies on this when it sweeps a composition found in this book's groups whose `book` names another book — today only a dead row matches. A future SERIES_ART
+> composition that must live in a shared or chapter group with `book` naming another chapter changes that scan first
+> (security-reviewer P4-14 F4; Implementation §6.C 202).
 
 ### 9. Getting a composition: "AI proposes"
 
@@ -1416,6 +1423,21 @@ actor/element with a name or description, because a MIGRATED composition's defau
 boilerplate) make the compiled SDXL string non-blank for a scene with nothing to depict (§6.C 198 o–r). `Flux2Compiler` still ignores
 `RenderPlan.Camera` — Phase 5. Results, tests and the live proof: `PictureBookV3Implementation.md` §12.10.]**
 
+**[2026-10-23 (P4-12), as built — migrate-first on every compose path, and a written compose stales the render.** The lazy
+render hook (`PbComposeUtil.ensureComposition`) and the per-scene route (`PbServiceFacade.composeScene` → `composeSceneMigratedFirst`)
+now do what the job's up-front pass does: a story scene with no SCENE composition gets its `MIGRATED` row (`sdPrompt`→`promptOverride`,
+`promptLocked`) written **before** the LLM compose, so no path can create a fresh LLM row that drops a legacy lock; when the LLM then
+produces nothing the MIGRATED row stands and is reported `written:true, migratedFallback:true, migratedFirst:true` (a persist-phase
+failure stays `hardFailure`; a cancel after the migration keeps the row). Compositions are not bound node inputs, so **every LLM-written
+compose marks the scene's node STALE explicitly** (`PbComposeUtil.staleAfterCompose` → `PbBookUtil.markSceneNodeStale`: in the compose
+job before its Quick-start render, and on the per-scene route — never in the lazy hook, which is itself the render; a MIGRATED row that
+stands after an LLM miss stales nothing, exactly as the job's up-front pass does, and the result still reports `nodeStatus`) and **every wardrobe
+pin stales the chain** — `migrateSceneTags` snapshots `resolveOutfits` before and after the pass and stales every scene whose resolved
+outfits changed (`affected`/`staled`, surfaced as `migration.tagsAffected`/`tagsStaled`); the migration's own MIGRATED write never stales
+(nothing rendered from it yet). Results carry `nodeStale`/`nodeStatus` per scene and `staled` per job. Bound stated: a compose from
+another JVM (Console7, generic `PATCH /rest/model`) does not stale; the next explicit compose or edit does. `PictureBookV3Implementation.md`
+§6.C 200, §12.12.]**
+
 **Other ChapBook specifics:**
 - **Locations:** a ChapBook book has its own world, so the same world-scoped location library
   (§7.1) applies. A poem cycle that keeps returning to "the harbour" can share one approved place.
@@ -1854,6 +1876,24 @@ render path.
 | Camera | MEDIUM, EYE_LEVEL; WIDE when there are more than 3 actors |
 | Portrait | render on first use; while missing → `ACTOR_TEXT_ONLY` |
 
+**[2026-10-23 (P4-13), as built — a ChapBook fold destroys the folded page, it does not merge it.** `ChapBookUtil.mergeSceneUp`
+appends the *following* scene's stanza onto this one and then deletes that following scene together with every composition keyed
+to it (`deleteSceneCompositions` → `PbDeleteUtil.deleteCompositionsByScene`, child→parent, as the acting user, before any
+write; a refused row is 403/500: the stanza and both scene rows are untouched, while composition child rows already deleted
+before a mid-tree refusal stay deleted — Implementation §6.C 201 c, 202) — a user-edited `CHAPBOOK_PAGE` composition on the folded page is deleted
+with it, never carried onto the survivor, whose own composition is untouched (only `poemStanza` and `imageStale` change). Stated
+intent, not a gap (`PictureBookV3Implementation.md` §6.C 201 x).]**
+
+**[2026-10-23 (P4-13 / P4-14), as built — which scan owns which dangling composition class.** The orphan scan
+(`PbOrphanUtil.scanPb2Rows`; per user — `inScope` by slug, org-wide only for `AccountAdministrators`; its purge deletes a
+composition's dependents olio-then-user and then the row) lists a `sceneElement` / `sceneActor` whose `composition` FK no longer
+resolves, a composition whose `book` no longer resolves, and a SCENE / CHAPBOOK_PAGE composition whose `scene` no longer
+resolves (a FK to a deleted row reads back null, `fkId` → 0). The stale-graph scan (`PbHealthUtil.scanStale`; per book, run as
+the olio principal from `healBook` and from `createBook` over an existing world) lists a composition in the book's groups whose
+`book` names another book, and actors / elements whose composition is not one of the book's live rows. Both classify a
+composition with a dangling `book`; the overlap is by design — one is reachable per book, the other per user — and both delete
+it (architect P4-14 F5; Implementation §6.C 202).]**
+
 ### 30. Phasing
 
 Phases follow the notes' §60–68, re-cut for AM7. Each phase is shippable and ends with real tests
@@ -1867,7 +1907,7 @@ for image output).
 | **2 — Style, model resolution, compiler core; ChapBook goes V3** | `olio.pb.style` with inheritance and lock, `ModelResolver`, capabilities/presets resources, models-by-task route, style editor, estimate, `RenderPlan`, TEXT_ONLY strategy, `SdxlCompiler`, plan inspector; **Kontext Disable stage** (§37.3) | **ChapBook is the first product switched to V3** (TEXT_ONLY, zero actors), with up-front composition from the existing continuity composer. **ChapBook old path disabled (§28.1 Stage 2)** | One model policy across reimage/PB/ChapBook/chat; a missing model is reported before rendering; ChapBook verify checks start; chat scene renders through the illustration service (§24.1) |
 | **3 — Locations** (world-scoped) | Location/variant models, LOCATION nodes, `approvedRender`, library Ux, approve/lock, clustering migration, background-first for TEXT_ONLY/DIRECT; **POI link** (§7.2 rules 1–3, 5): map-free `olio.pointOfInterest` + `olio.store` per resolved location in book worlds, name-match in game worlds, `PointOfInterestUtil.findByName`, `PbOrphanUtil`/`PbHealthUtil` repair of a dangling `poi` | Optional locations on ChapBook pages | Scenes 3/7/12 share one approved tavern; series chapters share it; a location failure doesn't fail scenes; every resolved location has a POI with a store, and deleting the world removes both |
 | **4 — Composition + wardrobe** | Composition/actor/element models (`sceneElement.item` FK, §7.2 rule 4), up-front `pb.compose` job in story order with lazy per-scene fallback and "Quick start" (§9.1, ratified) fed the location's POI store items (§9), layout util, board Ux, `Flux2Compiler`, degradations, wardrobe alternates and carry-forward (§6) | Composition model replaces `sdPrompt`/`promptLocked` (already switched in Phase 2) | Any number of actors; prompt shown = prompt sent; nothing dropped silently; outfit change persists across scenes; a promoted element is an `olio.item` in the POI store and is reused by name in a later scene at the same location |
-| **5 — Multi-character strategies** | **Spike first:** the graph compiler against the live backend (§38.5: IP-Adapter and FLUX.2 base graphs captured, `<region:>` vs own inpaint graph decided, text-frame QA outputs, timings on .39), Swarm mask inpaint, and FLUX.2 base + SDXL inpaint style coherence. Then `WorkflowCompiler`, SEQUENTIAL_INPAINT, REGIONAL_PROMPT, HARMONIZE and targeted regeneration. Parameter names and the raw-graph contract are already verified (§36.2, §38.1); what remains unmeasured is behaviour and timing | n/a (no actors unless G-35 is enabled) | Scenario B: 4 characters all rendered and identifiable on visual inspection; GPU memory within limits |
+| **5 — Multi-character strategies** | **Spike first (P5-0, no product code):** contract measurements and captured graphs against the live backend (§38.5: IP-Adapter and FLUX.2 base graphs captured, `<region:>` vs own inpaint graph decided, text-frame QA outputs, timings on .39), Swarm mask inpaint, and FLUX.2 base + SDXL inpaint style coherence. Then, as P5-1 onward, `WorkflowCompiler`, SEQUENTIAL_INPAINT, REGIONAL_PROMPT, HARMONIZE and targeted regeneration. Parameter names and the raw-graph contract are already verified (§36.2, §38.1); what remains unmeasured is behaviour and timing | n/a (no actors unless G-35 is enabled) | Scenario B: 4 characters all rendered and identifiable on visual inspection; GPU memory within limits |
 | **6 — Variants** | Variant batches, strip, history, retention sweep | Same | Scenario F |
 | **7 — PictureBook goes V3** | Book workspace Ux replaces wizard steps 4–5. **PB1 disabled (§28.1 Stage 2)** | — | Scenarios A–G; PictureBook verify checks start |
 | **8 — Visual QA** | `VlmQaProvider` first (default, `valkyriesys/eudaimonia-dryad3-vision` on `.42`, §17), then the Swarm/Comfy detection graph as `SwarmQaProvider` fallback (identity `UNAVAILABLE` until the §36.7 item 4 spike), provider selection by model availability, QA Ux, QA-gated auto-approve | QA on ChapBook pages (detection is mostly n/a; checks gross defects only) | Missing-character detection on a deliberately broken render, through each provider |
@@ -2028,7 +2068,9 @@ put the run objectId in the trace metadata so one book render can be followed ac
     model `valkyriesys/eudaimonia-dryad3-vision`; Comfy detection graph is the fallback when that
     model is not available (§17, Phase 8).
 13. ~~**Who authors the Comfy workflows**~~ **Resolved 2026-10-09:** nobody authors them; V3
-    generates them (§38). The Phase 5 spike builds the graph builder, not saved workflows.
+    generates them (§38). The Phase 5 spike (P5-0) measures the contract and captures Swarm's
+    generated graphs; the graph builder (`WorkflowCompiler`) is P5-1, built from those captures.
+    No saved workflows either way.
 14. **Re-measure on .39 — which timings, and what the question is.** The timings are the
     **seconds-per-render figures that feed the "estimate before Generate All" feature** (§18:
     scenes × stages × variants × `secondsPerStepPerReference`). The only numbers in the repo are
@@ -2048,6 +2090,26 @@ put the run objectId in the trace metadata so one book render can be followed ac
     thresholds** — tests and the job watchdog give renders ample time because these are small
     devices and are expected to be slow (§31 last bullet, §20 "reachable but slow"). Still open:
     (a) vs (b) for the estimate's source.
+
+    **Phase 5 decisions — inputs from P5-0 (2026-10-24; §38.5 as measured; nothing here is
+    decided).** *Seed numbers for (a) / (b), `.39`, FLUX.2 Klein 9B, 1024×768, 4 steps:* BASE with
+    3 references **≈ 102 s warm / 128 s cold**; no-reference 1024² 38.6 s — so roughly 20 s per
+    reference on this device against the repo's `~40 s per reference` Strix Halo figure;
+    ACTOR_REGION as a `<region:>` pass over the base ≈ 176 s warm / 194 s cold; one-box mask
+    inpaint 77.5 s; face-segment pass +86 s over base; `<object:>` ≈ 340 s. SDXL 25-step 28–53 s,
+    mask inpaint 15 s. HARMONIZE and UPSCALE unmeasured. *The per-actor pass — Swarm's `<region:>`
+    versus V3's own inpaint graph (§38.2):* `<region:>` is conditioning-only — it keeps the layout
+    and takes an edit on FLUX.2 but leaks across actors (1 in 3 seeds), merges or drops actors when
+    boxes overlap on either family, and takes 937 s for four boxes with five references; a plain
+    `maskimage` inpaint recomposites exactly outside the mask on both families (the untouched actor
+    is byte-stable) but at FLUX.2's 4 steps × creativity 0.6 it cannot add what the init lacks (a
+    scarf, a missing figure), and `useinpaintingencode` is not a substitute (grey slab). So the
+    P5-1 plan decides between: more steps or creativity 1.0 inside the mask for FLUX.2 inpaint
+    passes (unmeasured — measure first), a non-overlapping layout for any `<region:>` use
+    (`PbLayoutUtil.defaultPlacement` 4-of-4 overlaps), and which checkpoint family runs which
+    stage. IP-Adapter is inert on FLUX.2 and bleeds on SDXL; FACEID is blocked by the `.39` venv
+    (§36.5) — identity on FLUX.2 comes from the `ReferenceLatent` chain and held across seeds.
+    Still open: (a) vs (b) for the estimate's source.
 15. **Olio events + interactions for sequences and state changes — considered 2026-10-09;
     ratified 2026-10-09: skipped for V3** ("skip 15 for v3"). The analysis is kept as the record
     of why, and of where they would come back (an events → scenes importer).
@@ -2151,6 +2213,12 @@ live servers or the working tree on 2026-10-09; nothing was implemented. Raw pro
 SwarmUI **0.9.8.3.GIT-d9ecb52d**, one backend (`comfyui_selfstart`, id 0, GPU 0). Anonymous
 sessions get user `local` with permission `*` (includes `install_features`, `download_models`,
 `comfy_edit_workflows`, `restart_backends`), so V3's adapter needs no credential on this host.
+
+*Version drift, 2026-10-24:* `/API/GetNewSession` now reports **`0.9.8.4.GIT-5dc94afa`** (same
+single `comfyui_selfstart` backend; permissions still include `comfy_direct_calls` and
+`comfy_dynamic_custom_workflows`). The inventory below and the §38.1 contract were taken on the
+`0.9.8.3` build; the P5-0 spike's 29 requests found nothing that changed under the new one. Other
+`0.9.8.3` mentions in this document are left as the dated record of the 2026-10-09 probe.
 
 | Type | Installed |
 |---|---|
@@ -2258,15 +2326,17 @@ resolves to those tiers takes the Comfy fallback — the `[LLM-GATE]` line says 
 |---|---|---|
 | IP-Adapter node pack + SAM2 node pack | `ComfyInstallFeatures` (`features` = comma list from Swarm `src/Core/InstallableFeatures.cs`: `ipadapter`, `controlnet_preprocessors`, `frame_interpolation`, `gimm_vfi`, `comfyui_tensorrt`, `sam2`, `bnb_nf4`, `gguf`, `extramodels`, `nunchaku`, `teacache`; clones the repos and restarts the backend) | **Installed** — backend features `ipadapter`, `cubiqipadapterunified`, `cubiqipadapter`, `sam2`; 51 new nodes (§36.3). Done by Stephen; my own call was blocked by the tool-permission gate |
 | ClipVision encoder `CLIP-ViT-H-14-laion2B-s32B-b79K` | `DoModelDownloadWS` (`type` must be a `T2IModelSets` key: `Stable-Diffusion`, `LoRA`, `VAE`, `Embedding`, `ControlNet`, `ClipVision`, `Clip`) or a file drop | **Installed** — `ListModels` ClipVision lists it |
-| YOLO face weights `face_yolov8m.pt` | File drop into `(SwarmUI)/Models/yolov8/` (not a `T2IModelSets` type) | **Installed** — `yolomodelinternal` = `['face_yolov8m.pt']`; backend feature `yolov8` |
-| IP-Adapter SDXL weights (`ip-adapter-plus_sdxl_vit-h`, `ip-adapter-plus-face_sdxl_vit-h`, FaceID variants) | **No install needed**: Swarm's `useipadapter` dropdown downloads each model on first use | Will fetch on the first render that selects a value; expect the first such request to be slow |
-| InsightFace (for `FACEID*` and any identity-score workflow) | Python package + `antelopev2`/`buffalo_l` models inside the Comfy venv; not reachable by any Swarm API | **Unverified** — only a FACEID render will tell |
-| SDXL inpaint checkpoint | `DoModelDownloadWS` type `Stable-Diffusion` | **Absent, optional** — SEQUENTIAL_INPAINT can start with a base SDXL checkpoint + `useinpaintingencode` |
+| YOLO face weights `face_yolov8m.pt` | File drop into `(SwarmUI)/Models/yolov8/` (not a `T2IModelSets` type) | **Installed and rendered with** — `yolomodelinternal` = `['face_yolov8m.pt']`; backend feature `yolov8`. P5-0 `segment_yolo_flux2` (2026-10-23): a clean face-only pass, 0.2 % of the frame changed outside the two faces; CLIPSeg (`<segment:face>`) found one face of two |
+| IP-Adapter SDXL weights (`ip-adapter-plus_sdxl_vit-h`, `ip-adapter-plus-face_sdxl_vit-h`, FaceID variants) | **No install needed**: Swarm's `useipadapter` dropdown downloads each model on first use | **Working on SDXL** (P5-0 `ipadapter_sdxl`, 2026-10-23): `PLUS FACE (portraits)` rendered first time in 28.3 s — the same as a plain 25-step render, so fetched-then versus already-present is not separable; identity loose, wardrobe bleeds between actors. **Inert on the FLUX.2 generator path**: nodes emitted, output pixel-identical to the plain reference render |
+| InsightFace (for `FACEID*` and any identity-score workflow) | Python package + `antelopev2`/`buffalo_l` models inside the Comfy venv; not reachable by any Swarm API | **Broken** (P5-0 `faceid_sdxl`, 2026-10-23): `FACEID PLUS V2` → `ComfyUI execution error (Node 101: IPAdapterUnifiedLoaderFaceID) … numpy.dtype size changed, may indicate binary incompatibility. Expected 96 from C header, got 88 from PyObject` — InsightFace's compiled extension against the venv's numpy; a `pip` repair inside the Comfy venv on `.39`. FACEID stays out of Phase 5 until then |
+| SDXL inpaint checkpoint | `DoModelDownloadWS` type `Stable-Diffusion` | **Absent** — and `useinpaintingencode` with a base SDXL checkpoint is **not** a viable start (P5-0 `inpaintencode_*`, 2026-10-23: `VAEEncodeForInpaint` + `start_at_step 11/25` at creativity 0.55 leaves a flat grey slab in the mask). Plain `maskimage` inpaint (`SetLatentNoiseMask` + recomposite) works on both families without an inpaint checkpoint (§38.5 item 2) |
 | ControlNet model (pose/depth for REGIONAL_PROMPT) | `DoModelDownloadWS` type `ControlNet` | **Absent, optional** — `ControlNet` list is `[]` although the feature flag and SAM2 preprocessors are present |
 | Kontext checkpoint | Gated on Hugging Face | **Absent; recommend retire** (§37) |
 
-Nothing in this table has been rendered with yet. The first `GenerateText2Image` that sets
-`useipadapter` or `<segment:yolo-face_yolov8m.pt>` is the Phase 5 spike's first step (§36.7).
+Rendered with in the P5-0 spike (2026-10-23 / 24, `TestP50SwarmSpike`; results §38.5 and
+`PictureBookV3Implementation.md` §4.11): IP-Adapter on SDXL and FLUX.2, FACEID (failed), YOLO and
+CLIPSeg segments, `useinpaintingencode`, plain `maskimage` inpaint, `<region:>` and `<object:>` on
+both checkpoints. The spike installed nothing; the ControlNet and Kontext rows are unchanged.
 
 #### 36.6 Code audit — where the design text was wrong or imprecise, and what was changed
 
@@ -2535,6 +2605,45 @@ both save nodes carried the same bytes.
 **2.5 s** — ComfyUI served the sampler from its node cache because seed, prompt and sampler inputs
 were identical to render 1; only the new scale/save nodes ran. Both facts matter below.
 
+**Measured in P5-0 (2026-10-23 / 24; 29 requests; graphs, requests and responses under
+`C:/tmp/p50-spike/`; per-render table `PictureBookV3Implementation.md` §4.11).** Everything in the
+table above held on the `0.9.8.4.GIT-5dc94afa` build. Added facts, by row:
+
+- *Get Swarm's own graph:* the FLUX.2 generator (`flux2Klein_9b` + `promptimages`) is 18 nodes —
+  `CheckpointLoaderSimple`, `CLIPLoader qwen_3_8b (flux2)`, `VAELoader Flux\flux2-vae`,
+  `EmptyFlux2LatentImage`, **`SwarmTextEncodeAdvanced`** for the positive prompt (input key
+  **`prompt`**, with `steps`, 1.5× `width`/`height`, `target_width`/`target_height`, `guidance -1`),
+  `CLIPTextEncode` for the negative, and per reference `SwarmLoadImageB64 → VAEEncode →
+  ReferenceLatent` chained on the conditioning into `SwarmKSampler` (`noise_seed`, `start_at_step
+  0`, `end_at_step 10000`). The plain `maskimage` path adds `SwarmLoadImageB64(mask) → ImageToMask
+  (red) → SwarmMaskGrow → SwarmMaskBlur`, `SwarmLoadImageB64(init) → VAEEncode → SetLatentNoiseMask`,
+  `DifferentialDiffusion` on the model, and — with `initimagerecompositemask` — `ThresholdMask
+  0.001 → SwarmImageCompositeMaskedColorCorrecting` before the save; **`start_at_step` =
+  `steps × initimagecreativity`** (4 × 0.6 → 2; 25 × 0.6 → 10). `<region:>` adds
+  `SwarmSquareMaskFromPercent` + `CLIPTextEncode` + `ConditioningSetMask(globalregionfactor)` per
+  region, the overlap-fix / exclude / clean-except-self mask nodes and `ConditioningCombine` (27
+  nodes for two regions, 54 for four with five references). `<object:>` passes are **not** in the
+  generated graph (confirmed: the capture for an `<object:>` prompt is the plain graph).
+- *Submit a raw graph / Tag filling / Per-request custom inputs / Images into the graph:* a
+  **FLUX.2** graph re-posted as `comfyworkflowraw` with `${comfyrawworkflowinputtextscene}`,
+  `${comfyrawworkflowinputseedv3seed}` and **`${comfyrawworkflowinputimageactorA}` in a
+  `SwarmLoadImageB64.image_base64`** (posted as a data-URI under that key) plus a string-id
+  `v3_save_final` node: accepted, 108 s, the prompt edit visible — the image-tag fill is measured.
+- *Outputs:* one image came back for two save nodes carrying the same bytes, as in render 1. The
+  returned path contains spaces (`View/local/raw/<date>/<n>-<prompt prefix>-<model>.png`); encode
+  it per segment before fetching.
+- *Raw Comfy API:* `system_stats` → `cuda:0 AMD Radeon(TM) 8060S Graphics : native`, `vram_total
+  107090132992`, RAM 68.3 GB, Windows, Python 3.12.10, PyTorch `2.9.1+rocm7.2.1`, ComfyUI 0.42.0
+  (frontend 1.53.6 installed / 1.57.1 required — warning only), Comfy port 7821, `--preview-method
+  latent2rgb`; `vram_free` ≈ 99 GB with SDXL resident, ≈ 79.5 GB with FLUX.2 (~20 GB for Klein 9B
+  + `qwen_3_8b`), ≈ 106 GB after Swarm's idle unload (~20 min).
+- *Websocket:* `GenerateText2ImageWS` with the same body gives `status + backend_status +
+  supported_features` (features include `comfyui, yolov8, ipadapter, cubiqipadapterunified, sam2,
+  comfy_loadimage_b64, comfy_saveimage_ws, comfy_saveaudio_ws, folderbackslash`), `gen_progress`
+  (`is_preview` on the first), `keep_alive`, one `image + batch_index + request_id + metadata`
+  frame whose `image` is a path, then `discard_indices` and `socket_intention`.
+- *Timings (never thresholds):* §38.5 item 5.
+
 #### 38.2 What V3 builds
 
 A new layer in `olio/illustration/`, between the prompt compilers (§14) and the adapter (§15):
@@ -2626,31 +2735,94 @@ persisted copy of the Comfy graph beyond the artifact.
   timings.
 - **§36.2 route list:** add `ComfyGetGeneratedWorkflow` and `ComfyBackendDirect/object_info`;
   `ComfySaveWorkflow` / `ComfyReadWorkflow` / `ComfyListWorkflows` are no longer used by V3.
-- **§30 Phase 5 spike** becomes "build the graph compiler against the live backend", not "author
-  workflows" — see §38.5. Phase 2 (`SdxlCompiler`, TEXT_ONLY) can ship on the plain-parameter
+- **§30 Phase 5 spike** becomes "measure the contract and capture Swarm's generated graphs against
+  the live backend" (P5-0), not "author workflows"; the graph compiler itself is P5-1 — see §38.5. Phase 2 (`SdxlCompiler`, TEXT_ONLY) can ship on the plain-parameter
   path and still record `backendGraph` from `ComfyGetGeneratedWorkflow`, so the proxy mapping
   exists from the first V3 render.
 
-#### 38.5 Still to verify in the spike (not guesses — unmeasured)
+#### 38.5 Measured in the P5-0 spike (2026-10-23 / 24) — the six items this section listed as unmeasured
 
-1. **IP-Adapter graph shape.** `useipadapter` with an empty `promptimages` emitted no IP-Adapter
-   nodes (ignored, not an error). Re-run `ComfyGetGeneratedWorkflow` with a real portrait in
-   `promptimages` and `useipadapter = PLUS FACE (portraits)`, capture the subgraph, and confirm the
-   weights auto-download on the first `GenerateText2Image`.
-2. **`<region:>` / `<object:>` graphs.** `<object:>` is handled *outside* the generator
-   (`T2IMultiStepObjectBuilder.CreateFullImage`, `T2IEngine.cs:240-263`): Swarm renders the object
-   passes as separate generations and feeds the composite back as `initimage`. So REGIONAL_PROMPT
-   with `<object:>` is **not one graph** today; V3 either compiles its own per-actor inpaint graph
-   (the §38.1 `<segment:>` subgraph is the template) or uses `<region:>` only (which the generator
-   does emit as conditioning). Decide after capturing both.
-3. **Text output frames** for QA counts (§38.4, §17).
-4. **FLUX.2 base graph** from the generator (`flux2Klein_9b` with `promptimages` references), to
-   see the reference-latent nodes V3 must preserve when it extends that graph for a region pass
-   with an SDXL checkpoint.
-5. **Timings on `.39`** for a compiled BASE + one ACTOR_REGION pair, to replace the Strix Halo
-   figures (§34 Q14).
-6. **Websocket route** (`GenerateText2ImageWS`) for per-stage progress; the HTTP route was used
-   for both probes.
+Measured by `TestP50SwarmSpike` (Objects7, gated on `PB_SD_TESTS=1`, no DB, no LLM) against `.39`
+with `flux2Klein_9b` and `juggernautXL_ragnarokBy`; 29 requests, 27 PNGs opened and described,
+every generated graph and response saved under `C:/tmp/p50-spike/`; the per-render table, the
+pixel diffs and the ledger of judgments are `PictureBookV3Implementation.md` §4.11 and §6.C 204.
+Numbers are measurements on that GPU on that day, never thresholds (§34 Q14).
 
-Nothing in this section needs an online research prompt: the contract was taken from the running
-server's source and confirmed by two renders. The spike items are measurements, not unknowns.
+1. **IP-Adapter graph shape — captured; SDXL works loosely, FLUX.2 inert, FACEID broken.** With a
+   real portrait in `promptimages` and `useipadapter = PLUS FACE (portraits)` the SDXL generator
+   emits `SwarmLoadImageB64 → IPAdapterUnifiedLoader(preset) → IPAdapter(weight 0.8, start 0.0,
+   end 1.0, standard)` into the model (10 nodes) and renders in 28.3 s — the same as a plain
+   25-step SDXL render, so whether the weights were fetched then or were already on disk is not
+   separable from the measurement. Identity is loose and the wardrobe bleeds between the two
+   actors. On the FLUX.2 generator path the same nodes are emitted (`ImageBatch` ×2 over the three
+   references, 22 nodes) **and the output is pixel-identical to the plain reference render** —
+   IP-Adapter does nothing there; identity on FLUX.2 comes from the `ReferenceLatent` chain (item
+   4). `FACEID PLUS V2` fails inside Comfy — `IPAdapterUnifiedLoaderFaceID: numpy.dtype size
+   changed … Expected 96 from C header, got 88 from PyObject` — InsightFace's compiled extension
+   against the venv's numpy; a venv repair on `.39`, not a Swarm or V3 matter (§36.5).
+2. **`<region:>` / `<object:>` graphs — captured; `<region:>` is conditioning-only and soft,
+   `<object:>` is two generations, plain `maskimage` inpaint is the usable per-actor substrate.**
+   `<region:>` on an `initimage` (creativity 0.6, `globalregionfactor 0.5`) emits per region
+   `SwarmSquareMaskFromPercent` + `CLIPTextEncode` + `ConditioningSetMask(0.5)` with
+   `SwarmOverMergeMasksForOverlapFix` / `SwarmExcludeFromMask` / `SwarmCleanOverlapMasksExceptSelf`
+   and `DifferentialDiffusion`, combined by `ConditioningCombine` (27 nodes for two actors, 54 for
+   four with five references). It holds the base layout and takes a wardrobe edit on FLUX.2 but
+   leaked the edit to the other actor in 1 of 3 seeds; on SDXL two overlapping boxes merged into
+   one figure and one actor vanished; **on FLUX.2 the four-box fresh render (937 s) dropped the one
+   actor whose box every other box overlaps** — `PbLayoutUtil.defaultPlacement`'s 4-of-4 layout
+   overlaps and is not usable as `<region:>` input as it stands. `<object:>` is confirmed to run
+   outside the generator (the captured graph is the plain one): a red umbrella prop was added on
+   FLUX.2 in 355 s; on an actor it did not take the wardrobe edit (333 s). Plain `maskimage` on an
+   `initimage` (`ImageToMask → SwarmMaskGrow 16 → SwarmMaskBlur 8 → SetLatentNoiseMask` over the
+   `VAEEncode`d init, `DifferentialDiffusion`, `ThresholdMask → SwarmImageCompositeMaskedColorCorrecting`
+   when `initimagerecompositemask` is set) **recomposites exactly outside the mask on both
+   families** (0.0 % change in the untouched actor's box), in 77.5 s on FLUX.2 and 15.1 s on SDXL —
+   this is the SEQUENTIAL_INPAINT substrate and the template for V3's own per-actor graph. Its
+   limit on FLUX.2 Klein: `start_at_step = steps × creativity` = 4 × 0.6 → 2, too coarse for an
+   **additive** edit (the scarf never appeared) and unable to introduce a figure that is not in the
+   init (the four-actor inpaint repainted the two empty boxes as street). `useinpaintingencode`
+   (`VAEEncodeForInpaint grow 6` + `SetLatentNoiseMask`, `start_at_step 11/25`) with a standard
+   SDXL checkpoint leaves a **flat grey slab** — not a viable start (§36.5 corrected).
+   `<segment:yolo-face_yolov8m.pt,0.6,0.5>` on FLUX.2 (the §38.1 subgraph, now with a seed +2
+   sampler at `start_at_step 2` and three `ReferenceLatent` nodes) is a clean face-only pass:
+   0.2 % of the frame changed outside the two faces, 28.7 % / 21.8 % inside them; CLIPSeg
+   (`<segment:face>`) found one face of the two. Seeds are deterministic across JVMs (run 1 and
+   run 2 base are byte-identical), so a pass re-renders its base exactly before applying itself.
+3. **Text output frames — not observed; not requested.** A plain `GenerateText2ImageWS` render
+   produced 30 frames: 4× `status + backend_status + supported_features`, ~19 `gen_progress` (the
+   first with `is_preview: true`, `latent2rgb` previews), 4× `keep_alive`, one `image + batch_index
+   + request_id + metadata`, then `discard_indices` and `socket_intention`. No graph in the spike
+   had a text-output node, so the `progress.max == 12347` frame (§38.4) is still unmeasured — a
+   P5-1 item once the QA-count node exists.
+4. **FLUX.2 base graph — captured (18 nodes).** `CheckpointLoaderSimple flux2Klein_9b` +
+   `CLIPLoader qwen_3_8b (type flux2)` + `VAELoader Flux\flux2-vae`; `EmptyFlux2LatentImage`;
+   positive prompt through **`SwarmTextEncodeAdvanced`** (input key `prompt`, not `text`; carries
+   `steps`, the 1.5× `width`/`height` and the `target_*` size, `guidance -1`); negative through
+   `CLIPTextEncode`; each reference as `SwarmLoadImageB64 → VAEEncode → ReferenceLatent`, chained
+   on the conditioning (`6 → 106 → 108 → 110`) into `SwarmKSampler` (`noise_seed`, 4 steps, cfg
+   2.0, euler / simple, `start_at_step 0`, `end_at_step 10000`) → `VAEDecode` → `SwarmSaveImageWS`.
+   The `ReferenceLatent` chain is what V3 must preserve when it extends the graph; identity and
+   wardrobe held across three further seeds. A raw re-post of this graph with three tags
+   (`6.prompt`, `10.noise_seed`, **`102.image_base64 → ${comfyrawworkflowinputimageactorA}`**) and a
+   `v3_save_final` node passed `TryIsValid`, rendered in 108 s and took a prompt edit — the image
+   tag fill into `SwarmLoadImageB64` is measured, not assumed.
+5. **Timings on `.39` (AMD Radeon 8060S, 107 GB, ROCm 7.2.1, ComfyUI 0.42.0).** FLUX.2 BASE with 3
+   references at 1024×768 / 4 steps: **101.5–102 s warm, 127–128 s cold** (checkpoint + text encoder
+   reload after an SDXL render; ~20 GB resident); 1024² with no reference 38.6 s. ACTOR_REGION as a
+   `<region:>` pass over the base (creativity 0.6, two regions): **175–194 s**. One-box mask inpaint
+   77.5 s; `<segment:yolo>` 188 s (base + face pass); CLIPSeg 63 s; `<object:>` 333–355 s; four-box
+   five-reference fresh `<region:>` 937 s (prep 0.3 s, generation 15.6 min, from a full unload).
+   SDXL 25-step 1024×768: 28–53 s (4 regions 53 s); SDXL mask inpaint 15 s; `useinpaintingencode`
+   9 s. HARMONIZE and UPSCALE were not in the spike. These replace the Strix Halo figures as the
+   seed for §34 Q14 (b).
+6. **Websocket route — works; see 3.** `GenerateText2ImageWS` at `ws://192.168.1.39:7801/API/GenerateText2ImageWS`
+   with the same JSON body; 30 frames in 106.5 s for a BASE render; the image arrives as a path in
+   the metadata frame, not as bytes.
+
+Also measured on the way: `/API/GetNewSession` now reports **`0.9.8.4.GIT-5dc94afa`** (§36.1) and
+nothing in §38.1 changed under it; `object_info` confirms `SwarmYoloDetection` (`model_name ∈
+[face_yolov8m.pt]`, `index`, optional `class_filter`, `sort_order`, `threshold 0.25`), `SwarmClipSeg`,
+`IPAdapterFaceID`, `IPAdapterUnifiedLoaderFaceID`, `SwarmLoadImageB64`; `system_stats` reports
+`vram_free` before / after every render (≈ 99 GB free with SDXL resident, ≈ 79.5 GB with FLUX.2).
+Nothing in this section is a decision; the Phase 5 decisions that these measurements feed are listed
+in §34 under Q14.

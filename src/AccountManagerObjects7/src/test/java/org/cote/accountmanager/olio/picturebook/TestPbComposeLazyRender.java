@@ -20,7 +20,9 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
@@ -123,6 +125,8 @@ public class TestPbComposeLazyRender extends BaseTest {
 			assertTrue("the first ensure composed the scene", e1.composedNow);
 			assertNotNull(e1.result);
 			assertTrue("...and wrote it", e1.result.isWritten());
+			/// P4-12: a never-composed scene is migrated first (the MIGRATED row from its own fields), then composed.
+			assertTrue("...migrating first (P4-12)", e1.result.migratedFirst);
 			assertNotNull(e1.composition);
 			String compOid = oidOf(e1.composition);
 			assertEquals("the hook's composition is the written one", compOid, oidOf(e1.result.composition));
@@ -130,14 +134,17 @@ public class TestPbComposeLazyRender extends BaseTest {
 			assertNotNull("the row is readable", comp1);
 			assertEquals(compOid, oidOf(comp1));
 			assertEquals("the row is the scene's", idOf(scene), fkId(comp1, OlioFieldNames.FIELD_PB_SCENE));
-			assertEquals("a new row is revision 1", Integer.valueOf(1), comp1.get(OlioFieldNames.FIELD_PB_REVISION));
-			assertEquals("one SCENE composition in the book", 1, PbComposeUtil.listSceneCompositions(u, bk).size());
 			String source1 = enumWord(comp1, OlioFieldNames.FIELD_PB_SOURCE);
 			boolean migrated = PbCompositionSourceEnumType.MIGRATED.name().equals(source1);
 			assertTrue("MIGRATED (no generalChat answered) or LLM (one did): " + source1,
 				migrated || PbCompositionSourceEnumType.LLM.name().equals(source1));
+			/// The MIGRATED row written first is revision 1; an LLM compose over it bumps the same row to 2.
+			Integer expectedRevision = Integer.valueOf(migrated ? 1 : 2);
+			assertEquals("a migrate-first row is revision 1 when MIGRATED stands, 2 when the LLM composed over it",
+				expectedRevision, comp1.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals("one SCENE composition in the book", 1, PbComposeUtil.listSceneCompositions(u, bk).size());
 			assertEquals("the outcome says the same", migrated, e1.result.migratedFallback);
-			logger.info("MEASURED: P4-4 ensureComposition first call " + ms1 + " ms source=" + source1
+			logger.info("MEASURED: P4-4 ensureComposition first call " + ms1 + " ms source=" + source1 + " revision=" + expectedRevision
 				+ (migrated ? " (the organization's generalChat fallback did not answer; §29 MIGRATED row)" : " (the organization's generalChat answered)"));
 
 			/// 3. Second call: found and left alone (LLM), or re-attempted and left alone as a hardFailure (MIGRATED, chat still away).
@@ -151,7 +158,7 @@ public class TestPbComposeLazyRender extends BaseTest {
 			assertEquals("the same row either way", compOid, oidOf(e2.composition));
 			BaseRecord comp2 = PbComposeUtil.findSceneComposition(u, scene, gid, orgId);
 			assertEquals("still one row", compOid, oidOf(comp2));
-			assertEquals("...untouched", Integer.valueOf(1), comp2.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals("...untouched", expectedRevision, comp2.get(OlioFieldNames.FIELD_PB_REVISION));
 			assertEquals("...same source", source1, enumWord(comp2, OlioFieldNames.FIELD_PB_SOURCE));
 			assertEquals("still one SCENE composition in the book", 1, PbComposeUtil.listSceneCompositions(u, bk).size());
 			if(migrated) {
@@ -237,7 +244,9 @@ public class TestPbComposeLazyRender extends BaseTest {
 			logger.info("MEASURED: P4-4 lazy compose source=" + source1
 				+ (migrated ? " (the organization's generalChat fallback did not answer; §29 MIGRATED row)" : " (the organization's generalChat answered)"));
 			assertEquals("the lazy row is the scene's", idOf(scene), fkId(comp1, OlioFieldNames.FIELD_PB_SCENE));
-			assertEquals("a new row is revision 1", Integer.valueOf(1), comp1.get(OlioFieldNames.FIELD_PB_REVISION));
+			/// P4-12: the lazy hook migrates first (revision 1) and an LLM compose over that row bumps it to 2.
+			assertEquals("a migrate-first row is revision 1 when MIGRATED stands, 2 when the LLM composed over it",
+				Integer.valueOf(migrated ? 1 : 2), comp1.get(OlioFieldNames.FIELD_PB_REVISION));
 			assertEquals("one SCENE composition in the book", 1, PbComposeUtil.listSceneCompositions(u, bk).size());
 
 			List<String> degradations1 = strings(first, "degradations");
@@ -390,12 +399,14 @@ public class TestPbComposeLazyRender extends BaseTest {
 			assertTrue("...and wrote it", e1.result.isWritten());
 			assertFalse("the LLM answered: no MIGRATED fallback (reason: " + e1.result.failureReason + ")", e1.result.migratedFallback);
 			assertFalse("...and no hard failure", e1.result.hardFailure);
+			assertTrue("P4-12: the never-composed scene was migrated first", e1.result.migratedFirst);
 			BaseRecord comp1 = PbComposeUtil.findSceneComposition(u, scene, gid, orgId);
 			assertNotNull("the row is readable", comp1);
 			String compOid = oidOf(comp1);
 			assertEquals("the hook's composition is the written one", compOid, oidOf(e1.composition));
 			assertEquals("source LLM", PbCompositionSourceEnumType.LLM.name(), enumWord(comp1, OlioFieldNames.FIELD_PB_SOURCE));
-			assertEquals("revision 1", Integer.valueOf(1), comp1.get(OlioFieldNames.FIELD_PB_REVISION));
+			/// P4-12: the MIGRATED row written first is revision 1; the LLM compose over it bumps the same row to 2.
+			assertEquals("revision 2 (LLM over the migrate-first row)", Integer.valueOf(2), comp1.get(OlioFieldNames.FIELD_PB_REVISION));
 			assertEquals(Boolean.FALSE, comp1.get(OlioFieldNames.FIELD_PB_USER_EDITED));
 			assertEquals("one SCENE composition in the book", 1, PbComposeUtil.listSceneCompositions(u, bk).size());
 
@@ -405,7 +416,7 @@ public class TestPbComposeLazyRender extends BaseTest {
 			assertNull("an LLM row is found; no compose is attempted", e2.result);
 			assertEquals("the same row", compOid, oidOf(e2.composition));
 			BaseRecord comp2 = PbComposeUtil.findSceneComposition(u, scene, gid, orgId);
-			assertEquals("...untouched", Integer.valueOf(1), comp2.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals("...untouched", Integer.valueOf(2), comp2.get(OlioFieldNames.FIELD_PB_REVISION));
 			assertEquals("still one SCENE composition in the book", 1, PbComposeUtil.listSceneCompositions(u, bk).size());
 		}
 		finally {
@@ -423,7 +434,122 @@ public class TestPbComposeLazyRender extends BaseTest {
 		}
 	}
 
+	/**
+	 * P4-12: the lazy ensure migrates a never-composed scene FIRST, so a locked legacy {@code sdPrompt} reaches
+	 * the composition row as {@code promptOverride}/{@code promptLocked} whether or not the LLM then composed
+	 * over it - and the render plan built from that row carries the locked prompt into the compiled BASE prompt.
+	 * Whatever LLM route the gate picked (or none) the token must survive; the source is logged, not asserted.
+	 */
+	@Test(timeout = CASE_TIMEOUT_MS)
+	public void case03_ensureCompositionMigratesALockedLegacyPromptFirst() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		try {
+			bk = newBook(u, "lock");
+			BookContext bctx = PbBookUtil.openBookContext(u, bk);
+			assertNotNull("The book must carry a world", bctx);
+			String popPath = bctx.getGroupPath(OlioFieldNames.FIELD_POPULATION);
+			assertNotNull("The book world must expose its Population group", popPath);
+
+			String token = "PBTOKEN-" + shortId();
+			String lockedPrompt = "landscape, a low-beamed tavern by the quay, rain on the shutters, lantern light, " + token;
+			BaseRecord scene = addScene(u, bk, 1, TITLE, SETTING, ACTION, MOOD, TEXT);
+			BaseRecord lockPatch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_CB_SD_PROMPT,
+				OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
+			lockPatch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, lockedPrompt);
+			lockPatch.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.TRUE);
+			assertNotNull("patch scene sdPrompt/promptLocked", ioContext.getAccessPoint().update(u, lockPatch));
+			BaseRecord cp = createCharPerson(u, popPath, "Mira Vale", "Mira", "Vale");
+			enrol(u, scene, cp);
+			scene = PbBookUtil.readScene(u, oidOf(scene), orgId);
+			assertNotNull("scene readable", scene);
+			assertEquals("precondition: the scene carries the locked prompt", lockedPrompt, scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			assertEquals("precondition: promptLocked", Boolean.TRUE, scene.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			long gid = ((Number) scene.get(FieldNames.FIELD_GROUP_ID)).longValue();
+			assertNull("precondition: the scene has no composition", PbComposeUtil.findSceneComposition(u, scene, gid, orgId));
+
+			long t1 = System.currentTimeMillis();
+			PbComposeUtil.EnsureResult e1 = PbComposeUtil.ensureComposition(u, bk, scene, new SummarizeProgress());
+			long ms1 = System.currentTimeMillis() - t1;
+			assertTrue("the ensure composed the scene", e1.composedNow);
+			assertNotNull(e1.result);
+			assertTrue("P4-12: the never-composed scene was migrated first", e1.result.migratedFirst);
+			assertFalse("the migrate-first row stands, so no hard failure is reported", e1.result.hardFailure);
+			assertFalse("not cancelled", e1.result.cancelled);
+			assertNotNull("the hook returns the composition", e1.composition);
+			BaseRecord comp = PbComposeUtil.findSceneComposition(u, scene, gid, orgId);
+			assertNotNull("the row is readable", comp);
+			assertEquals("the hook's composition is the row", oidOf(comp), oidOf(e1.composition));
+			String source = enumWord(comp, OlioFieldNames.FIELD_PB_SOURCE);
+			boolean migrated = PbCompositionSourceEnumType.MIGRATED.name().equals(source);
+			logger.info("MEASURED: P4-12 ensureComposition (locked legacy prompt) " + ms1 + " ms source=" + source
+				+ " migratedFallback=" + e1.result.migratedFallback + " reason=" + e1.result.failureReason
+				+ " revision=" + comp.get(OlioFieldNames.FIELD_PB_REVISION)
+				+ " route=" + testProperties.getProperty("test.llm.route") + " tier=" + testProperties.getProperty("test.llm.resolvedTier"));
+			assertTrue("source is MIGRATED or LLM, was " + source,
+				migrated || PbCompositionSourceEnumType.LLM.name().equals(source));
+			assertEquals("a migrate-first row is revision 1 when MIGRATED stands, 2 when the LLM composed over it",
+				Integer.valueOf(migrated ? 1 : 2), comp.get(OlioFieldNames.FIELD_PB_REVISION));
+			String override = comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+			assertNotNull("the locked prompt reached the row as promptOverride (source " + source + ")", override);
+			assertTrue("promptOverride carries the token whatever the source (source " + source + "): " + override, override.contains(token));
+			assertEquals("promptLocked survives the compose (source " + source + ")", Boolean.TRUE, comp.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertEquals(Boolean.FALSE, comp.get(OlioFieldNames.FIELD_PB_USER_EDITED));
+
+			/// The plan the render would use: the row's promptOverride is the intent and reaches the compiled BASE prompt.
+			BaseRecord freshScene = PbBookUtil.readScene(u, oidOf(scene), orgId);
+			BaseRecord book = PbBookUtil.readBook(u, oidOf(bk), orgId);
+			assertNotNull("readBook", book);
+			RenderPlan p = PbRenderPlanUtil.buildScenePlan(u, book, freshScene, PbRenderPlanUtil.PlanOptions.NONE, SDAPIEnumType.SWARM, "http://127.0.0.1:1");
+			assertNotNull("plan", p);
+			assertNotNull("the plan has an intent", p.getIntent());
+			assertNotNull("the row's promptOverride is the plan's intent", p.getIntent().getPromptOverride());
+			assertTrue("the intent carries the token: " + p.getIntent().getPromptOverride(), p.getIntent().getPromptOverride().contains(token));
+			assertNotNull("the plan carries a compiled BASE prompt", p.getCompiled().get(RenderPlan.STAGE_BASE));
+			String compiled = p.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt();
+			assertTrue("the compiled BASE prompt carries the locked token: " + compiled, compiled.contains(token));
+			logger.info("[p412-lock] compiled BASE prompt (" + compiled.length() + " chars): " + compiled);
+
+			/// Found, not re-composed, and still locked.
+			PbComposeUtil.EnsureResult e2 = PbComposeUtil.ensureComposition(u, bk, scene, new SummarizeProgress());
+			assertFalse("the second ensure composed nothing", e2.composedNow);
+			assertEquals("the same row", oidOf(comp), oidOf(e2.composition));
+			BaseRecord comp2 = PbComposeUtil.findSceneComposition(u, scene, gid, orgId);
+			Integer rev1 = comp.get(OlioFieldNames.FIELD_PB_REVISION);
+			Integer rev2 = comp2.get(OlioFieldNames.FIELD_PB_REVISION);
+			assertEquals("...untouched", rev1, rev2);
+			assertEquals("...still locked", Boolean.TRUE, comp2.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
 	// ─────────────────────────────── helpers ───────────────────────────────
+
+	/// A population member created as the user (the TestPbComposeFallback shape).
+	private BaseRecord createCharPerson(BaseRecord u, String groupPath, String name, String firstName, String lastName) throws Exception {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		BaseRecord cp = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, u, null, plist);
+		cp.set(FieldNames.FIELD_NAME, name);
+		cp.set(FieldNames.FIELD_FIRST_NAME, firstName);
+		if(lastName != null) {
+			cp.set(FieldNames.FIELD_LAST_NAME, lastName);
+		}
+		cp.set(FieldNames.FIELD_GENDER, "female");
+		BaseRecord created = ioContext.getAccessPoint().create(u, cp);
+		assertNotNull("create charPerson " + name, created);
+		cp.set(FieldNames.FIELD_ID, created.get(FieldNames.FIELD_ID));
+		cp.set(FieldNames.FIELD_OBJECT_ID, created.get(FieldNames.FIELD_OBJECT_ID));
+		return cp;
+	}
+
+	private void enrol(BaseRecord u, BaseRecord scene, BaseRecord cp) {
+		assertTrue("enrol " + cp.get(FieldNames.FIELD_NAME) + " in scene " + scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX),
+			ioContext.getMemberUtil().member(u, scene, OlioFieldNames.FIELD_PB_CHARACTERS, cp, null, true));
+	}
 
 	@SuppressWarnings("unchecked")
 	private static List<String> strings(Map<String, Object> out, String key) {

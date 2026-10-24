@@ -161,8 +161,10 @@ export function composeCounterText(job) {
         let bits = ['composed ' + (r.composed != null ? r.composed : 0)];
         if (r.current) bits.push('current ' + r.current);
         if (r.skippedUserEdited) bits.push('kept ' + r.skippedUserEdited + ' hand-edited');
-        if (r.migrated) bits.push('migrated ' + r.migrated);
+        let migrated = (r.migrated || 0) + (r.migration && r.migration.created ? r.migration.created : 0);
+        if (migrated) bits.push('migrated ' + migrated);
         if (r.hardFailures) bits.push('failed ' + r.hardFailures);
+        if (r.staled) bits.push('renders staled ' + r.staled);
         if (r.pagesSkipped) bits.push('pages skipped ' + r.pagesSkipped);
         if (r.quickStartRendered) bits.push('drafts rendered ' + r.quickStartRendered);
         if (r.quickStartFailed) bits.push('drafts failed ' + r.quickStartFailed);
@@ -171,6 +173,26 @@ export function composeCounterText(job) {
     let cur = job.current != null ? job.current : 0;
     let tot = job.total != null ? job.total : 0;
     return cur + ' of ' + tot + (job.phase ? ' · ' + job.phase : '');
+}
+
+/** Pure: the toast for one per-scene compose result; `verb` is "composed" or "re-composed"; counts only when `withCounts`. */
+export function composeSceneText(res, verb, withCounts) {
+    let v = verb || 'composed';
+    if (!res) return 'Scene ' + v;
+    if (!res.written) return 'Scene was not ' + v + (res.failureReason ? ': ' + res.failureReason : '');
+    let s = 'Scene ' + v;
+    if (withCounts) {
+        let actors = Array.isArray(res.actors) ? res.actors.length : 0;
+        let elements = Array.isArray(res.elements) ? res.elements.length : 0;
+        s += ' (' + (res.source || 'llm') + ', ' + actors + ' actors, ' + elements + ' elements)';
+    }
+    let notes = [];
+    if (res.migratedFirst) notes.push(res.migratedFallback ? 'legacy prompt migrated; the LLM compose did not land, so it stands' : 'legacy prompt migrated first');
+    if (res.nodeStale) notes.push('render marked stale');
+    if (notes.length) s += ' — ' + notes.join('; ');
+    let warnings = Array.isArray(res.warnings) ? res.warnings : [];
+    if (warnings.length) s += ' — ' + warnings.join('; ');
+    return s;
 }
 
 /** Pure: a composition's configOverride text → the sparse olio.sd.config object it carries, null when blank or invalid. */
@@ -601,24 +623,13 @@ async function recomposeScene() {
         if (!ok) return;
     }
     await act('recompose', function () { return composeScene(bookObjectId, sceneObjectId, withChatConfig({ force: true }, chatConfigRef)); },
-        function (res) {
-            if (!res) return 'Scene re-composed';
-            if (res.written) {
-                let s = 'Scene re-composed (' + (res.source || 'llm') + ', ' + res.actors.length + ' actors, ' + res.elements.length + ' elements)';
-                if (res.warnings.length) s += ' — ' + res.warnings.join('; ');
-                return s;
-            }
-            return 'Scene was not re-composed' + (res.failureReason ? ': ' + res.failureReason : '');
-        });
+        function (res) { return composeSceneText(res, 're-composed', true); });
 }
 
 async function composeFirst() {
     if (!bookObjectId || !sceneObjectId || busy.compose) return;
     await act('compose', function () { return composeScene(bookObjectId, sceneObjectId, withChatConfig({}, chatConfigRef)); },
-        function (res) {
-            if (res && res.written) return 'Scene composed';
-            return 'Scene was not composed' + (res && res.failureReason ? ': ' + res.failureReason : '');
-        });
+        function (res) { return composeSceneText(res, 'composed'); });
 }
 
 // ── Compose job (book-level) ───────────────────────────────────────────

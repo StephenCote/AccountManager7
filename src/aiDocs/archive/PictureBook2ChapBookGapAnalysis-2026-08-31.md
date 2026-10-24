@@ -1,3 +1,5 @@
+> Archived 2026-10-23: superseded by PictureBookV3Design.md §30 (phase 0 row) and PictureBookImageGenerationDesign.md §2 (feature gap analysis, with [Fixed …] annotations).
+
 # PictureBook 2 / ChapBook — Comprehensive Gap Analysis
 
 > **Status:** OPEN — analysis only, nothing fixed. Written 2026-08-31 for use as the entry

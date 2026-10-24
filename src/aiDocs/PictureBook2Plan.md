@@ -2862,7 +2862,7 @@ than guessed at here.
 
 **19. Q16 canvas rendering — ANSWERED: DOM cards + `@panzoom/panzoom`, no canvas/graph library.**
 Researched 2026-08-14 via two independent web-enabled sessions (ChatGPT and Grok) against
-`aiDocs/CanvasLibraryResearchPrompt.md`. **They converged on the same recommendation, the same runner-up
+`aiDocs/archive/CanvasLibraryResearchPrompt.md`. **They converged on the same recommendation, the same runner-up
 and the same rule-outs**, which is the main reason to trust it. (A third response, Gemini, was supplied as
 a PDF that could not be text-extracted in this environment — no `poppler`, no `pypdf`/`fitz`/`pdfminer` —
 so it is **not** reflected here.)

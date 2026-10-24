@@ -1,3 +1,5 @@
+> Archived 2026-10-23: no single superseding section; retained for history (research prompt that answered PictureBook2Plan.md Appendix D Q16).
+
 # Research prompt — canvas/graph library for the PictureBook 2.0 pre-production board
 
 Paste the block below into a **web-enabled** Claude session. It is self-contained.

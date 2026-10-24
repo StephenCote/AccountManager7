@@ -256,9 +256,12 @@ public class PbHealthUtil {
 	/**
 	 * Remove every PB2 graph row in the book's container groups that is not bound to {@code bookRow}:
 	 * workflows pointing at another (deleted) book, their nodes, runs and bindings, artifacts produced by
-	 * those nodes, and scenes / cast groups pointing at another book. Runs as the olio principal because
-	 * those rows are olio-owned. Called by {@code PbBookUtil.createBook} when it adopts a pre-existing
-	 * world, and by {@link #healBook} for {@link #STALE_GRAPH}.
+	 * those nodes, compositions pointing at another book with their scene actors and elements, and scenes /
+	 * cast groups pointing at another book. Runs as the olio principal: the graph rows are olio-owned, and
+	 * the page compositions a user created in the book group are reachable through the olio principal's
+	 * group ownership ({@code systemDeleteRule}'s group-owner access op).
+	 * Called by {@code PbBookUtil.createBook} when it adopts a pre-existing world, and by {@link #healBook}
+	 * for {@link #STALE_GRAPH}.
 	 *
 	 * @return the number of rows deleted
 	 */
@@ -389,7 +392,11 @@ public class PbHealthUtil {
 	}
 
 	private static final class StaleScan {
-		/** Child-to-parent order: bindings, artifacts, runs, nodes, scenes, cast groups, workflows. */
+		/**
+		 * Child-to-parent order: scene elements, scene actors, compositions (those bound to another book, and any
+		 * actor/element whose composition is not live), then bindings, artifacts, runs, nodes, scenes, cast groups,
+		 * workflows. The composition rows go before the scenes they point at.
+		 */
 		final List<BaseRecord> stale = new ArrayList<>();
 		final Set<Long> liveWorkflowIds = new HashSet<>();
 		final Set<Long> liveNodeIds = new HashSet<>();
@@ -1346,6 +1353,31 @@ public class PbHealthUtil {
 				staleCast.add(cg);
 			}
 		}
+		Set<Long> liveCompositionIds = new HashSet<>();
+		List<BaseRecord> staleCompositions = new ArrayList<>();
+		for(BaseRecord comp : rowsInGroups(OlioModelNames.MODEL_PB_COMPOSITION, allGroups, orgId, OlioFieldNames.FIELD_PB_BOOK)) {
+			if(fkId(comp, OlioFieldNames.FIELD_PB_BOOK) == bookId) {
+				liveCompositionIds.add(idOf(comp));
+			}
+			else {
+				staleCompositions.add(comp);
+			}
+		}
+		List<BaseRecord> staleActors = new ArrayList<>();
+		for(BaseRecord a : rowsInGroups(OlioModelNames.MODEL_PB_SCENE_ACTOR, allGroups, orgId, OlioFieldNames.FIELD_PB_COMPOSITION)) {
+			if(!liveCompositionIds.contains(fkId(a, OlioFieldNames.FIELD_PB_COMPOSITION))) {
+				staleActors.add(a);
+			}
+		}
+		List<BaseRecord> staleElements = new ArrayList<>();
+		for(BaseRecord e : rowsInGroups(OlioModelNames.MODEL_PB_SCENE_ELEMENT, allGroups, orgId, OlioFieldNames.FIELD_PB_COMPOSITION)) {
+			if(!liveCompositionIds.contains(fkId(e, OlioFieldNames.FIELD_PB_COMPOSITION))) {
+				staleElements.add(e);
+			}
+		}
+		scan.stale.addAll(staleElements);
+		scan.stale.addAll(staleActors);
+		scan.stale.addAll(staleCompositions);
 		scan.stale.addAll(staleBindings);
 		scan.stale.addAll(staleArtifacts);
 		scan.stale.addAll(staleRuns);

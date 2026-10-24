@@ -1352,13 +1352,18 @@ public class ChapBookUtil {
 	 * {@code AccessPoint.update(user, ...)}), so the olio principal is not involved. Every AccessPoint
 	 * result is asserted: a null update or a false delete fails loudly with a {@link PictureBookException}
 	 * rather than being swallowed into a silent no-op.
+	 * <p>
+	 * The folded scene's compositions (its page composition with its scene actors and elements) are deleted
+	 * child→parent, as the user, <i>before</i> the stanza patch — a refused composition row aborts with
+	 * 403/500 and nothing has changed yet.
 	 *
 	 * @param user          the acting user (must have WRITE access to the scenes)
 	 * @param sceneObjectId objectId of the scene that ABSORBS its successor
 	 * @return the objectId of the surviving (absorbing) scene
 	 * @throws PictureBookException 400 for missing args or when {@code sceneObjectId} is the last scene
-	 *         (no following scene to fold in); 403 when the parent book is not a CHAPBOOK; 404 when the
-	 *         scene or its book is not readable; 500 when a patch/delete/reindex fails
+	 *         (no following scene to fold in); 403 when the parent book is not a CHAPBOOK or PBAC refuses a
+	 *         composition row of the folded scene; 404 when the scene or its book is not readable; 500 when
+	 *         a patch/delete/reindex fails
 	 */
 	public static String mergeSceneUp(BaseRecord user, String sceneObjectId) {
 		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
@@ -1395,6 +1400,10 @@ public class ChapBookUtil {
 		String nextStanza = next.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
 		String merged = (thisStanza != null ? thisStanza : "") + "\n" + (nextStanza != null ? nextStanza : "");
 
+		// The folded scene's compositions go first, before any write: a refused row then leaves the stanza,
+		// both scenes and the page intact instead of a merged stanza beside a scene that could not be folded.
+		deleteSceneCompositions(user, next, orgId);
+
 		// PRESERVE the absorbing scene's sdPrompt/promptLocked — a hand-edited or LOCKED prompt must
 		// survive a merge. Only poemStanza and imageStale change: the merged text is longer, so the
 		// rendered image is stale, but the prompt stays so the user can re-render with their own prompt
@@ -1424,15 +1433,34 @@ public class ChapBookUtil {
 	}
 
 	/**
+	 * Tear down every composition that points at {@code scene} (its page composition and anything else keyed to it)
+	 * child→parent as {@code user}, before the scene row itself goes: the composition's {@code scene} FK would
+	 * otherwise dangle. A refused row aborts with 403 (PBAC) or 500 (persistence) and the scene is left in place —
+	 * a page is never half-deleted.
+	 */
+	private static void deleteSceneCompositions(BaseRecord user, BaseRecord scene, long orgId) {
+		PictureBookUtil.DeleteResult refused = PbDeleteUtil.deleteCompositionsByScene(user, scene, orgId,
+			PictureBookUtil.DeleteResult.ok());
+		if (refused != null) {
+			throw new PictureBookException(refused.authorized ? 500 : 403,
+				"Composition row of scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + " could not be deleted: "
+				+ refused.reason);
+		}
+	}
+
+	/**
 	 * Delete a single scene and reindex the survivors so {@code sceneIndex} is a clean {@code 0..n-1}.
 	 * <p>
 	 * As with {@link #mergeSceneUp}, all writes are performed AS THE ACTING USER through {@code AccessPoint}
-	 * and every result is asserted. The parent book must be a CHAPBOOK.
+	 * and every result is asserted. The parent book must be a CHAPBOOK. The scene's compositions (page
+	 * composition, scene actors, scene elements) are deleted child→parent before the scene row; a refused
+	 * composition row aborts with 403/500 and the scene is left in place.
 	 *
 	 * @param user          the acting user (must have DELETE access to the scene)
 	 * @param sceneObjectId objectId of the scene to delete
-	 * @throws PictureBookException 400 for missing args; 403 when the parent book is not a CHAPBOOK; 404
-	 *         when the scene or its book is not readable; 500 when the delete or reindex fails
+	 * @throws PictureBookException 400 for missing args; 403 when the parent book is not a CHAPBOOK or PBAC
+	 *         refuses a composition row; 404 when the scene or its book is not readable; 500 when the delete
+	 *         or reindex fails
 	 */
 	public static void deleteSceneAndReindex(BaseRecord user, String sceneObjectId) {
 		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
@@ -1447,6 +1475,7 @@ public class ChapBookUtil {
 		BaseRecord book = resolveSceneBook(user, scene, orgId);
 		requireChapBook(book);
 
+		deleteSceneCompositions(user, scene, orgId);
 		if (!IOSystem.getActiveContext().getAccessPoint().delete(user, scene)) {
 			throw new PictureBookException(500, "Failed to delete scene " + sceneObjectId);
 		}

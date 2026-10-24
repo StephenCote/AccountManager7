@@ -390,9 +390,19 @@ describe('compose client (P4-4)', () => {
         expect(r).toMatchObject({
             sceneObjectId: 's1', sceneIndex: 1, written: true, source: 'LLM', castTier: 'SCENE_MEMBERS', compositionObjectId: 'c1', actors: [{ objectId: 'a1' }],
             warnings: [], elements: [], unresolvedNames: [], unrecognizedPlacements: [], hardFailure: false, cancelled: false, skippedUserEdited: false, migratedFallback: false,
-            failureReason: null, locationHint: null, composition: null, elapsedMs: 0
+            failureReason: null, locationHint: null, composition: null, elapsedMs: 0, migratedFirst: false, nodeStale: false, nodeStatus: null
         });
-        expect(wf.normalizeComposeResult(null)).toMatchObject({ sceneObjectId: null, written: false, compositionObjectId: null, source: null, castTier: null, actors: [], elements: [] });
+        expect(wf.normalizeComposeResult(null)).toMatchObject({ sceneObjectId: null, written: false, compositionObjectId: null, source: null, castTier: null, actors: [], elements: [], migratedFirst: false, nodeStale: false, nodeStatus: null });
+        expect(wf.normalizeComposeResult({ migratedFirst: 1, nodeStale: 'yes', nodeStatus: 'STALE' })).toMatchObject({ migratedFirst: true, nodeStale: true, nodeStatus: 'STALE' });
+    });
+    it('normalizeComposeJobResult: staled count, per-scene nodeStale and the migration pass (P4-12 c1/h2)', () => {
+        let r = wf.normalizeComposeJobResult({ composed: 1, staled: 2, scenes: [{ sceneObjectId: 's1', nodeStale: 1 }, { sceneObjectId: 's2' }],
+            migration: { scanned: 3, created: 2, failed: 1, failedSceneObjectIds: ['s3'], tagsPinned: 1, tagsAffected: 2, tagsStaled: 2, warnings: ['w'] } });
+        expect(r).toMatchObject({ staled: 2, scenes: [{ nodeStale: true }, { nodeStale: false }] });
+        expect(r.migration).toEqual({ scanned: 3, created: 2, skippedExisting: 0, skippedUserEdited: 0, failed: 1, failedSceneObjectIds: ['s3'], tagsPinned: 1, tagsSkippedPinned: 0, tagsAmbiguous: 0, tagsAffected: 2, tagsStaled: 2, warnings: ['w'], error: null });
+        expect(wf.normalizeComposeJobResult(null)).toMatchObject({ staled: 0, migration: null });
+        expect(wf.normalizeComposeJobResult({ migration: 'nope' })).toMatchObject({ migration: null });
+        expect(wf.normalizeCompositionMigration({ error: 'boom' })).toMatchObject({ scanned: 0, created: 0, failedSceneObjectIds: [], warnings: [], error: 'boom' });
     });
     it('normalizeComposeJobResult: counts 0, flags boolean, scenes[] with draftRender normalized or null, locationPass normalized or null', () => {
         let r = wf.normalizeComposeJobResult({ composed: 2, scenes: [{ sceneObjectId: 's1', status: 'composed', draftRender: { artifactObjectId: 'a1' } }, { sceneObjectId: 's2', status: 'cancelled' }], locationPass: { proposed: 1 }, note: 'x' });

@@ -1,3 +1,5 @@
+> Archived 2026-10-23: superseded by PictureBookV3Design.md §28 (migration) / §30 (phasing) and PictureBookV3Implementation.md §1 (status).
+
 # PB2 / ChapBook — Session Handoff (2026-09-01)
 
 **Purpose:** self-contained continuation point for a fresh conversation. Read this first, then the

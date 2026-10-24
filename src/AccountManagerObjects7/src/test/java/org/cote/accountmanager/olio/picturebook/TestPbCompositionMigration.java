@@ -109,7 +109,8 @@ public class TestPbCompositionMigration extends BaseTest {
 
 	private static final String MIGRATION_FAILED_ERROR = "composition migration failed for this scene; not composed so its legacy prompt and lock are kept";
 	private static final String[] RESULT_KEYS = { "scanned", "created", "skippedExisting", "skippedUserEdited", "failed",
-		"failedSceneObjectIds", "tagsPinned", "tagsSkippedPinned", "tagsAmbiguous", "warnings" };
+		"failedSceneObjectIds", "tagsPinned", "tagsSkippedPinned", "tagsAmbiguous", "tagsAffected", "tagsStaled",
+		"warnings" };
 
 	private static final String SETTING_1 = "the spiral stair of the Varrow Point lighthouse, salt-damp stone, a storm rising outside";
 	private static final String ACTION_1 = "Ilse climbs with the lamp oil while Corin follows two steps behind";

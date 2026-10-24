@@ -67,6 +67,8 @@ public class PbWardrobeUtil {
 	public static final int MAX_ALTERNATES = 24;
 	/** {@code olio.apparel} inherits {@code common.description2K}; the request text is capped well below it. */
 	public static final int MAX_DESCRIPTION_CHARS = 512;
+	/** The character's physical description as handed to the outfit prompt; {@code common.description2K} width. */
+	public static final int MAX_APPEARANCE_CHARS = 2048;
 	public static final int MAX_NAME_CHARS = 64;
 	/** The legacy per-scene apparel tag written by {@code PictureBookUtil.tagApparelSceneIndex}. */
 	public static final String ATTR_SCENE_INDEX = "sceneIndex";
@@ -189,6 +191,10 @@ public class PbWardrobeUtil {
 		public int skippedNoScene;
 		public int skippedNoComposition;
 		public int ambiguous;
+		/** Scenes whose resolved outfits the pins changed (the tagged scene and the carried chain after it). */
+		public int affected;
+		/** Of {@link #affected}, the scenes whose render node was marked STALE. */
+		public int staled;
 		public List<String> warnings = new ArrayList<>();
 	}
 
@@ -881,8 +887,11 @@ public class PbWardrobeUtil {
 	 * becomes the pin of that character's actor in scene N's composition. Idempotent; never overwrites an existing
 	 * pin; keeps the attribute (the render-time {@code selectSceneApparel} flip still reads it). In a chapter book
 	 * only characters of the chapter's shadow group are migrated - a character of the shared series Population
-	 * group has tags from several chapters' numbering and is counted {@code ambiguous}. Nothing is marked stale:
-	 * a pin to the apparel the tag already selected changes no render.
+	 * group has tags from several chapters' numbering and is counted {@code ambiguous}. The V3 plan path resolves
+	 * outfits pin, carried, default and never reads the tag, so a pin changes the render of the tagged scene and
+	 * of every later scene that carried from it: the resolved outfits are snapshotted before and after the pass
+	 * and every scene whose outfits changed has its node marked STALE ({@code affected} / {@code staled}), as
+	 * {@link #pinActorApparel} does for one pin.
 	 */
 	public static MigrationResult migrateSceneTags(BaseRecord user, BaseRecord book) {
 		BaseRecord fresh = PbBookUtil.requireBookUpdate(user, book, "migrate wardrobe tags");
@@ -927,6 +936,8 @@ public class PbWardrobeUtil {
 		}
 		Map<Long, BaseRecord> comps = PbComposeUtil.listSceneCompositions(user, fresh);
 		Map<Long, List<BaseRecord>> actorsByComp = new HashMap<>();
+		Map<Long, BaseRecord> scenesById = new HashMap<>();
+		Map<Long, Map<Long, Long>> before = outfitSnapshot(user, fresh, scenesById);
 
 		for(BaseRecord cp : characters) {
 			BaseRecord store = storeOf(user, cp);
@@ -989,10 +1000,41 @@ public class PbWardrobeUtil {
 				res.pinned++;
 			}
 		}
+		if(res.pinned > 0) {
+			Map<Long, Map<Long, Long>> after = outfitSnapshot(user, fresh, scenesById);
+			for(Map.Entry<Long, Map<Long, Long>> e : after.entrySet()) {
+				if(e.getValue().equals(before.getOrDefault(e.getKey(), Collections.emptyMap()))) {
+					continue;
+				}
+				res.affected++;
+				BaseRecord scene = scenesById.get(e.getKey());
+				if(scene != null && PbBookUtil.markSceneNodeStale(user, scene)) {
+					res.staled++;
+				}
+			}
+		}
 		logger.info("Migrated wardrobe tags of book " + slug + ": " + res.scanned + " tags, " + res.pinned + " pinned, " + res.skippedPinned
 			+ " already pinned, " + res.skippedNoActor + " no actor, " + res.skippedNoScene + " no scene, " + res.skippedNoComposition
-			+ " no composition, " + res.ambiguous + " ambiguous");
+			+ " no composition, " + res.ambiguous + " ambiguous; " + res.affected + " scenes' outfits changed, " + res.staled + " marked stale");
 		return res;
+	}
+
+	/// sceneId -> (characterId -> resolved apparel id, 0 for none) as the chain stands now; fills scenesById.
+	private static Map<Long, Map<Long, Long>> outfitSnapshot(BaseRecord user, BaseRecord book, Map<Long, BaseRecord> scenesById) {
+		Map<Long, Map<Long, Long>> snap = new HashMap<>();
+		for(SceneOutfits so : resolveOutfits(user, book)) {
+			long sid = idOf(so.scene);
+			scenesById.put(sid, so.scene);
+			Map<Long, Long> byChar = new HashMap<>();
+			for(ResolvedOutfit ro : so.actors) {
+				if(ro.character == null) {
+					continue;
+				}
+				byChar.put(Long.valueOf(idOf(ro.character)), Long.valueOf(ro.apparel != null ? idOf(ro.apparel) : 0L));
+			}
+			snap.put(Long.valueOf(sid), byChar);
+		}
+		return snap;
 	}
 
 	// ─────────────────────────────── reference image ───────────────────────────────
@@ -1297,15 +1339,16 @@ public class PbWardrobeUtil {
 
 	// ─────────────────────────────── small helpers ───────────────────────────────
 
-	/** Trimmed, whitespace-collapsed, capped request text; null when nothing meaningful remains. */
+	/**
+	 * Trimmed, whitespace-collapsed, capped request text with braces turned into parentheses (a {@code {word}} in
+	 * user text would otherwise trip the unsubstituted-placeholder guard once it lands in the outfit prompt); null
+	 * when nothing meaningful remains.
+	 */
 	static String normalizeRequest(String description) {
 		if(!NarrativeUtil.isMeaningful(description)) {
 			return null;
 		}
-		String d = description.trim().replaceAll("\\s+", " ");
-		if(d.length() > MAX_DESCRIPTION_CHARS) {
-			d = d.substring(0, MAX_DESCRIPTION_CHARS).trim();
-		}
+		String d = PbLocationUtil.sanitizeForPrompt(description, MAX_DESCRIPTION_CHARS);
 		return (d.isEmpty() ? null : d);
 	}
 
@@ -1459,8 +1502,15 @@ public class PbWardrobeUtil {
 	}
 
 	/// Only the physical description is sent to the outfit guess so the character's own clothing cannot outrank the request;
-	/// the full description (attribute, else physical + outfit) is the fallback when the narrative carries none.
-	private static String physicalAppearance(BaseRecord character) {
+	/// the full description (attribute, else physical + outfit) is the fallback when the narrative carries none. Both are
+	/// user- or LLM-authored, so they go through the same brace-to-parenthesis sanitizer as the request (capped at the
+	/// description2K width).
+	/// Package-private for the test: the guess-apparel vars are not otherwise observable.
+	static String physicalAppearance(BaseRecord character) {
+		return PbLocationUtil.sanitizeForPrompt(rawPhysicalAppearance(character), MAX_APPEARANCE_CHARS);
+	}
+
+	private static String rawPhysicalAppearance(BaseRecord character) {
 		BaseRecord narrative = (character.hasField(OlioFieldNames.FIELD_NARRATIVE) ? character.get(OlioFieldNames.FIELD_NARRATIVE) : null);
 		if(narrative != null) {
 			try {

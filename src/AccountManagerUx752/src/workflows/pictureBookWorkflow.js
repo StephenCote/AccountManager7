@@ -1005,8 +1005,11 @@ export function normalizeComposeResult(r) {
         cancelled: !!r.cancelled,
         skippedUserEdited: !!r.skippedUserEdited,
         migratedFallback: !!r.migratedFallback,
+        migratedFirst: !!r.migratedFirst,
         hardFailure: !!r.hardFailure,
         failureReason: r.failureReason != null ? r.failureReason : null,
+        nodeStale: !!r.nodeStale,
+        nodeStatus: r.nodeStatus != null ? r.nodeStatus : null,
         source: r.source != null ? r.source : null,
         castTier: r.castTier != null ? r.castTier : null,
         locationHint: r.locationHint != null ? r.locationHint : null,
@@ -1065,13 +1068,34 @@ function normalizeComposeJobScene(s) {
         elementCount: s.elementCount != null ? s.elementCount : 0,
         warnings: Array.isArray(s.warnings) ? s.warnings : [],
         elapsedMs: s.elapsedMs != null ? s.elapsedMs : 0,
+        nodeStale: !!s.nodeStale,
         draftRender: normalizeDraftRender(s.draftRender),
         draftRenderError: s.draftRenderError != null ? s.draftRenderError : null,
         draftRenderMs: s.draftRenderMs != null ? s.draftRenderMs : 0
     });
 }
 
-/** Pure: the terminal pb.compose job's `result` → every count 0, every list [], every flag boolean, locationPass normalized or null. */
+/** Pure: the job's up-front composition-migration pass (`result.migration`) → every count 0, lists [], or null when the pass did not run. */
+export function normalizeCompositionMigration(mg) {
+    if (!mg || typeof mg !== 'object') return null;
+    return Object.assign({}, mg, {
+        scanned: mg.scanned != null ? mg.scanned : 0,
+        created: mg.created != null ? mg.created : 0,
+        skippedExisting: mg.skippedExisting != null ? mg.skippedExisting : 0,
+        skippedUserEdited: mg.skippedUserEdited != null ? mg.skippedUserEdited : 0,
+        failed: mg.failed != null ? mg.failed : 0,
+        failedSceneObjectIds: Array.isArray(mg.failedSceneObjectIds) ? mg.failedSceneObjectIds : [],
+        tagsPinned: mg.tagsPinned != null ? mg.tagsPinned : 0,
+        tagsSkippedPinned: mg.tagsSkippedPinned != null ? mg.tagsSkippedPinned : 0,
+        tagsAmbiguous: mg.tagsAmbiguous != null ? mg.tagsAmbiguous : 0,
+        tagsAffected: mg.tagsAffected != null ? mg.tagsAffected : 0,
+        tagsStaled: mg.tagsStaled != null ? mg.tagsStaled : 0,
+        warnings: Array.isArray(mg.warnings) ? mg.warnings : [],
+        error: mg.error != null ? mg.error : null
+    });
+}
+
+/** Pure: the terminal pb.compose job's `result` → every count 0, every list [], every flag boolean, locationPass/migration normalized or null. */
 export function normalizeComposeJobResult(r) {
     r = r || {};
     return Object.assign({}, r, {
@@ -1086,6 +1110,8 @@ export function normalizeComposeJobResult(r) {
         skippedUserEdited: r.skippedUserEdited != null ? r.skippedUserEdited : 0,
         migrated: r.migrated != null ? r.migrated : 0,
         hardFailures: r.hardFailures != null ? r.hardFailures : 0,
+        staled: r.staled != null ? r.staled : 0,
+        migration: normalizeCompositionMigration(r.migration),
         pagesSkipped: r.pagesSkipped != null ? r.pagesSkipped : 0,
         quickStartRendered: r.quickStartRendered != null ? r.quickStartRendered : 0,
         quickStartFailed: r.quickStartFailed != null ? r.quickStartFailed : 0,

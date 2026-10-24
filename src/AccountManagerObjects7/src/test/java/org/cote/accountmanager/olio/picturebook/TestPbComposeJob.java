@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
@@ -34,6 +35,8 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.thread.AsyncJobWork;
@@ -80,6 +83,10 @@ import org.junit.Test;
  * the same organization that points at the scene and the book is excluded by the group-constrained
  * whole-book list, so the tally still submits; the job then writes the scene's own row and the list resolves
  * the scene to it rather than to the older foreign row.</li>
+ * <li>P4-12, dead LLM: a scene with a DONE render node whose composition the job's up-front migration wrote is
+ * reported {@code staled} with {@code nodeStale:true} and a STALE node; a scene without a node is not.</li>
+ * <li>P4-12, live LLM: a {@code composed} outcome over a DONE node stales it exactly once; a forced pass over the
+ * already-STALE node never flips it back.</li>
  * </ol>
  */
 public class TestPbComposeJob extends BaseTest {
@@ -88,6 +95,9 @@ public class TestPbComposeJob extends BaseTest {
 	private static final String TEST_USER = "testUser1";
 	private static final String STRANGER_USER = "pbComposeStranger";
 	private static final String CFG_NAME = "P44 Compose Job Cfg";
+	/// P4-12 case11: a chatConfig whose connection accepts no connections, so no LLM can answer by construction.
+	private static final String DEAD_CFG_NAME = "P412 Job Dead Cfg";
+	private static final String DEAD_LLM_URL = "http://127.0.0.1:1";
 	/// An SD server that accepts no connections, so the Quick-start DRAFT render is refused before rendering.
 	private static final String DEAD_SD_SERVER = "http://127.0.0.1:1";
 
@@ -1005,7 +1015,277 @@ public class TestPbComposeJob extends BaseTest {
 		}
 	}
 
+	/**
+	 * P4-12, dead LLM, no SD: the whole-book job over two never-composed scenes, scene 1 holding a DONE render
+	 * node and scene 2 none. The job's up-front migration writes a MIGRATED row for both scenes
+	 * ({@code migration.created == 2}) and the loop's dead-LLM pass over each existing row is a hardFailure that
+	 * leaves it untouched ({@code migrated == 0}). The specification under test (design §24): a MIGRATED row
+	 * reproduces the scene's own fields and nothing has been rendered from it, so the migration stales nothing -
+	 * the job reports {@code staled == 0}, scene 1's outcome {@code nodeStale:false} with its node still DONE, and
+	 * scene 2's outcome {@code nodeStale:false} - the same contract {@code PbServiceFacade.composeScene} honours
+	 * when its migrate-first MIGRATED row stands
+	 * ({@code TestPbComposeFallback.migrateFirstWithDeadLlmStandsThenHardFailsAndLeavesTheDoneNodeAlone}).
+	 * {@link #case12_liveJobStalesTheDoneNodeWhenTheLlmComposes} is the write that does stale.
+	 */
+	@Test
+	public void case11_deadLlmJobLeavesTheDoneNodeOfAMigratedSceneAlone() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		BaseRecord cfg = null;
+		String jobId = null;
+		try {
+			cfg = OlioTestUtil.getUnreachableOllamaConfig(u, DEAD_CFG_NAME, DEAD_LLM_URL, "qwen3:8b", 5);
+			assertNotNull("chatConfig " + DEAD_CFG_NAME, cfg);
+			/// The policy-decision cache holds a group-less chatConfig miss as DENY for 120 s; evict so resolveChatConfig
+			/// sees the row just created (TestPbComposeLazyRender.case02 documents the trap).
+			CacheUtil.clearCache();
+			logger.info("[p412-job-dead] chatConfig " + DEAD_CFG_NAME + " -> " + DEAD_LLM_URL + " (no LLM can answer here by construction)");
+			bk = newBook(u, "c11");
+			String bkOid = oidOf(bk);
+			List<BaseRecord> scenes = twoScenesWithCast(u, bk);
+			BaseRecord s1 = scenes.get(0);
+			BaseRecord s2 = scenes.get(1);
+			long gid = ((Number) s1.get(FieldNames.FIELD_GROUP_ID)).longValue();
+			assertNull(PbComposeUtil.findSceneComposition(u, s1, gid, orgId));
+			assertNull(PbComposeUtil.findSceneComposition(u, s2, gid, orgId));
+			BaseRecord wf = workflow(u, bk);
+			BaseRecord node1 = ensurePageNode(u, bk, wf, oidOf(s1));
+			node1 = setStatus(u, node1, PbNodeStatusEnumType.DONE, orgId);
+			assertEquals("precondition: scene 2 has no render node", 0L, fkId(PbBookUtil.readScene(u, oidOf(s2), orgId), OlioFieldNames.FIELD_PB_SCENE_NODE));
+
+			long t0 = System.currentTimeMillis();
+			Map<String, Object> dto = PbComposeJobUtil.submitCompose(u, bk, false, false, DEAD_CFG_NAME, null, null);
+			logger.info("P4-12 case11 submit: " + dto);
+			assertEquals(Boolean.TRUE, dto.get("submitted"));
+			assertEquals(Integer.valueOf(2), dto.get("scenesToCompose"));
+			jobId = (String) dto.get("jobId");
+			assertNotNull(jobId);
+			AsyncJob job = awaitTerminalLoggingPhases(u, jobId, LOCAL_TIMEOUT_MS, "case11");
+			logger.info("MEASURED: P4-12 case11 dead-LLM compose job wall " + (System.currentTimeMillis() - t0) + " ms -> " + job.getStatus() + " error=" + job.getError());
+			logger.info("P4-12 case11 result: " + job.getResult());
+			assertEquals("job error: " + job.getError(), AsyncJob.Status.COMPLETED, job.getStatus());
+			assertNull(PbComposeJobUtil.inflightJobId(bkOid));
+
+			Map<?, ?> result = JSONUtil.importObject(job.getResult(), Map.class);
+			assertNotNull("the result parses: " + job.getResult(), result);
+			Map<?, ?> migration = (Map<?, ?>) result.get("migration");
+			assertNotNull("the job reports its migration pass: " + job.getResult(), migration);
+			assertEquals("a MIGRATED row was written for every scene before the loop", 2, num(migration, "created"));
+			assertEquals(0, num(migration, "failed"));
+			assertEquals(2, num(result, "visited"));
+			assertEquals("the loop never writes a second MIGRATED row", 0, num(result, "migrated"));
+			assertEquals("the dead LLM over each existing row is a hardFailure that leaves it untouched", 2, num(result, "hardFailures"));
+			assertEquals(0, num(result, "composed"));
+			List<?> outcomes = (List<?>) result.get("scenes");
+			assertEquals(2, outcomes.size());
+			Map<?, ?> o1 = (Map<?, ?>) outcomes.get(0);
+			Map<?, ?> o2 = (Map<?, ?>) outcomes.get(1);
+			assertEquals(oidOf(s1), o1.get("sceneObjectId"));
+			assertEquals(oidOf(s2), o2.get("sceneObjectId"));
+			BaseRecord c1 = PbComposeUtil.findSceneComposition(u, s1, gid, orgId);
+			BaseRecord c2 = PbComposeUtil.findSceneComposition(u, s2, gid, orgId);
+			assertNotNull("scene 1 holds the migration's row", c1);
+			assertNotNull("scene 2 holds the migration's row", c2);
+			assertEquals(PbCompositionSourceEnumType.MIGRATED.name(), enumWord(c1, OlioFieldNames.FIELD_PB_SOURCE));
+			assertEquals(PbCompositionSourceEnumType.MIGRATED.name(), enumWord(c2, OlioFieldNames.FIELD_PB_SOURCE));
+			BaseRecord node1After = PbGraphUtil.readNode(u, oidOf(node1), orgId);
+			assertNotNull(node1After);
+			logger.info("P4-12 case11 observed: staled=" + result.get("staled") + " outcome[0].nodeStale=" + o1.get("nodeStale")
+				+ " outcome[1].nodeStale=" + o2.get("nodeStale") + " node1=" + nodeStatus(node1After)
+				+ " c1.revision=" + c1.get(OlioFieldNames.FIELD_PB_REVISION) + " c2.revision=" + c2.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertTrue("the result carries 'staled': " + result.keySet(), result.containsKey("staled"));
+			assertTrue("outcome[0] carries 'nodeStale': " + o1.keySet(), o1.containsKey("nodeStale"));
+			assertTrue("outcome[1] carries 'nodeStale': " + o2.keySet(), o2.containsKey("nodeStale"));
+
+			/// The specification (design §24): the migration's MIGRATED row for scene 1 reproduces the fields its DONE
+			/// render was made from, so nothing is staled - as PbServiceFacade.composeScene does for the identical
+			/// MIGRATED write on the single-scene path. Only an LLM write stales (case12).
+			assertEquals("P4-12: a migration-only write stales nothing: " + job.getResult(), 0, num(result, "staled"));
+			assertEquals("scene 1's outcome reports its DONE node untouched: " + o1, Boolean.FALSE, o1.get("nodeStale"));
+			assertEquals("scene 1's node still reads DONE", PbNodeStatusEnumType.DONE.toString(), nodeStatus(node1After));
+			assertEquals("scene 2 has no node to stale: " + o2, Boolean.FALSE, o2.get("nodeStale"));
+			assertEquals("scene 1's composition is the migration's revision 1", Integer.valueOf(1), c1.get(OlioFieldNames.FIELD_PB_REVISION));
+		}
+		finally {
+			if(jobId != null) {
+				AsyncJobRegistry.cancel(u, jobId);
+				awaitTerminalQuietly(u, jobId, LOCAL_TIMEOUT_MS);
+			}
+			deleteBook(u, bk);
+			deleteConfig(u, cfg);
+		}
+	}
+
+	/**
+	 * P4-12, live LLM, no SD: the same two-scene book with a DONE render node on scene 1 only, composed through
+	 * the route the gate resolved. A {@code composed} outcome for scene 1 (LLM over the migration's row, revision
+	 * 2) must report {@code nodeStale:true}, read STALE on the node and count once in {@code staled}; scene 2
+	 * (no node) reports {@code nodeStale:false} whatever its outcome. A malformed LLM reply over the existing row
+	 * is a hardFailure that writes nothing, so passes repeat (bounded, MEASURED) until scene 1 is composed; a node
+	 * already STALE is not re-counted on a later pass.
+	 */
+	@Test
+	public void case12_liveJobStalesTheDoneNodeWhenTheLlmComposes() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		BaseRecord cfg = null;
+		String jobId = null;
+		try {
+			cfg = liveConfig(u);
+			bk = newBook(u, "c12");
+			String bkOid = oidOf(bk);
+			List<BaseRecord> scenes = twoScenesWithCast(u, bk);
+			BaseRecord s1 = scenes.get(0);
+			BaseRecord s2 = scenes.get(1);
+			long gid = ((Number) s1.get(FieldNames.FIELD_GROUP_ID)).longValue();
+			BaseRecord wf = workflow(u, bk);
+			BaseRecord node1 = ensurePageNode(u, bk, wf, oidOf(s1));
+			node1 = setStatus(u, node1, PbNodeStatusEnumType.DONE, orgId);
+			assertEquals("precondition: scene 2 has no render node", 0L, fkId(PbBookUtil.readScene(u, oidOf(s2), orgId), OlioFieldNames.FIELD_PB_SCENE_NODE));
+
+			boolean scene1Composed = false;
+			int passes = 0;
+			while(!scene1Composed) {
+				assertTrue("the LLM returned no parseable staging for scene 1 in " + passes + " consecutive passes; giving up", passes < 5);
+				long t0 = System.currentTimeMillis();
+				Map<String, Object> dto = PbComposeJobUtil.submitCompose(u, bk, false, false, CFG_NAME, null, null);
+				logger.info("P4-12 case12 pass " + (passes + 1) + " submit: " + dto);
+				assertEquals(Boolean.TRUE, dto.get("submitted"));
+				jobId = (String) dto.get("jobId");
+				assertNotNull(jobId);
+				AsyncJob job = awaitTerminalLoggingPhases(u, jobId, JOB_TIMEOUT_MS, "case12-pass" + (passes + 1));
+				logger.info("MEASURED: P4-12 case12 pass " + (passes + 1) + " compose job wall " + (System.currentTimeMillis() - t0) + " ms -> "
+					+ job.getStatus() + " error=" + job.getError());
+				logger.info("P4-12 case12 pass " + (passes + 1) + " result: " + job.getResult());
+				assertEquals("job error: " + job.getError(), AsyncJob.Status.COMPLETED, job.getStatus());
+				assertNull(PbComposeJobUtil.inflightJobId(bkOid));
+				Map<?, ?> result = JSONUtil.importObject(job.getResult(), Map.class);
+				assertNotNull("the result parses: " + job.getResult(), result);
+				assertTrue("the result carries 'staled': " + result.keySet(), result.containsKey("staled"));
+				List<?> outcomes = (List<?>) result.get("scenes");
+				assertEquals(2, outcomes.size());
+				Map<?, ?> o1 = (Map<?, ?>) outcomes.get(0);
+				Map<?, ?> o2 = (Map<?, ?>) outcomes.get(1);
+				assertEquals(oidOf(s1), o1.get("sceneObjectId"));
+				assertEquals(oidOf(s2), o2.get("sceneObjectId"));
+				String status1 = (String) o1.get("status");
+				BaseRecord node1Now = PbGraphUtil.readNode(u, oidOf(node1), orgId);
+				assertNotNull(node1Now);
+				int staled = num(result, "staled");
+				logger.info("P4-12 case12 pass " + (passes + 1) + " observed: scene1=" + status1 + " scene2=" + o2.get("status") + " staled=" + staled
+					+ " outcome[0].nodeStale=" + o1.get("nodeStale") + " outcome[1].nodeStale=" + o2.get("nodeStale") + " node1=" + nodeStatus(node1Now));
+				assertEquals("scene 2 has no node to stale: " + o2, Boolean.FALSE, o2.get("nodeStale"));
+				if("composed".equals(status1)) {
+					scene1Composed = true;
+					BaseRecord c1 = PbComposeUtil.findSceneComposition(u, s1, gid, orgId);
+					assertNotNull(c1);
+					assertEquals(PbCompositionSourceEnumType.LLM.name(), enumWord(c1, OlioFieldNames.FIELD_PB_SOURCE));
+					assertEquals("LLM over the migration's row is revision 2", Integer.valueOf(2), c1.get(OlioFieldNames.FIELD_PB_REVISION));
+					assertEquals("the LLM write over a DONE render reports the node staled: " + o1, Boolean.TRUE, o1.get("nodeStale"));
+					assertEquals("scene 1's node reads STALE", PbNodeStatusEnumType.STALE.toString(), nodeStatus(node1Now));
+					assertEquals("exactly scene 1's node is counted in this pass: " + job.getResult(), 1, staled);
+				}
+				else {
+					/// A hard failure writes nothing, so staleAfterCompose never runs for it: the node stays DONE
+					/// and the composed pass is always the one and only staling.
+					assertEquals("the only other outcome over an existing row is a hardFailure: " + o1, "hardFailure", status1);
+					assertTrue("the hard failure says the row was left untouched: " + o1, String.valueOf(o1.get("error")).contains("existing composition left untouched"));
+					assertEquals("a hard failure never stales the node: " + o1, Boolean.FALSE, o1.get("nodeStale"));
+				}
+				passes++;
+			}
+			logger.info("MEASURED: P4-12 case12 scene 1 LLM-composed after " + passes + " pass(es)");
+			assertEquals("scene 1's node is STALE after the compose", PbNodeStatusEnumType.STALE.toString(), nodeStatus(PbGraphUtil.readNode(u, oidOf(node1), orgId)));
+
+			/// A forced resubmit over the already-STALE node is not re-counted: markSceneNodeStale on a STALE node
+			/// returns the mirror result without a status write, so a composed scene 1 still reports nodeStale:true
+			/// (the mirror succeeded) and the node is still STALE - never DONE, never RUNNING.
+			long t1 = System.currentTimeMillis();
+			Map<String, Object> forced = PbComposeJobUtil.submitCompose(u, bk, false, true, CFG_NAME, null, null);
+			assertEquals(Boolean.TRUE, forced.get("submitted"));
+			jobId = (String) forced.get("jobId");
+			AsyncJob jobF = awaitTerminalLoggingPhases(u, jobId, JOB_TIMEOUT_MS, "case12-forced");
+			logger.info("MEASURED: P4-12 case12 forced pass wall " + (System.currentTimeMillis() - t1) + " ms -> " + jobF.getStatus() + " error=" + jobF.getError());
+			logger.info("P4-12 case12 forced result: " + jobF.getResult());
+			assertEquals("job error: " + jobF.getError(), AsyncJob.Status.COMPLETED, jobF.getStatus());
+			Map<?, ?> rF = JSONUtil.importObject(jobF.getResult(), Map.class);
+			Map<?, ?> f1 = (Map<?, ?>) ((List<?>) rF.get("scenes")).get(0);
+			logger.info("P4-12 case12 forced observed: scene1=" + f1.get("status") + " staled=" + rF.get("staled") + " outcome[0].nodeStale=" + f1.get("nodeStale"));
+			assertEquals("the node stays STALE across the forced pass", PbNodeStatusEnumType.STALE.toString(), nodeStatus(PbGraphUtil.readNode(u, oidOf(node1), orgId)));
+			if("composed".equals(f1.get("status"))) {
+				assertEquals("an already-STALE node is still reported stale on a write", Boolean.TRUE, f1.get("nodeStale"));
+			}
+			else {
+				assertEquals("nothing written, nothing staled: " + f1, Boolean.FALSE, f1.get("nodeStale"));
+			}
+		}
+		finally {
+			if(jobId != null) {
+				AsyncJobRegistry.cancel(u, jobId);
+				awaitTerminalQuietly(u, jobId, LOCAL_TIMEOUT_MS);
+			}
+			deleteBook(u, bk);
+			deleteConfig(u, cfg);
+		}
+	}
+
 	// ─────────────────────────────── helpers ───────────────────────────────
+
+	// ─── graph / nodes (the TestPbWardrobe shape) ───
+
+	private BaseRecord workflow(BaseRecord u, BaseRecord bk) {
+		String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+		BaseRecord wf = PbGraphUtil.getCreateWorkflow(u, bk, PbBookUtil.workflowGroupPath(slug));
+		assertNotNull("workflow", wf);
+		return wf;
+	}
+
+	/// The scene's LANDSCAPE render node, created and linked as scene.sceneNode when the scene has none.
+	private BaseRecord ensurePageNode(BaseRecord u, BaseRecord bk, BaseRecord wf, String sceneOid) throws Exception {
+		long orgId = orgOf(u);
+		String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+		BaseRecord scene = PbBookUtil.readScene(u, sceneOid, orgId);
+		assertNotNull("scene " + sceneOid, scene);
+		long linked = fkId(scene, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		if(linked > 0L) {
+			BaseRecord existing = PbGraphUtil.readNodeById(u, linked, orgId);
+			assertNotNull("linked page node", existing);
+			return existing;
+		}
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
+		String handle = PbPipelineUtil.landscapeHandle(sceneOid);
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(u, wf, handle);
+		if(node == null) {
+			node = PbGraphUtil.addNode(u, wf, handle, PbNodeTypeEnumType.LANDSCAPE, PbBookUtil.workflowGroupPath(slug), idx);
+			assertNotNull("page node " + handle, node);
+			assertTrue("page node scope patch", PbPipelineUtil.patchNodeScope(u, wf, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx));
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		patch.set(OlioFieldNames.FIELD_PB_SCENE_NODE, node);
+		assertNotNull("scene.sceneNode patch", ioContext.getAccessPoint().update(u, patch));
+		BaseRecord back = PbBookUtil.readScene(u, sceneOid, orgId);
+		assertNotNull(back);
+		assertEquals("the page links its node", idOf(node), fkId(back, OlioFieldNames.FIELD_PB_SCENE_NODE));
+		BaseRecord fresh = PbGraphUtil.readNode(u, oidOf(node), orgId);
+		assertNotNull("page node re-read", fresh);
+		return fresh;
+	}
+
+	private BaseRecord setStatus(BaseRecord u, BaseRecord node, PbNodeStatusEnumType to, long orgId) {
+		assertTrue("persistStatus " + to, PbGraphUtil.persistStatus(u, node, to));
+		BaseRecord fresh = PbGraphUtil.readNode(u, oidOf(node), orgId);
+		assertNotNull("node re-read", fresh);
+		assertEquals("precondition: node is " + to, to.toString(), nodeStatus(fresh));
+		return fresh;
+	}
+
+	private static String nodeStatus(BaseRecord node) {
+		Object v = node.get(OlioFieldNames.FIELD_PB_NODE_STATUS);
+		return (v == null ? null : String.valueOf(v).toUpperCase());
+	}
 
 	/** A registry job that occupies a worker until the test counts {@code release} down. */
 	private static final class Filler {

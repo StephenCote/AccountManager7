@@ -7,6 +7,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +26,8 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
+import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.junit.Before;
 import org.junit.Test;
@@ -41,6 +44,9 @@ import org.junit.Test;
 ///  2. Health-check cure: with a live book whose Workflow group holds a workflow bound to a dead row,
 ///     getCreateWorkflow fails exactly as in production, checkBook reports STALE_GRAPH (+ WORKFLOW_MISSING
 ///     noting the block), healBook purges it, the live scene row survives, and a re-check is clean.
+/// Since P4-13 the purge also covers the V3 composition rows: a CHAPBOOK_PAGE composition and its element,
+/// user-owned (created as the owner through AccessPoint, unlike the olio-owned graph rows), are purged by the
+/// olio principal on recreate when they point at the dead book, and a live book's composition survives a heal.
 /// Real DB, no LLM, non-admin users throughout.
 public class TestPbHealthStaleGraph extends BaseTest {
 
@@ -82,6 +88,19 @@ public class TestPbHealthStaleGraph extends BaseTest {
 	private static long fkId(BaseRecord rec, String field) {
 		Object o = rec.hasField(field) ? rec.get(field) : null;
 		return (o instanceof BaseRecord) ? idOf((BaseRecord) o) : 0L;
+	}
+
+	/** The scene's CHAPBOOK_PAGE composition created as {@code owner}, with one PROP element row; {composition, element}. */
+	private static BaseRecord[] seedPageComposition(BaseRecord owner, BaseRecord book, BaseRecord scene) {
+		BaseRecord comp = PbComposeUtil.getCreatePageComposition(owner, book, scene, PbCompositionSourceEnumType.USER);
+		assertNotNull("page composition for scene " + scene.get(FieldNames.FIELD_OBJECT_ID), comp);
+		assertEquals("the page composition is user-owned, not olio-owned", idOf(owner), ((Number) comp.get(FieldNames.FIELD_OWNER_ID)).longValue());
+		Map<String, Object> in = new HashMap<>();
+		in.put(OlioFieldNames.FIELD_PB_ELEMENT_TYPE, PbElementTypeEnumType.PROP.toString());
+		in.put(FieldNames.FIELD_DESCRIPTION, "a brass harbor lamp");
+		BaseRecord element = PbComposeUtil.createElementRow(owner, comp, in);
+		assertNotNull("element row on the page composition", element);
+		return new BaseRecord[] { comp, element };
 	}
 
 	@SuppressWarnings("unchecked")
@@ -135,9 +154,12 @@ public class TestPbHealthStaleGraph extends BaseTest {
 		assertNotNull("node A", nodeA);
 		BaseRecord sceneA = PbBookUtil.createScene(owner, bookA, 0, "Scene 0", PbBookUtil.bookGroupPath(slug));
 		assertNotNull("scene A", sceneA);
+		BaseRecord[] pageA = seedPageComposition(owner, bookA, sceneA);
 		long wfAId = idOf(wfA);
 		long nodeAId = idOf(nodeA);
 		long sceneAId = idOf(sceneA);
+		long compAId = idOf(pageA[0]);
+		long elemAId = idOf(pageA[1]);
 
 		/// Reproduce the old reset(): the book row alone goes. World, groups and the whole graph stay behind.
 		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
@@ -150,6 +172,8 @@ public class TestPbHealthStaleGraph extends BaseTest {
 		assertNotNull("stale workflow must survive the row-only delete (precondition)", rawRowById(ioContext, OlioModelNames.MODEL_PB_WORKFLOW, wfAId, orgId));
 		assertNotNull("stale node must survive the row-only delete (precondition)", rawRowById(ioContext, OlioModelNames.MODEL_PB_NODE, nodeAId, orgId));
 		assertNotNull("stale scene must survive the row-only delete (precondition)", rawRowById(ioContext, OlioModelNames.MODEL_PB_SCENE, sceneAId, orgId));
+		assertNotNull("stale page composition must survive the row-only delete (precondition)", rawRowById(ioContext, OlioModelNames.MODEL_PB_COMPOSITION, compAId, orgId));
+		assertNotNull("stale element must survive the row-only delete (precondition)", rawRowById(ioContext, OlioModelNames.MODEL_PB_SCENE_ELEMENT, elemAId, orgId));
 
 		/// Recreate the slug the way a second extract does. createBook adopts the world and must purge first.
 		BaseRecord bookB = PbBookUtil.createBook(owner, dataPath, slug, "Health " + slug + " again");
@@ -159,6 +183,9 @@ public class TestPbHealthStaleGraph extends BaseTest {
 		assertNull("stale workflow purged on recreate", rawRowById(ioContext, OlioModelNames.MODEL_PB_WORKFLOW, wfAId, orgId));
 		assertNull("stale node purged on recreate", rawRowById(ioContext, OlioModelNames.MODEL_PB_NODE, nodeAId, orgId));
 		assertNull("stale scene purged on recreate", rawRowById(ioContext, OlioModelNames.MODEL_PB_SCENE, sceneAId, orgId));
+		/// The olio principal purges the user-owned composition rows too, element before composition.
+		assertNull("stale element purged on recreate", rawRowById(ioContext, OlioModelNames.MODEL_PB_SCENE_ELEMENT, elemAId, orgId));
+		assertNull("stale page composition purged on recreate", rawRowById(ioContext, OlioModelNames.MODEL_PB_COMPOSITION, compAId, orgId));
 
 		/// The collision is gone: the workflow is created and bound to the NEW row.
 		BaseRecord wfB = PbGraphUtil.getCreateWorkflow(owner, bookB, wfPath);
@@ -196,9 +223,12 @@ public class TestPbHealthStaleGraph extends BaseTest {
 		assertNotNull("node B", nodeB);
 		BaseRecord liveScene = PbBookUtil.createScene(owner, bookB, 0, "Scene 0", PbBookUtil.bookGroupPath(slug));
 		assertNotNull("live scene", liveScene);
+		BaseRecord[] livePage = seedPageComposition(owner, bookB, liveScene);
 		long wfBId = idOf(wfB);
 		long nodeBId = idOf(nodeB);
 		long liveSceneId = idOf(liveScene);
+		long liveCompId = idOf(livePage[0]);
+		long liveElemId = idOf(livePage[1]);
 
 		Map<String, Object> clean = PbHealthUtil.checkBook(owner, bOid);
 		assertFalse("fresh book has no STALE_GRAPH: " + findingCodes(clean), findingCodes(clean).contains(PbHealthUtil.STALE_GRAPH));
@@ -284,6 +314,8 @@ public class TestPbHealthStaleGraph extends BaseTest {
 		assertNull("stale workflow purged", rawRowById(ioContext, OlioModelNames.MODEL_PB_WORKFLOW, wfBId, orgId));
 		assertNull("stale node purged", rawRowById(ioContext, OlioModelNames.MODEL_PB_NODE, nodeBId, orgId));
 		assertNotNull("live scene row untouched by the purge", rawRowById(ioContext, OlioModelNames.MODEL_PB_SCENE, liveSceneId, orgId));
+		assertNotNull("live page composition untouched by the purge", rawRowById(ioContext, OlioModelNames.MODEL_PB_COMPOSITION, liveCompId, orgId));
+		assertNotNull("live element untouched by the purge", rawRowById(ioContext, OlioModelNames.MODEL_PB_SCENE_ELEMENT, liveElemId, orgId));
 
 		/// The collision is gone: creation succeeds and binds to B.
 		BaseRecord wfNew = PbGraphUtil.getCreateWorkflow(owner, bookB, wfPath);

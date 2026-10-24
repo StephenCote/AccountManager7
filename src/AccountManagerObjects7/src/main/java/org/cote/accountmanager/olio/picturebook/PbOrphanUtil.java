@@ -32,6 +32,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 
@@ -526,7 +527,12 @@ public class PbOrphanUtil {
 		}
 	}
 
-	/** PB2 graph rows in the Book/Workflow/Artifacts groups of each container whose never-null key is null. */
+	/**
+	 * PB2 graph rows in the Book/Workflow/Artifacts groups of each container whose never-null key is null. Composition
+	 * rows are listed first, child→parent (scene elements and scene actors whose {@code composition} is gone, then
+	 * compositions whose {@code book} is gone or — only for the scene-keyed purposes SCENE and CHAPBOOK_PAGE, where
+	 * {@code scene} is never null by design — whose {@code scene} is gone), so a purge takes children before parents.
+	 */
 	private static void scanPb2Rows(long orgId, Scan s) {
 		for(BaseRecord container : s.containers) {
 			String slug = container.get(FieldNames.FIELD_NAME);
@@ -544,6 +550,20 @@ public class PbOrphanUtil {
 			}
 			BaseRecord[] grpArr = groups.toArray(new BaseRecord[0]);
 			String basePath = PbBookUtil.bookContainerPath(slug);
+			flagNullFk(s, PbHealthUtil.rowsInGroups(OlioModelNames.MODEL_PB_SCENE_ELEMENT, grpArr, orgId, OlioFieldNames.FIELD_PB_COMPOSITION),
+				OlioModelNames.MODEL_PB_SCENE_ELEMENT, OlioFieldNames.FIELD_PB_COMPOSITION, basePath, slug, groups);
+			flagNullFk(s, PbHealthUtil.rowsInGroups(OlioModelNames.MODEL_PB_SCENE_ACTOR, grpArr, orgId, OlioFieldNames.FIELD_PB_COMPOSITION),
+				OlioModelNames.MODEL_PB_SCENE_ACTOR, OlioFieldNames.FIELD_PB_COMPOSITION, basePath, slug, groups);
+			for(BaseRecord comp : PbHealthUtil.rowsInGroups(OlioModelNames.MODEL_PB_COMPOSITION, grpArr, orgId, OlioFieldNames.FIELD_PB_BOOK, OlioFieldNames.FIELD_PB_SCENE, OlioFieldNames.FIELD_PB_PURPOSE)) {
+				if(PbHealthUtil.fkId(comp, OlioFieldNames.FIELD_PB_BOOK) == 0L) {
+					s.add(new Item(ORPHAN_PB2_ROW, comp, OlioModelNames.MODEL_PB_COMPOSITION, rowPath(basePath, comp, groups), slug,
+						"composition.book points at a deleted record"));
+				}
+				else if(isSceneKeyed(comp) && PbHealthUtil.fkId(comp, OlioFieldNames.FIELD_PB_SCENE) == 0L) {
+					s.add(new Item(ORPHAN_PB2_ROW, comp, OlioModelNames.MODEL_PB_COMPOSITION, rowPath(basePath, comp, groups), slug,
+						"composition.scene points at a deleted record (purpose " + comp.get(OlioFieldNames.FIELD_PB_PURPOSE) + " is scene-keyed)"));
+				}
+			}
 			flagNullFk(s, PbHealthUtil.rowsInGroups(OlioModelNames.MODEL_PB_WORKFLOW, grpArr, orgId, OlioFieldNames.FIELD_PB_BOOK),
 				OlioModelNames.MODEL_PB_WORKFLOW, OlioFieldNames.FIELD_PB_BOOK, basePath, slug, groups);
 			flagNullFk(s, PbHealthUtil.rowsInGroups(OlioModelNames.MODEL_PB_SCENE, grpArr, orgId, OlioFieldNames.FIELD_PB_BOOK),
@@ -561,6 +581,14 @@ public class PbOrphanUtil {
 				}
 			}
 		}
+	}
+
+	/** SCENE and CHAPBOOK_PAGE compositions always carry a scene; cover/title/opener/series art never do. */
+	private static boolean isSceneKeyed(BaseRecord comp) {
+		Object val = comp.get(OlioFieldNames.FIELD_PB_PURPOSE);
+		String purpose = (val != null ? val.toString() : null);
+		return PbCompositionPurposeEnumType.SCENE.toString().equalsIgnoreCase(purpose)
+			|| PbCompositionPurposeEnumType.CHAPBOOK_PAGE.toString().equalsIgnoreCase(purpose);
 	}
 
 	private static void flagNullFk(Scan s, List<BaseRecord> rows, String model, String fk, String basePath, String slug, List<BaseRecord> groups) {
@@ -775,6 +803,23 @@ public class PbOrphanUtil {
 				deps.addAll(PbDeleteUtil.findByFk(OlioModelNames.MODEL_PB_BINDING, OlioFieldNames.FIELD_PB_NODE, it.rec, orgId));
 				deps.addAll(PbDeleteUtil.findByFk(OlioModelNames.MODEL_PB_BINDING, OlioFieldNames.FIELD_PB_SOURCE_NODE, it.rec, orgId));
 				deps.addAll(PbDeleteUtil.findByFk(OlioModelNames.MODEL_PB_ARTIFACT, OlioFieldNames.FIELD_PB_PRODUCED_BY_NODE, it.rec, orgId));
+				for(BaseRecord dep : deps) {
+					if(deleteAsEither(olio, user, dep).deleted) {
+						n++;
+					}
+				}
+				DeleteResult d = deleteAsEither(olio, user, it.rec);
+				if(!d.deleted) {
+					return Outcome.of(d, n);
+				}
+				n++;
+				break;
+			}
+			case OlioModelNames.MODEL_PB_COMPOSITION: {
+				n = 0;
+				List<BaseRecord> deps = new ArrayList<>();
+				deps.addAll(PbDeleteUtil.findByFk(OlioModelNames.MODEL_PB_SCENE_ELEMENT, OlioFieldNames.FIELD_PB_COMPOSITION, it.rec, orgId));
+				deps.addAll(PbDeleteUtil.findByFk(OlioModelNames.MODEL_PB_SCENE_ACTOR, OlioFieldNames.FIELD_PB_COMPOSITION, it.rec, orgId));
 				for(BaseRecord dep : deps) {
 					if(deleteAsEither(olio, user, dep).deleted) {
 						n++;

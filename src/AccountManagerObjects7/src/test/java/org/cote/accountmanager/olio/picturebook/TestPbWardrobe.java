@@ -473,6 +473,108 @@ public class TestPbWardrobe extends BaseTest {
 		}
 	}
 
+	/// P4-12: a legacy tag pin changes the resolved outfit of the tagged scene AND of every scene the pin carries
+	/// into, so both scenes' DONE render nodes are marked STALE and the pass reports affected / staled. A scene the
+	/// pin does not reach keeps its DONE node. The second pass changes nothing and stales nothing. The same counters
+	/// ride on PbMigrationUtil.CompositionMigrationResult (tagsAffected / tagsStaled) through the real wiring and toMap().
+	@Test
+	public void migrateSceneTagsStalesTheAffectedScenesNodes() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = newBook(u, "mst");
+		try {
+			Fixture fx = fixture(u, bk);
+			String c1 = fx.character("Mira Vale");
+			BaseRecord cp1 = PbWardrobeUtil.requireCharacterOfBook(u, fx.book, c1);
+			long char1 = idOf(cp1);
+			String a = giveApparel(u, fx.octx, c1, true);
+			String b = giveApparel(u, fx.octx, c1, false);
+			BaseRecord deadCfg = OlioTestUtil.getUnreachableOllamaConfig(u, DEAD_CFG_NAME, DEAD_URL, "qwen3:8b", 5);
+			BaseRecord wf = workflow(u, bk);
+			BaseRecord[] scenes = new BaseRecord[4];
+			BaseRecord[] nodes = new BaseRecord[4];
+			for(int i = 1; i <= 3; i++) {
+				scenes[i] = addScene(u, bk, i, "Scene " + i);
+				enrol(u, scenes[i], cp1);
+				composeDead(u, fx.book, scenes[i], deadCfg);
+				nodes[i] = setStatus(u, ensurePageNode(u, bk, wf, oidOf(scenes[i])), PbNodeStatusEnumType.DONE, fx.orgId);
+			}
+			assertTrue("tag B -> 2", PictureBookUtil.tagApparelSceneIndex(u, c1, b, 2));
+
+			List<SceneOutfits> before = PbWardrobeUtil.resolveOutfits(u, fx.book);
+			expect(before, 1, char1, OutfitSource.DEFAULT, a, -1, "(default)");
+			expect(before, 2, char1, OutfitSource.DEFAULT, a, -1, "(default)");
+			expect(before, 3, char1, OutfitSource.DEFAULT, a, -1, "(default)");
+
+			long t = System.currentTimeMillis();
+			MigrationResult res = PbWardrobeUtil.migrateSceneTags(u, fx.book);
+			log("[p412-tags] migrate #1 (" + (System.currentTimeMillis() - t) + " ms): " + describe(res) + " affected=" + res.affected + " staled=" + res.staled);
+			assertEquals("scanned", 1, res.scanned);
+			assertEquals("pinned", 1, res.pinned);
+			assertTrue("P4-12: the tagged scene and the carried scene after it both changed: affected=" + res.affected, res.affected >= 2);
+			assertEquals("P4-12: exactly the tagged scene and the carried scene changed", 2, res.affected);
+			assertEquals("P4-12: both affected scenes' DONE nodes were marked stale", 2, res.staled);
+			assertNodeStatus(u, nodes[2], PbNodeStatusEnumType.STALE, fx.orgId);
+			assertNodeStatus(u, nodes[3], PbNodeStatusEnumType.STALE, fx.orgId);
+			assertNodeStatus(u, nodes[1], PbNodeStatusEnumType.DONE, fx.orgId);
+
+			List<SceneOutfits> after = PbWardrobeUtil.resolveOutfits(u, fx.book);
+			expect(after, 1, char1, OutfitSource.DEFAULT, a, -1, "(default)");
+			expect(after, 2, char1, OutfitSource.PINNED, b, -1, "(pinned)");
+			expect(after, 3, char1, OutfitSource.CARRIED, b, 2, "(from scene 2)");
+
+			/// Second pass: the tag is already pinned, nothing changes, nothing is staled.
+			nodes[2] = setStatus(u, nodes[2], PbNodeStatusEnumType.DONE, fx.orgId);
+			nodes[3] = setStatus(u, nodes[3], PbNodeStatusEnumType.DONE, fx.orgId);
+			t = System.currentTimeMillis();
+			MigrationResult res2 = PbWardrobeUtil.migrateSceneTags(u, fx.book);
+			log("[p412-tags] migrate #2 (" + (System.currentTimeMillis() - t) + " ms): " + describe(res2) + " affected=" + res2.affected + " staled=" + res2.staled);
+			assertEquals("idempotent: pinned", 0, res2.pinned);
+			assertEquals("idempotent: skippedPinned", 1, res2.skippedPinned);
+			assertEquals("idempotent: affected", 0, res2.affected);
+			assertEquals("idempotent: staled", 0, res2.staled);
+			assertNodeStatus(u, nodes[1], PbNodeStatusEnumType.DONE, fx.orgId);
+			assertNodeStatus(u, nodes[2], PbNodeStatusEnumType.DONE, fx.orgId);
+			assertNodeStatus(u, nodes[3], PbNodeStatusEnumType.DONE, fx.orgId);
+
+			/// Real wiring: PbMigrationUtil.migrateCompositions runs the tag pass after the scenes and copies the
+			/// counters. A new tag C -> 3 affects scene 3 only (scene 2 keeps its pin B); only node 3 goes STALE.
+			String c = giveApparel(u, fx.octx, c1, false);
+			assertTrue("tag C -> 3", PictureBookUtil.tagApparelSceneIndex(u, c1, c, 3));
+			t = System.currentTimeMillis();
+			PbMigrationUtil.CompositionMigrationResult cm = PbMigrationUtil.migrateCompositions(u, fx.book, PbBookUtil.listScenes(u, fx.book));
+			log("[p412-tags] migrateCompositions (" + (System.currentTimeMillis() - t) + " ms): " + cm);
+			assertEquals("scanned", 3, cm.scanned);
+			assertEquals("created", 0, cm.created);
+			assertEquals("skippedExisting", 3, cm.skippedExisting);
+			assertEquals("tagsPinned", 1, cm.tagsPinned);
+			assertEquals("tagsSkippedPinned", 1, cm.tagsSkippedPinned);
+			assertEquals("P4-12: tagsAffected rides on the composition migration result", 1, cm.tagsAffected);
+			assertEquals("P4-12: tagsStaled rides on the composition migration result", 1, cm.tagsStaled);
+			assertNodeStatus(u, nodes[3], PbNodeStatusEnumType.STALE, fx.orgId);
+			assertNodeStatus(u, nodes[2], PbNodeStatusEnumType.DONE, fx.orgId);
+			assertNodeStatus(u, nodes[1], PbNodeStatusEnumType.DONE, fx.orgId);
+			Map<String, Object> m = cm.toMap();
+			assertEquals("toMap tagsAffected", Integer.valueOf(1), m.get("tagsAffected"));
+			assertEquals("toMap tagsStaled", Integer.valueOf(1), m.get("tagsStaled"));
+			assertEquals("toMap tagsPinned", Integer.valueOf(1), m.get("tagsPinned"));
+			List<SceneOutfits> third = PbWardrobeUtil.resolveOutfits(u, fx.book);
+			expect(third, 2, char1, OutfitSource.PINNED, b, -1, "(pinned)");
+			expect(third, 3, char1, OutfitSource.PINNED, c, -1, "(pinned)");
+
+			/// The DTO carries the two counters verbatim.
+			PbMigrationUtil.CompositionMigrationResult hand = new PbMigrationUtil.CompositionMigrationResult();
+			hand.tagsAffected = 2;
+			hand.tagsStaled = 1;
+			Map<String, Object> hm = hand.toMap();
+			assertEquals("hand-built toMap tagsAffected", Integer.valueOf(2), hm.get("tagsAffected"));
+			assertEquals("hand-built toMap tagsStaled", Integer.valueOf(1), hm.get("tagsStaled"));
+			log("migrateSceneTagsStalesTheAffectedScenesNodes done");
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
 	// ─────────────────────────────── 5. live LLM alternate ───────────────────────────────
 
 	@Test
@@ -537,6 +639,65 @@ public class TestPbWardrobe extends BaseTest {
 
 			refused("blank description", new int[] {400}, () -> PbWardrobeUtil.createAlternate(u, fx.book, c1, "   ", LIVE_CFG_NAME, dataPath()));
 			log("createAlternateLiveLlmDedupesAndIsOlioOwned done");
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	// ─────────────────────────────── 5b. braced text is not a template placeholder ───────────────────────────────
+
+	/// P4-13 (d2). A user's outfit request or a character's pbDescription can carry {braces}; both are
+	/// substituted into the guess-apparel template, whose UNSUBSTITUTED_PLACEHOLDER guard refuses the whole
+	/// LLM call on any {word} left in the rendered prompt. normalizeRequest and physicalAppearance now run
+	/// through PbLocationUtil.sanitizeForPrompt, which turns braces into parentheses.
+	@Test
+	public void createAlternateBracedDescriptionsAreNotPlaceholders() throws Exception {
+		assertEquals("a cloak with a (style) hood and (color) trim",
+			PbWardrobeUtil.normalizeRequest("a cloak with a {style} hood and {color} trim"));
+		assertEquals("(hood)", PbWardrobeUtil.normalizeRequest("  {hood}  "));
+		assertNull("blank stays nothing", PbWardrobeUtil.normalizeRequest("   "));
+		String longBraced = "{" + "y".repeat(PbWardrobeUtil.MAX_DESCRIPTION_CHARS + 40) + "}";
+		String capped = PbWardrobeUtil.normalizeRequest(longBraced);
+		assertEquals("capped after substitution", PbWardrobeUtil.MAX_DESCRIPTION_CHARS, capped.length());
+		assertFalse("no brace survives the cap", capped.contains("{") || capped.contains("}"));
+
+		BaseRecord u = user();
+		BaseRecord bk = newBook(u, "brace");
+		try {
+			Fixture fx = fixture(u, bk);
+			String c1 = fx.character("Oriel Thane");
+			giveApparel(u, fx.octx, c1, true);
+			BaseRecord cp = PbWardrobeUtil.requireCharacterOfBook(u, fx.book, c1);
+			String bracedLook = "a tall woman with {hair} hair, {eyes} eyes and a scar across one brow";
+			assertTrue("pbDescription persisted", IOSystem.getActiveContext().getRecordUtil().createRecord(
+				AttributeUtil.addAttribute(cp, PictureBookUtil.ATTR_DESCRIPTION, bracedLook)));
+			BaseRecord reread = PbWardrobeUtil.requireCharacterOfBook(u, fx.book, c1);
+			String appearance = PbWardrobeUtil.physicalAppearance(reread);
+			log("physicalAppearance -> " + appearance);
+			assertEquals("braces in the character's look become parentheses",
+				"a tall woman with (hair) hair, (eyes) eyes and a scar across one brow", appearance);
+
+			BaseRecord cfg = OlioTestUtil.getOllamaOpenAIConfig(u, LIVE_CFG_NAME, testProperties);
+			assertNotNull("live chat config", cfg);
+			log("llm route=" + testProperties.getProperty("test.llm.route") + " tier=" + testProperties.getProperty("test.llm.resolvedTier")
+				+ " server=" + testProperties.getProperty("test.llm.connection.server") + " model=" + cfg.get("model"));
+			String bracedRequest = "a {colour} wool cloak with a {style} hood over a plain tunic and boots";
+			long t = System.currentTimeMillis();
+			/// Before (d2) the braced appearance and request reached the template verbatim and the guard refused
+			/// the call: callLlmForChapBook returned null and this threw 502 "The LLM returned nothing".
+			CreateResult cr = PbWardrobeUtil.createAlternate(u, fx.book, c1, bracedRequest, LIVE_CFG_NAME, dataPath());
+			log("createAlternate (braced): " + (System.currentTimeMillis() - t) + " ms reused=" + cr.reused + " items=" + cr.items
+				+ " wearables=" + cr.wearables + " desc=" + cr.description);
+			assertNotNull("apparel", cr.apparel);
+			assertFalse("not reused", cr.reused);
+			assertTrue("wearables > 0", cr.wearables > 0);
+			String desc = readApparel(u, oidOf(cr.apparel)).get(FieldNames.FIELD_DESCRIPTION);
+			assertNotNull("description", desc);
+			assertTrue("stored description starts with the substituted request: " + desc,
+				desc.startsWith("a (colour) wool cloak with a (style) hood over a plain tunic and boots"));
+			assertFalse("no brace is stored: " + desc, desc.contains("{") || desc.contains("}"));
+			log("createAlternateBracedDescriptionsAreNotPlaceholders done");
 		}
 		finally {
 			deleteBook(u, bk);

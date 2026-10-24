@@ -1,6 +1,6 @@
 # PictureBook 2.0 — Implementation State
 
-> **Latest session handoff (2026-09-01):** see `PictureBook2ChapBook-Handoff-2026-09-01.md` for the
+> **Latest session handoff (2026-09-01):** see `archive/PictureBook2ChapBook-Handoff-2026-09-01.md` for the
 > gap-analysis closure (C1–C5, D5/D6, B1, X-DELETE), the four hardening items (A/B/C/D), the tests
 > run, review verdicts, deferrals (X-async, B5), and the corrected commit state (all in HEAD
 > `89414d85`, tree clean).
@@ -1096,7 +1096,7 @@ touched.
 **Modified (Service7):** `rest/services/CacheService.java`, `rest/services/PictureBookService.java`.
 
 **Docs:** `aiDocs/PictureBook2Plan.md` (Appendix C + D + ratifications), `aiDocs/KnownIssues.md` (KI-60
-characterization), `aiDocs/CanvasLibraryResearchPrompt.md` (new), this file.
+characterization), `aiDocs/archive/CanvasLibraryResearchPrompt.md` (new), this file.
 
 ---
 

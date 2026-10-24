@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
@@ -44,6 +45,8 @@ import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
 import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
 import org.cote.accountmanager.schema.type.PbLocationKindEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
+import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbShotTypeEnumType;
 import org.cote.accountmanager.schema.type.PbViewpointEnumType;
 import org.cote.accountmanager.util.JSONUtil;
@@ -528,6 +531,191 @@ public class TestPbComposeFallback extends BaseTest {
 			assertNull("no sdPrompt on this scene, no promptOverride", r7.composition.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
 			assertEquals(Boolean.FALSE, r7.composition.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
 			assertFalse("the two scenes have distinct compositions", compOid.equals(oidOf(r7.composition)));
+		}
+		finally {
+			deleteBook(u, bk);
+			if(cfg != null) {
+				BaseRecord conn = cfg.get("connection");
+				deleteQuietly(u, cfg);
+				deleteQuietly(u, conn);
+			}
+		}
+	}
+
+	/**
+	 * P4-12 (design §24): the per-scene facade path over a never-composed scene with a dead LLM. The scene's
+	 * {@code MIGRATED} row is written FIRST from its own fields (so the locked legacy {@code sdPrompt} lands in
+	 * {@code promptOverride} with {@code promptLocked}), the LLM then produces nothing, and the result reports
+	 * what the scene actually has - {@code migratedFallback} over the MIGRATED row, {@code migratedFirst},
+	 * revision 1, not the {@code hardFailure} the raw call reports for an untouched existing row - and the
+	 * DONE render node linked to the scene is NOT staled: the MIGRATED row reproduces the scene's own fields and
+	 * nothing has been rendered from it, the same rule the job's up-front migration follows (design §24), so
+	 * {@code nodeStale:false} with {@code nodeStatus} still reporting DONE. The second call finds the row, the LLM
+	 * is still dead, and nothing is written: {@code hardFailure}, no {@code migratedFirst}, {@code nodeStale:false},
+	 * no {@code nodeStatus}, revision still 1, the node still DONE. Both the {@code ComposeResult} and the DTO the
+	 * REST route returns are asserted.
+	 */
+	@Test
+	public void migrateFirstWithDeadLlmStandsThenHardFailsAndLeavesTheDoneNodeAlone() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		BaseRecord cfg = null;
+		try {
+			cfg = OlioTestUtil.getUnreachableOllamaConfig(u, CFG_NAME, DEAD_URL, "qwen3:8b", 5);
+			assertNotNull("chatConfig " + CFG_NAME, cfg);
+			/// A miss on a group-less chatConfig lookup is held as DENY by the policy-decision cache for the read
+			/// policy's decisionAge; evict so the facade's resolveChatConfig sees the row (TestPbComposeLazyRender.case02).
+			CacheUtil.clearCache();
+			logger.info("[p412-dead] chatConfig " + CFG_NAME + " -> " + DEAD_URL + " (no LLM can answer here by construction)");
+
+			bk = newBook(u, "mf");
+			String bkOid = oidOf(bk);
+			BookContext bctx = PbBookUtil.openBookContext(u, bk);
+			assertNotNull("The book must carry a world", bctx);
+			String popPath = bctx.getGroupPath(OlioFieldNames.FIELD_POPULATION);
+			assertNotNull("The book world must expose its Population group", popPath);
+
+			String token = "PBTOKEN-" + shortId();
+			String lockedPrompt = "landscape, a low-beamed tavern taproom at night, rain on the windows, " + token;
+			BaseRecord scene = addScene(u, bk, 2, "Arrival",
+				"The Gilded Tankard, a low-beamed tavern by the quay", "Mira shakes the rain from her cloak", "tense",
+				"Mira Vale pushes through the taproom door, rain dripping from her cloak.", lockedPrompt, Boolean.TRUE);
+			String sceneOid = oidOf(scene);
+			BaseRecord mira = createCharPerson(u, popPath, "Mira Vale", "Mira", "Vale");
+			enrol(u, scene, mira);
+			long gid = idOf(groupOf(scene));
+			assertNull("precondition: the scene has no composition", PbComposeUtil.findSceneComposition(u, scene, gid, orgId));
+
+			/// A DONE render node linked as scene.sceneNode: what a prior render of this scene leaves behind.
+			BaseRecord wf = workflow(u, bk);
+			BaseRecord node = ensurePageNode(u, bk, wf, sceneOid);
+			node = setStatus(u, node, PbNodeStatusEnumType.DONE, orgId);
+			String nodeOid = oidOf(node);
+
+			/// 1. The facade: migrate first, LLM dead, the MIGRATED row stands, the DONE node is left alone.
+			long t0 = System.currentTimeMillis();
+			Map<String, Object> dto1 = PbServiceFacade.composeScene(u, bkOid, sceneOid, CFG_NAME, false, null);
+			long ms1 = System.currentTimeMillis() - t0;
+			logger.info("MEASURED: P4-12 facade compose 1 (dead LLM) " + ms1 + " ms: " + JSONUtil.exportObject(dto1));
+			assertEquals(bkOid, dto1.get("bookObjectId"));
+			assertEquals(sceneOid, dto1.get("sceneObjectId"));
+			assertEquals(Integer.valueOf(2), dto1.get("sceneIndex"));
+			assertEquals("written", Boolean.TRUE, dto1.get("written"));
+			assertEquals("migratedFallback", Boolean.TRUE, dto1.get("migratedFallback"));
+			assertEquals("migratedFirst", Boolean.TRUE, dto1.get("migratedFirst"));
+			assertEquals("hardFailure", Boolean.FALSE, dto1.get("hardFailure"));
+			assertEquals("cancelled", Boolean.FALSE, dto1.get("cancelled"));
+			assertEquals("skippedUserEdited", Boolean.FALSE, dto1.get("skippedUserEdited"));
+			assertEquals("source", PbCompositionSourceEnumType.MIGRATED.name(), dto1.get("source"));
+			assertEquals("castTier", CastTier.SCENE_MEMBERS.name(), dto1.get("castTier"));
+			assertEquals("a MIGRATED fallback stales nothing (design §24)", Boolean.FALSE, dto1.get("nodeStale"));
+			assertTrue("nodeStatus still reports the node, DONE: " + dto1.get("nodeStatus"), "DONE".equalsIgnoreCase(String.valueOf(dto1.get("nodeStatus"))));
+			String reason1 = (String) dto1.get("failureReason");
+			assertNotNull("failureReason names the outcome", reason1);
+			assertTrue("the reason says the MIGRATED row stands: " + reason1, reason1.endsWith("stands"));
+			assertTrue("...and names the LLM failure: " + reason1, reason1.startsWith("LLM unavailable"));
+			List<?> warnings1 = (List<?>) dto1.get("warnings");
+			assertNotNull(warnings1);
+			assertTrue("the reason is also a warning: " + warnings1, warnings1.contains(reason1));
+			String compOid = (String) dto1.get("compositionObjectId");
+			assertNotNull("compositionObjectId", compOid);
+			Map<?, ?> comp1 = (Map<?, ?>) dto1.get("composition");
+			assertNotNull("composition DTO", comp1);
+			assertEquals(compOid, comp1.get("objectId"));
+			assertEquals("the composition DTO is MIGRATED", PbCompositionSourceEnumType.MIGRATED.name(), String.valueOf(comp1.get("source")).toUpperCase());
+			assertEquals("revision 1", Integer.valueOf(1), comp1.get("revision"));
+			assertEquals("the locked prompt migrated", lockedPrompt, comp1.get("promptOverride"));
+			assertTrue("...carrying the token", String.valueOf(comp1.get("promptOverride")).contains(token));
+			assertEquals("promptLocked migrated", Boolean.TRUE, comp1.get("promptLocked"));
+			assertEquals(Boolean.FALSE, comp1.get("userEdited"));
+			List<?> actors1 = (List<?>) dto1.get("actors");
+			assertEquals("one actor row for the one roster member", 1, actors1.size());
+
+			BaseRecord row1 = PbComposeUtil.readComposition(u, compOid, orgId);
+			assertNotNull("the row is readable", row1);
+			assertEquals(PbCompositionSourceEnumType.MIGRATED.name(), enumWord(row1, OlioFieldNames.FIELD_PB_SOURCE));
+			assertEquals(Integer.valueOf(1), row1.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals(lockedPrompt, row1.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals(Boolean.TRUE, row1.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			assertEquals("one SCENE composition in the book", 1, PbComposeUtil.listSceneCompositions(u, bk).size());
+			assertEquals("findSceneComposition sees it", compOid, oidOf(PbComposeUtil.findSceneComposition(u, scene, gid, orgId)));
+			assertNodeStatus(u, node, PbNodeStatusEnumType.DONE, orgId);
+
+			/// 2. Again: the row exists, the LLM is still dead, nothing is written, nothing is staled.
+			t0 = System.currentTimeMillis();
+			Map<String, Object> dto2 = PbServiceFacade.composeScene(u, bkOid, sceneOid, CFG_NAME, false, null);
+			long ms2 = System.currentTimeMillis() - t0;
+			logger.info("MEASURED: P4-12 facade compose 2 (dead LLM) " + ms2 + " ms: " + JSONUtil.exportObject(dto2));
+			assertEquals("hardFailure", Boolean.TRUE, dto2.get("hardFailure"));
+			assertEquals("written", Boolean.FALSE, dto2.get("written"));
+			assertEquals("migratedFirst", Boolean.FALSE, dto2.get("migratedFirst"));
+			assertEquals("migratedFallback", Boolean.FALSE, dto2.get("migratedFallback"));
+			assertEquals("nodeStale", Boolean.FALSE, dto2.get("nodeStale"));
+			assertNull("no stale mark, no node status read", dto2.get("nodeStatus"));
+			String reason2 = (String) dto2.get("failureReason");
+			assertNotNull(reason2);
+			assertTrue("the existing row was left untouched: " + reason2, reason2.contains("existing composition left untouched"));
+			assertEquals("the same composition", compOid, dto2.get("compositionObjectId"));
+			Map<?, ?> comp2 = (Map<?, ?>) dto2.get("composition");
+			assertEquals("revision still 1", Integer.valueOf(1), comp2.get("revision"));
+			BaseRecord row2 = PbComposeUtil.readComposition(u, compOid, orgId);
+			assertEquals("revision untouched on the database", Integer.valueOf(1), row2.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals(lockedPrompt, row2.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
+			assertEquals("still one SCENE composition in the book", 1, PbComposeUtil.listSceneCompositions(u, bk).size());
+			assertNodeStatus(u, node, PbNodeStatusEnumType.DONE, orgId);
+
+			/// 3. The same contract at the ComposeResult level, on a second never-composed scene with its own DONE
+			/// node: composeSceneMigratedFirst + staleAfterCompose are what the facade and the lazy hook share.
+			BaseRecord scene2 = addScene(u, bk, 5, "Departure", "the quay at dawn", "Mira walks to the boat", "quiet",
+				"Mira leaves at first light.", "landscape, a grey quay at dawn, " + token, Boolean.TRUE);
+			enrol(u, scene2, mira);
+			BaseRecord node2 = ensurePageNode(u, bk, wf, oidOf(scene2));
+			node2 = setStatus(u, node2, PbNodeStatusEnumType.DONE, orgId);
+			BaseRecord scene2Fresh = PbBookUtil.readScene(u, oidOf(scene2), orgId);
+			ComposeResult r = PbComposeUtil.composeSceneMigratedFirst(u, bk, scene2Fresh, cfg, false, null, null);
+			logger.info("[p412-dead] composeSceneMigratedFirst: " + describe(r) + " migratedFirst=" + r.migratedFirst + " llmFailure=" + r.llmFailure);
+			assertTrue("migratedFirst", r.migratedFirst);
+			assertTrue("migratedFallback", r.migratedFallback);
+			assertFalse("hardFailure", r.hardFailure);
+			assertFalse("existingLeftUntouched is cleared", r.existingLeftUntouched);
+			assertTrue("written", r.isWritten());
+			assertEquals(PbCompositionSourceEnumType.MIGRATED, r.source);
+			assertNotNull("llmFailure names why the LLM path produced nothing", r.llmFailure);
+			assertEquals("the reason is the LLM failure plus the standing MIGRATED row",
+				r.llmFailure + "; the MIGRATED composition written first from the scene's own fields stands", r.failureReason);
+			assertTrue(r.warnings.contains(r.failureReason));
+			assertNotNull(r.composition);
+			assertEquals(Integer.valueOf(1), r.composition.get(OlioFieldNames.FIELD_PB_REVISION));
+			assertEquals(Boolean.TRUE, r.composition.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
+			String override2 = r.composition.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+			assertNotNull("scene 2's locked prompt migrated as promptOverride", override2);
+			assertTrue("promptOverride carries the token: " + override2, override2.contains(token));
+			assertFalse("not yet read", r.nodeStale);
+			assertNull(r.nodeStatus);
+			assertNodeStatus(u, node2, PbNodeStatusEnumType.DONE, orgId);
+			PbComposeUtil.staleAfterCompose(u, scene2Fresh, r);
+			assertFalse("a MIGRATED fallback stales nothing (design §24)", r.nodeStale);
+			assertTrue("nodeStatus still reports the node: " + r.nodeStatus, "DONE".equalsIgnoreCase(r.nodeStatus));
+			assertNodeStatus(u, node2, PbNodeStatusEnumType.DONE, orgId);
+			Map<String, Object> dto = PbServiceFacade.composeResultDto(r);
+			for(String key : new String[] {"written", "cancelled", "skippedUserEdited", "migratedFallback", "migratedFirst", "hardFailure",
+					"failureReason", "nodeStale", "nodeStatus", "source", "castTier", "warnings", "compositionObjectId", "composition", "actors", "elements"}) {
+				assertTrue("composeResultDto carries " + key + ": " + dto.keySet(), dto.containsKey(key));
+			}
+			assertEquals(Boolean.TRUE, dto.get("migratedFirst"));
+			assertEquals(Boolean.FALSE, dto.get("nodeStale"));
+			assertEquals(r.nodeStatus, dto.get("nodeStatus"));
+
+			/// Nothing written on the second call: no mark, no node read.
+			ComposeResult again = PbComposeUtil.composeSceneMigratedFirst(u, bk, scene2Fresh, cfg, false, null, null);
+			assertTrue(again.hardFailure);
+			assertFalse(again.migratedFirst);
+			PbComposeUtil.staleAfterCompose(u, scene2Fresh, again);
+			assertFalse("nothing written, nothing staled", again.nodeStale);
+			assertNull(again.nodeStatus);
+			assertNodeStatus(u, node2, PbNodeStatusEnumType.DONE, orgId);
+			assertNotNull("the first node is untouched by the second scene", PbGraphUtil.readNode(u, nodeOid, orgId));
 		}
 		finally {
 			deleteBook(u, bk);
@@ -1064,5 +1252,65 @@ public class TestPbComposeFallback extends BaseTest {
 	private void enrol(BaseRecord u, BaseRecord scene, BaseRecord cp) {
 		assertTrue("enrol " + cp.get(FieldNames.FIELD_NAME) + " in scene " + scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX),
 			ioContext.getMemberUtil().member(u, scene, OlioFieldNames.FIELD_PB_CHARACTERS, cp, null, true));
+	}
+
+	// ─────────────────────────────── graph / nodes (the TestPbWardrobe shape) ───────────────────────────────
+
+	private BaseRecord workflow(BaseRecord u, BaseRecord bk) {
+		String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+		BaseRecord wf = PbGraphUtil.getCreateWorkflow(u, bk, PbBookUtil.workflowGroupPath(slug));
+		assertNotNull("workflow", wf);
+		return wf;
+	}
+
+	/// The scene's LANDSCAPE render node, created and linked as scene.sceneNode when the scene has none.
+	private BaseRecord ensurePageNode(BaseRecord u, BaseRecord bk, BaseRecord wf, String sceneOid) throws Exception {
+		long orgId = orgOf(u);
+		String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+		BaseRecord scene = PbBookUtil.readScene(u, sceneOid, orgId);
+		assertNotNull("scene " + sceneOid, scene);
+		long linked = fkId(scene, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		if(linked > 0L) {
+			BaseRecord existing = PbGraphUtil.readNodeById(u, linked, orgId);
+			assertNotNull("linked page node", existing);
+			return existing;
+		}
+		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
+		String handle = PbPipelineUtil.landscapeHandle(sceneOid);
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(u, wf, handle);
+		if(node == null) {
+			node = PbGraphUtil.addNode(u, wf, handle, PbNodeTypeEnumType.LANDSCAPE, PbBookUtil.workflowGroupPath(slug), idx);
+			assertNotNull("page node " + handle, node);
+			assertTrue("page node scope patch", PbPipelineUtil.patchNodeScope(u, wf, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx));
+		}
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		patch.set(OlioFieldNames.FIELD_PB_SCENE_NODE, node);
+		assertNotNull("scene.sceneNode patch", ioContext.getAccessPoint().update(u, patch));
+		BaseRecord back = PbBookUtil.readScene(u, sceneOid, orgId);
+		assertNotNull(back);
+		assertEquals("the page links its node", idOf(node), fkId(back, OlioFieldNames.FIELD_PB_SCENE_NODE));
+		BaseRecord fresh = PbGraphUtil.readNode(u, oidOf(node), orgId);
+		assertNotNull("page node re-read", fresh);
+		return fresh;
+	}
+
+	private BaseRecord setStatus(BaseRecord u, BaseRecord node, PbNodeStatusEnumType to, long orgId) {
+		assertTrue("persistStatus " + to, PbGraphUtil.persistStatus(u, node, to));
+		BaseRecord fresh = PbGraphUtil.readNode(u, oidOf(node), orgId);
+		assertNotNull("node re-read", fresh);
+		assertEquals("precondition: node is " + to, to.toString(), nodeStatus(fresh));
+		return fresh;
+	}
+
+	private void assertNodeStatus(BaseRecord u, BaseRecord node, PbNodeStatusEnumType expected, long orgId) {
+		BaseRecord fresh = PbGraphUtil.readNode(u, oidOf(node), orgId);
+		assertNotNull("node re-read", fresh);
+		assertEquals("node " + fresh.get(FieldNames.FIELD_NAME) + " status", expected.toString(), nodeStatus(fresh));
+	}
+
+	private static String nodeStatus(BaseRecord node) {
+		Object v = node.get(OlioFieldNames.FIELD_PB_NODE_STATUS);
+		return (v == null ? null : String.valueOf(v).toUpperCase());
 	}
 }

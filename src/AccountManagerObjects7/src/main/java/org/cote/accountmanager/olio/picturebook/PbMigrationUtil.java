@@ -125,6 +125,10 @@ public class PbMigrationUtil {
 		public int tagsSkippedPinned;
 		/** Legacy scene tags that could not be resolved to exactly one actor. */
 		public int tagsAmbiguous;
+		/** Scenes whose resolved outfits the pins changed (tagged scenes and the carried chain after them). */
+		public int tagsAffected;
+		/** Of {@link #tagsAffected}, the scenes whose render node was marked STALE. */
+		public int tagsStaled;
 		public final List<String> warnings = new ArrayList<>();
 
 		/** A serializable view of the counters; the warnings list is copied. */
@@ -139,6 +143,8 @@ public class PbMigrationUtil {
 			m.put("tagsPinned", tagsPinned);
 			m.put("tagsSkippedPinned", tagsSkippedPinned);
 			m.put("tagsAmbiguous", tagsAmbiguous);
+			m.put("tagsAffected", tagsAffected);
+			m.put("tagsStaled", tagsStaled);
 			m.put("warnings", new ArrayList<>(warnings));
 			return m;
 		}
@@ -148,7 +154,8 @@ public class PbMigrationUtil {
 			return "CompositionMigrationResult{scanned=" + scanned + ", created=" + created
 				+ ", existing=" + skippedExisting + ", userEdited=" + skippedUserEdited + ", failed=" + failed
 				+ ", tagsPinned=" + tagsPinned + ", tagsSkippedPinned=" + tagsSkippedPinned
-				+ ", tagsAmbiguous=" + tagsAmbiguous + ", warnings=" + warnings.size() + "}";
+				+ ", tagsAmbiguous=" + tagsAmbiguous + ", tagsAffected=" + tagsAffected + ", tagsStaled=" + tagsStaled
+				+ ", warnings=" + warnings.size() + "}";
 		}
 	}
 
@@ -772,6 +779,8 @@ public class PbMigrationUtil {
 					result.tagsPinned = tags.pinned;
 					result.tagsSkippedPinned = tags.skippedPinned;
 					result.tagsAmbiguous = tags.ambiguous;
+					result.tagsAffected = tags.affected;
+					result.tagsStaled = tags.staled;
 					result.warnings.addAll(tags.warnings);
 				}
 			}
