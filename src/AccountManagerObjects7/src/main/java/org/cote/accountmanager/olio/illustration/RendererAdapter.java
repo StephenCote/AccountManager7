@@ -13,6 +13,11 @@ public interface RendererAdapter {
 	String ERROR_NO_IMAGES = "Renderer returned no images";
 	String ERROR_CANCELLED = "Render cancelled before the stage was sent";
 	String ERROR_PREFIX_BACKEND = "Renderer error: ";
+	/// A raw graph failed validation before it was sent (design §38.4) - the detail follows ": ".
+	String ERROR_GRAPH_INVALID = "GRAPH_INVALID";
+	/// Swarm refused a raw graph it was sent (an unsupported node type, a malformed workflow) - the
+	/// server's text follows ": ". Distinct from a generation failure, which stays a backend error.
+	String ERROR_RENDERER_REJECTED = "RENDERER_REJECTED";
 
 	/// Capabilities of the named model's family, or null when the family is unknown.
 	RendererCapabilities capabilities(String model);

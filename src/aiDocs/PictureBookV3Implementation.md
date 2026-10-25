@@ -5390,6 +5390,88 @@ Without the flag (verifier, and again after the run-3 edits): `Tests run: 6, Fai
 
 ---
 
+### 4.12 P5-1 graph builder — `TestP51GraphLive` (Objects7, gated, `am7db`, pure SD, no LLM call) against SwarmUI `http://192.168.1.39:7801` (`0.9.8.4.GIT-d74f8ce4`) — run 5 (2026-10-24 19:29:58 → 19:38:39 local, `Total time: 08:46 min`): `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 522.0 s`, `BUILD SUCCESS` — 5 / 5 ran, 9 render requests: 7 images (1 BASE FLUX.2 with book 58's three real portraits, 4 FLUX.2 ACTOR_REGION variants, 1 BASE SDXL, 1 ACTOR_REGION SDXL) + 2 deliberate rejections (t04a uninstalled checkpoint → `RENDERER_REJECTED`, t04b unknown node type → `GRAPH_INVALID` before any request); runs 1–4 red (below); **the 7 PNGs of run 5 opened and described** (and the 7 of each of runs 3 and 4 before them)
+
+**Command and gate.** From `src/`: `PB_SD_TESTS=1 mvn -o -pl AccountManagerObjects7 -Dtest=TestP51GraphLive -DskipTests=false test > C:/tmp/p51-live5.log 2>&1` (`@FixMethodOrder(NAME_ASCENDING)`, t00 → t04; `@Test(timeout = 3 h)` on each — a ceiling against a hung socket, never a threshold; `extends BaseTest`, so `IOSystem` opens against `am7db` and the LLM gate runs even though the class never calls an LLM; live user `getCreateUser("pbCustomTestUser")` (id 186, org 21, book 58's owner) through `AccessPoint`, never admin):
+
+```
+[INFO ] 2026-10-24 19:29:58 ... SdTestGate - http://192.168.1.39:7801 answered HTTP 302
+[INFO ] ... SdTestGate - Live SD checkpoint ... = 'OfficialStableDiffusion/sd_xl_base_1.0.safetensors' [olio.sd.config schema default]
+[INFO ] ... LlmTestGate - [LLM-GATE] http://127.0.0.1:4000/health/liveliness answered HTTP 200
+[INFO ] ... LlmTestGate - [LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000
+[INFO ] ... SdTestGate - Checkpoint 'flux2Klein_9b' installed on http://192.168.1.39:7801: true
+[INFO ] ... TestP51GraphLive - [p51] LLM tier: none - this class is pure SD against http://192.168.1.39:7801 (Swarm 0.9.8.4.GIT-d74f8ce4)
+```
+
+In words: `BaseTest.setup()` resolved an LLM route — the **local Docker Ollama container through LiteLLM** (`tier=local`, not Azure, not `.42`) — and the class then made **no LLM call at all**; every request in this section went to the SwarmUI on `.39`. The SDXL checkpoint is `OfficialStableDiffusion/sd_xl_base_1.0` (the `olio.sd.config` schema default), **not** the spike's `juggernautXL_ragnarokBy`. Without the flag the class reports `Skipped` with the same `This is NOT a pass.` message as `TestP50SwarmSpike` — a skip, never a pass.
+
+**Runs 1–4 (all red, all `C:/tmp/p51-live[2-4].log`).** Run 1 (18:42:56 → 18:43:19, 23 s): `IllegalArgumentException: A tag name must be [A-Za-z0-9_]+: Duña de Rosa` in `readCast` (t01, t03 errors; t02 "needs t01's base image") — my test used the cast names as tag names; fixed with the fixed `CAST_TAGS` map (`duna_de_rosa` / `jideon_de_rosa` / `touvier`) and, found on the same pass, Duña's portrait (`data.data` 553) is owned by the **olio principal**, so it is re-read as `Factory.findUser(OlioContext.OLIO_USER_NAME, orgId)` where the owner read returns null. Run 2 (18:46:17 → 18:47:17, 60 s): `RENDERER_REJECTED: ComfyUI execution error (Node 104: SwarmLoadImageB64) (Model=flux2Klein_9b.safetensors): cannot identify image file <_io.BytesIO …>` on t01 and the same on t03's node 15 — **a product defect, not a test defect**: Swarm's `initImageFixer` only base64-fills an image-typed raw input whose key contains `swarminputimage`; otherwise it uploads the PNG and replaces the tag with the *filename*, which `SwarmLoadImageB64` cannot decode. Confirmed outside the product with `C:/tmp/p51_probe3.py` (A `…inputimageinit` → the same error; B–E with the marker → images). Fix: `ComfyGraph.IMAGE_KEY_MARKER = "swarminputimage"` (`ComfyGraph.java:38`), `inputKey` (`:336-338`) inserts it for image inputs, and `GraphInputs.put` refuses two names that Swarm's `CleanTypeName` (digits and underscores dropped) would reduce to one key. Run 3 (19:10:07 → 19:17:58, 7:56): three **test** defects of mine — t00 / t04 `Input …probe1 collides with …probe0: Swarm reduces both to …probe` (the new collision guard rejecting my digit-suffixed probe names → `probea` / `probeb` / `probec`), and t01 `requestJson must already be sanitised` — a stale assertion written before the `isSanitized`-false contract (`StageResult.requestJson` is redacted but not marked until `PbArtifactUtil.sanitizeGeneratorRequest`) → assert-false before / sanitise / assert-true after. The seven renders of run 3 all succeeded (BASE 215 147 ms; V1–V4 26 672 / 43 630 / 54 141 / 78 005 ms; SDXL 20 499 / 9 946 ms). Run 4 (19:19:34 → 19:28:21, 8:52): one test defect — t01 `:329` passed the unsanitised string to `persistArtifact` instead of the sanitised one (BASE 215 533 ms; V1–V4 26 563 / 43 941 / 54 170 / 77 119 ms; SDXL 20 390 / 10 067 ms — every render green, the assertion after them red). Runs 4 and 5 reused `target/p51/`, so the PNGs there are run 5's.
+
+**Run 5 — t00 catalogue and drift probe (no render).** `swarmVersion=0.9.8.4.GIT-d74f8ce4` (the spike measured under `GIT-5dc94afa`); `NodeCatalogue.forServer` → `object_info` with **1 122 node types, one fetch** (the second call hit the 1 h cache). The four generator captures re-requested live via `ComfyGetGeneratedWorkflow` and validated against the catalogue: `base_flux2` 18 nodes, hash `468e299d…`, classes `{CLIPLoader 1, CLIPTextEncode 2, CheckpointLoaderSimple 1, EmptyFlux2LatentImage 1, ReferenceLatent 3, SwarmKSampler 1, SwarmLoadImageB64 3, SwarmSaveImageWS 1, VAEDecode 1, VAEEncode 3, VAELoader 1}`; `inpaint_A_flux2` 21 nodes, `9f4b4ac0…` (adds `DifferentialDiffusion`, `ImageToMask`, `SetLatentNoiseMask`, `SwarmImageCompositeMaskedColorCorrecting`, `SwarmMaskBlur`, `SwarmMaskGrow`, `ThresholdMask`; `ReferenceLatent 1`, `SwarmLoadImageB64 3`, `VAEEncode 2`); `base_sdxl` 8 nodes, `cb21f553…` (`CLIPTextEncodeSDXL 2`, `ModelSamplingDiscrete 1`); `inpaint_A_sdxl` 17 nodes, `385e2db2…`. Problems reported: only the expected `UNFILLED_TAG` (the probe tags carry no values) plus two **warnings** — `UNKNOWN_INPUT[10]: SwarmKSampler does not list input control_after_generate` and `UNKNOWN_INPUT[112]: SwarmImageCompositeMaskedColorCorrecting … resize_source` (Swarm's generator emits inputs its own `object_info` does not list; a warning never blocks). **Three drift WARNs against the P5-0 fixtures** (the generator changed between the two Swarm builds): `base_flux2` fixture has `CLIPTextEncode 1 + SwarmTextEncodeAdvanced 1`, live has `CLIPTextEncode 2`; `inpaint_A_flux2` fixture has `ReferenceLatent 3 / SwarmLoadImageB64 5 / VAEEncode 4 / SwarmTextEncodeAdvanced 1`, live `1 / 3 / 2 / CLIPTextEncode 2`; `inpaint_A_sdxl` fixture `CLIPTextEncode 2`, live `CLIPTextEncodeSDXL 2 + ModelSamplingDiscrete 1`. The fixture-backed `TestWorkflowCompiler` / `TestNodeCatalogue` therefore describe the spike's generator; the live class is the one that describes today's. t00 wrote `target/p51/object_info.subset.json` (22 types) which was then copied by hand (LF) to `src/test/resources/olio/illustration/p50/object_info.subset.json` (architect F8).
+
+**Per render (run 5, `target/p51/`, every PNG opened):**
+
+| # | test, label | model, request | ms | PNG, opened and described |
+|---|---|---|---|---|
+| 1 | `t01` BASE | FLUX.2 `flux2Klein_9b`, 1024 × 768, seed 424242, 3 real references read through PBAC (Duña 2048² 4 967 703 B as olio principal; Jideon 1024² 1 751 535 B and Touvier 1024² 1 614 905 B as owner), prompt "Combine the exact people and faces from the three reference images into one scene: the first reference image is Duña de Rosa, the second is Jideon de Rosa, the third is Touvier. Setting: A narrow, wet alley with a cement wall on one side and an open sky above…"; graph 18 nodes, hash `77201a5f…`, inputs `textscene`, `textnegative`, `seedseed`, `imageswarminputimage{duna_de_rosa, jideon_de_rosa, touvier}` | 208 566 (VRAM free 94 567 → 77 252 / 102 129 MB; torch free 3 642 → 2 711) | `t01_base_flux2.png` 1024 × 768, 1 382 150 B, seed reported 424242: one continuous photographic scene — a narrow wet alley in rain. **Duña** at left: young woman, unkempt dark hair, rose-gold glasses, pale pyjama top, white bikini bottom, gold anklets, barefoot, watching. **Jideon** centre: older, broad-shouldered, grey-brown unkempt hair and beard, scarred face, dark red leather jacket, pale blue cargo trousers, pink socks, rose shoes, looking down. **Touvier** right: young Asian man in a shiny lilac coat, crouching, picking up a chip; colourful chips on the wet pavement. All three faces hold their references. Artifact round-trip on throwaway book `p51base-342afec2`: image `19fa226b…` (role `baseImage`, `backendGraph` = `{graphHash, saveNodeId v3_save_final, swarmVersion, stage}`), graph `b959f232…` (role `renderGraph`, envelope read back and compared equal to the compiled graph), plan `966cd37c…`. The PNG's byte count varies run to run (1 382 152 in run 4) because Swarm's `tEXt parameters` chunk carries per-render `sui_extra_data` timings — pixel identity is the IDAT hash (`a1ef587f94b47910…`, 1 379 245 B) |
+| 2 | `t02` V1 | FLUX.2 ACTOR_REGION on #1, box A = Touvier `[563, 115, 410, 615]` px, grow 16 / blur 8, **4 steps, creativity 0.6 → start_at_step 2** (predicted 2), prompt "The person in the reference image is Touvier, lean, straight-framed 25 year old man, Other Asian heritage… wearing shiny pastel purple stainless steel coat… **wears a bright yellow scarf** … He crouches at the right side of the frame picking up neuro chips…" | 26 397 | `t02_V1_s4_c0.6.png`: only a yellow patch at the collar — reads as a yellow shirt, not a scarf; pose, identity and coat kept; no seam — **partial** |
+| 3 | `t02` V2 | same, **4 steps, creativity 1.0 → start 0** (the shipped `capabilities.json` flux2 default) | 44 085 | `t02_V2_s4_c1.0.png`: a clear bright yellow knitted fringed scarf, but Touvier re-posed and enlarged (head at Jideon's shoulder, overlapping his arm), face somewhat changed — **scarf yes, composition not held** |
+| 4 | `t02` V3 | same, **8 steps, creativity 0.6 → start 3** | 54 239 | `t02_V3_s8_c0.6.png`: scarf present (yellow at the neck with a tail inside the coat), pose, position, identity and coat kept, no seam — **best by the decision rule** |
+| 5 | `t02` V4 | same, **12 steps, creativity 0.6 → start 5** | 77 231 | `t02_V4_s12_c0.6.png`: the same result as V3 at higher cost |
+| 6 | `t03` BASE | SDXL `sd_xl_base_1.0`, text only, 1024 × 768, "photo, three people in a narrow wet alley…" | 20 193 | `t03_base_sdxl.png`: off-prompt — an illustrated / anime two-man street (a young man, black hair, pink jacket over a green tee; a bearded man in sunglasses, purple cap, purple jacket, white tee, necklace); no third person, no photographic look |
+| 7 | `t03` ACTOR_REGION | SDXL on #6, right box, 25 steps / 0.6 → start 10, grow 16 / blur 8 | 9 941 (VRAM free 94 511 / 102 129 MB; torch free 14 263) | `t03_inpaint_sdxl.png`: the right box re-rendered in a harsher cel-shaded / ink style — a visible stylistic seam at x ≈ 500–560; outside-mask pixels untouched (margin 16, max diff 229 / 0 / 0) |
+| 8 | `t04a` | FLUX.2 graph with `ckpt_name=NoSuchCheckpoint_p51_e941231a.safetensors` | 20 165, **error** | no PNG — `RENDERER_REJECTED: ComfyUI execution error (Node 4: CheckpointLoaderSimple) (Model=flux2Klein_9b.safetensors): Model in folder 'checkpoints' with filename 'NoSuchCheckpoint_p51_e941231a.safetensors' not found.`; the catalogue was invalidated (`fetches` 1 → 2 on the next probe) |
+| 9 | `t04b` | graph with `class_type=NoSuchNodeV3` | 0, **error** | no request sent — `GRAPH_INVALID: UNKNOWN_NODE_TYPE[4]: node type NoSuchNodeV3 is not in the renderer's object_info`, `durationMs=0` |
+
+**t02 measure-both (`target/p51/t02_table.md`, columns variant, steps, creativity, start_at_step, wall ms, untouched margin px, max diff @0 / @24 / @256, graphHash, VRAM, png):** V1 `4 / 0.6 / 2 / 26 397 / 16 / 200 0 0 / c6ec5dc4f02b`, V2 `4 / 1.0 / 0 / 44 085 / 16 / 255 0 0 / 27a1ab49be30`, V3 `8 / 0.6 / 3 / 54 239 / 16 / 220 0 0 / 4f959b90fc70`, V4 `12 / 0.6 / 5 / 77 231 / 16 / 200 0 0 / c2de97f2d8d0`; VRAM `free 77 252 / total 102 129 MB (torch free 2 711)` before and after every variant. "Untouched margin" is the smallest margin (px, step 8) beyond the box at which every pixel equals the base; asserted `≤ grow + blur = 24` (architect F8) and measured 16 everywhere, so the composite respects the mask on both models. Run 3 and run 4 reproduced the same four timings within ±1 s. **Decision rule (plan §5.2: cheapest variant whose PNG shows the scarf present, identity held, no seam; ties → fewer steps) → V3, 8 steps / creativity 0.6.** The shipped `capabilities.json` flux2 inpaint default is still V2 (`4 / 1.0 / 16 / 8`) — changing it is a plain question in §13.2, not done.
+
+**Timings (ms, all measurements, never thresholds):** BASE FLUX.2 three-reference 1024 × 768 at 4 steps: 215 147 (run 3) / 215 533 (run 4) / 208 566 (run 5) — against the spike's 101–128 s for the same shape under `GIT-5dc94afa` with AIME-derived references (the run-3 VRAM line shows `torch free 1` before the render, i.e. a cold model load, and the first render of every run follows an SDXL-free queue; no re-measure was made). ACTOR_REGION FLUX.2 scales with steps as `start_at_step` predicts (26 → 44 → 54 → 77 s for 2 / 4 / 5 / 7 sampled steps). SDXL BASE 20 193 / ACTOR_REGION 9 941.
+
+**Hardware / software of `.39` (`/ComfyBackendDirect/system_stats`, t01):** unchanged from §4.11 — `AMD Radeon(TM) 8060S Graphics`, `vram_total 102 129 MB` as reported by the adapter's MB rounding (107 090 132 992 B), `torch free` 1–14 GB; SwarmUI `0.9.8.4.GIT-d74f8ce4`.
+
+**Regression set after run 5 (`C:/tmp/p51-regress2.log`, one surefire JVM against `am7db`, no `PB_SD_TESTS`, 19:41:47 → 20:43:37,
+`Total time: 01:01 h`):** `Tests run: 243, Failures: 2, Errors: 0, Skipped: 0` — **BUILD FAILURE**, the two failures mine. Per class:
+`TestPbGraph` 20 / 20 (213.3 s); `TestPictureBookWorkflow` 5 / 5 (2 361 s — on LLM fallbacks, see §13.2 "LLM tier"); the
+`olio.illustration.*Test*` wildcard = `TestCanvasResolver` 5, `TestComfyGraph` 15, `TestFlux2Compiler` 15, `TestGraphRequestShape` 4,
+`TestIllustrationResources` 21, `TestMaskImage` 5, **`TestModelResolver` 41 with 2 failures**, `TestNodeCatalogue` 13, `TestRenderEstimate` 3,
+`TestRenderPlan` 14, `TestSdxlCompiler` 12, `TestStrategySelector` 5, `TestSwarmGraphClientOffline` 6, **`TestSWUtilPathEncoding` 4 / 4**
+(its first observed run — the verifier was right that no earlier log held it), `TestWorkflowCompiler` 24; `TestPbHealthStaleGraph` 2 / 2
+(182.1 s); **`TestPbOrphanCompositions` 2 / 2 (192.2 s)** — `TestScanListsDanglingCompositionRowsAndPurgeRemovesThemChildFirst` (`:165`,
+the P4-13 case) and `TestScanListsCompositionWhoseBookRowIsGoneAndPurgeRemovesIt` (`:297`, the `composition.book`-FK case from the §13
+backlog: the scan listed `olio.pb.composition` id 1188 `cover.ecd79bf9` as `ORPHAN_PB2_ROW` and the purge reported `deleted=2 denied=0
+failed=0`); `TestPbOrphanScan` 1 / 1 (114.1 s); `TestPbRenderPlanActors` 3 / 3 (115.4 s); `TestPbRenderPlanExecutor` 7 / 7 (346.1 s);
+`TestPbRenderPlanLocationText` 7 / 7; `TestPbRenderPlanSubject` 4 / 4; `TestRenderPlanLive` **5 / 5 (182.8 s) — it ran, it did not
+skip**: it gates on `SdTestGate.isReachable(server)`, not on `PB_SD_TESTS`, so with `.39` up it rendered two SDXL 512 × 512 / 12-step
+images (`p24-live-render-*.png` 3 281 ms, `p410-camera-render-*.png` 5 610 ms, `sd_xl_base_1.0`). The set therefore made **real SD
+renders on `.39`** beyond `TestP51GraphLive`'s: 2 from `TestRenderPlanLive`, 5 × 1024 × 1024 from `TestPbRenderPlanExecutor`
+(`target/p25-render-plan-*.png`, 20:37–20:40) and 9 from `TestPictureBookWorkflow` (`export/pb2_*`, `export/ki68_step{4,20,40}_*`); all
+16 were opened and are described in §13.2 "PNGs opened" — none is a pipeline defect (every actor present, no seam, no blank image);
+the `ki68_step40` render carries an off-prompt white Polaroid-style frame and several lighthouse renders have malformed gulls, which is
+SD behaviour no test asserts. The two `TestPictureBookWorkflow` "fresh" portraits are near-interchangeable generic young blond men —
+the LLM fallback (§13.2 "LLM tier") made visible.
+
+**The two failures — my regression, fixed, re-run.** `TestModelResolver.flux2RefusedForInpaint` (`:359`, `assertFalse(r.isResolved())`)
+and `TestModelResolver.supportsTaskTable` (`:396`, `expected:<FAMILY_UNSUPPORTED_FOR_TASK> but was:<OK>`). Cause: `ModelResolver.supportsTask`
+answers `INPAINT` from `RendererCapabilities.isSupportsMasks()` (`ModelResolver.java:293-294`), and this slice set `flux2*`
+`supportsMasks` to `true` in `capabilities.json` (design §38.2, "`flux2*` `supportsMasks` is now `true` on the strength of the spike's
+one-box FLUX.2 inpaint", architect F9) — the two P4 (P2-2) assertions encoded the old `false`. Neither the planner, the architect, the
+verifier nor I looked for consumers of `supportsMasks`; §6.C 205 (i)'s "`supportsTask(INPAINT)` has no caller" was **wrong** —
+`PbServiceFacade.java:201` (the model-inventory listing) calls it, so the REST inventory now reports `flux2Klein_9b` as
+`supportedForTask: true` for `INPAINT`, and `ModelResolver.resolve(INPAINT, flux2)` resolves instead of refusing. No product
+execution path consumes an INPAINT resolution yet (`PbModelTaskEnumType.INPAINT` has no other product reference; the executor path is
+P5-2), so the change is informational until then. Fix (⚠ §6.C 205 bb — test expectations updated to the design's current rule, not
+weakened; the alternative, reverting `supportsMasks` and keying ACTOR_REGION on the `inpaint` block, would contradict the design text
+the architect approved and the §13 `SEQUENTIAL_INPAINT` row): `flux2RefusedForInpaint` → `flux2AllowedForInpaint` asserting
+`isResolved()`, model `FLUX2`, reason `OK`, not degraded; the table row → `Reason.OK`; the class javadoc's "flux2 … no masks" →
+"masks since P5-1". Re-run of the whole `olio.illustration.*Test*` wildcard, no DB (`C:/tmp/p51-unit5.log`, 20:46:48): **187 / 187**
+across the 15 classes above (`TestModelResolver` 41 / 41), `BUILD SUCCESS`, `Total time: 7.824 s`. The DB-bound classes were not
+re-run after the edit — it touches one pure test class and nothing they load. `TestRenderPlanLive` and the other live classes are
+therefore green as run at 20:43 and the illustration wildcard is green as re-run at 20:46; no single log shows all 243 green at once.
+
+**Not claimed.** No product caller of `WorkflowCompiler` / `SwarmRendererAdapter.executeGraph` exists yet — `PbRenderPlanExecutor` still issues the P4 T2I requests; ACTOR_REGION and the graph path are reachable only from this class (P5-2 wires them). No calibration record exists (B3: design note only). The three generator-drift WARNs were observed, not fixed — the P5-0 fixtures are left as the spike captured them. `capabilities.json` was not changed after the t02 read. Nothing is DONE; nothing is committed.
+
+---
+
 ## 5. Deviations from design
 
 Each entry here is mirrored by a dated in-place edit in `PictureBookV3Design.md` (or the gap doc
@@ -13043,6 +13125,176 @@ blocking item), 12, 13 and 15 are ⚠ MY JUDGMENT.
      (aa) ⚠ **Not acted on, noted:** `system_stats` reports the ComfyUI frontend at 1.53.6 with 1.57.1 required (a Comfy warning, no
      effect seen); the `.39` PyTorch is `2.9.1+rocm7.2.1` on an AMD 8060S with 107 GB of unified memory reported as VRAM — the
      timings are for that device and transfer to nothing else. Default: leave.
+     **Stephen 2026-10-24 (§13.1 "Yours"):** (9) **ratified as measured**; (7) Q14 → **(b) seeded by (a)** — closes (f)'s open half;
+     (3) inpaint → **measure both first** in P5-1; (1) **real cast if one exists** — (b) stands for the spike, P5-1 looks for an
+     `am7db` book with ≥ 4 real portraits; (2) / (d), (4), (5) / (q), (6) / (q), (8) / (i) at their defaults. The rest of (a)–(aa)
+     open at their defaults.
+
+205. ⚠ **2026-10-24 (P5-1 — the graph builder: `ComfyGraph` / `GraphInputs` / `WorkflowCompiler` / `NodeCatalogue` / `SwarmGraphClient`
+     / `MaskImage` in `olio/illustration/`, the raw-graph path of `SwarmRendererAdapter`, the `renderGraph` artifact, and the gated live
+     class `TestP51GraphLive` against `.39`; results §4.12 / §13.2, design §38.1 "Measured in P5-1" / §38.2) — judgments taken while
+     planning, implementing, running and reporting it.** Nothing here is DONE (159 b). Plan `C:/tmp/p51-plan.md` (planner; Addendum A =
+     the real-cast / Swarm-version / `postgres3` discoveries, Addendum B = architect APPROVE WITH CHANGES, B1–B4 answered by Stephen,
+     F4–F9 folded); logs `C:/tmp/p51-unit3.log`, `C:/tmp/p51-unit4.log` (offline suite 88 / 88), `C:/tmp/p51-live.log` … `p51-live5.log`
+     (five live runs), `C:/tmp/p51-regress-db.log` (the pre-live DB pair), `C:/tmp/p51-regress2.log` (the closing regression set);
+     artefacts `AccountManagerObjects7/target/p51/` (7 PNGs, `t02_table.md`, `object_info.subset.json`); probes `C:/tmp/p51_probe*.py`
+     (mine, outside the repo); doc scripts `C:/tmp/p51_doc.py`; pre-image `C:/tmp/PictureBookV3Implementation.md.pre-p51`.
+     (a) ✓ **Stephen's four plan answers (all at their Recommended defaults):** B1 generate-and-patch per design §38.2 — every render
+     calls `ComfyGetGeneratedWorkflow` with placeholder images and patches the result (the planner's hand-written graph-template
+     compiler was dropped at plan stage and never written; the tracked P4 `Flux2Compiler` / `SdxlCompiler` are *prompt* compilers and
+     are untouched); B2 a sibling JSON artifact per stage, role
+     `renderGraph`, envelope `{stage, graphHash, swarmVersion, graph}`, and `backendGraph` on the image artifact =
+     `{graphHash, saveNodeId "v3_save_final", swarmVersion, stage}` (`backendId` omitted when unknown); B3 the calibration record is a
+     design note only in P5-1 (§38.1 "Measured in P5-1"; implementation P5-2) with `capabilities.json` seeded from the P5-0 numbers; B4
+     book 58 `catatone-custom-book-6` (owner `pbCustomTestUser` id 186, org 21) and its three real portraits — Duña de Rosa (person 444,
+     data 553), Jideon de Rosa (442, data 16251), Touvier (443, data 15674) — with the live class running as that user through PBAC.
+     (b) ⚠ **No `am7db` book had ≥ 4 real portraits on 2026-10-24 (Addendum A1: 58 has 3; 96 Duña + Jideon; 5930 Jideon + Touvier; 57
+     Elena + Marcus)** — so Stephen's "real cast if one exists" was met with three, not four, and the inpaint target is Touvier ("wears a
+     bright yellow scarf"). Default: three is the P5-1 cast; a 4-actor real run waits for a book that has one.
+     (c) ⚠ **Image-key marker (the run-2 product defect).** Swarm's `initImageFixer` base64-fills a raw image input only when its key
+     contains `swarminputimage`; otherwise it uploads the PNG and substitutes the *filename*, which `SwarmLoadImageB64` cannot decode
+     (`cannot identify image file <_io.BytesIO …>`, §4.12 run 2; confirmed outside the product with `C:/tmp/p51_probe3.py`, cases A vs
+     B–E). `ComfyGraph.IMAGE_KEY_MARKER = "swarminputimage"` (`:38`) and `inputKey` (`:336-338`) insert it for image inputs, so the wire
+     key is `comfyrawworkflowinputimageswarminputimage<name>`; `ComfyGraph.swarmKey` reproduces Swarm's `CleanTypeName` (digits and
+     underscores dropped) and `GraphInputs.put` refuses two names that reduce to one key — which is what rejected my own `probe0` /
+     `probe1` in run 3. Design §38.2's example keys (`…inputimageref0`) are therefore wrong for this Swarm build and were amended.
+     Default: keep the marker in the product (it is Swarm's contract, not ours) and the collision guard as a hard error.
+     (d) ⚠ **F4 path encoding measured, not changed:** `TestSWUtilPathEncoding` (4 cases, Jersey `WebTarget.getUri()`, no server)
+     records that spaces and non-ASCII are percent-encoded once and `#` / `?` are **not** — a Swarm file name carrying either would be
+     cut at that character. No captured path has carried one (names are prompt words + seed), so `SDUtil.fetchImageBytes` is unchanged;
+     the test is the record of why. **Verifier (§13.2): this class had not been observed running in any P5-1 log at hand-back** — it
+     is now: closing regression set `p51-regress2.log` 4 / 4 (20:43) and the re-run `p51-unit5.log` 4 / 4 (20:46) — §4.12
+     "Regression set". Default: leave `fetchImageBytes`; encode only if a `#` / `?` ever appears.
+     (e) ⚠ **F5 sanitisation is a prefix rule plus one exact key.** `PbArtifactUtil.SANITIZE_IMAGE_KEY_PREFIX = "comfyrawworkflowinputimage"`
+     (`:96`) strips every image-tag key by prefix (`:733`) and `comfyworkflowraw` joins `SANITIZE_KEYS` (`:89`); `StageResult.requestJson`
+     is **redacted but not `isSanitized`** until `sanitizeGeneratorRequest(json, referenceArtifactIds)` runs — the contract the run-3
+     stale assertion got wrong. `PbPipelineUtil.recordImage` sanitises before persisting (pre-existing path); `persistGraphArtifact`
+     calls `graph.assertNoInlineImages()` (`PbRenderPlanUtil.java:422`) so the generator's placeholder base64 can never reach the DB;
+     `persistArtifact` itself trusts its caller (the run-4 test defect passed it the unsanitised string). Default: leave the trust at
+     `persistArtifact`; every product caller passes `null` or a sanitised body (verifier item 3b).
+     (f) ⚠ **F6 `NodeCatalogue`:** immutable per-server holders, 1 h TTL (`TTL_MS`, `:35`), fetch failures never cached, `invalidate`
+     (`:139`) called only from the renderer-rejection branch. It validates node **types** (`UNKNOWN_NODE_TYPE`, error) and input
+     **names** (`UNKNOWN_INPUT`, warning only — Swarm's own generator emits `control_after_generate` / `resize_source`, which its
+     `object_info` does not list) and unfilled tags; it does **not** check enum values or slot types. Default: as built; slot typing is
+     not a P5 need.
+     (g) ⚠ **F7 `recordImageMetrics(…, String backendGraph)` overload** (`PbArtifactUtil.java:235`) adds the field only when non-null; the
+     P4 T2I path keeps the old overload. Default: as built.
+     (h) ⚠ **F8 fixtures and margins:** `object_info.subset.json` (22 types) is produced by the gated t00 into `target/p51/` and copied by
+     hand (LF) into `src/test/resources/olio/illustration/p50/` — a fixture that can only be refreshed by a live run; t02 asserts the
+     untouched-outside-mask margin `≤ maskGrow + maskBlur = 24` (measured 16 on both models); each live method carries
+     `@Test(timeout = 180 min)` — a hang guard, twice the 90-min spike ceiling, never a threshold (the javadoc said "90-minute" until the
+     verifier's item 5; corrected after run 5, comment only). Default: as built.
+     (i) ⚠ **F9 `capabilities.json`:** `_comment` rewritten; flux2 `inpaint {steps 4, creativity 1.0, maskGrow 16, maskBlur 8}` (the
+     spike's "creativity 1.0" guess, now measured — see (m)), `secondsPerStepPerReference 5.0` (the spike's (102 − 38.6) / 4 / 3 = 5.3,
+     rounded to one figure because a three-run spread of ±12 % does not support a second), `supportsMasks true`; xl `{25, 0.6, 16, 8}`;
+     kontext none. `ModelResolver.supportsTask(INPAINT)` is now `OK` for flux2 — and the draft of this letter said "no product caller
+     yet", which was **wrong**: `PbServiceFacade.java:201` (the model-inventory listing) calls it, and `TestModelResolver` asserted the
+     old `false` at two sites; the closing regression set caught both — (bb). `RenderEstimate` still ignores
+     `secondsPerStepPerReference` (carried from 204). Default: as built; the calibration record (B3) supersedes the literals in P5-2.
+     (j) ⚠ **Generate-and-patch mechanics (mine):** placeholders are solid-colour PNGs at canvas size (`INIT_COLOUR` yellow, `MASK_COLOUR`
+     magenta, one distinct colour per reference); `patchImages` matches every `SwarmLoadImageB64.image_base64` first by exact base64,
+     then by nearest decoded solid colour (sum of channel differences); every loader must match a placeholder and every placeholder must
+     be found or the compile fails (`GraphCompileException`). Steps / cfg / `start_at_step` stay literals from the generator;
+     `startAtStep(steps, creativity) = round(steps × (1 − creativity))` (`WorkflowCompiler.java:155`) is compared with the generator's
+     literal and a mismatch is a compile error (`:293`). Patch order images → seed → prompts → save-node rename. Default: as built.
+     (k) ⚠ **`SwarmGraphClient`:** `rawBody` extracted (`:153`) so `TestGraphRequestShape` asserts the wire shape with no server;
+     `postWithSession` retries exactly once after `sdu.dropSession()` when the response `error` contains "session" (`:195-199`);
+     `generateRaw` returns a `RawResponse` (durationMs, error, imagePaths, isUnreachable) — no exception for a Swarm `{"error":…}`.
+     `SDUtil` gained `session()` / `dropSession()` / `swarmVersion()` over its existing per-server session cache (`SDUtil.java:157-195`)
+     and `SWSessionResponse.version` is additive; the T2I path is byte-for-byte the same `computeIfAbsent`. Default: as built.
+     (l) ⚠ **Error mapping (`SwarmRendererAdapter.executeGraph`, `:140-180`):** catalogue errors → `GRAPH_INVALID: …` with `durationMs 0`
+     and no request; unreachable → the existing unreachable result; `isGraphRejection` → `NodeCatalogue.invalidate(server)` +
+     `RENDERER_REJECTED: <Swarm's text>`; everything else `Renderer error: …`. **`isGraphRejection` (`:235-241`) is broad:** false for
+     null and session errors, true when the lowercased text contains "unsupported node", "node type", "workflow", "invalid" or "comfy" —
+     so **every** `ComfyUI execution error (…)` (t04a's uninstalled checkpoint, and a future OOM) is classified as a graph rejection and
+     drops the catalogue (one extra `object_info` fetch, ~0.3 s). Verifier item 3 adds that `TestSwarmGraphClientOffline:115` asserts
+     `"Model flux2Klein_9b not found"` → not-a-rejection, a phrase the real server never emits (its shape is
+     `ComfyUI execution error (Node 4: CheckpointLoaderSimple) (Model=…): Model in folder 'checkpoints' with filename '…' not found.`,
+     which **is** a rejection under the current rule). Default: leave the rule in P5-1 (the only consumer is this class) and narrow it in
+     P5-2 when the executor needs to tell "fix the graph" from "fix the server", adding t04a's live text to the offline test then.
+     (m) ⚠ **t02 measure-both result → V3 (8 steps, creativity 0.6, `start_at_step 3`)** by the plan's rule (cheapest variant whose PNG
+     shows the scarf present, identity held, no seam): V1 4 / 0.6 partial (a yellow collar, no scarf), V2 4 / 1.0 scarf but Touvier
+     re-posed and enlarged, V3 8 / 0.6 scarf + pose + identity held, V4 12 / 0.6 the same at 77 s vs 54 s. The shipped flux2 inpaint
+     default is still V2 (`4 / 1.0`). **Not changed** — your call (§13.2 "Yours" (1)). Default: change `capabilities.json` flux2 inpaint
+     to `{8, 0.6, 16, 8}` in P5-2 (or now, if you say so).
+     (n) ⚠ **Pre-live regression pair ran before the live class** (`p51-regress-db.log`, 17:58 → 18:42: `TestPbGraph` 20 / 20,
+     `TestPictureBookWorkflow` 5 / 5, BUILD SUCCESS, 44:33 min) to show the `SDUtil` / `PbArtifactUtil` / `PbRenderPlanUtil` edits left the
+     P4 T2I path green; **`TestPictureBookWorkflow` is the KI-68 step-budget comparison (4 / 20 / 40 steps on `flux2Klein_9b`, LLM + SD)
+     and reuses / mutates book 58** — the same book the live class reads its cast from. Out of P5-1 scope; noted, not changed. Default:
+     leave; if book 58's portraits ever change under it, `TestP51GraphLive.CAST` names the data ids to re-check.
+     (o) ⚠ **My defects on the way (all mine, none Stephen's):** run 1 — cast names used as tag names (`Duña` fails `[A-Za-z0-9_]+`);
+     run 3 — digit-suffixed probe names tripped the new collision guard, and a stale "already sanitised" assertion; run 4 — the
+     unsanitised string handed to `persistArtifact`. Each cost one live run (23 s, 8 min, 9 min). Run 2 was the one product defect, (c).
+     (p) ⚠ **Portrait ownership:** Duña's portrait (`data.data` 553) is owned by the **olio principal**, not by book 58's owner, so an
+     owner-side `AccessPoint` read returns null and the class re-reads it as `Factory.findUser(OlioContext.OLIO_USER_NAME, orgId)`
+     (`readAs={Duña=olio principal, Jideon=owner, Touvier=owner}`); Jideon's and Touvier's are owner-owned. Same family as the Photo-Op
+     finding carried in 204. The test also reaches the portrait FK with `getReader().populate(profile, {"portrait"})`
+     (`TestP51GraphLive.java:615`, verifier item 6) — a read-side shortcut that bypasses PBAC for one FK; the bytes themselves are read
+     through `AccessPoint`. Default: in P5-2 plan `profile.portrait` on the `AccessPoint.find` query instead (needs a live re-run to
+     show); the question of which principal product code should read Photo-Op portraits as stays open from 204.
+     (q) ⚠ **Generator drift between Swarm builds (`GIT-5dc94afa` → `GIT-d74f8ce4`):** three WARNs in t00 (§4.12) — the P5-0 captures
+     carry `SwarmTextEncodeAdvanced`, today's generator emits `CLIPTextEncode` (× 2); the SDXL inpaint capture lacks `CLIPTextEncodeSDXL`
+     / `ModelSamplingDiscrete`; the FLUX.2 inpaint capture has 5 loaders where today's has 3. The offline `TestWorkflowCompiler` /
+     `TestNodeCatalogue` therefore pass against the spike's generator shape; only the live class describes today's (verifier item 7).
+     Also: today's `object_info` lists `images` / `minimax_refs` / `lora_hooks` as optional inputs of `SwarmTextEncodeAdvanced`, so design
+     §38's node example is dated. Default: refresh the p50 fixtures from a live capture after P5-2, not now.
+     (r) ⚠ **SDXL checkpoint is `OfficialStableDiffusion/sd_xl_base_1.0` (the `olio.sd.config` schema default), not the spike's
+     `juggernautXL_ragnarokBy`** — `SdTestGate` resolves what the schema default names; t03's base is off-prompt anime (two men, no third
+     person) and its inpaint shows a style seam. The SDXL rows are a control for the mask / composite contract (margin 16, outside pixels
+     untouched), not a quality claim. Default: leave; SDXL quality is not a Phase 5 question.
+     (s) ⚠ **BASE FLUX.2 three-reference render measured 209–216 s in P5-1 vs the spike's 101–128 s** for the same request shape — run 3's
+     VRAM line shows `torch free 1` (a cold model load) and the references are 2048² / 1024² real portraits rather than the spike's 1024²
+     AIME-derived ones; no re-measure was made (Stephen's (6) from 204 generalised). Default: none claimed; the calibration record
+     (P5-2) is where per-server numbers belong.
+     (t) ⚠ **PNG byte count is not pixel identity:** Swarm's `tEXt parameters` chunk carries per-render `sui_extra_data` timings, so the
+     same seed yields 1 382 152 B in run 4 and 1 382 150 B in run 5 with an identical IDAT (sha256 `a1ef587f94b47910…`, 1 379 245 B). The
+     class compares dimensions and seed, never byte counts. Default: as built.
+     (u) ⚠ **Runs 4 and 5 reused `target/p51/`** (overwritten, not archived) — the run-3 PNGs are gone; their timings survive in
+     `p51-live3.log`. Default: leave.
+     (v) ⚠ **t04a costs a real generation attempt** (~20 s server time, the checkpoint-load failure) every run; t04b costs nothing (no
+     request). Default: leave; it is the only live proof of the `RENDERER_REJECTED` branch.
+     (w) ⚠ **`TestP51GraphLive.java:293 / :296` assert `cast.artifactIds()` equals the request's `referenceArtifactIds`** — under the
+     documented AIME stand-in fallback (no real cast) the ids are empty, `JSONUtil`'s NON_EMPTY mapper drops the key and the assertion
+     would read `null` vs `[]` (verifier item 2). Unreached (book 58 exists). Default: fix in P5-2 (`Optional.ofNullable(…).orElse(List.of())`).
+     (x) ⚠ **`SDUtil.invalidateSession` drops the session but not `versionCache`** (`:175-177`, verifier item 4). The next mint
+     overwrites the version, so the stale window is a Swarm upgrade that keeps old sessions valid **and** a failed re-mint; not
+     changed in P5-1 (no test exercises the invalidation path live). Default: add `versionCache.remove(autoserver)` in P5-2 with the
+     calibration-record work.
+     (y) ⚠ **`TestPbOrphanCompositions` composition.book-FK case (the 204 y backlog item)** — added as the class's second method
+     (`TestScanListsCompositionWhoseBookRowIsGoneAndPurgeRemovesIt`); P4-13 backlog, carried into this slice by the plan. **At the
+     verifier's hand-back no P5-1 log showed it running** (only the P4-13 single-case run in `p413-orphan.log`); the closing regression
+     set is the evidence: `p51-regress2.log` `TestPbOrphanCompositions` 2 / 2, 192.2 s — the scan listed `olio.pb.composition` 1188
+     (`cover.ecd79bf9`) as `ORPHAN_PB2_ROW`, the purge reported `deleted=2 denied=0 failed=0` (§4.12 "Regression set"). The §13 backlog
+     paragraph is rewritten accordingly. Default: none.
+     (z) ⚠ **`[LLM-GATE] route=litellm tier=local …` is printed for this class** because it extends `BaseTest` (it needs `am7db` for the
+     cast and the artifact round-trip); the resolved route — the local Docker Ollama container through LiteLLM — is **never used**; the
+     class logs `[p51] LLM tier: none` on its own line. Default: leave; a `BaseTest` without the LLM gate is a bigger change than this.
+     (aa) ⚠ **Out of scope, noted, not touched:** `PictureBookUtil.java:10124-10130` unauthorised `RecordReader.populate` portrait read;
+     `a7_auth_group_0_1` has no `path` column (A3); `SDUtil.doTxt2Img` "TEMPORARY diagnostic logging"; `ClientUtil` drops the body on a
+     non-200; `PbPipelineUtil.persistBytes` / `recordImage` are SceneGraph-bound; `artifactRequest()` may omit `durationMs`;
+     `RenderPlan$Box` has no `toString` (`boxA=…Box@39f51417` in the log); **`TestPictureBookWorkflow.java:89` hard-codes
+     `PB_LLM_MODEL = "gpt-oss:120b"`** into the chatConfig it builds, while `LlmTestGate` rewrites `test.llm.ollama.server` to the
+     local container (`http://127.0.0.1:11435`) — in the pre-live pair all six of its `Chat` calls logged `HTTP 404 … model
+     'gpt-oss:120b' not found` (18:09:48 → 18:11:00), `PictureBookUtil` logged `Null LLM response` and fell back, and the class passed
+     5 / 5 on fallbacks; its green is not LLM evidence and the `[LLM-GATE] tier=local` line it printed was resolved but unusable
+     (`architecture.md`'s "tests not yet migrated" list does not name it; §13.2 plain question (8), default: a task of its own, not
+     P5-2); P5-2 items — executor wiring, `SEQUENTIAL_INPAINT`, HARMONIZE, the calibration record, node-level error surfacing, a
+     graphHash timing dimension, single-reference ACTOR_REGION enforcement.
+     (bb) ⚠ **`TestModelResolver` — two P4 assertions changed after the closing regression set went red (my regression):**
+     `flux2RefusedForInpaint` (`:357`) and `supportsTaskTable` (`:396`) asserted `FAMILY_UNSUPPORTED_FOR_TASK` for flux2 + `INPAINT`,
+     the P2-2 fact that `flux2*` `supportsMasks` was `false`; (i) flipped it to `true` and `ModelResolver.supportsTask` answers `INPAINT`
+     from exactly that flag (`:293-294`). I had not run `TestModelResolver` in any offline set (my explicit `-Dtest` lists named my
+     seven new classes plus the two prompt compilers; the wildcard only ran in the closing set), so the slice reached the verifier with
+     a red P4 test nobody had executed. Fix applied 20:45: `flux2RefusedForInpaint` → `flux2AllowedForInpaint` (`isResolved()`,
+     `FLUX2`, `Reason.OK`, `!isDegraded()`), the table row → `Reason.OK`, the class javadoc's "flux2 … no masks" → "masks since
+     P5-1"; `p51-unit5.log` 187 / 187 over the 15-class wildcard, `BUILD SUCCESS` 20:46:48. This **updates** the assertions to the
+     design's current rule (§38.2 "`flux2*` `supportsMasks` is now `true`", architect F9; §13 `SEQUENTIAL_INPAINT` requires
+     `supportsMasks`) — it does not delete, skip or loosen them. The alternative — keep `supportsMasks:false` for flux2 and gate
+     ACTOR_REGION on the presence of the `inpaint` block instead, leaving `TestModelResolver` and the REST inventory's INPAINT answer
+     untouched until P5-2 wires the executor — was not taken because it contradicts the design text already approved this slice and
+     would need that text reverted. Visible product consequence either way: the `PbServiceFacade` inventory now lists
+     `flux2Klein_9b` as `supportedForTask: true` for `INPAINT` and `ModelResolver.resolve(INPAINT, flux2)` resolves; nothing executes
+     an INPAINT resolution before P5-2. Plain question (9) in §13.2. Default: the update stands.
 
 ### 6.G Found in Slice C transport (P0-10c), left alone under scope discipline — your call on each
 
@@ -22804,11 +23056,16 @@ next §6.C number 204 (P5-0).
 Scope: design §30 row 5 and §38.4 / §38.5 as corrected (architect F3, 2026-10-23): **the spike measures the contract and captures
 Swarm's generated graphs against the live backend; the graph compiler (`WorkflowCompiler` / `ComfyGraph`) is P5-1 and later, product
 code in `olio/illustration/`, built from the captures.** Nothing in this section is DONE (159 b); P5-1 starts only after P5-0 is
-ratified.
+ratified. **Ratified 2026-10-24 (Stephen, in answer to §13.1 "Yours"):** (9) P5-0 as measured; (7) design §34 Q14 → **(b)** a
+per-server calibration record seeded by (a) the spike's numbers; (3) the FLUX.2 inpaint pass — **measure both** (more steps vs
+creativity 1.0 inside the mask) in P5-1 before deciding; (1) **real cast if one exists** (an `am7db` book with ≥ 4 real portraits;
+AIME-derived only if none, and say so). (2) FACEID out, (4) `useinpaintingencode` excluded, (5) 90-min spike ceiling, (6) no
+re-measure of `4actor_inpaint_flux2`, (8) the `architecture.md` spike sentence in his next rules pass — all at their defaults.
 
-**Backlog (found on the way, not in any task yet):** `TestPbOrphanCompositions` does not cover the `composition.book`-FK branch of
-`PbOrphanUtil` (`:558-560`) — the page / element rows whose composition names a deleted book; one case in the first Phase 5 test slice
-(§6.C 204 y).
+**Backlog (found on the way, not in any task yet):** the `composition.book`-FK branch of `PbOrphanUtil` (`:558-560`) — the page /
+element rows whose composition names a deleted book — is now exercised by the second case of `TestPbOrphanCompositions` (added in
+P5-1 as the first Phase 5 test slice, §6.C 204 y / 205 y); its run evidence is §4.12 "Regression set after run 5". Nothing else
+is parked here from P5-1 — the out-of-scope list is §6.C 205 (aa).
 
 ### 13.1 P5-0 results — the Phase 5 Swarm spike: `TestP50SwarmSpike` (6 methods, gated, Objects7 test tree, no DB, no LLM) + `P50Swarm` against SwarmUI `http://192.168.1.39:7801` (`0.9.8.4.GIT-5dc94afa`) with `flux2Klein_9b` + `juggernautXL_ragnarokBy` — 2026-10-23 22:40 → 2026-10-24 00:50:05 local (run 1 22:55 stopped; run 2 23:02:08 → 00:12:00, 6 / 6 ran, 29 requests = 26 images + 1 FACEID error + 1 client-cut + 1 WebSocket frames-only; run 3 00:34 → 00:50 re-measure of the cut render: 937 s, 3 of 4 actors)
 
@@ -22905,5 +23162,182 @@ stands.
 Next: **STOP.** P5-1 (plan the graph compiler from the captured graphs — `ComfyGraph` / `WorkflowCompiler` in `olio/illustration/`,
 design §38.2 / §38.3) only after P5-0 is ratified; its plan starts from design §34 "Phase 5 decisions" and §38.5 as measured.
 
-⚠ 204 (a)–(aa) open (defaults in §6.C; (b)/(d)/(f)/(i)/(q) plain questions above); ⚠ 203 (a)–(j) open (defaults in §6.C; (c)/(d) plain questions); ⚠ 202 (a)–(bb) open (defaults in §6.C; (k)/(l)/(m)/(n)/(o)/(p) plain questions); ⚠ 201 (a)–(bb) open except (v)/(x) taken in §12.14 (202 c) and (e)/(f)/(t) wording corrected there (202 g/i/f), (j)/(q) taken in §12.13; ⚠ 200 (a)–(z) open except (o) closed and (w) taken in §12.13, (r) a plain question; ⚠ 199 (a)–(j) open except (h1)/(h2)/(c1) → §12.12, (c2)/(d1)/(d2) → §12.13, (g)/(j) taken; ⚠ 198 (a)–(w) open; ⚠ 197 (a)–(ww) open except (jj); ⚠ 196 (a)/(b) closed by 198 (h); ⚠ 194 (a)–(dd), (ff), (gg), (ii) open; ⚠ 195 (a)–(c) open;
-next §6.C number 205.
+### 13.2 P5-1 results — the graph builder: `ComfyGraph` / `GraphInputs` / `WorkflowCompiler` / `NodeCatalogue` / `SwarmGraphClient` / `MaskImage` (Objects7 `olio/illustration/`, product), the raw-graph path of `SwarmRendererAdapter`, the `renderGraph` artifact (`PbRenderPlanUtil.persistGraphArtifact`), `SDUtil` session / version, and the gated live class `TestP51GraphLive` (5 methods, Objects7 test tree, `am7db`, pure SD, no LLM call) against SwarmUI `http://192.168.1.39:7801` (`0.9.8.4.GIT-d74f8ce4`) with `flux2Klein_9b` + `OfficialStableDiffusion/sd_xl_base_1.0` and book 58's three real portraits — 2026-10-24 ~15:30 → 20:46:48 local (live runs 1–4 red at 18:43 / 18:47 / 19:17 / 19:28; run 5 green 19:29:58 → 19:38:39, 5 / 5, 9 requests = 7 images + 2 deliberate rejections; closing regression set 19:41:47 → 20:43:37 **red**, 243 run / 2 failures in the P4 `TestModelResolver` — my regression — fixed and the illustration wildcard re-run green 187 / 187 at 20:46:48)
+
+**Read-first:** design §38 (§38.1 as measured incl. the new "Measured in P5-1" block, §38.2 generate-and-patch incl. the `swarminputimage`
+marker bullet, §38.3 artifacts), §34 "Phase 5 decisions"; §13.1 "Yours" and §6.C 204 (Stephen's ratification answers); `C:/tmp/p51-plan.md`
+(planner, Addendum A discoveries, Addendum B = architect APPROVE WITH CHANGES F4–F9 + Stephen's B1–B4); `TestP50SwarmSpike` / `P50Swarm`
+(the capture precedent; the p50 fixtures are its captures); `SdTestGate`, `BaseTest` (the `[LLM-GATE]` line it prints); `PbArtifactUtil`
+(`SANITIZE_*`, `isSanitized`, `sanitizeGeneratorRequest`); `llm-conduct.md` rule 2 (gated skip ≠ pass; name the SD URL and checkpoints;
+LLM tier in words).
+
+**Flow (local):** planner → `p51-plan.md` → architect APPROVE WITH CHANGES (Addendum B) → Stephen's four answers (B1–B4, all defaults) →
+implement product + offline tests → `p51-unit3.log` / `p51-unit4.log` (offline, 88 / 88) → pre-live DB pair `p51-regress-db.log`
+(`TestPbGraph` 20 / 20, `TestPictureBookWorkflow` 5 / 5, 44:33 min) → live runs 1–5 (§4.12; run 2 found the one product defect, the
+image-key marker) → verifier (PASS, 7 items; ran while the closing set was still going) → closing regression set `p51-regress2.log`
+**red** (2 `TestModelResolver` failures — the P4 test the capabilities flip broke, §4.12) → fix the two assertions → illustration
+wildcard re-run green (`p51-unit5.log`) → this doc pass → **STOP**.
+
+**What changed (all uncommitted, LF; product + test tree + docs; no jar install, no WAR, no container):**
+- New product, `src/AccountManagerObjects7/src/main/java/org/cote/accountmanager/olio/illustration/`: `ComfyGraph.java` (414 lines —
+  the parsed graph: node map, `inputKey` / `swarmKey` with `IMAGE_KEY_MARKER`, `graphHash`, `assertNoInlineImages`, placeholder
+  redaction), `GraphInputs.java` (151 — typed tag values, collision guard), `WorkflowCompiler.java` (482 — generate-and-patch for BASE
+  and ACTOR_REGION, `startAtStep`, `CompiledGraph`), `NodeCatalogue.java` (265 — per-server `object_info` cache, `validate`),
+  `SwarmGraphClient.java` (261 — `generatedWorkflow`, `objectInfoJson`, `systemStats`, `generateRaw`, `fetchImage`, `rawBody`, one
+  session retry), `MaskImage.java` (126 — rect masks and solid placeholders), `GraphProblem.java` (45), `GraphCompileException.java` (16).
+- Modified product: `SwarmRendererAdapter.java` (+127 — `executeGraph`, `graphRequestJson`, `isGraphRejection`, `backendGraph` JSON),
+  `StageRequest.java` (+47 — `graph` / `inputs`, `isGraph`, builder invariant), `RendererCapabilities.java` (+60 — `InpaintParams`,
+  `getInpaint`, `secondsPerStepPerReference`, `supportsMasks`), `RendererAdapter.java` (+5 — `ERROR_GRAPH_INVALID`,
+  `ERROR_RENDERER_REJECTED`), `RenderPlan.java` (+3 — `STAGE_ACTOR_REGION`), `PbRenderPlanUtil.java` (+62 — `persistGraphArtifact`,
+  `readGraphArtifact`, `readGraphEnvelope`, `GRAPH_MAPPER`), `PbArtifactUtil.java` (+42 — `comfyworkflowraw` key,
+  `SANITIZE_IMAGE_KEY_PREFIX`, `recordImageMetrics(…, backendGraph)`), `PbPipelineUtil.java` (+5 — `ROLE_RENDER_GRAPH`), `SDUtil.java`
+  (36 — `session()` / `dropSession()` / `swarmVersion()` over the existing session cache), `SWSessionResponse.java` (14 — `version`),
+  `SWUtil.java` (10 — `getNewSession` returns the response), `resources/olio/illustration/capabilities.json` (33 — `_comment`, flux2
+  `inpaint {4, 1.0, 16, 8}` + `secondsPerStepPerReference 5.0` + `supportsMasks`, xl `inpaint {25, 0.6, 16, 8}`).
+- New tests, `…/olio/illustration/`: `TestComfyGraph` (312 lines, 15 cases), `TestGraphRequestShape` (221, 4), `TestMaskImage` (82, 5),
+  `TestNodeCatalogue` (352, 13), `TestSwarmGraphClientOffline` (118, 6), `TestWorkflowCompiler` (495, 24), `TestSWUtilPathEncoding`
+  (49, 4), `FixtureGraphClient` (184, helper); `…/olio/picturebook/TestP51GraphLive.java` (936, 5 gated live methods t00–t04). Modified
+  tests: `TestIllustrationResources` (+60 — the capabilities additions), `TestPbOrphanCompositions` (+74 — the composition.book-FK case
+  from the §13 backlog, 204 y), `TestModelResolver` (P4 test; after the closing regression set: `flux2RefusedForInpaint` →
+  `flux2AllowedForInpaint`, the `supportsTaskTable` INPAINT row → `OK`, one javadoc line — §6.C 205 bb).
+- New fixtures `src/test/resources/olio/illustration/p50/`: `base_flux2.workflow.json` / `.request.json`, `inpaint_A_flux2.workflow.json`
+  / `.request.json`, `inpaint_A_sdxl.workflow.json`, `raw_flux2.request.json`, `placements.json` (the P5-0 captures, verbatim minus
+  base64) and `object_info.subset.json` (22 types, produced by t00 and copied by hand).
+- Docs: this file §4.12, §6.C 205, §13 backlog paragraph, §13.2, footer; design §38.1 "Measured in P5-1" block and the §38.2
+  `swarminputimage` bullet (done before this pass; 3 065 lines, 0 CR).
+- Scratch, not repo: `AccountManagerObjects7/target/p51/` (run-5 PNGs, `t02_table.md`, `object_info.subset.json`), `C:/tmp/p51_probe*.py`,
+  `C:/tmp/p51probe/`, the logs.
+
+**Tests:** offline suite, no flag, no DB — `p51-unit4.log`: `TestComfyGraph` 15, `TestGraphRequestShape` 4, `TestIllustrationResources` 21,
+`TestMaskImage` 5, `TestNodeCatalogue` 13, `TestSwarmGraphClientOffline` 6, `TestWorkflowCompiler` 24 = **88 / 88, BUILD SUCCESS**
+(`TestSWUtilPathEncoding` was **not** in that explicit list — the verifier caught it; see the regression set). Live, `PB_SD_TESTS=1`,
+`am7db`: `TestP51GraphLive` run 5 `Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 522.0 s`, `BUILD SUCCESS`,
+`Total time: 08:46 min` (§4.12; runs 1–4 red, causes there). Pre-live DB pair `p51-regress-db.log` (17:58 → 18:42:33): `TestPbGraph`
+20 / 20 (212.3 s), `TestPictureBookWorkflow` 5 / 5 (2 456 s), `BUILD SUCCESS`, `Total time: 44:33 min` — the P4 T2I path after the
+`SDUtil` / `PbArtifactUtil` / `PbRenderPlanUtil` edits. **Closing regression set, one surefire JVM, no `PB_SD_TESTS`
+(`p51-regress2.log`, 19:41:47 → 20:43:37, `Total time: 01:01 h`):** `Tests run: 243, Failures: 2, Errors: 0, Skipped: 0`, **BUILD
+FAILURE** — the two failures in the P4 `TestModelResolver` (`flux2RefusedForInpaint:359`, `supportsTaskTable:396`), both mine: the
+`capabilities.json` `supportsMasks` flip changed what `ModelResolver.supportsTask(INPAINT)` answers and I had never run that class
+(§4.12 "The two failures"). Everything else green: `TestPbGraph` 20 / 20, `TestPictureBookWorkflow` 5 / 5 (on LLM fallbacks, below),
+**`TestSWUtilPathEncoding` 4 / 4** (its first observed run), **`TestPbOrphanCompositions` 2 / 2** (the new composition.book-FK case
+listed composition 1188 and purged `deleted=2 denied=0 failed=0`), `TestPbHealthStaleGraph` 2 / 2, `TestPbOrphanScan` 1 / 1,
+`TestPbRenderPlanActors` 3 / 3, `TestPbRenderPlanExecutor` 7 / 7, `TestPbRenderPlanLocationText` 7 / 7, `TestPbRenderPlanSubject`
+4 / 4, and **`TestRenderPlanLive` 5 / 5 — it ran, it did not skip** (it gates on `SdTestGate.isReachable`, not `PB_SD_TESTS`; two
+SDXL renders on `.39`). After the two-assertion fix (⚠ 205 bb) the `olio.illustration.*Test*` wildcard was re-run offline
+(`p51-unit5.log`, 20:46:48): **187 / 187, BUILD SUCCESS** (`TestModelResolver` 41 / 41). The DB-bound classes were **not** re-run after
+that edit — it touches one pure test class — so no single log shows all 243 green at once (§4.12). Every test class listed above has
+`@Test` methods that assert behaviour (exact pixel colours, exact problem codes, byte-free JSON, the collision guard, fixture
+round-trips, `isOk`, dimensions, seed, `start_at_step`, the ≤ 24 px margin, the two error prefixes, the catalogue refetch count); no
+timing is asserted anywhere (verifier item 1).
+
+**LLM tier and SD:** **no LLM call was made by any P5-1 test.** `TestP51GraphLive` extends `BaseTest`, so `LlmTestGate` ran and printed
+`[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr pb=qwen3:8b-jos-ctr server=http://127.0.0.1:4000` — in words: it resolved
+the **local Docker Ollama container through LiteLLM** (not Azure, not `.42`) — and the class then never used it; it logs
+`[p51] LLM tier: none - this class is pure SD against http://192.168.1.39:7801 (Swarm 0.9.8.4.GIT-d74f8ce4)`. SD: every render went to
+the SwarmUI on **`.39`**, checkpoints `flux2Klein_9b` and `OfficialStableDiffusion/sd_xl_base_1.0.safetensors` (the `olio.sd.config`
+schema default — not the spike's `juggernautXL_ragnarokBy`). The pre-live and closing regression sets' `TestPictureBookWorkflow`
+(pre-existing, run as regression, not written here) is the one class in this slice's runs that **tries** to call an LLM — and in the
+pre-live run every one of its six calls **failed**: `TestPictureBookWorkflow.java:89` hard-codes `PB_LLM_MODEL = "gpt-oss:120b"` (a
+`.42` model) into its chatConfig while `LlmTestGate` had rewritten `test.llm.ollama.server` to the local container
+(`http://127.0.0.1:11435`, direct, not LiteLLM), so `Chat` logged `LLM call returned HTTP 404: … model 'gpt-oss:120b' not found` six
+times (18:09:48 → 18:11:00), `PictureBookUtil` logged `Null LLM response` and fell back (age 25 default, pronoun gender, `'adult'`
+fallback), and the class still passed 5 / 5 on the fallback paths. So "tier=local" was resolved and **not usable** by that test; its
+green is not evidence that the LLM path works — and the fallback is **visible in its pictures**: the two "fresh" portraits
+(`pb2_fresh_portrait_Jideon_*`, `pb2_fresh_portrait_Touvier_*`) are near-interchangeable young blond men with no role or story cue,
+where the level-1 / level-2 real-cast renders show two distinct, consistent characters (PNG list below). The closing set repeated the
+same six 404s. Out of scope here (§6.C 205 aa; plain question (8) below) — its SD work (the KI-68 4 / 20 / 40-step comparison on
+`flux2Klein_9b`) did run on `.39`.
+
+**Install / package / deploy:** none — Objects7 main + test tree only; `mvn -o -q -pl AccountManagerObjects7 test-compile` exit 0 before
+each run; no `install`, no WAR, no Docker image, no Eclipse Tomcat bounce. Nothing in Service7 or Ux752 references the new classes.
+
+**PNGs opened:** **37** — the 7 of run 5 (`t01_base_flux2`, `t02_V1_s4_c0.6`, `t02_V2_s4_c1.0`, `t02_V3_s8_c0.6`, `t02_V4_s12_c0.6`,
+`t03_base_sdxl`, `t03_inpaint_sdxl`; each described in §4.12), the 7 of each of runs 3 and 4 before them (same seeds, same reads; runs 4
+and 5 overwrote `target/p51/`), and the **16 the closing regression set rendered on `.39`** (all opened after the set finished, all
+decodable, none blank or seamed; `target/` paths are `AccountManagerObjects7/target/`, `export/` is `AccountManagerObjects7/export/`):
+`TestRenderPlanLive` — `p24-live-render-p24r9361407f.png` (512², black-and-white woodcut-style lighthouse on dark rocks, ~7 bird
+silhouettes, no people; minor scribble at bottom left) and `p410-camera-render-p410c1daec4ff.png` (512², photographic lighthouse on a
+breakwater at dusk, long-exposure sea, two sharp gulls, smeared dark bird blobs top left / right, no people). `TestPbRenderPlanExecutor`
+(all 1024², 20:37–20:40) — `p25-render-plan-p26c2afa2f0a-p26-defaults.png` (rocky foreshore, ~12 gulls, white lighthouse top right,
+pink dusk, clean), `…-p26-override.png` (painterly dark stone lighthouse with red lantern, orange sky, ~20 gulls, several malformed,
+a signature-like scribble bottom right), `p25-render-plan-p25h22216e5d-first.png` (tall grey concrete lighthouse on tetrapods, ~30
+gulls, a sail on the horizon, a few malformed gulls), `…-second.png` (white lighthouse with lit lantern on a round stone base in the
+sea, ~50 gulls, hills left, clean), `p25-render-plan-p25dfc352862-degraded.png` (red-capped stone lighthouse on a cobbled pier, large
+wave right, ~40 gulls, one ghost gull smeared into the masonry). `TestPictureBookWorkflow` (`export/`) — `pb2_fresh_portrait_Jideon_*`
+(1024², one young blond man in a yellow satin suit over a sparkly black turtleneck holding a camera, sunlit street; clean, no role
+cue), `pb2_fresh_portrait_Touvier_*` (1024², one young curly-blond man shirtless under denim short-overalls holding a red fur garment,
+industrial interior; clean, no role cue — the two fallback portraits are near-interchangeable, see "LLM tier"),
+`pb2_fresh_composite_*` (1024 × 768, rainy alley, the two blond men crouching face to face over scattered coloured tiles; both match
+their portraits by hair / colouring, no seams; minor wardrobe drift — overalls vs shorts, mismatched shoes),
+`pb2_level1_composite_*` (1024 × 768, same alley with the real cast — older bearded man in a maroon leather jacket, pink shoes,
+magenta socks, facing a young East Asian man in a lilac glossy coat, tiles between them; coherent, no seams or limb defects),
+`pb2_level2_withLandscapeRef_*` (1024 × 768, same pair and poses, brick-walled alley with a blurred car at the vanishing point; clean,
+likeness consistent), `pb2_level2_withoutLandscapeRef_*` (1024 × 768, same pair in a plainer concrete alley with a lit building at the
+end; clean — the two level-2 renders differ only in background detail), `ki68_step4_*` (1024 × 768, same composition at 4 steps: usable
+but softer, slightly posterised background, the tiles in the right man's hand smeared), `ki68_step20_*` (1024 × 768, sharper; wet-pavement
+reflections and the cut on the older man's brow resolved; clean), `ki68_step40_*` (1024 × 768, the most detailed, but with an
+off-prompt white Polaroid-style frame around the image; two people, no limb issues). None of the 16 is a pipeline defect (no missing
+actor, no seam, no blank); the image-quality notes (malformed gulls, the step-40 frame) are SD behaviour, not asserted by any test. The
+t02 read is a human judgement (V3 best by the rule) recorded in §6.C 205 (m); nothing about picture quality is asserted by code.
+
+**Reviews:** planner → architect **APPROVE WITH CHANGES** (Addendum B: B1–B4 questions answered by Stephen at their defaults; F4–F9 folded,
+§6.C 205 d–i) → implement → verifier **PASS** (no blocking item; 7 items: (1) MEDIUM `TestSWUtilPathEncoding` and the new
+`TestPbOrphanCompositions` case not observed in any P5-1 log at hand-back — closed by `p51-regress2.log` (4 / 4 and 2 / 2), 205 d / y;
+(2) LOW the AIME-fallback assertion at `TestP51GraphLive.java:293 / :296` — 205 w, default P5-2; (3) LOW `isGraphRejection` breadth and
+the offline phrase the server never emits — 205 l, default P5-2; (4) LOW `SDUtil.invalidateSession` keeps `versionCache` — 205 x,
+default P5-2; (5) LOW javadoc "90-minute" vs the 180-min constant — **corrected after run 5, comment only**; (6) LOW
+`getReader().populate` for the portrait FK in the test — 205 p, plain question below; (7) INFO fixture drift — 205 q). **What the
+verifier missed, as did the planner, the architect and I:** the `supportsMasks` flip's consumers — the two P4 `TestModelResolver`
+assertions (red in the closing set, §4.12) and the product caller `PbServiceFacade.java:201` (the model inventory now answers
+`INPAINT` for flux2). So there were **two** source edits after the green live run: the javadoc (5) and the `TestModelResolver`
+update (⚠ 205 bb); the live class was not re-run after either (neither touches anything it loads). A hand-back grants no approval;
+nothing is DONE.
+
+**Serial timeline (2026-10-24, local):** ~15:30 plan → architect → Stephen's B1–B4 → implement → offline suites (`unit3` 19:09 is the
+later of two) → DB pair 17:58:05 → 18:42:33 → live run 1 → 18:43:19 (23.4 s of tests, tag names) → run 2 → 18:47:17 (60.6 s, the
+image-key defect; probes `p51_probe*.py` 18:50–19:05) → run 3 19:10 → 19:17:58 (471.8 s, my three test defects) → run 4 19:19 →
+19:28:21 (528.1 s, one more) → `unit4` → 19:29:45 (88 / 88) → run 5 19:30 → 19:38:39 green (522.0 s) → regression set 19:41:47 →
+20:43:37 **red** (243 / 2, `TestModelResolver`; the verifier ran read-only, no Maven, while it was going) → the two-assertion fix →
+`unit5` → 20:46:48 green (187 / 187) → the 16 regression PNGs opened → this doc pass. Every Maven run serial; never two surefire JVMs
+on `am7db`.
+
+**DECISION AUDIT:** ✓ FOLLOWING INSTRUCTIONS — planner → architect → implement → verifier → doc pass → STOP; Stephen's B1–B4 and the
+204 ratification answers applied as given (generate-and-patch, sibling artifact, calibration as design note, book 58's real cast,
+measure-both); `pbCustomTestUser` through PBAC, never admin; no schema reset; no `TestAuthorization` / `admin -db -patch`; one surefire
+JVM at a time; SD on `.39`; timings never thresholds; every PNG opened and described; LLM tier stated in words; gated skip ≠ pass; LF
+preserved; nothing DONE; nothing committed; `capabilities.json` not changed after the t02 read (a question, not a decision). ⚠ MY
+JUDGMENT, each with a default in §6.C 205: (b) three real portraits, not four; (c) the `swarminputimage` marker as a hard product rule
+and the collision guard as an error; (d) `fetchImageBytes` unchanged after measuring; (e) `persistArtifact` trusts its caller; (f)
+catalogue checks names, not slot types; (h) the 180-min hang guard and the hand-copied `object_info` fixture; (i) 5.0 not 5.3; (j)
+nearest-colour placeholder matching; (l) the broad `isGraphRejection`; (m) V3 read, default not applied; (n) regression pair chosen,
+`TestPictureBookWorkflow`'s book-58 mutation left; (p) the olio-principal re-read and the test's `populate`; (q) fixtures left at the
+spike's generator; (r) `sd_xl_base_1.0` as the SDXL control; (s) no re-measure of the slower BASE; (u) `target/p51` reused; (w) / (x)
+verifier items left for P5-2; (z) the unused `[LLM-GATE]` line; (bb) the two red `TestModelResolver` assertions updated to the design's
+current `supportsMasks` rule rather than the flag reverted — plain question (9) below.
+
+**Yours (plain questions, defaults):** (1) Change `capabilities.json` flux2 inpaint from `4 / 1.0` to `8 / 0.6` (t02's V3 — scarf, pose
+and identity held, 54 s vs 44 s)? Default: yes, in P5-2 with the calibration record. (2) Is three real portraits (book 58) an acceptable
+reading of "real cast if one exists", or should a 4-actor real run wait for a book with four? Default: three now; four when a book has
+them. (3) Keep `isGraphRejection` broad (every ComfyUI execution error drops the catalogue, ~0.3 s) until P5-2's executor needs the
+split? Default: yes. (4) `TestP51GraphLive`'s portrait FK read via `getReader().populate` — replace with a planned `profile.portrait`
+on the `AccessPoint.find` query in P5-2 (needs a live re-run)? Default: yes, P5-2. (5) `TestPictureBookWorkflow` mutates book 58, the
+live cast's book — leave it (its portraits are read by data id, not regenerated)? Default: leave. (6) Refresh the p50 fixtures from a
+live capture after P5-2 (the generator drifted under `GIT-d74f8ce4`)? Default: yes, after P5-2. (7) The `SDUtil.invalidateSession` /
+`versionCache` one-liner and the AIME-fallback assertion fix — P5-2, or now (each needs no live run but a compile and the offline
+suite)? Default: P5-2. (8) `TestPictureBookWorkflow`'s hard-coded `gpt-oss:120b` 404s against the local container the gate resolves,
+so its five green methods ran on LLM fallbacks — migrate it to the `test.llm.model.pb` / `test.llm.connection.*` keys (the
+`architecture.md` resolver pattern) as its own small task, or leave it? Default: leave for a task of its own; not P5-2's. (9) The
+`supportsMasks` flip made `ModelResolver.supportsTask(INPAINT)` answer `OK` for flux2, so the REST model inventory
+(`PbServiceFacade.java:201`) now lists `flux2Klein_9b` as INPAINT-capable before anything can execute an inpaint (P5-2) — keep the
+`TestModelResolver` update and the inventory answer as they stand, or revert `flux2* supportsMasks` to `false` until P5-2 wires
+`SEQUENTIAL_INPAINT`? Default: the update stands (the design text and the §13 `SEQUENTIAL_INPAINT` row already say masks are
+supported). Everything from §13.1 "Yours" not answered on 2026-10-24 (204 b / d / f / i / q at their defaults) and §12.15's list
+stands.
+
+Next: **STOP.** P5-2 (wire `WorkflowCompiler` / `executeGraph` into `PbRenderPlanExecutor` for BASE and ACTOR_REGION, `SEQUENTIAL_INPAINT`,
+the per-server calibration record (B3), node-level error surfacing, the (w) / (x) one-liners, the capabilities default per (1)) only
+after you have read §4.12 and answered (1)–(9) or let the defaults stand; its plan starts from design §38.2 / §38.3 as measured and the
+run-5 artefacts.
+
+⚠ 205 (a)–(bb) open (defaults in §6.C; (b)/(l)/(m)/(n)/(p)/(q)/(w)/(x)/(aa)/(bb) plain questions above); ⚠ 204 (a)–(aa) open (defaults in §6.C; (b)/(d)/(f)/(i)/(q) plain questions above); ⚠ 203 (a)–(j) open (defaults in §6.C; (c)/(d) plain questions); ⚠ 202 (a)–(bb) open (defaults in §6.C; (k)/(l)/(m)/(n)/(o)/(p) plain questions); ⚠ 201 (a)–(bb) open except (v)/(x) taken in §12.14 (202 c) and (e)/(f)/(t) wording corrected there (202 g/i/f), (j)/(q) taken in §12.13; ⚠ 200 (a)–(z) open except (o) closed and (w) taken in §12.13, (r) a plain question; ⚠ 199 (a)–(j) open except (h1)/(h2)/(c1) → §12.12, (c2)/(d1)/(d2) → §12.13, (g)/(j) taken; ⚠ 198 (a)–(w) open; ⚠ 197 (a)–(ww) open except (jj); ⚠ 196 (a)/(b) closed by 198 (h); ⚠ 194 (a)–(dd), (ff), (gg), (ii) open; ⚠ 195 (a)–(c) open;
+next §6.C number 206.

@@ -33,6 +33,9 @@ public final class RenderPlan {
 
 	public static final String STAGE_BASE = "BASE";
 	public static final String STAGE_UPSCALE = "UPSCALE";
+	/// One actor's masked inpaint over the base (design §38.2); P5-1 runs it standalone, P5-2 wires it
+	/// into the executor.
+	public static final String STAGE_ACTOR_REGION = "ACTOR_REGION";
 
 	/// Actor roles. The five §12 roles (HERO, SUPPORTING, NAMED_BACKGROUND, EXTRA, CROWD) are the values
 	/// olio.pb.sceneActor.role carries; FOREGROUND / BACKGROUND are the pre-P4-7 aliases, kept so plans

@@ -1,0 +1,78 @@
+[ {
+  "actor" : "A (0 of 2)",
+  "x" : 0.05,
+  "y" : 0.2,
+  "w" : 0.4,
+  "h" : 0.8,
+  "depth" : 0,
+  "horizontal" : "LEFT",
+  "plane" : "FOREGROUND",
+  "shotType" : "MEDIUM",
+  "toString" : "MEDIUM LEFT FOREGROUND [x=0.0500 y=0.2000 w=0.4000 h=0.8000 depth=0] (default)"
+}, {
+  "actor" : "B (1 of 2)",
+  "x" : 0.55,
+  "y" : 0.2,
+  "w" : 0.4,
+  "h" : 0.8,
+  "depth" : 0,
+  "horizontal" : "RIGHT",
+  "plane" : "FOREGROUND",
+  "shotType" : "MEDIUM",
+  "toString" : "MEDIUM RIGHT FOREGROUND [x=0.5500 y=0.2000 w=0.4000 h=0.8000 depth=0] (default)"
+}, {
+  "actor" : "A (0 of 4, HERO)",
+  "x" : 0.3,
+  "y" : 0.2,
+  "w" : 0.4,
+  "h" : 0.8,
+  "depth" : 0,
+  "horizontal" : "CENTRE",
+  "plane" : "FOREGROUND",
+  "shotType" : "MEDIUM",
+  "toString" : "MEDIUM CENTRE FOREGROUND [x=0.3000 y=0.2000 w=0.4000 h=0.8000 depth=0] (default)"
+}, {
+  "actor" : "B (1 of 4, HERO)",
+  "x" : 0.05,
+  "y" : 0.2,
+  "w" : 0.4,
+  "h" : 0.8,
+  "depth" : 0,
+  "horizontal" : "LEFT",
+  "plane" : "FOREGROUND",
+  "shotType" : "MEDIUM",
+  "toString" : "MEDIUM LEFT FOREGROUND [x=0.0500 y=0.2000 w=0.4000 h=0.8000 depth=0] (default)"
+}, {
+  "actor" : "C (2 of 4, SUPPORTING)",
+  "x" : 0.55,
+  "y" : 0.2,
+  "w" : 0.4,
+  "h" : 0.8,
+  "depth" : 0,
+  "horizontal" : "RIGHT",
+  "plane" : "FOREGROUND",
+  "shotType" : "MEDIUM",
+  "toString" : "MEDIUM RIGHT FOREGROUND [x=0.5500 y=0.2000 w=0.4000 h=0.8000 depth=0] (default)"
+}, {
+  "actor" : "D (3 of 4, SUPPORTING)",
+  "x" : 0.35,
+  "y" : 0.15,
+  "w" : 0.3,
+  "h" : 0.55,
+  "depth" : 1,
+  "horizontal" : "CENTRE",
+  "plane" : "MIDGROUND",
+  "shotType" : "MEDIUM",
+  "toString" : "MEDIUM CENTRE MIDGROUND [x=0.3500 y=0.1500 w=0.3000 h=0.5500 depth=1] (default)"
+}, {
+  "actor" : "prop (2 of 3, SUPPORTING)",
+  "x" : 0.55,
+  "y" : 0.2,
+  "w" : 0.4,
+  "h" : 0.8,
+  "depth" : 0,
+  "horizontal" : "RIGHT",
+  "plane" : "FOREGROUND",
+  "shotType" : "MEDIUM",
+  "toString" : "MEDIUM RIGHT FOREGROUND [x=0.5500 y=0.2000 w=0.4000 h=0.8000 depth=0] (default)"
+} ]

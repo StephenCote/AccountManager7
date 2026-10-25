@@ -278,4 +278,78 @@ public class TestPbOrphanCompositions extends BaseTest {
 			logger.info("cleanup " + slug + ": deleted=" + res.deleted + " reason=" + res.reason);
 		}
 	}
+
+	private static String reasonOf(Map<String, Object> report, String code, String objectId) {
+		for (Map<String, Object> it : items(report, code)) {
+			if (objectId.equals(it.get("objectId"))) {
+				return (String) it.get("reason");
+			}
+		}
+		return null;
+	}
+
+	/// V3 Phase 5, P5-1 (backlog from P4-13): the composition.book branch of the scan. A scene-less COVER
+	/// composition whose BOOK row goes row-only (the old reset() shape, as in TestPbOrphanScan's book B) is
+	/// listed under ORPHAN_PB2_ROW with the book reason - not the scene reason, since a cover carries no scene -
+	/// and a purge of that category alone removes it. Slug attribution for the own scope survives the row
+	/// delete through the per-book role, exactly as for workflow/scene rows. Real DB, no LLM, no SD.
+	@Test
+	public void TestScanListsCompositionWhoseBookRowIsGoneAndPurgeRemovesIt() throws Exception {
+		OlioModelNames.use();
+		IOContext ioContext = IOSystem.getActiveContext();
+		BaseRecord user = getCreateUser("pbOrphanCompUser");
+		assertNotNull("user", user);
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		String tag = shortId();
+		String slug = "orcb" + tag;
+		BaseRecord book = PbBookUtil.createBook(user, dataPath, slug, "Orphan composition book " + slug);
+		assertNotNull("book", book);
+		String bookOid = oid(book);
+		try {
+			BaseRecord cover = coverComposition(user, book, orgId, tag);
+			String coverOid = oid(cover);
+
+			/// Row-only delete of the book: world, container groups, roles and the composition all stay.
+			BaseRecord rawBook = rawRowByOid(ioContext, OlioModelNames.MODEL_PB_BOOK, bookOid, orgId);
+			assertNotNull("raw book", rawBook);
+			assertTrue("row-only delete of the book", ioContext.getRecordUtil().deleteRecord(rawBook, true));
+			assertNull("book row is gone", rawRowByOid(ioContext, OlioModelNames.MODEL_PB_BOOK, bookOid, orgId));
+			assertNotNull("the cover composition survives its book (precondition)",
+				rawRowByOid(ioContext, OlioModelNames.MODEL_PB_COMPOSITION, coverOid, orgId));
+			CacheUtil.clearCache();
+
+			/// ── scan(own) ──
+			Map<String, Object> report = PbOrphanUtil.scan(user, false);
+			assertEquals("own", report.get("scope"));
+			logger.info("ORPHAN_PB2_ROW items: " + items(report, PbOrphanUtil.ORPHAN_PB2_ROW));
+			assertTrue("ORPHAN_PB2_ROW lists the composition whose book is gone",
+				objectIds(report, PbOrphanUtil.ORPHAN_PB2_ROW).contains(coverOid));
+			assertEquals("the book reason, not the scene reason", "composition.book points at a deleted record",
+				reasonOf(report, PbOrphanUtil.ORPHAN_PB2_ROW, coverOid));
+
+			/// scan is read-only.
+			assertNotNull("scan deleted nothing", rawRowByOid(ioContext, OlioModelNames.MODEL_PB_COMPOSITION, coverOid, orgId));
+
+			/// ── purge(own, PB2 rows only) ──
+			Map<String, Object> purge = PbOrphanUtil.purge(user, false, List.of(PbOrphanUtil.ORPHAN_PB2_ROW));
+			assertDeleted(purge, "cover composition", coverOid);
+			assertNull("cover composition purged", rawRowByOid(ioContext, OlioModelNames.MODEL_PB_COMPOSITION, coverOid, orgId));
+
+			/// ── rescan ──
+			Map<String, Object> again = PbOrphanUtil.scan(user, false);
+			assertFalse("rescan does not list the composition", allObjectIds(again).contains(coverOid));
+		}
+		finally {
+			if (rawRowByOid(ioContext, OlioModelNames.MODEL_PB_BOOK, bookOid, orgId) != null) {
+				DeleteResult res = PbDeleteUtil.deleteBookComplete(user, bookOid);
+				logger.info("cleanup " + slug + ": deleted=" + res.deleted + " reason=" + res.reason);
+			}
+			else {
+				/// The book row is gone by design; the world, container, roles and anything left are orphans now.
+				Map<String, Object> sweep = PbOrphanUtil.purge(user, false, null);
+				logger.info("cleanup " + slug + ": orphan purge deleted=" + sweep.get("deleted") + " denied=" + sweep.get("denied") + " failed=" + sweep.get("failed"));
+			}
+		}
+	}
 }

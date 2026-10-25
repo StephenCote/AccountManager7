@@ -7,7 +7,12 @@ import java.util.Map;
 /// Everything an adapter needs to execute one stage of a {@link RenderPlan} (design §15). The prompt
 /// pair is the plan's compiled prompt for the stage - the adapter sends it verbatim. Explicit numeric
 /// parameters live here; the refiner block (UPSCALE only) is read from the config snapshot because it
-/// is the config's, not the plan's, decision. No init image in Phase 2.
+/// is the config's, not the plan's, decision.
+///
+/// A request carrying a {@link #getGraph() graph} and its {@link #getInputs() inputs} is a raw-graph
+/// stage (design §38): the adapter posts the graph instead of building a T2I request, and the prompt,
+/// seed and images here are provenance (what the graph was compiled from), not what is sent. Images -
+/// references, an init image, a mask - travel only inside the inputs.
 public final class StageRequest {
 
 	public static final int SEED_RANDOM = -1;
@@ -26,6 +31,8 @@ public final class StageRequest {
 	private final int images;
 	private final boolean hires;
 	private final Map<String, Object> config;
+	private final ComfyGraph graph;
+	private final GraphInputs inputs;
 
 	private StageRequest(Builder b) {
 		this.plan = b.plan;
@@ -42,6 +49,8 @@ public final class StageRequest {
 		this.images = b.images;
 		this.hires = b.hires;
 		this.config = (b.config == null ? Collections.emptyMap() : Collections.unmodifiableMap(new LinkedHashMap<>(b.config)));
+		this.graph = b.graph;
+		this.inputs = b.inputs;
 	}
 
 	public RenderPlan getPlan() { return plan; }
@@ -61,9 +70,38 @@ public final class StageRequest {
 	public boolean isHires() { return hires; }
 	/// The plan's config snapshot (read-only), consulted for the refiner block when {@link #isHires()}.
 	public Map<String, Object> getConfig() { return config; }
+	/// The compiled graph for a raw-graph stage, or null for a T2I stage.
+	public ComfyGraph getGraph() { return graph; }
+	/// The values (and image bytes) that fill the graph's tags; null for a T2I stage.
+	public GraphInputs getInputs() { return inputs; }
+	/// True when the adapter should post {@link #getGraph()} rather than build a T2I request.
+	public boolean isGraph() { return graph != null; }
 
 	public static Builder builder() {
 		return new Builder();
+	}
+
+	/// A builder preloaded with this request's values, for attaching a graph to a request built by
+	/// the plan.
+	public Builder toBuilder() {
+		Builder b = new Builder();
+		b.plan = plan;
+		b.stage = stage;
+		b.prompt = prompt;
+		b.model = model;
+		b.width = width;
+		b.height = height;
+		b.steps = steps;
+		b.cfg = cfg;
+		b.sampler = sampler;
+		b.scheduler = scheduler;
+		b.seed = seed;
+		b.images = images;
+		b.hires = hires;
+		b.config = config;
+		b.graph = graph;
+		b.inputs = inputs;
+		return b;
 	}
 
 	public static final class Builder {
@@ -81,6 +119,8 @@ public final class StageRequest {
 		private int images = 1;
 		private boolean hires = false;
 		private Map<String, Object> config;
+		private ComfyGraph graph;
+		private GraphInputs inputs;
 
 		private Builder() { }
 
@@ -98,6 +138,8 @@ public final class StageRequest {
 		public Builder images(int images) { this.images = images; return this; }
 		public Builder hires(boolean hires) { this.hires = hires; return this; }
 		public Builder config(Map<String, Object> config) { this.config = config; return this; }
+		public Builder graph(ComfyGraph graph) { this.graph = graph; return this; }
+		public Builder inputs(GraphInputs inputs) { this.inputs = inputs; return this; }
 
 		public StageRequest build() {
 			if(prompt == null) {
@@ -105,6 +147,9 @@ public final class StageRequest {
 			}
 			if(images < 1) {
 				images = 1;
+			}
+			if((graph == null) != (inputs == null)) {
+				throw new IllegalArgumentException("A raw-graph request needs both a graph and its inputs");
 			}
 			return new StageRequest(this);
 		}

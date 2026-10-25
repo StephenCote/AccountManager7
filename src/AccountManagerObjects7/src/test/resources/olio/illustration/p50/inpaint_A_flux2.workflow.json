@@ -1,0 +1,220 @@
+{
+  "4" : {
+    "class_type" : "CheckpointLoaderSimple",
+    "inputs" : {
+      "ckpt_name" : "flux2Klein_9b.safetensors"
+    }
+  },
+  "100" : {
+    "class_type" : "CLIPLoader",
+    "inputs" : {
+      "clip_name" : "qwen_3_8b.safetensors",
+      "type" : "flux2",
+      "device" : "default"
+    }
+  },
+  "101" : {
+    "class_type" : "VAELoader",
+    "inputs" : {
+      "vae_name" : "Flux\\flux2-vae.safetensors"
+    }
+  },
+  "102" : {
+    "class_type" : "SwarmLoadImageB64",
+    "inputs" : {
+      "image_base64" : "<5336 chars base64>"
+    }
+  },
+  "103" : {
+    "class_type" : "ImageToMask",
+    "inputs" : {
+      "image" : [ "102", 0 ],
+      "channel" : "red"
+    }
+  },
+  "104" : {
+    "class_type" : "DifferentialDiffusion",
+    "inputs" : {
+      "model" : [ "4", 0 ]
+    }
+  },
+  "105" : {
+    "class_type" : "SwarmMaskGrow",
+    "inputs" : {
+      "mask" : [ "103", 0 ],
+      "grow" : 16
+    }
+  },
+  "106" : {
+    "class_type" : "SwarmMaskBlur",
+    "inputs" : {
+      "mask" : [ "105", 0 ],
+      "blur_radius" : 8,
+      "sigma" : 1.0
+    }
+  },
+  "15" : {
+    "class_type" : "SwarmLoadImageB64",
+    "inputs" : {
+      "image_base64" : "<1996020 chars base64>"
+    }
+  },
+  "5" : {
+    "class_type" : "VAEEncode",
+    "inputs" : {
+      "vae" : [ "101", 0 ],
+      "pixels" : [ "15", 0 ]
+    }
+  },
+  "107" : {
+    "class_type" : "SetLatentNoiseMask",
+    "inputs" : {
+      "samples" : [ "5", 0 ],
+      "mask" : [ "106", 0 ]
+    }
+  },
+  "6" : {
+    "class_type" : "SwarmTextEncodeAdvanced",
+    "inputs" : {
+      "clip" : [ "100", 0 ],
+      "lora_hooks" : null,
+      "steps" : 4,
+      "prompt" : "Combine the exact person and face from the first reference image with the exact person and face from the second reference image. Place both people together in the environment shown in the third reference image (a rain-soaked street beside a weathered clapboard house, overhead power lines, bare winter trees, overcast light, puddles reflecting the sky). The first person is a lean man in his fifties with short grey hair and a grey beard, wearing a coral-pink jacket over a patterned shirt, rust-red cargo trousers and olive boots. The second person is a young woman with long wavy strawberry-blonde hair, wearing a green and white striped satin tunic over lime-green trousers and teal boots. They are standing together on the wet pavement, talking. The mood is bleak and quiet, flat grey overcast daylight. Preserve facial identity, hair, and clothing precisely. Matching lighting, scale, and perspective across the whole image. No extra people. Do not draw the reference images themselves - no poster, screen, mirror, billboard, framed picture or character sheet anywhere in the scene. A single continuous scene, no panels, no split screen, no collage. The first person wears a bright yellow scarf.",
+      "width" : 1536,
+      "height" : 1152,
+      "target_width" : 1024,
+      "target_height" : 768,
+      "guidance" : -1.0,
+      "images" : null,
+      "minimax_refs" : null
+    }
+  },
+  "7" : {
+    "class_type" : "CLIPTextEncode",
+    "inputs" : {
+      "clip" : [ "100", 0 ],
+      "text" : "blurry faces, deformed, extra people, mismatched lighting, low quality"
+    }
+  },
+  "108" : {
+    "class_type" : "SwarmLoadImageB64",
+    "inputs" : {
+      "image_base64" : "<2731996 chars base64>"
+    }
+  },
+  "109" : {
+    "class_type" : "SwarmLoadImageB64",
+    "inputs" : {
+      "image_base64" : "<2274284 chars base64>"
+    }
+  },
+  "110" : {
+    "class_type" : "SwarmLoadImageB64",
+    "inputs" : {
+      "image_base64" : "<2351844 chars base64>"
+    }
+  },
+  "111" : {
+    "class_type" : "VAEEncode",
+    "inputs" : {
+      "vae" : [ "101", 0 ],
+      "pixels" : [ "108", 0 ]
+    }
+  },
+  "112" : {
+    "class_type" : "ReferenceLatent",
+    "inputs" : {
+      "conditioning" : [ "6", 0 ],
+      "latent" : [ "111", 0 ]
+    }
+  },
+  "113" : {
+    "class_type" : "VAEEncode",
+    "inputs" : {
+      "vae" : [ "101", 0 ],
+      "pixels" : [ "109", 0 ]
+    }
+  },
+  "114" : {
+    "class_type" : "ReferenceLatent",
+    "inputs" : {
+      "conditioning" : [ "112", 0 ],
+      "latent" : [ "113", 0 ]
+    }
+  },
+  "115" : {
+    "class_type" : "VAEEncode",
+    "inputs" : {
+      "vae" : [ "101", 0 ],
+      "pixels" : [ "110", 0 ]
+    }
+  },
+  "116" : {
+    "class_type" : "ReferenceLatent",
+    "inputs" : {
+      "conditioning" : [ "114", 0 ],
+      "latent" : [ "115", 0 ]
+    }
+  },
+  "10" : {
+    "class_type" : "SwarmKSampler",
+    "inputs" : {
+      "model" : [ "104", 0 ],
+      "noise_seed" : 424242,
+      "steps" : 4,
+      "cfg" : 2.0,
+      "sampler_name" : "euler",
+      "scheduler" : "simple",
+      "positive" : [ "116", 0 ],
+      "negative" : [ "7", 0 ],
+      "latent_image" : [ "107", 0 ],
+      "start_at_step" : 2,
+      "end_at_step" : 10000,
+      "return_with_leftover_noise" : "disable",
+      "add_noise" : "enable",
+      "control_after_generate" : "fixed",
+      "var_seed" : 0,
+      "var_seed_strength" : 0.0,
+      "sigma_min" : -1.0,
+      "sigma_max" : -1.0,
+      "rho" : 7.0,
+      "previews" : "default",
+      "tile_sample" : false,
+      "tile_size" : 1024,
+      "model_negative" : null
+    }
+  },
+  "8" : {
+    "class_type" : "VAEDecode",
+    "inputs" : {
+      "vae" : [ "101", 0 ],
+      "samples" : [ "10", 0 ]
+    }
+  },
+  "117" : {
+    "class_type" : "ThresholdMask",
+    "inputs" : {
+      "mask" : [ "106", 0 ],
+      "value" : 0.001
+    }
+  },
+  "118" : {
+    "class_type" : "SwarmImageCompositeMaskedColorCorrecting",
+    "inputs" : {
+      "destination" : [ "15", 0 ],
+      "source" : [ "8", 0 ],
+      "mask" : [ "117", 0 ],
+      "x" : 0,
+      "y" : 0,
+      "resize_source" : false,
+      "correction_method" : "None"
+    }
+  },
+  "9" : {
+    "class_type" : "SwarmSaveImageWS",
+    "inputs" : {
+      "images" : [ "118", 0 ],
+      "bit_depth" : "8bit"
+    }
+  }
+}

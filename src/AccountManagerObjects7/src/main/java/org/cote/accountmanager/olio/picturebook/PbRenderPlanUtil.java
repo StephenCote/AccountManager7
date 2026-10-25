@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.illustration.CanvasResolver;
+import org.cote.accountmanager.olio.illustration.ComfyGraph;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.PromptCompilers;
@@ -31,6 +32,9 @@ import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbReferencePolicyEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Builds the immutable {@link RenderPlan} for one scene (PictureBook V3 design §12-§15, §18): style
@@ -408,6 +412,64 @@ public final class PbRenderPlanUtil {
 		if(text == null || text.isBlank()) return null;
 		return RenderPlan.fromJson(text);
 	}
+
+	/// Persist a stage's compiled graph as the node's {@code renderGraph} JSON artifact (V3 §38.3), as
+	/// {@code user} through PBAC. The envelope is {@code {stage, graphHash, swarmVersion, graph}}; the graph
+	/// must carry image tags only - inline image data is refused before anything is written.
+	public static BaseRecord persistGraphArtifact(BaseRecord user, BaseRecord node, String groupPath, String stage,
+			ComfyGraph graph, String swarmVersion) {
+		if(graph == null) throw new PictureBookException(400, "A graph is required");
+		graph.assertNoInlineImages();
+		Map<String, Object> env = new LinkedHashMap<>();
+		env.put(GRAPH_KEY_STAGE, stage);
+		env.put(GRAPH_KEY_HASH, graph.graphHash());
+		env.put(GRAPH_KEY_SWARM_VERSION, swarmVersion);
+		env.put(GRAPH_KEY_GRAPH, graph.toMap());
+		String text;
+		try {
+			text = GRAPH_MAPPER.writeValueAsString(env);
+		}
+		catch(Exception e) {
+			throw new PictureBookException(500, "The graph envelope did not serialise: " + e.getMessage());
+		}
+		return PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_RENDER_GRAPH, PbArtifactTypeEnumType.JSON,
+			groupPath, null, text, null, null);
+	}
+
+	/// The graph carried by a {@code renderGraph} artifact, or null when the artifact carries none.
+	public static ComfyGraph readGraphArtifact(BaseRecord artifact) {
+		Map<String, Object> env = readGraphEnvelope(artifact);
+		if(env == null) return null;
+		Object g = env.get(GRAPH_KEY_GRAPH);
+		if(!(g instanceof Map)) return null;
+		@SuppressWarnings("unchecked")
+		Map<String, Object> gm = (Map<String, Object>) g;
+		return ComfyGraph.fromMap(gm);
+	}
+
+	/// The whole {@code {stage, graphHash, swarmVersion, graph}} envelope of a {@code renderGraph}
+	/// artifact, or null.
+	public static Map<String, Object> readGraphEnvelope(BaseRecord artifact) {
+		if(artifact == null || !artifact.hasField(OlioFieldNames.FIELD_PB_ARTIFACT_TEXT)) return null;
+		String text = artifact.get(OlioFieldNames.FIELD_PB_ARTIFACT_TEXT);
+		if(text == null || text.isBlank()) return null;
+		try {
+			return GRAPH_MAPPER.readValue(text, GRAPH_MAP_TYPE);
+		}
+		catch(Exception e) {
+			logger.warn("renderGraph artifact did not parse: " + e.getMessage());
+			return null;
+		}
+	}
+
+	public static final String GRAPH_KEY_STAGE = "stage";
+	public static final String GRAPH_KEY_HASH = "graphHash";
+	public static final String GRAPH_KEY_SWARM_VERSION = "swarmVersion";
+	public static final String GRAPH_KEY_GRAPH = "graph";
+	/// Keeps nulls: a generated graph carries `lora_hooks: null` and the artifact must say what the
+	/// graph says (JSONUtil's mapper is NON_EMPTY).
+	private static final ObjectMapper GRAPH_MAPPER = new ObjectMapper();
+	private static final TypeReference<LinkedHashMap<String, Object>> GRAPH_MAP_TYPE = new TypeReference<LinkedHashMap<String, Object>>() { };
 
 	// ─── helpers ─────────────────────────────────────────────────────────────────
 

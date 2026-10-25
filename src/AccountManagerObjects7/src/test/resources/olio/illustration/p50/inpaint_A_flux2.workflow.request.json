@@ -1,0 +1,22 @@
+{
+  "model" : "flux2Klein_9b",
+  "prompt" : "Combine the exact person and face from the first reference image with the exact person and face from the second reference image. Place both people together in the environment shown in the third reference image (a rain-soaked street beside a weathered clapboard house, overhead power lines, bare winter trees, overcast light, puddles reflecting the sky). The first person is a lean man in his fifties with short grey hair and a grey beard, wearing a coral-pink jacket over a patterned shirt, rust-red cargo trousers and olive boots. The second person is a young woman with long wavy strawberry-blonde hair, wearing a green and white striped satin tunic over lime-green trousers and teal boots. They are standing together on the wet pavement, talking. The mood is bleak and quiet, flat grey overcast daylight. Preserve facial identity, hair, and clothing precisely. Matching lighting, scale, and perspective across the whole image. No extra people. Do not draw the reference images themselves - no poster, screen, mirror, billboard, framed picture or character sheet anywhere in the scene. A single continuous scene, no panels, no split screen, no collage. The first person wears a bright yellow scarf.",
+  "sampler" : "euler",
+  "scheduler" : "simple",
+  "images" : 1,
+  "steps" : 4,
+  "seed" : 424242,
+  "height" : 768,
+  "width" : 1024,
+  "negativeprompt" : "blurry faces, deformed, extra people, mismatched lighting, low quality",
+  "cfgscale" : 2.0,
+  "refinercontrolpercentage" : 0.0,
+  "promptimages" : [ "<2732018 chars data-uri>", "<2274306 chars data-uri>", "<2351866 chars data-uri>" ],
+  "initimage" : "<1996042 chars data-uri>",
+  "maskimage" : "<5358 chars data-uri>",
+  "initimagecreativity" : 0.6,
+  "maskblur" : 8,
+  "maskgrow" : 16,
+  "initimagerecompositemask" : true,
+  "session_id" : "<redacted>"
+}

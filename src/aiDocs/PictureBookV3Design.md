@@ -13,8 +13,8 @@ ChapBook first, **Kontext retired (§37)**, **Comfy graphs compiled dynamically 
 as proxy (§38)**, **auto-approve is one general switch (§10)**, **VLM QA default =
 `valkyriesys/eudaimonia-dryad3-vision`, Comfy detection fallback (§17)**, **POI link kept
 (§7.2 — object/item references)**, **composition up front (§9.1)**, **events/interactions skipped
-(§34 item 15)**. Open: §34 items 3 (default value only), 7, 8, Q14 (source (a) vs (b) only) — none
-blocks Phase 0–2; the design records a default for each.
+(§34 item 15)**, **Q14 source (b) seeded by (a) (ratified 2026-10-24 with P5-0)**. Open: §34 items 3
+(default value only), 7, 8 — none blocks Phase 0–2; the design records a default for each.
 **Inputs:** `PictureBookV3Notes.md` (target architecture), `PictureBookImageGenerationDesign.md`
 (current behaviour and gaps G-1…G-36), `PictureBook2Plan.md` (workflow graph, §6 ComfyUI),
 `PictureBookWorkflowOverhaul.md`, `PictureBookAsyncJobDesign.md`, `PictureBookSdConfigRefactor.md`.
@@ -1124,7 +1124,11 @@ scenes × stages × variants × `secondsPerStepPerReference`. This matters becau
 with steps and the number of references. **[verified 2026-10-09]** The SD server for this work is
 SwarmUI on `192.168.1.39` (§15, §36.1), not the Strix Halo; the only timing figure in the repo was
 measured on the Strix Halo iGPU, so the estimate's seed values must be measured on .39 before they
-are shown to anyone (§36.7).
+are shown to anyone (§36.7). **[2026-10-24 (P5-1): measured — the `.39` figures are §38.5 item 5
+and the `flux2*` seed (5.0 s per step per reference) is in `capabilities.json`; SDXL and Kontext
+still have none. The estimate's live source is the per-server calibration record designed under
+§34 Q14 (b) and built in P5-2; until then `RenderEstimate` does not read the seed either, so no
+estimate is shown.]**
 
 ### 19. Degradations and transparency (G9 in the notes)
 
@@ -1197,7 +1201,7 @@ question, Implementation §6.C 193 (mm). Implementation §6.C 193 (g), (h), (i),
 | The renderer is reachable but slow | **Not a failure.** There is no per-stage wall-clock limit; the only watchdog is **no progress** (no Swarm progress frame and no node status change) for a long ceiling (default 30 min, from capabilities), after which the stage is FAILED as `RENDERER_STALLED` and the job pauses as above. Small GPUs are expected to take longer (§31) |
 | QA fails to run | Variant unaffected; QA artifact records `ERROR` |
 | The compiled Comfy graph fails local validation (§38.2) | `GRAPH_INVALID`: the stage node is FAILED with the offending node id and input in `lastError`; no request is sent, no GPU time is spent |
-| Swarm refuses the graph (`unsupported node type`) or Comfy reports an execution `error` | `RENDERER_REJECTED` with the node id; treated like BASE/COMPOSITE failure for the stage, and the node catalogue cache is invalidated so the next attempt re-validates against the live backend |
+| Swarm refuses the graph (`unsupported node type`) or Comfy reports an execution `error` | `RENDERER_REJECTED` with the node id; treated like BASE/COMPOSITE failure for the stage, and the node catalogue cache is invalidated so the next attempt re-validates against the live backend **[2026-10-24 (P5-1), as built in `SwarmRendererAdapter.executeGraph`: `GRAPH_INVALID` carries every error the catalogue found (`NodeCatalogue.describe`) with `durationMs 0`; `RENDERER_REJECTED` is any Swarm `error` mentioning an unsupported node / node type, "workflow", "invalid" or "comfy" **other than a session error** (those are retried once by the client and then reported as a plain backend error, without touching the catalogue); a cancelled render stays `CANCELLED`; an `error` that is none of these is `ERROR_PREFIX_BACKEND + error`. Neither stage result carries a Comfy node id yet — Swarm's HTTP `error` string is all the adapter has; per-node error surfacing is P5-2. The node→FAILED mapping is unchanged because no executor calls the graph path in P5-1]** |
 | An exception anywhere | `run` and `node` are closed as FAILED in a `finally` block (gap doc Appendix A "Other": graph runs are left RUNNING when a scene throws — **[corrected 2026-10-09: left PENDING; see the note under the opening paragraph]**) **[implemented 2026-10-10, Phase 1 P1-3, for executor runs: `PbNodeExecutor.executeNodeRun` stamps the run RUNNING (`PbGraphUtil.markRunning`) and the node RUNNING before dispatch, closes COMPLETED on success, FAILED + `error` in the catch, and a `finally` guard closes any run left open as FAILED ("Execution abandoned before the run could be closed"); `TestPbNodeRun.case01` observes RUNNING mid-call and FAILED after the throw. PB1 scene runs opened by `openSceneGraph` are still PENDING → closed, never RUNNING — recorded in the implementation state §5.5 item 25 / §6.C item 30]** |
 
 ### 21. Async execution, durability and cancellation
@@ -1972,6 +1976,19 @@ Each run, node execution and artifact records the notes' §71 fields:
 LLM steps (compose, location description) go through LiteLLM, so they are Langfuse traces;
 put the run objectId in the trace metadata so one book render can be followed across LLM and SD.
 
+**[2026-10-24 (P5-1), as built — what a graph-rendered stage records (§38.3 as-built block is the
+full description):** per stage node one `renderGraph` JSON artifact (`{stage, graphHash,
+swarmVersion, graph}`; never image bytes) alongside its image artifacts; on each image artifact
+`backendGraph = {stage, graphHash, saveNodeId, swarmVersion}` and `generatorRequest` = the
+sanitised request record (`stage`, `model`, `images`, `graphHash`, text + seed inputs,
+`referenceArtifactIds`, `referenceArtifactObjectIds`); `seed` from the sent inputs, never the PNG.
+`graphHash` is the join key across the three. `durationMs` per stage comes back on `StageResult` as
+before. Nothing writes these from the executor yet — the executor's graph path is P5-2 — so until
+then they exist on the records only where the P5-1 live test or a caller puts them:
+`PbRenderPlanUtil.persistGraphArtifact` for the graph artifact, `PbPipelineUtil.recordImage` for
+the sanitised request record, and the new `PbArtifactUtil.recordImageMetrics(…, backendGraph)`
+overload for `backendGraph` (the existing `recordImage` path does not pass it; the executor will).**]**
+
 ---
 
 ## Part VI — Risks and open decisions
@@ -2088,8 +2105,10 @@ put the run objectId in the trace metadata so one book render can be followed ac
     an update at job completion; (a) alone goes stale the first time a model or GPU changes.
     **Answered in part 2026-10-09:** whatever the estimate's source, timings are **never test
     thresholds** — tests and the job watchdog give renders ample time because these are small
-    devices and are expected to be slow (§31 last bullet, §20 "reachable but slow"). Still open:
-    (a) vs (b) for the estimate's source.
+    devices and are expected to be slow (§31 last bullet, §20 "reachable but slow"). **Resolved
+    2026-10-24 (Stephen, on ratifying P5-0): (b), seeded by (a) — the P5-0 numbers below are the
+    seed; the per-server calibration record is P5-1's to design** (the in-JVM
+    `RenderCalibration` EWMA from Phase 2 is the in-process half; the persisted record is new).
 
     **Phase 5 decisions — inputs from P5-0 (2026-10-24; §38.5 as measured; nothing here is
     decided).** *Seed numbers for (a) / (b), `.39`, FLUX.2 Klein 9B, 1024×768, 4 steps:* BASE with
@@ -2109,7 +2128,46 @@ put the run objectId in the trace metadata so one book render can be followed ac
     (`PbLayoutUtil.defaultPlacement` 4-of-4 overlaps), and which checkpoint family runs which
     stage. IP-Adapter is inert on FLUX.2 and bleeds on SDXL; FACEID is blocked by the `.39` venv
     (§36.5) — identity on FLUX.2 comes from the `ReferenceLatent` chain and held across seeds.
-    Still open: (a) vs (b) for the estimate's source.
+    **Ratified 2026-10-24 (Stephen):** P5-0 as measured; the estimate's source is **(b) seeded by
+    (a)**; the FLUX.2 inpaint question (more steps vs creativity 1.0 inside the mask) is
+    **measured first in P5-1** before the graph builder commits; P5-1's live tests use a **real
+    `am7db` cast (≥ 4 portraits) if one exists**; FACEID stays out and `useinpaintingencode` is
+    excluded from Phase 5.
+
+    **Q14 (b) — the per-server calibration record: designed in P5-1, built in P5-2 (Stephen,
+    2026-10-24, B3: "design note only in P5-1").** What P5-1 did: the (a) seed is in
+    `capabilities.json` — `flux2*` `secondsPerStepPerReference` 5.0, derived from the spike's
+    3-reference BASE (≈ 102 s warm) against the no-reference render (38.6 s): (102 − 38.6) / 4
+    steps / 3 references = 5.3, rounded to 5.0 by the implementer (Stephen ratified the
+    measurements, not the rounding); `*xl*` and `*kontext*` stay `null` because no
+    reference-bearing render of either family has been timed on `.39`. The in-JVM
+    `RenderCalibration` EWMA records graph **BASE** renders only. What P5-2 builds, as designed
+    here:
+    - **Shape.** One record per `(server, model-family pattern, stage)` holding the EWMA of
+      `durationMs / (steps × max(1, references))` — i.e. the same unit as
+      `secondsPerStepPerReference` — plus `sampleCount`, `lastSampleAt`, the last `graphHash` and
+      the Swarm version it was measured under. ACTOR_REGION samples use the *effective* step
+      count `steps − start_at_step`, which is why it needs its own row rather than sharing BASE's
+      (folding it in skews the BASE figure). The record seeds from `capabilities.json` when it has
+      no samples; a family with a `null` seed and no samples yields "no estimate", never a number.
+    - **Where it lives.** Deployment-global per server, like the server URLs in
+      `system.connection` — not in any user's group and not per organisation (a GPU's speed is not
+      tenant-specific). A `/System`-global record of a small new model (or a sibling of
+      `olio.sd.config`; the model choice is P5-2's) resolved the way `ServerConfigUtil` resolves
+      connections.
+    - **Who writes it, and when.** The render executor, at **job completion**, through a dedicated
+      authorised write path — never from a read (an estimate request must not create or update the
+      record; `architecture.md` "Read paths must not create") and never as the org admin: the
+      writer is the job's own principal with an explicit grant on the record, or the record is
+      written by the system principal from the executor only, with the choice recorded in §6.C
+      when P5-2 makes it. A write the writer is not permitted is counted and logged, never forced.
+    - **How the estimate reads it.** `RenderEstimate` consumes the record (today it does **not**
+      consume `secondsPerStepPerReference` at all — noted out of scope in P5-1), falling back to
+      the in-JVM EWMA, then to the `capabilities.json` seed, then to "no estimate". A second JVM
+      (Console7) updating the record cannot invalidate this JVM's in-process copy; the propagation
+      bound is the record's re-read on the next estimate request, stated in the Ux, not hidden.
+    - **Never a threshold.** The record feeds the estimate only; no test, watchdog or job limit
+      reads it (§20 "reachable but slow").
 15. **Olio events + interactions for sequences and state changes — considered 2026-10-09;
     ratified 2026-10-09: skipped for V3** ("skip 15 for v3"). The analysis is kept as the record
     of why, and of where they would come back (an events → scenes importer).
@@ -2379,9 +2437,9 @@ scene-blurb, landscape-prompt, scene-image-prompt}.json` and
 
 #### 36.7 Prep checklist before Phase 0 starts (notes only; nothing implemented)
 
-1. Decide the open items in §34: **3 (default value), 7, 8, Q14 (source (a) vs (b))**. None
-   blocks Phase 0–2; each has a recorded default (off, DRAFT, two weeks + sign-off, (b) seeded
-   by (a)) that implementation uses until overridden.
+1. Decide the open items in §34: **3 (default value), 7, 8** (Q14's source closed 2026-10-24:
+   (b) seeded by (a)). None blocks Phase 0–2; each has a recorded default (off, DRAFT, two weeks +
+   sign-off) that implementation uses until overridden.
    Closed 2026-10-09: item 1 (composition up front, §9.1), item 2 (POI link kept — object/item
    references, §7.2), item 15 (events/interactions skipped), Q3's shape (one
    general switch, §10), Q4 (Kontext retired, §37), Q5/Q13 (dynamic graphs, §38), Q6 and Q9–Q11
@@ -2644,6 +2702,66 @@ table above held on the `0.9.8.4.GIT-5dc94afa` build. Added facts, by row:
   frame whose `image` is a path, then `discard_indices` and `socket_intention`.
 - *Timings (never thresholds):* §38.5 item 5.
 
+**Measured in P5-1 (2026-10-24; `.39` on `0.9.8.4.GIT-d74f8ce4`; live run #2 of `TestP51GraphLive`
+and five raw-graph probes, `C:/tmp/p51_probe3.py`). The *Images into the graph* row above is
+incomplete, and the spike's image-tag fill passed by accident.** What the Swarm source
+(`ComfyUIAPIAbstractBackend.cs`, master as of 2026-10-24) actually does with an image-typed
+`comfyrawworkflowinput…` value:
+
+- **`initImageFixer` runs before the tag fill**, over every image-typed dynamic input. If the
+  request **key contains `swarmloadimageb` or `swarminputimage`**, the value is kept and the tag is
+  filled by `fillDynamic` with the image's base64 — the behaviour the row above describes. **Otherwise**,
+  when `workflow.IndexOf("${" + key)` finds the tag, the PNG is uploaded to Comfy `/upload/image` as
+  `init_image_sui_backend_{BackendData.ID}_{id}.png` and the `${…}` span in the graph is replaced
+  with that **filename** — which a `SwarmLoadImageB64` node then tries to base64-decode. Live run #2
+  failed exactly there: `RENDERER_REJECTED … (Node 104/15: SwarmLoadImageB64) cannot identify image
+  file`; probe A below is the same failure as `Invalid base64-encoded string: number of data
+  characters (25)` (25 = the length of the filename it was handed).
+- **The key Swarm compares with is the *cleaned* key** (`T2IParamTypes.CleanTypeName`): lowercase,
+  ASCII letters only — digits and underscores are dropped — and the `IndexOf` is case-sensitive
+  against the graph text. So the spike's `${comfyrawworkflowinputimageactorA}` survived only because
+  Swarm searched for `…imageactora` (lowercase `a`) and missed; live run #1/#2's `duna_de_rosa` and
+  `jideon_de_rosa` tags missed on the underscores; the plain `init`, `mask` and `touvier` tags were
+  found and broken. A pass by case-miss is not a contract. A second consequence: two request keys
+  that clean to the same string (`ref0` / `ref1` → `…imageref`) are one parameter on the server and
+  silently share a value.
+- **Type detection** (`DynamicParamGenerator`) takes the first `T2IParamDataType` whose lowercased
+  name is a prefix of the part after `comfyrawworkflowinput`, so a key that starts
+  `imageswarminputimage…` is still an IMAGE input.
+- **`ImageShouldResize` is off for a raw-graph request**: it is evaluated against
+  `GetImageWidth(-1)` and a `comfyworkflowraw` body sends no `width` / `height`, so the uploaded or
+  inlined image is never resized by Swarm. A non-issue for V3; recorded so nobody re-derives it.
+
+**The contract V3 follows from P5-1 on (product code, not a convention):** every image request key
+and its `${…}` tag is **`comfyrawworkflowinputimage` + `swarminputimage` + `<name>`** — e.g.
+`comfyrawworkflowinputimageswarminputimageinit`, `…swarminputimagemask`,
+`…swarminputimagetouvier`. `ComfyGraph.inputKey(TYPE_IMAGE, name)` inserts the marker
+(`ComfyGraph.IMAGE_KEY_MARKER`), so no caller can build an image key without it; non-image keys are
+unchanged (`comfyrawworkflowinputtextscene`, `comfyrawworkflowinputseedseed`).
+`ComfyGraph.swarmKey(key)` is Swarm's reduction (A–Z lowercased, everything but a–z dropped), and
+`GraphInputs` refuses a second key that reduces to an earlier one's value
+(`IllegalArgumentException: Input … collides with …`), raised while the inputs are built — i.e.
+**before the generator is asked for anything** — so a reference set Swarm would merge never reaches
+`.39`. Reference names therefore must stay distinct once reduced to lowercase letters: `ref0` /
+`ref1` are rejected, `duna_de_rosa` / `jideon_de_rosa` / `touvier` / `init` / `mask` coexist. The
+tag-type detection in `TestGraphRequestShape` and the `PbArtifactUtil` key sanitiser
+(`SANITIZE_IMAGE_KEY_PREFIX = "comfyrawworkflowinputimage"`) are prefix matches and still apply.
+
+**Probes (SDXL `sd_xl_base_1.0`, graph = one `SwarmLoadImageB64` per tag + `v3_save_final`, value =
+`t03_base_sdxl.png` as a data URI; timings are observations, not thresholds):**
+
+| Probe | Tags | Result |
+|---|---|---|
+| A (old shape) | `init` | **error** `(Node 7: SwarmLoadImageB64) Invalid base64-encoded string: number of data characters (25)`, 2 569 ms |
+| B | `swarminputimageinit` | `images=1`, 452 ms |
+| C | `swarminputimagemask` | `images=1`, 360 ms |
+| D | `swarminputimagetouvier` | `images=1`, 349 ms |
+| E | `swarminputimageduna_de_rosa`, `…jideon_de_rosa`, `…touvier`, `…init`, `…mask` (five loaders in one graph) | `images=1`, 718 ms |
+
+Any `renderGraph` artifact persisted by a run before this change (run #2's t03 BASE stage, if it
+reached the DB) carries the old `comfyrawworkflowinputimage<name>` keys; it is a record of what was
+sent, not a template, and is left as is.
+
 #### 38.2 What V3 builds
 
 A new layer in `olio/illustration/`, between the prompt compilers (§14) and the adapter (§15):
@@ -2694,6 +2812,66 @@ StageResult {outputs[] keyed by save-node id, promptId, graphHash, timings}
   stages on one backend. A later optimisation can fuse stages when nothing in between is
   user-visible, but it is not the default.
 
+**[2026-10-24 (P5-1), as built — `WorkflowCompiler` + `ComfyGraph` + `GraphInputs` + `NodeCatalogue`
++ `SwarmGraphClient` in `olio/illustration/`; Stephen's answers of 2026-10-24 in bold; ledger in
+`PictureBookV3Implementation.md` §6.C 205.]**
+
+- **Base graph source — generate-and-patch, as designed (Stephen, B1).** The compiler posts the
+  stage's ordinary Swarm parameters to `ComfyGetGeneratedWorkflow` with *markers* in the slots that
+  must become tags — the alphanumeric strings `V3SCENEMARKER7731` / `V3NEGATIVEMARKER7732` for the
+  two prompts, the seed `1234567`, and one solid-colour placeholder PNG per image slot (references
+  red / green / blue / cyan / orange / purple in order, init yellow, mask magenta) — then rewrites
+  the returned graph: the marker text in `CLIPTextEncode.text` / `SwarmTextEncodeAdvanced.prompt`
+  becomes `${comfyrawworkflowinputtextscene}` / `…textnegative`, `SwarmKSampler.noise_seed` becomes
+  `${comfyrawworkflowinputseedseed}`, and each `SwarmLoadImageB64.image_base64` is matched to its
+  placeholder — by exact base64 first, then by decoded colour within a channel-sum tolerance of 60
+  (the generator re-encodes PNGs) — and becomes `${comfyrawworkflowinputimageswarminputimage<name>}`
+  (the marker is Swarm's base64-fill switch, §38.1 "Measured in P5-1"); substitution order is
+  mask → init → references. The numeric save node is replaced by the string-id
+  `v3_save_final` (one save node per graph). A loader the compiler cannot match to a placeholder, or
+  a marker it cannot find, is a `GraphCompileException` — the generator's shape changed under us —
+  reported as `GRAPH_INVALID`, never patched around.
+- **Literals stay literals.** `steps`, `cfg`, sampler, scheduler, the loaders' file names, the
+  canvas size and the mask grow / blur are left exactly as the generator wrote them for the request;
+  only the prompts, the seed and the images are tags. This narrows the "inputs that vary per attempt
+  are tags" bullet above (which listed steps and cfg): a different step count is a different graph
+  with a different `graphHash`, which is what makes the hash a provenance key — the artifact's hash
+  names *the sampling parameters that produced it*, not a template that several parameter sets
+  share. `start_at_step` is Swarm's `round(steps × (1 − creativity))`;
+  `WorkflowCompiler.startAtStep` is the same formula so a caller can predict it, and the compiler
+  logs a warning when the generated graph disagrees rather than overwriting the generator.
+- **Per-actor pass = the plain `maskimage` inpaint graph (§38.5 item 2), full canvas.**
+  `compileActorRegion` asks the generator for an `initimage` + `maskimage` + `initimagecreativity`
+  + `maskgrow` / `maskblur` + `initimagerecompositemask` graph over the BASE image, the mask painted
+  from the actor's boxes, the step count and creativity from the family's `inpaint` block in
+  `capabilities.json` (FLUX.2 4 steps, creativity 1.0 pending the measure-both comparison Stephen
+  asked for; SDXL 25 steps, creativity 0.6; grow 16 / blur 8 on both, the spike's values). The
+  compiler places whatever references its caller passes as `promptimages`; the P5-1 plan's rule —
+  the target actor's own portrait is the only reference on an ACTOR_REGION pass — is what the live
+  test does and what the P5-2 executor wiring must enforce, because **nothing in product code
+  calls the compiler yet** (`compileBase` / `compileActorRegion` / `persistGraphArtifact` have test
+  callers only; the executor path is P5-2). `flux2*` `supportsMasks` is now `true` on the strength
+  of the spike's one-box FLUX.2 inpaint; `useinpaintingencode` is excluded (Stephen, 2026-10-24).
+- **Validation before submit — narrower than designed.** `NodeCatalogue` (the
+  `/ComfyBackendDirect/object_info` snapshot, cached per server for an hour, dropped on a
+  `RENDERER_REJECTED`) checks class names and input names, not values: an unknown `class_type`, a
+  missing required input, a link to a node id that does not exist, a `${…}` tag the request does
+  not fill, no non-numeric save node, and inline image data in a loader are **errors**
+  (`GRAPH_INVALID`, nothing sent); an input name the catalogue does not list for the class is a
+  **warning only**, because Swarm's own generated graphs carry inputs `object_info` omits
+  (`lora_hooks`, `images`, `minimax_refs` on `SwarmTextEncodeAdvanced`) and the backend tolerates
+  them. **Enum values and output-slot indices are not checked** — the design bullet above promised
+  both; they are left to Swarm's `TryIsValid` and Comfy's own validation, which surface as
+  `RENDERER_REJECTED`. When no catalogue can be fetched the adapter logs it and runs the structural
+  checks alone (links, tags, save node, inline images) so an unreachable `object_info` degrades
+  rather than blocks.
+- **Fixture constraint worth knowing before writing an offline test.** The captured base fixture
+  (`src/test/resources/olio/illustration/p50/base_flux2.workflow.json`) is the three-reference
+  graph, so an offline compile against it must supply exactly three references; `references(n)`
+  with another `n` fails with `Node 104 SwarmLoadImageB64 matches no placeholder image` — correct
+  behaviour, not a bug (`TestWorkflowCompiler.noReferencesSendsNoPromptImagesAndKeepsNoLoader`
+  asserts it). The live generator, asked for *n* references, emits *n* loaders.
+
 #### 38.3 The PB workflow as proxy
 
 | PB graph (`olio.pb.*`) | Comfy graph |
@@ -2709,6 +2887,51 @@ surface — every box in the Ux plan inspector (§26) is one Comfy subgraph, and
 on an artifact returns the exact `comfyworkflowraw` string with its filled tag values, which can be
 dropped into the ComfyUI editor or re-submitted verbatim for a repro. There is **no** second
 persisted copy of the Comfy graph beyond the artifact.
+
+**[2026-10-24 (P5-1), as built — where the graph, the request and the provenance actually live;
+Stephen's answer B2 of 2026-10-24: "sibling JSON artifact per stage".]**
+
+- **The graph body is a sibling `renderGraph` artifact on the stage node**, not a field of the
+  image artifact and not part of the plan artifact (the §38.2 bullet "recorded with the patch in
+  the plan artifact" and the §38.4 §32 line "the plan artifact holds the full graph string" are
+  superseded by this). `PbRenderPlanUtil.persistGraphArtifact` writes one
+  `olio.pb.artifact` of type `JSON`, role `renderGraph`, whose `text` is the envelope
+  `{stage, graphHash, swarmVersion, graph}` — `graph` being the tagged API-format graph exactly as
+  sent, nulls kept (`lora_hooks: null` is what the generator wrote and the artifact must say so).
+  `ComfyGraph.assertNoInlineImages()` runs before anything is written: a loader carrying base64
+  instead of an image tag is refused, so the artifact can never hold image bytes. One per stage
+  per attempt; the image artifacts of that stage share its `graphHash`.
+- **`artifact.backendGraph` on each image artifact is `{stage, graphHash, saveNodeId,
+  swarmVersion}`** (`SwarmRendererAdapter.backendGraphJson`). `stage` is added to the §38.4 shape
+  and `backendId` is omitted — Swarm's response does not identify the backend that ran the job, so
+  the field would have been a guess. `graphHash` is the SHA-256 of the graph's canonical JSON
+  (`ComfyGraph.graphHash`) and is the key that joins an image to its `renderGraph` artifact.
+- **The stage's request record (`StageResult.requestJson` → `artifact.generatorRequest`) is
+  `{stage, model, images, graphHash, inputs, referenceArtifactIds}`** with `inputs` *redacted* —
+  text and seed values verbatim, every image input replaced by `"<N bytes png>"` — so it is
+  bytes-free by construction (`SwarmRendererAdapter.graphRequestJson`). It is **not** what
+  `PbArtifactUtil.isSanitized` accepts: the redacted map still carries the
+  `comfyrawworkflowinputimage<name>` keys, which the key-name sanitiser strips. The pipeline's
+  `recordImage` always runs `sanitizeGeneratorRequest` before `persistArtifact`, which drops those
+  keys, keeps `stage` / `graphHash` / `referenceArtifactIds` and the text + seed inputs, and adds
+  `referenceArtifactObjectIds`; the `renderGraph` artifact still names every image tag, so which
+  loader took which reference is recoverable from graph + `referenceArtifactIds` and nothing is
+  lost by the strip. The contract is asserted, not assumed
+  (`TestGraphRequestShape.redactedInputsCarryNoBytes`: `isSanitized` false before the pipeline
+  sanitiser, true after, content preserved). No product change was made to make the request record
+  pass `isSanitized` directly — the redaction and the sanitiser have different jobs.
+- **PNG parameters are not provenance for a raw render (measured in P5-0).** Swarm writes the
+  *request defaults* into the PNG's `sui_image_params` block for a `comfyworkflowraw` render — not
+  the graph's sampler values and not the filled tags. The spike's raw FLUX.2 re-post
+  (`C:/tmp/p50-spike/01-base/raw_flux2.*`) was sent with `comfyrawworkflowinputseedv3seed = 424242`
+  and a graph sampling 4 steps at 1024×768, cfg 2.0; its PNG says `steps 20, seed 1163099747,
+  1024×1024, cfgscale 7.0`. So the adapter takes the seed from the inputs it sent
+  (`GraphInputs.seed(TAG_SEED)`) and never from the returned PNG. A `SEED_RANDOM` request does not
+  leave the choice to Swarm: the compiler draws the seed itself (`ThreadLocalRandom`, 1 …
+  `Integer.MAX_VALUE`) and sends it as the tag value, so every compiled render has a known seed and
+  replays byte-for-byte (§38.5 item 2). `SEED_UNKNOWN` / `seedReported=false` can only arise for a
+  graph whose inputs carry no `seed` tag at all. Reading the PNG back for seed / steps / cfg would
+  silently attribute a raw render to the wrong parameters.
 
 #### 38.4 What this changes elsewhere in this design
 
@@ -2728,11 +2951,25 @@ persisted copy of the Comfy graph beyond the artifact.
   fallback is to save the mask image and count on the Objects7 side.
 - **§20 failure semantics:** two rows added — `GRAPH_INVALID` (local validation failed; no GPU
   time spent) and `RENDERER_REJECTED` (Swarm's `unsupported node type` refusal or Comfy's `error`
-  websocket message, with the node id).
+  websocket message, with the node id). **[2026-10-24 (P5-1), as built:** the adapter classifies a
+  Swarm `error` string as a graph rejection when it mentions an unsupported node / node type,
+  "workflow", "invalid" or "comfy" — **except a session error** (`Invalid session`, which contains
+  "invalid"): `SwarmGraphClient` retries a rejected session once with a fresh `GetNewSession`, and
+  one that still fails is reported as a plain backend error (`ERROR_PREFIX_BACKEND`), because
+  invalidating the node catalogue over an expired session would make the next render refetch
+  `object_info` for nothing. Comfy-side execution errors arrive in the same `error` field over the
+  HTTP route, so the "websocket message" wording above is the WS route's form of the same thing;
+  V3 renders over HTTP in P5-1. Node-level error surfacing (which node failed) is a P5-2 item.**]**
 - **§21:** cancel stays between stages; `InterruptAll` is still not used.
 - **§32:** `artifact.backendGraph` holds `{graphHash, saveNodeId, swarmVersion, backendId}`;
   the plan artifact holds the full graph string. Add a `graphHash` dimension to the render
-  timings.
+  timings. **[2026-10-24 (P5-1), as built: `{stage, graphHash, saveNodeId, swarmVersion}` — no
+  `backendId` — and the graph string is a sibling `renderGraph` artifact, not the plan artifact;
+  §38.3's as-built block is the record. The `graphHash` timing dimension is not added in P5-1:
+  the in-JVM `RenderCalibration` is keyed by server + model pattern and records graph **BASE**
+  renders only, skipping ACTOR_REGION (whose effective step count is `steps − start_at_step` and
+  would skew the BASE EWMA); the stage dimension goes in with the persisted calibration record
+  (§34 Q14 (b), P5-2).]**
 - **§36.2 route list:** add `ComfyGetGeneratedWorkflow` and `ComfyBackendDirect/object_info`;
   `ComfySaveWorkflow` / `ComfyReadWorkflow` / `ComfyListWorkflows` are no longer used by V3.
 - **§30 Phase 5 spike** becomes "measure the contract and capture Swarm's generated graphs against

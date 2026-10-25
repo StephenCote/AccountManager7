@@ -83,8 +83,17 @@ public class PbArtifactUtil {
 		/// and matching is case-insensitive (see stripKeys), so neither a field rename nor a wire-name
 		/// change can silently reopen it.
 		"initimage", "promptimages", "session_id", "sessionid",
-		"initImage", "promptImages", "sessionId"
+		"initImage", "promptImages", "sessionId",
+		/// A raw-graph request (V3 §38) carries the graph body under this key; the graph is its own
+		/// artifact (renderGraph), so the request record never duplicates it.
+		"comfyworkflowraw"
 	));
+
+	/**
+	 * A raw-graph request's image inputs are keyed {@code comfyrawworkflowinputimage<name>} - one key per
+	 * reference, init image or mask, each a data URI. Any key with this prefix is stripped (V3 §38.3).
+	 */
+	public static final String SANITIZE_IMAGE_KEY_PREFIX = "comfyrawworkflowinputimage";
 
 	/** Where the replaced reference objectIds are recorded instead. */
 	public static final String REFERENCE_ARTIFACTS_KEY = "referenceArtifactObjectIds";
@@ -213,6 +222,17 @@ public class PbArtifactUtil {
 	 */
 	public static boolean recordImageMetrics(BaseRecord user, BaseRecord artifact, byte[] bytes, String mimeType,
 			int width, int height, Long seed, SDAPIEnumType backend, long durationMs) {
+		return recordImageMetrics(user, artifact, bytes, mimeType, width, height, seed, backend, durationMs, null);
+	}
+
+	/**
+	 * {@link #recordImageMetrics(BaseRecord, BaseRecord, byte[], String, int, int, Long, SDAPIEnumType, long)}
+	 * plus the raw-graph provenance a V3 §38 render produces ({@code backendGraph}: stage, graphHash,
+	 * saveNodeId, swarmVersion - never the graph body, which is the sibling renderGraph artifact).
+	 * Materialised on the patch only when non-null.
+	 */
+	public static boolean recordImageMetrics(BaseRecord user, BaseRecord artifact, byte[] bytes, String mimeType,
+			int width, int height, Long seed, SDAPIEnumType backend, long durationMs, String backendGraph) {
 		if(artifact == null) {
 			return false;
 		}
@@ -226,6 +246,9 @@ public class PbArtifactUtil {
 		if(durationMs > 0L) {
 			fields.add(OlioFieldNames.FIELD_PB_DURATION_MS);
 		}
+		if(backendGraph != null) {
+			fields.add(OlioFieldNames.FIELD_PB_BACKEND_GRAPH);
+		}
 		BaseRecord patch = PbGraphUtil.patchOf(artifact, OlioModelNames.MODEL_PB_ARTIFACT, fields.toArray(new String[0]));
 		try {
 			if(backend != null) {
@@ -233,6 +256,9 @@ public class PbArtifactUtil {
 			}
 			if(durationMs > 0L) {
 				patch.set(OlioFieldNames.FIELD_PB_DURATION_MS, Long.valueOf(durationMs));
+			}
+			if(backendGraph != null) {
+				patch.set(OlioFieldNames.FIELD_PB_BACKEND_GRAPH, backendGraph);
 			}
 			if(bytes != null) {
 				patch.set(OlioFieldNames.FIELD_PB_BYTE_LENGTH, Long.valueOf(bytes.length));
@@ -704,13 +730,17 @@ public class PbArtifactUtil {
 			/// the false-clean defect above happened, and the cost of being robust here is one lowercase
 			/// comparison per key.
 			for(String present : new ArrayList<>(m.keySet())) {
-				for(String k : SANITIZE_KEYS) {
-					if(present.equalsIgnoreCase(k)) {
-						if(m.remove(present) != null) {
-							removed++;
+				boolean strip = present.toLowerCase().startsWith(SANITIZE_IMAGE_KEY_PREFIX);
+				if(!strip) {
+					for(String k : SANITIZE_KEYS) {
+						if(present.equalsIgnoreCase(k)) {
+							strip = true;
+							break;
 						}
-						break;
 					}
+				}
+				if(strip && m.remove(present) != null) {
+					removed++;
 				}
 			}
 			for(Object v : new ArrayList<>(m.values())) {

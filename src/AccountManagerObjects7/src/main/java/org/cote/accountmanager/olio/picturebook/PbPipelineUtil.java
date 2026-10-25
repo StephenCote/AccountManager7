@@ -93,6 +93,11 @@ public class PbPipelineUtil {
 	public static final String ROLE_CHARACTER = "character";
 	public static final String ROLE_SOURCE_TEXT = "sourceText";
 	public static final String ROLE_RENDER_PLAN = "renderPlan";
+	/**
+	 * The compiled Comfy graph a raw-graph stage posted (V3 §38.3, P5-1): a JSON artifact on the same node as
+	 * the image it produced, with image tags only - never image bytes. One revision per render.
+	 */
+	public static final String ROLE_RENDER_GRAPH = "renderGraph";
 	/** The image a RENDER_PLAN node's BASE stage produced (V3 §11, P2-5); same node as its {@code renderPlan} JSON. */
 	public static final String ROLE_BASE = "base";
 	/**

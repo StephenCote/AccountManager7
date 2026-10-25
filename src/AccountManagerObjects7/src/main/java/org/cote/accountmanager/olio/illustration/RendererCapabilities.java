@@ -32,15 +32,44 @@ public final class RendererCapabilities {
 	/// Prompt token budget when a family declares none (three CLIP chunks, the SDXL figure).
 	public static final int DEFAULT_PROMPT_TOKEN_BUDGET = 225;
 
+	/// The per-actor inpaint parameters a family runs its ACTOR_REGION stage with (design §38.2): the
+	/// sampler steps, the init-image creativity (1 - the fraction of steps skipped), and the mask grow /
+	/// blur in pixels. Null on a family that declares none.
+	public static final class InpaintParams {
+		private final int steps;
+		private final double creativity;
+		private final int maskGrow;
+		private final int maskBlur;
+
+		public InpaintParams(int steps, double creativity, int maskGrow, int maskBlur) {
+			this.steps = steps;
+			this.creativity = creativity;
+			this.maskGrow = maskGrow;
+			this.maskBlur = maskBlur;
+		}
+
+		public int getSteps() { return steps; }
+		public double getCreativity() { return creativity; }
+		public int getMaskGrow() { return maskGrow; }
+		public int getMaskBlur() { return maskBlur; }
+
+		@Override
+		public String toString() {
+			return "InpaintParams{steps=" + steps + ", creativity=" + creativity + ", maskGrow=" + maskGrow + ", maskBlur=" + maskBlur + "}";
+		}
+	}
+
 	private static final List<RendererCapabilities> FALLBACK;
 	static {
 		List<RendererCapabilities> l = new ArrayList<>();
-		l.add(new RendererCapabilities(PATTERN_FLUX2, true, 3, true, true, true, false, false, true, true, true,
-			4, 4, 24, 1.0, 3.5, Collections.unmodifiableList(List.of(new int[] {1024, 768}, new int[] {768, 1024}, new int[] {1024, 1024})), null, 512));
+		l.add(new RendererCapabilities(PATTERN_FLUX2, true, 3, true, true, true, true, false, true, true, true,
+			4, 4, 24, 1.0, 3.5, Collections.unmodifiableList(List.of(new int[] {1024, 768}, new int[] {768, 1024}, new int[] {1024, 1024})), Double.valueOf(5.0), 512,
+			new InpaintParams(4, 1.0, 16, 8)));
 		l.add(new RendererCapabilities(PATTERN_SDXL, true, 0, false, false, true, true, false, true, true, true,
-			12, 20, 30, 5.0, 7.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024}, new int[] {1024, 768}, new int[] {768, 1024}, new int[] {832, 1216}, new int[] {1216, 832})), null, 225));
+			12, 20, 30, 5.0, 7.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024}, new int[] {1024, 768}, new int[] {768, 1024}, new int[] {832, 1216}, new int[] {1216, 832})), null, 225,
+			new InpaintParams(25, 0.6, 16, 8)));
 		l.add(new RendererCapabilities(PATTERN_KONTEXT, false, 1, true, false, true, false, false, true, true, false,
-			20, 28, 28, 1.0, 1.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024})), null, 225));
+			20, 28, 28, 1.0, 1.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024})), null, 225, null));
 		FALLBACK = Collections.unmodifiableList(l);
 	}
 
@@ -67,12 +96,13 @@ public final class RendererCapabilities {
 	private final List<int[]> nativeResolutions;
 	private final Double secondsPerStepPerReference;
 	private final int promptTokenBudget;
+	private final InpaintParams inpaint;
 
 	private RendererCapabilities(String pattern, boolean enabled, int maxReferences, boolean supportsReferences,
 			boolean supportsStyleReferences, boolean supportsInitImage, boolean supportsMasks, boolean supportsRegionalPrompt,
 			boolean supportsSeedReplay, boolean supportsCancel, boolean supportsBatch, int stepsLow, int stepsDefault,
 			int stepsHigh, double cfgMin, double cfgMax, List<int[]> nativeResolutions, Double secondsPerStepPerReference,
-			int promptTokenBudget) {
+			int promptTokenBudget, InpaintParams inpaint) {
 		this.pattern = pattern;
 		this.regex = globToRegex(pattern);
 		this.enabled = enabled;
@@ -93,6 +123,7 @@ public final class RendererCapabilities {
 		this.nativeResolutions = nativeResolutions;
 		this.secondsPerStepPerReference = secondsPerStepPerReference;
 		this.promptTokenBudget = (promptTokenBudget > 0 ? promptTokenBudget : DEFAULT_PROMPT_TOKEN_BUDGET);
+		this.inpaint = inpaint;
 	}
 
 	public String getPattern() { return pattern; }
@@ -118,6 +149,9 @@ public final class RendererCapabilities {
 	/// Positive-prompt token budget the compiler truncates to (§14); a static family property, a
 	/// judgement rather than a measured encoder limit - see the resource's _comment.
 	public int getPromptTokenBudget() { return promptTokenBudget; }
+	/// The family's ACTOR_REGION inpaint parameters, or null when it declares none (then the stage is
+	/// unavailable for the family, not guessed).
+	public InpaintParams getInpaint() { return inpaint; }
 
 	/// The step count for a preset's stepsMode ("low" | "default" | "high"); anything else is default.
 	public int recommendedSteps(String stepsMode) {
@@ -146,7 +180,7 @@ public final class RendererCapabilities {
 		return "RendererCapabilities{" + pattern + ", enabled=" + enabled + ", maxReferences=" + maxReferences
 			+ ", steps=" + recommendedStepsLow + "/" + recommendedStepsDefault + "/" + recommendedStepsHigh
 			+ ", cfg=[" + cfgMin + "," + cfgMax + "], promptTokenBudget=" + promptTokenBudget
-			+ ", secondsPerStepPerReference=" + secondsPerStepPerReference + "}";
+			+ ", secondsPerStepPerReference=" + secondsPerStepPerReference + ", inpaint=" + inpaint + "}";
 	}
 
 	// ─────────────────────────────── static access ───────────────────────────────
@@ -249,6 +283,17 @@ public final class RendererCapabilities {
 		Object spr = m.get("secondsPerStepPerReference");
 		Double seconds = (spr instanceof Number) ? Double.valueOf(((Number) spr).doubleValue()) : null;
 		int stepsDefault = num(steps.get("default"), 20);
+		InpaintParams inpaint = null;
+		if(m.get("inpaint") instanceof Map) {
+			Map<String, Object> ip = (Map<String, Object>) m.get("inpaint");
+			Object cr = ip.get("creativity");
+			inpaint = new InpaintParams(
+				num(ip.get("steps"), stepsDefault),
+				(cr instanceof Number) ? ((Number) cr).doubleValue() : 1.0,
+				num(ip.get("maskGrow"), 0),
+				num(ip.get("maskBlur"), 0)
+			);
+		}
 		return new RendererCapabilities(
 			(String) pat,
 			bool(m.get("enabled"), true),
@@ -268,7 +313,8 @@ public final class RendererCapabilities {
 			(cfg.size() == 2 && cfg.get(1) instanceof Number) ? ((Number) cfg.get(1)).doubleValue() : 1.0,
 			Collections.unmodifiableList(res),
 			seconds,
-			num(m.get("promptTokenBudget"), DEFAULT_PROMPT_TOKEN_BUDGET)
+			num(m.get("promptTokenBudget"), DEFAULT_PROMPT_TOKEN_BUDGET),
+			inpaint
 		);
 	}
 

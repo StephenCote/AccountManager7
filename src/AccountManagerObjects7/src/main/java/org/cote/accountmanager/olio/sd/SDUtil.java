@@ -155,13 +155,47 @@ public class SDUtil {
 	/// Swarm session per call — observed as 8 simultaneous sessions from one client on a small
 	/// book. Reusing one session per server until Swarm itself rejects it fixes that.
 	private static final java.util.concurrent.ConcurrentHashMap<String, String> sessionCache = new java.util.concurrent.ConcurrentHashMap<>();
+	/// Swarm's version string per server, learned from the same GetNewSession call that mints the
+	/// session; provenance for raw-graph renders (PictureBook V3 design §38.3).
+	private static final java.util.concurrent.ConcurrentHashMap<String, String> versionCache = new java.util.concurrent.ConcurrentHashMap<>();
 
 	private String getOrCreateSession() {
-		return sessionCache.computeIfAbsent(autoserver, SWUtil::getAnonymousSession);
+		return sessionCache.computeIfAbsent(autoserver, s -> {
+			org.cote.accountmanager.olio.sd.swarm.SWSessionResponse resp = SWUtil.getNewSession(s);
+			if (resp == null) {
+				return null;
+			}
+			if (resp.getVersion() != null && !resp.getVersion().isEmpty()) {
+				versionCache.put(s, resp.getVersion());
+			}
+			return resp.getSession_id();
+		});
 	}
 
 	private void invalidateSession() {
 		sessionCache.remove(autoserver);
+	}
+
+	/// The cached anonymous session for this server, minted on first use; null when the server did not
+	/// issue one. Shared with txt2img so a raw-graph caller does not open a second session per render.
+	public String session() {
+		return getOrCreateSession();
+	}
+
+	/// Forget the cached session so the next call mints a fresh one (after Swarm rejects it).
+	public void dropSession() {
+		invalidateSession();
+	}
+
+	/// Swarm's version string for this server, known once a session has been minted; null when the
+	/// server is unreachable or reports none.
+	public String swarmVersion() {
+		String v = versionCache.get(autoserver);
+		if (v == null) {
+			getOrCreateSession();
+			v = versionCache.get(autoserver);
+		}
+		return v;
 	}
 
 	public SWImageResponse txt2img(SWTxt2Img req) {

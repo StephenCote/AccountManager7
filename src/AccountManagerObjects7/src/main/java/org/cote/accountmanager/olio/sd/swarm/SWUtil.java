@@ -601,13 +601,19 @@ public class SWUtil {
 	}
 
 	public static String getAnonymousSession(String server) {
+		SWSessionResponse test = getNewSession(server);
+		return (test == null ? null : test.getSession_id());
+	}
+
+	/// POST /API/GetNewSession: the session id plus Swarm's version string, or null when the server did
+	/// not answer.
+	public static SWSessionResponse getNewSession(String server) {
 		SWSessionResponse test = ClientUtil.post(SWSessionResponse.class, ClientUtil.getResource(server + "/API/GetNewSession"), "{}", MediaType.APPLICATION_JSON_TYPE);
 		if (test == null) {
 			logger.error("Session response was null");
 			return null;
 		}
-		return test.getSession_id();
-		
+		return test;
 	}
 	
 	public static SWImageInfo extractInfo(byte[] data) throws ImageProcessingException, IOException {

@@ -28,8 +28,8 @@ import org.junit.Test;
  * Pure tests for the one model policy (P2-2): {@link ModelResolver}, {@link CheckpointNames} and
  * {@link ModelTaskKeys} against a fixed in-memory inventory shaped like a Swarm listing (folder +
  * extension). No DB, no SD server, no BaseTest. The family rules come from the real
- * {@code capabilities.json} on the classpath (flux2 enabled/refs/no masks, sdxl enabled/no refs/masks,
- * kontext disabled), so a change to that resource is caught here too.
+ * {@code capabilities.json} on the classpath (flux2 enabled/refs/masks since P5-1, sdxl enabled/no
+ * refs/masks, kontext disabled), so a change to that resource is caught here too.
  */
 public class TestModelResolver {
 
@@ -354,10 +354,12 @@ public class TestModelResolver {
 	}
 
 	@Test
-	public void flux2RefusedForInpaint() {
+	public void flux2AllowedForInpaint() {
 		Resolution r = ModelResolver.resolve(req(PbModelTaskEnumType.INPAINT).override("flux2Klein_9b").build(), INV);
-		assertFalse(r.isResolved());
-		assertEquals(Reason.FAMILY_UNSUPPORTED_FOR_TASK, r.getCandidates().get(0).getReason());
+		assertTrue(r.isResolved());
+		assertEquals(FLUX2, r.getModel());
+		assertEquals(Reason.OK, r.getCandidates().get(0).getReason());
+		assertFalse(r.isDegraded());
 	}
 
 	@Test
@@ -393,7 +395,7 @@ public class TestModelResolver {
 		assertEquals(Reason.FAMILY_UNSUPPORTED_FOR_TASK, ModelResolver.supportsTask(sdxl, PbModelTaskEnumType.SCENE_DIRECT, true));
 		assertEquals(Reason.OK, ModelResolver.supportsTask(sdxl, PbModelTaskEnumType.SCENE_DIRECT, false));
 		assertEquals(Reason.OK, ModelResolver.supportsTask(sdxl, PbModelTaskEnumType.INPAINT, false));
-		assertEquals(Reason.FAMILY_UNSUPPORTED_FOR_TASK, ModelResolver.supportsTask(flux2, PbModelTaskEnumType.INPAINT, false));
+		assertEquals(Reason.OK, ModelResolver.supportsTask(flux2, PbModelTaskEnumType.INPAINT, false));
 		assertEquals(Reason.OK, ModelResolver.supportsTask(sdxl, PbModelTaskEnumType.HARMONIZE, false));
 		assertEquals(Reason.OK, ModelResolver.supportsTask(flux2, PbModelTaskEnumType.HARMONIZE, false));
 		assertEquals(Reason.FAMILY_UNSUPPORTED_FOR_TASK, ModelResolver.supportsTask(sdxl, PbModelTaskEnumType.UNKNOWN, false));

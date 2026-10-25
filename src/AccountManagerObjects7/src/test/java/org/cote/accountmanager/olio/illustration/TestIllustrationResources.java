@@ -112,7 +112,7 @@ public class TestIllustrationResources {
 		assertTrue(rc.isSupportsReferences());
 		assertTrue(rc.isSupportsStyleReferences());
 		assertTrue(rc.isSupportsInitImage());
-		assertFalse(rc.isSupportsMasks());
+		assertTrue("P5-0 measured a FLUX.2 masked inpaint on .39 (77.5 s); the family now declares masks", rc.isSupportsMasks());
 		assertFalse(rc.isSupportsRegionalPrompt());
 		assertTrue(rc.isSupportsSeedReplay());
 		assertTrue(rc.isSupportsCancel());
@@ -123,6 +123,11 @@ public class TestIllustrationResources {
 		assertEquals(1.0, rc.getCfgMin(), EPS);
 		assertEquals(3.5, rc.getCfgMax(), EPS);
 		assertResolutions(rc, new int[][] {{1024, 768}, {768, 1024}, {1024, 1024}});
+		assertNotNull("flux2 declares the ACTOR_REGION inpaint block", rc.getInpaint());
+		assertEquals(4, rc.getInpaint().getSteps());
+		assertEquals(1.0, rc.getInpaint().getCreativity(), EPS);
+		assertEquals(16, rc.getInpaint().getMaskGrow());
+		assertEquals(8, rc.getInpaint().getMaskBlur());
 	}
 
 	@Test
@@ -149,6 +154,11 @@ public class TestIllustrationResources {
 		assertEquals(5.0, jug.getCfgMin(), EPS);
 		assertEquals(7.0, jug.getCfgMax(), EPS);
 		assertResolutions(jug, new int[][] {{1024, 1024}, {1024, 768}, {768, 1024}, {832, 1216}, {1216, 832}});
+		assertNotNull("sdxl declares the ACTOR_REGION inpaint block", jug.getInpaint());
+		assertEquals(25, jug.getInpaint().getSteps());
+		assertEquals(0.6, jug.getInpaint().getCreativity(), EPS);
+		assertEquals(16, jug.getInpaint().getMaskGrow());
+		assertEquals(8, jug.getInpaint().getMaskBlur());
 	}
 
 	@Test
@@ -197,12 +207,31 @@ public class TestIllustrationResources {
 		assertEquals(RendererCapabilities.PATTERN_FLUX2, rc.getPattern());
 	}
 
+	/**
+	 * Only a family that was measured on .39 carries a timing (§15/§18). P5-0 measured flux2 at
+	 * (102 - 38.6) s / 4 steps / 3 refs, ratified as 5.0 s/step/reference (2026-10-24); sdxl takes no
+	 * references and kontext is retired, so both stay null. The figure is an estimate input, never a
+	 * threshold.
+	 */
 	@Test
-	public void noFamilyCarriesATimingUntilMeasuredOnDotThirtyNine() {
+	public void onlyTheMeasuredFamilyCarriesATiming() {
 		for(RendererCapabilities rc : RendererCapabilities.families()) {
-			assertNull(rc.getPattern() + " secondsPerStepPerReference must stay null until measured (§15/§18)",
-				rc.getSecondsPerStepPerReference());
+			if(RendererCapabilities.PATTERN_FLUX2.equals(rc.getPattern())) {
+				assertNotNull("flux2 was measured in P5-0", rc.getSecondsPerStepPerReference());
+				assertEquals(5.0, rc.getSecondsPerStepPerReference().doubleValue(), EPS);
+			}
+			else {
+				assertNull(rc.getPattern() + " secondsPerStepPerReference must stay null until measured (§15/§18)",
+					rc.getSecondsPerStepPerReference());
+			}
 		}
+	}
+
+	@Test
+	public void kontextDeclaresNoInpaintBlock() {
+		RendererCapabilities rc = RendererCapabilities.forModel("flux1-kontext-dev");
+		assertNotNull(rc);
+		assertNull("a family without an inpaint block cannot run ACTOR_REGION; it is not guessed", rc.getInpaint());
 	}
 
 	@Test
@@ -344,8 +373,27 @@ public class TestIllustrationResources {
 				expected[r] = new int[] {((Number) wh.get(0)).intValue(), ((Number) wh.get(1)).intValue()};
 			}
 			assertResolutions(rc, expected);
-			assertTrue(p + ".secondsPerStepPerReference must be declared (null) in the file, not omitted", f.containsKey("secondsPerStepPerReference"));
-			assertEquals(p + ".secondsPerStepPerReference", f.get("secondsPerStepPerReference"), rc.getSecondsPerStepPerReference());
+			assertTrue(p + ".secondsPerStepPerReference must be declared (null or a number) in the file, not omitted", f.containsKey("secondsPerStepPerReference"));
+			Object spr = f.get("secondsPerStepPerReference");
+			if(spr == null) {
+				assertNull(p + ".secondsPerStepPerReference", rc.getSecondsPerStepPerReference());
+			}
+			else {
+				assertNotNull(p + ".secondsPerStepPerReference", rc.getSecondsPerStepPerReference());
+				assertEquals(p + ".secondsPerStepPerReference", ((Number) spr).doubleValue(), rc.getSecondsPerStepPerReference().doubleValue(), EPS);
+			}
+			Object inp = f.get("inpaint");
+			if(inp == null) {
+				assertNull(p + ".inpaint", rc.getInpaint());
+			}
+			else {
+				Map<String, Object> im = (Map<String, Object>) inp;
+				assertNotNull(p + ".inpaint", rc.getInpaint());
+				assertEquals(p + ".inpaint.steps", ((Number) im.get("steps")).intValue(), rc.getInpaint().getSteps());
+				assertEquals(p + ".inpaint.creativity", ((Number) im.get("creativity")).doubleValue(), rc.getInpaint().getCreativity(), EPS);
+				assertEquals(p + ".inpaint.maskGrow", ((Number) im.get("maskGrow")).intValue(), rc.getInpaint().getMaskGrow());
+				assertEquals(p + ".inpaint.maskBlur", ((Number) im.get("maskBlur")).intValue(), rc.getInpaint().getMaskBlur());
+			}
 		}
 	}
 

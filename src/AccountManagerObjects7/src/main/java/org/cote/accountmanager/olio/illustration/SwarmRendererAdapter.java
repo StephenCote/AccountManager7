@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.illustration;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -13,9 +14,10 @@ import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.util.JSONUtil;
 
-/// SwarmUI adapter (PictureBook V3 design §15, §38.1): one txt2img call per stage against Swarm's
-/// parameter API, bytes back, nothing persisted. The timed window is the txt2img call only, so the
-/// calibration sample (§18) excludes image downloads and decoding. Errors never carry the server URL.
+/// SwarmUI adapter (PictureBook V3 design §15, §38.1): one call per stage - txt2img against Swarm's
+/// parameter API, or the raw-graph post when the request carries a compiled graph (§38) - bytes back,
+/// nothing persisted. The timed window is the generate call only, so the calibration sample (§18)
+/// excludes image downloads and decoding. Errors never carry the server URL.
 public final class SwarmRendererAdapter implements RendererAdapter {
 
 	private static final Logger logger = LogManager.getLogger(SwarmRendererAdapter.class);
@@ -56,6 +58,9 @@ public final class SwarmRendererAdapter implements RendererAdapter {
 		CancelToken token = (cancel == null ? CancelToken.NONE : cancel);
 		if(token.isCancelled()) {
 			return StageResult.failed(ERROR_CANCELLED, 0L, null);
+		}
+		if(request.isGraph()) {
+			return executeGraph(request, token);
 		}
 		SWTxt2Img s2i = toSwarm(request);
 		/// Exported before txt2img mints the session so the artifact never carries a session id.
@@ -117,6 +122,122 @@ public final class SwarmRendererAdapter implements RendererAdapter {
 			logger.info("Stage " + request.getStage() + " rendered " + result.getImages().size() + " image(s) in " + durationMs + " ms");
 		}
 		return result;
+	}
+
+	// ─────────────────────────────── raw graph (§38) ───────────────────────────────
+
+	/// Post a compiled graph. Before the GPU: the graph is checked against the server's node catalogue
+	/// (GRAPH_INVALID). After: Swarm's `unsupported node type` style refusals are RENDERER_REJECTED and
+	/// drop the catalogue so the next render refetches it. The seed on each image is the seed the inputs
+	/// carry, because a raw render's PNG metadata reflects the request defaults, not the graph
+	/// (§38.3). Only BASE feeds calibration.
+	private StageResult executeGraph(StageRequest request, CancelToken token) {
+		ComfyGraph graph = request.getGraph();
+		GraphInputs inputs = request.getInputs();
+		SwarmGraphClient client = new SwarmGraphClient(sdu);
+		String graphHash = graph.graphHash();
+		String requestJson = graphRequestJson(request, graphHash);
+
+		NodeCatalogue catalogue = NodeCatalogue.forServer(server, client::objectInfoJson);
+		List<GraphProblem> problems;
+		if(catalogue != null) {
+			problems = catalogue.validate(graph, inputs.names());
+		}
+		else {
+			logger.warn("No node catalogue for stage " + request.getStage() + "; structural checks only");
+			problems = NodeCatalogue.validateStructure(graph, inputs.names());
+		}
+		List<GraphProblem> errors = NodeCatalogue.errors(problems);
+		if(!errors.isEmpty()) {
+			return StageResult.failed(ERROR_GRAPH_INVALID + ": " + NodeCatalogue.describe(errors), 0L, requestJson);
+		}
+		if(problems.size() > errors.size()) {
+			logger.info("Graph for stage " + request.getStage() + " has " + (problems.size() - errors.size()) + " warning(s): " + NodeCatalogue.describe(problems));
+		}
+
+		SwarmGraphClient.RawResponse resp;
+		try {
+			resp = client.generateRaw(graph, inputs, request.getModel(), request.getImages(), token);
+		}
+		catch(RuntimeException e) {
+			logger.error("Raw generate threw for stage " + request.getStage() + ": " + e.getMessage());
+			return StageResult.failed(ERROR_UNREACHABLE, 0L, requestJson);
+		}
+		long durationMs = resp.getDurationMs();
+		if(resp.isUnreachable()) {
+			return StageResult.failed(ERROR_UNREACHABLE, durationMs, requestJson);
+		}
+		if(resp.getError() != null) {
+			if(ERROR_CANCELLED.equals(resp.getError())) {
+				return StageResult.failed(ERROR_CANCELLED, durationMs, requestJson);
+			}
+			if(isGraphRejection(resp.getError())) {
+				NodeCatalogue.invalidate(server);
+				return StageResult.failed(ERROR_RENDERER_REJECTED + ": " + resp.getError(), durationMs, requestJson);
+			}
+			return StageResult.failed(ERROR_PREFIX_BACKEND + resp.getError(), durationMs, requestJson);
+		}
+		if(resp.getImagePaths().isEmpty()) {
+			return StageResult.failed(ERROR_NO_IMAGES, durationMs, requestJson);
+		}
+
+		Long seedValue = inputs.seed(WorkflowCompiler.TAG_SEED);
+		int seed = (seedValue == null ? StageImage.SEED_UNKNOWN : seedValue.intValue());
+		boolean seedReported = (seedValue != null);
+		StageResult.Builder out = StageResult.builder().durationMs(durationMs).requestJson(requestJson)
+			.backendGraph(backendGraphJson(request.getStage(), graphHash, client.swarmVersion()));
+		for(String path : resp.getImagePaths()) {
+			byte[] bytes = client.fetchImage(path);
+			if(bytes == null || bytes.length == 0) {
+				logger.warn("Could not retrieve image bytes for stage " + request.getStage() + " (" + path + ")");
+				continue;
+			}
+			int[] dims = ImageDims.decode(bytes);
+			out.image(new StageImage(bytes, seed, seedReported, dims[0], dims[1]));
+		}
+		StageResult result = out.build();
+		if(result.isOk()) {
+			if(RenderPlan.STAGE_BASE.equals(request.getStage())) {
+				RendererCapabilities caps = capabilities(request.getModel());
+				if(caps != null) {
+					RenderCalibration.record(server, caps.getPattern(), durationMs, request.getSteps(), request.getWidth(), request.getHeight());
+				}
+			}
+			logger.info("Stage " + request.getStage() + " (graph " + graphHash.substring(0, 12) + ") rendered " + result.getImages().size() + " image(s) in " + durationMs + " ms");
+		}
+		return result;
+	}
+
+	/// The stage's request record: what was sent minus the graph body and the images (both are
+	/// artifacts of their own), so it is safe to persist as is.
+	static String graphRequestJson(StageRequest request, String graphHash) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("stage", request.getStage());
+		m.put("model", request.getModel());
+		m.put("images", Integer.valueOf(request.getImages()));
+		m.put("graphHash", graphHash);
+		m.put("inputs", request.getInputs().redacted());
+		m.put("referenceArtifactIds", request.getInputs().getReferenceArtifactIds());
+		return JSONUtil.exportObject(m);
+	}
+
+	static String backendGraphJson(String stage, String graphHash, String swarmVersion) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("stage", stage);
+		m.put("graphHash", graphHash);
+		m.put("saveNodeId", ComfyGraph.SAVE_FINAL);
+		m.put("swarmVersion", swarmVersion);
+		return JSONUtil.exportObject(m);
+	}
+
+	/// Swarm refusing the graph itself (an unknown node type, a malformed workflow) rather than a
+	/// generation failure. A session rejection that survived the client's one retry is not one.
+	static boolean isGraphRejection(String error) {
+		if(error == null || SwarmGraphClient.isSessionError(error)) {
+			return false;
+		}
+		String s = error.toLowerCase();
+		return s.contains("unsupported node") || s.contains("node type") || s.contains("workflow") || s.contains("invalid") || s.contains("comfy");
 	}
 
 	/// The Swarm request for a stage. BASE never runs the refiner; UPSCALE runs the config's refiner
