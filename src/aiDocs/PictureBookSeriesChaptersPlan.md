@@ -4,7 +4,7 @@
 per-chapter async extraction (fixes Issue 1's 90-min timeout, `archive/IssueLog-2026-09-22.md`) is landed;
 per-chapter scene persistence into each series chapter book (Full N-series) is being completed. Not
 yet end-to-end verified over a full multi-chapter manuscript.
-**Scope:** The "N-series" of `PictureBookWorkflowOverhaul.md` §6 (N1–N4): make series/chapters
+**Scope:** The "N-series" of `archive/PictureBookWorkflowOverhaul.md` §6 (N1–N4): make series/chapters
 real, share one Olio world per series, additive per-chapter ingest, series reader + chapter-scoped
 canvas. The "W-series" (W1–W5, graph recording) is already **done and verified** — this plan does
 not touch it except to correct stale references to it.
@@ -14,7 +14,7 @@ chapters. A single `.docx` → this is deliberately the **range-within-one-manus
 (Q8/Q11), not a set of separate files.
 
 > **How to read this doc.** Every factual claim is cited to current code as `file:line`. Where the
-> older design doc (`PictureBookWorkflowOverhaul.md`) and the code disagree, **the code wins** and the
+> older design doc (`archive/PictureBookWorkflowOverhaul.md`) and the code disagree, **the code wins** and the
 > doc is called stale. This plan was re-derived against the actual post-W-series tree, per Stephen's
 > instruction to re-review the design vis-à-vis what is implemented.
 
@@ -35,7 +35,7 @@ chapters. A single `.docx` → this is deliberately the **range-within-one-manus
 
 ## 1. Current reality vs. the design doc (what changed under W-series)
 
-`PictureBookWorkflowOverhaul.md`'s "key locations" table (`:466-481`) and several §2/§6 line refs
+`archive/PictureBookWorkflowOverhaul.md`'s "key locations" table (`:468-483`) and several §2/§6 line refs
 are now **stale**. Verified corrections (strike these when the overhaul doc is next edited):
 
 | Doc claim (STALE) | Verified current fact (`file:line`) |

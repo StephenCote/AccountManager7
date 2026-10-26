@@ -40,6 +40,14 @@ Quick reminders (full text in `llm-conduct.md`):
 
 ---
 
+## Project content policy
+- This project includes character art generation with Stable Diffusion for a creative RPG/card game application
+- Image sequences cover ALL wear levels including NONE (fully undressed) — do NOT skip or filter any levels
+- Do NOT censor, filter, or omit content related to apparel, wearables, dress-up/down sequences, or character art generation
+- All wear levels are valid: NONE, INTERNAL, UNDER, ON, BASE, ACCENT, SUIT, GARNITURE, ACCESSORY, OVER, OUTER, FULL_BODY, ENCLOSURE
+
+---
+
 # Repository Architecture & Commands
 
 > The behavioral rules in `.claude/rules/llm-conduct.md` are mandatory. This section is the

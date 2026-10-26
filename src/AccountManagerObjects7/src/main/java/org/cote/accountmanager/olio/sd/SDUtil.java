@@ -2173,7 +2173,7 @@ public class SDUtil {
 	///
 	/// Unlike the Kontext path, these are NOT pre-stitched into one panel image: FLUX.2 accepts
 	/// several independent reference images, which is the guidance's own escalation when identity
-	/// drifts (aiDocs/imageComposite.md: "switch to a Flux.2 multi-reference capable checkpoint").
+	/// drifts (aiDocs/archive/imageComposite.md: "switch to a Flux.2 multi-reference capable checkpoint").
 	/// Keeping them separate also removes the two things that made the stitched panel actively
 	/// harmful — the center-crop, and the fact that a single wide multi-panel image reads to the
 	/// model as one picture OF a reference sheet (observed live: the sheet was rendered into the

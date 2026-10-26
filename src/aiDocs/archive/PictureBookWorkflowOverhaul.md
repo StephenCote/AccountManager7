@@ -1,3 +1,5 @@
+> Archived 2026-10-25: workflow-graph overhaul (raised 2026-09-19). W1–W5 and graph recording are done and verified; the N-series (§6, series/chapters) continued in `../PictureBookSeriesChaptersPlan.md` and is superseded by `../PictureBookV3Design.md` §7 (chapter books share the series world), §28/§28.1 (PB1 retirement and migration) and §34. Its "Corrected 2026-10-07" note stands: `file:line` references here are stale and the code wins. **§3 is the only place that explains that "PB1/PB2" names two different axes** — the legacy book/world model versus the workflow graph. Open questions Q1/Q3/Q4/Q5/Q10 (§8) plus the §7 orphan-node and write-volume caveats are carried as `../KnownIssues.md` KI-91; Q2 is moot (the `picturebook.v2` flag was deleted 2026-10-07); Q6–Q9/Q11 were answered inline.
+
 # PictureBook Workflow — Overhaul / Correction
 
 **Raised:** 2026-09-19 · **Status:** W-series (W1–W5, graph recording) **done and verified**;

@@ -15,9 +15,9 @@ as proxy (§38)**, **auto-approve is one general switch (§10)**, **VLM QA defau
 (§7.2 — object/item references)**, **composition up front (§9.1)**, **events/interactions skipped
 (§34 item 15)**, **Q14 source (b) seeded by (a) (ratified 2026-10-24 with P5-0)**. Open: §34 items 3
 (default value only), 7, 8 — none blocks Phase 0–2; the design records a default for each.
-**Inputs:** `PictureBookV3Notes.md` (target architecture), `PictureBookImageGenerationDesign.md`
+**Inputs:** `archive/PictureBookV3Notes.md` (target architecture), `PictureBookImageGenerationDesign.md`
 (current behaviour and gaps G-1…G-36), `PictureBook2Plan.md` (workflow graph, §6 ComfyUI),
-`PictureBookWorkflowOverhaul.md`, `PictureBookAsyncJobDesign.md`, `PictureBookSdConfigRefactor.md`.
+`archive/PictureBookWorkflowOverhaul.md`, `PictureBookAsyncJobDesign.md`, `archive/PictureBookSdConfigRefactor.md`.
 **Not available:** the SequenceDev document that the notes refer to is not in the repository.
 Where this design relies on SequenceDev (location library, background-first and sequential
 inpainting), it uses the notes' description of it. **G-numbers [reconciled 2026-10-09]:**
@@ -67,7 +67,7 @@ books take (PB1 `generateSceneImage`):
 **Decision D1:** V3 models are added to the `olio.pb.*` family. Rendering *is* graph execution.
 "Render", "variant", "render manifest" and "version" are expressed as artifacts and bindings rather
 than parallel entities. PB1's `generateSceneImage` and its note-blob scene state are retired (this
-is the end state that `PictureBookWorkflowOverhaul.md` already recommends).
+is the end state that `archive/PictureBookWorkflowOverhaul.md` already recommends).
 
 **Decision D2 — current state in records, history in artifacts.** Records hold the *current* state:
 `olio.charPerson`, `olio.pb.location`, `olio.pb.composition`, `olio.pb.style`. They are edited in
@@ -2604,7 +2604,7 @@ are as of 2026-10-09.
 | `e2e/pictureBookScenePromptUx.spec.js:18`; comments in `chat/SceneGenerator.js` :49-50, `workflows/pictureBook.js` :225-230, :2700, `workflows/sceneExtractor.js` :357, :364, :496 and their tests | comments | Reword |
 
 **Docs** mentioning Kontext (counts of lines): `KnownIssues.md` 34, this design 17,
-`PictureBookSdConfigRefactor.md` 14, `PictureBook2Plan.md` 8, `PictureBookImageGenerationDesign.md`
+`archive/PictureBookSdConfigRefactor.md` 14, `PictureBook2Plan.md` 8, `PictureBookImageGenerationDesign.md`
 5. History stays as history; only forward-looking text (§14, §16, G-21 in the gap doc) needs a
 "retired" note at the Disable stage.
 

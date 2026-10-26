@@ -1,5 +1,5 @@
 /**
- * Issue 1 (src/aiDocs/IssueLog-2026-09-22.md) — REAL end-to-end proof that submitting a full
+ * Issue 1 (src/aiDocs/archive/IssueLog-2026-09-22.md) — REAL end-to-end proof that submitting a full
  * MULTI-CHAPTER novel manuscript fans out into ONE bounded async scene-extraction job PER CHAPTER
  * instead of a single unbounded whole-novel job (the old path ran ~4-5h and blew the client's
  * 90-min JOB_POLL_DEADLINE_MS, producing "(clearly you didn't test)").

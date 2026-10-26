@@ -9,9 +9,9 @@ them: characters, settings/landscapes, style, model choice, prompts, review and 
 > Nothing was run, so "works" below means "the code is written to do this", not "verified". Code-level
 > findings are kept in Appendix A for when implementation starts.
 
-Related: `PictureBookSdConfigRefactor.md` (one book style + per-scene overrides),
-`PictureBookAsyncJobDesign.md`, `PictureBook2Plan.md` / `PictureBookWorkflowOverhaul.md` (workflow
-graph), `imageComposite.md` (original composite approach), `KnownIssues.md` KI-59 / KI-66.
+Related: `archive/PictureBookSdConfigRefactor.md` (one book style + per-scene overrides),
+`PictureBookAsyncJobDesign.md`, `PictureBook2Plan.md` / `archive/PictureBookWorkflowOverhaul.md` (workflow
+graph), `archive/imageComposite.md` (original composite approach), `KnownIssues.md` KI-59 / KI-66.
 
 ---
 
@@ -308,8 +308,8 @@ against the source; the rest are from reading the code.
   (`SceneGraph.isRunClosed()` guard; `closeRun` marks closed even with no run row);
   `PbNodeExecutor.executeNode` stamps the node FAILED + `lastError`/`lastRunAt` and rethrows. Tests:
   `TestPbSceneGenerationGuards#testRunClosedFailedWhenSceneThrows`, `TestPbGraph#case16_runAndNodeClosedFailedOnException`.**]**
-- **Doc drift:** `PictureBookWorkflowOverhaul.md` ("not started", but W3/W4 are done),
-  `AccountManagerUx752/aiDocs/ChapBookReviewRedesign.md` ("nothing implemented", but mostly done),
-  `PictureBookUxAndOlioModelPlan.md` (A2.2/A2.3, B and C not done), and two field descriptions in
+- **Doc drift:** `archive/PictureBookWorkflowOverhaul.md` ("not started", but W3/W4 are done),
+  `archive/ChapBookReviewRedesign.md` ("nothing implemented", but mostly done),
+  `archive/PictureBookUxAndOlioModelPlan.md` (A2.2/A2.3, B and C not done), and two field descriptions in
   `configModel.json` (`flux2IncludeLandscapeRef`, `negativePrompt`) that describe behaviour the code
   doesn't have.

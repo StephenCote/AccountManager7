@@ -1,3 +1,5 @@
+> Archived 2026-10-25: PB2/ChapBook build-state log frozen at 2026-09-01; superseded by `../PictureBookV3Implementation.md` §1 (status) and `PictureBook2ChapBook-Handoff-2026-09-01.md` (the last handoff, already here). Historical only — `file:line` references below are as of 2026-09-01.
+
 # PictureBook 2.0 — Implementation State
 
 > **Latest session handoff (2026-09-01):** see `archive/PictureBook2ChapBook-Handoff-2026-09-01.md` for the

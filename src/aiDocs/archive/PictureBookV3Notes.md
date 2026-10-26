@@ -1,3 +1,5 @@
+> Archived 2026-10-25: V3 pre-design notes (2026-10-09); superseded by `../PictureBookV3Design.md`, whose §35 (Traceability: notes → this design) maps every section of these notes. The design still cites the design goals by bare id (G3/G4/G6/G9/G10): **G1–G10 are under `## 3.1 Primary goals` below** (originally L80–147 of this file; +2 here because of this banner).
+
 # PictureBook Image Generation
 ## Comprehensive Scene Composition & Rendering Architecture
 

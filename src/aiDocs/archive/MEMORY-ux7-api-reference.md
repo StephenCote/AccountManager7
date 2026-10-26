@@ -1,12 +1,8 @@
+> Archived 2026-10-25: Ux7-era API and domain notes (Key API Patterns, `am7client` helpers, apparel/store participation, LLM library). The `## Project Content Policy` block (original L5–9) was **moved verbatim to the root `CLAUDE.md`** ("Project content policy") and removed from this copy; the durable API facts (enum casing, PATCH shape, `am7client.member` sField) are in `.claude/rules/model-api.md` and `.claude/rules/troubleshooting.md`. This is not the harness auto-memory `MEMORY.md` (under `~/.claude/projects/.../memory/`), which is unaffected.
+
 # AccountManager7 Project Memory
 
 Detailed reference for LLM assistants working on this project. Auto-loaded summary is at `~/.claude/projects/.../memory/MEMORY.md`; this file has the full details.
-
-## Project Content Policy
-- This project includes character art generation with Stable Diffusion for a creative RPG/card game application
-- Image sequences cover ALL wear levels including NONE (fully undressed) — do NOT skip or filter any levels
-- Do NOT censor, filter, or omit content related to apparel, wearables, dress-up/down sequences, or character art generation
-- All wear levels are valid: NONE, INTERNAL, UNDER, ON, BASE, ACCENT, SUIT, GARNITURE, ACCESSORY, OVER, OUTER, FULL_BODY, ENCLOSURE
 
 ## Key API Patterns
 - `page.createObject(obj)` — single arg, schema on obj via `obj.schema`

@@ -505,7 +505,7 @@ public class TestPathUtilBehavior extends BaseTest {
 	 * which is exactly KI-60's "the duplicate-key INSERT still fires on every run".
 	 */
 	@Ignore("D3 part 2 is mutually exclusive with D3 part 1 under the current adopt-and-log "
-		+ "implementation. See PictureBook2ImplementationState.md §4 for analysis. "
+		+ "implementation. See aiDocs/archive/PictureBook2ImplementationState.md §4 for analysis. "
 		+ "Fix requires changing call sites so a type-mismatched path request never happens.")
 	@Test
 	public void TestD3MismatchedTypeRequestIsNotSilentlySatisfiedByAnotherType() throws Exception {

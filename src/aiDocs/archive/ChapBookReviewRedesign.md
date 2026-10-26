@@ -1,3 +1,5 @@
+> Archived 2026-10-25 from `src/AccountManagerUx752/aiDocs/`: ChapBook review-UI redesign draft (2026-09-06). Its status line ("nothing implemented") is stale — most of it was built, and the reader/review surface is now owned by `../PictureBookV3Design.md` §24 (ChapBook on V3) and §26 (Ux). Relative paths in this file were written from the Ux752 module root.
+
 # ChapBook Review UI Redesign — Design & Analysis
 
 Status: **DRAFT — design/analysis only, nothing implemented.** Author: orchestrated investigation

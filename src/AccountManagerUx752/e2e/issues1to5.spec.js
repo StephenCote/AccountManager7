@@ -4,7 +4,7 @@
  * Run against the Docker stack (NOTHING here touches the LLM at .42 or SD at .39 — pure UI/REST):
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/issues1to5.spec.js --workers=1 --project=chromium
  *
- * Coverage (see src/aiDocs/IssueLog.md):
+ * Coverage (see src/aiDocs/archive/IssueLog-2026-08-25.md):
  *   Issue 1 — list picker "navigate up" works for a group-contained type (data.note).
  *   Issue 2 — importing a poem from a data.data record succeeds WITHOUT a PBAC "Group could not
  *             be found" error (olio.cb.poem created in ~/Poems).

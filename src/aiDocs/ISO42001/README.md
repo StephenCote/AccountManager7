@@ -16,7 +16,7 @@ Module orientation: `../../AccountManagerISO42001/CLAUDE.md`.
 | `../archive/ISO42001Plan.md` | ISO 42001 compliance dashboard plan — **archived** (Ux75-parented; superseded by this subdir + the Ux752 gap analysis) | historical |
 
 Related, cross-linked:
-- `../../AccountManagerUx752/aiDocs/Iso42001UxGapAnalysis.md` — UX gap analysis + backend backlog for the ISO 42001 UI (**status refreshed 2026-09-01**: most original P0/P1 gaps now built; remaining backlog = analysisProfile UI, results depth, dashboard heat-map/trend, pagination, run cancel; backend correctness items: `tier=0`→Tier-1, hardcoded `controlAreas`).
+- `../../AccountManagerUx752/aiDocs/Iso42001UxGapAnalysis.md` — UX gap analysis + backend backlog for the ISO 42001 UI (**status refreshed 2026-10-07**: most original P0/P1 gaps now built; remaining backlog = analysisProfile UI, results depth, dashboard heat-map/trend, pagination, run cancel; backend correctness items: `tier=0`→Tier-1, hardcoded `controlAreas`).
 - `../LiteLLMLangfuseIntegrationDesign.md` — optional LiteLLM/Langfuse layer. §2.6 is no longer a
   "future path": **B5 shipped 2026-09-14** — `LangfuseMetricsClient` / `LangfuseMetrics` live in this
   module (`iso42001/metrics/`) and are wired through `TestExecutor` / `TestRunner`. The layering rule

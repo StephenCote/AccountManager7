@@ -1,9 +1,11 @@
 # Picture Book — Completion Design Document
 
+> Reference 2026-10-25: PB1 (legacy book/world model) design. Still the only description of the PB1 storage model (§1), `resolveImageUrl` (§4), the viewer's keyboard/fullscreen behaviour (§5) and the §7 export deferred list — none restated by V3. PB1 is still the default render path (`PbRenderPath.PICTUREBOOK_DEFAULT = V1`) until V3 Phase 10; scheduled for removal at V3 Phase 10 / `PictureBookV3Design.md` §28.1 Stage 4. "PB1/PB2" names two different axes — this doc's book/world model versus the workflow graph (`PictureBook2Plan.md`) — see `archive/PictureBookWorkflowOverhaul.md` §3. Build-state history: `archive/PictureBook2ImplementationState.md`.
+
 **Date:** 2026-03-27
 **Status:** In Progress
 **Test Content:** AIME.pdf (satirical short story, ~2500 words, 3 pages)
-**Original Spec:** `aiDocs/Ux75ImplementationPlan.md` Phase 16 (lines 780-979)
+**Original Spec:** `aiDocs/archive/Ux75ImplementationPlan.md` Phase 16 (lines 780-979)
 
 ---
 

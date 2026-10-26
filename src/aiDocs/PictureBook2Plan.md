@@ -1,10 +1,12 @@
 # PictureBook 2.0 — Design & Implementation Plan
 
+> Reference 2026-10-25: design of record for the PB2 graph model (§2), the Books universe / one world per book (§3), the three blockers (§4) and the PBAC/ownership role model — none of which `PictureBookV3Design.md` restates (V3 is "built on the PB2 graph", its §1). Build state moved to `archive/PictureBook2ImplementationState.md`; the §0 "Open questions that still block work" table below was corrected the same day (Appendix D closes Q12/Q15/Q17/Q19). "PB1/PB2" names two different axes — the legacy book/world model versus the workflow graph — explained in `archive/PictureBookWorkflowOverhaul.md` §3.
+
 **Date:** 2026-08-11, revised 2026-08-12
 **Status:** **DESIGN COMPLETE — READY FOR IMPLEMENTATION.** Reviewed by `security-reviewer` and
 `architect` (returned CHANGES-NEEDED; all five blocking findings folded in). Implementation to be done in
 a separate conversation.
-**Supersedes (on completion):** `PictureBookDesign.md` §1-8 storage model; `PictureBookSdConfigRefactor.md` config model.
+**Supersedes (on completion):** `PictureBookDesign.md` §1-8 storage model; `archive/PictureBookSdConfigRefactor.md` config model.
 
 ---
 
@@ -86,12 +88,10 @@ outside this run's scope — except **Q17 (orphan-world reconcile)**, which phas
 
 ### Open questions that still block work
 
-| Q | Blocks | Note |
-|---|---|---|
-| Q15 | canvas cast entities (phase 5a) | "Meadow Herd" is a collective — bind to `auth.group` or a new `olio.pb.castGroup`? |
-| Q17 | book deletion (phase 3) | orphan-world reconcile shape |
-| Q19 | phase 1 scope | relocating `~/Roles/Olio *` to group paths needs a migration — in or out? |
-| Q12 | phase 3b | Comfy: one-node-one-call first, Swarm stays default? |
+None as of 2026-10-25. The four this table used to list are closed in Appendix D: **Q17** (orphan worlds)
+RESOLVED by the two-tier role split (decision 10); **Q12** (Comfy scope) BACKLOGGED (decision 12 — the
+current Comfy path is `PictureBookV3Design.md` §38); **Q15** (cast/group entities) → `olio.pb.castGroup`
+(decision 13); **Q19** (relocating `~/Roles/Olio *`) WON'T DO (decision 15).
 
 Q1-Q11, Q13-Q14, Q16, Q18, Q20 are answered inline. §10.
 
@@ -1643,7 +1643,7 @@ selected per-config.
 whether the local ComfyUI is reachable independently of Swarm's embedded copy, and its version. The
 approach must be to **capture a working graph from the ComfyUI UI** (Save/Export API format, or the
 network payload) and build the Java builders from that captured JSON — not from assumed node names.
-`aiDocs/imageComposite.md:28-30,47` already gives this instruction for Swarm's image-parameter keys;
+`aiDocs/archive/imageComposite.md:30-32,49` already gives this instruction for Swarm's image-parameter keys;
 the same rule applies here, more strongly.
 
 Verification: `TestComfyBackend` — a live test asserting a real image comes back and decodes, plus a
@@ -1993,7 +1993,7 @@ constraints/hints are irreversible once a table exists (see Appendix D). Sub-pha
   `verifyGrants`. Done first and alone because it is authorization-only, its regression baseline is the
   existing green gate, and the universe tier had to exist before the two-role property could be asserted.
   *Verified:* `TestBookWorld` 21/21 + the 83-test gate. As-built under ratification 5; measurements in
-  `PictureBook2ImplementationState.md` §3.
+  `archive/PictureBook2ImplementationState.md` §3.
 - **Phase 2b — the eight `olio.pb.*` model JSONs, registered, with their tables and indexes verified.
   DONE 2026-08-14.** The JSONs; the `OlioModelNames`/`OlioFieldNames` constants; six new `Pb*EnumType`s;
   the one-line `SDAPIEnumType.COMFY` addition (ratification 12); registration in `OlioModelNames.MODELS`.
@@ -2003,7 +2003,7 @@ constraints/hints are irreversible once a table exists (see Appendix D). Sub-pha
   `TestPbModelSchema` 14/14; non-regression 113/113 including the full phase-1 gate.
   Three deliberate deviations (serialized `olio.sd.config`; `name`+`urn` added to `query`; three extra
   invariant constraints) and four create-path traps for 2c are recorded in Appendix D and in
-  `PictureBook2ImplementationState.md` §3. Field renames beyond `sceneIndex`/`selected`:
+  `archive/PictureBook2ImplementationState.md` §3. Field renames beyond `sceneIndex`/`selected`:
   **`artifact.text` → `artifactText`**.
   *(The earlier 2b/2c split — write-but-don't-register plus a DDL pre-flight test — was withdrawn before
   the work started, and the run did not argue for it back: every table and index landed on the first JUnit
@@ -2026,7 +2026,7 @@ verified.** Each seam in `generateSceneImage` becomes a node execution, using th
 *Verified:* the flag-off gate green (`TestPictureBookCustom#TestPictureBookCustomPipeline` 1/1,
 **unedited**, zero PB2 lines), `TestPictureBookWorkflow` level 1 **and** level 2 green against live
 Swarm/LLM, non-regression **152/152**. Measurements and the four remaining gaps are in
-`PictureBook2ImplementationState.md` §3.
+`archive/PictureBook2ImplementationState.md` §3.
 
 > **Four as-built corrections to this entry.**
 > 1. **The feature flag is NOT the Ux manifest mechanism this entry pointed at.**
@@ -2152,7 +2152,7 @@ which is not specific enough to act on:
 container (`pgvector/pgvector:0.8.2-pg18-trixie`) publishes `0.0.0.0:15432->5432` — so **15432 is correct
 and every phase-1/2a test run used it.** The 2026-08-12 note claimed the file had been repointed to
 **15430** because nothing listened on 15432; whatever was true that day, it is not true now, and the
-15430 value was propagated into `PictureBook2ImplementationState.md` §6 and repeated in a verification
+15430 value was propagated into `archive/PictureBook2ImplementationState.md` §6 and repeated in a verification
 report before anyone re-read the file. A second container `am7-pg` publishes `15433`.
 *Do not* work around a connection failure with a port forwarder or by pointing at the `am7test` stack —
 check the file, then `docker ps`. `AccountManagerConsole7`'s `resource.properties:11` reads
@@ -2566,7 +2566,7 @@ can silently remove.
 > (`universeAuthorizationUserRole`/`AdminRole`, null-default) and nothing auto-enrols into either admin
 > role; the nested-grant write gap is closed by `OlioContext.scanNestedWorldGroups()`, world tier only.
 > Precondition 3 (B1 TOCTOU) is unchanged and is resolved by ratification 7 below, in phase 2b.
-> Measured evidence and the bounds that survive are in `PictureBook2ImplementationState.md` §3.
+> Measured evidence and the bounds that survive are in `archive/PictureBook2ImplementationState.md` §3.
 
 1. **The single role pair across tiers is safe only because nothing auto-enrols into the book `Admin`
    role.** `getCreateBookContext` enrols the creator into **`Writer` only**; `registerUser(..., asAdmin=true)`
@@ -2632,7 +2632,7 @@ Appendix A's model guidance is wrong in two places and incomplete in a third. Th
   wired into `IOSystem.open` (`IOSystem.java:162`), applied **after** the ADD COLUMN patches, one statement
   per constraint/hint, each `CREATE [UNIQUE] INDEX IF NOT EXISTS`, with per-statement
   error-log-and-continue. A hint or constraint added to a model whose table already exists **is** created
-  on the next boot or JUnit run. (This is Gap B in `PictureBook2ImplementationState.md` §3.)
+  on the next boot or JUnit run. (This is Gap B in `archive/PictureBook2ImplementationState.md` §3.)
   **And `-Dreset` is available on this database.** Stephen, 2026-08-14: `am7db` and `am7test` may be
   reset; **`am72db` must never be reset or dropped** — it shares host:port `localhost:15432` with `am7db`,
   so read the database name, not the port. `am7db` lives in a disposable container
@@ -2667,7 +2667,7 @@ must use `sceneIndex`.
 
 > **AS-BUILT 2026-08-14 (phase 2b) — three corrections to §2.1/§2.2, each forced by the code.** Full
 > measurements, the pg_indexes listing and the four create-path traps are in
-> `PictureBook2ImplementationState.md` §3.
+> `archive/PictureBook2ImplementationState.md` §3.
 > 1. **`olio.sd.config` is not a database-persisted model** — `ioConstraints: ["unknown"]`, so
 >    `DBUtil.isConstrained` is true, it has no table and no `id`. §2.2's "foreign `olio.sd.config` —
 >    **real persisted records** … making config queryable" is not buildable: a `foreign` field emits a

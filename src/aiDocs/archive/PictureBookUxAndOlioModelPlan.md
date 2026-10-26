@@ -1,3 +1,5 @@
+> Archived 2026-10-25: PLAN ONLY — nothing in Parts B–C was implemented and Part D (D1–D13) was never ratified; the decisions were taken in `../PictureBookV3Design.md` §7 (locations and the shared series world), §8 (scene/composition/actors) and §34 (decisions). Retained for the three read-only audits it records (UX walkthrough, backend/DB SELECT-only, Olio model survey).
+
 # PictureBook UX and Olio Model Plan
 
 **Status:** PLAN ONLY — nothing in Parts B–C implemented. HEAD `79437482`, 2026-09-30. Rev 3, architect-APPROVED 2026-09-30 (rev 1 CHANGES-NEEDED: four blocking findings; rev 2 four minor residuals; all folded in below and marked **[R2]**). Awaiting Stephen's decisions in Part D.

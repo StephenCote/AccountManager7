@@ -1,3 +1,5 @@
+> Archived 2026-10-25: implemented 2026-08-03 (`../KnownIssues.md` KI-38, FIXED). The precedence rule it introduced — one common `olio.sd.config` stored on the book, optional per-scene delta, optional alternate composite config; the backend merges (common → scene delta → `fillStyleDefaults`) and uses `getSDConfigPrompt` as the single style seam — now lives in `../PictureBookV3Design.md` §4 (`olio.pb.style`) / §4.1 (inheritance and locking) and is pinned by `TestPbConfigPrecedence`. The still-open items under "Implementation status — 2026-08-03" (catatone first-two-scenes regression, wizard Playwright specs, `configModel.json` `style.limit`, the `sdXL_v10VAEFix.safetensors` default) are carried as KI-91.
+
 # PictureBook imaging: use one common `olio.sd.config` (+ per-scene overrides), like CardGame
 
 **Status:** implemented 2026-08-03 — see KnownIssues **KI-38** (FIXED). Outstanding items (fake-pass

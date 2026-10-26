@@ -338,7 +338,7 @@ public class SWUtil {
 			p.append("The mood is ").append(mood).append(". ");
 		}
 
-		/// MEDIUM ANCHOR, positioned where aiDocs/imageComposite.md puts it - immediately after the
+		/// MEDIUM ANCHOR, positioned where aiDocs/archive/imageComposite.md puts it - immediately after the
 		/// placement clause and before the identity demands, not trailing at the very end.
 		///
 		/// Two things were wrong here. The doc's example reads "Photorealistic, matching lighting,

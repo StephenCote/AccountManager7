@@ -1473,7 +1473,7 @@ catch(FieldException | ValueException | ModelNotFoundException e) {
 	}
 
 	/**
-	 * W2 (PictureBookWorkflowOverhaul §W2) — graph-write failure-surface PLUMBING test, with a
+	 * W2 (aiDocs/archive/PictureBookWorkflowOverhaul.md §W2) — graph-write failure-surface PLUMBING test, with a
 	 * documented, measured account of why the failure-INDUCTION path could not be exercised.
 	 *
 	 * <p><b>Intended design</b> (the anchor's "best real-induction seam"): revoke the {@code /Create}
