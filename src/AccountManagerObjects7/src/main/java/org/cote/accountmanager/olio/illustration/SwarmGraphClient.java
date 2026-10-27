@@ -5,6 +5,9 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -38,6 +41,8 @@ public class SwarmGraphClient {
 	public static final String KEY_SESSION = "session_id";
 	public static final String KEY_MODEL = "model";
 	public static final String KEY_IMAGES = "images";
+	/// Swarm's node-failure marker: "(Node 7: KSampler)"; the class may carry spaces.
+	static final Pattern NODE_FAILURE = Pattern.compile("\\(Node (\\d+): ([^)]+)\\)");
 
 	/// What the raw post returned: image paths to fetch, or an error string, or neither when the server
 	/// gave no usable response at all (unreachable).
@@ -257,5 +262,37 @@ public class SwarmGraphClient {
 		}
 		String s = String.valueOf(err).toLowerCase();
 		return s.contains("session");
+	}
+
+	/// Swarm reports a ComfyUI node failure as "... (Node <id>: <class_type>) ..." (P5-2 §6.2). When the
+	/// text matches, the result is "node <id> <class> (<role>): <text>"; the role is the placeholder tag(s)
+	/// the failing node carries in the compiled graph (scene, negative, seed, init, mask) and is omitted
+	/// when the graph is unknown or the node carries none. No match: the text as given. Never includes a
+	/// session id or request JSON - neither is in the text Swarm returns.
+	public static String parseNodeFailure(String text, ComfyGraph graph) {
+		if(text == null) {
+			return "";
+		}
+		Matcher m = NODE_FAILURE.matcher(text);
+		if(!m.find()) {
+			return text;
+		}
+		String id = m.group(1);
+		String role = null;
+		if(graph != null) {
+			Set<String> tags = graph.tagsOf(id);
+			if(!tags.isEmpty()) {
+				List<String> names = new ArrayList<>();
+				for(String t : tags) {
+					names.add(ComfyGraph.tagName(t));
+				}
+				role = String.join(",", names);
+			}
+		}
+		return "node " + id + " " + m.group(2).trim() + (role != null ? " (" + role + ")" : "") + ": " + text;
+	}
+
+	public static String parseNodeFailure(String text) {
+		return parseNodeFailure(text, null);
 	}
 }

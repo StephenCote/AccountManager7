@@ -124,10 +124,17 @@ public class TestIllustrationResources {
 		assertEquals(3.5, rc.getCfgMax(), EPS);
 		assertResolutions(rc, new int[][] {{1024, 768}, {768, 1024}, {1024, 1024}});
 		assertNotNull("flux2 declares the ACTOR_REGION inpaint block", rc.getInpaint());
-		assertEquals(4, rc.getInpaint().getSteps());
-		assertEquals(1.0, rc.getInpaint().getCreativity(), EPS);
+		/// P5-1 t02 measure-both result V3 (8 / 0.6), ratified q1
+		assertEquals(8, rc.getInpaint().getSteps());
+		assertEquals(0.6, rc.getInpaint().getCreativity(), EPS);
 		assertEquals(16, rc.getInpaint().getMaskGrow());
 		assertEquals(8, rc.getInpaint().getMaskBlur());
+		assertNotNull("flux2 BASE calibration seed", rc.getCalibrationSeed(RenderPlan.STAGE_BASE));
+		assertEquals(9.2, rc.getCalibrationSeed(RenderPlan.STAGE_BASE).doubleValue(), EPS);
+		assertNotNull("flux2 ACTOR_REGION calibration seed", rc.getCalibrationSeed(RenderPlan.STAGE_ACTOR_REGION));
+		assertEquals(13.8, rc.getCalibrationSeed(RenderPlan.STAGE_ACTOR_REGION).doubleValue(), EPS);
+		assertNull("no seed for a stage kind the family does not declare", rc.getCalibrationSeed(RenderPlan.STAGE_UPSCALE));
+		assertNull(rc.getCalibrationSeed(null));
 	}
 
 	@Test
@@ -159,6 +166,8 @@ public class TestIllustrationResources {
 		assertEquals(0.6, jug.getInpaint().getCreativity(), EPS);
 		assertEquals(16, jug.getInpaint().getMaskGrow());
 		assertEquals(8, jug.getInpaint().getMaskBlur());
+		assertEquals(1.5, jug.getCalibrationSeed(RenderPlan.STAGE_BASE).doubleValue(), EPS);
+		assertEquals(1.0, jug.getCalibrationSeed(RenderPlan.STAGE_ACTOR_REGION).doubleValue(), EPS);
 	}
 
 	@Test
@@ -232,6 +241,8 @@ public class TestIllustrationResources {
 		RendererCapabilities rc = RendererCapabilities.forModel("flux1-kontext-dev");
 		assertNotNull(rc);
 		assertNull("a family without an inpaint block cannot run ACTOR_REGION; it is not guessed", rc.getInpaint());
+		assertNull("kontext declares no calibration seed; the estimate must say it has no figure", rc.getCalibrationSeed(RenderPlan.STAGE_BASE));
+		assertNull(rc.getCalibrationSeed(RenderPlan.STAGE_ACTOR_REGION));
 	}
 
 	@Test
@@ -393,6 +404,18 @@ public class TestIllustrationResources {
 				assertEquals(p + ".inpaint.creativity", ((Number) im.get("creativity")).doubleValue(), rc.getInpaint().getCreativity(), EPS);
 				assertEquals(p + ".inpaint.maskGrow", ((Number) im.get("maskGrow")).intValue(), rc.getInpaint().getMaskGrow());
 				assertEquals(p + ".inpaint.maskBlur", ((Number) im.get("maskBlur")).intValue(), rc.getInpaint().getMaskBlur());
+			}
+			Object seed = f.get("calibrationSeed");
+			if(seed == null) {
+				assertNull(p + ".calibrationSeed.BASE", rc.getCalibrationSeed(RenderPlan.STAGE_BASE));
+				assertNull(p + ".calibrationSeed.ACTOR_REGION", rc.getCalibrationSeed(RenderPlan.STAGE_ACTOR_REGION));
+			}
+			else {
+				Map<String, Object> sm = (Map<String, Object>) seed;
+				for(Map.Entry<String, Object> e : sm.entrySet()) {
+					assertNotNull(p + ".calibrationSeed." + e.getKey(), rc.getCalibrationSeed(e.getKey()));
+					assertEquals(p + ".calibrationSeed." + e.getKey(), ((Number) e.getValue()).doubleValue(), rc.getCalibrationSeed(e.getKey()).doubleValue(), EPS);
+				}
 			}
 		}
 	}

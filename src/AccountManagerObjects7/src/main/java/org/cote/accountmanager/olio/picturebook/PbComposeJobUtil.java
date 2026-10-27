@@ -792,8 +792,8 @@ public final class PbComposeJobUtil {
 			return m;
 		}
 		for(String k : new String[] { "artifactObjectId", "nodeObjectId", "nodeStatus", "runObjectId", "reviewStatus",
-				"strategy", "stagesPlanned", "stagesRendered", "degradations", PbNodeExecutor.KEY_AUTO_APPROVED,
-				PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED, PbNodeExecutor.KEY_CONFIG_NOT_APPLIED }) {
+				"strategy", "stagesPlanned", "stagesRendered", PbNodeExecutor.KEY_STAGE_ERRORS, "degradations",
+				PbNodeExecutor.KEY_AUTO_APPROVED, PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED, PbNodeExecutor.KEY_CONFIG_NOT_APPLIED }) {
 			if(ro.get(k) != null) {
 				m.put(k, ro.get(k));
 			}

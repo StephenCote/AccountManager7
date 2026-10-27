@@ -174,6 +174,8 @@ public class SDUtil {
 
 	private void invalidateSession() {
 		sessionCache.remove(autoserver);
+		/// the version was learned with the session; a server upgraded between sessions must not keep the old one
+		versionCache.remove(autoserver);
 	}
 
 	/// The cached anonymous session for this server, minted on first use; null when the server did not

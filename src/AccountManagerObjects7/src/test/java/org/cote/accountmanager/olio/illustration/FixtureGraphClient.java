@@ -17,14 +17,16 @@ import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 
 /**
- * A {@link SwarmGraphClient} whose generator answers from the P5-0 captured fixtures
- * ({@code src/test/resources/olio/illustration/p50/*.workflow.json}) instead of the server: the fixture
- * graph is loaded and the values a real generator derives from the request are substituted in - each
+ * A {@link SwarmGraphClient} whose generator answers from the captured fixtures
+ * ({@code src/test/resources/olio/illustration/p50/*.workflow.json}, captured by P5-0 and refreshed from the
+ * live generator by {@code TestP51GraphLive.t00}) instead of the server: the fixture graph is loaded and the
+ * values a real generator derives from the request are substituted in - each
  * {@code SwarmLoadImageB64.image_base64} from the request's {@code promptimages} / {@code initimage} /
- * {@code maskimage} (raw base64, no data-URI prefix, as Swarm writes it), the prompt and negative into the
- * text encoders, {@code seed} into {@code noise_seed}, {@code steps} into the sampler and
- * {@code start_at_step} from {@code initimagecreativity}. Nothing else in the fixture changes, so the
- * patch step in {@link WorkflowCompiler} runs against the real node shapes {@code .39} produced.
+ * {@code maskimage} (raw base64, no data-URI prefix, as Swarm writes it), the prompt and negative in place of
+ * the {@link WorkflowCompiler} markers the fixture's text inputs carry, {@code seed} into {@code noise_seed},
+ * {@code steps} into the sampler and {@code start_at_step} from {@code initimagecreativity}. Nothing else in
+ * the fixture changes, so the patch step in {@link WorkflowCompiler} runs against the real node shapes
+ * {@code .39} produced.
  * <p>
  * Which fixture answers is decided by the request: {@code initimage} present selects the inpaint graph
  * for the model family, otherwise the base graph. No network: the {@link SDUtil} points at a closed port
@@ -40,9 +42,9 @@ class FixtureGraphClient extends SwarmGraphClient {
 
 	/** When set, substituted images are decoded and re-encoded so their base64 differs from the request's. */
 	private boolean reencodeImages = false;
-	/** When set, the seed marker is not written into the sampler (a generator that ignored the seed). */
+	/** When set, the sampler gets a literal seed that is not the marker (a generator that ignored the seed). */
 	private boolean dropSeed = false;
-	/** When set, the prompt marker is not written (a generator that ignored the prompt). */
+	/** When set, the scene marker is replaced by literal text instead of the request's prompt (a generator that ignored the prompt). */
 	private boolean dropPrompt = false;
 	/** When set, every save node is removed from the answer. */
 	private boolean dropSave = false;
@@ -117,29 +119,30 @@ class FixtureGraphClient extends SwarmGraphClient {
 			g.setInput(loaders.get(i), ComfyGraph.INPUT_IMAGE_BASE64, b64);
 		}
 
-		/// Prompts.
-		for(String id : g.nodesOf(WorkflowCompiler.CLASS_TEXT_ENCODE_ADVANCED)) {
-			if(!dropPrompt) {
-				g.setInput(id, "prompt", String.valueOf(params.get("prompt")));
+		/// Prompts. The generator echoes the request's prompt / negativeprompt into its text inputs, whatever
+		/// the encoder class (CLIPTextEncode.text on flux2, CLIPTextEncodeSDXL.text_g + text_l on SDXL). The
+		/// captured fixtures hold the compiler's markers there because that is what the capturing request
+		/// sent, so the echo is a literal replacement of each marker by the request value; a request without
+		/// a negative gets "" where the fixture had the negative marker.
+		String prompt = (dropPrompt ? "a generator that ignored the prompt" : String.valueOf(params.get("prompt")));
+		String negative = (params.containsKey("negativeprompt") ? String.valueOf(params.get("negativeprompt")) : "");
+		for(String id : g.nodeIds()) {
+			Map<String, Object> in = g.inputs(id);
+			for(Map.Entry<String, Object> e : new ArrayList<>(in.entrySet())) {
+				if(e.getValue() instanceof String) {
+					String s = (String) e.getValue();
+					in.put(e.getKey(), s.replace(WorkflowCompiler.MARKER_SCENE, prompt).replace(WorkflowCompiler.MARKER_NEGATIVE, negative));
+				}
 			}
-			if(params.containsKey("steps")) {
-				g.setInput(id, "steps", params.get("steps"));
-			}
-		}
-		List<String> clip = g.nodesOf(WorkflowCompiler.CLASS_TEXT_ENCODE);
-		if(g.nodesOf(WorkflowCompiler.CLASS_TEXT_ENCODE_ADVANCED).isEmpty() && !clip.isEmpty()) {
-			if(!dropPrompt) {
-				g.setInput(clip.get(0), "text", String.valueOf(params.get("prompt")));
-			}
-			clip = clip.subList(1, clip.size());
-		}
-		for(String id : clip) {
-			g.setInput(id, "text", params.containsKey("negativeprompt") ? String.valueOf(params.get("negativeprompt")) : "");
 		}
 
-		/// Sampler literals.
+		/// Sampler literals. The fixture's noise_seed is already the marker (the capturing request sent it), so a
+		/// generator that ignored the seed is simulated by writing some other literal, not by leaving it alone.
 		for(String id : g.nodesOf(WorkflowCompiler.CLASS_KSAMPLER)) {
-			if(!dropSeed && params.get("seed") instanceof Number) {
+			if(dropSeed) {
+				g.setInput(id, WorkflowCompiler.INPUT_NOISE_SEED, Long.valueOf(WorkflowCompiler.MARKER_SEED + 1L));
+			}
+			else if(params.get("seed") instanceof Number) {
 				g.setInput(id, WorkflowCompiler.INPUT_NOISE_SEED, Long.valueOf(((Number) params.get("seed")).longValue()));
 			}
 			int steps = (params.get("steps") instanceof Number ? ((Number) params.get("steps")).intValue() : 0);

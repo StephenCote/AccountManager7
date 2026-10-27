@@ -25,9 +25,12 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.illustration.ComfyGraph;
+import org.cote.accountmanager.olio.illustration.GraphInputs;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
+import org.cote.accountmanager.olio.illustration.WorkflowCompiler;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
@@ -78,6 +81,9 @@ import org.junit.Test;
  *     {@code renderPlan}, which {@code nodeView} still exposes. The scene was never composed, so render 1
  *     reports exactly one {@code COMPOSED_OUT_OF_ORDER} degradation (P4-4 lazy fallback) and render 2
  *     reports none. Two real renders.</li>
+ * <li>{@link #baseReferenceNamesSurviveSwarmReduction} (P5-2, §38.1): the executor's BASE reference names
+ *     stay distinct under Swarm's letters-only key reduction, beside {@code location} / {@code init} /
+ *     {@code mask}; the {@code actor1} / {@code actor2} naming this replaced is shown to be refused. No DB, no SD.</li>
  * </ol>
  * SD-gated cases skip visibly through {@link SdTestGate} when {@code .39} is unreachable or lists no
  * usable checkpoint; a skip is reported as a skip, never counted as a pass.
@@ -821,6 +827,52 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 		}
 		finally {
 			cleanup(f);
+		}
+	}
+
+	/// P5-2 (design §38.1): the executor names its BASE references so they stay distinct under Swarm's
+	/// letters-only key reduction. Found live by TestP52SequentialInpaintLive t01-t04 - `actor1` / `actor2`
+	/// both reduce to `...imageactor` and GraphInputs refused the second before any render. No DB, no SD.
+	@Test
+	public void baseReferenceNamesSurviveSwarmReduction() {
+		byte[] png = { (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+		Set<String> reduced = new HashSet<>();
+		GraphInputs inputs = new GraphInputs();
+		for(int i = 0; i < PbNodeExecutor.MAX_REFERENCE_NAMES; i++) {
+			String name = PbNodeExecutor.referenceName(i);
+			assertTrue("tag name shape: " + name, name.matches("[A-Za-z0-9_]+"));
+			String key = ComfyGraph.inputKey(ComfyGraph.TYPE_IMAGE, name);
+			assertTrue("reference " + i + " (" + name + ") reduces to a key already taken: " + ComfyGraph.swarmKey(key),
+				reduced.add(ComfyGraph.swarmKey(key)));
+			inputs.image(name, png);
+		}
+		assertEquals("actora", PbNodeExecutor.referenceName(0));
+		assertEquals("actorz", PbNodeExecutor.referenceName(25));
+		for(String fixed : new String[] { "location", WorkflowCompiler.TAG_INIT, WorkflowCompiler.TAG_MASK }) {
+			String key = ComfyGraph.inputKey(ComfyGraph.TYPE_IMAGE, fixed);
+			assertTrue(fixed + " collides with an actor reference", reduced.add(ComfyGraph.swarmKey(key)));
+			inputs.image(fixed, png);
+		}
+		assertEquals(PbNodeExecutor.MAX_REFERENCE_NAMES + 3, inputs.imageCount());
+
+		/// Past the last letter the helper names the limit instead of producing a tag the graph would reject.
+		for(int bad : new int[] { -1, PbNodeExecutor.MAX_REFERENCE_NAMES }) {
+			try {
+				String name = PbNodeExecutor.referenceName(bad);
+				fail("index " + bad + " yielded " + name);
+			}
+			catch(IllegalArgumentException e) {
+				assertTrue(e.getMessage(), e.getMessage().contains("letter-suffixed"));
+			}
+		}
+
+		/// Control: the naming this replaces is refused, so the case discriminates.
+		try {
+			new GraphInputs().image("actor1", png).image("actor2", png);
+			fail("actor1 / actor2 reduce to one Swarm key and must be refused");
+		}
+		catch(IllegalArgumentException e) {
+			assertTrue(e.getMessage(), e.getMessage().contains("collides"));
 		}
 	}
 }

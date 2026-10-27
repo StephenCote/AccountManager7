@@ -292,6 +292,22 @@ public class OlioFieldNames {
 	public static final String FIELD_SD_DENOISING_STRENGTH = "denoisingStrength";
 	public static final String FIELD_SD_LORAS = "loras";
 
+	// Render timing calibration (olio.sd.calibration, P5-2 §4.1)
+	public static final String FIELD_SD_CAL_SERVER = "server";
+	public static final String FIELD_SD_CAL_FAMILY = "family";
+	public static final String FIELD_SD_CAL_STAGE = "stage";
+	public static final String FIELD_SD_CAL_GRAPH_HASH = "graphHash";
+	public static final String FIELD_SD_CAL_SWARM_VERSION = "swarmVersion";
+	public static final String FIELD_SD_CAL_SECONDS_PER_STEP_PER_MEGAPIXEL = "secondsPerStepPerMegapixel";
+	public static final String FIELD_SD_CAL_SAMPLE_COUNT = "sampleCount";
+	public static final String FIELD_SD_CAL_LAST_DURATION_MS = "lastDurationMs";
+	public static final String FIELD_SD_CAL_LAST_STEPS = "lastSteps";
+	public static final String FIELD_SD_CAL_LAST_WIDTH = "lastWidth";
+	public static final String FIELD_SD_CAL_LAST_HEIGHT = "lastHeight";
+	public static final String FIELD_SD_CAL_LAST_REFERENCES = "lastReferences";
+	public static final String FIELD_SD_CAL_SEEDED = "seeded";
+	public static final String FIELD_SD_CAL_LAST_SAMPLE_AT = "lastSampleAt";
+
 	// PictureBook 2 persisted graph (olio.pb.*)
 	public static final String FIELD_PB_SLUG = "slug";
 	public static final String FIELD_PB_WORLD = "world";

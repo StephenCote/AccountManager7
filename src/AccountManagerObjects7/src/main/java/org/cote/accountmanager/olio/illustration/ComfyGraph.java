@@ -213,6 +213,16 @@ public final class ComfyGraph {
 		return out;
 	}
 
+	/// The tags present in one node's own input values (empty when the node does not exist or carries none).
+	public Set<String> tagsOf(String id) {
+		Set<String> out = new LinkedHashSet<>();
+		Map<String, Object> n = nodes.get(id);
+		if(n != null) {
+			collectTags(n.get(FIELD_INPUTS), out);
+		}
+		return out;
+	}
+
 	@SuppressWarnings("unchecked")
 	private static void collectTags(Object v, Set<String> out) {
 		if(v instanceof String) {
@@ -341,6 +351,21 @@ public final class ComfyGraph {
 	/// `${comfyrawworkflowinput<type><name>}` - the value placed in the graph.
 	public static String tag(String type, String name) {
 		return "${" + inputKey(type, name) + "}";
+	}
+
+	/// The `<name>` of an input key (`comfyrawworkflowinputtextscene` -> `scene`); the key as given when
+	/// it is not one. The type is matched longest-first so `image` + marker strips before `integer`'s prefix could.
+	public static String tagName(String inputKey) {
+		if(inputKey == null || !inputKey.startsWith(INPUT_KEY_PREFIX)) {
+			return inputKey;
+		}
+		String rest = inputKey.substring(INPUT_KEY_PREFIX.length());
+		for(String t : new String[] {TYPE_IMAGE + IMAGE_KEY_MARKER, TYPE_INTEGER, TYPE_DECIMAL, TYPE_BOOLEAN, TYPE_MODEL, TYPE_TEXT, TYPE_SEED}) {
+			if(rest.startsWith(t) && rest.length() > t.length()) {
+				return rest.substring(t.length());
+			}
+		}
+		return inputKey;
 	}
 
 	/// The key as Swarm matches it (`T2IParamTypes.CleanTypeName`): ASCII-lowercased, letters only. So

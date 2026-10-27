@@ -18,6 +18,7 @@ public class OperationUtil {
 
 	private static Map<String,Class<?>> operations = new ConcurrentHashMap<>();
 	private static Map<String,IOperation> operationInst = new ConcurrentHashMap<>();
+	private static Map<String,Object[]> operationIo = new ConcurrentHashMap<>();
 	
 	public static IOperation getOperationInstance(String className, IReader reader, ISearch search){
 		Class<?> cls = getOperation(className);
@@ -27,10 +28,15 @@ public class OperationUtil {
 			return null;
 		}
 		
-		if(operationInst.containsKey(className)) return operationInst.get(className);
+		/// An instance outliving the IOContext it was built for keeps answering from that context's closed
+		/// (and no longer invalidated) search cache - OwnerOperation then reports a stale ownerId after
+		/// IOSystem is reset in the same JVM. Rebuild whenever the reader or search differs.
+		Object[] io = operationIo.get(className);
+		if(operationInst.containsKey(className) && io != null && io[0] == reader && io[1] == search) return operationInst.get(className);
 		try {
 			oper = (IOperation)cls.getDeclaredConstructor(IReader.class, ISearch.class).newInstance(reader, search);
 			operationInst.put(className, oper);
+			operationIo.put(className, new Object[] { reader, search });
 
 		} catch (InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException e) {
 			

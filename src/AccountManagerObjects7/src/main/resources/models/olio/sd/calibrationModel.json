@@ -1,0 +1,83 @@
+{
+	"name": "olio.sd.calibration",
+	"inherits": ["data.directory"],
+	"query": ["id", "groupId", "objectId", "ownerId", "organizationId", "urn", "name", "server", "family", "stage", "secondsPerStepPerMegapixel", "sampleCount", "seeded", "lastSampleAt"],
+	"group": "SD Calibration",
+
+	"hints": ["name"],
+	"description": "Per-server render timing calibration (PictureBook V3 design §34 Q14 (b), P5-2 §4): the EWMA of seconds per step per megapixel for one server + model family + stage kind, written as the requesting user from the executor's completed stages (never the org admin) into that user's ~/Illustration/Calibration, and read find-only (absent means the capabilities seed). name = calibration:<family>:<stage>:<host:port> so find-by-name is exact. 'Has it been measured' is keyed on seeded / sampleCount, never on lastSampleAt (a timestamp column gets 'default now()' on the boot patch).",
+	"fields": [
+		{
+			"name": "server",
+			"type": "string",
+			"maxLength": 128,
+			"description": "host:port of the Swarm URL the figure was measured on."
+		},
+		{
+			"name": "family",
+			"type": "string",
+			"maxLength": 64,
+			"description": "The capabilities family pattern (e.g. flux2*)."
+		},
+		{
+			"name": "stage",
+			"type": "string",
+			"maxLength": 32,
+			"description": "The stage kind: RenderPlan.STAGE_BASE or STAGE_ACTOR_REGION."
+		},
+		{
+			"name": "graphHash",
+			"type": "string",
+			"maxLength": 64,
+			"description": "sha-256 of the compiled graph (minus seed and prompt) of the last sample."
+		},
+		{
+			"name": "swarmVersion",
+			"type": "string",
+			"maxLength": 64,
+			"description": "The Swarm version the last sample was measured under."
+		},
+		{
+			"name": "secondsPerStepPerMegapixel",
+			"type": "double",
+			"description": "The EWMA (alpha 0.3) of seconds per step per megapixel."
+		},
+		{
+			"name": "sampleCount",
+			"type": "int",
+			"description": "How many samples have been folded into the figure."
+		},
+		{
+			"name": "lastDurationMs",
+			"type": "long"
+		},
+		{
+			"name": "lastSteps",
+			"type": "int",
+			"description": "Effective steps of the last sample (for ACTOR_REGION: steps minus start_at_step)."
+		},
+		{
+			"name": "lastWidth",
+			"type": "int"
+		},
+		{
+			"name": "lastHeight",
+			"type": "int"
+		},
+		{
+			"name": "lastReferences",
+			"type": "int",
+			"description": "Reference images sent with the last sample."
+		},
+		{
+			"name": "seeded",
+			"type": "boolean",
+			"description": "True while the figure is still the capabilities seed; false once a measured sample has been folded in."
+		},
+		{
+			"name": "lastSampleAt",
+			"type": "timestamp",
+			"description": "When the last sample was folded. Never a null test for 'measured' - see the model description."
+		}
+	]
+}

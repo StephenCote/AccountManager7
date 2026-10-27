@@ -26,7 +26,6 @@ import org.cote.accountmanager.olio.illustration.DeploymentModelDefaults;
 import org.cote.accountmanager.olio.illustration.ModelInventory;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
-import org.cote.accountmanager.olio.illustration.RenderCalibration;
 import org.cote.accountmanager.olio.illustration.RenderEstimate;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
@@ -35,6 +34,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.PbCalibrationUtil;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -2767,8 +2767,7 @@ public class PbServiceFacade {
 
 		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(user, book, scene, opts, apiType, sdServer);
 		Map<String, Object> out = new LinkedHashMap<>(plan.toMap());
-		RenderPlan.ModelPick base = plan.pickForStage(RenderPlan.STAGE_BASE);
-		out.put("estimate", RenderEstimate.estimate(plan, RenderCalibration.sample(sdServer, base != null ? base.getFamily() : null)));
+		out.put("estimate", RenderEstimate.estimate(plan, PbCalibrationUtil.samplesFor(user, sdServer, plan)));
 		out.put("contentHash", plan.contentHash());
 		out.put("planSummary", plan.actorSummary());
 		return out;

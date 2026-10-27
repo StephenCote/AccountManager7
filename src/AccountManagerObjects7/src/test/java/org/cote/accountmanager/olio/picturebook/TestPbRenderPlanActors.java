@@ -15,12 +15,15 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
@@ -32,7 +35,12 @@ import org.cote.accountmanager.olio.CivilUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
+import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
+import org.cote.accountmanager.olio.illustration.RendererCapabilities;
+import org.cote.accountmanager.olio.illustration.StrategySelector;
+import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.CastTier;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.PromoteResult;
@@ -54,9 +62,13 @@ import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
 import org.cote.accountmanager.schema.type.PbImportanceEnumType;
 import org.cote.accountmanager.schema.type.PbLocationKindEnumType;
+import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
+import org.cote.accountmanager.schema.type.PbStrategyEnumType;
+import org.cote.accountmanager.schema.type.PbStyleScopeEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -86,6 +98,16 @@ public class TestPbRenderPlanActors extends BaseTest {
 	private static final String COMP_OVERRIDE = "p47 composition prompt override " + UUID.randomUUID();
 	private static final String CALLER_OVERRIDE = "p47 caller prompt override " + UUID.randomUUID();
 	private static final String SETTING = "a rain-dark harbour street at dusk";
+	/// P5-2 case04: one pinned checkpoint per capabilities.json family, each on its own (never contacted) server
+	/// whose inventory is seeded in-JVM, so the family alone decides slots, masks and the INPAINT pick.
+	private static final String FLUX2_SERVER = "http://p52-flux2.invalid:1";
+	private static final String SDXL_SERVER = "http://p52-sdxl.invalid:1";
+	private static final String KONTEXT_SERVER = "http://p52-kontext.invalid:1";
+	private static final String FLUX2_MODEL = "flux2Klein_p52.safetensors";
+	private static final String SDXL_MODEL = "p52Scene_sdxl.safetensors";
+	private static final String KONTEXT_MODEL = "p52_kontext.safetensors";
+	private static final String STYLE_PATH = "~/p52styles";
+	private static final String[] CAST = new String[] { "Ilsa Varne", "Tobin Reske", "Mara Quill", "Dov Halloran" };
 
 	@Before
 	public void setupEach() throws Exception {
@@ -385,6 +407,243 @@ public class TestPbRenderPlanActors extends BaseTest {
 		}
 	}
 
+	/**
+	 * P5-2 T3 (addendum 8): four approved, readable portraits on a scene with no location reference. flux2 caps
+	 * (3 slots, masks, inpaint) -> priorities 0-2 BASE, the 4th ACTOR_REGION with its own compiled
+	 * {@code ACTOR_REGION#actor} key (no bare {@code ACTOR_REGION}), a resolved INPAINT pick and SEQUENTIAL_INPAINT;
+	 * the same 4th actor without a box (R4) is {@code ACTOR_TEXT_ONLY "reference limit 3; no box for a region
+	 * pass"} under DIRECT_REFERENCE. sdxl caps (0 slots, masks, inpaint) -> ACTOR_REGION for all four. kontext
+	 * (disabled family) -> no pick resolves, so no actor is referenced and the plan is TEXT_ONLY carrying the
+	 * resolver's MODEL_SUBSTITUTED degradation.
+	 */
+	@Test
+	public void case04_overflowBecomesActorRegionOnMaskFamily() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = newBook(u, "d");
+		List<BaseRecord> styles = new ArrayList<>();
+		try {
+			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+			BookContext bctx = bookContext(u, bk);
+			BaseRecord popGroup = bctx.getGroup(OlioFieldNames.FIELD_POPULATION);
+			String popPath = bctx.getGroupPath(OlioFieldNames.FIELD_POPULATION);
+			BaseRecord scene = addScene(u, bk, 0, "Quayside", SETTING, null, null);
+			String[] charOids = new String[CAST.length];
+			long[] charIds = new long[CAST.length];
+			for(int i = 0; i < CAST.length; i++) {
+				charOids[i] = createCharPersonIn(u, popGroup, popPath, CAST[i] + " " + shortId());
+				BaseRecord cp = readChar(u, charOids[i]);
+				charIds[i] = idOf(cp);
+				giveNarrative(u, cp, SUPP_PHYS, null);
+				enrol(u, scene, cp);
+			}
+			BaseRecord book = PbBookUtil.readBook(u, oidOf(bk), orgId);
+			for(int i = 0; i < CAST.length; i++) {
+				approvedPortraitFor(u, book, slug, charOids[i], 0x204060 + i * 0x101010);
+			}
+			ComposeResult cr = PbComposeUtil.composeMigrated(u, book, scene, false);
+			assertTrue("MIGRATED composition written: " + cr.failureReason, cr.isWritten());
+			BaseRecord comp = PbComposeUtil.readComposition(u, oidOf(cr.composition), orgId);
+			List<BaseRecord> rows = PbComposeUtil.listActors(u, comp);
+			assertEquals("four actor rows", CAST.length, rows.size());
+			for(int i = 0; i < CAST.length; i++) {
+				placeActor(u, rowByCharacter(rows, charIds[i]), i, 0.04 + i * 0.24, 0.2, 0.2, 0.6);
+			}
+			BaseRecord freshScene = PbBookUtil.readScene(u, oidOf(scene), orgId);
+
+			/// flux2: 3 slots. R4 first - the overflow actor with no box cannot take a region pass.
+			seedInventory(FLUX2_SERVER, List.of(FLUX2_MODEL));
+			styles.add(pinBookStyle(u, bk, "flux2", FLUX2_MODEL));
+			placeActor(u, rowByCharacter(PbComposeUtil.listActors(u, comp), charIds[3]), 3, 0, 0, 0, 0);
+			RenderPlan noBox = PbRenderPlanUtil.buildScenePlan(u, PbBookUtil.readBook(u, oidOf(bk), orgId), freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, FLUX2_SERVER);
+			log("flux2/no-box strategy=" + noBox.getStrategy().getName() + " reason=" + noBox.getStrategy().getReason() + " degradations=" + noBox.getDegradations());
+			assertEquals("flux2 BASE pick", FLUX2_MODEL, noBox.pickForStage(RenderPlan.STAGE_BASE).getModel());
+			assertTrue("flux2 INPAINT pick resolved", noBox.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.INPAINT)).isResolved());
+			assertEquals("flux2/no-box strategy", PbStrategyEnumType.DIRECT_REFERENCE, noBox.getStrategy().getName());
+			for(int i = 0; i < 3; i++) {
+				RenderPlan.Actor a = actorByCharacter(noBox.getActors(), charOids[i]);
+				assertTrue(a.getName() + " referenced", a.isReferenced());
+				assertEquals(a.getName() + " BASE", RenderPlan.STAGE_BASE, a.getReferenceStage());
+			}
+			RenderPlan.Actor fourth = actorByCharacter(noBox.getActors(), charOids[3]);
+			assertFalse("no box: not referenced", fourth.isReferenced());
+			assertNull("no box: no reference stage", fourth.getReferenceStage());
+			assertNull("no box on the actor", fourth.getBox());
+			expectOne(noBox, RenderPlan.Degradation.ACTOR_TEXT_ONLY, fourth.getActorId(), fourth.getName() + " rendered from description (reference limit 3; no box for a region pass)");
+			assertFalse("no ACTOR_REGION stage without a region actor", noBox.getStrategy().getStages().contains(RenderPlan.STAGE_ACTOR_REGION));
+
+			placeActor(u, rowByCharacter(PbComposeUtil.listActors(u, comp), charIds[3]), 3, 0.76, 0.2, 0.2, 0.6);
+			RenderPlan flux2 = PbRenderPlanUtil.buildScenePlan(u, PbBookUtil.readBook(u, oidOf(bk), orgId), freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, FLUX2_SERVER);
+			log("flux2 strategy=" + flux2.getStrategy().getName() + " reason=" + flux2.getStrategy().getReason() + " compiled=" + flux2.getCompiled().keySet() + " degradations=" + flux2.getDegradations());
+			assertEquals("flux2 strategy", PbStrategyEnumType.SEQUENTIAL_INPAINT, flux2.getStrategy().getName());
+			assertEquals("flux2 stages", Arrays.asList(RenderPlan.STAGE_BASE, RenderPlan.STAGE_ACTOR_REGION), flux2.getStrategy().getStages().subList(0, 2));
+			for(int i = 0; i < 3; i++) {
+				RenderPlan.Actor a = actorByCharacter(flux2.getActors(), charOids[i]);
+				assertTrue(a.getName() + " referenced", a.isReferenced());
+				assertEquals(a.getName() + " BASE", RenderPlan.STAGE_BASE, a.getReferenceStage());
+				assertNotNull(a.getName() + " portrait", a.getIdentity().getPortraitArtifactId());
+			}
+			RenderPlan.Actor region = actorByCharacter(flux2.getActors(), charOids[3]);
+			assertTrue("4th referenced", region.isReferenced());
+			assertEquals("4th ACTOR_REGION", RenderPlan.STAGE_ACTOR_REGION, region.getReferenceStage());
+			assertNotNull("4th box", region.getBox());
+			String regionKey = RenderPlan.actorStageKey(RenderPlan.STAGE_ACTOR_REGION, region.getActorId());
+			assertTrue("compiled " + regionKey + " in " + flux2.getCompiled().keySet(), flux2.getCompiled().containsKey(regionKey));
+			assertNotNull("compiledForActor", flux2.compiledForActor(RenderPlan.STAGE_ACTOR_REGION, region.getActorId()));
+			assertFalse("no bare ACTOR_REGION key (addendum 7)", flux2.getCompiled().containsKey(RenderPlan.STAGE_ACTOR_REGION));
+			assertEquals("one ACTOR_REGION key", 1, flux2.getCompiled().keySet().stream().filter(k -> k.startsWith(RenderPlan.STAGE_ACTOR_REGION + "#")).count());
+			assertEquals("ACTOR_REGION pick is the INPAINT pick", FLUX2_MODEL, flux2.pickForStage(RenderPlan.STAGE_ACTOR_REGION).getModel());
+			assertNoActorDegradation(flux2);
+			assertEquals("summary", "4 characters: 4 referenced, 0 text", flux2.actorSummary());
+
+			/// sdxl: 0 slots, masks + inpaint -> every actor takes a region pass
+			seedInventory(SDXL_SERVER, List.of(SDXL_MODEL));
+			styles.add(pinBookStyle(u, bk, "sdxl", SDXL_MODEL));
+			RenderPlan sdxl = PbRenderPlanUtil.buildScenePlan(u, PbBookUtil.readBook(u, oidOf(bk), orgId), freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, SDXL_SERVER);
+			log("sdxl strategy=" + sdxl.getStrategy().getName() + " reason=" + sdxl.getStrategy().getReason() + " compiled=" + sdxl.getCompiled().keySet() + " degradations=" + sdxl.getDegradations());
+			assertEquals("sdxl BASE pick", SDXL_MODEL, sdxl.pickForStage(RenderPlan.STAGE_BASE).getModel());
+			assertEquals("sdxl strategy", PbStrategyEnumType.SEQUENTIAL_INPAINT, sdxl.getStrategy().getName());
+			assertTrue("sdxl reason says the passes carry no portrait: " + sdxl.getStrategy().getReason(),
+				sdxl.getStrategy().getReason().endsWith(StrategySelector.REASON_REGION_TEXT_ONLY_SUFFIX));
+			assertFalse("flux2 reason carries no such suffix: " + flux2.getStrategy().getReason(),
+				flux2.getStrategy().getReason().contains(StrategySelector.REASON_REGION_TEXT_ONLY_SUFFIX));
+			for(int i = 0; i < CAST.length; i++) {
+				RenderPlan.Actor a = actorByCharacter(sdxl.getActors(), charOids[i]);
+				assertTrue(a.getName() + " referenced", a.isReferenced());
+				assertEquals(a.getName() + " ACTOR_REGION", RenderPlan.STAGE_ACTOR_REGION, a.getReferenceStage());
+				assertTrue("compiled for " + a.getName(), sdxl.getCompiled().containsKey(RenderPlan.actorStageKey(RenderPlan.STAGE_ACTOR_REGION, a.getActorId())));
+			}
+			assertFalse("no bare ACTOR_REGION key", sdxl.getCompiled().containsKey(RenderPlan.STAGE_ACTOR_REGION));
+			assertNoActorDegradation(sdxl);
+
+			/// kontext: disabled family -> nothing resolves, caps unknown, no actor referenced
+			seedInventory(KONTEXT_SERVER, List.of(KONTEXT_MODEL));
+			assertEquals("precondition: kontext is a disabled family", ModelResolver.Reason.FAMILY_DISABLED,
+				ModelResolver.supportsTask(RendererCapabilities.forModel(KONTEXT_MODEL), PbModelTaskEnumType.LOCATION, false));
+			styles.add(pinBookStyle(u, bk, "kontext", KONTEXT_MODEL));
+			RenderPlan kontext = PbRenderPlanUtil.buildScenePlan(u, PbBookUtil.readBook(u, oidOf(bk), orgId), freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, KONTEXT_SERVER);
+			log("kontext strategy=" + kontext.getStrategy().getName() + " reason=" + kontext.getStrategy().getReason() + " models=" + kontext.getModels() + " degradations=" + kontext.getDegradations());
+			assertEquals("kontext strategy", PbStrategyEnumType.TEXT_ONLY, kontext.getStrategy().getName());
+			assertEquals("kontext reason", StrategySelector.REASON_NO_REFERENCED_ACTORS, kontext.getStrategy().getReason());
+			assertFalse("kontext LOCATION pick unresolved", kontext.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.LOCATION)).isResolved());
+			assertFalse("kontext INPAINT pick unresolved", kontext.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.INPAINT)).isResolved());
+			assertTrue("kontext: no actor referenced", kontext.getActors().stream().noneMatch(RenderPlan.Actor::isReferenced));
+			assertTrue("kontext: MODEL_SUBSTITUTED reported: " + kontext.getDegradations(),
+				kontext.getDegradations().stream().anyMatch(d -> RenderPlan.Degradation.MODEL_SUBSTITUTED.equals(d.getCode())));
+			assertTrue("kontext: no ACTOR_REGION compiled", kontext.getCompiled().keySet().stream().noneMatch(k -> k.startsWith(RenderPlan.STAGE_ACTOR_REGION)));
+			log("case04 done");
+		}
+		finally {
+			SwarmModelInventory.invalidate(FLUX2_SERVER);
+			SwarmModelInventory.invalidate(SDXL_SERVER);
+			SwarmModelInventory.invalidate(KONTEXT_SERVER);
+			deleteBook(u, bk);
+			for(BaseRecord s : styles) {
+				try {
+					log("cleanup style " + s.get(FieldNames.FIELD_NAME) + ": " + ioContext.getAccessPoint().delete(u, s));
+				}
+				catch(Exception e) {
+					logger.error("cleanup of style failed", e);
+				}
+			}
+		}
+	}
+
+	/**
+	 * P5-2 addendum finding 1: an approved portrait whose {@code data.data} the planner cannot read degrades at plan
+	 * time - {@code ACTOR_TEXT_ONLY "(portrait not readable)"}, never referenced - instead of surfacing at render. The
+	 * artifact itself stays listable (the chain read is a list, not a per-record read); only its bytes record is moved
+	 * into another user's private group, test-side, and moved back before cleanup.
+	 */
+	@Test
+	public void case05_unreadablePortraitIsTextOnlyAtPlanTime() throws Exception {
+		BaseRecord u = user();
+		BaseRecord u2 = user(SECOND_USER);
+		long orgId = orgOf(u);
+		BaseRecord bk = newBook(u, "e");
+		BaseRecord dataRow = null;
+		Long homeGroupId = null;
+		BaseRecord ghostGroup = null;
+		try {
+			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+			BookContext bctx = bookContext(u, bk);
+			BaseRecord popGroup = bctx.getGroup(OlioFieldNames.FIELD_POPULATION);
+			String popPath = bctx.getGroupPath(OlioFieldNames.FIELD_POPULATION);
+			BaseRecord scene = addScene(u, bk, 0, "Dockside", SETTING, null, null);
+			String heroOid = createCharPersonIn(u, popGroup, popPath, CAST[0] + " " + shortId());
+			BaseRecord hero = readChar(u, heroOid);
+			giveNarrative(u, hero, HERO_PHYS, null);
+			enrol(u, scene, hero);
+			BaseRecord book = PbBookUtil.readBook(u, oidOf(bk), orgId);
+			BaseRecord art = approvedPortraitFor(u, book, slug, heroOid, 0x336699);
+			ComposeResult cr = PbComposeUtil.composeMigrated(u, book, scene, false);
+			assertTrue("MIGRATED composition written: " + cr.failureReason, cr.isWritten());
+			BaseRecord freshScene = PbBookUtil.readScene(u, oidOf(scene), orgId);
+			seedInventory(FLUX2_SERVER, List.of(FLUX2_MODEL));
+			BaseRecord style = pinBookStyle(u, bk, "flux2", FLUX2_MODEL);
+			try {
+				RenderPlan readable = PbRenderPlanUtil.buildScenePlan(u, PbBookUtil.readBook(u, oidOf(bk), orgId), freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, FLUX2_SERVER);
+				RenderPlan.Actor before = actorByCharacter(readable.getActors(), heroOid);
+				assertTrue("precondition: referenced while the portrait is readable: " + readable.getDegradations(), before.isReferenced());
+				assertEquals("precondition: BASE", RenderPlan.STAGE_BASE, before.getReferenceStage());
+				assertEquals("precondition: strategy", PbStrategyEnumType.DIRECT_REFERENCE, readable.getStrategy().getName());
+
+				BaseRecord stub = PbArtifactUtil.readArtifact(u, oidOf(art), orgId).get(OlioFieldNames.FIELD_PB_DATA);
+				assertNotNull("artifact data stub", stub);
+				dataRow = readData(u, oidOf(stub), orgId);
+				assertNotNull("portrait data readable before the move", dataRow);
+				homeGroupId = dataRow.get(FieldNames.FIELD_GROUP_ID);
+				assertEquals("precondition: testUser1 owns the portrait data", idOf(u), ((Number) dataRow.get(FieldNames.FIELD_OWNER_ID)).longValue());
+				ghostGroup = ioContext.getPathUtil().makePath(u2, ModelNames.MODEL_GROUP, "~/p52ghost", GroupEnumType.DATA.toString(), orgId);
+				assertNotNull("testUser2 private group", ghostGroup);
+				moveData(dataRow, idOf(ghostGroup), idOf(u2));
+				assertNull("portrait data no longer readable by testUser1 (precondition)", readData(u, oidOf(stub), orgId));
+				/// The planner's chain read (approvedPortrait -> listChain) still lists the artifact: a per-record find
+				/// (readArtifact) is denied through the data followReference, a list is not (model-api.md).
+				BaseRecord pNode = PbPipelineUtil.findNodeByHandle(u, PbGraphUtil.findWorkflow(u, book), PbPipelineUtil.portraitHandle(heroOid));
+				assertNotNull("portrait node", pNode);
+				assertTrue("the artifact itself is still in the listed chain",
+					PbArtifactUtil.listChain(u, pNode, PbPipelineUtil.ROLE_PORTRAIT).stream().anyMatch(x -> oidOf(art).equals(oidOf(x))));
+				assertNull("a per-record read of the artifact is denied through the data reference", PbArtifactUtil.readArtifact(u, oidOf(art), orgId));
+
+				RenderPlan plan = PbRenderPlanUtil.buildScenePlan(u, PbBookUtil.readBook(u, oidOf(bk), orgId), freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, FLUX2_SERVER);
+				log("unreadable strategy=" + plan.getStrategy().getName() + " reason=" + plan.getStrategy().getReason() + " degradations=" + plan.getDegradations());
+				RenderPlan.Actor a = actorByCharacter(plan.getActors(), heroOid);
+				assertFalse("not referenced", a.isReferenced());
+				assertNull("no reference stage", a.getReferenceStage());
+				assertEquals("the approved portrait is still named on the identity", oidOf(art), a.getIdentity().getPortraitArtifactId());
+				expectOne(plan, RenderPlan.Degradation.ACTOR_TEXT_ONLY, a.getActorId(), a.getName() + " rendered from description (portrait not readable)");
+				assertEquals("strategy", PbStrategyEnumType.TEXT_ONLY, plan.getStrategy().getName());
+				assertEquals("reason", StrategySelector.REASON_NO_REFERENCED_ACTORS, plan.getStrategy().getReason());
+				assertEquals("summary", "1 characters: 0 referenced, 1 text", plan.actorSummary());
+				log("case05 done");
+			}
+			finally {
+				SwarmModelInventory.invalidate(FLUX2_SERVER);
+				if(dataRow != null && homeGroupId != null) {
+					moveData(dataRow, homeGroupId, idOf(u));
+				}
+				try {
+					log("cleanup style: " + ioContext.getAccessPoint().delete(u, style));
+				}
+				catch(Exception e) {
+					logger.error("cleanup of style failed", e);
+				}
+				if(ghostGroup != null) {
+					try {
+						log("cleanup ~/p52ghost: " + ioContext.getAccessPoint().delete(u2, ghostGroup));
+					}
+					catch(Exception e) {
+						logger.error("cleanup of ~/p52ghost failed", e);
+					}
+				}
+			}
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
 	// ─────────────────────────────── plan lookups ───────────────────────────────
 
 	private static RenderPlan.Actor actorByCharacter(List<RenderPlan.Actor> actors, String charOid) {
@@ -436,7 +695,118 @@ public class TestPbRenderPlanActors extends BaseTest {
 		assertEquals(code + " stage", RenderPlan.STAGE_BASE, hits.get(0).getStage());
 	}
 
+	private static void assertNoActorDegradation(RenderPlan plan) {
+		assertTrue("no ACTOR_* degradation: " + plan.getDegradations(),
+			plan.getDegradations().stream().noneMatch(d -> d.getCode() != null && d.getCode().startsWith("ACTOR_")));
+	}
+
+	private static BaseRecord rowByCharacter(List<BaseRecord> rows, long charId) {
+		for(BaseRecord r : rows) {
+			if(fkId(r, OlioFieldNames.FIELD_PB_CHARACTER) == charId) {
+				return r;
+			}
+		}
+		fail("no actor row for character #" + charId);
+		return null;
+	}
+
 	// ─────────────────────────────── fixtures ───────────────────────────────
+
+	/** Explicit priority and box on a composed actor row; w = h = 0 is "no box" ({@code PbRenderPlanUtil.boxOf}). */
+	private void placeActor(BaseRecord u, BaseRecord row, int priority, double x, double y, double w, double h) throws Exception {
+		BaseRecord patch = PbGraphUtil.patchOf(row, OlioModelNames.MODEL_PB_SCENE_ACTOR, OlioFieldNames.FIELD_PB_PRIORITY,
+			OlioFieldNames.FIELD_PB_X, OlioFieldNames.FIELD_PB_Y, OlioFieldNames.FIELD_PB_W, OlioFieldNames.FIELD_PB_H);
+		patch.set(OlioFieldNames.FIELD_PB_PRIORITY, priority);
+		patch.set(OlioFieldNames.FIELD_PB_X, x);
+		patch.set(OlioFieldNames.FIELD_PB_Y, y);
+		patch.set(OlioFieldNames.FIELD_PB_W, w);
+		patch.set(OlioFieldNames.FIELD_PB_H, h);
+		assertNotNull("place actor row " + row.get(FieldNames.FIELD_NAME), ioContext.getAccessPoint().update(u, patch));
+	}
+
+	/** The case02 idiom: a PORTRAIT node for the character, one image artifact in its chain, approved. */
+	private BaseRecord approvedPortraitFor(BaseRecord u, BaseRecord book, String slug, String charOid, int rgb) throws Exception {
+		long orgId = orgOf(u);
+		BaseRecord wf = PbGraphUtil.getCreateWorkflow(u, book, PbBookUtil.workflowGroupPath(slug));
+		BaseRecord pNode = PbGraphUtil.addNode(u, wf, PbPipelineUtil.portraitHandle(charOid), PbNodeTypeEnumType.PORTRAIT, PbBookUtil.workflowGroupPath(slug), 0);
+		assertNotNull("portrait node for " + charOid, pNode);
+		BaseRecord art = imageArtifact(u, pNode, slug, 64, 96, rgb);
+		assertNotNull("approve", PbArtifactUtil.approve(u, PbArtifactUtil.readArtifact(u, oidOf(art), orgId), "p52"));
+		assertEquals("portrait approved", PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(PbArtifactUtil.readArtifact(u, oidOf(art), orgId)));
+		return art;
+	}
+
+	/// The TestPb1ModelPolicySequence idiom: an in-JVM inventory for a server that is never contacted.
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	private static void seedInventory(String server, List<String> installed) throws Exception {
+		java.lang.reflect.Field cacheField = SwarmModelInventory.class.getDeclaredField("CACHE");
+		cacheField.setAccessible(true);
+		Map cache = (Map) cacheField.get(null);
+		java.lang.reflect.Constructor<SwarmModelInventory> ctor = SwarmModelInventory.class.getDeclaredConstructor(String.class, List.class, long.class);
+		ctor.setAccessible(true);
+		cache.put(server.trim(), ctor.newInstance(server.trim(), new ArrayList<>(installed), System.currentTimeMillis()));
+	}
+
+	/**
+	 * A BOOK-scope style pinning every render task to {@code model}, set as the book's style (the
+	 * TestPbStyleHashStaleness patch idiom) so {@code scaffold} resolves LOCATION, SCENE_DIRECT and INPAINT to that
+	 * family. Returns the style for cleanup.
+	 */
+	private BaseRecord pinBookStyle(BaseRecord u, BaseRecord bk, String tag, String model) throws Exception {
+		long orgId = orgOf(u);
+		Map<String, String> pins = new LinkedHashMap<>();
+		for(PbModelTaskEnumType t : new PbModelTaskEnumType[] { PbModelTaskEnumType.PORTRAIT, PbModelTaskEnumType.LOCATION,
+				PbModelTaskEnumType.SCENE_DIRECT, PbModelTaskEnumType.INPAINT }) {
+			pins.put(ModelTaskKeys.key(t), model);
+		}
+		BaseRecord style = RecordFactory.newInstance(OlioModelNames.MODEL_PB_STYLE);
+		ioContext.getRecordUtil().applyNameGroupOwnership(u, style, "p52-" + tag + "-" + shortId(), STYLE_PATH, orgId);
+		style.set(OlioFieldNames.FIELD_PB_SCOPE, PbStyleScopeEnumType.BOOK.toString());
+		style.set(OlioFieldNames.FIELD_PB_TASK_MODELS, JSONUtil.exportObject(pins));
+		BaseRecord created = ioContext.getAccessPoint().create(u, style);
+		assertNotNull("create style " + tag, created);
+		BaseRecord styleRef = PbStyleUtil.readStyle(u, oidOf(created), orgId);
+		assertNotNull("readStyle " + tag, styleRef);
+
+		BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK,
+			new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, OlioFieldNames.FIELD_STYLE });
+		patch.set(FieldNames.FIELD_ID, bk.get(FieldNames.FIELD_ID));
+		patch.set(FieldNames.FIELD_OBJECT_ID, bk.get(FieldNames.FIELD_OBJECT_ID));
+		patch.set(FieldNames.FIELD_NAME, bk.get(FieldNames.FIELD_NAME));
+		patch.set(OlioFieldNames.FIELD_STYLE, styleRef);
+		assertNotNull("book style patch " + tag, ioContext.getAccessPoint().update(u, patch));
+		CacheUtil.clearCache();
+		BaseRecord after = PbBookUtil.readBook(u, oidOf(bk), orgId);
+		BaseRecord linked = after.get(OlioFieldNames.FIELD_STYLE);
+		assertNotNull("book carries the style " + tag, linked);
+		assertEquals("book style is " + tag, oidOf(styleRef), oidOf(linked));
+		log("book style -> " + tag + " (" + model + ")");
+		return styleRef;
+	}
+
+	private BaseRecord readData(BaseRecord u, String oid, long orgId) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, oid);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID });
+		q.setCache(false);
+		return ioContext.getAccessPoint().find(u, q);
+	}
+
+	/// Test-side only (the case01 RecordUtil idiom): re-home a data.data row into a group its original reader cannot
+	/// see. The owner moves with it - ownership alone still reads a row in a foreign group (measured 2026-10-26).
+	private void moveData(BaseRecord dataRow, long groupId, long ownerId) throws Exception {
+		BaseRecord patch = RecordFactory.newInstance(ModelNames.MODEL_DATA,
+			new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_OWNER_ID });
+		patch.set(FieldNames.FIELD_ID, dataRow.get(FieldNames.FIELD_ID));
+		patch.set(FieldNames.FIELD_OBJECT_ID, dataRow.get(FieldNames.FIELD_OBJECT_ID));
+		patch.set(FieldNames.FIELD_NAME, dataRow.get(FieldNames.FIELD_NAME));
+		patch.set(FieldNames.FIELD_GROUP_ID, groupId);
+		patch.set(FieldNames.FIELD_OWNER_ID, ownerId);
+		assertTrue("move data " + dataRow.get(FieldNames.FIELD_NAME) + " to group " + groupId, ioContext.getRecordUtil().updateRecord(patch));
+		CacheUtil.clearCache();
+		log("data " + dataRow.get(FieldNames.FIELD_NAME) + " -> group " + groupId + " owner " + ownerId);
+	}
 
 	private BookContext bookContext(BaseRecord u, BaseRecord bk) {
 		BookContext bctx = PbBookUtil.openBookContext(u, bk);

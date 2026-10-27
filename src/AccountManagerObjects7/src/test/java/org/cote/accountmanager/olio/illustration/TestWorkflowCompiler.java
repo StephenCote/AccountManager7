@@ -103,8 +103,10 @@ public class TestWorkflowCompiler {
 		assertEquals(tagOf(ComfyGraph.TYPE_IMAGE, "actorC"), g.inputs("104").get(ComfyGraph.INPUT_IMAGE_BASE64));
 		g.assertNoInlineImages();
 
-		/// Prompts and seed.
-		assertEquals(tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_SCENE), g.inputs("6").get("prompt"));
+		/// Prompts and seed. The 2026-10-26 generator encodes flux2 prompts with a plain CLIPTextEncode (the
+		/// P5-0 capture had SwarmTextEncodeAdvanced.prompt); the compiler's patch is class-agnostic.
+		assertEquals(WorkflowCompiler.CLASS_TEXT_ENCODE, g.classType("6"));
+		assertEquals(tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_SCENE), g.inputs("6").get("text"));
 		assertEquals(tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_NEGATIVE), g.inputs("7").get("text"));
 		assertEquals(tagOf(ComfyGraph.TYPE_SEED, WorkflowCompiler.TAG_SEED), g.inputs("10").get(WorkflowCompiler.INPUT_NOISE_SEED));
 
@@ -116,7 +118,7 @@ public class TestWorkflowCompiler {
 		assertEquals(4, c.getSteps());
 		assertEquals(0, c.getStartAtStep());
 		assertEquals(424242L, c.getSeed());
-		assertTrue("null inputs survive serialisation (lora_hooks)", g.toJson().contains("\"lora_hooks\":null"));
+		assertTrue("null inputs survive serialisation (model_negative)", g.toJson().contains("\"model_negative\":null"));
 
 		/// Inputs fill exactly the tags.
 		GraphInputs in = c.getInputs();
@@ -290,13 +292,18 @@ public class TestWorkflowCompiler {
 			target(MaskImage.solid(W, H, Color.GRAY), new RenderPlan.Box(0.55, 0.2, 0.4, 0.8)),
 			new RendererCapabilities.InpaintParams(25, 0.6, 16, 8), client);
 		ComfyGraph g = c.getGraph();
-		assertEquals(16, g.size());
+		/// 2026-10-26 generator: ModelSamplingDiscrete added (16 -> 17 nodes), the mask loader is "101", and
+		/// the prompts ride CLIPTextEncodeSDXL with the marker in both text_g and text_l - the patch tags both.
+		assertEquals(17, g.size());
 		assertEquals(2, g.nodesOf(ComfyGraph.CLASS_LOAD_IMAGE_B64).size());
 		assertEquals(Set.of(WorkflowCompiler.TAG_INIT, WorkflowCompiler.TAG_MASK), c.getPlaceholderMatches().keySet());
-		assertEquals(tagOf(ComfyGraph.TYPE_IMAGE, WorkflowCompiler.TAG_MASK), g.inputs("100").get(ComfyGraph.INPUT_IMAGE_BASE64));
+		assertEquals(tagOf(ComfyGraph.TYPE_IMAGE, WorkflowCompiler.TAG_MASK), g.inputs("101").get(ComfyGraph.INPUT_IMAGE_BASE64));
 		assertEquals(tagOf(ComfyGraph.TYPE_IMAGE, WorkflowCompiler.TAG_INIT), g.inputs("15").get(ComfyGraph.INPUT_IMAGE_BASE64));
-		assertEquals("SDXL positive is a plain CLIPTextEncode", tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_SCENE), g.inputs("6").get("text"));
-		assertEquals(tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_NEGATIVE), g.inputs("7").get("text"));
+		assertEquals("CLIPTextEncodeSDXL", g.classType("6"));
+		assertEquals(tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_SCENE), g.inputs("6").get("text_g"));
+		assertEquals(tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_SCENE), g.inputs("6").get("text_l"));
+		assertEquals(tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_NEGATIVE), g.inputs("7").get("text_g"));
+		assertEquals(tagOf(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_NEGATIVE), g.inputs("7").get("text_l"));
 		assertEquals(25, c.getSteps());
 		assertEquals(10, c.getStartAtStep());
 		assertEquals(5.0, ((Number) g.inputs("10").get("cfg")).doubleValue(), 0.0001);

@@ -112,17 +112,18 @@ public class TestComfyGraph {
 		assertEquals("SwarmKSampler", g.classType("10"));
 		assertNull(g.classType("nope"));
 		assertNull(g.inputs("nope"));
-		assertTrue(g.inputs("6").containsKey("lora_hooks"));
-		assertNull(g.inputs("6").get("lora_hooks"));
+		/// A null input the generator wrote (model_negative on the 2026-10-26 sampler) is kept as null.
+		assertTrue(g.inputs("10").containsKey("model_negative"));
+		assertNull(g.inputs("10").get("model_negative"));
 		assertEquals("8", ComfyGraph.linkTarget(g.inputs("9").get("images")));
 		assertTrue(g.danglingLinks().isEmpty());
 		assertTrue("the captured graph is untagged", g.tags().isEmpty());
 		ComfyGraph again = ComfyGraph.fromJson(g.toJson());
 		assertEquals(g.toJson(), again.toJson());
 		assertEquals(g.graphHash(), again.graphHash());
-		/// The spike's inpaint graphs parse too.
+		/// The captured inpaint graphs parse too (2026-10-26 generator: SDXL gained ModelSamplingDiscrete, 17 nodes).
 		assertEquals(27, FixtureGraphClient.fixtureGraph(FixtureGraphClient.INPAINT_FLUX2).size());
-		assertEquals(16, FixtureGraphClient.fixtureGraph(FixtureGraphClient.INPAINT_SDXL).size());
+		assertEquals(17, FixtureGraphClient.fixtureGraph(FixtureGraphClient.INPAINT_SDXL).size());
 	}
 
 	@Test

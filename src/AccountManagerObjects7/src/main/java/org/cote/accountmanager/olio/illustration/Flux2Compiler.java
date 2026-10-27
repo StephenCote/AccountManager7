@@ -22,11 +22,13 @@ import org.cote.accountmanager.schema.type.PbStrategyEnumType;
 /// b. ", STYLE once, then the fixed composition rules ported from SWUtil.buildFlux2ScenePrompt. LoRA
 /// tags are appended outside the budget.
 ///
-/// Reference wording is gated twice (architect MUST-FIX 1): on the plan's strategy being
-/// DIRECT_REFERENCE and on the actor's own referenced flag. Under TEXT_ONLY every actor is text and no
-/// ordinal is spoken, so the model is never told to copy an identity out of an image it was not given.
-/// The reference-specific rules (identity fidelity, "do not draw the reference images") are emitted
-/// only when at least one reference is spoken of, for the same reason.
+/// Reference wording is gated twice (architect MUST-FIX 1): on the plan's strategy being a reference
+/// strategy (DIRECT_REFERENCE or SEQUENTIAL_INPAINT) and on the actor's own referenced flag with a BASE
+/// referenceStage. Under TEXT_ONLY every actor is text and no ordinal is spoken, so the model is never
+/// told to copy an identity out of an image it was not given; an ACTOR_REGION actor (P5-2) is likewise
+/// text here because its reference travels with its own inpaint pass (InpaintRegionCompiler). The
+/// reference-specific rules (identity fidelity, "do not draw the reference images") are emitted only
+/// when at least one reference is spoken of, for the same reason.
 ///
 /// Budget: the family's promptTokenBudget for the stage's model pick (512 for flux2). Over budget,
 /// groups drop in the order ELEM_LOW, ELEM_MEDIUM, EXTRAS, ACTOR_BG detail (named background rows keep
@@ -87,11 +89,13 @@ public final class Flux2Compiler implements PromptCompiler {
 		RenderPlan.Location location = plan.getLocation();
 		String main = override != null ? override : clean(location == null ? null : location.getDescription());
 
-		boolean direct = plan.getStrategy() != null && plan.getStrategy().getName() == PbStrategyEnumType.DIRECT_REFERENCE;
+		boolean direct = usesReferences(plan.getStrategy());
 		List<Actor> referencedOrdered = new ArrayList<>();
 		if(direct) {
+			/// Only BASE-stage references are sent with this prompt; an ACTOR_REGION actor is described as text so
+			/// the base composition leaves room where its box is, and its own pass speaks its reference (P5-2).
 			for(Actor a : plan.getActors()) {
-				if(a.isReferenced()) {
+				if(a.isReferenced() && RenderPlan.STAGE_BASE.equals(a.getReferenceStage())) {
 					referencedOrdered.add(a);
 				}
 			}
@@ -390,6 +394,16 @@ public final class Flux2Compiler implements PromptCompiler {
 	private static int ord(Map<Actor, Integer> refOrdinal, Actor a) {
 		Integer o = refOrdinal.get(a);
 		return (o == null ? 0 : o);
+	}
+
+	/// DIRECT_REFERENCE and SEQUENTIAL_INPAINT both send BASE-stage references with the base prompt. Public
+	/// so the executor's BASE path (graph with references vs plain T2I) is decided by the same test.
+	public static boolean usesReferences(RenderPlan.Strategy strategy) {
+		if(strategy == null) {
+			return false;
+		}
+		PbStrategyEnumType s = strategy.getName();
+		return s == PbStrategyEnumType.DIRECT_REFERENCE || s == PbStrategyEnumType.SEQUENTIAL_INPAINT;
 	}
 
 	private static boolean startsWithDigit(String s) {

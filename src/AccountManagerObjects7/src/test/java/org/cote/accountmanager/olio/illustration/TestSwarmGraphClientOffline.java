@@ -79,7 +79,10 @@ public class TestSwarmGraphClientOffline {
 		StageResult res = adapter.execute(graphRequest(g, c.getInputs()), null);
 		assertFalse(res.isOk());
 		assertTrue(res.getError(), res.getError().startsWith(RendererAdapter.ERROR_GRAPH_INVALID + ": "));
-		assertTrue(res.getError(), res.getError().contains("DANGLING_LINK[" + ComfyGraph.SAVE_FINAL + "]"));
+		/// P5-2 §6.2: "GRAPH_INVALID: node <id> <class> <code>: <message>"
+		assertTrue(res.getError(), res.getError().startsWith(RendererAdapter.ERROR_GRAPH_INVALID + ": node " + ComfyGraph.SAVE_FINAL + " "
+			+ g.classType(ComfyGraph.SAVE_FINAL) + " " + GraphProblem.DANGLING_LINK + ": "));
+		assertEquals(RendererAdapter.ERROR_GRAPH_INVALID, res.getErrorCode());
 		assertEquals(0L, res.getDurationMs());
 	}
 

@@ -101,6 +101,12 @@ public class PbPipelineUtil {
 	/** The image a RENDER_PLAN node's BASE stage produced (V3 §11, P2-5); same node as its {@code renderPlan} JSON. */
 	public static final String ROLE_BASE = "base";
 	/**
+	 * An intermediate stage image a RENDER_PLAN node's multi-stage render produced (V3 §11, P5-2): the BASE
+	 * result before an ACTOR_REGION pass, and each pass's result. Same node as the final {@code base} image;
+	 * one revision per stage, with the stage (and actor) in the artifact name.
+	 */
+	public static final String ROLE_STAGE = "stage";
+	/**
 	 * Binding role for the {@code olio.pb.location} record (ordinal 0) and its {@code olio.pb.locationVariant}
 	 * (ordinal 1) a node renders against (V3 §7, P3-4). A LOCATION node binds its own subject under this role
 	 * after a render; a RENDER_PLAN node binds the scene's location so {@code approvedRender} drift stales it.
@@ -693,6 +699,19 @@ public class PbPipelineUtil {
 			PbArtifactTypeEnumType artifactType, BaseRecord data, byte[] bytes, String mimeType, Long seed,
 			BaseRecord sdConfigSnapshot, String rawRequestJson, List<String> referenceArtifactObjectIds,
 			SDAPIEnumType backend, long durationMs) {
+		return recordImage(g, node, role, artifactType, data, bytes, mimeType, seed, sdConfigSnapshot, rawRequestJson,
+			referenceArtifactObjectIds, backend, durationMs, null);
+	}
+
+	/**
+	 * {@link #recordImage(SceneGraph, BaseRecord, String, PbArtifactTypeEnumType, BaseRecord, byte[], String, Long, BaseRecord, String, List, SDAPIEnumType, long)}
+	 * plus the raw-graph provenance of a V3 §38 stage ({@code backendGraph}: stage, graphHash, saveNodeId,
+	 * swarmVersion - never the graph body; P5-2 §3.4). Written only when non-null.
+	 */
+	public static BaseRecord recordImage(SceneGraph g, BaseRecord node, String role,
+			PbArtifactTypeEnumType artifactType, BaseRecord data, byte[] bytes, String mimeType, Long seed,
+			BaseRecord sdConfigSnapshot, String rawRequestJson, List<String> referenceArtifactObjectIds,
+			SDAPIEnumType backend, long durationMs, String backendGraph) {
 		if(g == null || node == null) {
 			return null;
 		}
@@ -700,7 +719,7 @@ public class PbPipelineUtil {
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(g.user, node, role, artifactType,
 			g.artifactGroupPath, data, null, sdConfigSnapshot, sanitized);
 		int[] wh = decodeDimensions(bytes);
-		PbArtifactUtil.recordImageMetrics(g.user, artifact, bytes, mimeType, wh[0], wh[1], seed, backend, durationMs);
+		PbArtifactUtil.recordImageMetrics(g.user, artifact, bytes, mimeType, wh[0], wh[1], seed, backend, durationMs, backendGraph);
 		return PbArtifactUtil.readArtifact(g.user, artifact.get(FieldNames.FIELD_OBJECT_ID),
 			PbGraphUtil.orgId(node));
 	}

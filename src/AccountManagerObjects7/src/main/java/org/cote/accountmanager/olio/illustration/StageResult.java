@@ -15,6 +15,7 @@ public final class StageResult {
 	private final String requestJson;
 	private final String backendGraph;
 	private final String error;
+	private final String errorDetail;
 
 	private StageResult(Builder b) {
 		this.images = Collections.unmodifiableList(new ArrayList<>(b.images));
@@ -22,6 +23,7 @@ public final class StageResult {
 		this.requestJson = b.requestJson;
 		this.backendGraph = b.backendGraph;
 		this.error = b.error;
+		this.errorDetail = b.errorDetail;
 	}
 
 	public List<StageImage> getImages() { return images; }
@@ -29,7 +31,14 @@ public final class StageResult {
 	public String getRequestJson() { return requestJson; }
 	public String getBackendGraph() { return backendGraph; }
 	public String getError() { return error; }
+	/// The findings beyond the one the error names (GRAPH_INVALID with several problems), or null.
+	public String getErrorDetail() { return errorDetail; }
 	public boolean isOk() { return error == null && !images.isEmpty(); }
+
+	/// The error's code (P5-2 §6.1): {@link RendererAdapter#errorCode}.
+	public String getErrorCode() {
+		return RendererAdapter.errorCode(error);
+	}
 
 	public static Builder builder() {
 		return new Builder();
@@ -45,6 +54,7 @@ public final class StageResult {
 		private String requestJson;
 		private String backendGraph;
 		private String error;
+		private String errorDetail;
 
 		private Builder() { }
 
@@ -53,6 +63,7 @@ public final class StageResult {
 		public Builder requestJson(String requestJson) { this.requestJson = requestJson; return this; }
 		public Builder backendGraph(String backendGraph) { this.backendGraph = backendGraph; return this; }
 		public Builder error(String error) { this.error = error; return this; }
+		public Builder errorDetail(String errorDetail) { this.errorDetail = errorDetail; return this; }
 
 		public StageResult build() {
 			if(error == null && images.isEmpty()) {

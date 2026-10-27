@@ -19,21 +19,29 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.illustration.ComfyGraph;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
+import org.cote.accountmanager.olio.illustration.Flux2Compiler;
+import org.cote.accountmanager.olio.illustration.GraphCompileException;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererAdapter;
+import org.cote.accountmanager.olio.illustration.RendererCapabilities;
 import org.cote.accountmanager.olio.illustration.StageImage;
 import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StageResult;
+import org.cote.accountmanager.olio.illustration.SwarmGraphClient;
 import org.cote.accountmanager.olio.illustration.SwarmRendererAdapter;
+import org.cote.accountmanager.olio.illustration.WorkflowCompiler;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil.SceneGraph;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.ResolvedCharacter;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.Flux2Defaults;
+import org.cote.accountmanager.olio.sd.PbCalibrationUtil;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
@@ -485,8 +493,19 @@ public class PbNodeExecutor {
 		}
 	}
 
+	/// The message stamped on the node and the run; a BASE stage failure also carries the renderer's detail
+	/// (the Swarm node and its reason) so it is not lost with the exception that only reaches the caller.
 	private static String errorMessage(Exception e) {
-		return (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+		String msg = (e.getMessage() != null && !e.getMessage().isBlank()) ? e.getMessage() : e.getClass().getSimpleName();
+		if(e instanceof PbStageFailedException) {
+			for(Map<String, Object> se : ((PbStageFailedException) e).getStageErrors()) {
+				Object detail = se.get("detail");
+				if(detail != null) {
+					msg = msg + " [" + se.get("stage") + ": " + detail + "]";
+				}
+			}
+		}
+		return msg;
 	}
 
 	// ─── style + model policy (P2-3) ─────────────────────────────────────────────
@@ -641,7 +660,8 @@ public class PbNodeExecutor {
 			"render_plan_" + (sceneIndex != null ? sceneIndex : "x"),
 			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt");
 		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
-			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
+			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, r.referenceArtifactObjectIds, sdu.getApiType(), r.durationMs,
+			r.backendGraph);
 		bindSceneLocation(g, node, r.plan, r.degradations);
 
 		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
@@ -721,7 +741,8 @@ public class PbNodeExecutor {
 			"location_" + PbPipelineUtil.shortRef(variant != null ? variant.get(FieldNames.FIELD_OBJECT_ID) : locationOid),
 			"Location " + location.get(FieldNames.FIELD_NAME) + " has no description to render from");
 		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE,
-			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
+			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, r.referenceArtifactObjectIds, sdu.getApiType(), r.durationMs,
+			r.backendGraph);
 
 		/// Bind the subject AFTER the render, as executePortrait does: the binding's refHash is the location's
 		/// watched fields (approvedRender included), so approving a later candidate stales this node too.
@@ -743,7 +764,11 @@ public class PbNodeExecutor {
 		return out;
 	}
 
-	/** What one plan-driven BASE render produced, before the caller records it under its node's role. */
+	/**
+	 * What one plan-driven render produced, before the caller records it under its node's role: the final
+	 * image of the stage sequence (P5-2 §2.4 - the BASE render, or the last good ACTOR_REGION pass) with the
+	 * references and raw-graph provenance that image carries, plus what every stage did.
+	 */
 	static final class PlannedRender {
 		final RenderPlan plan;
 		final String planOid;
@@ -756,10 +781,19 @@ public class PbNodeExecutor {
 		final long durationMs;
 		final List<String> degradations;
 		final List<String> configNotApplied;
+		/// Artifact objectIds the final image's request referenced (its portraits and location render, or for
+		/// a pass its own portrait and the stage artifact it painted over); empty on the plain T2I path.
+		final List<String> referenceArtifactObjectIds;
+		/// The final image's {@code backendGraph} envelope; null on the plain T2I path.
+		final String backendGraph;
+		final List<String> stagesRendered;
+		final List<Map<String, Object>> stageErrors;
+		final boolean calibrationPersisted;
 
 		private PlannedRender(RenderPlan plan, String planOid, CompiledPrompt compiled, byte[] bytes, BaseRecord data,
 				BaseRecord frozen, Long seed, String requestJson, long durationMs, List<String> degradations,
-				List<String> configNotApplied) {
+				List<String> configNotApplied, List<String> referenceArtifactObjectIds, String backendGraph,
+				List<String> stagesRendered, List<Map<String, Object>> stageErrors, boolean calibrationPersisted) {
 			this.plan = plan;
 			this.planOid = planOid;
 			this.compiled = compiled;
@@ -771,21 +805,75 @@ public class PbNodeExecutor {
 			this.durationMs = durationMs;
 			this.degradations = degradations;
 			this.configNotApplied = configNotApplied;
+			this.referenceArtifactObjectIds = referenceArtifactObjectIds;
+			this.backendGraph = backendGraph;
+			this.stagesRendered = stagesRendered;
+			this.stageErrors = stageErrors;
+			this.calibrationPersisted = calibrationPersisted;
 		}
 
 		/// The plan keys every plan-driven node reports (§12): which plan, its hash, the strategy and stages,
-		/// the one-line actor summary (P4-7) and the effective-config values a plan never carries
-		/// ({@link #KEY_CONFIG_NOT_APPLIED}).
+		/// the stages actually rendered ({@code BASE}, {@code ACTOR_REGION#<actorId>}, ...) and their errors
+		/// ({@link #KEY_STAGE_ERRORS}), whether the calibration samples were persisted, the one-line actor
+		/// summary (P4-7) and the effective-config values a plan never carries ({@link #KEY_CONFIG_NOT_APPLIED}).
 		void describe(Map<String, Object> out) {
 			String strategy = plan.getStrategy().getName().name();
 			out.put("planArtifactObjectId", planOid);
 			out.put("planContentHash", plan.contentHash());
 			out.put("strategy", strategy);
 			out.put("stagesPlanned", plan.getStrategy().getStages());
-			out.put("stagesRendered", List.of(RenderPlan.STAGE_BASE));
+			out.put("stagesRendered", stagesRendered);
+			out.put(KEY_STAGE_ERRORS, stageErrors);
+			out.put(KEY_CALIBRATION_PERSISTED, Boolean.valueOf(calibrationPersisted));
 			out.put("planSummary", plan.actorSummary() + "; strategy " + strategy);
 			out.put(KEY_CONFIG_NOT_APPLIED, configNotApplied);
 		}
+	}
+
+	/// DTO key: one entry per stage that failed (P5-2 §6), each {@code {stage, code, message, detail}};
+	/// {@code detail} is the adapter's {@link StageResult#getErrorDetail()} when it carried one.
+	public static final String KEY_STAGE_ERRORS = "stageErrors";
+	/// DTO key: true when every graph stage's calibration sample was persisted as the user (P5-2 §4); false
+	/// on the plain T2I path, which calibrates in-process only.
+	public static final String KEY_CALIBRATION_PERSISTED = "calibrationPersisted";
+
+	/**
+	 * A BASE stage that failed (P5-2 §6.3): the node fails with {@code Render of <label> failed: <code>: ...}
+	 * and the stage error that produced it travels with the exception so a caller can classify it by
+	 * {@code code} rather than by parsing the message.
+	 */
+	static final class PbStageFailedException extends PictureBookException {
+		private static final long serialVersionUID = 1L;
+		private final transient List<Map<String, Object>> stageErrors;
+
+		PbStageFailedException(int status, String message, List<Map<String, Object>> stageErrors) {
+			super(status, message);
+			this.stageErrors = stageErrors;
+		}
+
+		List<Map<String, Object>> getStageErrors() {
+			return stageErrors;
+		}
+	}
+
+	/// One stage error entry for {@link #KEY_STAGE_ERRORS}.
+	private static Map<String, Object> stageError(String stage, String code, String message, String detail) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("stage", stage);
+		m.put("code", code);
+		m.put("message", message);
+		if(detail != null && !detail.isBlank()) {
+			m.put("detail", detail);
+		}
+		return m;
+	}
+
+	/// {@code <code>: <text>} for a stage error string: the adapter's own code-prefixed errors stay as they
+	/// are; its prose errors (unreachable, no images, cancelled, backend) gain their §6.1 code in front.
+	private static String codedError(String error) {
+		String e = (error != null ? error : RendererAdapter.ERROR_NO_IMAGES);
+		String code = RendererAdapter.errorCode(e);
+		return (e.startsWith(code + ": ") ? e : code + ": " + e);
 	}
 
 	/**
@@ -891,34 +979,363 @@ public class PbNodeExecutor {
 			.config(cfg)
 			.build();
 
+		StageSequence seq = renderStages(g, node, plan, planOid, sceneLabel, sdu, req, pick);
+		for(RenderPlan.Degradation d : seq.added) {
+			degradations.add(d.getCode() + ": " + d.getMessage());
+		}
+		if(!seq.added.isEmpty()) {
+			plan = recordExecutorDegradations(user, planArtifact, plan, seq.added);
+		}
+		BaseRecord frozen = frozenConfig(plan, pick, compiled);
+
+		/// §2.4 step 5: nothing was persisted while a later stage could still cancel; now every stage lands
+		/// in order - its renderGraph artifact, and for every stage but the last its image as a `stage`
+		/// artifact (backendGraph, references, duration) - then the last stage's image is the final under
+		/// the caller's role (§5.3: one `stage` image per intermediate pass, never a copy of the final).
+		/// The plain T2I path persists exactly what it did before.
+		String prevStageOid = null;
+		if(seq.graphPath) {
+			for(int i = 0; i < seq.outputs.size(); i++) {
+				StageOutput so = seq.outputs.get(i);
+				if(so.graph != null) {
+					PbRenderPlanUtil.persistGraphArtifact(user, node, g.getArtifactGroupPath(), so.label, so.graph, sdu.swarmVersion());
+				}
+				if(i == seq.outputs.size() - 1) {
+					break;
+				}
+				BaseRecord stageData = PbPipelineUtil.persistBytes(g, imageNamePrefix + "_" + so.label + "_" + System.currentTimeMillis(), so.bytes, "image/png");
+				if(stageData == null) {
+					throw new PictureBookException(500, "Failed to persist the " + so.label + " stage bytes for " + sceneLabel);
+				}
+				List<String> refs = new ArrayList<>(so.referenceIds);
+				if(so.chainsPrevious && prevStageOid != null) {
+					refs.add(prevStageOid);
+				}
+				BaseRecord stageArtifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_STAGE, PbArtifactTypeEnumType.IMAGE,
+					stageData, so.bytes, "image/png", so.seed, frozen, so.requestJson, refs, sdu.getApiType(), so.durationMs, so.backendGraph);
+				so.artifactOid = (stageArtifact != null ? stageArtifact.get(FieldNames.FIELD_OBJECT_ID) : null);
+				prevStageOid = so.artifactOid;
+			}
+		}
+		StageOutput last = seq.outputs.get(seq.outputs.size() - 1);
+		BaseRecord data = PbPipelineUtil.persistBytes(g, imageNamePrefix + "_" + System.currentTimeMillis(), last.bytes, "image/png");
+		if(data == null) {
+			throw new PictureBookException(500, "Failed to persist the rendered bytes for " + sceneLabel);
+		}
+		List<String> finalRefs = new ArrayList<>(last.referenceIds);
+		if(last.chainsPrevious) {
+			/// the stage artifact the final pass painted over is the one persisted just before it
+			String prior = seq.stageOid(seq.outputs.size() - 2);
+			if(prior != null) {
+				finalRefs.add(prior);
+			}
+		}
+		return new PlannedRender(plan, planOid, compiled, last.bytes, data, frozen, last.seed, last.requestJson, last.durationMs,
+			degradations, configNotApplied, finalRefs, last.backendGraph, seq.labels(), seq.stageErrors, seq.calibrationPersisted);
+	}
+
+	/// One stage's output, held in memory until the sequence ends (P5-2 §2.4 step 5).
+	private static final class StageOutput {
+		final String label;
+		final byte[] bytes;
+		final Long seed;
+		final String requestJson;
+		final long durationMs;
+		final String backendGraph;
+		/// The compiled graph the stage posted; null on the plain T2I path.
+		final ComfyGraph graph;
+		/// Artifact ids the stage's request referenced (portraits and location render, or a pass's own portrait).
+		final List<String> referenceIds;
+		/// True for a pass painted over the previous stage's image, whose artifact id joins its references.
+		final boolean chainsPrevious;
+		String artifactOid;
+
+		StageOutput(String label, byte[] bytes, Long seed, String requestJson, long durationMs, String backendGraph,
+				ComfyGraph graph, List<String> referenceIds, boolean chainsPrevious) {
+			this.label = label;
+			this.bytes = bytes;
+			this.seed = seed;
+			this.requestJson = requestJson;
+			this.durationMs = durationMs;
+			this.backendGraph = backendGraph;
+			this.graph = graph;
+			this.referenceIds = referenceIds;
+			this.chainsPrevious = chainsPrevious;
+		}
+	}
+
+	/// What {@link #renderStages} produced: every stage's output in order (the last is the final image), the
+	/// stage errors, the executor-time degradations (ACTOR_FAILED, MODEL_SUBSTITUTED) to append to the plan,
+	/// whether any stage went through the graph path, and whether every graph stage's calibration persisted.
+	private static final class StageSequence {
+		final List<StageOutput> outputs = new ArrayList<>();
+		final List<Map<String, Object>> stageErrors = new ArrayList<>();
+		final List<RenderPlan.Degradation> added = new ArrayList<>();
+		boolean graphPath;
+		boolean calibrationPersisted;
+
+		List<String> labels() {
+			List<String> l = new ArrayList<>();
+			for(StageOutput so : outputs) {
+				l.add(so.label);
+			}
+			return l;
+		}
+
+		String stageOid(int index) {
+			return (index >= 0 && index < outputs.size() ? outputs.get(index).artifactOid : null);
+		}
+	}
+
+	/**
+	 * The stage sequence of P5-2 §2.4: BASE (a compiled graph carrying the BASE-stage portraits and the
+	 * location render as references when the strategy sends any, otherwise the plain T2I request exactly as
+	 * before), then one ACTOR_REGION pass per actor referenced on that stage, each a masked init-image pass
+	 * over the last good image with the actor's own portrait as its one reference. A BASE failure ends the
+	 * node ({@link PbStageFailedException}, §6.3); a failed pass is an ACTOR_FAILED degradation and the
+	 * sequence continues on the last good image (§2.4 step 4); a cancel anywhere discards everything
+	 * ({@link PbStageCancelledException}). Each graph stage records its calibration sample as the user
+	 * (§4); the T2I path keeps calibrating in-process only (§10 row 6).
+	 */
+	private static StageSequence renderStages(SceneGraph g, BaseRecord node, RenderPlan plan, String planOid,
+			String sceneLabel, SDUtil sdu, StageRequest req, RenderPlan.ModelPick basePick) {
+		BaseRecord user = g.getUser();
+		long orgId = PbGraphUtil.orgId(node);
+		StageSequence seq = new StageSequence();
 		RendererAdapter adapter = new SwarmRendererAdapter(sdu);
-		StageResult result = adapter.execute(req, g::isCancelRequested);
-		if(!result.isOk()) {
-			String error = (result.getError() != null ? result.getError() : RendererAdapter.ERROR_NO_IMAGES);
+		SwarmGraphClient client = new SwarmGraphClient(sdu);
+		WorkflowCompiler compiler = new WorkflowCompiler();
+		boolean allCalibrated = true;
+		int graphStages = 0;
+
+		/// ─── BASE ───
+		List<RenderPlan.Actor> baseActors = new ArrayList<>();
+		List<RenderPlan.Actor> regionActors = new ArrayList<>();
+		boolean references = Flux2Compiler.usesReferences(plan.getStrategy());
+		for(RenderPlan.Actor a : plan.getActors()) {
+			if(!references || !a.isReferenced()) {
+				continue;
+			}
+			if(RenderPlan.STAGE_BASE.equals(a.getReferenceStage())) {
+				baseActors.add(a);
+			}
+			else if(RenderPlan.STAGE_ACTOR_REGION.equals(a.getReferenceStage())) {
+				regionActors.add(a);
+			}
+		}
+		baseActors.sort((a, b) -> Integer.compare(a.getPriority(), b.getPriority()));
+		regionActors.sort((a, b) -> Integer.compare(a.getPriority(), b.getPriority()));
+		/// A family that takes no references (SDXL) still renders SEQUENTIAL_INPAINT, but every image it is
+		/// handed must be one its graph has a node for: no location render on BASE, no portrait on a pass.
+		RendererCapabilities baseCaps = (basePick != null && basePick.isResolved() ? RendererCapabilities.forModel(basePick.getModel()) : null);
+		boolean baseTakesReferences = (baseCaps != null && baseCaps.isSupportsReferences());
+		String locationRef = (references && baseTakesReferences && plan.getLocation() != null ? plan.getLocation().getRenderArtifactId() : null);
+
+		StageRequest baseReq = req;
+		WorkflowCompiler.CompiledGraph baseGraph = null;
+		List<String> baseRefIds = new ArrayList<>();
+		if(!baseActors.isEmpty() || locationRef != null) {
+			List<WorkflowCompiler.Reference> refs = new ArrayList<>();
+			try {
+				int k = 0;
+				for(RenderPlan.Actor a : baseActors) {
+					String oid = a.getIdentity().getPortraitArtifactId();
+					byte[] png = referenceBytes(user, oid, orgId);
+					if(png == null) {
+						throw baseFailure(seq, sceneLabel, planOid, RendererAdapter.ERROR_GRAPH_INVALID + ": reference " + oid + " not readable", null);
+					}
+					refs.add(new WorkflowCompiler.Reference(referenceName(k++), oid, png));
+					baseRefIds.add(oid);
+				}
+				if(locationRef != null) {
+					byte[] png = referenceBytes(user, locationRef, orgId);
+					if(png == null) {
+						throw baseFailure(seq, sceneLabel, planOid, RendererAdapter.ERROR_GRAPH_INVALID + ": reference " + locationRef + " not readable", null);
+					}
+					refs.add(new WorkflowCompiler.Reference("location", locationRef, png));
+					baseRefIds.add(locationRef);
+				}
+				baseGraph = compiler.compileBase(req, refs, client);
+			}
+			catch(GraphCompileException | IllegalArgumentException e) {
+				throw baseFailure(seq, sceneLabel, planOid, RendererAdapter.ERROR_GRAPH_INVALID + ": " + e.getMessage(), null);
+			}
+			baseReq = req.toBuilder().graph(baseGraph.getGraph()).inputs(baseGraph.getInputs()).seed((int) baseGraph.getSeed())
+				.steps(baseGraph.getSteps()).build();
+		}
+
+		StageResult base = adapter.execute(baseReq, g::isCancelRequested);
+		if(!base.isOk()) {
+			String error = (base.getError() != null ? base.getError() : RendererAdapter.ERROR_NO_IMAGES);
 			if(RendererAdapter.ERROR_CANCELLED.equals(error) || g.isCancelRequested()) {
 				throw new PbStageCancelledException("Cancelled render of " + sceneLabel + "; nothing recorded");
 			}
-			int status = (RendererAdapter.ERROR_UNREACHABLE.equals(error) ? 503 : 500);
-			throw new PictureBookException(status, "Render of " + sceneLabel + " failed: " + error
-				+ " (plan artifact " + planOid + ")");
+			throw baseFailure(seq, sceneLabel, planOid, error, base.getErrorDetail());
 		}
 		if(g.isCancelRequested()) {
 			throw new PbStageCancelledException("Cancelled render of " + sceneLabel + " after the renderer answered; image discarded");
 		}
-
-		StageImage img = result.getImages().get(0);
-		byte[] bytes = img.getBytes();
-		if(bytes == null || bytes.length == 0) {
+		StageImage baseImg = base.getImages().get(0);
+		if(baseImg.getBytes() == null || baseImg.getBytes().length == 0) {
 			throw new PictureBookException(500, "Rendered image for " + sceneLabel + " decoded to empty bytes (plan artifact " + planOid + ")");
 		}
-		BaseRecord data = PbPipelineUtil.persistBytes(g, imageNamePrefix + "_" + System.currentTimeMillis(), bytes, "image/png");
-		if(data == null) {
-			throw new PictureBookException(500, "Failed to persist the rendered bytes for " + sceneLabel);
+		Long baseSeed = (baseImg.isSeedReported() ? Long.valueOf(baseImg.getSeed()) : (baseGraph != null ? Long.valueOf(baseGraph.getSeed()) : null));
+		seq.outputs.add(new StageOutput(RenderPlan.STAGE_BASE, baseImg.getBytes(), baseSeed, base.getRequestJson(), base.getDurationMs(),
+			base.getBackendGraph(), (baseGraph != null ? baseGraph.getGraph() : null), baseRefIds, false));
+		if(baseGraph != null) {
+			seq.graphPath = true;
+			graphStages++;
+			allCalibrated &= PbCalibrationUtil.recordSample(user, sdu.getServer(), basePick.getFamily(), RenderPlan.STAGE_BASE,
+				baseGraph.getGraph().graphHash(), base.getDurationMs(), baseGraph.getSteps(), req.getWidth(), req.getHeight(),
+				baseRefIds.size(), sdu.swarmVersion());
 		}
-		BaseRecord frozen = frozenConfig(plan, pick, compiled);
-		return new PlannedRender(plan, planOid, compiled, bytes, data, frozen,
-			(img.isSeedReported() ? Long.valueOf(img.getSeed()) : null), result.getRequestJson(), result.getDurationMs(),
-			degradations, configNotApplied);
+
+		/// ─── ACTOR_REGION passes ───
+		if(!regionActors.isEmpty() && plan.getStrategy().getStages().contains(RenderPlan.STAGE_ACTOR_REGION)) {
+			RenderPlan.ModelPick inpaintPick = plan.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.INPAINT));
+			RenderPlan.ModelPick regionPick = plan.pickForStage(RenderPlan.STAGE_ACTOR_REGION);
+			if((inpaintPick == null || !inpaintPick.isResolved()) && regionPick != null && regionPick.isResolved()) {
+				seq.added.add(new RenderPlan.Degradation(RenderPlan.Degradation.MODEL_SUBSTITUTED,
+					"INPAINT pick unresolved; using BASE pick " + regionPick.getModel(), null, RenderPlan.STAGE_ACTOR_REGION));
+			}
+			RendererCapabilities caps = (regionPick != null && regionPick.isResolved() ? RendererCapabilities.forModel(regionPick.getModel()) : null);
+			RendererCapabilities.InpaintParams inpaint = (caps != null ? caps.getInpaint() : null);
+			boolean regionTakesReferences = (caps != null && caps.isSupportsReferences());
+			for(RenderPlan.Actor a : regionActors) {
+				StageOutput lastGood = seq.outputs.get(seq.outputs.size() - 1);
+				String label = RenderPlan.actorStageKey(RenderPlan.STAGE_ACTOR_REGION, a.getActorId());
+				String oid = a.getIdentity().getPortraitArtifactId();
+				CompiledPrompt cp = plan.compiledForActor(RenderPlan.STAGE_ACTOR_REGION, a.getActorId());
+				String invalid = null;
+				if(regionPick == null || !regionPick.isResolved()) {
+					invalid = "no model resolved for the pass";
+				}
+				else if(inpaint == null) {
+					invalid = "family of " + regionPick.getModel() + " declares no inpaint parameters";
+				}
+				else if(cp == null || cp.getPrompt() == null || cp.getPrompt().isBlank()) {
+					invalid = "no prompt compiled for " + label;
+				}
+				else if(a.getBox() == null) {
+					invalid = "actor " + a.getActorId() + " has no box";
+				}
+				byte[] png = (invalid == null && regionTakesReferences ? referenceBytes(user, oid, orgId) : null);
+				if(invalid == null && regionTakesReferences && png == null) {
+					invalid = "reference " + oid + " not readable";
+				}
+				if(invalid != null) {
+					actorFailed(seq, a, label, RendererAdapter.ERROR_GRAPH_INVALID + ": " + invalid, null);
+					continue;
+				}
+				List<WorkflowCompiler.Reference> passRefs = (png != null ? List.of(new WorkflowCompiler.Reference(referenceName(0), oid, png)) : List.of());
+				List<String> passRefIds = (png != null ? List.of(oid) : List.of());
+				WorkflowCompiler.CompiledGraph cg;
+				try {
+					WorkflowCompiler.ActorTarget target = new WorkflowCompiler.ActorTarget(a, lastGood.bytes, lastGood.artifactOid, List.of(a.getBox()));
+					StageRequest reqA = req.toBuilder().stage(RenderPlan.STAGE_ACTOR_REGION).prompt(cp).model(regionPick.getModel()).build();
+					cg = compiler.compileActorRegion(reqA, passRefs, target, inpaint, client);
+					reqA = reqA.toBuilder().graph(cg.getGraph()).inputs(cg.getInputs()).seed((int) cg.getSeed()).steps(cg.getSteps()).build();
+					StageResult res = adapter.execute(reqA, g::isCancelRequested);
+					if(!res.isOk()) {
+						String error = (res.getError() != null ? res.getError() : RendererAdapter.ERROR_NO_IMAGES);
+						if(RendererAdapter.ERROR_CANCELLED.equals(error) || g.isCancelRequested()) {
+							throw new PbStageCancelledException("Cancelled render of " + sceneLabel + " during " + label + "; nothing recorded");
+						}
+						actorFailed(seq, a, label, error, res.getErrorDetail());
+						continue;
+					}
+					if(g.isCancelRequested()) {
+						throw new PbStageCancelledException("Cancelled render of " + sceneLabel + " after " + label + " answered; images discarded");
+					}
+					StageImage img = res.getImages().get(0);
+					if(img.getBytes() == null || img.getBytes().length == 0) {
+						actorFailed(seq, a, label, RendererAdapter.ERROR_NO_IMAGES, null);
+						continue;
+					}
+					Long seed = (img.isSeedReported() ? Long.valueOf(img.getSeed()) : Long.valueOf(cg.getSeed()));
+					seq.outputs.add(new StageOutput(label, img.getBytes(), seed, res.getRequestJson(), res.getDurationMs(), res.getBackendGraph(),
+						cg.getGraph(), passRefIds, true));
+					seq.graphPath = true;
+					graphStages++;
+					allCalibrated &= PbCalibrationUtil.recordSample(user, sdu.getServer(), regionPick.getFamily(), RenderPlan.STAGE_ACTOR_REGION,
+						cg.getGraph().graphHash(), res.getDurationMs(), cg.getSteps() - cg.getStartAtStep(), req.getWidth(), req.getHeight(),
+						passRefIds.size(), sdu.swarmVersion());
+				}
+				catch(GraphCompileException | IllegalArgumentException e) {
+					actorFailed(seq, a, label, RendererAdapter.ERROR_GRAPH_INVALID + ": " + e.getMessage(), null);
+				}
+			}
+		}
+		seq.calibrationPersisted = (graphStages > 0 && allCalibrated);
+		return seq;
+	}
+
+	/// The image tag name of the i-th actor reference: `actora`, `actorb`, ... Swarm matches request keys on
+	/// their lowercase letters only (design §38.1), so `actor1` / `actor2` would be one parameter on the
+	/// server and {@code GraphInputs} refuses the second; a letter suffix stays distinct after the reduction.
+	/// One letter, so 26 is the ceiling; past it the message names the limit rather than yielding `actor{`.
+	static final int MAX_REFERENCE_NAMES = 26;
+
+	static String referenceName(int index) {
+		if(index < 0 || index >= MAX_REFERENCE_NAMES) {
+			throw new IllegalArgumentException("Reference index " + index + " is outside the " + MAX_REFERENCE_NAMES + " letter-suffixed tags");
+		}
+		return "actor" + (char) ('a' + index);
+	}
+
+	/// A BASE stage failure (§6.3): 503 when the renderer could not be reached, 500 otherwise; the message
+	/// keeps the {@code Render of <label> failed: } prefix and the plan artifact suffix the run error carries.
+	private static PbStageFailedException baseFailure(StageSequence seq, String sceneLabel, String planOid, String error, String detail) {
+		String coded = codedError(error);
+		String code = RendererAdapter.errorCode(error);
+		seq.stageErrors.add(stageError(RenderPlan.STAGE_BASE, code, coded, detail));
+		int status = (RendererAdapter.CODE_UNREACHABLE.equals(code) ? 503 : 500);
+		return new PbStageFailedException(status, "Render of " + sceneLabel + " failed: " + coded + " (plan artifact " + planOid + ")", seq.stageErrors);
+	}
+
+	/// A failed ACTOR_REGION pass (§2.4 step 4, §6.3): an ACTOR_FAILED degradation on the plan and a stage
+	/// error; the sequence goes on with the last good image.
+	private static void actorFailed(StageSequence seq, RenderPlan.Actor a, String label, String error, String detail) {
+		String coded = codedError(error);
+		seq.stageErrors.add(stageError(label, RendererAdapter.errorCode(error), coded, detail));
+		seq.added.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_FAILED,
+			"ACTOR_REGION pass for " + a.getName() + " failed: " + coded, a.getActorId(), RenderPlan.STAGE_ACTOR_REGION));
+		logger.warn("{}: {}", label, coded);
+	}
+
+	/// The PNG bytes of a reference artifact, read as the user; null when the artifact or its data cannot be
+	/// read (the readability probe of the plan only ran at plan time, so the executor checks again).
+	private static byte[] referenceBytes(BaseRecord user, String artifactOid, long orgId) {
+		if(artifactOid == null || artifactOid.isBlank()) {
+			return null;
+		}
+		BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactOid, orgId);
+		byte[] png = readArtifactBytes(user, artifact);
+		return (png != null && png.length > 0 ? png : null);
+	}
+
+	/// Append the executor-time degradations to the persisted plan artifact (its text and content hash) so
+	/// the artifact a reviewer opens says what the render actually did; the in-memory plan is returned with
+	/// them appended either way, and a failed patch is logged, never thrown.
+	private static RenderPlan recordExecutorDegradations(BaseRecord user, BaseRecord planArtifact, RenderPlan plan,
+			List<RenderPlan.Degradation> added) {
+		RenderPlan updated = plan.withDegradations(added);
+		String planOid = planArtifact.get(FieldNames.FIELD_OBJECT_ID);
+		try {
+			BaseRecord patch = PbGraphUtil.patchOf(planArtifact, OlioModelNames.MODEL_PB_ARTIFACT,
+				OlioFieldNames.FIELD_PB_ARTIFACT_TEXT, OlioFieldNames.FIELD_PB_CONTENT_HASH);
+			String json = updated.toJson();
+			patch.set(OlioFieldNames.FIELD_PB_ARTIFACT_TEXT, json);
+			patch.set(OlioFieldNames.FIELD_PB_CONTENT_HASH, PbConfigUtil.sha256Hex(json));
+			BaseRecord res = IOSystem.getActiveContext().getAccessPoint().update(user, patch);
+			if(res == null) {
+				logger.warn("Executor degradations were not recorded on plan artifact " + planOid);
+			}
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			logger.warn("Executor degradations were not recorded on plan artifact " + planOid + ": " + e.getMessage());
+		}
+		return updated;
 	}
 
 	/**
@@ -1071,7 +1488,8 @@ public class PbNodeExecutor {
 		List<String> degradations = r.degradations;
 		byte[] bytes = r.bytes;
 		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE,
-			r.data, bytes, "image/png", r.seed, r.frozen, r.requestJson, List.of(), sdu.getApiType(), r.durationMs);
+			r.data, bytes, "image/png", r.seed, r.frozen, r.requestJson, r.referenceArtifactObjectIds, sdu.getApiType(), r.durationMs,
+			r.backendGraph);
 
 		/// The scene keeps pointing at the newest image so the v1 readers (bookPageView's fallback, the
 		/// health scan's SCENE_IMAGE_* findings) stay coherent; the artifact chain is what review acts on.

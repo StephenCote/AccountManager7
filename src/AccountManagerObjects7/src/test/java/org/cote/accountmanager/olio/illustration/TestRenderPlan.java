@@ -281,7 +281,7 @@ public class TestRenderPlan {
 			+ "\"box\":{\"x\":0.1,\"y\":0.2,\"w\":0.3,\"h\":0.4},\"depth\":2,\"pose\":\"standing\",\"expression\":\"scowling\",\"action\":\"drawing a sword\",\"facing\":\"left\","
 			+ "\"outfit\":{\"apparelId\":\"ap-1\",\"text\":\"wearing a grey cloak\",\"refArtifactId\":\"art-outfit\"},"
 			+ "\"identity\":{\"portraitArtifactId\":\"art-portrait\",\"fullbodyArtifactId\":\"art-body\",\"text\":\"a tall man\"},"
-			+ "\"policy\":\"REQUIRE_REFERENCE\",\"referenced\":true},"));
+			+ "\"policy\":\"REQUIRE_REFERENCE\",\"referenced\":true,\"referenceStage\":\"BASE\"},"));
 		assertTrue(json, json.contains("{\"actorId\":\"row-2\",\"role\":\"CROWD\",\"priority\":9,\"depth\":0,\"identity\":{\"text\":\"3 dockhands\"},\"referenced\":false}"));
 		assertTrue(json, json.contains("\"elements\":[{\"type\":\"PROP\",\"name\":\"lantern\",\"description\":\"a brass lantern\",\"box\":{\"x\":0.5,\"y\":0.5,\"w\":0.1,\"h\":0.1},"
 			+ "\"depth\":1,\"importance\":\"HIGH\",\"itemId\":\"item-7\"},{\"name\":\"gulls\",\"depth\":0,\"importance\":\"LOW\"}]"));
@@ -490,5 +490,71 @@ public class TestRenderPlan {
 
 		assertNotEquals("the camera is part of the plan's identity: with and without hash differently", with.contentHash(), without.contentHash());
 		assertNotEquals("a different camera is a different plan", with.contentHash(), planWithCamera("wide, birds eye").contentHash());
+	}
+
+	/**
+	 * P5-2: an actor's {@code referenceStage} (BASE | ACTOR_REGION | null) and the per-actor compiled key
+	 * {@code ACTOR_REGION#<actorId>} round-trip through the wire; a referenced actor with no stage named (a
+	 * pre-P5-2 plan) reads as BASE, and an unreferenced one stays null. The INPAINT pick is the ACTOR_REGION
+	 * stage's pick when resolved, else the strategy's BASE pick.
+	 */
+	@Test
+	public void referenceStageAndActorCompiledKeyRoundTrip() {
+		RenderPlan.Actor base = new RenderPlan.Actor.Builder("c01").name("Jideon").referenced(true).referenceStage(RenderPlan.STAGE_BASE).build();
+		RenderPlan.Actor region = new RenderPlan.Actor.Builder("c02").name("Mara").box(new RenderPlan.Box(0.6, 0.1, 0.3, 0.8))
+			.referenced(true).referenceStage(RenderPlan.STAGE_ACTOR_REGION).build();
+		RenderPlan.Actor text = new RenderPlan.Actor.Builder("c03").name("Bes").build();
+		RenderPlan a = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE)
+			.location(new RenderPlan.Location(null, "a quay"))
+			.actor(base).actor(region).actor(text)
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, "sd_xl_base_1.0.safetensors", "*xl*", "DEPLOYMENT_DEFAULT", "OK", false, null))
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.SCENE_DIRECT, "flux2Klein_9b.safetensors", "flux2*", "DEPLOYMENT_DEFAULT", "OK", false, null))
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.INPAINT, "flux2Klein_9b.safetensors", "flux2*", "DEPLOYMENT_DEFAULT", "OK", false, null))
+			.build()
+			.withStrategy(new RenderPlan.Strategy(PbStrategyEnumType.SEQUENTIAL_INPAINT, Arrays.asList("BASE", "ACTOR_REGION"), "SEQUENTIAL_INPAINT: 1 BASE, 1 ACTOR_REGION"), null);
+		Map<String, CompiledPrompt> compiled = new LinkedHashMap<>();
+		compiled.put(RenderPlan.STAGE_BASE, new CompiledPrompt("base prompt", "n", 2));
+		compiled.put(RenderPlan.actorStageKey(RenderPlan.STAGE_ACTOR_REGION, "c02"), new CompiledPrompt("Mara region prompt", "n", 2));
+		a = a.withCompiled(compiled, null);
+
+		assertEquals("ACTOR_REGION#c02", RenderPlan.actorStageKey(RenderPlan.STAGE_ACTOR_REGION, "c02"));
+		assertEquals("a blank actorId is the bare stage key", RenderPlan.STAGE_BASE, RenderPlan.actorStageKey(RenderPlan.STAGE_BASE, null));
+		assertEquals("Mara region prompt", a.compiledForActor(RenderPlan.STAGE_ACTOR_REGION, "c02").getPrompt());
+		assertNull("no bare ACTOR_REGION key is ever compiled", a.getCompiled().get(RenderPlan.STAGE_ACTOR_REGION));
+		assertNull(a.compiledForActor(RenderPlan.STAGE_ACTOR_REGION, "c01"));
+		assertEquals("ACTOR_REGION takes the INPAINT pick when resolved", PbModelTaskEnumType.INPAINT, a.pickForStage(RenderPlan.STAGE_ACTOR_REGION).getTask());
+		assertEquals(PbModelTaskEnumType.SCENE_DIRECT, a.pickForStage(RenderPlan.STAGE_BASE).getTask());
+
+		String json = a.toJson();
+		assertTrue(json, json.contains("\"referenced\":true,\"referenceStage\":\"BASE\""));
+		assertTrue(json, json.contains("\"referenced\":true,\"referenceStage\":\"ACTOR_REGION\""));
+		assertTrue(json, json.contains("\"ACTOR_REGION#c02\":{"));
+		assertFalse("an unreferenced actor carries no stage on the wire", json.contains("\"actorId\":\"c03\",\"name\":\"Bes\",\"role\":\"FOREGROUND\",\"priority\":0,\"depth\":0,\"referenced\":false,\"referenceStage\""));
+		RenderPlan back = RenderPlan.fromJson(json);
+		assertNotNull(back);
+		assertEquals(json, back.toJson());
+		assertEquals(a.contentHash(), back.contentHash());
+		assertEquals(RenderPlan.STAGE_BASE, back.getActors().get(0).getReferenceStage());
+		assertEquals(RenderPlan.STAGE_ACTOR_REGION, back.getActors().get(1).getReferenceStage());
+		assertTrue(back.getActors().get(1).isReferenced());
+		assertNull(back.getActors().get(2).getReferenceStage());
+		assertFalse(back.getActors().get(2).isReferenced());
+		assertEquals("Mara region prompt", back.compiledForActor(RenderPlan.STAGE_ACTOR_REGION, "c02").getPrompt());
+
+		/// an unresolved INPAINT pick falls through to the strategy's BASE pick
+		RenderPlan noInpaint = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE)
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.SCENE_DIRECT, "flux2Klein_9b.safetensors", "flux2*", "DEPLOYMENT_DEFAULT", "OK", false, null))
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.INPAINT, null, null, "DEPLOYMENT_DEFAULT", "INVENTORY_UNAVAILABLE", true, null))
+			.build()
+			.withStrategy(new RenderPlan.Strategy(PbStrategyEnumType.SEQUENTIAL_INPAINT, Arrays.asList("BASE", "ACTOR_REGION"), "x"), null);
+		assertEquals(PbModelTaskEnumType.SCENE_DIRECT, noInpaint.pickForStage(RenderPlan.STAGE_ACTOR_REGION).getTask());
+
+		/// legacy: referenced with no stage reads as BASE; unreferenced stays null
+		RenderPlan legacy = RenderPlan.fromJson("{\"planVersion\":\"illustration/1\",\"purpose\":\"scene\",\"config\":{},"
+			+ "\"actors\":[{\"actorId\":\"c01\",\"name\":\"Jideon\",\"referenced\":true},{\"actorId\":\"c02\",\"name\":\"Mara\",\"referenced\":false}],"
+			+ "\"intent\":{\"raw\":false},\"models\":{}}");
+		assertEquals(RenderPlan.STAGE_BASE, legacy.getActors().get(0).getReferenceStage());
+		assertNull(legacy.getActors().get(1).getReferenceStage());
+		assertTrue(legacy.toJson(), legacy.toJson().contains("\"referenced\":true,\"referenceStage\":\"BASE\""));
 	}
 }

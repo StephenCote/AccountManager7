@@ -19,6 +19,36 @@ public interface RendererAdapter {
 	/// server's text follows ": ". Distinct from a generation failure, which stays a backend error.
 	String ERROR_RENDERER_REJECTED = "RENDERER_REJECTED";
 
+	/// Stage error codes (P5-2 §6.1) for the prose errors above, so a consumer classifies every failed
+	/// stage by one token: the executor's stageErrors[].code and the ACTOR_FAILED message prefix.
+	String CODE_UNREACHABLE = "UNREACHABLE";
+	String CODE_NO_IMAGES = "NO_IMAGES";
+	String CODE_CANCELLED = "CANCELLED";
+	String CODE_RENDERER_ERROR = "RENDERER_ERROR";
+
+	/// The code of a stage error: the prose constants map to their CODE_*, GRAPH_INVALID and
+	/// RENDERER_REJECTED are their own first token, anything else is the text before the first ": "
+	/// (or the whole text). Null for null.
+	static String errorCode(String error) {
+		if(error == null) {
+			return null;
+		}
+		if(ERROR_UNREACHABLE.equals(error)) {
+			return CODE_UNREACHABLE;
+		}
+		if(ERROR_NO_IMAGES.equals(error)) {
+			return CODE_NO_IMAGES;
+		}
+		if(ERROR_CANCELLED.equals(error)) {
+			return CODE_CANCELLED;
+		}
+		if(error.startsWith(ERROR_PREFIX_BACKEND)) {
+			return CODE_RENDERER_ERROR;
+		}
+		int i = error.indexOf(": ");
+		return (i < 0 ? error : error.substring(0, i));
+	}
+
 	/// Capabilities of the named model's family, or null when the family is unknown.
 	RendererCapabilities capabilities(String model);
 

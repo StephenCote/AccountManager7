@@ -11,11 +11,14 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.illustration.CanvasResolver;
 import org.cote.accountmanager.olio.illustration.ComfyGraph;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.InpaintRegionCompiler;
 import org.cote.accountmanager.olio.illustration.PromptCompilers;
 import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
@@ -25,6 +28,7 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
@@ -132,7 +136,7 @@ public final class PbRenderPlanUtil {
 		String renderOid = resolveSceneLocation(user, book, scene, composition, s.builder);
 
 		s.builder
-			.actors(actorsOf(user, book, composition, s.caps, renderOid != null, out))
+			.actors(actorsOf(user, book, composition, s.caps, s.inpaintResolved(), renderOid != null, out))
 			.elements(elementsOf(user, composition, out));
 		/// A SCENE composition's shot type / viewpoint / cameraText is the plan's camera (P4-10 A2); the compiler
 		/// (SdxlCompiler) already consumes plan.camera, so nothing else changes when there is none.
@@ -290,13 +294,20 @@ public final class PbRenderPlanUtil {
 		return finish(s);
 	}
 
-	/// The builder every plan shares before its subject is set, plus the capabilities the strategy needs.
+	/// The builder every plan shares before its subject is set, plus what the reference decision needs: the
+	/// capabilities of the pick a reference strategy renders BASE with (SCENE_DIRECT when it resolved, else
+	/// LOCATION's) and the INPAINT pick an ACTOR_REGION pass requires (unresolved picks never earn one).
 	private static final class Scaffold {
 		final RenderPlan.Builder builder;
 		final RendererCapabilities caps;
-		Scaffold(RenderPlan.Builder builder, RendererCapabilities caps) {
+		final RenderPlan.ModelPick inpaintPick;
+		Scaffold(RenderPlan.Builder builder, RendererCapabilities caps, RenderPlan.ModelPick inpaintPick) {
 			this.builder = builder;
 			this.caps = caps;
+			this.inpaintPick = inpaintPick;
+		}
+		boolean inpaintResolved() {
+			return inpaintPick != null && inpaintPick.isResolved();
 		}
 	}
 
@@ -324,8 +335,11 @@ public final class PbRenderPlanUtil {
 			effective, modelOverride, apiType, sdServer, false);
 		ModelResolver.Resolution directRes = PbModelPolicy.applyForStyle(style, styleTier, PbModelTaskEnumType.SCENE_DIRECT,
 			null, null, apiType, sdServer, false);
+		ModelResolver.Resolution inpaintRes = PbModelPolicy.applyForStyle(style, styleTier, PbModelTaskEnumType.INPAINT,
+			null, null, apiType, sdServer, false);
 		RenderPlan.ModelPick locPick = ModelResolver.pickOf(locRes);
 		RenderPlan.ModelPick directPick = ModelResolver.pickOf(directRes);
+		RenderPlan.ModelPick inpaintPick = ModelResolver.pickOf(inpaintRes);
 		ModelResolver.addDegradation(locRes, degradations);
 
 		QualityPresets.Preset preset = QualityPresets.resolve(
@@ -333,6 +347,8 @@ public final class PbRenderPlanUtil {
 				? opts.getPresetOverride() : style.qualityPreset());
 		RendererCapabilities caps = (locRes.getCapabilities() != null ? locRes.getCapabilities() : RendererCapabilities.forModel(locRes.getModel()));
 		int steps = (caps != null ? caps.recommendedSteps(preset.getStepsMode()) : intOf(effective, OlioFieldNames.FIELD_SD_STEPS, 20));
+		/// Reference strategies render BASE with the SCENE_DIRECT pick, so its family decides the slots and masks
+		RendererCapabilities strategyCaps = (directRes.isResolved() && directRes.getCapabilities() != null ? directRes.getCapabilities() : caps);
 		RenderPlan.PresetValues presetValues = new RenderPlan.PresetValues(preset.getName().name(), steps, preset.getVariants(),
 			preset.isUpscale(), preset.getQa());
 
@@ -356,15 +372,18 @@ public final class PbRenderPlanUtil {
 			.config(snapshot)
 			.intent(new RenderPlan.Intent(opts.getPromptOverride(), opts.isRaw()))
 			.model(locPick)
-			.model(directPick);
+			.model(directPick)
+			.model(inpaintPick);
 		for(RenderPlan.Degradation d : degradations) {
 			b.degradation(d);
 		}
-		return new Scaffold(b, caps);
+		return new Scaffold(b, strategyCaps, inpaintPick);
 	}
 
 	/// Strategy selection and per-stage compilation, identical for every purpose. The compiler is the
 	/// stage pick's family ({@link PromptCompilers#forPick}): FLUX2 picks compile as prose, everything else as SDXL.
+	/// ACTOR_REGION has no bare key: each ACTOR_REGION actor gets its own "ACTOR_REGION#actorId" prompt from
+	/// {@link InpaintRegionCompiler} (P5-2).
 	private static RenderPlan finish(Scaffold s) {
 		RenderPlan plan = s.builder.build();
 		List<RenderPlan.Degradation> out = new ArrayList<>();
@@ -373,7 +392,16 @@ public final class PbRenderPlanUtil {
 
 		out = new ArrayList<>();
 		Map<String, CompiledPrompt> compiled = new LinkedHashMap<>();
+		InpaintRegionCompiler region = new InpaintRegionCompiler();
 		for(String stage : strategy.getStages()) {
+			if(RenderPlan.STAGE_ACTOR_REGION.equals(stage)) {
+				for(RenderPlan.Actor a : plan.getActors()) {
+					if(a.isReferenced() && RenderPlan.STAGE_ACTOR_REGION.equals(a.getReferenceStage())) {
+						compiled.put(RenderPlan.actorStageKey(stage, a.getActorId()), region.compile(plan, a, out));
+					}
+				}
+				continue;
+			}
 			compiled.put(stage, PromptCompilers.forPick(plan.pickForStage(stage)).compile(plan, stage, out));
 		}
 		return plan.withCompiled(compiled, out);
@@ -626,17 +654,23 @@ public final class PbRenderPlanUtil {
 	 *     approved PORTRAIT artifact when the book's workflow has one.</li>
 	 * </ul>
 	 * {@code referenced} is decided here, not by the compiler: a HERO / SUPPORTING (or FOREGROUND) actor whose
-	 * policy is not TEXT_ONLY and who has an approved portrait is a candidate (NAMED_BACKGROUND only under
-	 * REQUIRE_REFERENCE); candidates fill {@code caps.maxReferences} slots less one when the scene carries a
-	 * location render, REQUIRE_REFERENCE first, then by priority. Every other candidate is
-	 * {@code ACTOR_TEXT_ONLY} with the reason (no approved portrait, reference limit, REQUIRE_REFERENCE not
-	 * met); a renderer with no reference slots at all makes every actor text with no per-actor degradation.
-	 * A composition or actor-row read that throws never aborts a plan: the actors are empty and one
-	 * {@code ACTOR_UNRESOLVED} (no actorId) says the rows were not read, so the render cannot auto-approve.
+	 * policy is not TEXT_ONLY and who has an approved portrait this user can read is a candidate
+	 * (NAMED_BACKGROUND only under REQUIRE_REFERENCE); candidates fill {@code caps.maxReferences} BASE slots
+	 * less one when the scene carries a location render, REQUIRE_REFERENCE first, then by priority (P5-2:
+	 * {@code caps} is the SCENE_DIRECT pick's family when it resolved, since that is what renders BASE). An
+	 * overflow candidate with a box becomes an {@code ACTOR_REGION} reference instead when the family supports
+	 * masks, declares inpaint parameters and an INPAINT pick resolved ({@code inpaintResolved}) - no degradation.
+	 * Every other candidate is {@code ACTOR_TEXT_ONLY} with the reason (no approved portrait, portrait not
+	 * readable, reference limit, REQUIRE_REFERENCE not met); a renderer with no reference slots and no region
+	 * pass makes every actor text with no per-actor degradation. The portrait's readability is probed here
+	 * (identity only, as {@code user}, mirroring the executor's read) so the plan never names a reference the
+	 * executor could not send. A composition or actor-row read that throws never aborts a plan: the actors are
+	 * empty and one {@code ACTOR_UNRESOLVED} (no actorId) says the rows were not read, so the render cannot
+	 * auto-approve.
 	 */
 	static List<RenderPlan.Actor> sceneActors(BaseRecord user, BaseRecord book, BaseRecord scene, RendererCapabilities caps,
-			boolean hasLocationRef, List<RenderPlan.Degradation> out) {
-		return actorsOf(user, book, findComposition(user, book, scene, out), caps, hasLocationRef, out);
+			boolean inpaintResolved, boolean hasLocationRef, List<RenderPlan.Degradation> out) {
+		return actorsOf(user, book, findComposition(user, book, scene, out), caps, inpaintResolved, hasLocationRef, out);
 	}
 
 	/// The scene's elements from its SCENE-purpose composition; empty without one. No degradation is raised.
@@ -681,7 +715,9 @@ public final class PbRenderPlanUtil {
 		final int order;
 		final boolean requireReference;
 		boolean candidate;
+		boolean hasBox;
 		boolean referenced;
+		String referenceStage;
 
 		ActorEntry(RenderPlan.Actor.Builder builder, String name, String actorId, int priority, int order, boolean requireReference) {
 			this.builder = builder;
@@ -694,7 +730,7 @@ public final class PbRenderPlanUtil {
 	}
 
 	private static List<RenderPlan.Actor> actorsOf(BaseRecord user, BaseRecord book, BaseRecord composition,
-			RendererCapabilities caps, boolean hasLocationRef, List<RenderPlan.Degradation> out) {
+			RendererCapabilities caps, boolean inpaintResolved, boolean hasLocationRef, List<RenderPlan.Degradation> out) {
 		if(composition == null) return Collections.emptyList();
 		List<BaseRecord> rows;
 		Map<Long, PbWardrobeUtil.ResolvedOutfit> outfits = new HashMap<>();
@@ -778,6 +814,7 @@ public final class PbRenderPlanUtil {
 					}
 					String identityText = (NarrativeUtil.isMeaningful(outfitText) ? physicalDescription(cp) : actorDescription(cp));
 					String portraitOid = null;
+					boolean portraitReadable = false;
 					if(!textOnly) {
 						if(!workflowRead[0]) {
 							workflowRead[0] = true;
@@ -788,7 +825,9 @@ public final class PbRenderPlanUtil {
 								logger.warn("Could not read the workflow of book " + book.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
 							}
 						}
-						portraitOid = approvedPortrait(user, workflow[0], cpOid);
+						BaseRecord portrait = approvedPortrait(user, workflow[0], cpOid);
+						portraitOid = (portrait != null ? strField(portrait, FieldNames.FIELD_OBJECT_ID) : null);
+						portraitReadable = (portraitOid != null && portraitDataReadable(user, portrait));
 					}
 					b = new RenderPlan.Actor.Builder(actorId).characterId(cpOid).name(name).outfit(outfit)
 						.identity(new RenderPlan.Identity(portraitOid, null, identityText));
@@ -796,18 +835,20 @@ public final class PbRenderPlanUtil {
 					boolean eligibleRole = RenderPlan.ROLE_HERO.equals(role) || RenderPlan.ROLE_SUPPORTING.equals(role)
 						|| RenderPlan.ROLE_FOREGROUND.equals(role) || (RenderPlan.ROLE_NAMED_BACKGROUND.equals(role) && requireRef);
 					if(!textOnly && eligibleRole) {
-						if(portraitOid != null) {
+						if(portraitReadable) {
 							entry.candidate = true;
 						}
 						else {
+							String why = (portraitOid != null ? "portrait not readable" : (requireRef ? "REQUIRE_REFERENCE not met" : "no approved portrait"));
 							out.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_TEXT_ONLY,
-								label(name, actorId) + " rendered from description (" + (requireRef ? "REQUIRE_REFERENCE not met" : "no approved portrait") + ")",
-								actorId, RenderPlan.STAGE_BASE));
+								label(name, actorId) + " rendered from description (" + why + ")", actorId, RenderPlan.STAGE_BASE));
 						}
 					}
 				}
 			}
-			b.role(role).priority(priority).box(boxOf(row)).depth(intOf(row, OlioFieldNames.FIELD_PB_DEPTH, 0))
+			RenderPlan.Box box = boxOf(row);
+			entry.hasBox = (box != null);
+			b.role(role).priority(priority).box(box).depth(intOf(row, OlioFieldNames.FIELD_PB_DEPTH, 0))
 				.pose(meaningful(strField(row, OlioFieldNames.FIELD_PB_POSE)))
 				.expression(meaningful(strField(row, FieldNames.FIELD_EXPRESSION)))
 				.action(meaningful(strField(row, OlioFieldNames.FIELD_PB_ACTION)))
@@ -818,6 +859,9 @@ public final class PbRenderPlanUtil {
 		}
 
 		/// Slot assignment: REQUIRE_REFERENCE first, then priority, then row order (listActors is already by priority).
+		/// BASE slots first; an overflow candidate with a box takes an ACTOR_REGION pass when the family can mask
+		/// and an INPAINT pick resolved (addendum 8), so a region pass satisfies REQUIRE_REFERENCE too.
+		boolean regionCapable = (caps != null && caps.isSupportsMasks() && caps.getInpaint() != null && inpaintResolved);
 		List<ActorEntry> candidates = new ArrayList<>();
 		for(ActorEntry e : entries) {
 			if(e.candidate) candidates.add(e);
@@ -828,23 +872,49 @@ public final class PbRenderPlanUtil {
 		for(ActorEntry e : candidates) {
 			if(used < slots) {
 				e.referenced = true;
+				e.referenceStage = RenderPlan.STAGE_BASE;
 				used++;
+			}
+			else if(regionCapable && e.hasBox) {
+				e.referenced = true;
+				e.referenceStage = RenderPlan.STAGE_ACTOR_REGION;
 			}
 			else if(e.requireReference) {
 				out.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_TEXT_ONLY,
 					label(e.name, e.actorId) + " rendered from description (REQUIRE_REFERENCE not met)", e.actorId, RenderPlan.STAGE_BASE));
 			}
-			else if(slots > 0) {
+			else if(slots > 0 || regionCapable) {
 				out.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_TEXT_ONLY,
-					label(e.name, e.actorId) + " rendered from description (reference limit " + slots + ")", e.actorId, RenderPlan.STAGE_BASE));
+					label(e.name, e.actorId) + " rendered from description (reference limit " + slots
+					+ (regionCapable ? "; no box for a region pass" : "") + ")", e.actorId, RenderPlan.STAGE_BASE));
 			}
 		}
 
 		List<RenderPlan.Actor> actors = new ArrayList<>();
 		for(ActorEntry e : entries) {
-			actors.add(e.builder.referenced(e.referenced).build());
+			actors.add(e.builder.referenced(e.referenced).referenceStage(e.referenceStage).build());
 		}
 		return actors;
+	}
+
+	/// Whether {@code user} can read the artifact's data.data record (identity only, no bytes): the same read the
+	/// executor's readArtifactBytes performs, so an unreadable portrait degrades at plan time, never at render.
+	private static boolean portraitDataReadable(BaseRecord user, BaseRecord artifact) {
+		if(artifact == null || !artifact.hasField(OlioFieldNames.FIELD_PB_DATA)) return false;
+		BaseRecord dataStub = artifact.get(OlioFieldNames.FIELD_PB_DATA);
+		String dataOid = (dataStub != null ? strField(dataStub, FieldNames.FIELD_OBJECT_ID) : null);
+		if(dataOid == null) return false;
+		try {
+			Query dq = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, dataOid);
+			dq.field(FieldNames.FIELD_ORGANIZATION_ID, PbGraphUtil.orgId(artifact));
+			dq.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID });
+			dq.setCache(false);
+			return IOSystem.getActiveContext().getAccessPoint().find(user, dq) != null;
+		}
+		catch(Exception e) {
+			logger.warn("Could not probe portrait data " + dataOid + ": " + e.getMessage());
+			return false;
+		}
 	}
 
 	private static List<RenderPlan.Element> elementsOf(BaseRecord user, BaseRecord composition, List<RenderPlan.Degradation> out) {
@@ -872,15 +942,16 @@ public final class PbRenderPlanUtil {
 		}
 	}
 
-	/// The objectId of the first APPROVED artifact in the character's PORTRAIT chain, or null.
-	private static String approvedPortrait(BaseRecord user, BaseRecord workflow, String charOid) {
+	/// The first APPROVED artifact in the character's PORTRAIT chain (as listChain projects it, data FK stub
+	/// included), or null.
+	private static BaseRecord approvedPortrait(BaseRecord user, BaseRecord workflow, String charOid) {
 		if(workflow == null || charOid == null) return null;
 		try {
 			BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, PbPipelineUtil.portraitHandle(charOid));
 			if(node == null) return null;
 			for(BaseRecord a : PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_PORTRAIT)) {
 				if(PbArtifactUtil.reviewStatusOf(a) == PbReviewStatusEnumType.APPROVED) {
-					return a.get(FieldNames.FIELD_OBJECT_ID);
+					return a;
 				}
 			}
 		}

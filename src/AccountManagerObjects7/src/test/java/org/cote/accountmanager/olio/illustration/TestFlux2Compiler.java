@@ -219,6 +219,60 @@ public class TestFlux2Compiler {
 	}
 
 	@Test
+	public void sequentialInpaintSpeaksBaseReferencesOnlyAndRegionActorsAsText() {
+		/// P5-2: Jideon and Mara ride in BASE (ordinals), Tam takes an ACTOR_REGION pass so the base prompt describes
+		/// him as text - he is still counted among "the other people described below" so the composition leaves
+		/// room where his box is - and the reference rules are still emitted for the two spoken references.
+		RenderPlan p = base(PbStrategyEnumType.SEQUENTIAL_INPAINT)
+			.strategy(new RenderPlan.Strategy(PbStrategyEnumType.SEQUENTIAL_INPAINT, Arrays.asList(RenderPlan.STAGE_BASE, RenderPlan.STAGE_ACTOR_REGION), "SEQUENTIAL_INPAINT: test"))
+			.actor(actor("a1", "Jideon", RenderPlan.ROLE_HERO, "a tall man", true, 1))
+			.actor(actor("a2", "Mara", RenderPlan.ROLE_SUPPORTING, "a hooded figure", true, 2))
+			.actor(new Actor.Builder("a3").characterId("ch-a3").name("Tam").role(RenderPlan.ROLE_FOREGROUND).priority(3)
+				.identity(new RenderPlan.Identity("art-a3", null, "a boy with a lantern")).referenced(true)
+				.referenceStage(RenderPlan.STAGE_ACTOR_REGION).box(new RenderPlan.Box(0.66, 0.2, 0.33, 0.8)).build())
+			.build();
+		List<Degradation> degs = new ArrayList<>();
+		CompiledPrompt cp = compiler.compile(p, RenderPlan.STAGE_BASE, degs);
+		assertEquals("Combine the exact person and face from the first reference image with the exact person and face from the second reference image. "
+			+ "Place them all, with the other people described below, in " + MAIN + ". "
+			+ "The first person (the first reference image) is Jideon, a tall man. "
+			+ "The second person (the second reference image) is Mara, a hooded figure. "
+			+ "The third person is Tam, a boy with a lantern. "
+			+ STYLE + ". " + RULES_REFERENCE.trim(), cp.getPrompt());
+		assertFalse("no third reference is spoken of", cp.getPrompt().contains("third reference"));
+		assertTrue(degs.isEmpty());
+
+		/// every referenced actor on ACTOR_REGION: BASE is text-only in wording (no ordinals, no reference rules)
+		/// even though the strategy is SEQUENTIAL_INPAINT
+		RenderPlan regionOnly = base(PbStrategyEnumType.SEQUENTIAL_INPAINT)
+			.actor(new Actor.Builder("a3").characterId("ch-a3").name("Tam").role(RenderPlan.ROLE_HERO).priority(1)
+				.identity(new RenderPlan.Identity("art-a3", null, "a boy with a lantern")).referenced(true)
+				.referenceStage(RenderPlan.STAGE_ACTOR_REGION).box(new RenderPlan.Box(0.66, 0.2, 0.33, 0.8)).build())
+			.build();
+		String rp = compiler.compile(regionOnly, RenderPlan.STAGE_BASE, null).getPrompt();
+		assertEquals("Place the person described below in " + MAIN + ". The first person is Tam, a boy with a lantern. " + STYLE + ". " + RULES_TEXT_ONLY.trim(), rp);
+
+		/// under SEQUENTIAL_INPAINT the location reference is spoken of exactly as under DIRECT_REFERENCE
+		RenderPlan withLoc = base(PbStrategyEnumType.SEQUENTIAL_INPAINT)
+			.location(new RenderPlan.Location("loc-1", null, "ab12", "art-loc", MAIN))
+			.actor(actor("a1", "Jideon", RenderPlan.ROLE_HERO, "a tall man", true, 1))
+			.build();
+		assertTrue(compiler.compile(withLoc, RenderPlan.STAGE_BASE, null).getPrompt()
+			.startsWith("Take the exact person and face from the first reference image and place them in the environment shown in the second reference image (" + MAIN + "). "));
+
+		/// the strategy gate still holds: an ACTOR_REGION-staged actor under TEXT_ONLY is plain text and no location ordinal
+		RenderPlan textOnly = base(PbStrategyEnumType.TEXT_ONLY)
+			.location(new RenderPlan.Location("loc-1", null, "ab12", "art-loc", MAIN))
+			.actor(actor("a1", "Jideon", RenderPlan.ROLE_HERO, "a tall man", true, 1))
+			.build();
+		assertFalse(compiler.compile(textOnly, RenderPlan.STAGE_BASE, null).getPrompt().contains("reference"));
+		assertTrue(Flux2Compiler.usesReferences(new RenderPlan.Strategy(PbStrategyEnumType.SEQUENTIAL_INPAINT, Arrays.asList(RenderPlan.STAGE_BASE), "x")));
+		assertTrue(Flux2Compiler.usesReferences(new RenderPlan.Strategy(PbStrategyEnumType.DIRECT_REFERENCE, Arrays.asList(RenderPlan.STAGE_BASE), "x")));
+		assertFalse(Flux2Compiler.usesReferences(new RenderPlan.Strategy(PbStrategyEnumType.TEXT_ONLY, Arrays.asList(RenderPlan.STAGE_BASE), "x")));
+		assertFalse(Flux2Compiler.usesReferences(null));
+	}
+
+	@Test
 	public void everyRoleHasItsSentence() {
 		Actor hero = new Actor.Builder("a1").characterId("ch-1").name("Jideon").role(RenderPlan.ROLE_HERO).priority(1)
 			.identity(new RenderPlan.Identity(null, null, "a tall man"))

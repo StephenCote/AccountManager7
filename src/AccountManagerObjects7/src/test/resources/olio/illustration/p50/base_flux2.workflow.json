@@ -28,44 +28,35 @@
     }
   },
   "6" : {
-    "class_type" : "SwarmTextEncodeAdvanced",
+    "class_type" : "CLIPTextEncode",
     "inputs" : {
       "clip" : [ "100", 0 ],
-      "lora_hooks" : null,
-      "steps" : 4,
-      "prompt" : "Combine the exact person and face from the first reference image with the exact person and face from the second reference image. Place both people together in the environment shown in the third reference image (a rain-soaked street beside a weathered clapboard house, overhead power lines, bare winter trees, overcast light, puddles reflecting the sky). The first person is a lean man in his fifties with short grey hair and a grey beard, wearing a coral-pink jacket over a patterned shirt, rust-red cargo trousers and olive boots. The second person is a young woman with long wavy strawberry-blonde hair, wearing a green and white striped satin tunic over lime-green trousers and teal boots. They are standing together on the wet pavement, talking. The mood is bleak and quiet, flat grey overcast daylight. Preserve facial identity, hair, and clothing precisely. Matching lighting, scale, and perspective across the whole image. No extra people. Do not draw the reference images themselves - no poster, screen, mirror, billboard, framed picture or character sheet anywhere in the scene. A single continuous scene, no panels, no split screen, no collage.",
-      "width" : 1536,
-      "height" : 1152,
-      "target_width" : 1024,
-      "target_height" : 768,
-      "guidance" : -1.0,
-      "images" : null,
-      "minimax_refs" : null
+      "text" : "V3SCENEMARKER7731"
     }
   },
   "7" : {
     "class_type" : "CLIPTextEncode",
     "inputs" : {
       "clip" : [ "100", 0 ],
-      "text" : "blurry faces, deformed, extra people, mismatched lighting, low quality"
+      "text" : "V3NEGATIVEMARKER7732"
     }
   },
   "102" : {
     "class_type" : "SwarmLoadImageB64",
     "inputs" : {
-      "image_base64" : "<2731996 chars base64>"
+      "image_base64" : "<4848 chars base64>"
     }
   },
   "103" : {
     "class_type" : "SwarmLoadImageB64",
     "inputs" : {
-      "image_base64" : "<2274284 chars base64>"
+      "image_base64" : "<4848 chars base64>"
     }
   },
   "104" : {
     "class_type" : "SwarmLoadImageB64",
     "inputs" : {
-      "image_base64" : "<2351844 chars base64>"
+      "image_base64" : "<4848 chars base64>"
     }
   },
   "105" : {
@@ -114,7 +105,7 @@
     "class_type" : "SwarmKSampler",
     "inputs" : {
       "model" : [ "4", 0 ],
-      "noise_seed" : 424242,
+      "noise_seed" : 1234567,
       "steps" : 4,
       "cfg" : 2.0,
       "sampler_name" : "euler",

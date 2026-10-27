@@ -127,10 +127,12 @@ public final class SwarmRendererAdapter implements RendererAdapter {
 	// ─────────────────────────────── raw graph (§38) ───────────────────────────────
 
 	/// Post a compiled graph. Before the GPU: the graph is checked against the server's node catalogue
-	/// (GRAPH_INVALID). After: Swarm's `unsupported node type` style refusals are RENDERER_REJECTED and
-	/// drop the catalogue so the next render refetches it. The seed on each image is the seed the inputs
-	/// carry, because a raw render's PNG metadata reflects the request defaults, not the graph
-	/// (§38.3). Only BASE feeds calibration.
+	/// (GRAPH_INVALID, node-qualified, no HTTP). After: Swarm's `unsupported node type` style refusals
+	/// are RENDERER_REJECTED (node-qualified when the text names one) and drop the catalogue so the next
+	/// render refetches it. The seed on each image is the seed the inputs carry, because a raw render's
+	/// PNG metadata reflects the request defaults, not the graph (§38.3). Calibration for a graph stage
+	/// is not folded here: the executor records it per stage through PbCalibrationUtil.recordSample,
+	/// which also persists it as the requesting user (P5-2 §4.4), so one render is one sample.
 	private StageResult executeGraph(StageRequest request, CancelToken token) {
 		ComfyGraph graph = request.getGraph();
 		GraphInputs inputs = request.getInputs();
@@ -149,7 +151,9 @@ public final class SwarmRendererAdapter implements RendererAdapter {
 		}
 		List<GraphProblem> errors = NodeCatalogue.errors(problems);
 		if(!errors.isEmpty()) {
-			return StageResult.failed(ERROR_GRAPH_INVALID + ": " + NodeCatalogue.describe(errors), 0L, requestJson);
+			return StageResult.builder().error(graphInvalid(graph, errors.get(0)))
+				.errorDetail(errors.size() > 1 ? NodeCatalogue.describe(errors.subList(1, errors.size())) : null)
+				.durationMs(0L).requestJson(requestJson).build();
 		}
 		if(problems.size() > errors.size()) {
 			logger.info("Graph for stage " + request.getStage() + " has " + (problems.size() - errors.size()) + " warning(s): " + NodeCatalogue.describe(problems));
@@ -173,7 +177,7 @@ public final class SwarmRendererAdapter implements RendererAdapter {
 			}
 			if(isGraphRejection(resp.getError())) {
 				NodeCatalogue.invalidate(server);
-				return StageResult.failed(ERROR_RENDERER_REJECTED + ": " + resp.getError(), durationMs, requestJson);
+				return StageResult.failed(ERROR_RENDERER_REJECTED + ": " + SwarmGraphClient.parseNodeFailure(resp.getError(), graph), durationMs, requestJson);
 			}
 			return StageResult.failed(ERROR_PREFIX_BACKEND + resp.getError(), durationMs, requestJson);
 		}
@@ -197,15 +201,23 @@ public final class SwarmRendererAdapter implements RendererAdapter {
 		}
 		StageResult result = out.build();
 		if(result.isOk()) {
-			if(RenderPlan.STAGE_BASE.equals(request.getStage())) {
-				RendererCapabilities caps = capabilities(request.getModel());
-				if(caps != null) {
-					RenderCalibration.record(server, caps.getPattern(), durationMs, request.getSteps(), request.getWidth(), request.getHeight());
-				}
-			}
 			logger.info("Stage " + request.getStage() + " (graph " + graphHash.substring(0, 12) + ") rendered " + result.getImages().size() + " image(s) in " + durationMs + " ms");
 		}
 		return result;
+	}
+
+	/// "GRAPH_INVALID: node <id> <class> <code>: <message>" for a node-bound problem; "GRAPH_INVALID: <code>: <message>" otherwise.
+	static String graphInvalid(ComfyGraph graph, GraphProblem p) {
+		StringBuilder sb = new StringBuilder(ERROR_GRAPH_INVALID).append(": ");
+		if(p.getNodeId() != null) {
+			sb.append("node ").append(p.getNodeId());
+			String ct = (graph == null ? null : graph.classType(p.getNodeId()));
+			if(ct != null && !ct.isBlank()) {
+				sb.append(' ').append(ct);
+			}
+			sb.append(' ');
+		}
+		return sb.append(p.getCode()).append(": ").append(p.getMessage()).toString();
 	}
 
 	/// The stage's request record: what was sent minus the graph body and the images (both are

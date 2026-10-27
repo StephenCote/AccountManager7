@@ -2,39 +2,47 @@
   "4" : {
     "class_type" : "CheckpointLoaderSimple",
     "inputs" : {
-      "ckpt_name" : "juggernautXL_ragnarokBy.safetensors"
+      "ckpt_name" : "OfficialStableDiffusion\\sd_xl_base_1.0.safetensors"
     }
   },
   "100" : {
-    "class_type" : "SwarmLoadImageB64",
+    "class_type" : "ModelSamplingDiscrete",
     "inputs" : {
-      "image_base64" : "<5336 chars base64>"
+      "model" : [ "4", 0 ],
+      "sampling" : "eps",
+      "zsnr" : false
     }
   },
   "101" : {
-    "class_type" : "ImageToMask",
+    "class_type" : "SwarmLoadImageB64",
     "inputs" : {
-      "image" : [ "100", 0 ],
-      "channel" : "red"
+      "image_base64" : "<5356 chars base64>"
     }
   },
   "102" : {
-    "class_type" : "DifferentialDiffusion",
+    "class_type" : "ImageToMask",
     "inputs" : {
-      "model" : [ "4", 0 ]
+      "image" : [ "101", 0 ],
+      "channel" : "red"
     }
   },
   "103" : {
-    "class_type" : "SwarmMaskGrow",
+    "class_type" : "DifferentialDiffusion",
     "inputs" : {
-      "mask" : [ "101", 0 ],
-      "grow" : 16
+      "model" : [ "100", 0 ]
     }
   },
   "104" : {
+    "class_type" : "SwarmMaskGrow",
+    "inputs" : {
+      "mask" : [ "102", 0 ],
+      "grow" : 16
+    }
+  },
+  "105" : {
     "class_type" : "SwarmMaskBlur",
     "inputs" : {
-      "mask" : [ "103", 0 ],
+      "mask" : [ "104", 0 ],
       "blur_radius" : 8,
       "sigma" : 1.0
     }
@@ -42,7 +50,7 @@
   "15" : {
     "class_type" : "SwarmLoadImageB64",
     "inputs" : {
-      "image_base64" : "<1996020 chars base64>"
+      "image_base64" : "<4848 chars base64>"
     }
   },
   "5" : {
@@ -52,39 +60,53 @@
       "pixels" : [ "15", 0 ]
     }
   },
-  "105" : {
+  "106" : {
     "class_type" : "SetLatentNoiseMask",
     "inputs" : {
       "samples" : [ "5", 0 ],
-      "mask" : [ "104", 0 ]
+      "mask" : [ "105", 0 ]
     }
   },
   "6" : {
-    "class_type" : "CLIPTextEncode",
+    "class_type" : "CLIPTextEncodeSDXL",
     "inputs" : {
       "clip" : [ "4", 1 ],
-      "text" : "A photograph of a lean man in his fifties with short grey hair and a grey beard, wearing a coral-pink jacket over a patterned shirt, rust-red cargo trousers and olive boots wearing a bright yellow scarf and a young woman with long wavy strawberry-blonde hair, wearing a green and white striped satin tunic over lime-green trousers and teal boots, standing together on the wet pavement, talking, in a rain-soaked street beside a weathered clapboard house, overhead power lines, bare winter trees, overcast light, puddles reflecting the sky. bleak and quiet, flat grey overcast daylight."
+      "text_g" : "V3SCENEMARKER7731",
+      "text_l" : "V3SCENEMARKER7731",
+      "crop_w" : 0,
+      "crop_h" : 0,
+      "width" : 1536,
+      "height" : 1152,
+      "target_width" : 1024,
+      "target_height" : 768
     }
   },
   "7" : {
-    "class_type" : "CLIPTextEncode",
+    "class_type" : "CLIPTextEncodeSDXL",
     "inputs" : {
       "clip" : [ "4", 1 ],
-      "text" : "Washed out colors, illogical, disgusting, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, mutated, distorted, melting, cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, censored, mosaic, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face."
+      "text_g" : "V3NEGATIVEMARKER7732",
+      "text_l" : "V3NEGATIVEMARKER7732",
+      "crop_w" : 0,
+      "crop_h" : 0,
+      "width" : 832,
+      "height" : 640,
+      "target_width" : 1024,
+      "target_height" : 768
     }
   },
   "10" : {
     "class_type" : "SwarmKSampler",
     "inputs" : {
-      "model" : [ "102", 0 ],
-      "noise_seed" : 424242,
+      "model" : [ "103", 0 ],
+      "noise_seed" : 1234567,
       "steps" : 25,
       "cfg" : 5.0,
       "sampler_name" : "dpmpp_2m",
       "scheduler" : "karras",
       "positive" : [ "6", 0 ],
       "negative" : [ "7", 0 ],
-      "latent_image" : [ "105", 0 ],
+      "latent_image" : [ "106", 0 ],
       "start_at_step" : 10,
       "end_at_step" : 10000,
       "return_with_leftover_noise" : "disable",
@@ -108,19 +130,19 @@
       "samples" : [ "10", 0 ]
     }
   },
-  "106" : {
+  "107" : {
     "class_type" : "ThresholdMask",
     "inputs" : {
-      "mask" : [ "104", 0 ],
+      "mask" : [ "105", 0 ],
       "value" : 0.001
     }
   },
-  "107" : {
+  "108" : {
     "class_type" : "SwarmImageCompositeMaskedColorCorrecting",
     "inputs" : {
       "destination" : [ "15", 0 ],
       "source" : [ "8", 0 ],
-      "mask" : [ "106", 0 ],
+      "mask" : [ "107", 0 ],
       "x" : 0,
       "y" : 0,
       "resize_source" : false,
@@ -130,7 +152,7 @@
   "9" : {
     "class_type" : "SwarmSaveImageWS",
     "inputs" : {
-      "images" : [ "107", 0 ],
+      "images" : [ "108", 0 ],
       "bit_depth" : "8bit"
     }
   }

@@ -2744,6 +2744,8 @@ unchanged (`comfyrawworkflowinputtextscene`, `comfyrawworkflowinputseedseed`).
 **before the generator is asked for anything** — so a reference set Swarm would merge never reaches
 `.39`. Reference names therefore must stay distinct once reduced to lowercase letters: `ref0` /
 `ref1` are rejected, `duna_de_rosa` / `jideon_de_rosa` / `touvier` / `init` / `mask` coexist. The
+executor's tags are `actora`, `actorb`, … (`PbNodeExecutor.referenceName`) — its first version used
+`actor1` / `actor2` and failed exactly here on the first live run (2026-10-26, implementation §6.C 209 a). The
 tag-type detection in `TestGraphRequestShape` and the `PbArtifactUtil` key sanitiser
 (`SANITIZE_IMAGE_KEY_PREFIX = "comfyrawworkflowinputimage"`) are prefix matches and still apply.
 

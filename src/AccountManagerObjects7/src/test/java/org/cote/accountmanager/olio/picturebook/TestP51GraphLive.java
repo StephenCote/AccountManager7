@@ -19,6 +19,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -202,13 +203,17 @@ public class TestP51GraphLive extends BaseTest {
 		RendererCapabilities.InpaintParams fluxInpaint = inpaintOf(flux2Model);
 		RendererCapabilities.InpaintParams sdxlInpaint = inpaintOf(sdxlModel);
 
+		/// Three grey references on the inpaint probe too, so the capture has the fixture's loader shape
+		/// (mask + init + three references) and can replace inpaint_A_flux2.workflow.json one for one.
+		RecordingGraphClient recorder = new RecordingGraphClient(sdu);
 		Map<String, ComfyGraph> live = new LinkedHashMap<>();
-		live.put("base_flux2", wc.compileBase(flux2Request("probe", FLUX2_NEGATIVE, 4), greys, client).getGraph());
+		live.put("base_flux2", wc.compileBase(flux2Request("probe", FLUX2_NEGATIVE, 4), greys, recorder).getGraph());
 		live.put("inpaint_A_flux2", wc.compileActorRegion(flux2Request("probe", FLUX2_NEGATIVE, fluxInpaint.getSteps()),
-			greys.subList(0, 1), target(greyBase, DEFAULT_BOX_A), fluxInpaint, client).getGraph());
-		live.put("base_sdxl", wc.compileBase(sdxlRequest("probe", 25), Collections.emptyList(), client).getGraph());
+			greys, target(greyBase, DEFAULT_BOX_A), fluxInpaint, recorder).getGraph());
+		live.put("base_sdxl", wc.compileBase(sdxlRequest("probe", 25), Collections.emptyList(), recorder).getGraph());
 		live.put("inpaint_A_sdxl", wc.compileActorRegion(sdxlRequest("probe", sdxlInpaint.getSteps()), Collections.emptyList(),
-			target(greyBase, DEFAULT_BOX_A), sdxlInpaint, client).getGraph());
+			target(greyBase, DEFAULT_BOX_A), sdxlInpaint, recorder).getGraph());
+		assertEquals("one generator exchange per live compile", live.size(), recorder.answers.size());
 
 		TreeSet<String> union = new TreeSet<>();
 		for(Map.Entry<String, ComfyGraph> e : live.entrySet()) {
@@ -245,6 +250,73 @@ public class TestP51GraphLive extends BaseTest {
 		Files.write(out.toPath(), subset.toJson().getBytes(StandardCharsets.UTF_8));
 		logger.info("[p51][t00] wrote " + out.getPath() + " (" + subset.size() + " types: " + union + ")"
 			+ " - copy by hand (LF) to src/test/resources" + FIXTURE_DIR + "object_info.subset.json after review");
+
+		/// T12: the generator's answer and the params that produced it, redacted the way P50Swarm wrote the
+		/// spike fixtures, so a drifted fixture can be replaced one for one after review.
+		int i = 0;
+		for(String label : live.keySet()) {
+			File wf = new File(OUT, label + ".workflow.json");
+			File rq = new File(OUT, label + ".workflow.request.json");
+			Files.write(wf.toPath(), redactGraph(recorder.answers.get(i)).toPrettyJson().getBytes(StandardCharsets.UTF_8));
+			Files.write(rq.toPath(), JSONUtil.exportObject(redactRequest(recorder.requests.get(i))).getBytes(StandardCharsets.UTF_8));
+			logger.info("[p51][t00] wrote " + wf.getPath() + " (" + recorder.answers.get(i).size() + " nodes) and " + rq.getPath()
+				+ " - copy by hand (LF) to src/test/resources" + FIXTURE_DIR + " after review");
+			i++;
+		}
+	}
+
+	/// Records each raw generator answer (before the compiler patches it) and the params that produced it.
+	static final class RecordingGraphClient extends SwarmGraphClient {
+		final List<Map<String, Object>> requests = new ArrayList<>();
+		final List<ComfyGraph> answers = new ArrayList<>();
+
+		RecordingGraphClient(SDUtil sdu) {
+			super(sdu);
+		}
+
+		@Override
+		public ComfyGraph generatedWorkflow(Map<String, Object> params) {
+			ComfyGraph g = super.generatedWorkflow(params);
+			requests.add(new LinkedHashMap<>(params));
+			answers.add(g.copy());
+			return g;
+		}
+	}
+
+	/// Every image_base64 becomes "<N chars base64>" whatever its length: the probes' grey PNGs are small, and the
+	/// fixture-backed tests substitute their own images anyway (FixtureGraphClient).
+	static ComfyGraph redactGraph(ComfyGraph g) {
+		ComfyGraph c = g.copy();
+		for(String id : c.nodeIds()) {
+			Map<String, Object> inputs = c.inputs(id);
+			Object b64 = inputs.get(ComfyGraph.INPUT_IMAGE_BASE64);
+			if(b64 instanceof String) {
+				inputs.put(ComfyGraph.INPUT_IMAGE_BASE64, "<" + ((String) b64).length() + " chars base64>");
+			}
+		}
+		return c;
+	}
+
+	/// session_id is added by the client after the recording point, so it is written as the redacted marker directly.
+	static Map<String, Object> redactRequest(Map<String, Object> params) {
+		Map<String, Object> out = new LinkedHashMap<>();
+		for(Map.Entry<String, Object> e : params.entrySet()) {
+			out.put(e.getKey(), redactValue(e.getValue()));
+		}
+		out.put("session_id", "<redacted>");
+		return out;
+	}
+
+	static Object redactValue(Object v) {
+		if(v instanceof String && ((String) v).startsWith("data:")) {
+			return "<" + ((String) v).length() + " chars data-uri>";
+		}
+		if(v instanceof List) {
+			List<Object> out = new ArrayList<>();
+			for(Object o : (List<?>) v) out.add(redactValue(o));
+			return out;
+		}
+		return v;
 	}
 
 	// ─────────────────────────────── t01 ───────────────────────────────
@@ -290,10 +362,10 @@ public class TestP51GraphLive extends BaseTest {
 		String persisted = PbArtifactUtil.sanitizeGeneratorRequest(result.getRequestJson(), cast.artifactIds());
 		assertTrue("sanitised requestJson must be clean: " + persisted, PbArtifactUtil.isSanitized(persisted));
 		Map<String, Object> reqMap = JSONUtil.getMap(result.getRequestJson().getBytes(StandardCharsets.UTF_8), String.class, Object.class);
-		assertEquals(cast.artifactIds(), reqMap.get("referenceArtifactIds"));
+		assertEquals(cast.artifactIds(), Optional.ofNullable((List<?>) reqMap.get("referenceArtifactIds")).orElse(List.of()));
 		Map<String, Object> persistedMap = JSONUtil.getMap(persisted.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
 		assertEquals(graph.graphHash(), persistedMap.get("graphHash"));
-		assertEquals(cast.artifactIds(), persistedMap.get("referenceArtifactIds"));
+		assertEquals(cast.artifactIds(), Optional.ofNullable((List<?>) persistedMap.get("referenceArtifactIds")).orElse(List.of()));
 
 		t01Png = img.getBytes();
 		t01Prompt = prompt;
@@ -426,7 +498,7 @@ public class TestP51GraphLive extends BaseTest {
 			}
 		}
 		table.append("\nDecision rule (plan 5.2): cheapest variant whose PNG shows the scarf present, identity held, no seam; ties -> fewer steps.\n")
-			.append("The read of the PNGs is a human judgement recorded in Implementation 6.C 205; the shipped capabilities.json default is V2 (4 / 1.0) until then.\n");
+			.append("The read of the PNGs is a human judgement recorded in Implementation 6.C 205; V3 (8 / 0.6) ratified and shipped as the capabilities.json default.\n");
 		if(!findings.isEmpty()) {
 			table.append("\nFindings:\n");
 			for(String s : findings) table.append("- ").append(s).append('\n');
@@ -612,7 +684,6 @@ public class TestP51GraphLive extends BaseTest {
 				BaseRecord person = readPerson(owner, oid, orgId);
 				BaseRecord profile = person.get(FieldNames.FIELD_PROFILE);
 				if(profile == null) throw new IllegalStateException(name + " has no profile");
-				IOSystem.getActiveContext().getReader().populate(profile, new String[] { "portrait" });
 				BaseRecord portrait = profile.get("portrait");
 				if(portrait == null) throw new IllegalStateException(name + " has no portrait");
 				String portraitOid = portrait.get(FieldNames.FIELD_OBJECT_ID);

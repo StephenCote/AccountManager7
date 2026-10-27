@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio.illustration;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -64,13 +65,20 @@ public final class RendererCapabilities {
 		List<RendererCapabilities> l = new ArrayList<>();
 		l.add(new RendererCapabilities(PATTERN_FLUX2, true, 3, true, true, true, true, false, true, true, true,
 			4, 4, 24, 1.0, 3.5, Collections.unmodifiableList(List.of(new int[] {1024, 768}, new int[] {768, 1024}, new int[] {1024, 1024})), Double.valueOf(5.0), 512,
-			new InpaintParams(4, 1.0, 16, 8)));
+			new InpaintParams(8, 0.6, 16, 8), seeds(9.2, 13.8)));
 		l.add(new RendererCapabilities(PATTERN_SDXL, true, 0, false, false, true, true, false, true, true, true,
 			12, 20, 30, 5.0, 7.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024}, new int[] {1024, 768}, new int[] {768, 1024}, new int[] {832, 1216}, new int[] {1216, 832})), null, 225,
-			new InpaintParams(25, 0.6, 16, 8)));
+			new InpaintParams(25, 0.6, 16, 8), seeds(1.5, 1.0)));
 		l.add(new RendererCapabilities(PATTERN_KONTEXT, false, 1, true, false, true, false, false, true, true, false,
-			20, 28, 28, 1.0, 1.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024})), null, 225, null));
+			20, 28, 28, 1.0, 1.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024})), null, 225, null, Collections.emptyMap()));
 		FALLBACK = Collections.unmodifiableList(l);
+	}
+
+	private static Map<String, Double> seeds(double base, double actorRegion) {
+		Map<String, Double> m = new LinkedHashMap<>();
+		m.put(RenderPlan.STAGE_BASE, Double.valueOf(base));
+		m.put(RenderPlan.STAGE_ACTOR_REGION, Double.valueOf(actorRegion));
+		return Collections.unmodifiableMap(m);
 	}
 
 	private static volatile List<RendererCapabilities> cache = null;
@@ -97,12 +105,13 @@ public final class RendererCapabilities {
 	private final Double secondsPerStepPerReference;
 	private final int promptTokenBudget;
 	private final InpaintParams inpaint;
+	private final Map<String, Double> calibrationSeed;
 
 	private RendererCapabilities(String pattern, boolean enabled, int maxReferences, boolean supportsReferences,
 			boolean supportsStyleReferences, boolean supportsInitImage, boolean supportsMasks, boolean supportsRegionalPrompt,
 			boolean supportsSeedReplay, boolean supportsCancel, boolean supportsBatch, int stepsLow, int stepsDefault,
 			int stepsHigh, double cfgMin, double cfgMax, List<int[]> nativeResolutions, Double secondsPerStepPerReference,
-			int promptTokenBudget, InpaintParams inpaint) {
+			int promptTokenBudget, InpaintParams inpaint, Map<String, Double> calibrationSeed) {
 		this.pattern = pattern;
 		this.regex = globToRegex(pattern);
 		this.enabled = enabled;
@@ -124,6 +133,7 @@ public final class RendererCapabilities {
 		this.secondsPerStepPerReference = secondsPerStepPerReference;
 		this.promptTokenBudget = (promptTokenBudget > 0 ? promptTokenBudget : DEFAULT_PROMPT_TOKEN_BUDGET);
 		this.inpaint = inpaint;
+		this.calibrationSeed = (calibrationSeed == null ? Collections.emptyMap() : calibrationSeed);
 	}
 
 	public String getPattern() { return pattern; }
@@ -152,6 +162,11 @@ public final class RendererCapabilities {
 	/// The family's ACTOR_REGION inpaint parameters, or null when it declares none (then the stage is
 	/// unavailable for the family, not guessed).
 	public InpaintParams getInpaint() { return inpaint; }
+	/// The family's seed figure (seconds per step per megapixel) for a stage kind (RenderPlan.STAGE_*),
+	/// or null when the family declares none for it - the estimate must then say it has no figure.
+	public Double getCalibrationSeed(String stage) {
+		return (stage == null ? null : calibrationSeed.get(stage));
+	}
 
 	/// The step count for a preset's stepsMode ("low" | "default" | "high"); anything else is default.
 	public int recommendedSteps(String stepsMode) {
@@ -294,6 +309,14 @@ public final class RendererCapabilities {
 				num(ip.get("maskBlur"), 0)
 			);
 		}
+		Map<String, Double> seed = new LinkedHashMap<>();
+		if(m.get("calibrationSeed") instanceof Map) {
+			for(Map.Entry<String, Object> e : ((Map<String, Object>) m.get("calibrationSeed")).entrySet()) {
+				if(e.getKey() != null && e.getValue() instanceof Number) {
+					seed.put(e.getKey(), Double.valueOf(((Number) e.getValue()).doubleValue()));
+				}
+			}
+		}
 		return new RendererCapabilities(
 			(String) pat,
 			bool(m.get("enabled"), true),
@@ -314,7 +337,8 @@ public final class RendererCapabilities {
 			Collections.unmodifiableList(res),
 			seconds,
 			num(m.get("promptTokenBudget"), DEFAULT_PROMPT_TOKEN_BUDGET),
-			inpaint
+			inpaint,
+			Collections.unmodifiableMap(seed)
 		);
 	}
 

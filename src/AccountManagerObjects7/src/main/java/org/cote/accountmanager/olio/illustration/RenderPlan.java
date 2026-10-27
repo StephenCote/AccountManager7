@@ -144,6 +144,21 @@ public final class RenderPlan {
 		return compiled;
 	}
 
+	/// The compiled-map key for a per-actor stage pass ("ACTOR_REGION#<actorId>"); a stage kind alone
+	/// (BASE, UPSCALE) is its own key.
+	public static String actorStageKey(String stage, String actorId) {
+		if(actorId == null || actorId.isBlank()) {
+			return stage;
+		}
+		return stage + "#" + actorId;
+	}
+
+	/// The prompt compiled for one actor's pass of a stage (P5-2: ACTOR_REGION#<actorId>), or null when
+	/// none was compiled for that actor.
+	public CompiledPrompt compiledForActor(String stage, String actorId) {
+		return compiled.get(actorStageKey(stage, actorId));
+	}
+
 	public List<Degradation> getDegradations() {
 		return degradations;
 	}
@@ -183,7 +198,9 @@ public final class RenderPlan {
 
 	/// The model pick a stage renders with. TEXT_ONLY and the Phase 2 strategies render the BASE
 	/// stage with the location pick (the scene stand-in is the landscape path, §6.C 156 e) unless
-	/// the purpose is PORTRAIT; DIRECT_REFERENCE renders with the sceneDirect pick; UPSCALE uses
+	/// the purpose is PORTRAIT; DIRECT_REFERENCE and SEQUENTIAL_INPAINT render BASE with the
+	/// sceneDirect pick; ACTOR_REGION uses the inpaint pick when one was resolved and otherwise the
+	/// BASE pick (same family; the executor records a MODEL_SUBSTITUTED degradation); UPSCALE uses
 	/// the upscale pick when one was resolved and otherwise the BASE pick. Null when the plan
 	/// carries no pick for the task.
 	public ModelPick pickForStage(String stage) {
@@ -193,8 +210,14 @@ public final class RenderPlan {
 				return up;
 			}
 		}
+		if(STAGE_ACTOR_REGION.equals(stage)) {
+			ModelPick ip = models.get(ModelTaskKeys.key(PbModelTaskEnumType.INPAINT));
+			if(ip != null && ip.isResolved()) {
+				return ip;
+			}
+		}
 		PbModelTaskEnumType task;
-		if(strategy != null && strategy.getName() == PbStrategyEnumType.DIRECT_REFERENCE) {
+		if(strategy != null && (strategy.getName() == PbStrategyEnumType.DIRECT_REFERENCE || strategy.getName() == PbStrategyEnumType.SEQUENTIAL_INPAINT)) {
 			task = PbModelTaskEnumType.SCENE_DIRECT;
 		}
 		else if(PURPOSE_PORTRAIT.equals(purpose)) {
@@ -828,6 +851,7 @@ public final class RenderPlan {
 		private final Identity identity;
 		private final String policy;
 		private final boolean referenced;
+		private final String referenceStage;
 
 		public Actor(String actorId, String name, String role, String description, boolean referenced) {
 			this(new Builder(actorId).name(name).role(role).identity(description == null ? null : new Identity(null, null, description)).referenced(referenced));
@@ -849,6 +873,8 @@ public final class RenderPlan {
 			this.identity = b.identity;
 			this.policy = b.policy;
 			this.referenced = b.referenced;
+			/// a referenced actor with no stage named is a pre-P5-2 plan: its reference went into BASE
+			this.referenceStage = (b.referenced && b.referenceStage == null ? STAGE_BASE : b.referenceStage);
 		}
 
 		public String getActorId() {
@@ -921,6 +947,13 @@ public final class RenderPlan {
 			return referenced;
 		}
 
+		/// The stage this actor's portrait is sent as a reference on: STAGE_BASE (a reference slot in
+		/// the base render) or STAGE_ACTOR_REGION (its own masked pass, P5-2); null when the actor is
+		/// rendered from text only.
+		public String getReferenceStage() {
+			return referenceStage;
+		}
+
 		Map<String, Object> toMap() {
 			Map<String, Object> m = new LinkedHashMap<>();
 			m.put("actorId", actorId);
@@ -938,6 +971,7 @@ public final class RenderPlan {
 			m.put("identity", identity == null ? null : identity.toMap());
 			m.put("policy", policy);
 			m.put("referenced", referenced);
+			m.put("referenceStage", referenceStage);
 			return m;
 		}
 
@@ -955,7 +989,8 @@ public final class RenderPlan {
 				.facing(str(m, "facing"))
 				.outfit(Outfit.fromMap(mapOf(m, "outfit")))
 				.policy(str(m, "policy"))
-				.referenced(boolOf(m, "referenced"));
+				.referenced(boolOf(m, "referenced"))
+				.referenceStage(str(m, "referenceStage"));
 			Identity identity = Identity.fromMap(mapOf(m, "identity"));
 			if(identity == null) {
 				String legacy = str(m, "description");
@@ -982,6 +1017,7 @@ public final class RenderPlan {
 			private Identity identity;
 			private String policy;
 			private boolean referenced;
+			private String referenceStage;
 
 			public Builder(String actorId) {
 				this.actorId = actorId;
@@ -1054,6 +1090,12 @@ public final class RenderPlan {
 
 			public Builder referenced(boolean referenced) {
 				this.referenced = referenced;
+				return this;
+			}
+
+			/// STAGE_BASE | STAGE_ACTOR_REGION | null; a referenced actor left null reads as BASE.
+			public Builder referenceStage(String referenceStage) {
+				this.referenceStage = referenceStage;
 				return this;
 			}
 
