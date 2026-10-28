@@ -66,7 +66,7 @@ public class TestWorkflowCompiler {
 
 	static WorkflowCompiler.ActorTarget target(byte[] base, RenderPlan.Box... boxes) {
 		RenderPlan.Actor actor = new RenderPlan.Actor("A", "Touvier", RenderPlan.ROLE_FOREGROUND, "a lean man in his fifties", true);
-		return new WorkflowCompiler.ActorTarget(actor, base, "art-base", List.of(boxes));
+		return new WorkflowCompiler.ActorTarget(actor, base, List.of(boxes));
 	}
 
 	static String tagOf(String type, String name) {
@@ -492,7 +492,7 @@ public class TestWorkflowCompiler {
 
 	@Test(expected = IllegalArgumentException.class)
 	public void actorTargetNeedsABox() {
-		new WorkflowCompiler.ActorTarget(new RenderPlan.Actor("A", "x", null, null, true), MaskImage.solid(4, 4, Color.RED), null, List.of());
+		new WorkflowCompiler.ActorTarget(new RenderPlan.Actor("A", "x", null, null, true), MaskImage.solid(4, 4, Color.RED), List.of());
 	}
 
 	@Test(expected = IllegalArgumentException.class)

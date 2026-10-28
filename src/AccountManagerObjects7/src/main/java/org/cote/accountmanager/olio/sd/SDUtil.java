@@ -1759,7 +1759,9 @@ public class SDUtil {
 		}
 	}
 
-	/// Stitch up to three source images side-by-side into equal square panels for FLUX Kontext.
+	/// Stitch up to three source images side-by-side into equal square panels: the PB2 REFERENCE_STRIP
+	/// node's IMAGE_STRIP ({@code PbNodeExecutor.executeReferenceStrip}, deprecated with PB1 at design
+	/// §28.1 Stage 4, Phase 10). V3 never stitches - references travel as separate graph inputs.
 	/// Each non-null image is center-cropped to square, then scaled to panelSize x panelSize.
 	/// Layout: [left | center | right] — e.g. [sysPortrait | usrPortrait | landscape].
 	/// @param leftBytes   Left panel image (e.g. system character portrait), or null to skip

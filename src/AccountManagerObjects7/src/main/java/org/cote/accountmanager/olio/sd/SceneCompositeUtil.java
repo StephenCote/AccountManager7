@@ -180,6 +180,11 @@ public class SceneCompositeUtil {
 	/// generated the landscape prompt (an LLM call) and the landscape image (a full SD pass) for every
 	/// scene unconditionally, and then this method threw the result away when the answer here was
 	/// false — the whole cost, none of the benefit.
+	/// @deprecated v1 composite builder (design §28.1 Stage 1 Coexist, P5-3): live through the chat scene image
+	///             ({@code chat.renderPath=v1}) and persisted PB2 COMPOSITE nodes; V3 compiles the scene through
+	///             {@code PbRenderPlanUtil} / RENDER_PLAN. Removed at Stage 4 (Phase 10) after the chat default
+	///             flips (Phase 7+). The mode vocabulary and refusal on this class are not deprecated.
+	@Deprecated
 	public static boolean includesLandscapeReference(String mode, BaseRecord sdConfig) {
 		if (!MODE_FLUX2.equals(mode)) return true;
 		Boolean includeLandscapeV = null;
@@ -210,6 +215,11 @@ public class SceneCompositeUtil {
 	/// @param landscapeBytes setting reference bytes; may be null
 	/// @param creativity  initImageCreativity for CLASSIC's img2img pass
 	/// @param sdConfig    the config driving model/params/style
+	/// @deprecated v1 composite builder (design §28.1 Stage 1 Coexist, P5-3): live through the chat scene image
+	///             ({@code chat.renderPath=v1}) and persisted PB2 COMPOSITE nodes; V3 compiles the scene through
+	///             {@code PbRenderPlanUtil} / RENDER_PLAN. Removed at Stage 4 (Phase 10) after the chat default
+	///             flips (Phase 7+). The mode vocabulary and refusal on this class are not deprecated.
+	@Deprecated
 	public static SWTxt2Img buildSceneRequest(String mode, String leftDesc, String rightDesc,
 			String action, String setting, String mood, String classicPrompt, String classicNegative,
 			byte[] leftBytes, byte[] rightBytes, byte[] landscapeBytes, double creativity,
@@ -316,6 +326,11 @@ public class SceneCompositeUtil {
 	/// is the exact string that was sent (lora tags included, if the config has any), so appending again
 	/// would double them. Only typography is normalized, same as appendLoras does for composed prompts.
 	/// Reference images / init image stay attached - the override replaces the words, not the pipeline.
+	/// @deprecated v1 composite builder (design §28.1 Stage 1 Coexist, P5-3): live through the chat scene image
+	///             ({@code chat.renderPath=v1}) and persisted PB2 COMPOSITE nodes; V3 compiles the scene through
+	///             {@code PbRenderPlanUtil} / RENDER_PLAN. Removed at Stage 4 (Phase 10) after the chat default
+	///             flips (Phase 7+). The mode vocabulary and refusal on this class are not deprecated.
+	@Deprecated
 	public static SWTxt2Img applyPromptOverride(SWTxt2Img s2i, String promptOverride) {
 		if (s2i == null || promptOverride == null || promptOverride.isBlank()) return s2i;
 		String composed = s2i.getPrompt();
@@ -327,6 +342,11 @@ public class SceneCompositeUtil {
 
 	/// Default img2img creativity per mode, preserving the values both original call sites used.
 	/// Only CLASSIC actually consumes it; the reference-based modes don't run an init-image pass.
+	/// @deprecated v1 composite builder (design §28.1 Stage 1 Coexist, P5-3): live through the chat scene image
+	///             ({@code chat.renderPath=v1}) and persisted PB2 COMPOSITE nodes; V3 compiles the scene through
+	///             {@code PbRenderPlanUtil} / RENDER_PLAN. Removed at Stage 4 (Phase 10) after the chat default
+	///             flips (Phase 7+). The mode vocabulary and refusal on this class are not deprecated.
+	@Deprecated
 	public static double defaultCreativity(String mode) {
 		return MODE_CLASSIC.equals(mode) ? 0.85 : 0.65;
 	}

@@ -696,7 +696,13 @@ public class PictureBookService {
      * POST /scene/{sceneObjectId}/generate
      * Generate SD image for one scene using the 4-stage pipeline (see PictureBookUtil.generateSceneImage).
      * Body: { chatConfig, sdConfig: {steps,refinerSteps,cfg,hires}, promptOverride }
+     *
+     * @deprecated PB1 (v1) entry, design §28.1 Stage 1 Coexist (P5-3): not gated by the render-path switch,
+     *             so it also runs under {@code picturebook.renderPath=v3} (the UI hides it there; the server
+     *             logs a WARN). Replaced by {@code POST /{bookObjectId}/render-plan} (RENDER_PLAN); the
+     *             Stage 2 refusal ({@code PbRenderPath.REFUSAL_PREFIX}) is Phase 7 and removal is Stage 4, Phase 10.
      */
+    @Deprecated
     @RolesAllowed({"admin", "user"})
     @POST
     @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/generate")
@@ -761,7 +767,12 @@ public class PictureBookService {
      * the other book-scoped endpoints but isn't otherwise used — the scene objectIds carry
      * everything PictureBookUtil needs.
      * Body: { sceneObjectIds: [...], chatConfig, promptTemplate, sdConfig: { style } }
+     *
+     * @deprecated PB1 (v1) entry, design §28.1 Stage 1 Coexist (P5-3): prepares prompts for the PB1
+     *             {@code /scene/{id}/generate} loop and is not gated by the render-path switch. V3 compiles
+     *             prompts inside the render plan; Stage 2 refusal Phase 7, removal Stage 4, Phase 10.
      */
+    @Deprecated
     @RolesAllowed({"admin", "user"})
     @POST
     @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/prepare-images")

@@ -834,7 +834,7 @@ public class TestP51GraphLive extends BaseTest {
 
 	static WorkflowCompiler.ActorTarget target(byte[] base, RenderPlan.Box box) {
 		RenderPlan.Actor actor = new RenderPlan.Actor("A", ACTOR_A, RenderPlan.ROLE_FOREGROUND, "lean, straight-framed 25 year old man", true);
-		return new WorkflowCompiler.ActorTarget(actor, base, null, List.of(box));
+		return new WorkflowCompiler.ActorTarget(actor, base, List.of(box));
 	}
 
 	static List<WorkflowCompiler.Reference> greyReferences(int n) {

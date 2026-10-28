@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
@@ -295,28 +294,7 @@ public class TestKontext extends BaseTest {
 		logger.info("Legacy prompt: " + legacyPrompt);
 	}
 
-	@Test
-	public void testStripSDXLWeighting() {
-		logger.info("testStripSDXLWeighting");
-
-		/// SDXL-style weighted prompt
-		String input = "a beautiful athletic ((twenty five:1.5) (25yo:1.5) (white) (woman)) with ((short and curly) (blond hair)) and (electric blue eyes)";
-		String cleaned = SWUtil.stripSDXLWeighting(input);
-		assertNotNull("Cleaned prompt should not be null", cleaned);
-		assertTrue("Should not contain parentheses", !cleaned.contains("(") && !cleaned.contains(")"));
-		assertTrue("Should not contain weight numbers", !cleaned.contains(":1.5"));
-		assertTrue("Should preserve text content", cleaned.contains("twenty five"));
-		assertTrue("Should preserve text content", cleaned.contains("blond hair"));
-		logger.info("Input:   " + input);
-		logger.info("Cleaned: " + cleaned);
-
-		/// Already clean prompt
-		assertEquals("Clean prompt should pass through", "a man with brown hair", SWUtil.stripSDXLWeighting("a man with brown hair"));
-
-		/// Null/empty
-		assertNull("Null should return null", SWUtil.stripSDXLWeighting(null));
-		assertEquals("Empty should return empty", "", SWUtil.stripSDXLWeighting(""));
-	}
+	/// testStripSDXLWeighting moved to TestSwUtilPromptText (P5-3): it covers a live FLUX.2 helper and this class is Surefire-excluded.
 
 	/// Ensure a character has apparel. If not, create a random outfit and persist it.
 	private void ensureApparel(OlioContext ctx, BaseRecord person) throws Exception {

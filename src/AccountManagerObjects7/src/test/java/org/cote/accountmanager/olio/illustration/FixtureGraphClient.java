@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,9 +31,12 @@ import org.cote.accountmanager.olio.sd.SDUtil;
  * <p>
  * Which fixture answers is decided by the request: {@code initimage} present selects the inpaint graph
  * for the model family, otherwise the base graph. No network: the {@link SDUtil} points at a closed port
- * and is never called.
+ * and is never called - {@link #swarmVersion()} answers a fixed label instead of opening a session.
+ * <p>
+ * Public (P5-3) so {@code olio.picturebook} tests can run {@code PbNodeExecutor.renderStages} through it;
+ * the fault switches stay package-private to the compiler tests that use them.
  */
-class FixtureGraphClient extends SwarmGraphClient {
+public class FixtureGraphClient extends SwarmGraphClient {
 
 	static final String FIXTURE_DIR = "/olio/illustration/p50/";
 	static final String BASE_FLUX2 = "base_flux2.workflow.json";
@@ -50,14 +54,34 @@ class FixtureGraphClient extends SwarmGraphClient {
 	private boolean dropSave = false;
 	/** When set, the sampler keeps the fixture's {@code steps} / {@code start_at_step} literals. */
 	private boolean keepFixtureSteps = false;
+	/**
+	 * When set, reference loaders the request did not fill are spliced out with their VAEEncode /
+	 * ReferenceLatent chain, as the live generator emits one loader per image the request carries. The
+	 * fixtures were captured with three references; off by default so the compiler's leftover-loader
+	 * guard ({@code loaderNodeWithNoPlaceholderIsRejected}) still sees the unfilled node.
+	 */
+	private boolean pruneUnusedLoaders = false;
 	/** Overrides fixture selection when non-null. */
 	private String fixture = null;
 	/** Every params map the generator was asked for, in order. */
 	final List<Map<String, Object>> requests = new ArrayList<>();
 	final List<ComfyGraph> answers = new ArrayList<>();
 
-	FixtureGraphClient() {
+	/** The version label {@link #swarmVersion()} answers; no session is ever opened against {@link #OFFLINE_SERVER}. */
+	public static final String FIXTURE_VERSION = "fixture-p50";
+
+	public FixtureGraphClient() {
 		super(new SDUtil(SDAPIEnumType.SWARM, OFFLINE_SERVER));
+	}
+
+	@Override
+	public String swarmVersion() {
+		return FIXTURE_VERSION;
+	}
+
+	/** Every params map the generator was asked for, in order; read-only, for tests outside this package. */
+	public List<Map<String, Object>> requests() {
+		return Collections.unmodifiableList(requests);
 	}
 
 	FixtureGraphClient reencodeImages() { this.reencodeImages = true; return this; }
@@ -66,6 +90,8 @@ class FixtureGraphClient extends SwarmGraphClient {
 	FixtureGraphClient dropSave() { this.dropSave = true; return this; }
 	FixtureGraphClient keepFixtureSteps() { this.keepFixtureSteps = true; return this; }
 	FixtureGraphClient fixture(String name) { this.fixture = name; return this; }
+	/** Answer with as many reference loaders as the request carries images (see {@link #pruneUnusedLoaders}). */
+	public FixtureGraphClient pruneUnusedLoaders() { this.pruneUnusedLoaders = true; return this; }
 
 	static String fixtureText(String name) {
 		try(InputStream in = FixtureGraphClient.class.getResourceAsStream(FIXTURE_DIR + name)) {
@@ -118,6 +144,15 @@ class FixtureGraphClient extends SwarmGraphClient {
 			}
 			g.setInput(loaders.get(i), ComfyGraph.INPUT_IMAGE_BASE64, b64);
 		}
+		if(pruneUnusedLoaders) {
+			for(int i = slots.size(); i < loaders.size(); i++) {
+				splice(g, loaders.get(i));
+			}
+			List<String> dangling = g.danglingLinks();
+			if(!dangling.isEmpty()) {
+				throw new IllegalStateException("Pruning " + name + " left dangling links: " + dangling);
+			}
+		}
 
 		/// Prompts. The generator echoes the request's prompt / negativeprompt into its text inputs, whatever
 		/// the encoder class (CLIPTextEncode.text on flux2, CLIPTextEncodeSDXL.text_g + text_l on SDXL). The
@@ -168,6 +203,39 @@ class FixtureGraphClient extends SwarmGraphClient {
 
 	static String stripUri(Object v) {
 		return WorkflowCompiler.stripDataUri(String.valueOf(v));
+	}
+
+	static final String CLASS_REFERENCE_LATENT = "ReferenceLatent";
+	static final String INPUT_CONDITIONING = "conditioning";
+
+	/// Remove a node the way the generator would never have emitted it: a ReferenceLatent is a pass-through,
+	/// so its consumers are rewired to the conditioning it consumed; anything else (the loader, its VAEEncode)
+	/// exists only for the dropped image, so its consumers are spliced out in turn.
+	static void splice(ComfyGraph g, String id) {
+		Map<String, Object> in = g.inputs(id);
+		if(in == null) {
+			return;
+		}
+		Object passThrough = (CLASS_REFERENCE_LATENT.equals(g.classType(id)) ? in.get(INPUT_CONDITIONING) : null);
+		for(String nid : new ArrayList<>(g.nodeIds())) {
+			Map<String, Object> nin = (nid.equals(id) ? null : g.inputs(nid));
+			if(nin == null) {
+				continue;
+			}
+			for(Map.Entry<String, Object> e : new ArrayList<>(nin.entrySet())) {
+				if(!id.equals(ComfyGraph.linkTarget(e.getValue()))) {
+					continue;
+				}
+				if(passThrough != null) {
+					nin.put(e.getKey(), ComfyGraph.deepCopy(passThrough));
+				}
+				else {
+					splice(g, nid);
+					break;
+				}
+			}
+		}
+		g.removeNode(id);
 	}
 
 	/// Same pixels, different bytes: decode and write back through an ARGB buffer.

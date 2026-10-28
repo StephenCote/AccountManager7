@@ -9748,6 +9748,15 @@ public class PictureBookUtil {
         String bookGroupPath = sceneGroupPath.endsWith("/Scenes")
                 ? sceneGroupPath.substring(0, sceneGroupPath.length() - "/Scenes".length()) : null;
 
+        // §28.1 Stage 1 Coexist (P5-3): this PB1 entry is not gated by the render-path switch - the UI hides
+        // it under v3 but a direct REST caller still lands here. Log the fact, never refuse: the server-side
+        // refusal is Stage 2 (Phase 7). The ~/Chat fallback answers to chat.renderPath and is not reported.
+        if (bookGroupPath != null && PbRenderPath.V3.equals(PbRenderPath.pictureBook())) {
+            logger.warn("PB1 generateSceneImage for scene " + sceneObjectId + " in " + bookGroupPath + " while "
+                    + PbRenderPath.PICTUREBOOK_CONFIG_KEY + "=" + PbRenderPath.V3
+                    + ": replaced by POST .../render-plan (RENDER_PLAN); refused at design §28.1 Stage 2 (Phase 7), removed Stage 4 (Phase 10)");
+        }
+
         // Resolve the ONE common olio.sd.config that drives this scene's portraits, landscape, and
         // composite — the single canonical style/param seam (SDUtil.getSDConfigPrompt). Precedence:
         // the request's sdConfig, else the book's stored config, else a random canonical config.

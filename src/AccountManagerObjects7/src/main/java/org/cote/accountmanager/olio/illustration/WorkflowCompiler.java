@@ -49,7 +49,6 @@ public final class WorkflowCompiler {
 	private static final Color MASK_COLOUR = new Color(255, 0, 255);
 
 	public static final String CLASS_TEXT_ENCODE = "CLIPTextEncode";
-	public static final String CLASS_TEXT_ENCODE_ADVANCED = "SwarmTextEncodeAdvanced";
 	public static final String CLASS_KSAMPLER = "SwarmKSampler";
 	public static final String INPUT_NOISE_SEED = "noise_seed";
 	public static final String INPUT_STEPS = "steps";
@@ -80,15 +79,15 @@ public final class WorkflowCompiler {
 		public byte[] getPng() { return png; }
 	}
 
-	/// The actor an ACTOR_REGION stage repaints: the base image it paints over (and that image's
-	/// artifact, for provenance) and the boxes the mask covers.
+	/// The actor an ACTOR_REGION stage repaints: the base image it paints over and the boxes the mask
+	/// covers. The base image's artifact id is not carried here: the pass runs before anything is
+	/// persisted, so the executor records provenance on the stage output afterwards (P5-3, §6.C 208 ay).
 	public static final class ActorTarget {
 		private final RenderPlan.Actor actor;
 		private final byte[] baseImage;
-		private final String baseArtifactObjectId;
 		private final List<RenderPlan.Box> boxes;
 
-		public ActorTarget(RenderPlan.Actor actor, byte[] baseImage, String baseArtifactObjectId, List<RenderPlan.Box> boxes) {
+		public ActorTarget(RenderPlan.Actor actor, byte[] baseImage, List<RenderPlan.Box> boxes) {
 			if(baseImage == null || baseImage.length == 0) {
 				throw new IllegalArgumentException("An actor target needs the base image bytes");
 			}
@@ -97,13 +96,11 @@ public final class WorkflowCompiler {
 			}
 			this.actor = actor;
 			this.baseImage = baseImage;
-			this.baseArtifactObjectId = baseArtifactObjectId;
 			this.boxes = Collections.unmodifiableList(new ArrayList<>(boxes));
 		}
 
 		public RenderPlan.Actor getActor() { return actor; }
 		public byte[] getBaseImage() { return baseImage; }
-		public String getBaseArtifactObjectId() { return baseArtifactObjectId; }
 		public List<RenderPlan.Box> getBoxes() { return boxes; }
 	}
 

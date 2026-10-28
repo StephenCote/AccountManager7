@@ -480,8 +480,10 @@ public class PbNodeExecutor {
 			case LANDSCAPE_PROMPT:
 				return executePromptNode(g, node, nodeType);
 			case REFERENCE_STRIP:
+				warnLegacyNode(g, node, nodeType);
 				return executeReferenceStrip(g, node);
 			case COMPOSITE:
+				warnLegacyNode(g, node, nodeType);
 				return executeComposite(g, node, sdu);
 			case RENDER_PLAN:
 				return executeRenderPlan(g, node, sdu);
@@ -491,6 +493,16 @@ public class PbNodeExecutor {
 				throw new PictureBookException(501,
 					"Single-node execution is not yet implemented for node type " + nodeType);
 		}
+	}
+
+	/// One line per execution of a PB2-era node (§28.1 Stage 1 Coexist, P5-3): the type is deprecated in
+	/// favour of RENDER_PLAN and goes with PB1 at Stage 4 (Phase 10). Only persisted legacy nodes reach
+	/// here - PB1's own path never enters dispatch - so each line is one real re-execution, worth keeping.
+	private static void warnLegacyNode(SceneGraph g, BaseRecord node, PbNodeTypeEnumType nodeType) {
+		BaseRecord book = g.getBook();
+		logger.warn("Legacy PB2 node type " + nodeType + " executed: node " + node.get(FieldNames.FIELD_OBJECT_ID)
+			+ " (" + node.get(OlioFieldNames.FIELD_PB_HANDLE) + ") in book " + (book != null ? book.get(FieldNames.FIELD_OBJECT_ID) : "?")
+			+ " - replaced by RENDER_PLAN; removed with PB1 at design §28.1 Stage 4 (Phase 10)");
 	}
 
 	/// The message stamped on the node and the run; a BASE stage failure also carries the renderer's detail
@@ -925,6 +937,35 @@ public class PbNodeExecutor {
 	 */
 	static PlannedRender renderPlanned(SceneGraph g, BaseRecord node, RenderPlan plan, String sceneLabel, SDUtil sdu,
 			String imageNamePrefix, String noTextMessage) {
+		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage, RenderBackend.SWARM);
+	}
+
+	/**
+	 * The renderer a planned render talks to: the adapter that executes each {@link StageRequest} and the
+	 * graph client the compiler asks for generated workflows and the server version. {@link #SWARM} is the
+	 * production backend and the only one outside tests; a test hands in fakes so {@link #renderStages}
+	 * runs without a Swarm server (P5-3, §6.C 209 b). A parameter rather than a static so nothing is
+	 * process-global.
+	 */
+	interface RenderBackend {
+		RendererAdapter adapter(SDUtil sdu);
+		SwarmGraphClient client(SDUtil sdu);
+
+		RenderBackend SWARM = new RenderBackend() {
+			@Override
+			public RendererAdapter adapter(SDUtil sdu) {
+				return new SwarmRendererAdapter(sdu);
+			}
+			@Override
+			public SwarmGraphClient client(SDUtil sdu) {
+				return new SwarmGraphClient(sdu);
+			}
+		};
+	}
+
+	/** {@link #renderPlanned(SceneGraph, BaseRecord, RenderPlan, String, SDUtil, String, String)} against {@code backend}. */
+	static PlannedRender renderPlanned(SceneGraph g, BaseRecord node, RenderPlan plan, String sceneLabel, SDUtil sdu,
+			String imageNamePrefix, String noTextMessage, RenderBackend backend) {
 		BaseRecord user = g.getUser();
 		BaseRecord planArtifact = PbRenderPlanUtil.persistPlanArtifact(user, node, g.getArtifactGroupPath(), plan);
 		String planOid = planArtifact.get(FieldNames.FIELD_OBJECT_ID);
@@ -979,7 +1020,7 @@ public class PbNodeExecutor {
 			.config(cfg)
 			.build();
 
-		StageSequence seq = renderStages(g, node, plan, planOid, sceneLabel, sdu, req, pick);
+		StageSequence seq = renderStages(g, node, plan, planOid, sceneLabel, sdu, req, pick, backend);
 		for(RenderPlan.Degradation d : seq.added) {
 			degradations.add(d.getCode() + ": " + d.getMessage());
 		}
@@ -998,7 +1039,7 @@ public class PbNodeExecutor {
 			for(int i = 0; i < seq.outputs.size(); i++) {
 				StageOutput so = seq.outputs.get(i);
 				if(so.graph != null) {
-					PbRenderPlanUtil.persistGraphArtifact(user, node, g.getArtifactGroupPath(), so.label, so.graph, sdu.swarmVersion());
+					PbRenderPlanUtil.persistGraphArtifact(user, node, g.getArtifactGroupPath(), so.label, so.graph, seq.swarmVersion);
 				}
 				if(i == seq.outputs.size() - 1) {
 					break;
@@ -1073,6 +1114,9 @@ public class PbNodeExecutor {
 		final List<RenderPlan.Degradation> added = new ArrayList<>();
 		boolean graphPath;
 		boolean calibrationPersisted;
+		/// The renderer version the graph client reported (null when it reported none); stamped on every
+		/// renderGraph artifact and calibration sample of the sequence.
+		String swarmVersion;
 
 		List<String> labels() {
 			List<String> l = new ArrayList<>();
@@ -1095,15 +1139,17 @@ public class PbNodeExecutor {
 	 * node ({@link PbStageFailedException}, §6.3); a failed pass is an ACTOR_FAILED degradation and the
 	 * sequence continues on the last good image (§2.4 step 4); a cancel anywhere discards everything
 	 * ({@link PbStageCancelledException}). Each graph stage records its calibration sample as the user
-	 * (§4); the T2I path keeps calibrating in-process only (§10 row 6).
+	 * (§4); the T2I path keeps calibrating in-process only (§10 row 6). Every call to the renderer goes
+	 * through {@code backend} - the adapter for the stages, the client for generated workflows and the
+	 * server version - so a test backend makes this method run with no server at all.
 	 */
 	private static StageSequence renderStages(SceneGraph g, BaseRecord node, RenderPlan plan, String planOid,
-			String sceneLabel, SDUtil sdu, StageRequest req, RenderPlan.ModelPick basePick) {
+			String sceneLabel, SDUtil sdu, StageRequest req, RenderPlan.ModelPick basePick, RenderBackend backend) {
 		BaseRecord user = g.getUser();
 		long orgId = PbGraphUtil.orgId(node);
 		StageSequence seq = new StageSequence();
-		RendererAdapter adapter = new SwarmRendererAdapter(sdu);
-		SwarmGraphClient client = new SwarmGraphClient(sdu);
+		RendererAdapter adapter = backend.adapter(sdu);
+		SwarmGraphClient client = backend.client(sdu);
 		WorkflowCompiler compiler = new WorkflowCompiler();
 		boolean allCalibrated = true;
 		int graphStages = 0;
@@ -1187,7 +1233,7 @@ public class PbNodeExecutor {
 			graphStages++;
 			allCalibrated &= PbCalibrationUtil.recordSample(user, sdu.getServer(), basePick.getFamily(), RenderPlan.STAGE_BASE,
 				baseGraph.getGraph().graphHash(), base.getDurationMs(), baseGraph.getSteps(), req.getWidth(), req.getHeight(),
-				baseRefIds.size(), sdu.swarmVersion());
+				baseRefIds.size(), swarmVersion(seq, client));
 		}
 
 		/// ─── ACTOR_REGION passes ───
@@ -1231,7 +1277,7 @@ public class PbNodeExecutor {
 				List<String> passRefIds = (png != null ? List.of(oid) : List.of());
 				WorkflowCompiler.CompiledGraph cg;
 				try {
-					WorkflowCompiler.ActorTarget target = new WorkflowCompiler.ActorTarget(a, lastGood.bytes, lastGood.artifactOid, List.of(a.getBox()));
+					WorkflowCompiler.ActorTarget target = new WorkflowCompiler.ActorTarget(a, lastGood.bytes, List.of(a.getBox()));
 					StageRequest reqA = req.toBuilder().stage(RenderPlan.STAGE_ACTOR_REGION).prompt(cp).model(regionPick.getModel()).build();
 					cg = compiler.compileActorRegion(reqA, passRefs, target, inpaint, client);
 					reqA = reqA.toBuilder().graph(cg.getGraph()).inputs(cg.getInputs()).seed((int) cg.getSeed()).steps(cg.getSteps()).build();
@@ -1259,7 +1305,7 @@ public class PbNodeExecutor {
 					graphStages++;
 					allCalibrated &= PbCalibrationUtil.recordSample(user, sdu.getServer(), regionPick.getFamily(), RenderPlan.STAGE_ACTOR_REGION,
 						cg.getGraph().graphHash(), res.getDurationMs(), cg.getSteps() - cg.getStartAtStep(), req.getWidth(), req.getHeight(),
-						passRefIds.size(), sdu.swarmVersion());
+						passRefIds.size(), swarmVersion(seq, client));
 				}
 				catch(GraphCompileException | IllegalArgumentException e) {
 					actorFailed(seq, a, label, RendererAdapter.ERROR_GRAPH_INVALID + ": " + e.getMessage(), null);
@@ -1268,6 +1314,16 @@ public class PbNodeExecutor {
 		}
 		seq.calibrationPersisted = (graphStages > 0 && allCalibrated);
 		return seq;
+	}
+
+	/// The renderer version for the sequence, asked of the graph client the first time a graph stage needs
+	/// it and kept on the sequence; asked again only while the client reports none, as the session cache
+	/// behind it does. The plain T2I path never asks.
+	private static String swarmVersion(StageSequence seq, SwarmGraphClient client) {
+		if(seq.swarmVersion == null) {
+			seq.swarmVersion = client.swarmVersion();
+		}
+		return seq.swarmVersion;
 	}
 
 	/// The image tag name of the i-th actor reference: `actora`, `actorb`, ... Swarm matches request keys on
@@ -1610,8 +1666,14 @@ public class PbNodeExecutor {
 
 	/**
 	 * Stitch the source portrait and landscape artifacts side-by-side into an IMAGE_STRIP for use
-	 * as a Kontext/FLUX.2 reference image. Does NOT require an SD server — pure Java 2D work.
+	 * as a FLUX.2 reference image. Does NOT require an SD server — pure Java 2D work.
+	 *
+	 * @deprecated PB2-era node (§28.1 Stage 1 Coexist): only PB1 ({@code PictureBookUtil.generateSceneImage})
+	 *             creates REFERENCE_STRIP nodes; V3 passes references through the compiled graph
+	 *             ({@link #renderStages}) and never stitches. Kept so persisted nodes still execute; removed
+	 *             with PB1 at Stage 4 (Phase 10) together with {@code SDUtil.stitchSceneImages}.
 	 */
+	@Deprecated
 	private static Map<String, Object> executeReferenceStrip(SceneGraph g, BaseRecord node) {
 		BaseRecord user = g.getUser();
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
@@ -1703,6 +1765,16 @@ public class PbNodeExecutor {
 
 	// ─── composite ───────────────────────────────────────────────────────────────
 
+	/**
+	 * The PB2-era scene composite: one {@code SceneCompositeUtil.buildSceneRequest} T2I request from the
+	 * bound portraits, landscape and the scene's mirrored prompt.
+	 *
+	 * @deprecated PB2-era node (§28.1 Stage 1 Coexist): only PB1 creates COMPOSITE nodes; V3 renders the
+	 *             scene through RENDER_PLAN ({@link #executeRenderPlan}). Kept so persisted nodes still
+	 *             execute - including the retired-mode refusal it shares with every other entry point -
+	 *             and removed with PB1 at Stage 4 (Phase 10).
+	 */
+	@Deprecated
 	private static Map<String, Object> executeComposite(SceneGraph g, BaseRecord node, SDUtil sdu) {
 		BaseRecord user = g.getUser();
 		BaseRecord book = g.getBook();
