@@ -3,7 +3,7 @@
 # am7-docker-up.sh/.bat layer this file automatically when ./volatile/extra-ca.pem
 # exists (or AM7_EXTRA_CA_FILE points at a PEM bundle). It makes the `ollama`
 # and `litellm` containers trust the proxy CA that re-signs every HTTPS site on
-# this network (Microsoft Global Secure Access -> CommunityCare root), without
+# this network (Microsoft Global Secure Access -> the corporate root CA), without
 # which `ollama pull` fails with "x509: certificate signed by unknown authority"
 # and LiteLLM cannot reach Azure. The PEM is public CA material, but it is
 # environment-specific, so it lives in the git-ignored volatile/ dir, never here.

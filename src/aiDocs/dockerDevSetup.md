@@ -1524,8 +1524,8 @@ images do not trust —
 
 ```
 leaf (registry.ollama.ai)  <-  CN=Microsoft Global Secure Access Intermediate CA2
-                           <-  O=CommunityCare, CN=CCOKTLS2025
-                           <-  CN=ca, DC=ccok, DC=com        (root; in LocalMachine\Root)
+                           <-  <corporate issuing CA>
+                           <-  <corporate root CA>           (root; in LocalMachine\Root)
 ```
 
 Confirm it is interception and not a real bad cert before doing anything. Use the `openssl` that
@@ -1547,8 +1547,9 @@ it is public CA material but environment-specific, so it never goes in the repo)
 ```powershell
 cd C:\Projects\GitHub\AccountManager7\src
 $openssl = 'C:\Program Files\Git\mingw64\bin\openssl.exe'
-# 1. the corporate root, from the Windows machine store (thumbprint as of 2026-09-29; valid to 2029)
-$c = Get-ChildItem Cert:\LocalMachine\Root | Where-Object Thumbprint -eq '003628E11BB3134ADE9FC798B63482DC9E41D7E2'
+# 1. the corporate root, from the Windows machine store — its thumbprint is environment-specific
+#    and deliberately not recorded here; find it as described below this block
+$c = Get-ChildItem Cert:\LocalMachine\Root | Where-Object Thumbprint -eq '<ROOT-THUMBPRINT>'
 "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($c.RawData, 'InsertLineBreaks') + "`n-----END CERTIFICATE-----" |
   Set-Content -Encoding ascii .\volatile\extra-ca.pem
 # 2. the intermediates the proxy serves (they are NOT in the Windows store): every block except the first (the leaf)
@@ -1561,8 +1562,10 @@ $show = ('' | & $openssl s_client -connect registry.ollama.ai:443 -servername re
 # Verify return code: 0 (ok)
 ```
 
-If the thumbprint no longer matches, list candidates with
-`Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*ccok*' | Format-List Subject,Thumbprint,NotAfter`.
+To find the root's thumbprint: the last `i:` line of the served chain is the root's subject —
+`'' | & $openssl s_client -connect registry.ollama.ai:443 -servername registry.ollama.ai -showcerts 2>$null | Select-String '^ i:' | Select-Object -Last 1`
+— then look it up in the store by a distinctive part of that DN:
+`Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -like '*<part of the root DN>*' | Format-List Subject,Thumbprint,NotAfter`.
 
 **What the wrappers then do.** When `.\volatile\extra-ca.pem` exists — or `AM7_EXTRA_CA_FILE`
 points at a bundle (the wrapper errors out if that path is missing) — `am7-docker-up.bat`/`.sh`
