@@ -19,7 +19,9 @@ import {
     getBookInfo, workflowView, nodeView, listStale,
     regenerateNode, pinNode, addMembers, createChapter, testNode,
     saveCanvas, addBinding, deleteBinding, detectBoundaries,
-    listSeriesBooks, listPb2Books, loadNodePlan
+    listSeriesBooks, listPb2Books, loadNodePlan,
+    normalizeArtifact, isArchivedArtifact, groupArtifactsByAttempt, formatBytes,
+    scanRetention, applyRetention, retentionActionable
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -112,6 +114,18 @@ let selectedNodeId = null;
 let nodeDetails = null;
 let nodeDetailsLoading = false;
 let nodePlan = { nodeId: null, loading: false, open: false, plan: null, artifact: null, error: null };
+
+// V3 §23 variants (P6-4) — per-selected-node strip UI state. `showArchived` reveals ARCHIVED artifacts
+// (hidden by default behind a "Show archived (n)" toggle); `compare` holds up to two artifact objectIds
+// chosen from the strip for the two-up compare pane. Both reset whenever the selected node changes.
+let artifactUi = { showArchived: false, compare: [] };
+
+// V3 §23 retention (P6-3b/P6-4) — the book-level dry-run → apply dialog. `keepAttempts` /
+// `deleteBytesAfterDays` are the raw input strings ('' = server default). `scan` is the last dry run for
+// the CURRENT inputs (editing either input discards it, so Apply is never enabled against a stale scan);
+// `result` is the last apply. Hosted on the shared dialogCore stack like Share / New Chapter.
+const RETENTION_DEFAULTS = { open: false, keepAttempts: '', deleteBytesAfterDays: '', scanning: false, applying: false, scan: null, result: null, error: null };
+let retention = Object.assign({}, RETENTION_DEFAULTS);
 
 let pinLoading = {};
 let regenLoading = {};
@@ -429,11 +443,32 @@ async function selectNode(nodeOid) {
     nodeDetails = null;
     nodeDetailsLoading = true;
     nodePlan = { nodeId: nodeOid, loading: false, open: false, plan: null, artifact: null, error: null };
+    artifactUi = { showArchived: false, compare: [] };
     m.redraw();
     try {
         nodeDetails = await nodeView(pb2BookObjectId, nodeOid);
     } catch (e) {
         page.toast('error', 'Failed to load node detail');
+    }
+    nodeDetailsLoading = false;
+    m.redraw();
+}
+
+/** Re-read the selected node's detail (after a retention apply changed its artifacts). Keeps the strip's
+ *  toggles but drops a compare pick that no longer exists. */
+async function reloadNodeDetails() {
+    if (!selectedNodeId || !pb2BookObjectId) return;
+    nodeDetailsLoading = true;
+    m.redraw();
+    try {
+        nodeDetails = await nodeView(pb2BookObjectId, selectedNodeId);
+        let known = {};
+        Object.keys((nodeDetails && nodeDetails.artifacts) || {}).forEach(function (role) {
+            (nodeDetails.artifacts[role] || []).forEach(function (a) { if (a && a.objectId) known[a.objectId] = true; });
+        });
+        artifactUi.compare = artifactUi.compare.filter(function (id) { return known[id]; });
+    } catch (e) {
+        page.toast('error', 'Failed to reload node detail');
     }
     nodeDetailsLoading = false;
     m.redraw();
@@ -836,30 +871,144 @@ function renderNodeCard(n) {
 }
 
 // ── Artifact history panel (inside node detail panel) ─────────────────
+// V3 §23 (P6-4): one role's chain grouped by attempt (groupArtifactsByAttempt), newest attempt first,
+// variants in variantIndex order. Tile border/tint follows the review state: selected = blue, APPROVED =
+// green, REJECTED = grey, ARCHIVED = dashed + dimmed and hidden until "Show archived (n)". Clicking a tile
+// adds it to the two-up compare pane (max two; a third pick replaces the oldest).
+
+/** Border colour + opacity for one artifact tile, by selection then review status. */
+function artifactTileStyle(art) {
+    let st = String(art.reviewStatus || '').toUpperCase();
+    if (art.selected) return { border: '2px solid #3b82f6', opacity: '1' };
+    if (st === 'APPROVED') return { border: '2px solid #16a34a', opacity: '1' };
+    if (st === 'ARCHIVED') return { border: '2px dashed #cbd5e1', opacity: '.55' };
+    if (st === 'REJECTED') return { border: '2px solid #9ca3af', opacity: '.7' };
+    return { border: '2px solid #e2e8f0', opacity: '1' };
+}
+
+/** Pure: one-line tooltip for a tile — rev, variant, seed, status, archive/bytes facts. */
+function artifactTileTitle(art) {
+    let bits = ['Rev ' + (art.revision != null ? art.revision : '?')];
+    if (art.attempt != null) bits.push('v' + art.variantIndex);
+    if (art.seed != null) bits.push('seed ' + art.seed);
+    if (art.selected) bits.push('current');
+    if (art.reviewStatus) bits.push(String(art.reviewStatus).toLowerCase());
+    if (art.archivedAt) bits.push('archived ' + art.archivedAt);
+    if (art.bytesDeleted) bits.push('bytes deleted');
+    return bits.join(' · ');
+}
+
+function toggleCompare(objectId) {
+    let idx = artifactUi.compare.indexOf(objectId);
+    if (idx >= 0) artifactUi.compare.splice(idx, 1);
+    else {
+        artifactUi.compare.push(objectId);
+        while (artifactUi.compare.length > 2) artifactUi.compare.shift();
+    }
+    m.redraw();
+}
+
+function renderArtifactTile(art) {
+    let tile = artifactTileStyle(art);
+    let compareIdx = artifactUi.compare.indexOf(art.objectId);
+    let isImage = !!(art.dataObjectId && art.mimeType && String(art.mimeType).startsWith('image/'));
+    return m('div', {
+        key: art.objectId,
+        'data-testid': 'pbwf-art-tile',
+        'data-artifact-id': art.objectId,
+        'data-variant-index': art.variantIndex,
+        'data-review-status': String(art.reviewStatus || '').toLowerCase(),
+        'data-compare': compareIdx >= 0 ? String(compareIdx + 1) : undefined,
+        style: 'display:flex;flex-direction:column;align-items:center;width:60px;cursor:pointer;',
+        title: artifactTileTitle(art),
+        onclick: function (e) { e.stopPropagation(); toggleCompare(art.objectId); }
+    }, [
+        m('div', {
+            style: [
+                'position:relative;border:' + tile.border + ';border-radius:6px;overflow:hidden;opacity:' + tile.opacity + ';',
+                compareIdx >= 0 ? 'box-shadow:0 0 0 2px #f59e0b;' : ''
+            ].join('')
+        }, [
+            isImage
+                ? m('img', {
+                    src: imageUrl(art.dataObjectId),
+                    style: 'width:56px;height:56px;object-fit:cover;display:block;',
+                    loading: 'lazy',
+                })
+                : m('div', { style: 'width:56px;height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10px;color:#64748b;text-align:center;line-height:1.1;' },
+                    art.bytesDeleted
+                        ? [m('span', { 'data-testid': 'pbwf-art-bytes-deleted', style: 'font-size:9px;color:#b45309;font-weight:600;' }, 'bytes'), m('span', { style: 'font-size:9px;color:#b45309;font-weight:600;' }, 'deleted')]
+                        : 'r' + (art.revision != null ? art.revision : '?')),
+            compareIdx >= 0 ? m('span', { style: 'position:absolute;top:2px;right:2px;background:#f59e0b;color:#fff;font-size:9px;font-weight:700;border-radius:9999px;padding:0 5px;' }, compareIdx === 0 ? 'A' : 'B') : null,
+            art.selected ? m('span', { style: 'position:absolute;top:2px;left:2px;background:#3b82f6;color:#fff;font-size:9px;border-radius:9999px;padding:0 4px;' }, '●') : null,
+        ]),
+        m('div', { style: 'font-size:9px;color:#64748b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;' }, [
+            art.attempt != null ? m('span', { 'data-testid': 'pbwf-art-variant-badge', style: 'font-weight:600;color:#374151;' }, 'v' + art.variantIndex) : m('span', { style: 'font-weight:600;color:#374151;' }, 'r' + (art.revision != null ? art.revision : '?')),
+            art.seed != null ? m('span', { 'data-testid': 'pbwf-art-seed-badge', title: 'seed ' + art.seed }, ' · s' + art.seed) : null,
+        ]),
+    ]);
+}
 
 function renderArtifactHistory(role, list) {
     if (!list || !list.length) return null;
-    return m('div', { style: 'margin-bottom:8px;' }, [
-        m('div', { style: 'font-size:11px;font-weight:600;color:#374151;margin-bottom:4px;text-transform:capitalize;' }, role),
-        m('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;' },
-            list.map(function (art) {
-                return m('div', {
-                    key: art.objectId,
-                    style: [
-                        'border:2px solid ' + (art.selected ? '#3b82f6' : '#e2e8f0'),
-                        'border-radius:6px;overflow:hidden;',
-                    ].join(''),
-                    title: 'Rev ' + (art.revision || '?') + (art.selected ? ' (current)' : ''),
-                }, art.dataObjectId && art.mimeType && art.mimeType.startsWith('image/')
-                    ? m('img', {
-                        src: imageUrl(art.dataObjectId),
-                        style: 'width:60px;height:60px;object-fit:cover;display:block;',
-                        loading: 'lazy',
-                    })
-                    : m('div', { style: 'width:60px;height:60px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#64748b;' },
-                        'r' + (art.revision || '?')));
-            })
-        ),
+    let grouped = groupArtifactsByAttempt(list);
+    let groups = grouped.attempts.filter(function (g) {
+        return artifactUi.showArchived || g.variants.some(function (a) { return !isArchivedArtifact(a); });
+    });
+    return m('div', { 'data-testid': 'pbwf-art-role', 'data-role': role, style: 'margin-bottom:8px;' }, [
+        m('div', { style: 'display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;' }, [
+            m('span', { style: 'font-size:11px;font-weight:600;color:#374151;text-transform:capitalize;' }, role),
+            grouped.archivedCount > 0 ? m('button', {
+                'data-testid': 'pbwf-art-archived-toggle',
+                style: 'border:none;background:none;cursor:pointer;font-size:10px;color:#6366f1;padding:0;',
+                onclick: function (e) { e.stopPropagation(); artifactUi.showArchived = !artifactUi.showArchived; m.redraw(); }
+            }, artifactUi.showArchived ? 'Hide archived (' + grouped.archivedCount + ')' : 'Show archived (' + grouped.archivedCount + ')') : null,
+        ]),
+        groups.length ? groups.map(function (g) {
+            let variants = g.variants.filter(function (a) { return artifactUi.showArchived || !isArchivedArtifact(a); });
+            return m('div', { key: g.attempt != null ? 'a:' + g.attempt : 'r:' + g.variants[0].objectId, 'data-testid': 'pbwf-art-attempt', 'data-attempt': g.attempt || '', style: 'margin-bottom:6px;' }, [
+                m('div', { style: 'font-size:10px;color:#64748b;margin-bottom:3px;' }, g.label),
+                m('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;' }, variants.map(renderArtifactTile)),
+            ]);
+        }) : m('div', { style: 'font-size:10px;color:#94a3b8;' }, 'All ' + grouped.archivedCount + ' archived'),
+    ]);
+}
+
+/** Two-up compare pane for the (up to) two tiles picked from the strip; null when nothing is picked. */
+function renderArtifactCompare() {
+    if (!artifactUi.compare.length || !nodeDetails || !nodeDetails.artifacts) return null;
+    let byId = {};
+    Object.keys(nodeDetails.artifacts).forEach(function (role) {
+        (nodeDetails.artifacts[role] || []).forEach(function (a) { if (a && a.objectId) byId[a.objectId] = Object.assign({ role: role }, normalizeArtifact(a)); });
+    });
+    let picks = artifactUi.compare.map(function (id) { return byId[id]; }).filter(Boolean);
+    if (!picks.length) return null;
+    return m('div', { 'data-testid': 'pbwf-art-compare', style: 'margin:6px 0 10px;padding:6px;border:1px solid #fde68a;background:#fffbeb;border-radius:6px;' }, [
+        m('div', { style: 'display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;' }, [
+            m('span', { style: 'font-size:11px;font-weight:600;color:#92400e;' }, 'Compare'),
+            m('button', {
+                'data-testid': 'pbwf-art-compare-clear',
+                style: 'border:none;background:none;cursor:pointer;font-size:10px;color:#92400e;padding:0;',
+                onclick: function (e) { e.stopPropagation(); artifactUi.compare = []; m.redraw(); }
+            }, 'Clear'),
+        ]),
+        m('div', { style: 'display:flex;gap:6px;' }, picks.map(function (a, i) {
+            let isImage = !!(a.dataObjectId && a.mimeType && String(a.mimeType).startsWith('image/'));
+            return m('div', { key: a.objectId, 'data-testid': 'pbwf-art-compare-item', style: 'flex:1;min-width:0;' }, [
+                isImage
+                    ? m('img', { src: imageUrl(a.dataObjectId), style: 'width:100%;aspect-ratio:1;object-fit:contain;background:#fff;border:1px solid #e2e8f0;border-radius:4px;display:block;' })
+                    : m('div', { style: 'width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:10px;color:#64748b;background:#fff;border:1px solid #e2e8f0;border-radius:4px;' },
+                        a.bytesDeleted ? 'bytes deleted' : (a.artifactType || 'no image')),
+                m('div', { style: 'font-size:9px;color:#374151;margin-top:2px;word-break:break-word;' }, [
+                    m('b', (i === 0 ? 'A ' : 'B ') + a.role + ' r' + (a.revision != null ? a.revision : '?')),
+                    a.attempt != null ? ' v' + a.variantIndex : '',
+                    a.seed != null ? ' · seed ' + a.seed : '',
+                    a.reviewStatus ? ' · ' + String(a.reviewStatus).toLowerCase() : '',
+                    a.byteLength ? ' · ' + formatBytes(a.byteLength) : '',
+                ]),
+            ]);
+        })),
+        picks.length < 2 ? m('div', { style: 'font-size:10px;color:#92400e;margin-top:4px;' }, 'Pick a second tile to compare') : null,
     ]);
 }
 
@@ -896,8 +1045,9 @@ function renderNodeDetailPanel() {
         nodeDetailsLoading ? m('div', { style: 'font-size:12px;color:#64748b;' }, 'Loading…') : null,
 
         nodeDetails && nodeDetails.artifacts
-            ? m('div', { style: 'margin-top:8px;' }, [
+            ? m('div', { 'data-testid': 'pbwf-art-history', style: 'margin-top:8px;' }, [
                 m('div', { style: 'font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;' }, 'Artifact Revisions'),
+                renderArtifactCompare(),
                 Object.keys(nodeDetails.artifacts).map(function (role) {
                     return renderArtifactHistory(role, nodeDetails.artifacts[role]);
                 }),
@@ -1129,6 +1279,189 @@ function openChapterDialog() {
         // Any close path (Cancel, X, backdrop, Escape, or Dialog.close() after a successful create)
         // resets the chapter form state — the same reset the old hand-rolled Cancel/backdrop did.
         onClose: function () { resetChapterDialogState(); },
+    });
+}
+
+// ── Variant retention dialog (V3 §23, P6-4) ───────────────────────────
+// Book-scoped dry run → apply over GET/POST /{book}/retention[/apply]. The dialog never applies without a
+// dry run for the SAME inputs: editing K or D discards the scan, and Apply is enabled only when the current
+// scan has ≥1 ARCHIVE / DELETE_BYTES item. The server re-scans on apply, so per-item `outcome` is reported
+// from the apply response, not inferred from the dry run.
+
+function resetRetentionState() {
+    retention = Object.assign({}, RETENTION_DEFAULTS);
+}
+
+function retentionInputs() {
+    return { keepAttempts: retention.keepAttempts, deleteBytesAfterDays: retention.deleteBytesAfterDays };
+}
+
+function onRetentionInput(key, value) {
+    retention[key] = value;
+    // A scan is only valid for the inputs it was run with.
+    retention.scan = null;
+    retention.result = null;
+    retention.error = null;
+}
+
+async function doScanRetention() {
+    if (!pb2BookObjectId || retention.scanning || retention.applying) return;
+    retention.scanning = true;
+    retention.error = null;
+    retention.result = null;
+    m.redraw();
+    try {
+        retention.scan = await scanRetention(pb2BookObjectId, retentionInputs());
+    } catch (e) {
+        retention.scan = null;
+        retention.error = (e && e.message) || 'Dry run failed';
+    }
+    retention.scanning = false;
+    m.redraw();
+}
+
+async function doApplyRetention() {
+    if (!pb2BookObjectId || retention.applying || retention.scanning || !retention.scan) return;
+    if (!retentionActionable(retention.scan).length) return;
+    retention.applying = true;
+    retention.error = null;
+    m.redraw();
+    try {
+        retention.result = await applyRetention(pb2BookObjectId, retentionInputs());
+        retention.scan = null;   // the world changed; a fresh dry run is needed before applying again
+        page.toast('success', 'Retention applied: ' + retention.result.archived + ' archived, ' + retention.result.bytesDeleted + ' bytes-deleted');
+        if (selectedNodeId) reloadNodeDetails();
+    } catch (e) {
+        retention.error = (e && e.message) || 'Apply failed';
+    }
+    retention.applying = false;
+    m.redraw();
+}
+
+const RETENTION_ACTION_LABEL = { KEEP: 'keep', ARCHIVE: 'archive', DELETE_BYTES: 'delete bytes', NONE: '—' };
+const RETENTION_ACTION_COLOR = { KEEP: '#16a34a', ARCHIVE: '#d97706', DELETE_BYTES: '#dc2626', NONE: '#94a3b8' };
+const RETENTION_OUTCOME_COLOR = { archived: '#d97706', bytesDeleted: '#dc2626', kept: '#16a34a', refused: '#7c3aed', denied: '#dc2626', failed: '#dc2626' };
+
+function retentionItemLabel(it) {
+    return (it.nodeHandle || it.nodeObjectId || '?') + ' · ' + (it.role || '?') + ' r' + (it.revision != null ? it.revision : '?')
+        + (it.attempt != null ? ' v' + it.variantIndex : '') + (it.selected ? ' ●' : '');
+}
+
+function renderRetentionItems(items, showOutcome) {
+    if (!items.length) return null;
+    return m('div', { 'data-testid': 'pbwf-retention-items', style: 'max-height:220px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;margin-top:8px;' },
+        items.map(function (it) {
+            let act = showOutcome ? (it.outcome || '?') : it.action;
+            let color = showOutcome ? (RETENTION_OUTCOME_COLOR[it.outcome] || '#64748b') : (RETENTION_ACTION_COLOR[it.action] || '#64748b');
+            let label = showOutcome ? act : (RETENTION_ACTION_LABEL[it.action] || it.action);
+            return m('div', { key: it.objectId, 'data-testid': 'pbwf-retention-item', 'data-action': it.action, 'data-outcome': it.outcome || '', style: 'display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid #f1f5f9;font-size:11px;' }, [
+                m('span', { style: 'font-weight:700;color:' + color + ';min-width:72px;' }, label),
+                m('span', { style: 'flex:1;min-width:0;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', title: it.objectId }, retentionItemLabel(it)),
+                m('span', { style: 'color:#64748b;white-space:nowrap;' }, [
+                    it.reviewStatus ? String(it.reviewStatus).toLowerCase() : '',
+                    it.byteLength ? ' · ' + formatBytes(it.byteLength) : '',
+                ]),
+                (showOutcome ? it.outcomeReason : it.reason) ? m('span', { style: 'color:#94a3b8;white-space:nowrap;max-width:160px;overflow:hidden;text-overflow:ellipsis;', title: showOutcome ? it.outcomeReason : it.reason }, showOutcome ? it.outcomeReason : it.reason) : null,
+            ]);
+        }));
+}
+
+function renderRetentionDialogContent() {
+    let s = retention.scan;
+    let r = retention.result;
+    let actionable = s ? retentionActionable(s) : [];
+    let inputStyle = 'width:80px;border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;font-size:13px;';
+    return m('div', { 'data-testid': 'pbwf-retention-dialog' }, [
+        m('p', { style: 'font-size:12px;color:#64748b;margin-bottom:10px;' },
+            'Keep the K newest attempts per node and role; older, unselected, unapproved variants are archived. ' +
+            'An archived variant\'s image bytes are deleted D days after archiving (the artifact row is kept). ' +
+            'Selected and approved artifacts are never touched. Run a dry run first; Apply re-scans on the server.'),
+        m('div', { style: 'display:flex;gap:16px;align-items:flex-end;margin-bottom:8px;' }, [
+            m('label', { style: 'font-size:12px;color:#374151;display:flex;flex-direction:column;gap:2px;' }, [
+                'Keep attempts (K)',
+                m('input', { 'data-testid': 'pbwf-retention-keep', type: 'number', min: 1, step: 1, placeholder: 'default', style: inputStyle,
+                    value: retention.keepAttempts, disabled: retention.scanning || retention.applying,
+                    oninput: function (e) { onRetentionInput('keepAttempts', e.target.value); } }),
+            ]),
+            m('label', { style: 'font-size:12px;color:#374151;display:flex;flex-direction:column;gap:2px;' }, [
+                'Delete bytes after (days, D)',
+                m('input', { 'data-testid': 'pbwf-retention-days', type: 'number', min: 0, step: 1, placeholder: 'default', style: inputStyle,
+                    value: retention.deleteBytesAfterDays, disabled: retention.scanning || retention.applying,
+                    oninput: function (e) { onRetentionInput('deleteBytesAfterDays', e.target.value); } }),
+            ]),
+            m('span', { style: 'font-size:11px;color:#94a3b8;padding-bottom:6px;' }, 'blank = server default'),
+        ]),
+        retention.error ? m('div', { 'data-testid': 'pbwf-retention-error', style: 'font-size:12px;color:#dc2626;background:#fef2f2;border-radius:4px;padding:6px;margin-bottom:8px;word-break:break-word;' }, retention.error) : null,
+        retention.scanning ? m('div', { style: 'font-size:12px;color:#64748b;' }, 'Scanning…') : null,
+        retention.applying ? m('div', { style: 'font-size:12px;color:#64748b;' }, 'Applying…') : null,
+
+        // Dry-run summary + actionable items
+        s && !r ? m('div', { 'data-testid': 'pbwf-retention-summary', style: 'font-size:12px;color:#374151;' }, [
+            m('div', [
+                m('b', s.total + ' artifact' + (s.total === 1 ? '' : 's')), ' across ', m('b', s.nodes + ' node' + (s.nodes === 1 ? '' : 's')),
+                ' with K=' + s.keepAttempts + ', D=' + s.deleteBytesAfterDays + ' — ',
+                m('span', { style: 'color:#16a34a;' }, s.counts.keep + ' keep'), ' · ',
+                m('span', { 'data-testid': 'pbwf-retention-archive-count', style: 'color:#d97706;' }, s.counts.archive + ' archive'), ' · ',
+                m('span', { 'data-testid': 'pbwf-retention-delete-count', style: 'color:#dc2626;' }, s.counts.deleteBytes + ' delete bytes'),
+                s.bytesReclaimable ? [' · ', m('span', { 'data-testid': 'pbwf-retention-reclaimable' }, formatBytes(s.bytesReclaimable) + ' reclaimable')] : null,
+            ]),
+            actionable.length
+                ? renderRetentionItems(actionable, false)
+                : m('div', { 'data-testid': 'pbwf-retention-nothing', style: 'font-size:12px;color:#64748b;margin-top:8px;' }, 'Nothing to do for these settings.'),
+            s.warnings.length ? m('ul', { style: 'font-size:11px;color:#b45309;margin-top:6px;padding-left:16px;' }, s.warnings.map(function (w) { return m('li', String(w)); })) : null,
+        ]) : null,
+
+        // Apply result
+        r ? m('div', { 'data-testid': 'pbwf-retention-result', style: 'font-size:12px;color:#374151;' }, [
+            m('div', [
+                m('b', 'Applied: '),
+                m('span', { 'data-testid': 'pbwf-retention-archived', style: 'color:#d97706;' }, r.archived + ' archived'), ' · ',
+                m('span', { 'data-testid': 'pbwf-retention-bytes-deleted', style: 'color:#dc2626;' }, r.bytesDeleted + ' bytes-deleted'),
+                r.bytesFreed ? ' (' + formatBytes(r.bytesFreed) + ' freed)' : '',
+                r.refused ? [' · ', m('span', { style: 'color:#7c3aed;' }, r.refused + ' refused')] : null,
+                r.denied ? [' · ', m('span', { style: 'color:#dc2626;' }, r.denied + ' denied')] : null,
+                r.failed ? [' · ', m('span', { style: 'color:#dc2626;' }, r.failed + ' failed')] : null,
+            ]),
+            renderRetentionItems(r.items.filter(function (it) { return it.outcome && it.outcome !== 'kept'; }), true),
+            r.warnings.length ? m('ul', { style: 'font-size:11px;color:#b45309;margin-top:6px;padding-left:16px;' }, r.warnings.map(function (w) { return m('li', String(w)); })) : null,
+            m('div', { style: 'font-size:11px;color:#64748b;margin-top:6px;' }, 'Run another dry run to see the new state.'),
+        ]) : null,
+    ]);
+}
+
+function retentionDialogActions() {
+    let canApply = !!retention.scan && !retention.scanning && !retention.applying && retentionActionable(retention.scan).length > 0;
+    return [
+        { label: 'Close', icon: 'cancel', onclick: function () { Dialog.close(); } },
+        {
+            label: retention.scanning ? 'Scanning…' : 'Dry run',
+            icon: 'search',
+            disabled: retention.scanning || retention.applying,
+            onclick: function () { doScanRetention(); },
+            attrs: { 'data-testid': 'pbwf-retention-scan' },
+        },
+        {
+            label: retention.applying ? 'Applying…' : 'Apply',
+            icon: 'inventory_2',
+            primary: true,
+            disabled: !canApply,
+            onclick: function () { doApplyRetention(); },
+            attrs: { 'data-testid': 'pbwf-retention-apply' },
+        },
+    ];
+}
+
+function openRetentionDialog() {
+    if (retention.open) return;
+    resetRetentionState();
+    retention.open = true;
+    Dialog.open({
+        title: 'Variant Retention',
+        size: 'lg',
+        closable: true,
+        content: { view: renderRetentionDialogContent },
+        actions: { view: retentionDialogActions },
+        onClose: function () { resetRetentionState(); },
     });
 }
 
@@ -1501,6 +1834,13 @@ var pictureBookWorkflowView = {
                     style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
                     onclick: openChapterDialog
                 }, '📖 Chapter') : null,
+                // Retention button — V3 §23 variant retention dry run → apply (book-scoped)
+                pb2BookObjectId ? m('button', {
+                    'data-testid': 'pbwf-retention-open',
+                    title: 'Archive old variants / delete archived bytes',
+                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
+                    onclick: openRetentionDialog
+                }, '🗄 Retention') : null,
                 // Pages button — PB2 page reader
                 pb2BookObjectId ? m('button', {
                     title: 'View scene pages',
@@ -1567,13 +1907,15 @@ var pictureBookWorkflowView = {
 
 // Exported for unit tests (src/test/overlayDialogFixes.test.js) — they open the dialogs
 // onto the shared dialogCore stack without needing the route/canvas to be mounted.
-export { openMemberDialog, openChapterDialog };
+export { openMemberDialog, openChapterDialog, openRetentionDialog };
 
 // Exported for Vitest (P1-10 S6): pure layout/colour helpers plus a seam for the drag-drop save.
+// P6-4 adds the variant strip / compare / retention pieces.
 export { computePositions, storedPosition, pickThumbArtifact, statusColor, STATUS_COLOR, onCanvasMouseUp, renderNodeDetailPanel, toggleNodePlan, NODE_TYPE_RANK, TYPE_ACCENT, typeAccent, renderNodeCard };
+export { renderArtifactHistory, renderArtifactCompare, artifactTileStyle, artifactTileTitle, toggleCompare, renderRetentionDialogContent, retentionDialogActions, doScanRetention, doApplyRetention };
 export const CANVAS_GEOMETRY = { CARD_W, CARD_H, COL_GAP, ROW_GAP, CANVAS_PAD };
 export function __canvasStateForTest() {
-    return { graphData, positions, draggingNodeId, pb2BookObjectId, selectedNodeId, nodeDetails, nodePlan };
+    return { graphData, positions, draggingNodeId, pb2BookObjectId, selectedNodeId, nodeDetails, nodePlan, artifactUi, retention };
 }
 export function __setCanvasStateForTest(patch) {
     patch = patch || {};
@@ -1585,6 +1927,8 @@ export function __setCanvasStateForTest(patch) {
     if ('nodeDetails' in patch) nodeDetails = patch.nodeDetails;
     if ('nodeDetailsLoading' in patch) nodeDetailsLoading = !!patch.nodeDetailsLoading;
     if ('nodePlan' in patch) nodePlan = Object.assign({ nodeId: null, loading: false, open: false, plan: null, artifact: null, error: null }, patch.nodePlan || {});
+    if ('artifactUi' in patch) artifactUi = Object.assign({ showArchived: false, compare: [] }, patch.artifactUi || {});
+    if ('retention' in patch) retention = Object.assign({}, RETENTION_DEFAULTS, patch.retention || {});
 }
 
 // ── Routes ────────────────────────────────────────────────────────────

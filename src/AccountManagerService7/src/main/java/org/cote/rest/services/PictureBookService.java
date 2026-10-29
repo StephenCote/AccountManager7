@@ -99,6 +99,14 @@ import jakarta.ws.rs.core.Response;
  *   GET  /orphans/org                           — dry run, whole organization (admin)
  *   POST /orphans/org/purge                     — remove, whole organization (admin); same body
  *
+ * Retention (§23, PbRetentionUtil via PbServiceFacade; GETs are dry runs that write nothing, applies
+ * re-scan and act on exactly that item set, as the caller; K/D are per request, never persisted —
+ * ?keepAttempts=3&deleteBytesAfterDays=30 on GET, the same keys in the JSON body on POST; 400 out of range):
+ *   GET  /{bookObjectId}/retention              — dry run: every artifact with KEEP / ARCHIVE / DELETE_BYTES / NONE
+ *   POST /{bookObjectId}/retention/apply        — archive + delete bytes (403 when the caller may not update the book)
+ *   GET  /retention/org                         — dry run, whole organization (admin)
+ *   POST /retention/org/apply                   — apply, whole organization (admin)
+ *
  * PB2 bridge (book group objectId → olio.pb.book objectId):
  *   GET  /{bookGroupObjectId}/pb2                             — resolve PB1 book group to PB2 book; 404 if no PB2 book yet
  *
@@ -228,6 +236,16 @@ public class PictureBookService {
         Object v = params.get(key);
         if (v instanceof Number) return ((Number) v).intValue();
         return null;
+    }
+
+    /**
+     * An optional int body field: null when the client did not send it. A declared int field reads back as
+     * 0, not null, when absent (KI-25), so {@code hasField} is the only presence signal; without it an
+     * omitted {@code keepAttempts} would be a 400 and an omitted {@code deleteBytesAfterDays} would delete
+     * archived bytes immediately. Same idiom as the {@code chapter} read in POST /chapter.
+     */
+    private Integer optionalInt(BaseRecord params, String key) {
+        return (params != null && params.hasField(key)) ? getInt(params, key) : null;
     }
 
     // ----- Endpoints -----------------------------------------------------
@@ -3400,6 +3418,104 @@ public class PictureBookService {
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
+        }
+    }
+
+    // ----- Retention (transport only; PbRetentionUtil owns policy, scan and apply) -----
+
+    /**
+     * GET /{bookObjectId}/retention?keepAttempts=3&deleteBytesAfterDays=30
+     * Dry run of the retention policy over one book: every artifact with the action the policy would take.
+     * Nothing is written. Both parameters are optional (selector defaults) and 400 when out of range or
+     * not integers.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/retention")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response scanRetention(@PathParam("bookObjectId") String bookObjectId,
+            @QueryParam("keepAttempts") String keepAttempts, @QueryParam("deleteBytesAfterDays") String deleteBytesAfterDays,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.scanRetention(user, bookObjectId,
+                parseIntParam("keepAttempts", keepAttempts), parseIntParam("deleteBytesAfterDays", deleteBytesAfterDays)))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/retention/apply
+     * Apply the policy over one book as the caller (403 when the caller may not update the book). Body:
+     * { keepAttempts?: 3, deleteBytesAfterDays?: 30 }. The apply re-scans first so a dry run and an apply
+     * act on the same item set; per-artifact denials and 409 refusals are reported on the item.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/retention/apply")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response applyRetention(@PathParam("bookObjectId") String bookObjectId, String json,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.applyRetention(user, bookObjectId,
+                optionalInt(params, "keepAttempts"), optionalInt(params, "deleteBytesAfterDays")))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * GET /retention/org?keepAttempts=3&deleteBytesAfterDays=30
+     * Dry run over every book in the organization. Admin-only at the transport layer; PbRetentionUtil
+     * additionally re-checks AccountAdministrators membership and 403s otherwise.
+     */
+    @RolesAllowed({"admin"})
+    @GET
+    @Path("/retention/org")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response scanOrgRetention(@QueryParam("keepAttempts") String keepAttempts,
+            @QueryParam("deleteBytesAfterDays") String deleteBytesAfterDays, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.scanRetentionOrg(user,
+                parseIntParam("keepAttempts", keepAttempts), parseIntParam("deleteBytesAfterDays", deleteBytesAfterDays)))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /retention/org/apply
+     * Apply over every book in the organization. Same gating as GET /retention/org; same body as
+     * POST /{bookObjectId}/retention/apply.
+     */
+    @RolesAllowed({"admin"})
+    @POST
+    @Path("/retention/org/apply")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response applyOrgRetention(String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        BaseRecord params = parseParams(json);
+        try {
+            return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.applyRetentionOrg(user,
+                optionalInt(params, "keepAttempts"), optionalInt(params, "deleteBytesAfterDays")))).build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /** An optional integer query parameter; a present non-integer is a 400 rather than Jersey's default 404. */
+    private static Integer parseIntParam(String name, String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        try {
+            return Integer.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            throw new PictureBookException(400, name + " must be an integer; got '" + value + "'");
         }
     }
 

@@ -401,6 +401,11 @@ public class OlioFieldNames {
 	public static final String FIELD_PB_DURATION_MS = "durationMs";
 	/// The approvedBy value written by the book's autoApprove switch, as opposed to a user objectId.
 	public static final String PB_APPROVED_BY_AUTO = "AUTO";
+	/// olio.pb.artifact — V3 §23 variants and retention: the run objectId every variant of one render shares,
+	/// the variant's 0..N-1 position in it, and the retention stamp (trusted only when reviewStatus == ARCHIVED).
+	public static final String FIELD_PB_ATTEMPT = "attempt";
+	public static final String FIELD_PB_VARIANT_INDEX = "variantIndex";
+	public static final String FIELD_PB_ARCHIVED_AT = "archivedAt";
 
 	public static final String FIELD_PB_RUN_STATUS = "runStatus";
 	public static final String FIELD_PB_STARTED_AT = "startedAt";

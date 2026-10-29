@@ -152,6 +152,10 @@ public class PbPipelineUtil {
 		/// V3 P4-4: how the scene plan is built on this graph. NONE everywhere except a Quick-start DRAFT
 		/// render from the compose job; read only by the RENDER_PLAN / ChapBook page scene-plan path.
 		private PbRenderPlanUtil.PlanOptions planOptions = PbRenderPlanUtil.PlanOptions.NONE;
+		/// V3 P6-2: the renderer a plan-driven render on this graph talks to. SWARM everywhere outside tests;
+		/// an offline test sets a fake so executeNodeRun / the render job run with no Swarm server (P5-3's
+		/// seam, moved onto the graph so it travels with the call rather than through every signature).
+		private PbNodeExecutor.RenderBackend renderBackend = PbNodeExecutor.RenderBackend.SWARM;
 
 		SceneGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord sceneRow,
 				String workflowGroupPath, String artifactGroupPath, String galleryGroupPath,
@@ -229,6 +233,15 @@ public class PbPipelineUtil {
 
 		void setCancelToken(SummarizeProgress token) {
 			this.cancelToken = token;
+		}
+
+		/** Never null; {@link PbNodeExecutor.RenderBackend#SWARM} unless an offline test set a fake. */
+		PbNodeExecutor.RenderBackend getRenderBackend() {
+			return renderBackend;
+		}
+
+		void setRenderBackend(PbNodeExecutor.RenderBackend backend) {
+			this.renderBackend = (backend != null ? backend : PbNodeExecutor.RenderBackend.SWARM);
 		}
 
 		public String getArtifactGroupPath() {
@@ -712,12 +725,49 @@ public class PbPipelineUtil {
 			PbArtifactTypeEnumType artifactType, BaseRecord data, byte[] bytes, String mimeType, Long seed,
 			BaseRecord sdConfigSnapshot, String rawRequestJson, List<String> referenceArtifactObjectIds,
 			SDAPIEnumType backend, long durationMs, String backendGraph) {
+		return recordImage(g, node, role, artifactType, data, bytes, mimeType, seed, sdConfigSnapshot, rawRequestJson,
+			referenceArtifactObjectIds, backend, durationMs, backendGraph, null);
+	}
+
+	/**
+	 * {@link #recordImage(SceneGraph, BaseRecord, String, PbArtifactTypeEnumType, BaseRecord, byte[], String, Long, BaseRecord, String, List, SDAPIEnumType, long, String)}
+	 * stamped with the {@code attempt} that produced it (V3 §23, P6-2: the run objectId, or null outside a
+	 * run). A single-variant record: variantIndex 0, and the artifact it supersedes is the role's current
+	 * selection at the time of the write, exactly as before.
+	 */
+	public static BaseRecord recordImage(SceneGraph g, BaseRecord node, String role,
+			PbArtifactTypeEnumType artifactType, BaseRecord data, byte[] bytes, String mimeType, Long seed,
+			BaseRecord sdConfigSnapshot, String rawRequestJson, List<String> referenceArtifactObjectIds,
+			SDAPIEnumType backend, long durationMs, String backendGraph, String attempt) {
+		return recordImageCore(g, node, role, artifactType, data, bytes, mimeType, seed, sdConfigSnapshot, rawRequestJson,
+			referenceArtifactObjectIds, backend, durationMs, backendGraph, null, 0, attempt, true);
+	}
+
+	/**
+	 * One variant of a batch (V3 §23, P6-2): every final of the attempt is written against the SAME
+	 * pre-batch selection ({@code supersedes}, captured by the caller with
+	 * {@code PbArtifactUtil.findSelected} before anything was recorded) so variant 1 never supersedes
+	 * variant 0, and only variant 0 takes the selection (§10 rule 1; {@code PbArtifactUtil.persistArtifact}).
+	 */
+	public static BaseRecord recordImage(SceneGraph g, BaseRecord node, String role,
+			PbArtifactTypeEnumType artifactType, BaseRecord data, byte[] bytes, String mimeType, Long seed,
+			BaseRecord sdConfigSnapshot, String rawRequestJson, List<String> referenceArtifactObjectIds,
+			SDAPIEnumType backend, long durationMs, String backendGraph, BaseRecord supersedes, int variantIndex, String attempt) {
+		return recordImageCore(g, node, role, artifactType, data, bytes, mimeType, seed, sdConfigSnapshot, rawRequestJson,
+			referenceArtifactObjectIds, backend, durationMs, backendGraph, supersedes, variantIndex, attempt, false);
+	}
+
+	private static BaseRecord recordImageCore(SceneGraph g, BaseRecord node, String role,
+			PbArtifactTypeEnumType artifactType, BaseRecord data, byte[] bytes, String mimeType, Long seed,
+			BaseRecord sdConfigSnapshot, String rawRequestJson, List<String> referenceArtifactObjectIds,
+			SDAPIEnumType backend, long durationMs, String backendGraph, BaseRecord supersedes, int variantIndex,
+			String attempt, boolean resolveSupersedes) {
 		if(g == null || node == null) {
 			return null;
 		}
 		String sanitized = PbArtifactUtil.sanitizeGeneratorRequest(rawRequestJson, referenceArtifactObjectIds);
 		BaseRecord artifact = PbArtifactUtil.persistArtifact(g.user, node, role, artifactType,
-			g.artifactGroupPath, data, null, sdConfigSnapshot, sanitized);
+			g.artifactGroupPath, data, null, sdConfigSnapshot, sanitized, supersedes, variantIndex, attempt, resolveSupersedes);
 		int[] wh = decodeDimensions(bytes);
 		PbArtifactUtil.recordImageMetrics(g.user, artifact, bytes, mimeType, wh[0], wh[1], seed, backend, durationMs, backendGraph);
 		return PbArtifactUtil.readArtifact(g.user, artifact.get(FieldNames.FIELD_OBJECT_ID),

@@ -361,33 +361,38 @@ public class TestPbAutoApprove extends BaseTest {
 	// ─────────────────────────────── P4-7: the veto set over the plan's degradation codes ───────────────────────────────
 
 	/**
-	 * P4-7: the plan degradations an attempt carries are classified by their {@code CODE: message} prefix. The three
-	 * accepted codes never veto, each of the five {@link PbArtifactUtil#AUTO_APPROVE_VETO_CODES} does, the executor's
-	 * {@code upscale:} pseudo-entry and any free-form entry veto (they are not known codes), and a mixed list is
-	 * reduced to exactly its vetoing entries, in order. Pure classification: no artifact, no DB write.
+	 * P4-7: the plan degradations an attempt carries are classified by their {@code CODE: message} prefix. The four
+	 * accepted codes never veto (§23 added {@code VARIANT_SEED_UNKNOWN}: every planned variant still rendered), each
+	 * of the six {@link PbArtifactUtil#AUTO_APPROVE_VETO_CODES} does (§23 added {@code VARIANT_FAILED}: a planned
+	 * variant is missing), the executor's {@code upscale:} pseudo-entry and any free-form entry veto (they are not
+	 * known codes), and a mixed list is reduced to exactly its vetoing entries, in order. Pure classification: no
+	 * artifact, no DB write.
 	 */
 	@Test
-	public void case08_vetoSetIsTheFiveCodesPlusAnythingUnknown() {
+	public void case08_vetoSetIsTheSixCodesPlusAnythingUnknown() {
 		assertTrue(PbArtifactUtil.vetoingDegradations(null).isEmpty());
 		assertTrue(PbArtifactUtil.vetoingDegradations(List.of()).isEmpty());
 
 		String textOnly = RenderPlan.Degradation.ACTOR_TEXT_ONLY + ": Mara rendered from description (no approved portrait)";
 		String substituted = RenderPlan.Degradation.MODEL_SUBSTITUTED + ": location model substituted (flux2Klein_9b not installed)";
 		String qaWarn = RenderPlan.Degradation.QA_WARN + ": soft QA warning";
-		assertTrue("the three accepted codes never veto", PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn)).isEmpty());
-		for(String code : new String[] { RenderPlan.Degradation.ACTOR_TEXT_ONLY, RenderPlan.Degradation.MODEL_SUBSTITUTED, RenderPlan.Degradation.QA_WARN }) {
+		String seedUnknown = RenderPlan.Degradation.VARIANT_SEED_UNKNOWN + ": variant 1 rendered with a random seed: the renderer reported no seed for variant 0";
+		assertTrue("the four accepted codes never veto", PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn, seedUnknown)).isEmpty());
+		for(String code : new String[] { RenderPlan.Degradation.ACTOR_TEXT_ONLY, RenderPlan.Degradation.MODEL_SUBSTITUTED, RenderPlan.Degradation.QA_WARN,
+				RenderPlan.Degradation.VARIANT_SEED_UNKNOWN }) {
 			assertTrue(code + " is a known code", RenderPlan.Degradation.isKnownCode(code));
 			assertFalse(code + " is not in the veto set", PbArtifactUtil.AUTO_APPROVE_VETO_CODES.contains(code));
 			assertTrue("a bare code with no message is still accepted", PbArtifactUtil.vetoingDegradations(List.of(code)).isEmpty());
 		}
 
-		assertEquals(5, PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size());
+		assertEquals(6, PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size());
 		String[] vetoes = new String[] {
 			RenderPlan.Degradation.ACTOR_UNRESOLVED + ": Old Bes rendered from the row's text (character abc could not be read)",
 			RenderPlan.Degradation.ACTOR_FAILED + ": Jideon reference could not be bound",
 			RenderPlan.Degradation.LOCATION_TEXT_ONLY + ": the tavern rendered from text (no approved render)",
 			RenderPlan.Degradation.PROMPT_TRUNCATED + ": ELEM_LOW dropped: gulls (12 tokens over budget 512)",
-			RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": composed lazily by the render" };
+			RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": composed lazily by the render",
+			RenderPlan.Degradation.VARIANT_FAILED + ": variant 2 not rendered: Swarm returned no image" };
 		for(String entry : vetoes) {
 			String code = entry.substring(0, entry.indexOf(':'));
 			assertTrue(code + " is a known code", RenderPlan.Degradation.isKnownCode(code));

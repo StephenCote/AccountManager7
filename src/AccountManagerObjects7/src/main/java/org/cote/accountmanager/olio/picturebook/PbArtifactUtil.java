@@ -127,15 +127,49 @@ public class PbArtifactUtil {
 	public static BaseRecord persistArtifact(BaseRecord user, BaseRecord node, String role,
 			PbArtifactTypeEnumType artifactType, String groupPath, BaseRecord data, String artifactText,
 			BaseRecord sdConfigSnapshot, String generatorRequest) {
+		return persistArtifact(user, node, role, artifactType, groupPath, data, artifactText, sdConfigSnapshot,
+			generatorRequest, null, 0, null, true);
+	}
+
+	/**
+	 * {@link #persistArtifact(BaseRecord, BaseRecord, String, PbArtifactTypeEnumType, String, BaseRecord, String, BaseRecord, String)}
+	 * for one variant of a multi-variant attempt (V3 §23).
+	 * <p>
+	 * Every variant of one render shares {@code attempt} (the run's objectId) and carries its own
+	 * {@code variantIndex} (0..N-1). Two things differ from the single-variant path, and both exist because
+	 * the N variants are persisted one after another into the same {@code (node, role)} chain:
+	 * <ul>
+	 * <li><b>{@code supersedes} is the caller's pre-batch selection</b>, resolved once before the first
+	 * variant was persisted and passed in for every one of them. Resolving it per variant would make
+	 * variant 1 "supersede" variant 0 - a sibling of the same attempt, not the revision the attempt
+	 * replaces. {@code resolveSupersedes=true} is the single-variant behaviour (look it up here);
+	 * {@code false} trusts {@code supersedes} as given, null included.</li>
+	 * <li><b>Rule 1 auto-selection applies to variant 0 only.</b> Variants 1..N-1 arrive unselected
+	 * whatever the chain's state, so an attempt never selects more than one of its own variants and the
+	 * book keeps showing variant 0 (or the APPROVED selection, when there is one) until a human picks.</li>
+	 * </ul>
+	 *
+	 * @param supersedes the revision this attempt replaces (the chain's selection before the attempt), or null
+	 * @param variantIndex 0..N-1; only 0 is ever auto-selected
+	 * @param attempt the run objectId shared by the attempt's variants, or null when there is no run
+	 * @param resolveSupersedes true to ignore {@code supersedes} and look the selection up (single-variant path)
+	 */
+	public static BaseRecord persistArtifact(BaseRecord user, BaseRecord node, String role,
+			PbArtifactTypeEnumType artifactType, String groupPath, BaseRecord data, String artifactText,
+			BaseRecord sdConfigSnapshot, String generatorRequest, BaseRecord supersedes, int variantIndex,
+			String attempt, boolean resolveSupersedes) {
 		if(node == null) {
 			throw new PictureBookException(400, "An artifact must name the node that produced it");
 		}
 		if(role == null || role.trim().length() == 0) {
 			throw new PictureBookException(400, "An artifact must carry a role - the version chain is keyed on (node, role, revision)");
 		}
+		if(variantIndex < 0) {
+			throw new PictureBookException(400, "variantIndex must be 0 or more; got " + variantIndex);
+		}
 		long orgId = PbGraphUtil.orgId(node);
 		int revision = nextRevision(user, node, role);
-		BaseRecord previous = findSelected(user, node, role);
+		BaseRecord previous = (resolveSupersedes ? findSelected(user, node, role) : supersedes);
 		String name = artifactName(node, role, revision);
 
 		BaseRecord artifact = null;
@@ -153,6 +187,10 @@ public class PbArtifactUtil {
 			/// Written here, not as a schema default: PB2 convention rule 3 forbids field defaults
 			/// on the PB models (TestPbModelSchema.TestPbModelsDeclareNoFieldDefaults).
 			artifact.set(OlioFieldNames.FIELD_PB_REVIEW_STATUS, PbReviewStatusEnumType.GENERATED.toString());
+			artifact.set(OlioFieldNames.FIELD_PB_VARIANT_INDEX, Integer.valueOf(variantIndex));
+			if(attempt != null && attempt.trim().length() > 0) {
+				artifact.set(OlioFieldNames.FIELD_PB_ATTEMPT, attempt);
+			}
 			if(previous != null) {
 				artifact.set(OlioFieldNames.FIELD_PB_SUPERSEDES, previous);
 			}
@@ -194,7 +232,11 @@ public class PbArtifactUtil {
 		/// V3 §10 rule 1: a new attempt never displaces an APPROVED selection. The newcomer arrives
 		/// GENERATED and unselected; downstream readers (findSelected) keep consuming the approved one. When
 		/// nothing is approved the newest attempt is auto-selected, so the book always has something to show.
-		if(previous == null || reviewStatusOf(previous) != PbReviewStatusEnumType.APPROVED) {
+		/// §23: only variant 0 of an attempt competes for the selection; its siblings stay unselected.
+		if(variantIndex > 0) {
+			logger.info("Artifact " + name + " recorded unselected: variant " + variantIndex + " of attempt " + attempt);
+		}
+		else if(previous == null || reviewStatusOf(previous) != PbReviewStatusEnumType.APPROVED) {
 			setSelected(user, persisted);
 		}
 		else {
@@ -531,15 +573,17 @@ public class PbArtifactUtil {
 	/**
 	 * The degradation codes that veto auto-approval (P4-7): a character that could not be read or rendered, a
 	 * setting rendered without its approved render, a prompt the compiler had to cut, and a composition written
-	 * out of order. {@code ACTOR_TEXT_ONLY}, {@code MODEL_SUBSTITUTED} and {@code QA_WARN} are reported on the
-	 * plan but accepted.
+	 * out of order, and an attempt that produced fewer finals than its preset planned (§23, P6-2).
+	 * {@code ACTOR_TEXT_ONLY}, {@code MODEL_SUBSTITUTED}, {@code QA_WARN} and {@code VARIANT_SEED_UNKNOWN} are
+	 * reported on the plan but accepted.
 	 */
 	public static final Set<String> AUTO_APPROVE_VETO_CODES = Set.of(
 		RenderPlan.Degradation.ACTOR_UNRESOLVED,
 		RenderPlan.Degradation.ACTOR_FAILED,
 		RenderPlan.Degradation.LOCATION_TEXT_ONLY,
 		RenderPlan.Degradation.PROMPT_TRUNCATED,
-		RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER);
+		RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER,
+		RenderPlan.Degradation.VARIANT_FAILED);
 
 	/// The entries of {@code degradations} that veto auto-approval, in order; empty when none (or null) do.
 	static List<String> vetoingDegradations(List<String> degradations) {
@@ -623,6 +667,60 @@ public class PbArtifactUtil {
 			PbLocationUtil.writeApprovedRender(user, subject, null);
 		}
 		return readArtifact(user, artifact.get(FieldNames.FIELD_OBJECT_ID), orgId);
+	}
+
+	/**
+	 * Archive (§23 retention): mark the artifact ARCHIVED and stamp {@code archivedAt}. The row and its bytes
+	 * stay; {@link PbRetentionUtil} deletes the bytes later, once the stamp is old enough.
+	 * <p>
+	 * <b>Refused with 409 while the artifact is the chain's selection or is APPROVED</b> - archiving never
+	 * changes what a book shows, and an approval is a human (or auto) verdict that only {@link #reject} undoes.
+	 * The guard reads the artifact as handed in, so a sweep that selected its candidates a moment ago and is
+	 * now applying them is refused per item when a reviewer selected or approved one in between; the caller
+	 * records the 409 and moves on. {@code approvedBy} is cleared with the status (an archived artifact carries
+	 * no approval); {@code selected} and the node's {@code pinned} flag are not touched - a non-selected
+	 * artifact has nothing to demote. Idempotent: an already-ARCHIVED artifact keeps its original stamp.
+	 */
+	public static BaseRecord archive(BaseRecord user, BaseRecord artifact) {
+		chainNode(artifact);
+		long orgId = PbGraphUtil.orgId(artifact);
+		Boolean sel = artifact.get(OlioFieldNames.FIELD_PB_SELECTED);
+		if(sel != null && sel.booleanValue()) {
+			throw new PictureBookException(409, "Artifact " + artifact.get(FieldNames.FIELD_NAME)
+				+ " is the selected revision of its chain and cannot be archived; select or approve another revision first");
+		}
+		PbReviewStatusEnumType rs = reviewStatusOf(artifact);
+		if(rs == PbReviewStatusEnumType.APPROVED) {
+			throw new PictureBookException(409, "Artifact " + artifact.get(FieldNames.FIELD_NAME)
+				+ " is APPROVED and cannot be archived; reject it first");
+		}
+		if(rs != PbReviewStatusEnumType.ARCHIVED) {
+			writeArchived(user, artifact, ZonedDateTime.now());
+		}
+		return readArtifact(user, artifact.get(FieldNames.FIELD_OBJECT_ID), orgId);
+	}
+
+	/**
+	 * The ARCHIVED stamp: {@code reviewStatus}, a cleared {@code approvedBy}, and {@code archivedAt}. The stamp
+	 * is always set here (never left materialised at epoch-0 - see {@link #writeReview} and
+	 * {@link #archivedAtOf}, which reports an epoch-0 stamp as null precisely so that a slip here cannot read as
+	 * "archived in 1970" and have the bytes deleted on the next sweep).
+	 */
+	private static void writeArchived(BaseRecord user, BaseRecord artifact, ZonedDateTime archivedAt) {
+		BaseRecord patch = PbGraphUtil.patchOf(artifact, OlioModelNames.MODEL_PB_ARTIFACT,
+			OlioFieldNames.FIELD_PB_REVIEW_STATUS, OlioFieldNames.FIELD_PB_APPROVED_BY, OlioFieldNames.FIELD_PB_ARCHIVED_AT);
+		try {
+			patch.set(OlioFieldNames.FIELD_PB_REVIEW_STATUS, PbReviewStatusEnumType.ARCHIVED.toString());
+			patch.set(OlioFieldNames.FIELD_PB_APPROVED_BY, null);
+			patch.set(OlioFieldNames.FIELD_PB_ARCHIVED_AT, archivedAt);
+		}
+		catch(FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble an archive patch: " + e.getMessage());
+		}
+		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			throw new PictureBookException(500, "Failed to mark artifact " + artifact.get(FieldNames.FIELD_NAME)
+				+ " ARCHIVED - AccessPoint.update returned null (PBAC denial or validation failure; check the audit log)");
+		}
 	}
 
 	/**
@@ -868,8 +966,44 @@ public class PbArtifactUtil {
 			OlioFieldNames.FIELD_PB_BYTE_LENGTH, OlioFieldNames.FIELD_PB_BACKEND,
 			OlioFieldNames.FIELD_PB_BACKEND_GRAPH,
 			OlioFieldNames.FIELD_PB_REVIEW_STATUS, OlioFieldNames.FIELD_PB_APPROVED_BY,
-			OlioFieldNames.FIELD_PB_APPROVED_AT, OlioFieldNames.FIELD_PB_DURATION_MS
+			OlioFieldNames.FIELD_PB_APPROVED_AT, OlioFieldNames.FIELD_PB_DURATION_MS,
+			OlioFieldNames.FIELD_PB_ATTEMPT, OlioFieldNames.FIELD_PB_VARIANT_INDEX,
+			OlioFieldNames.FIELD_PB_ARCHIVED_AT
 		};
+	}
+
+	/** The attempt (run objectId) an artifact belongs to, or null for a Test-mode / pre-Phase-6 row. */
+	public static String attemptOf(BaseRecord artifact) {
+		if(artifact == null || !artifact.hasField(OlioFieldNames.FIELD_PB_ATTEMPT)) {
+			return null;
+		}
+		String a = artifact.get(OlioFieldNames.FIELD_PB_ATTEMPT);
+		return (a != null && a.trim().length() > 0 ? a : null);
+	}
+
+	/** The variant's 0..N-1 position in its attempt; 0 when absent (single-variant or pre-Phase-6 row). */
+	public static int variantIndexOf(BaseRecord artifact) {
+		if(artifact == null || !artifact.hasField(OlioFieldNames.FIELD_PB_VARIANT_INDEX)) {
+			return 0;
+		}
+		Integer i = artifact.get(OlioFieldNames.FIELD_PB_VARIANT_INDEX);
+		return (i != null && i.intValue() > 0 ? i.intValue() : 0);
+	}
+
+	/**
+	 * The retention stamp, or null unless the artifact is ARCHIVED. The column is never NULL (DDL default
+	 * now(), epoch-0 on a bare newInstance), so the value is trusted only behind the status - the same guard
+	 * {@code artifactSummary} applies to {@code approvedAt}. An epoch-0 stamp on an ARCHIVED row (a patch
+	 * that materialised the field without setting it) is reported as null too, so nothing computes
+	 * "archived 56 years ago" from it.
+	 */
+	public static ZonedDateTime archivedAtOf(BaseRecord artifact) {
+		if(artifact == null || reviewStatusOf(artifact) != PbReviewStatusEnumType.ARCHIVED
+				|| !artifact.hasField(OlioFieldNames.FIELD_PB_ARCHIVED_AT)) {
+			return null;
+		}
+		ZonedDateTime at = artifact.get(OlioFieldNames.FIELD_PB_ARCHIVED_AT);
+		return (at != null && at.toInstant().toEpochMilli() > 0L ? at : null);
 	}
 
 	/**
@@ -883,6 +1017,39 @@ public class PbArtifactUtil {
 		}
 		PbReviewStatusEnumType rs = artifact.getEnum(OlioFieldNames.FIELD_PB_REVIEW_STATUS);
 		return (rs == null || rs == PbReviewStatusEnumType.UNKNOWN ? PbReviewStatusEnumType.GENERATED : rs);
+	}
+
+	/**
+	 * The objectIds of the artifacts this one was rendered from, read back out of the sanitized
+	 * {@code generatorRequest} ({@link #REFERENCE_ARTIFACTS_KEY}, written by {@link #sanitizeGeneratorRequest}).
+	 * Empty for an artifact with no request, an unparseable one, or a request without the key.
+	 */
+	public static List<String> referenceArtifactIdsOf(BaseRecord artifact) {
+		if(artifact == null || !artifact.hasField(OlioFieldNames.FIELD_PB_GENERATOR_REQUEST)) {
+			return Collections.emptyList();
+		}
+		String json = artifact.get(OlioFieldNames.FIELD_PB_GENERATOR_REQUEST);
+		if(json == null || json.trim().length() == 0) {
+			return Collections.emptyList();
+		}
+		Map<String, Object> parsed = null;
+		try {
+			parsed = JSONUtil.getMap(json.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+		}
+		catch(Exception e) {
+			logger.warn("Unparseable generatorRequest on " + artifact.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+		}
+		Object refs = (parsed != null ? parsed.get(REFERENCE_ARTIFACTS_KEY) : null);
+		if(!(refs instanceof List)) {
+			return Collections.emptyList();
+		}
+		List<String> out = new ArrayList<>();
+		for(Object o : (List<?>) refs) {
+			if(o != null && o.toString().trim().length() > 0) {
+				out.add(o.toString());
+			}
+		}
+		return out;
 	}
 
 	/** Deserialize a persisted {@code sdConfigSnapshot} string. Only needed when it arrives as text. */

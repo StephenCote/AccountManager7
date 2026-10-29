@@ -473,6 +473,100 @@ public class TestPbReview extends BaseTest {
 		assertExactlyOneSelected(u, n);
 	}
 
+	// ─────────────────────────────── P6-1: a multi-variant attempt under rules 1-4 ───────────────────────────────
+
+	/**
+	 * V3 §23 over the 13-arg {@code persistArtifact}. An attempt of three variants persisted one after another
+	 * with the pre-batch selection as {@code supersedes}: variant 0 takes the selection (rule 1, nothing
+	 * approved), variants 1 and 2 arrive unselected, all three share the attempt and supersede the SAME
+	 * pre-batch revision (never each other). Once a variant is approved a second attempt arrives wholly
+	 * unselected - its variant 0 included - and selecting one of its siblings is refused with 409 (rule 2).
+	 * Rejecting the approved selection falls back to the newest non-rejected sibling across attempts (rule 4).
+	 */
+	@Test
+	public void case08_variantsOfOneAttemptShareSupersedesAndOnlyVariantZeroCompetes() throws Exception {
+		BaseRecord u = user();
+		BaseRecord wf = workflow(u, book(u));
+		long orgId = orgOf(u);
+		BaseRecord n = node(u, wf, "p61-c08");
+
+		BaseRecord a0 = artifact(u, n, "c08 pre-batch");
+		assertTrue(selected(a0));
+		Long a0Id = a0.get(FieldNames.FIELD_ID);
+
+		/// Attempt 1: three variants, supersedes resolved ONCE before the batch.
+		String attempt1 = UUID.randomUUID().toString();
+		BaseRecord pre = PbArtifactUtil.findSelected(u, n, ROLE);
+		BaseRecord[] v = new BaseRecord[3];
+		for(int i = 0; i < 3; i++) {
+			v[i] = PbArtifactUtil.persistArtifact(u, n, ROLE, PbArtifactTypeEnumType.TEXT,
+				PbBookUtil.artifactGroupPath(SLUG), null, "p6-1 c08 attempt1 v" + i, null, null, pre, i, attempt1, false);
+			assertNotNull("variant " + i, v[i]);
+		}
+		assertTrue("variant 0 takes the selection while nothing is approved", selected(reread(u, v[0], orgId)));
+		assertFalse("variant 1 arrives unselected", selected(reread(u, v[1], orgId)));
+		assertFalse("variant 2 arrives unselected", selected(reread(u, v[2], orgId)));
+		assertFalse("the pre-batch revision was displaced by variant 0", selected(reread(u, a0, orgId)));
+		assertExactlyOneSelected(u, n);
+		for(int i = 0; i < 3; i++) {
+			BaseRecord fresh = reread(u, v[i], orgId);
+			assertEquals("variant " + i + " carries the attempt", attempt1, PbArtifactUtil.attemptOf(fresh));
+			assertEquals("variant " + i + " carries its index", i, PbArtifactUtil.variantIndexOf(fresh));
+			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(fresh));
+			BaseRecord sup = fresh.get(OlioFieldNames.FIELD_PB_SUPERSEDES);
+			assertNotNull("variant " + i + " records what the attempt supersedes", sup);
+			Long supId = sup.get(FieldNames.FIELD_ID);
+			assertEquals("variant " + i + " supersedes the PRE-BATCH selection, not its sibling", a0Id, supId);
+		}
+		/// Revisions are still unique and ascending across the attempt (the chain index is untouched by §23).
+		List<BaseRecord> chain = PbArtifactUtil.listChain(u, n, ROLE);
+		assertEquals(4, chain.size());
+		for(int i = 1; i < chain.size(); i++) {
+			Integer prev = chain.get(i - 1).get(OlioFieldNames.FIELD_PB_REVISION);
+			Integer cur = chain.get(i).get(OlioFieldNames.FIELD_PB_REVISION);
+			assertTrue("revisions ascend: " + prev + " < " + cur, prev.intValue() < cur.intValue());
+		}
+
+		/// Approve variant 2 of attempt 1 (rule 2 implies select), then a second attempt.
+		BaseRecord approved = PbArtifactUtil.approve(u, reread(u, v[2], orgId), u.get(FieldNames.FIELD_OBJECT_ID));
+		assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(approved));
+		assertTrue(selected(approved));
+		assertFalse(selected(reread(u, v[0], orgId)));
+
+		String attempt2 = UUID.randomUUID().toString();
+		BaseRecord pre2 = PbArtifactUtil.findSelected(u, n, ROLE);
+		Long pre2Id = pre2.get(FieldNames.FIELD_ID);
+		Long v2Id = v[2].get(FieldNames.FIELD_ID);
+		assertEquals("precondition: the approved variant is the selection", v2Id, pre2Id);
+		BaseRecord[] w = new BaseRecord[2];
+		for(int i = 0; i < 2; i++) {
+			w[i] = PbArtifactUtil.persistArtifact(u, n, ROLE, PbArtifactTypeEnumType.TEXT,
+				PbBookUtil.artifactGroupPath(SLUG), null, "p6-1 c08 attempt2 v" + i, null, null, pre2, i, attempt2, false);
+		}
+		assertFalse("rule 1: attempt 2's variant 0 never displaces an APPROVED selection", selected(reread(u, w[0], orgId)));
+		assertFalse(selected(reread(u, w[1], orgId)));
+		assertTrue("the approved variant is still the selection", selected(reread(u, v[2], orgId)));
+		assertExactlyOneSelected(u, n);
+		try {
+			PbArtifactUtil.select(u, reread(u, w[1], orgId));
+			fail("rule 2: selecting over an APPROVED selection must be refused");
+		}
+		catch(PictureBookException e) {
+			assertEquals(409, e.getStatus());
+		}
+
+		/// Rule 4 across attempts: reject the approved selection; the newest surviving sibling (attempt 2 v1) is selected.
+		BaseRecord rejected = PbArtifactUtil.reject(u, reread(u, v[2], orgId));
+		assertEquals(PbReviewStatusEnumType.REJECTED, PbArtifactUtil.reviewStatusOf(rejected));
+		assertFalse(selected(rejected));
+		BaseRecord current = PbArtifactUtil.findSelected(u, n, ROLE);
+		assertNotNull(current);
+		String w1Oid = w[1].get(FieldNames.FIELD_OBJECT_ID);
+		String currentOid = current.get(FieldNames.FIELD_OBJECT_ID);
+		assertEquals("the fallback is the newest non-rejected revision, whichever attempt it belongs to", w1Oid, currentOid);
+		assertExactlyOneSelected(u, n);
+	}
+
 	// ─────────────────────────────── fixture ───────────────────────────────
 
 	private BaseRecord user() {

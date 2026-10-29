@@ -159,6 +159,17 @@ public final class PbRenderJobUtil {
 
 	static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
 			Collection<Long> terminals, SDUtil sdu, String sdServer, String kind, boolean force) {
+		return submit(user, book, workflow, terminals, sdu, sdServer, kind, force, PbNodeExecutor.RenderBackend.SWARM);
+	}
+
+	/**
+	 * {@link #submit(BaseRecord, BaseRecord, BaseRecord, Collection, SDUtil, String, String, boolean)} with the
+	 * renderer every plan-driven stage of the job talks to (P6-2: the offline tests' seam into a real job -
+	 * registry, run row, inflight claim, the variant batch, auto-approve - with no Swarm server). Production
+	 * always passes {@link PbNodeExecutor.RenderBackend#SWARM}.
+	 */
+	static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
+			Collection<Long> terminals, SDUtil sdu, String sdServer, String kind, boolean force, PbNodeExecutor.RenderBackend backend) {
 		if(user == null || book == null || workflow == null) {
 			throw new PictureBookException(400, "A user, book and workflow are required");
 		}
@@ -218,7 +229,7 @@ public final class PbRenderJobUtil {
 			throw new PictureBookException(409, msg);
 		}
 
-		Work work = new Work(user, book, workflow, run, plan, sdu, sdServer);
+		Work work = new Work(user, book, workflow, run, plan, sdu, sdServer, backend);
 		AsyncJob job;
 		try {
 			job = AsyncJobRegistry.submit(user, useKind, runOid, work);
@@ -541,10 +552,12 @@ public final class PbRenderJobUtil {
 		private final Plan plan;
 		private final SDUtil sdu;
 		private final String sdServer;
+		private final PbNodeExecutor.RenderBackend backend;
 		private final String runOid;
 		private final List<Long> claimed;
 
-		Work(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord run, Plan plan, SDUtil sdu, String sdServer) {
+		Work(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord run, Plan plan, SDUtil sdu, String sdServer,
+				PbNodeExecutor.RenderBackend backend) {
 			this.user = user;
 			this.book = book;
 			this.workflow = workflow;
@@ -552,6 +565,7 @@ public final class PbRenderJobUtil {
 			this.plan = plan;
 			this.sdu = sdu;
 			this.sdServer = sdServer;
+			this.backend = (backend != null ? backend : PbNodeExecutor.RenderBackend.SWARM);
 			this.runOid = run.get(FieldNames.FIELD_OBJECT_ID);
 			this.claimed = new ArrayList<>();
 			for(BaseRecord n : plan.execute) {
@@ -672,6 +686,7 @@ public final class PbRenderJobUtil {
 							}
 						}
 						SceneGraph g = PbPipelineUtil.openNodeGraph(user, book, workflow, node, run, progress);
+						g.setRenderBackend(backend);
 						Map<String, Object> out = PbNodeExecutor.executeStage(g, node, sdu);
 						PbNodeExecutor.applyAutoApprove(g, out);
 						executed++;
@@ -689,6 +704,10 @@ public final class PbRenderJobUtil {
 						}
 						if(out.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED) != null) {
 							outcome.put(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED, out.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED));
+						}
+						/// V3 §23 (P6-2): the attempt's finals, so a job result says which variants a node produced
+						if(out.get(PbNodeExecutor.KEY_VARIANTS) != null) {
+							outcome.put(PbNodeExecutor.KEY_VARIANTS, out.get(PbNodeExecutor.KEY_VARIANTS));
 						}
 					}
 					catch(PbStageCancelledException e) {

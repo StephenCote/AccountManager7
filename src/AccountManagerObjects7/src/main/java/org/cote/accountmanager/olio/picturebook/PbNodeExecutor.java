@@ -258,11 +258,23 @@ public class PbNodeExecutor {
 	 */
 	static Map<String, Object> executeNodeRun(BaseRecord user, BaseRecord book,
 			BaseRecord workflow, BaseRecord node, SDUtil sdu, PbRenderPlanUtil.PlanOptions opts, SummarizeProgress cancelToken) {
+		return executeNodeRun(user, book, workflow, node, sdu, opts, cancelToken, RenderBackend.SWARM);
+	}
+
+	/**
+	 * {@link #executeNodeRun(BaseRecord, BaseRecord, BaseRecord, BaseRecord, SDUtil, PbRenderPlanUtil.PlanOptions, SummarizeProgress)}
+	 * against {@code backend} (P6-2: the offline tests' seam into a real run - RUNNING stamps, the variant
+	 * batch, auto-approve - with no Swarm server). Production always passes {@link RenderBackend#SWARM}.
+	 */
+	static Map<String, Object> executeNodeRun(BaseRecord user, BaseRecord book,
+			BaseRecord workflow, BaseRecord node, SDUtil sdu, PbRenderPlanUtil.PlanOptions opts, SummarizeProgress cancelToken,
+			RenderBackend backend) {
 		PbNodeTypeEnumType nodeType = gate(node, sdu);
 		long started = System.currentTimeMillis();
 		SceneGraph g = PbPipelineUtil.openNodeGraph(user, book, workflow, node, true);
 		g.setPlanOptions(opts);
 		g.setCancelToken(cancelToken);
+		g.setRenderBackend(backend);
 		Map<String, Object> out = null;
 		try {
 			/// Both stamps are writes the caller must be entitled to. A false here is not something to log
@@ -641,9 +653,10 @@ public class PbNodeExecutor {
 	 * resolved model, then send exactly the BASE stage through the renderer adapter and record the image as
 	 * the node's {@code base} artifact.
 	 * <p>
-	 * Phase 2 scope: the strategy is always TEXT_ONLY, only the BASE stage is rendered (an UPSCALE stage the
-	 * preset planned is reported as a degradation, never silently dropped) and one image is produced
-	 * regardless of the preset's variant count.
+	 * An UPSCALE stage the preset planned is reported as a degradation, never silently dropped. V3 §23
+	 * (P6-2): inside a run the preset's {@code variants} finals are rendered for the one attempt (the run),
+	 * each recorded as a {@code base} artifact stamped with the attempt and its variant index; only variant 0
+	 * takes the selection, and {@link #KEY_VARIANTS} lists them all. Test mode renders one.
 	 */
 	private static Map<String, Object> executeRenderPlan(SceneGraph g, BaseRecord node, SDUtil sdu) {
 		BaseRecord user = g.getUser();
@@ -668,12 +681,31 @@ public class PbNodeExecutor {
 		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
 		String sceneLabel = "scene " + (sceneIndex != null ? sceneIndex.toString() : scopeRef);
 
+		/// V3 §23 (P6-2): the attempt's finals are all written against the selection that stood before the
+		/// attempt, captured here before anything renders, so the second final never supersedes the first
+		/// and only variant 0 takes the selection (PbPipelineUtil.recordImage, batch overload).
+		BaseRecord preBatch = PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_BASE);
+		String attempt = attemptOf(g);
+
 		PlannedRender r = renderPlannedScene(g, node, scene, sceneLabel, sdu,
 			"render_plan_" + (sceneIndex != null ? sceneIndex : "x"),
-			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt");
-		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
-			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, r.referenceArtifactObjectIds, sdu.getApiType(), r.durationMs,
-			r.backendGraph);
+			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt", true);
+		List<BaseRecord> artifacts = new ArrayList<>();
+		for(PlannedRender.Variant v : r.variants) {
+			BaseRecord a;
+			if(r.variants.size() > 1) {
+				a = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
+					v.data, v.bytes, "image/png", v.seed, r.frozen, v.requestJson, v.referenceArtifactObjectIds, sdu.getApiType(), v.durationMs,
+					v.backendGraph, preBatch, v.variantIndex, attempt);
+			}
+			else {
+				a = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
+					v.data, v.bytes, "image/png", v.seed, r.frozen, v.requestJson, v.referenceArtifactObjectIds, sdu.getApiType(), v.durationMs,
+					v.backendGraph, attempt);
+			}
+			artifacts.add(a);
+		}
+		BaseRecord artifact = artifacts.get(0);
 		bindSceneLocation(g, node, r.plan, r.degradations);
 
 		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
@@ -681,7 +713,33 @@ public class PbNodeExecutor {
 
 		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(r.bytes.length), downstream, r.degradations);
 		r.describe(out);
+		out.put(KEY_VARIANTS, variantsDto(artifacts, r.variants));
 		return out;
+	}
+
+	/// V3 §23: the attempt an artifact recorded on this graph belongs to - the run's objectId, or null in Test
+	/// mode (no run), where the artifact is stamped with no attempt.
+	static String attemptOf(SceneGraph g) {
+		return (g != null && g.getRun() != null ? g.getRun().get(FieldNames.FIELD_OBJECT_ID) : null);
+	}
+
+	/// {@link #KEY_VARIANTS}: one entry per recorded final, in variant order.
+	private static List<Map<String, Object>> variantsDto(List<BaseRecord> artifacts, List<PlannedRender.Variant> variants) {
+		List<Map<String, Object>> list = new ArrayList<>();
+		for(int i = 0; i < artifacts.size() && i < variants.size(); i++) {
+			BaseRecord a = artifacts.get(i);
+			PlannedRender.Variant v = variants.get(i);
+			Map<String, Object> m = new LinkedHashMap<>();
+			m.put("artifactObjectId", (a != null ? a.get(FieldNames.FIELD_OBJECT_ID) : null));
+			m.put("variantIndex", Integer.valueOf(v.variantIndex));
+			m.put("seed", v.seed);
+			m.put("byteLength", Long.valueOf(v.bytes != null ? v.bytes.length : 0L));
+			m.put("artifactRevision", (a != null ? a.get(OlioFieldNames.FIELD_PB_REVISION) : null));
+			Boolean sel = (a != null ? a.get(OlioFieldNames.FIELD_PB_SELECTED) : null);
+			m.put("selected", Boolean.valueOf(sel != null && sel.booleanValue()));
+			list.add(m);
+		}
+		return list;
 	}
 
 	/**
@@ -754,7 +812,7 @@ public class PbNodeExecutor {
 			"Location " + location.get(FieldNames.FIELD_NAME) + " has no description to render from");
 		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE,
 			r.data, r.bytes, "image/png", r.seed, r.frozen, r.requestJson, r.referenceArtifactObjectIds, sdu.getApiType(), r.durationMs,
-			r.backendGraph);
+			r.backendGraph, attemptOf(g));
 
 		/// Bind the subject AFTER the render, as executePortrait does: the binding's refHash is the location's
 		/// watched fields (approvedRender included), so approving a later candidate stales this node too.
@@ -785,6 +843,7 @@ public class PbNodeExecutor {
 		final RenderPlan plan;
 		final String planOid;
 		final CompiledPrompt compiled;
+		/// Variant 0's final image and provenance (the fields every single-variant caller reads).
 		final byte[] bytes;
 		final BaseRecord data;
 		final BaseRecord frozen;
@@ -799,29 +858,62 @@ public class PbNodeExecutor {
 		/// The final image's {@code backendGraph} envelope; null on the plain T2I path.
 		final String backendGraph;
 		final List<String> stagesRendered;
+		/// Every variant's stage errors, in variant order; entries of variant 1+ carry a {@code variant} key.
 		final List<Map<String, Object>> stageErrors;
 		final boolean calibrationPersisted;
+		/// V3 §23 (P6-2): every final the attempt produced, variant 0 first. {@code variants.get(0)} is what
+		/// the scalar fields above describe; a single-variant render has exactly one entry.
+		final List<Variant> variants;
 
-		private PlannedRender(RenderPlan plan, String planOid, CompiledPrompt compiled, byte[] bytes, BaseRecord data,
-				BaseRecord frozen, Long seed, String requestJson, long durationMs, List<String> degradations,
-				List<String> configNotApplied, List<String> referenceArtifactObjectIds, String backendGraph,
-				List<String> stagesRendered, List<Map<String, Object>> stageErrors, boolean calibrationPersisted) {
+		private PlannedRender(RenderPlan plan, String planOid, CompiledPrompt compiled, BaseRecord frozen,
+				List<String> degradations, List<String> configNotApplied, List<Map<String, Object>> stageErrors,
+				boolean calibrationPersisted, List<Variant> variants) {
+			Variant v0 = variants.get(0);
 			this.plan = plan;
 			this.planOid = planOid;
 			this.compiled = compiled;
-			this.bytes = bytes;
-			this.data = data;
+			this.bytes = v0.bytes;
+			this.data = v0.data;
 			this.frozen = frozen;
-			this.seed = seed;
-			this.requestJson = requestJson;
-			this.durationMs = durationMs;
+			this.seed = v0.seed;
+			this.requestJson = v0.requestJson;
+			this.durationMs = v0.durationMs;
 			this.degradations = degradations;
 			this.configNotApplied = configNotApplied;
-			this.referenceArtifactObjectIds = referenceArtifactObjectIds;
-			this.backendGraph = backendGraph;
-			this.stagesRendered = stagesRendered;
+			this.referenceArtifactObjectIds = v0.referenceArtifactObjectIds;
+			this.backendGraph = v0.backendGraph;
+			this.stagesRendered = v0.stagesRendered;
 			this.stageErrors = stageErrors;
 			this.calibrationPersisted = calibrationPersisted;
+			this.variants = variants;
+		}
+
+		/// One final of the attempt (V3 §23): the last stage's image of its own BASE → ACTOR_REGION sequence,
+		/// with that image's provenance. {@code variantIndex} is its position in the attempt (0 = the one that
+		/// takes the selection).
+		static final class Variant {
+			final int variantIndex;
+			final byte[] bytes;
+			final BaseRecord data;
+			final Long seed;
+			final String requestJson;
+			final long durationMs;
+			final List<String> referenceArtifactObjectIds;
+			final String backendGraph;
+			final List<String> stagesRendered;
+
+			private Variant(int variantIndex, byte[] bytes, BaseRecord data, Long seed, String requestJson, long durationMs,
+					List<String> referenceArtifactObjectIds, String backendGraph, List<String> stagesRendered) {
+				this.variantIndex = variantIndex;
+				this.bytes = bytes;
+				this.data = data;
+				this.seed = seed;
+				this.requestJson = requestJson;
+				this.durationMs = durationMs;
+				this.referenceArtifactObjectIds = referenceArtifactObjectIds;
+				this.backendGraph = backendGraph;
+				this.stagesRendered = stagesRendered;
+			}
 		}
 
 		/// The plan keys every plan-driven node reports (§12): which plan, its hash, the strategy and stages,
@@ -839,8 +931,19 @@ public class PbNodeExecutor {
 			out.put(KEY_CALIBRATION_PERSISTED, Boolean.valueOf(calibrationPersisted));
 			out.put("planSummary", plan.actorSummary() + "; strategy " + strategy);
 			out.put(KEY_CONFIG_NOT_APPLIED, configNotApplied);
+			out.put(KEY_VARIANTS_PLANNED, Integer.valueOf(plan.getPreset() != null ? Math.max(1, plan.getPreset().getVariants()) : 1));
+			out.put(KEY_VARIANTS_RENDERED, Integer.valueOf(variants.size()));
 		}
 	}
+
+	/// DTO key (V3 §23, P6-2): how many finals the preset planned for this attempt.
+	public static final String KEY_VARIANTS_PLANNED = "variantsPlanned";
+	/// DTO key (V3 §23, P6-2): how many finals this attempt actually produced; less than planned when a
+	/// later variant's BASE failed (reported as a stage error and a degradation, the attempt kept).
+	public static final String KEY_VARIANTS_RENDERED = "variantsRendered";
+	/// DTO key (V3 §23, P6-2): the attempt's finals in variant order, each
+	/// {@code {artifactObjectId, variantIndex, seed, byteLength, artifactRevision, selected}}.
+	public static final String KEY_VARIANTS = "variants";
 
 	/// DTO key: one entry per stage that failed (P5-2 §6), each {@code {stage, code, message, detail}};
 	/// {@code detail} is the adapter's {@link StageResult#getErrorDetail()} when it carried one.
@@ -912,6 +1015,18 @@ public class PbNodeExecutor {
 	 */
 	static PlannedRender renderPlannedScene(SceneGraph g, BaseRecord node, BaseRecord scene, String sceneLabel, SDUtil sdu,
 			String imageNamePrefix, String noTextMessage) {
+		return renderPlannedScene(g, node, scene, sceneLabel, sdu, imageNamePrefix, noTextMessage, false);
+	}
+
+	/**
+	 * {@link #renderPlannedScene(SceneGraph, BaseRecord, BaseRecord, String, SDUtil, String, String)} that,
+	 * when {@code multiVariant} is set AND the graph belongs to a run, renders as many finals as the
+	 * preset's {@code variants} says (V3 §23, P6-2; {@link #renderPlanned(SceneGraph, BaseRecord, RenderPlan, String, SDUtil, String, String, int)}).
+	 * Test mode (no run) and every caller that passes false render one. The RENDER_PLAN node passes true;
+	 * the ChapBook page and the LOCATION node stay at one variant (§23: variants are a scene-final affair).
+	 */
+	static PlannedRender renderPlannedScene(SceneGraph g, BaseRecord node, BaseRecord scene, String sceneLabel, SDUtil sdu,
+			String imageNamePrefix, String noTextMessage, boolean multiVariant) {
 		/// V3 §9.1 (P4-4): a scene rendered before the compose job reached it is composed here, by itself,
 		/// as the request user, and the plan says so. A ChapBook page has no SCENE composition (P4-8), and the
 		/// preview path (PbServiceFacade.planScene) never comes through here, so a read stays a read.
@@ -927,17 +1042,35 @@ public class PbNodeExecutor {
 					? " (MIGRATED: " + ensured.result.failureReason + ")" : "") + "; re-compose in order to clear",
 				null, RenderPlan.STAGE_BASE)));
 		}
-		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage);
+		int variants = 1;
+		if(multiVariant && g.getRun() != null && plan.getPreset() != null) {
+			variants = Math.max(1, plan.getPreset().getVariants());
+		}
+		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage, variants);
 	}
 
 	/**
 	 * {@link #renderPlannedScene} for a plan the caller already built (P3-4: the LOCATION node builds its plan
 	 * from the location record, not from a scene). Persists {@code plan} as the node's {@code renderPlan}
-	 * artifact first, then renders exactly the BASE stage as described above.
+	 * artifact first, then renders exactly the BASE stage as described above - one variant.
 	 */
 	static PlannedRender renderPlanned(SceneGraph g, BaseRecord node, RenderPlan plan, String sceneLabel, SDUtil sdu,
 			String imageNamePrefix, String noTextMessage) {
-		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage, RenderBackend.SWARM);
+		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage, 1);
+	}
+
+	/**
+	 * V3 §23 (P6-2): the seed of variant {@code variant} of an attempt whose variant 0 rendered with
+	 * {@code baseSeed}: {@code baseSeed + variant}, folded back into Swarm's positive int range when the sum
+	 * would leave it. Variant 0 is always random; the others are reproducible from its reported seed, so an
+	 * attempt's finals are distinct and the strip can say why.
+	 */
+	static int variantSeed(long baseSeed, int variant) {
+		long s = baseSeed + variant;
+		if(s <= 0 || s >= Integer.MAX_VALUE) {
+			s = 1 + Math.floorMod(s, (long) (Integer.MAX_VALUE - 1));
+		}
+		return (int) s;
 	}
 
 	/**
@@ -963,10 +1096,23 @@ public class PbNodeExecutor {
 		};
 	}
 
-	/** {@link #renderPlanned(SceneGraph, BaseRecord, RenderPlan, String, SDUtil, String, String)} against {@code backend}. */
+	/**
+	 * {@link #renderPlanned(SceneGraph, BaseRecord, RenderPlan, String, SDUtil, String, String)} producing
+	 * {@code variants} finals for one attempt (V3 §23, P6-2), against the graph's
+	 * {@link SceneGraph#getRenderBackend() render backend}. Each variant is its own BASE → ACTOR_REGION
+	 * sequence ({@link #renderStages}): variant 0 renders with a random seed exactly as before, variant
+	 * {@code i} with {@link #variantSeed}(seed of variant 0, i) so the finals are distinct and reproducible.
+	 * Every sequence renders before anything is persisted (a cancel during any variant discards the whole
+	 * attempt, as a cancel during any stage already did); a BASE failure on variant 0 fails the node as
+	 * before, a BASE failure on a later variant keeps what rendered and is reported as that variant's stage
+	 * error plus a degradation (the attempt fell short of its plan, §19 - so auto-approve is vetoed). The
+	 * persisted stage artifacts of every variant share the attempt and carry their variant's index.
+	 */
 	static PlannedRender renderPlanned(SceneGraph g, BaseRecord node, RenderPlan plan, String sceneLabel, SDUtil sdu,
-			String imageNamePrefix, String noTextMessage, RenderBackend backend) {
+			String imageNamePrefix, String noTextMessage, int variants) {
 		BaseRecord user = g.getUser();
+		RenderBackend backend = g.getRenderBackend();
+		int variantCount = Math.max(1, variants);
 		BaseRecord planArtifact = PbRenderPlanUtil.persistPlanArtifact(user, node, g.getArtifactGroupPath(), plan);
 		String planOid = planArtifact.get(FieldNames.FIELD_OBJECT_ID);
 
@@ -1020,59 +1166,145 @@ public class PbNodeExecutor {
 			.config(cfg)
 			.build();
 
-		StageSequence seq = renderStages(g, node, plan, planOid, sceneLabel, sdu, req, pick, backend);
-		for(RenderPlan.Degradation d : seq.added) {
+		/// ─── render every variant before persisting any (§2.4 step 5, extended to the attempt) ───
+		List<StageSequence> sequences = new ArrayList<>();
+		/// the variant number of each rendered sequence: a failed later variant leaves a gap, and the artifacts of
+		/// the ones after it keep their own index (their seed is derived from it)
+		List<Integer> sequenceVariants = new ArrayList<>();
+		List<RenderPlan.Degradation> added = new ArrayList<>();
+		List<Map<String, Object>> stageErrors = new ArrayList<>();
+		boolean allCalibrated = true;
+		boolean anyGraph = false;
+		Long seed0 = null;
+		for(int v = 0; v < variantCount; v++) {
+			StageRequest vReq = req;
+			String vLabel = sceneLabel;
+			if(v > 0) {
+				vLabel = sceneLabel + " variant " + v;
+				if(seed0 != null) {
+					vReq = req.toBuilder().seed(variantSeed(seed0.longValue(), v)).build();
+				}
+				else {
+					/// the renderer reported no seed for variant 0 (plain T2I with no metadata): this variant is
+					/// random too, and the degradation says the attempt's seeds are not derived
+					added.add(new RenderPlan.Degradation(RenderPlan.Degradation.VARIANT_SEED_UNKNOWN,
+						"variant " + v + " rendered with a random seed: the renderer reported no seed for variant 0", null, RenderPlan.STAGE_BASE));
+				}
+			}
+			StageSequence seq;
+			try {
+				seq = renderStages(g, node, plan, planOid, vLabel, sdu, vReq, pick, backend);
+			}
+			catch(PbStageFailedException e) {
+				if(v == 0) {
+					throw e;
+				}
+				/// §23: a later variant's BASE failure is not the node's failure - what rendered stands, and the
+				/// attempt says it fell short (a free-form degradation, so auto-approve is vetoed; §19)
+				for(Map<String, Object> se : e.getStageErrors()) {
+					Map<String, Object> copy = new LinkedHashMap<>(se);
+					copy.put("variant", Integer.valueOf(v));
+					stageErrors.add(copy);
+				}
+				added.add(new RenderPlan.Degradation(RenderPlan.Degradation.VARIANT_FAILED,
+					"variant " + v + " not rendered: " + e.getMessage(), null, RenderPlan.STAGE_BASE));
+				logger.warn("renderPlanned: {} variant {} BASE failed; keeping {} rendered variant(s): {}", sceneLabel, v, sequences.size(), e.getMessage());
+				continue;
+			}
+			if(v == 0) {
+				seed0 = seq.outputs.get(0).seed;
+			}
+			sequences.add(seq);
+			sequenceVariants.add(Integer.valueOf(v));
+			added.addAll(seq.added);
+			for(Map<String, Object> se : seq.stageErrors) {
+				if(v == 0) {
+					stageErrors.add(se);
+				}
+				else {
+					Map<String, Object> copy = new LinkedHashMap<>(se);
+					copy.put("variant", Integer.valueOf(v));
+					stageErrors.add(copy);
+				}
+			}
+			anyGraph |= seq.graphPath;
+			allCalibrated &= (!seq.graphPath || seq.calibrationPersisted);
+		}
+		for(RenderPlan.Degradation d : added) {
 			degradations.add(d.getCode() + ": " + d.getMessage());
 		}
-		if(!seq.added.isEmpty()) {
-			plan = recordExecutorDegradations(user, planArtifact, plan, seq.added);
+		if(!added.isEmpty()) {
+			plan = recordExecutorDegradations(user, planArtifact, plan, added);
 		}
 		BaseRecord frozen = frozenConfig(plan, pick, compiled);
+		String attempt = attemptOf(g);
+		/// The `stage` images of every variant of this attempt are written against the role's pre-batch
+		/// selection (the same rule as the finals - PbPipelineUtil.recordImage's batch overload), so variant 1's
+		/// passes never supersede variant 0's.
+		BaseRecord preStage = (variantCount > 1 ? PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_STAGE) : null);
 
-		/// §2.4 step 5: nothing was persisted while a later stage could still cancel; now every stage lands
-		/// in order - its renderGraph artifact, and for every stage but the last its image as a `stage`
-		/// artifact (backendGraph, references, duration) - then the last stage's image is the final under
-		/// the caller's role (§5.3: one `stage` image per intermediate pass, never a copy of the final).
-		/// The plain T2I path persists exactly what it did before.
-		String prevStageOid = null;
-		if(seq.graphPath) {
-			for(int i = 0; i < seq.outputs.size(); i++) {
-				StageOutput so = seq.outputs.get(i);
-				if(so.graph != null) {
-					PbRenderPlanUtil.persistGraphArtifact(user, node, g.getArtifactGroupPath(), so.label, so.graph, seq.swarmVersion);
+		/// §2.4 step 5: nothing was persisted while a later stage could still cancel; now every stage of every
+		/// variant lands in order - its renderGraph artifact, and for every stage but the last its image as a
+		/// `stage` artifact (backendGraph, references, duration) - then each variant's last image is persisted
+		/// for the caller to record under its own role (§5.3: one `stage` image per intermediate pass, never a
+		/// copy of the final). The plain T2I path persists exactly what it did before.
+		List<PlannedRender.Variant> finals = new ArrayList<>();
+		for(int s = 0; s < sequences.size(); s++) {
+			StageSequence seq = sequences.get(s);
+			int v = sequenceVariants.get(s).intValue();
+			String vPrefix = (v == 0 ? imageNamePrefix : imageNamePrefix + "_v" + v);
+			String vLabel = (v == 0 ? sceneLabel : sceneLabel + " variant " + v);
+			String prevStageOid = null;
+			if(seq.graphPath) {
+				for(int i = 0; i < seq.outputs.size(); i++) {
+					StageOutput so = seq.outputs.get(i);
+					if(so.graph != null) {
+						PbRenderPlanUtil.persistGraphArtifact(user, node, g.getArtifactGroupPath(), so.label, so.graph, seq.swarmVersion);
+					}
+					if(i == seq.outputs.size() - 1) {
+						break;
+					}
+					BaseRecord stageData = PbPipelineUtil.persistBytes(g, vPrefix + "_" + so.label + "_" + System.currentTimeMillis(), so.bytes, "image/png");
+					if(stageData == null) {
+						throw new PictureBookException(500, "Failed to persist the " + so.label + " stage bytes for " + vLabel);
+					}
+					List<String> refs = new ArrayList<>(so.referenceIds);
+					if(so.chainsPrevious && prevStageOid != null) {
+						refs.add(prevStageOid);
+					}
+					BaseRecord stageArtifact;
+					if(variantCount > 1) {
+						stageArtifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_STAGE, PbArtifactTypeEnumType.IMAGE,
+							stageData, so.bytes, "image/png", so.seed, frozen, so.requestJson, refs, sdu.getApiType(), so.durationMs, so.backendGraph,
+							preStage, v, attempt);
+					}
+					else {
+						stageArtifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_STAGE, PbArtifactTypeEnumType.IMAGE,
+							stageData, so.bytes, "image/png", so.seed, frozen, so.requestJson, refs, sdu.getApiType(), so.durationMs, so.backendGraph,
+							attempt);
+					}
+					so.artifactOid = (stageArtifact != null ? stageArtifact.get(FieldNames.FIELD_OBJECT_ID) : null);
+					prevStageOid = so.artifactOid;
 				}
-				if(i == seq.outputs.size() - 1) {
-					break;
-				}
-				BaseRecord stageData = PbPipelineUtil.persistBytes(g, imageNamePrefix + "_" + so.label + "_" + System.currentTimeMillis(), so.bytes, "image/png");
-				if(stageData == null) {
-					throw new PictureBookException(500, "Failed to persist the " + so.label + " stage bytes for " + sceneLabel);
-				}
-				List<String> refs = new ArrayList<>(so.referenceIds);
-				if(so.chainsPrevious && prevStageOid != null) {
-					refs.add(prevStageOid);
-				}
-				BaseRecord stageArtifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_STAGE, PbArtifactTypeEnumType.IMAGE,
-					stageData, so.bytes, "image/png", so.seed, frozen, so.requestJson, refs, sdu.getApiType(), so.durationMs, so.backendGraph);
-				so.artifactOid = (stageArtifact != null ? stageArtifact.get(FieldNames.FIELD_OBJECT_ID) : null);
-				prevStageOid = so.artifactOid;
 			}
-		}
-		StageOutput last = seq.outputs.get(seq.outputs.size() - 1);
-		BaseRecord data = PbPipelineUtil.persistBytes(g, imageNamePrefix + "_" + System.currentTimeMillis(), last.bytes, "image/png");
-		if(data == null) {
-			throw new PictureBookException(500, "Failed to persist the rendered bytes for " + sceneLabel);
-		}
-		List<String> finalRefs = new ArrayList<>(last.referenceIds);
-		if(last.chainsPrevious) {
-			/// the stage artifact the final pass painted over is the one persisted just before it
-			String prior = seq.stageOid(seq.outputs.size() - 2);
-			if(prior != null) {
-				finalRefs.add(prior);
+			StageOutput last = seq.outputs.get(seq.outputs.size() - 1);
+			BaseRecord data = PbPipelineUtil.persistBytes(g, vPrefix + "_" + System.currentTimeMillis(), last.bytes, "image/png");
+			if(data == null) {
+				throw new PictureBookException(500, "Failed to persist the rendered bytes for " + vLabel);
 			}
+			List<String> finalRefs = new ArrayList<>(last.referenceIds);
+			if(last.chainsPrevious) {
+				/// the stage artifact the final pass painted over is the one persisted just before it
+				String prior = seq.stageOid(seq.outputs.size() - 2);
+				if(prior != null) {
+					finalRefs.add(prior);
+				}
+			}
+			finals.add(new PlannedRender.Variant(v, last.bytes, data, last.seed, last.requestJson, last.durationMs, finalRefs,
+				last.backendGraph, seq.labels()));
 		}
-		return new PlannedRender(plan, planOid, compiled, last.bytes, data, frozen, last.seed, last.requestJson, last.durationMs,
-			degradations, configNotApplied, finalRefs, last.backendGraph, seq.labels(), seq.stageErrors, seq.calibrationPersisted);
+		return new PlannedRender(plan, planOid, compiled, frozen, degradations, configNotApplied, stageErrors,
+			(anyGraph && allCalibrated), finals);
 	}
 
 	/// One stage's output, held in memory until the sequence ends (P5-2 §2.4 step 5).
@@ -1545,7 +1777,7 @@ public class PbNodeExecutor {
 		byte[] bytes = r.bytes;
 		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE,
 			r.data, bytes, "image/png", r.seed, r.frozen, r.requestJson, r.referenceArtifactObjectIds, sdu.getApiType(), r.durationMs,
-			r.backendGraph);
+			r.backendGraph, attemptOf(g));
 
 		/// The scene keeps pointing at the newest image so the v1 readers (bookPageView's fallback, the
 		/// health scan's SCENE_IMAGE_* findings) stay coherent; the artifact chain is what review acts on.

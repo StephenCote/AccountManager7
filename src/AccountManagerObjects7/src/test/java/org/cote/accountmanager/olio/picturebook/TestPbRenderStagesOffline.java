@@ -2,6 +2,8 @@ package org.cote.accountmanager.olio.picturebook;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.OlioContextUtil;
@@ -24,6 +27,7 @@ import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.FixtureGraphClient;
 import org.cote.accountmanager.olio.illustration.MaskImage;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererAdapter;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
@@ -31,10 +35,13 @@ import org.cote.accountmanager.olio.illustration.StageImage;
 import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StageResult;
 import org.cote.accountmanager.olio.illustration.SwarmGraphClient;
+import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
+import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
 import org.cote.accountmanager.olio.picturebook.PbNodeExecutor.PbStageFailedException;
 import org.cote.accountmanager.olio.picturebook.PbNodeExecutor.PlannedRender;
 import org.cote.accountmanager.olio.picturebook.PbNodeExecutor.RenderBackend;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil.SceneGraph;
+import org.cote.accountmanager.olio.picturebook.PbRenderPlanUtil.PlanOptions;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.PbCalibrationUtil;
@@ -47,8 +54,15 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
+import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
+import org.cote.accountmanager.schema.type.PbStyleScopeEnumType;
+import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -76,6 +90,27 @@ import org.junit.Test;
  *     {@link PbStageFailedException} 503 carrying the {@code UNREACHABLE} stage error; the plan artifact is
  *     the only artifact on the node and no calibration row was written.</li>
  * </ol>
+ * <p>
+ * P6-2 (V3 §23, §6.C 212): the same seam, a preset that plans more than one final per attempt.
+ * <ol start="5">
+ * <li>{@link #variantsRenderTwoFinalsOfOneAttempt}: DIRECT_REFERENCE, preset variants 2 -> BASE rendered
+ *     twice, the second with the seed derived from the first's reported seed, two finals with distinct
+ *     {@code data} rows, two envelopes, no degradation; {@code describe} says planned 2 / rendered 2.</li>
+ * <li>{@link #sequentialInpaintVariantsEachChainTheirOwnPass}: SEQUENTIAL_INPAINT, variants 2 -> four
+ *     requests BASE, pass, BASE, pass; each pass paints over its own variant's BASE; two {@code stage}
+ *     artifacts stamped variantIndex 0 and 1, only variant 0's selected; each final references its own
+ *     stage.</li>
+ * <li>{@link #laterVariantBaseFailureKeepsWhatRendered}: variants 3, variant 1's BASE answers UNREACHABLE ->
+ *     no throw; two finals keeping their real variant indexes (0 and 2, the gap is not renumbered), one
+ *     stage error tagged {@code variant 1}, a {@code VARIANT_FAILED} degradation (persisted on the plan
+ *     artifact, and a veto for auto-approve); planned 3 / rendered 2.</li>
+ * <li>{@link #runRecordsVariantsAsOneAttempt}: {@code executeNodeRun} with a STANDARD override on a
+ *     text-only scene -> two {@code base} artifacts sharing the run's objectId as {@code attempt},
+ *     variantIndex 0/1, only variant 0 selected and auto-approved, {@code variants[]} on the DTO.</li>
+ * <li>{@link #jobRecordsVariantsAsOneAttempt}: the same through {@code PbRenderJobUtil.submit} with the
+ *     book's style on STANDARD -> the job's node outcome carries {@code variants[]} and both artifacts
+ *     share the job's run as their attempt.</li>
+ * </ol>
  */
 public class TestPbRenderStagesOffline extends BaseTest {
 
@@ -91,6 +126,14 @@ public class TestPbRenderStagesOffline extends BaseTest {
 	private static final String ACTOR_A = "actorA";
 	private static final String ACTOR_B = "actorB";
 	private static final byte[] PNG_MAGIC = { (byte) 0x89, 0x50, 0x4E, 0x47 };
+	/// P6-2 run cases: the scene's own text, so the plan is TEXT_ONLY (no actors, no location) and the plain
+	/// T2I path carries the derived seeds straight to the adapter.
+	private static final String RUN_SETTING = "a basalt headland above a grey sea at dusk";
+	private static final String RUN_SD_PROMPT = "two travellers on a basalt headland at dusk, wind in their coats";
+	private static final String STYLE_PATH = "~/p62styles";
+	/// A hang guard on the job poll, never a performance threshold.
+	private static final long JOB_TIMEOUT_MS = 10L * 60L * 1000L;
+	private static final long POLL_MS = 250L;
 
 	@Before
 	public void offlineSetup() {
@@ -109,6 +152,26 @@ public class TestPbRenderStagesOffline extends BaseTest {
 
 	private static String oidOf(BaseRecord rec) {
 		return rec.get(FieldNames.FIELD_OBJECT_ID);
+	}
+
+	private static long idOf(BaseRecord rec) {
+		return ((Number) rec.get(FieldNames.FIELD_ID)).longValue();
+	}
+
+	/// Enum values come back as the enum or, through JSON, the raw string; never hand a generic get() to
+	/// String.valueOf - inference picks the char[] overload and throws ClassCastException.
+	private static String status(Object v) {
+		return (v != null ? v.toString().toUpperCase() : null);
+	}
+
+	private static boolean selected(BaseRecord a) {
+		Boolean sel = a.get(OlioFieldNames.FIELD_PB_SELECTED);
+		return sel != null && sel.booleanValue();
+	}
+
+	private static int intOf(Object v) {
+		assertTrue("a number, got " + v, v instanceof Number);
+		return ((Number) v).intValue();
 	}
 
 	// ─────────────────────────────── scripted renderer ───────────────────────────────
@@ -187,6 +250,8 @@ public class TestPbRenderStagesOffline extends BaseTest {
 		byte[] pngB;
 		SceneGraph graph;
 		SDUtil sdu;
+		/// P6-2 run cases only: the BOOK-scope style pinning every task to {@link #MODEL}.
+		BaseRecord style;
 	}
 
 	private Fixture fixture(String prefix) throws Exception {
@@ -258,11 +323,149 @@ public class TestPbRenderStagesOffline extends BaseTest {
 		catch(Exception e) {
 			logger.warn("Cleanup of " + f.slug + ": " + e.getMessage());
 		}
+		if(f.style != null) {
+			SwarmModelInventory.invalidate(OFFLINE_SERVER);
+			try {
+				ioContext.getAccessPoint().delete(f.owner, f.style);
+			}
+			catch(Exception e) {
+				logger.warn("Cleanup of style for " + f.slug + ": " + e.getMessage());
+			}
+		}
+	}
+
+	// ─────────────────────────────── P6-2 run fixture ───────────────────────────────
+
+	/// Put {@code installed} into SwarmModelInventory's cache for {@code server} so the resolver never asks the
+	/// (closed) port and never substitutes the pinned model. Same seam TestPbRenderPlanActors uses.
+	@SuppressWarnings({ "unchecked", "rawtypes" })
+	private static void seedInventory(String server, List<String> installed) throws Exception {
+		java.lang.reflect.Field cacheField = SwarmModelInventory.class.getDeclaredField("CACHE");
+		cacheField.setAccessible(true);
+		Map cache = (Map) cacheField.get(null);
+		java.lang.reflect.Constructor<SwarmModelInventory> ctor = SwarmModelInventory.class.getDeclaredConstructor(String.class, List.class, long.class);
+		ctor.setAccessible(true);
+		cache.put(server.trim(), ctor.newInstance(server.trim(), new ArrayList<>(installed), System.currentTimeMillis()));
+	}
+
+	/// A BOOK-scope style pinning PORTRAIT / LOCATION / SCENE_DIRECT / INPAINT to {@code model} (and carrying
+	/// {@code preset} when given), linked to the book; returns the style ref for cleanup.
+	private BaseRecord pinBookStyle(BaseRecord u, BaseRecord bk, String tag, String model, PbQualityPresetEnumType preset) throws Exception {
+		long orgId = orgOf(u);
+		Map<String, String> pins = new LinkedHashMap<>();
+		for(PbModelTaskEnumType t : new PbModelTaskEnumType[] { PbModelTaskEnumType.PORTRAIT, PbModelTaskEnumType.LOCATION,
+				PbModelTaskEnumType.SCENE_DIRECT, PbModelTaskEnumType.INPAINT }) {
+			pins.put(ModelTaskKeys.key(t), model);
+		}
+		BaseRecord style = RecordFactory.newInstance(OlioModelNames.MODEL_PB_STYLE);
+		ioContext.getRecordUtil().applyNameGroupOwnership(u, style, "p62-" + tag + "-" + shortId(), STYLE_PATH, orgId);
+		style.set(OlioFieldNames.FIELD_PB_SCOPE, PbStyleScopeEnumType.BOOK.toString());
+		style.set(OlioFieldNames.FIELD_PB_TASK_MODELS, JSONUtil.exportObject(pins));
+		if(preset != null) {
+			style.set(OlioFieldNames.FIELD_PB_QUALITY_PRESET, preset.toString());
+		}
+		BaseRecord created = ioContext.getAccessPoint().create(u, style);
+		assertNotNull("style create", created);
+		BaseRecord styleRef = PbStyleUtil.readStyle(u, oidOf(created), orgId);
+		assertNotNull("style read", styleRef);
+		BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK, new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, OlioFieldNames.FIELD_STYLE });
+		patch.set(FieldNames.FIELD_ID, bk.get(FieldNames.FIELD_ID));
+		patch.set(FieldNames.FIELD_OBJECT_ID, bk.get(FieldNames.FIELD_OBJECT_ID));
+		patch.set(FieldNames.FIELD_NAME, bk.get(FieldNames.FIELD_NAME));
+		patch.set(OlioFieldNames.FIELD_STYLE, styleRef);
+		assertNotNull("book style patch", ioContext.getAccessPoint().update(u, patch));
+		CacheUtil.clearCache();
+		BaseRecord after = PbBookUtil.readBook(u, oidOf(bk), orgId);
+		BaseRecord linked = after.get(OlioFieldNames.FIELD_STYLE);
+		assertNotNull("book carries its style", linked);
+		assertEquals("book style", oidOf(styleRef), oidOf(linked));
+		return styleRef;
+	}
+
+	/**
+	 * Everything a real run (Cases 8/9) needs that {@link #fixture} does not give: the book context (a world,
+	 * or compose 409s), scene text so the plan has a subject, a user-edited MIGRATED composition so
+	 * {@code ensureComposition} neither calls the LLM nor reports COMPOSED_OUT_OF_ORDER, the book style
+	 * pinned to {@link #MODEL} with the inventory seeded so nothing is MODEL_SUBSTITUTED, and auto-approve on.
+	 * Leaves {@code f.book} as the fresh {@code readBook} projection (the one {@code applyAutoApprove} reads).
+	 */
+	private void prepareRun(Fixture f, String tag, PbQualityPresetEnumType stylePreset) throws Exception {
+		long orgId = orgOf(f.owner);
+		BookContext bctx = PbBookUtil.openBookContext(f.owner, f.book);
+		assertNotNull("book context", bctx);
+		assertNotNull("book world", bctx.getWorld());
+
+		BaseRecord scene = PbBookUtil.readScene(f.owner, f.sceneOid, orgId);
+		assertNotNull("scene", scene);
+		BaseRecord sp = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SETTING, OlioFieldNames.FIELD_CB_SD_PROMPT);
+		sp.set(OlioFieldNames.FIELD_PB_SETTING, RUN_SETTING);
+		sp.set(OlioFieldNames.FIELD_CB_SD_PROMPT, RUN_SD_PROMPT);
+		assertNotNull("scene text patch", ioContext.getAccessPoint().update(f.owner, sp));
+		scene = PbBookUtil.readScene(f.owner, f.sceneOid, orgId);
+		assertEquals("scene sdPrompt", RUN_SD_PROMPT, scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+
+		BaseRecord book = PbBookUtil.readBook(f.owner, f.bookOid, orgId);
+		ComposeResult cr = PbComposeUtil.composeMigrated(f.owner, book, scene, false);
+		assertNotNull("compose", cr);
+		assertTrue("MIGRATED composition written: " + cr.failureReason, cr.isWritten());
+		BaseRecord comp = PbComposeUtil.readComposition(f.owner, oidOf(cr.composition), orgId);
+		assertNotNull("composition", comp);
+		assertNotNull("composition marked user-edited", PbComposeUtil.touchEdited(f.owner, comp, null));
+
+		f.style = pinBookStyle(f.owner, book, tag, MODEL, stylePreset);
+		seedInventory(OFFLINE_SERVER, List.of(MODEL));
+		assertTrue("autoApprove on", PbBookUtil.setAutoApprove(f.owner, book, true));
+		CacheUtil.clearCache();
+		f.book = PbBookUtil.readBook(f.owner, f.bookOid, orgId);
+		assertNotNull("book re-read", f.book);
+		assertEquals("autoApprove read back", Boolean.TRUE, f.book.get(OlioFieldNames.FIELD_PB_AUTO_APPROVE));
+	}
+
+	/// Poll the registry (the way a client polls {@code GET /rest/job/{id}}) until the job is terminal.
+	private static AsyncJob awaitTerminal(BaseRecord u, String jobId, long maxMs) throws InterruptedException {
+		long deadline = System.currentTimeMillis() + maxMs;
+		AsyncJob job = null;
+		while(System.currentTimeMillis() < deadline) {
+			job = AsyncJobRegistry.get(u, jobId);
+			assertNotNull("job " + jobId + " must stay visible to its owner", job);
+			if(job.isTerminal()) {
+				return job;
+			}
+			Thread.sleep(POLL_MS);
+		}
+		fail("job " + jobId + " did not reach a terminal state within " + maxMs + "ms (last: " + (job != null ? job.getStatus() : "null") + ")");
+		return null;
+	}
+
+	/// The attempt's {@code base} artifacts in variant order, each re-read uncached (the selection and review
+	/// stamps are written after the create, and listChain is a projection).
+	private static List<BaseRecord> baseArtifacts(Fixture f) {
+		return artifactsByVariant(f, PbPipelineUtil.ROLE_BASE);
+	}
+
+	/// The node's artifacts under {@code role}, re-read and sorted by variantIndex (the variants of one attempt
+	/// are written against the same pre-batch selection, so listChain's revision order is not their order).
+	private static List<BaseRecord> artifactsByVariant(Fixture f, String role) {
+		List<BaseRecord> chain = PbArtifactUtil.listChain(f.owner, f.node, role);
+		List<BaseRecord> fresh = new ArrayList<>();
+		for(BaseRecord a : chain) {
+			BaseRecord full = PbArtifactUtil.readArtifact(f.owner, oidOf(a), orgOf(f.owner));
+			assertNotNull("artifact " + oidOf(a), full);
+			fresh.add(full);
+		}
+		fresh.sort((a, b) -> Integer.compare(PbArtifactUtil.variantIndexOf(a), PbArtifactUtil.variantIndexOf(b)));
+		return fresh;
 	}
 
 	/// A resolved plan for the two fixture actors: both referenced, on the stages given, under
 	/// {@code strategy}; the INPAINT pick and the per-actor pass prompt only for SEQUENTIAL_INPAINT.
 	private static RenderPlan plan(Fixture f, PbStrategyEnumType strategy, String stageA, String stageB) {
+		return plan(f, strategy, stageA, stageB, 1);
+	}
+
+	/// P6-2: the same plan with a preset that asks for {@code variants} finals per attempt.
+	private static RenderPlan plan(Fixture f, PbStrategyEnumType strategy, String stageA, String stageB, int variants) {
 		String family = RendererCapabilities.forModel(MODEL).getPattern();
 		assertNotNull("family of " + MODEL, family);
 		Map<String, Object> cfg = new LinkedHashMap<>();
@@ -275,7 +478,7 @@ public class TestPbRenderStagesOffline extends BaseTest {
 		RenderPlan.Builder b = RenderPlan.builder()
 			.purpose(RenderPlan.PURPOSE_SCENE)
 			.canvas(new RenderPlan.Canvas(W, H))
-			.preset(new RenderPlan.PresetValues("p53", 4, 1, false, null))
+			.preset(new RenderPlan.PresetValues("p53", 4, variants, false, null))
 			.config(cfg)
 			.actor(actor(ACTOR_A, "Mara", 0, f.portraitA, stageA, new RenderPlan.Box(0.05, 0.1, 0.4, 0.8)))
 			.actor(actor(ACTOR_B, "Tobin", 1, f.portraitB, stageB, new RenderPlan.Box(0.55, 0.1, 0.4, 0.8)))
@@ -302,7 +505,14 @@ public class TestPbRenderStagesOffline extends BaseTest {
 	}
 
 	private static PlannedRender render(Fixture f, RenderPlan plan, RenderBackend backend) {
-		return PbNodeExecutor.renderPlanned(f.graph, f.node, plan, "scene 0 of " + f.slug, f.sdu, "p53_" + f.slug, "Scene has no text to render", backend);
+		return render(f, plan, backend, 1);
+	}
+
+	/// P6-2: the backend travels on the graph now (SceneGraph.setRenderBackend), and the render asks for
+	/// {@code variants} finals of one attempt.
+	private static PlannedRender render(Fixture f, RenderPlan plan, RenderBackend backend, int variants) {
+		f.graph.setRenderBackend(backend);
+		return PbNodeExecutor.renderPlanned(f.graph, f.node, plan, "scene 0 of " + f.slug, f.sdu, "p53_" + f.slug, "Scene has no text to render", variants);
 	}
 
 	private static void assertPng(String label, byte[] bytes) {
@@ -520,6 +730,333 @@ public class TestPbRenderStagesOffline extends BaseTest {
 			assertTrue("no stage image", PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_STAGE).isEmpty());
 			assertTrue("no base image", PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_BASE).isEmpty());
 			assertEquals("a failed BASE records no calibration sample", samplesBefore, calibrationSamples(f.owner, family, RenderPlan.STAGE_BASE));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	// ─────────────────────────────── P6-2 variants ───────────────────────────────
+
+	@Test
+	public void variantsRenderTwoFinalsOfOneAttempt() throws Exception {
+		logger.info("variantsRenderTwoFinalsOfOneAttempt");
+		Fixture f = null;
+		try {
+			f = fixture("p62v2");
+			byte[] png0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] png1 = MaskImage.solid(W, H, new Color(60, 90, 120));
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(png0, 4242, 1500), ok(png1, 4243, 1400));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+			RenderPlan plan = plan(f, PbStrategyEnumType.DIRECT_REFERENCE, RenderPlan.STAGE_BASE, RenderPlan.STAGE_BASE, 2);
+
+			PlannedRender pr = render(f, plan, backend(adapter, client), 2);
+
+			/// BASE went out twice through the graph path; the second carries the seed derived from the first's
+			/// reported seed and the same two portraits.
+			assertEquals("requests sent", 2, adapter.requests.size());
+			StageRequest first = adapter.requests.get(0);
+			StageRequest second = adapter.requests.get(1);
+			assertEquals(RenderPlan.STAGE_BASE, first.getStage());
+			assertEquals(RenderPlan.STAGE_BASE, second.getStage());
+			assertTrue("variant 0 is a graph", first.isGraph());
+			assertTrue("variant 1 is a graph", second.isGraph());
+			assertEquals("variant 1 seed derives from variant 0's reported seed", PbNodeExecutor.variantSeed(4242, 1), second.getSeed());
+			assertArrayEquals("variant 1 actora is portrait A", f.pngA, second.getInputs().image("actora"));
+			assertArrayEquals("variant 1 actorb is portrait B", f.pngB, second.getInputs().image("actorb"));
+			assertEquals("the client was asked for two generated workflows", 2, client.requests().size());
+
+			/// Two finals, each with its own data row; variant 0 is the PlannedRender's headline final.
+			assertEquals("variants", 2, pr.variants.size());
+			assertArrayEquals("headline bytes are variant 0", png0, pr.bytes);
+			assertEquals(Long.valueOf(4242), pr.seed);
+			PlannedRender.Variant v0 = pr.variants.get(0);
+			PlannedRender.Variant v1 = pr.variants.get(1);
+			assertEquals(0, v0.variantIndex);
+			assertEquals(1, v1.variantIndex);
+			assertArrayEquals("variant 0 bytes", png0, v0.bytes);
+			assertArrayEquals("variant 1 bytes", png1, v1.bytes);
+			assertEquals(Long.valueOf(4242), v0.seed);
+			assertEquals(Long.valueOf(4243), v1.seed);
+			assertNotNull("variant 0 data", v0.data);
+			assertNotNull("variant 1 data", v1.data);
+			assertNotEquals("distinct data rows", oidOf(v0.data), oidOf(v1.data));
+			assertEquals("variant 1 references", List.of(f.portraitA, f.portraitB), v1.referenceArtifactObjectIds);
+			assertEquals("variant 1 stages", List.of(RenderPlan.STAGE_BASE), v1.stagesRendered);
+			assertTrue("no stage errors: " + pr.stageErrors, pr.stageErrors.isEmpty());
+			assertEquals("degradations: " + pr.degradations, 0, pr.degradations.size());
+			assertTrue("calibration persisted", pr.calibrationPersisted);
+			assertPng("variant 1", v1.bytes);
+
+			/// Persisted: one plan, one envelope per variant, no stage image; renderPlanned records no finals.
+			assertEquals("plan artifacts", 1, PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_PLAN).size());
+			List<BaseRecord> graphs = PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_GRAPH);
+			assertEquals("renderGraph artifacts", 2, graphs.size());
+			assertEquals(RenderPlan.STAGE_BASE, envelope(graphs.get(0)).get(PbRenderPlanUtil.GRAPH_KEY_STAGE));
+			assertEquals(RenderPlan.STAGE_BASE, envelope(graphs.get(1)).get(PbRenderPlanUtil.GRAPH_KEY_STAGE));
+			assertTrue("no stage image", PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_STAGE).isEmpty());
+			assertTrue("renderPlanned records no base artifact", PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_BASE).isEmpty());
+
+			Map<String, Object> described = new LinkedHashMap<>();
+			pr.describe(described);
+			assertEquals(Integer.valueOf(2), described.get(PbNodeExecutor.KEY_VARIANTS_PLANNED));
+			assertEquals(Integer.valueOf(2), described.get(PbNodeExecutor.KEY_VARIANTS_RENDERED));
+			assertCalibrationRow(f.owner, plan.pickForStage(RenderPlan.STAGE_BASE).getFamily(), RenderPlan.STAGE_BASE, 2);
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	@Test
+	public void sequentialInpaintVariantsEachChainTheirOwnPass() throws Exception {
+		logger.info("sequentialInpaintVariantsEachChainTheirOwnPass");
+		Fixture f = null;
+		try {
+			f = fixture("p62si");
+			byte[] base0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] pass0 = MaskImage.solid(W, H, new Color(160, 100, 30));
+			byte[] base1 = MaskImage.solid(W, H, new Color(60, 90, 120));
+			byte[] pass1 = MaskImage.solid(W, H, new Color(30, 100, 160));
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(base0, 11, 1200), ok(pass0, 12, 900), ok(base1, 13, 1100), ok(pass1, 14, 800));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+			RenderPlan plan = plan(f, PbStrategyEnumType.SEQUENTIAL_INPAINT, RenderPlan.STAGE_BASE, RenderPlan.STAGE_ACTOR_REGION, 2);
+
+			PlannedRender pr = render(f, plan, backend(adapter, client), 2);
+
+			/// BASE, pass, BASE, pass - each pass paints over its own variant's BASE, never the other's.
+			assertEquals("requests sent", 4, adapter.requests.size());
+			assertEquals(RenderPlan.STAGE_BASE, adapter.requests.get(0).getStage());
+			assertEquals(RenderPlan.STAGE_ACTOR_REGION, adapter.requests.get(1).getStage());
+			assertEquals(RenderPlan.STAGE_BASE, adapter.requests.get(2).getStage());
+			assertEquals(RenderPlan.STAGE_ACTOR_REGION, adapter.requests.get(3).getStage());
+			assertEquals("variant 1 BASE seed derives from variant 0's BASE seed", PbNodeExecutor.variantSeed(11, 1), adapter.requests.get(2).getSeed());
+			assertArrayEquals("variant 0 pass paints over variant 0's BASE", base0, adapter.requests.get(1).getInputs().image("init"));
+			assertArrayEquals("variant 1 pass paints over variant 1's BASE", base1, adapter.requests.get(3).getInputs().image("init"));
+			assertEquals("the client was asked for four generated workflows", 4, client.requests().size());
+
+			String passLabel = RenderPlan.actorStageKey(RenderPlan.STAGE_ACTOR_REGION, ACTOR_B);
+			assertEquals("variants", 2, pr.variants.size());
+			assertArrayEquals("headline bytes are variant 0's pass", pass0, pr.bytes);
+			assertEquals(Long.valueOf(12), pr.seed);
+			PlannedRender.Variant v1 = pr.variants.get(1);
+			assertEquals(1, v1.variantIndex);
+			assertArrayEquals("variant 1 bytes are its pass", pass1, v1.bytes);
+			assertEquals(Long.valueOf(14), v1.seed);
+			assertEquals(List.of(RenderPlan.STAGE_BASE, passLabel), v1.stagesRendered);
+			assertTrue("no stage errors: " + pr.stageErrors, pr.stageErrors.isEmpty());
+			assertEquals("degradations: " + pr.degradations, 0, pr.degradations.size());
+			assertTrue("calibration persisted", pr.calibrationPersisted);
+
+			/// Two stage artifacts stamped with their variant, written against the same (absent) pre-batch
+			/// selection so only variant 0's is selected; each final references its own stage.
+			List<BaseRecord> stages = artifactsByVariant(f, PbPipelineUtil.ROLE_STAGE);
+			assertEquals("stage artifacts", 2, stages.size());
+			BaseRecord stage0 = stages.get(0);
+			BaseRecord stage1 = stages.get(1);
+			assertEquals(0, PbArtifactUtil.variantIndexOf(stage0));
+			assertEquals(1, PbArtifactUtil.variantIndexOf(stage1));
+			assertNull("no run, no attempt on stage 0", PbArtifactUtil.attemptOf(stage0));
+			assertNull("no run, no attempt on stage 1", PbArtifactUtil.attemptOf(stage1));
+			assertTrue("variant 0's stage is selected", selected(stage0));
+			assertFalse("variant 1's stage is not selected", selected(stage1));
+			assertEquals("variant 0 references its own stage", List.of(f.portraitB, oidOf(stage0)), pr.referenceArtifactObjectIds);
+			assertEquals("variant 1 references its own stage", List.of(f.portraitB, oidOf(stage1)), v1.referenceArtifactObjectIds);
+			assertEquals("renderGraph artifacts", 4, PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_GRAPH).size());
+			String family = plan.pickForStage(RenderPlan.STAGE_BASE).getFamily();
+			assertCalibrationRow(f.owner, family, RenderPlan.STAGE_BASE, 1);
+			assertCalibrationRow(f.owner, family, RenderPlan.STAGE_ACTOR_REGION, 1);
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	@Test
+	public void laterVariantBaseFailureKeepsWhatRendered() throws Exception {
+		logger.info("laterVariantBaseFailureKeepsWhatRendered");
+		Fixture f = null;
+		try {
+			f = fixture("p62vf");
+			byte[] base0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] base2 = MaskImage.solid(W, H, new Color(120, 60, 90));
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(base0, 31, 1300),
+				StageResult.failed(RendererAdapter.ERROR_UNREACHABLE, 5, "{\"offline\":true}"), ok(base2, 33, 1250));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+			RenderPlan plan = plan(f, PbStrategyEnumType.DIRECT_REFERENCE, RenderPlan.STAGE_BASE, RenderPlan.STAGE_BASE, 3);
+
+			PlannedRender pr = render(f, plan, backend(adapter, client), 3);
+
+			/// All three were attempted; variant 2's seed is still derived from variant 0, not renumbered.
+			assertEquals("requests sent", 3, adapter.requests.size());
+			assertEquals(PbNodeExecutor.variantSeed(31, 1), adapter.requests.get(1).getSeed());
+			assertEquals(PbNodeExecutor.variantSeed(31, 2), adapter.requests.get(2).getSeed());
+
+			assertEquals("finals", 2, pr.variants.size());
+			assertEquals(0, pr.variants.get(0).variantIndex);
+			assertEquals("the gap is kept", 2, pr.variants.get(1).variantIndex);
+			assertArrayEquals("variant 2 bytes", base2, pr.variants.get(1).bytes);
+			assertEquals(Long.valueOf(33), pr.variants.get(1).seed);
+			assertArrayEquals("headline bytes are variant 0", base0, pr.bytes);
+
+			assertEquals("one stage error", 1, pr.stageErrors.size());
+			assertEquals(RenderPlan.STAGE_BASE, pr.stageErrors.get(0).get("stage"));
+			assertEquals(RendererAdapter.CODE_UNREACHABLE, pr.stageErrors.get(0).get("code"));
+			assertEquals("the stage error names its variant", Integer.valueOf(1), pr.stageErrors.get(0).get("variant"));
+			boolean variantFailed = false;
+			for(String d : pr.degradations) {
+				variantFailed |= d.startsWith(RenderPlan.Degradation.VARIANT_FAILED + ": ");
+			}
+			assertTrue("VARIANT_FAILED degradation reported: " + pr.degradations, variantFailed);
+			assertFalse("VARIANT_FAILED vetoes auto-approve", PbArtifactUtil.vetoingDegradations(pr.degradations).isEmpty());
+			assertTrue("the rendered variants still calibrated", pr.calibrationPersisted);
+
+			/// The persisted plan carries the degradation; only the two rendered variants left envelopes.
+			List<BaseRecord> plans = PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_PLAN);
+			assertEquals("plan artifacts", 1, plans.size());
+			RenderPlan persisted = PbRenderPlanUtil.readPlanArtifact(PbArtifactUtil.readArtifact(f.owner, oidOf(plans.get(0)), orgOf(f.owner)));
+			assertNotNull("persisted plan", persisted);
+			boolean recorded = false;
+			for(RenderPlan.Degradation d : persisted.getDegradations()) {
+				recorded |= RenderPlan.Degradation.VARIANT_FAILED.equals(d.getCode());
+			}
+			assertTrue("VARIANT_FAILED recorded on the plan artifact", recorded);
+			assertEquals("renderGraph artifacts", 2, PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_GRAPH).size());
+
+			Map<String, Object> described = new LinkedHashMap<>();
+			pr.describe(described);
+			assertEquals(Integer.valueOf(3), described.get(PbNodeExecutor.KEY_VARIANTS_PLANNED));
+			assertEquals(Integer.valueOf(2), described.get(PbNodeExecutor.KEY_VARIANTS_RENDERED));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	@Test
+	public void runRecordsVariantsAsOneAttempt() throws Exception {
+		logger.info("runRecordsVariantsAsOneAttempt");
+		Fixture f = null;
+		try {
+			f = fixture("p62rn");
+			prepareRun(f, "run", null);
+			byte[] png0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] png1 = MaskImage.solid(W, H, new Color(60, 90, 120));
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(png0, 7001, 800), ok(png1, 7002, 700));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+
+			/// STANDARD (variants 2) as a request override over a style with no preset: the override wins.
+			Map<String, Object> out = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, f.node, f.sdu,
+				new PlanOptions(null, false, PbQualityPresetEnumType.STANDARD, null), null, backend(adapter, client));
+			assertNotNull("run DTO", out);
+			assertEquals("run status", PbRunStatusEnumType.COMPLETED.toString(), status(out.get("runStatus")));
+			String runOid = (String) out.get("runObjectId");
+			assertNotNull("run objectId", runOid);
+			assertEquals("a scene with no cast and no location plans TEXT_ONLY", PbStrategyEnumType.TEXT_ONLY.name(), out.get("strategy"));
+			assertEquals(2, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)));
+			assertEquals(2, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			List<String> degradations = PbNodeExecutor.degradationsOf(out);
+			assertTrue("no degradations: " + degradations, degradations == null || degradations.isEmpty());
+
+			/// The plain T2I path: variant 0 random, variant 1 derived from variant 0's reported seed.
+			assertEquals("requests sent", 2, adapter.requests.size());
+			assertFalse("TEXT_ONLY is not a graph", adapter.requests.get(0).isGraph());
+			assertFalse("TEXT_ONLY variant 1 is not a graph", adapter.requests.get(1).isGraph());
+			assertEquals(StageRequest.SEED_RANDOM, adapter.requests.get(0).getSeed());
+			assertEquals(PbNodeExecutor.variantSeed(7001, 1), adapter.requests.get(1).getSeed());
+
+			/// variants[] on the DTO: variant 0 is the headline artifact and the only selected one.
+			Object vs = out.get(PbNodeExecutor.KEY_VARIANTS);
+			assertTrue("variants is a list: " + vs, vs instanceof List);
+			List<?> variants = (List<?>) vs;
+			assertEquals("variants", 2, variants.size());
+			Map<?, ?> d0 = (Map<?, ?>) variants.get(0);
+			Map<?, ?> d1 = (Map<?, ?>) variants.get(1);
+			assertEquals(0, intOf(d0.get("variantIndex")));
+			assertEquals(1, intOf(d1.get("variantIndex")));
+			assertEquals(Boolean.TRUE, d0.get("selected"));
+			assertEquals(Boolean.FALSE, d1.get("selected"));
+			assertEquals("variant 0 is the DTO's artifact", out.get("artifactObjectId"), d0.get("artifactObjectId"));
+			assertNotEquals("distinct artifacts", d0.get("artifactObjectId"), d1.get("artifactObjectId"));
+
+			/// On the database: two base artifacts sharing the run as their attempt, only variant 0 selected and
+			/// auto-approved (§10 rule 5 fires once per attempt, on the selected final).
+			List<BaseRecord> bases = baseArtifacts(f);
+			assertEquals("base artifacts", 2, bases.size());
+			BaseRecord a0 = bases.get(0);
+			BaseRecord a1 = bases.get(1);
+			assertEquals(0, PbArtifactUtil.variantIndexOf(a0));
+			assertEquals(1, PbArtifactUtil.variantIndexOf(a1));
+			assertEquals("variant 0 attempt is the run", runOid, PbArtifactUtil.attemptOf(a0));
+			assertEquals("variant 1 attempt is the run", runOid, PbArtifactUtil.attemptOf(a1));
+			assertTrue("variant 0 selected", selected(a0));
+			assertFalse("variant 1 not selected", selected(a1));
+			assertEquals(Boolean.TRUE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			assertEquals(PbReviewStatusEnumType.APPROVED.name(), out.get("reviewStatus"));
+			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(a0));
+			assertEquals(PbArtifactUtil.APPROVED_BY_AUTO, a0.get(OlioFieldNames.FIELD_PB_APPROVED_BY));
+			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(a1));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	@Test
+	public void jobRecordsVariantsAsOneAttempt() throws Exception {
+		logger.info("jobRecordsVariantsAsOneAttempt");
+		Fixture f = null;
+		try {
+			f = fixture("p62jb");
+			prepareRun(f, "job", PbQualityPresetEnumType.STANDARD);
+			byte[] png0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] png1 = MaskImage.solid(W, H, new Color(60, 90, 120));
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(png0, 9001, 800), ok(png1, 9002, 700));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+
+			/// The book's style says STANDARD (variants 2); the job renders the node with default options.
+			Map<String, Object> dto = PbRenderJobUtil.submit(f.owner, f.book, f.workflow, List.of(Long.valueOf(idOf(f.node))), f.sdu, OFFLINE_SERVER,
+				PbRenderJobUtil.KIND_RENDER, true, backend(adapter, client));
+			assertNotNull("submit DTO", dto);
+			String jobId = (String) dto.get("jobId");
+			String runOid = (String) dto.get("runObjectId");
+			assertNotNull("jobId", jobId);
+			assertNotNull("runObjectId", runOid);
+			AsyncJob job = awaitTerminal(f.owner, jobId, JOB_TIMEOUT_MS);
+			assertEquals("job status (" + job.getResult() + ")", AsyncJob.Status.COMPLETED, job.getStatus());
+
+			Map<?, ?> result = JSONUtil.importObject(job.getResult(), Map.class);
+			assertNotNull("job result", result);
+			List<?> nodes = (List<?>) result.get("nodes");
+			assertNotNull("nodes", nodes);
+			assertEquals("one node outcome", 1, nodes.size());
+			Map<?, ?> outcome = (Map<?, ?>) nodes.get(0);
+			assertEquals(Boolean.TRUE, outcome.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			Object vs = outcome.get(PbNodeExecutor.KEY_VARIANTS);
+			assertTrue("outcome variants is a list: " + outcome, vs instanceof List);
+			List<?> variants = (List<?>) vs;
+			assertEquals("outcome variants", 2, variants.size());
+			Map<?, ?> d0 = (Map<?, ?>) variants.get(0);
+			Map<?, ?> d1 = (Map<?, ?>) variants.get(1);
+			assertEquals(0, intOf(d0.get("variantIndex")));
+			assertEquals(1, intOf(d1.get("variantIndex")));
+			assertEquals(Boolean.TRUE, d0.get("selected"));
+			assertEquals(Boolean.FALSE, d1.get("selected"));
+			assertEquals("variant 0 is the outcome's artifact", outcome.get("artifactObjectId"), d0.get("artifactObjectId"));
+
+			assertEquals("requests sent", 2, adapter.requests.size());
+			assertEquals(PbNodeExecutor.variantSeed(9001, 1), adapter.requests.get(1).getSeed());
+
+			List<BaseRecord> bases = baseArtifacts(f);
+			assertEquals("base artifacts", 2, bases.size());
+			assertEquals("variant 0 attempt is the job's run", runOid, PbArtifactUtil.attemptOf(bases.get(0)));
+			assertEquals("variant 1 attempt is the job's run", runOid, PbArtifactUtil.attemptOf(bases.get(1)));
+			assertEquals(0, PbArtifactUtil.variantIndexOf(bases.get(0)));
+			assertEquals(1, PbArtifactUtil.variantIndexOf(bases.get(1)));
+			assertTrue("variant 0 selected", selected(bases.get(0)));
+			assertFalse("variant 1 not selected", selected(bases.get(1)));
+			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(bases.get(0)));
+			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(bases.get(1)));
 		}
 		finally {
 			cleanup(f);

@@ -219,6 +219,16 @@
 			"type": "boolean",
 			"default": false,
 			"description": "Health: POST /health/heal — explicit opt-in to overwrite PROMPT_TEMPLATE_DRIFT findings with the shipped resource. Drift is only reported otherwise."
+		},
+		{
+			"name": "keepAttempts",
+			"type": "int",
+			"description": "V3 Phase 6 retention (P6-3b): POST /{bookObjectId}/retention/apply and /retention/org/apply — the K newest attempts per (node, role) to keep (PbRetentionSelector.DEFAULT_KEEP_ATTEMPTS when absent; 1..MAX_KEEP_ATTEMPTS, else 400). An int field reads back as 0 when absent (KI-25), so the endpoint reads it through hasField() — a bare 0 here would otherwise be a 400 on every body that omits it. Must be declared or RecordDeserializer drops it (KI-24 pattern)."
+		},
+		{
+			"name": "deleteBytesAfterDays",
+			"type": "int",
+			"description": "V3 Phase 6 retention (P6-3b): same two routes — days after archivedAt before an archived artifact's data.data bytes are deleted (PbRetentionSelector.DEFAULT_DELETE_BYTES_AFTER_DAYS when absent; 0..MAX_DELETE_BYTES_AFTER_DAYS, else 400). Read through hasField() for the same KI-25 reason, and here it matters more: an absent value read as 0 would delete every archived artifact's bytes immediately instead of after the default grace period."
 		}
 	]
 }

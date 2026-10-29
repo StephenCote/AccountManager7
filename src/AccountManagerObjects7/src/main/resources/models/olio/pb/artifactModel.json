@@ -143,6 +143,22 @@
 			"name": "durationMs",
 			"type": "long",
 			"description": "Wall-clock milliseconds the producing stage took (V3 §32). Recorded for display and never asserted against a threshold. The DDL default is 0, which means unrecorded."
+		},
+		{
+			"name": "attempt",
+			"type": "string",
+			"maxLength": 64,
+			"description": "V3 §23: the objectId of the olio.pb.run that produced this artifact, shared by every variant of one render. Null for a Test-mode render (no run) and for rows written before Phase 6; the strip groups by it and retention counts attempts by it."
+		},
+		{
+			"name": "variantIndex",
+			"type": "int",
+			"description": "V3 §23: this artifact's position within its attempt, 0..N-1 where N is the quality preset's variant count. The DDL default is 0, so a single-variant or pre-Phase-6 row reads as variant 0; only variant 0 of an attempt is auto-selected (rule 1)."
+		},
+		{
+			"name": "archivedAt",
+			"type": "zonetime",
+			"description": "When retention archived it (V3 §23). Same trap as approvedAt: zonetime columns get 'default now()' on the boot patch and a bare newInstance writes epoch-0, so this is never NULL and is trusted only when reviewStatus == ARCHIVED. Bytes are deleted D days after this stamp."
 		}
 	]
 }

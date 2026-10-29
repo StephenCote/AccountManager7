@@ -1932,6 +1932,17 @@ public class PbServiceFacade {
 		}
 		Long duration = artifact.get(OlioFieldNames.FIELD_PB_DURATION_MS);
 		m.put("durationMs", (duration != null && duration.longValue() > 0 ? duration : null));
+		/// §23 variants: attempt (run objectId, null for Test-mode / pre-Phase-6 rows) and the variant's slot.
+		/// archivedAt has the approvedAt trap (never NULL in the column) and is emitted only when ARCHIVED.
+		m.put("attempt", PbArtifactUtil.attemptOf(artifact));
+		m.put("variantIndex", PbArtifactUtil.variantIndexOf(artifact));
+		if(rs == PbReviewStatusEnumType.ARCHIVED) {
+			java.time.ZonedDateTime archivedAt = PbArtifactUtil.archivedAtOf(artifact);
+			m.put("archivedAt", (archivedAt != null ? archivedAt.toString() : null));
+			/// Bytes deleted by retention: the data FK is cleared, the metrics stay as provenance.
+			m.put("bytesDeleted", data == null && artifact.get(OlioFieldNames.FIELD_PB_BYTE_LENGTH) != null
+				&& ((Long) artifact.get(OlioFieldNames.FIELD_PB_BYTE_LENGTH)).longValue() > 0L);
+		}
 		return m;
 	}
 
@@ -4867,6 +4878,44 @@ public class PbServiceFacade {
 	public static Map<String, Object> purgeOrphans(BaseRecord user, boolean orgWide, List<String> codes) {
 		if(user == null) throw new PictureBookException(401, "No authenticated principal");
 		return PbOrphanUtil.purge(user, orgWide, codes);
+	}
+
+	// ─────────────────────────────── retention (§23) ───────────────────────────────
+
+	/**
+	 * Dry run of the retention policy over one book: every artifact with the action the policy would take
+	 * (KEEP / ARCHIVE / DELETE_BYTES / NONE). Nothing is written. 404 when the caller cannot read the book or
+	 * it has no workflow; 400 when {@code keepAttempts} / {@code deleteBytesAfterDays} are out of range (null
+	 * means the {@link PbRetentionSelector} default).
+	 */
+	public static Map<String, Object> scanRetention(BaseRecord user, String bookObjectId, Integer keepAttempts, Integer deleteBytesAfterDays) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		BaseRecord workflow = requireWorkflow(user, book);
+		return PbRetentionUtil.scanBook(user, book, workflow, PbRetentionUtil.Policy.of(keepAttempts, deleteBytesAfterDays));
+	}
+
+	/**
+	 * Apply the retention policy over one book as the caller: archive what a fresh scan says to archive and
+	 * delete the bytes it says are due. 403 when the caller may not update the book; per artifact, a PBAC
+	 * denial or a 409 from {@link PbArtifactUtil#archive} is reported on the item, never thrown.
+	 */
+	public static Map<String, Object> applyRetention(BaseRecord user, String bookObjectId, Integer keepAttempts, Integer deleteBytesAfterDays) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "apply retention to");
+		BaseRecord workflow = requireWorkflow(user, book);
+		return PbRetentionUtil.applyBook(user, book, workflow, PbRetentionUtil.Policy.of(keepAttempts, deleteBytesAfterDays));
+	}
+
+	/** Organization-wide {@link #scanRetention}; 403 unless the caller is in AccountAdministrators. */
+	public static Map<String, Object> scanRetentionOrg(BaseRecord user, Integer keepAttempts, Integer deleteBytesAfterDays) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		return PbRetentionUtil.scanOrg(user, PbRetentionUtil.Policy.of(keepAttempts, deleteBytesAfterDays));
+	}
+
+	/** Organization-wide {@link #applyRetention}; 403 unless the caller is in AccountAdministrators. */
+	public static Map<String, Object> applyRetentionOrg(BaseRecord user, Integer keepAttempts, Integer deleteBytesAfterDays) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		return PbRetentionUtil.applyOrg(user, PbRetentionUtil.Policy.of(keepAttempts, deleteBytesAfterDays));
 	}
 
 	/**

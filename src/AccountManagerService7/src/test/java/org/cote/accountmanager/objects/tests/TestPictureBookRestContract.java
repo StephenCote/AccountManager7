@@ -82,7 +82,10 @@ public class TestPictureBookRestContract extends BaseTest {
 
 	/// Org-wide operations that are deliberately admin-only at the transport layer. Anything added here
 	/// must still carry "admin" and must be justified in the service method's javadoc.
-	private static final List<String> ADMIN_ONLY = Arrays.asList("scanOrgOrphans", "purgeOrgOrphans");
+	private static final List<String> ADMIN_ONLY = Arrays.asList("scanOrgOrphans", "purgeOrgOrphans",
+		/// V3 Phase 6 retention (P6-3b): the org-wide scan/apply; PbRetentionUtil re-checks
+		/// AccountAdministrators membership behind the annotation.
+		"scanOrgRetention", "applyOrgRetention");
 
 	private BaseRecord parseBody(String json) {
 		OlioModelNames.use();
@@ -190,7 +193,13 @@ public class TestPictureBookRestContract extends BaseTest {
 			/// policy applies the style's task pins to PB1 renders too).
 			{ "getStyle", "GET" },
 			{ "putStyle", "PUT" },
-			{ "lockStyle", "POST" }
+			{ "lockStyle", "POST" },
+			/// V3 Phase 6 retention (P6-3b, 2026-10-29): dry run and apply per book (requireBook / requireBookUpdate)
+			/// and organization-wide (admin-only, see ADMIN_ONLY). No scheduler: both applies are manual.
+			{ "scanRetention", "GET" },
+			{ "applyRetention", "POST" },
+			{ "scanOrgRetention", "GET" },
+			{ "applyOrgRetention", "POST" }
 		};
 		for(String[] e : expected) {
 			Method found = null;
@@ -244,7 +253,10 @@ public class TestPictureBookRestContract extends BaseTest {
 			/// P2-3: the book style lives under the book; GET and PUT share one path, the lock is a sub-resource.
 			{ "getStyle", "/style" },
 			{ "putStyle", "/style" },
-			{ "lockStyle", "/style/lock" }
+			{ "lockStyle", "/style/lock" },
+			/// P6-3b: the per-book retention dry run and apply hang off the book, so the book grant applies.
+			{ "scanRetention", "/retention" },
+			{ "applyRetention", "/retention/apply" }
 		};
 		for(String[] e : expected) {
 			Method found = null;
@@ -260,6 +272,111 @@ public class TestPictureBookRestContract extends BaseTest {
 				path.startsWith("/{bookObjectId"));
 			assertTrue(e[0] + " path must end with " + e[1] + " (got " + path + ")", path.endsWith(e[1]));
 		}
+	}
+
+	/**
+	 * V3 Phase 6 retention (P6-3b): the four routes' shape. The two dry runs are GETs whose policy knobs are
+	 * {@code String} query parameters (so a non-integer is the service's own 400 via {@code parseIntParam},
+	 * not Jersey's 404 for an unconvertible {@code Integer}); the two applies are JSON-in POSTs whose knobs
+	 * ride in the body. The org-wide pair is NOT book-scoped and is admin-only at the transport layer; the
+	 * AccountAdministrators re-check behind it is covered by Objects7's {@code TestPbRetentionSweep.case04}.
+	 */
+	@Test
+	public void TestRetentionRoutesShape() {
+		Method scan = method("scanRetention");
+		Method apply = method("applyRetention");
+		Method scanOrg = method("scanOrgRetention");
+		Method applyOrg = method("applyOrgRetention");
+
+		assertEquals("/{bookObjectId:[0-9A-Za-z\\-]+}/retention", pathOf(scan));
+		assertEquals("/{bookObjectId:[0-9A-Za-z\\-]+}/retention/apply", pathOf(apply));
+		assertEquals("/retention/org", pathOf(scanOrg));
+		assertEquals("/retention/org/apply", pathOf(applyOrg));
+
+		for(Method get : new Method[] { scan, scanOrg }) {
+			assertTrue(get.getName() + " must be @GET", get.isAnnotationPresent(GET.class));
+			assertNull(get.getName() + " is a dry run: no body, so no @Consumes", get.getAnnotation(jakarta.ws.rs.Consumes.class));
+			List<String> queryParams = new ArrayList<>();
+			for(java.lang.reflect.Parameter p : get.getParameters()) {
+				jakarta.ws.rs.QueryParam qp = p.getAnnotation(jakarta.ws.rs.QueryParam.class);
+				if(qp != null) {
+					assertEquals(get.getName() + " @QueryParam(" + qp.value() + ") must be a String so a non-integer reaches"
+						+ " parseIntParam and 400s instead of Jersey 404ing the whole route", String.class, p.getType());
+					queryParams.add(qp.value());
+				}
+				else {
+					assertTrue(get.getName() + ": every other parameter is a @PathParam or @Context (got '" + p.getName() + "')",
+						p.getAnnotation(jakarta.ws.rs.PathParam.class) != null || p.getAnnotation(jakarta.ws.rs.core.Context.class) != null);
+				}
+			}
+			assertEquals(get.getName() + " reads exactly the two policy knobs as query parameters",
+				Arrays.asList("keepAttempts", "deleteBytesAfterDays"), queryParams);
+		}
+		for(Method post : new Method[] { apply, applyOrg }) {
+			assertTrue(post.getName() + " must be @POST", post.isAnnotationPresent(POST.class));
+			jakarta.ws.rs.Consumes consumes = post.getAnnotation(jakarta.ws.rs.Consumes.class);
+			assertNotNull(post.getName() + " must declare @Consumes", consumes);
+			assertEquals(Arrays.asList(jakarta.ws.rs.core.MediaType.APPLICATION_JSON), Arrays.asList(consumes.value()));
+			int bodies = 0;
+			for(java.lang.reflect.Parameter p : post.getParameters()) {
+				assertNull(post.getName() + " takes its knobs in the body, never as a @QueryParam (got '" + p.getName() + "')",
+					p.getAnnotation(jakarta.ws.rs.QueryParam.class));
+				if(p.getAnnotation(jakarta.ws.rs.PathParam.class) == null && p.getAnnotation(jakarta.ws.rs.core.Context.class) == null) {
+					assertEquals("the only un-annotated parameter is the String JSON body", String.class, p.getType());
+					bodies++;
+				}
+			}
+			assertEquals(post.getName() + ": one JSON body", 1, bodies);
+		}
+		for(Method m : new Method[] { scan, apply, scanOrg, applyOrg }) {
+			jakarta.ws.rs.Produces produces = m.getAnnotation(jakarta.ws.rs.Produces.class);
+			assertNotNull(m.getName() + " must declare @Produces", produces);
+			assertEquals(Arrays.asList(jakarta.ws.rs.core.MediaType.APPLICATION_JSON), Arrays.asList(produces.value()));
+			assertEquals(m.getName() + " must return a jakarta.ws.rs.core.Response", jakarta.ws.rs.core.Response.class, m.getReturnType());
+		}
+		List<String> bookRoles = Arrays.asList(method("scanRetention").getAnnotation(RolesAllowed.class).value());
+		assertTrue("per-book retention is for any book member: " + bookRoles, bookRoles.contains("admin") && bookRoles.contains("user"));
+		assertEquals(Arrays.asList("admin"), Arrays.asList(scanOrg.getAnnotation(RolesAllowed.class).value()));
+		assertEquals(Arrays.asList("admin"), Arrays.asList(applyOrg.getAnnotation(RolesAllowed.class).value()));
+	}
+
+	/**
+	 * {@code parseIntParam}, the one place a retention GET decides between "absent → default", "an integer
+	 * → that integer" and "anything else → 400". A private static with no container dependency, reached by
+	 * reflection as {@code TestEscapeJson} reaches {@code escapeJson}. The range check (0 / negative / over
+	 * the maximum → 400) is the selector's, covered by {@code TestPbRetentionSweep.case04}.
+	 */
+	@Test
+	public void TestParseIntParamIsAbsentOrIntegerOr400() throws Exception {
+		Method m = PictureBookService.class.getDeclaredMethod("parseIntParam", String.class, String.class);
+		m.setAccessible(true);
+		assertNull("absent → null (the selector default)", m.invoke(null, "keepAttempts", null));
+		assertNull("blank → null, same as absent", m.invoke(null, "keepAttempts", "   "));
+		assertEquals("an integer arrives as that integer", Integer.valueOf(7), m.invoke(null, "keepAttempts", " 7 "));
+		assertEquals("zero is passed through for the selector to refuse, not treated as absent", Integer.valueOf(0),
+			m.invoke(null, "deleteBytesAfterDays", "0"));
+		try {
+			m.invoke(null, "keepAttempts", "three");
+			fail("a non-integer must be a 400");
+		}
+		catch(java.lang.reflect.InvocationTargetException ite) {
+			assertTrue("the service's own PictureBookException, not a NumberFormatException escaping to Jersey",
+				ite.getCause() instanceof org.cote.accountmanager.olio.picturebook.PictureBookException);
+			org.cote.accountmanager.olio.picturebook.PictureBookException pbe =
+				(org.cote.accountmanager.olio.picturebook.PictureBookException) ite.getCause();
+			assertEquals(400, pbe.getStatus());
+			assertTrue("the message names the parameter: " + pbe.getMessage(), pbe.getMessage().contains("keepAttempts"));
+		}
+	}
+
+	private Method method(String name) {
+		for(Method m : PictureBookService.class.getDeclaredMethods()) {
+			if(m.getName().equals(name)) {
+				return m;
+			}
+		}
+		fail("PictureBookService." + name + " must exist");
+		return null;
 	}
 
 	/**
@@ -416,7 +533,10 @@ public class TestPictureBookRestContract extends BaseTest {
 			"pinned", "userNames", "asAdmin", "fromBookObjectId", "slug", "title", "copyRecordModel",
 			"copyRecordObjectIds",
 			/// extract-scenes-only (N-series) and extract-retry-failed
-			"seriesObjectId"
+			"seriesObjectId",
+			/// V3 Phase 6 retention (P6-3b): POST .../retention/apply and /retention/org/apply. Undeclared
+			/// when first written - the body was silently ignored and the defaults always applied.
+			"keepAttempts", "deleteBytesAfterDays"
 		};
 		List<String> undeclared = new ArrayList<>();
 		for(String f : read) {
@@ -462,6 +582,62 @@ public class TestPictureBookRestContract extends BaseTest {
 			+ " distinguish it from a deliberate 0 (KI-25)", absent.hasField("sceneIndex"));
 		assertEquals("An omitted int field reads back as 0 - this is exactly why the null check was wrong",
 			0, ((Number) absent.get("sceneIndex")).intValue());
+	}
+
+	/**
+	 * V3 Phase 6 retention (P6-3b): the apply body. Both knobs are declared ints, so both KI-24 and KI-25
+	 * apply: undeclared they were dropped and the defaults always won; declared, an omitted one reads back as
+	 * 0 and {@code hasField} is the only presence signal. The service reads them through {@code optionalInt}
+	 * for that reason - 0 is a legitimate {@code deleteBytesAfterDays} ("delete due bytes now") but would be
+	 * catastrophic as the reading of an omitted one, and 0 is a 400 for {@code keepAttempts}.
+	 */
+	@Test
+	public void TestRetentionApplyBodyRoundTrips() throws Exception {
+		BaseRecord both = parseBody("{\"keepAttempts\": 2, \"deleteBytesAfterDays\": 0}");
+		assertNotNull(both);
+		assertTrue("keepAttempts must survive deserialization", both.hasField("keepAttempts"));
+		assertTrue("deleteBytesAfterDays must survive deserialization", both.hasField("deleteBytesAfterDays"));
+		assertEquals(2, ((Number) both.get("keepAttempts")).intValue());
+		assertEquals("an explicit 0 arrives as 0 - 'delete the due bytes now'", 0, ((Number) both.get("deleteBytesAfterDays")).intValue());
+
+		BaseRecord one = parseBody("{\"keepAttempts\": 5}");
+		assertTrue(one.hasField("keepAttempts"));
+		assertEquals(5, ((Number) one.get("keepAttempts")).intValue());
+		assertFalse("an omitted deleteBytesAfterDays must be reported ABSENT by hasField - read any other way it"
+			+ " is 0, which would delete every archived artifact's bytes immediately", one.hasField("deleteBytesAfterDays"));
+		assertEquals("...and this is what the non-hasField read sees", 0, ((Number) one.get("deleteBytesAfterDays")).intValue());
+		assertFalse("an omitted keepAttempts must be reported ABSENT by hasField - read any other way it is 0,"
+			+ " which the selector refuses with a 400 on every body that leaves it out",
+			parseBody("{\"deleteBytesAfterDays\": 7}").hasField("keepAttempts"));
+
+		/// The service's own read path, on the real PictureBookService code rather than a restatement of it:
+		/// parseParams (schema injection + deserialize) then optionalInt (hasField-guarded). Reached by
+		/// reflection as TestChapBookRestContract reaches ChapBookService.parseParams.
+		PictureBookService svc = new PictureBookService();
+		Method parse = PictureBookService.class.getDeclaredMethod("parseParams", String.class);
+		parse.setAccessible(true);
+		Method optionalInt = PictureBookService.class.getDeclaredMethod("optionalInt", BaseRecord.class, String.class);
+		optionalInt.setAccessible(true);
+
+		BaseRecord sent = (BaseRecord) parse.invoke(svc, "{\"keepAttempts\": 2, \"deleteBytesAfterDays\": 0}");
+		assertNotNull(sent);
+		assertEquals(Integer.valueOf(2), optionalInt.invoke(svc, sent, "keepAttempts"));
+		assertEquals("an explicit 0 is handed to the facade as 0, not swallowed as absent",
+			Integer.valueOf(0), optionalInt.invoke(svc, sent, "deleteBytesAfterDays"));
+		BaseRecord partial = (BaseRecord) parse.invoke(svc, "{\"keepAttempts\": 2}");
+		assertNotNull(partial);
+		assertEquals(Integer.valueOf(2), optionalInt.invoke(svc, partial, "keepAttempts"));
+		assertNull("the omitted knob reaches the facade as null (= the selector default), never as 0",
+			optionalInt.invoke(svc, partial, "deleteBytesAfterDays"));
+
+		/// A literal {} body: ensureSchema splices the schema in as `{"schema":"...",}` - a trailing comma -
+		/// so parseParams returns null (WARN-logged) rather than an empty record. That is pre-existing
+		/// behaviour shared by every optional-body endpoint on this service and is deliberately not changed
+		/// here; what matters for retention is that a null params record still reads as "both absent".
+		BaseRecord empty = (BaseRecord) parse.invoke(svc, "{}");
+		assertNull("a null params record (blank or unparseable body) must read as absent, not throw", optionalInt.invoke(svc, empty, "keepAttempts"));
+		assertNull(optionalInt.invoke(svc, empty, "deleteBytesAfterDays"));
+		assertNull(optionalInt.invoke(svc, (BaseRecord) parse.invoke(svc, ""), "keepAttempts"));
 	}
 
 	@Test

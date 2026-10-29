@@ -158,14 +158,92 @@ export function normalizeRun(r) {
     });
 }
 
-function normalizeArtifact(a) {
+/**
+ * One artifactSummary with the NON_EMPTY omissions filled. §23 variants (P6): `attempt` is the run
+ * objectId the artifact was rendered in (null for a Test-mode / pre-Phase-6 row), `variantIndex` its
+ * 0..N-1 slot in that attempt, `seed` the per-variant seed (seed0 + variantIndex); `archivedAt` and
+ * `bytesDeleted` are emitted by the server only when the artifact is ARCHIVED (the column is never NULL,
+ * so the value is trusted only behind the status — PbServiceFacade.artifactSummary).
+ * The artifact `seed` column is a `long` with DDL default 0, so TEXT / renderPlan / pre-Phase-6 rows
+ * arrive as `seed: 0` (Jackson NON_EMPTY keeps numeric 0): a seed is "known" only when > 0, the same
+ * falsy-seed convention the legacy result card uses (pictureBook.js `if (result.seed && …)`).
+ */
+export function normalizeArtifact(a) {
     a = a || {};
     return Object.assign({}, a, {
         reviewStatus: a.reviewStatus != null ? a.reviewStatus : null,
         selected: !!a.selected,
         dataObjectId: a.dataObjectId != null ? a.dataObjectId : null,
-        nodeObjectId: a.nodeObjectId != null ? a.nodeObjectId : null
+        nodeObjectId: a.nodeObjectId != null ? a.nodeObjectId : null,
+        revision: a.revision != null ? Number(a.revision) : null,
+        attempt: (a.attempt != null && String(a.attempt).length) ? String(a.attempt) : null,
+        variantIndex: a.variantIndex != null && isFinite(Number(a.variantIndex)) ? Number(a.variantIndex) : 0,
+        seed: a.seed != null && isFinite(Number(a.seed)) && Number(a.seed) > 0 ? Number(a.seed) : null,
+        byteLength: a.byteLength != null && isFinite(Number(a.byteLength)) ? Number(a.byteLength) : 0,
+        archivedAt: a.archivedAt != null ? String(a.archivedAt) : null,
+        bytesDeleted: !!a.bytesDeleted
     });
+}
+
+/** Case-insensitive: is this artifact ARCHIVED (the only status the strip hides by default)? */
+export function isArchivedArtifact(a) {
+    return !!a && String(a.reviewStatus || '').toUpperCase() === 'ARCHIVED';
+}
+
+/**
+ * Pure: group one role's chain into attempts for the history strip. The server lists a chain ascending
+ * by revision with every attempt's variants interleaved only by revision order; the strip wants
+ *   [{ attempt, label, variants: [artifact…] (ascending variantIndex), maxRevision, archivedCount }, …]
+ * newest attempt FIRST (by its highest revision). An artifact without an `attempt` (Test mode, or a row
+ * written before Phase 6) was one render on its own, so it forms its own single-variant group — folding
+ * every untracked row into one bucket would misreport separate renders as variants of each other.
+ * `archivedCount` is the number of ARCHIVED artifacts in the whole list; `active` the non-archived ones.
+ * Returns { attempts, archivedCount, active } ; a null/malformed list → empty.
+ */
+export function groupArtifactsByAttempt(list) {
+    let out = { attempts: [], archivedCount: 0, active: 0 };
+    if (!Array.isArray(list) || !list.length) return out;
+    let byKey = {};
+    let order = [];
+    list.forEach(function (raw) {
+        if (!raw) return;
+        let a = normalizeArtifact(raw);
+        if (isArchivedArtifact(a)) out.archivedCount++; else out.active++;
+        let key = a.attempt != null ? 'a:' + a.attempt : 'r:' + (a.objectId || ('rev' + a.revision));
+        if (!byKey[key]) {
+            byKey[key] = { attempt: a.attempt, variants: [], maxRevision: -Infinity, archivedCount: 0 };
+            order.push(key);
+        }
+        let g = byKey[key];
+        g.variants.push(a);
+        if (a.revision != null && a.revision > g.maxRevision) g.maxRevision = a.revision;
+        if (isArchivedArtifact(a)) g.archivedCount++;
+    });
+    out.attempts = order.map(function (k) {
+        let g = byKey[k];
+        g.variants.sort(function (x, y) {
+            if (x.variantIndex !== y.variantIndex) return x.variantIndex - y.variantIndex;
+            return (x.revision || 0) - (y.revision || 0);
+        });
+        if (!isFinite(g.maxRevision)) g.maxRevision = null;
+        g.label = g.attempt != null
+            ? 'Attempt ' + g.attempt.slice(0, 8) + (g.variants.length > 1 ? ' · ' + g.variants.length + ' variants' : '')
+            : 'Rev ' + (g.maxRevision != null ? g.maxRevision : '?');
+        return g;
+    });
+    // Newest first: highest revision in the group; ties keep the server's order.
+    out.attempts.sort(function (x, y) { return (y.maxRevision || 0) - (x.maxRevision || 0); });
+    return out;
+}
+
+/** Pure: 0 → '0 B', 1536 → '1.5 KB', … (base 1024, one decimal above bytes). Non-numbers → '0 B'. */
+export function formatBytes(n) {
+    n = Number(n);
+    if (!isFinite(n) || n <= 0) return '0 B';
+    let units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? String(Math.round(n)) : n.toFixed(1)) + ' ' + units[i];
 }
 
 export function normalizeReviewQueue(r) {
@@ -510,6 +588,101 @@ export function countOrphans(scan) {
     if (typeof scan.total === 'number') return scan.total;
     if (!Array.isArray(scan.categories)) return 0;
     return scan.categories.reduce((n, c) => n + (Number(c && c.count) || 0), 0);
+}
+
+// ─────────────────────────── variant retention (V3 §23, P6-3b) ───────────────────────────
+// Sweep shape (PbRetentionUtil.Sweep.toMap): { scope:'book'|'org', bookObjectId, slug, checkedAt | appliedAt,
+//   keepAttempts, deleteBytesAfterDays, nodes, items:[{ objectId, name, nodeObjectId, nodeHandle, role, attempt,
+//   variantIndex, revision, reviewStatus, selected, hasBytes, byteLength, archivedAt, action
+//   (KEEP|ARCHIVE|DELETE_BYTES|NONE), reason, bytesDueAt, outcome?, outcomeReason?, bytesFreed? }],
+//   total, counts:{keep, archive, deleteBytes, none}, bytesReclaimable,
+//   apply adds: archived, bytesDeleted, bytesFreed, refused, denied, failed ; warnings:[] }
+// GET = dry run (query params); POST …/apply = act. K/D absent → server defaults (PbRetentionSelector);
+// out-of-range/non-integer → 400 ("(400) …" from wfFetch). The org-wide routes exist (admin-only) but the
+// canvas only drives the book-scoped pair.
+
+export const RETENTION_ACTIONS = ['KEEP', 'ARCHIVE', 'DELETE_BYTES', 'NONE'];
+
+/** Pure: a sweep with every NON_EMPTY omission filled, so views never test for a missing array/count. */
+export function normalizeRetention(s) {
+    s = s || {};
+    let counts = s.counts || {};
+    let n = function (v) { return v != null && isFinite(Number(v)) ? Number(v) : 0; };
+    return Object.assign({}, s, {
+        scope: s.scope || 'book',
+        bookObjectId: s.bookObjectId != null ? s.bookObjectId : null,
+        slug: s.slug != null ? s.slug : null,
+        checkedAt: s.checkedAt != null ? s.checkedAt : null,
+        appliedAt: s.appliedAt != null ? s.appliedAt : null,
+        applied: s.appliedAt != null,
+        keepAttempts: n(s.keepAttempts),
+        deleteBytesAfterDays: n(s.deleteBytesAfterDays),
+        nodes: n(s.nodes),
+        total: n(s.total),
+        counts: { keep: n(counts.keep), archive: n(counts.archive), deleteBytes: n(counts.deleteBytes), none: n(counts.none) },
+        bytesReclaimable: n(s.bytesReclaimable),
+        archived: n(s.archived),
+        bytesDeleted: n(s.bytesDeleted),
+        bytesFreed: n(s.bytesFreed),
+        refused: n(s.refused),
+        denied: n(s.denied),
+        failed: n(s.failed),
+        items: (Array.isArray(s.items) ? s.items : []).map(function (it) {
+            it = it || {};
+            return Object.assign({}, it, {
+                action: String(it.action || 'NONE').toUpperCase(),
+                outcome: it.outcome != null ? String(it.outcome) : null,
+                outcomeReason: it.outcomeReason != null ? it.outcomeReason : null,
+                reason: it.reason != null ? it.reason : null,
+                selected: !!it.selected,
+                hasBytes: !!it.hasBytes,
+                byteLength: n(it.byteLength),
+                bytesFreed: n(it.bytesFreed),
+                variantIndex: n(it.variantIndex),
+                revision: it.revision != null ? n(it.revision) : null,
+                attempt: it.attempt != null ? String(it.attempt) : null,
+                nodeHandle: it.nodeHandle != null ? it.nodeHandle : null,
+                reviewStatus: it.reviewStatus != null ? String(it.reviewStatus).toUpperCase() : null
+            });
+        }),
+        warnings: Array.isArray(s.warnings) ? s.warnings : []
+    });
+}
+
+/** Pure: the items a dry run would actually change (ARCHIVE or DELETE_BYTES). */
+export function retentionActionable(sweep) {
+    let s = normalizeRetention(sweep);
+    return s.items.filter(function (it) { return it.action === 'ARCHIVE' || it.action === 'DELETE_BYTES'; });
+}
+
+function retentionQuery(opts) {
+    opts = opts || {};
+    let q = [];
+    if (opts.keepAttempts != null && opts.keepAttempts !== '') q.push('keepAttempts=' + encodeURIComponent(opts.keepAttempts));
+    if (opts.deleteBytesAfterDays != null && opts.deleteBytesAfterDays !== '') q.push('deleteBytesAfterDays=' + encodeURIComponent(opts.deleteBytesAfterDays));
+    return q.length ? '?' + q.join('&') : '';
+}
+
+function retentionBody(opts) {
+    opts = opts || {};
+    let b = {};
+    if (opts.keepAttempts != null && opts.keepAttempts !== '') b.keepAttempts = Number(opts.keepAttempts);
+    if (opts.deleteBytesAfterDays != null && opts.deleteBytesAfterDays !== '') b.deleteBytesAfterDays = Number(opts.deleteBytesAfterDays);
+    return b;
+}
+
+/** Dry run: GET /{book}/retention[?keepAttempts=&deleteBytesAfterDays=]. opts values are passed as given
+ *  (the server validates and 400s), absent = server defaults. Returns a normalized sweep. */
+export async function scanRetention(pb2BookObjectId, opts) {
+    return normalizeRetention(await wfFetch('/' + pb2BookObjectId + '/retention' + retentionQuery(opts),
+        {}, 'scanRetention failed'));
+}
+
+/** Apply: POST /{book}/retention/apply with { keepAttempts?, deleteBytesAfterDays? }. The server re-scans and
+ *  acts on THAT set (not the client's last dry run), so per-item `outcome` is the truth, not the earlier `action`. */
+export async function applyRetention(pb2BookObjectId, opts) {
+    return normalizeRetention(await wfFetch('/' + pb2BookObjectId + '/retention/apply',
+        { method: 'POST', body: retentionBody(opts) }, 'applyRetention failed'));
 }
 
 /**

@@ -306,6 +306,77 @@ public class TestPbV3Schema extends BaseTest {
 		}
 	}
 
+	// ───────── 6 (P6-1): attempt / variantIndex / archivedAt exist, default, and round trip ─────────
+
+	/**
+	 * The three Phase 6 columns. A single-variant artifact (the 9-arg {@code persistArtifact}) reads a null
+	 * {@code attempt}, {@code variantIndex} 0 (DDL default) and a never-NULL {@code archivedAt} that the
+	 * helper refuses to report while the status is not ARCHIVED. The 13-arg overload stamps attempt and
+	 * index on create. Then {@code archivedAt} is written through a hand-built patch alongside ARCHIVED and
+	 * read back; the epoch-0 trap ({@code patchOf} materialises a ZONETIME at 1970) is covered by the
+	 * helper's guard, exercised in-memory.
+	 */
+	@Test
+	public void case06_variantColumnsDefaultAndRoundTrip() throws Exception {
+		BaseRecord u = user();
+		BaseRecord wf = workflow(u, book(u));
+		long orgId = orgOf(u);
+		BaseRecord n = node(u, wf, "p61-var", PbNodeTypeEnumType.PORTRAIT, 0);
+
+		BaseRecord single = PbArtifactUtil.persistArtifact(u, n, "portrait0", PbArtifactTypeEnumType.TEXT,
+			PbBookUtil.artifactGroupPath(SLUG), null, "p6-1 single", null, null);
+		assertNotNull(single);
+		BaseRecord fresh = PbArtifactUtil.readArtifact(u, single.get(FieldNames.FIELD_OBJECT_ID), orgId);
+		assertTrue("artifactRequest() must project attempt", fresh.hasField(OlioFieldNames.FIELD_PB_ATTEMPT));
+		assertTrue("artifactRequest() must project variantIndex", fresh.hasField(OlioFieldNames.FIELD_PB_VARIANT_INDEX));
+		assertTrue("artifactRequest() must project archivedAt", fresh.hasField(OlioFieldNames.FIELD_PB_ARCHIVED_AT));
+		assertNull("A single-variant artifact has no attempt", PbArtifactUtil.attemptOf(fresh));
+		assertEquals("variantIndex reads the DDL default 0", 0, PbArtifactUtil.variantIndexOf(fresh));
+		assertEquals(Integer.valueOf(0), fresh.get(OlioFieldNames.FIELD_PB_VARIANT_INDEX));
+		assertNotNull("archivedAt is never NULL in the column (default now())", fresh.get(OlioFieldNames.FIELD_PB_ARCHIVED_AT));
+		assertNull("...but is reported only when ARCHIVED", PbArtifactUtil.archivedAtOf(fresh));
+
+		String attempt = UUID.randomUUID().toString();
+		BaseRecord v1 = PbArtifactUtil.persistArtifact(u, n, "portrait0", PbArtifactTypeEnumType.TEXT,
+			PbBookUtil.artifactGroupPath(SLUG), null, "p6-1 variant 1", null, null, fresh, 1, attempt, false);
+		assertNotNull(v1);
+		BaseRecord v1Fresh = PbArtifactUtil.readArtifact(u, v1.get(FieldNames.FIELD_OBJECT_ID), orgId);
+		assertEquals("attempt round trips on create", attempt, PbArtifactUtil.attemptOf(v1Fresh));
+		assertEquals("variantIndex round trips on create", 1, PbArtifactUtil.variantIndexOf(v1Fresh));
+		BaseRecord sup = v1Fresh.get(OlioFieldNames.FIELD_PB_SUPERSEDES);
+		assertNotNull("The pre-batch supersedes is written as given", sup);
+		assertEquals((Long) fresh.get(FieldNames.FIELD_ID), (Long) sup.get(FieldNames.FIELD_ID));
+
+		ZonedDateTime archivedAt = ZonedDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.SECONDS);
+		BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_ARTIFACT, new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			OlioFieldNames.FIELD_PB_REVIEW_STATUS, OlioFieldNames.FIELD_PB_ARCHIVED_AT
+		});
+		patch.set(FieldNames.FIELD_ID, v1Fresh.get(FieldNames.FIELD_ID));
+		patch.set(FieldNames.FIELD_OBJECT_ID, v1Fresh.get(FieldNames.FIELD_OBJECT_ID));
+		patch.set(FieldNames.FIELD_NAME, v1Fresh.get(FieldNames.FIELD_NAME));
+		patch.set(OlioFieldNames.FIELD_PB_REVIEW_STATUS, PbReviewStatusEnumType.ARCHIVED.toString());
+		patch.set(OlioFieldNames.FIELD_PB_ARCHIVED_AT, archivedAt);
+		assertNotNull("The archive patch must be accepted by AccessPoint.update", ioContext.getAccessPoint().update(u, patch));
+		BaseRecord archived = PbArtifactUtil.readArtifact(u, v1.get(FieldNames.FIELD_OBJECT_ID), orgId);
+		assertEquals(PbReviewStatusEnumType.ARCHIVED, PbArtifactUtil.reviewStatusOf(archived));
+		ZonedDateTime readAt = PbArtifactUtil.archivedAtOf(archived);
+		assertNotNull("archivedAt is reported once ARCHIVED", readAt);
+		assertEquals("archivedAt must round trip (second precision, as an instant)",
+			archivedAt.toInstant(), readAt.toInstant().truncatedTo(ChronoUnit.SECONDS));
+
+		/// The epoch-0 guard: an ARCHIVED row whose stamp is 1970 (a patch that listed the field without setting
+		/// it) reports null rather than a 56-year-old archival.
+		BaseRecord epoch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_ARTIFACT, new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_REVIEW_STATUS, OlioFieldNames.FIELD_PB_ARCHIVED_AT
+		});
+		epoch.set(OlioFieldNames.FIELD_PB_REVIEW_STATUS, PbReviewStatusEnumType.ARCHIVED.toString());
+		ZonedDateTime materialised = epoch.get(OlioFieldNames.FIELD_PB_ARCHIVED_AT);
+		assertNotNull("Precondition: a listed ZONETIME is materialised, not null", materialised);
+		assertEquals("Precondition: ...at epoch-0", 0L, materialised.toInstant().toEpochMilli());
+		assertNull("An epoch-0 stamp is not an archival date", PbArtifactUtil.archivedAtOf(epoch));
+	}
+
 	private java.util.List<String> names(Enum<?>[] values) {
 		java.util.List<String> out = new java.util.ArrayList<>();
 		for(Enum<?> e : values) {

@@ -1308,8 +1308,24 @@ active jobs per principal **[verified 2026-10-09: `AsyncJobRegistry.java` `MAX_C
   (the run objectId) and have their own `variantIndex` and `seed`. **Both are new schema fields**
   — `attempt`, `variantIndex`, `reviewStatus` and `durationMs` do not exist on
   `artifactModel.json` today (verified 2026-10-09, §36.6); they are added in Phase 0 (§32).
+  **[2026-10-29 (P6-1 / P6-2), as built: `reviewStatus` / `durationMs` arrived in Phase 0–1; `attempt`
+  (string 64), `variantIndex` (int) and `archivedAt` (zonetime) were added in P6-1 by the boot DDL
+  patch — `archivedAt` carries the DDL default `now()` on every row and is trusted only while
+  `reviewStatus = ARCHIVED`. N comes from the preset only (`qualityPresets.json` `variants`: DRAFT 1,
+  STANDARD 2, FINAL 4; no per-request override yet). `PbNodeExecutor.renderPlanned` runs the plan's
+  whole stage sequence N times sequentially, variant i seeded `seed0 + i` from the renderer's reported
+  seed for variant 0; when the renderer reports none the later variants are random and the attempt
+  carries `VARIANT_SEED_UNKNOWN` (accepted by auto-approve). A later variant's failure does not fail
+  the node: what rendered stands, the index gaps, and `VARIANT_FAILED` vetoes auto-approve. Only
+  `variantIndex 0` is auto-selected (rule 1). ChapBook pages and LOCATION renders stay at 1 variant.
+  Implementation §6.C 212 (a)–(e).]**
 - The variant strip shows the current attempt plus the approved artifact. Older attempts sit behind
-  "History".
+  "History". **[2026-10-29 (P6-4), as built: the node detail panel's "Artifact Revisions" strip
+  groups each role's chain by `attempt`, newest attempt first (by its highest revision), tiles
+  `v{n} · s{seed}` with a status tint; rows with no `attempt` (Test mode, pre-P6) are one group each.
+  ARCHIVED rows hide behind "Show archived (n)" rather than a separate History view; a two-up compare
+  pane replaces per-tile zoom; an archived tile whose bytes are gone says "bytes deleted". The server
+  emits `seed: 0` for rows without one (long column) — the strip shows a seed only when > 0.]**
 - **Retention:** keep the approved and selected artifacts forever. Keep the last K attempts (default
   3) per node. Move older GENERATED/REJECTED variants to ARCHIVED, and delete their bytes after D
   days (default 30). **This is a new sweep routine**, not an extension of an existing one:
@@ -1317,7 +1333,18 @@ active jobs per principal **[verified 2026-10-09: `AsyncJobRegistry.java` `MAX_C
   stale-graph scan, so neither can be reused as-is. Put it beside them in
   `org.cote.accountmanager.olio.picturebook` (e.g. `PbRetentionUtil`) and expose it through the
   same health routes. Stage intermediates (BASE, regions) keep only those referenced by a retained
-  final artifact.
+  final artifact. **[2026-10-29 (P6-3a / P6-3b), as built: `PbRetentionSelector` is the pure policy
+  (K per (node, role) — not per node — attempts ordered by their highest revision; IN_REVIEW is kept
+  as well as selected / APPROVED; an ARCHIVED row's bytes are due at `archivedAt + D`; stage roles kept
+  only while a kept final references them; K = 3 / D = 30 are its constants). `PbRetentionUtil.scan` /
+  `apply` run as the caller through `AccessPoint`; `apply` archives via `PbArtifactUtil.archive`
+  (409 on a selected / APPROVED row) and deletes bytes by removing the `data.data` row as the caller,
+  then clearing the artifact's `data` FK — the artifact row stays, so the strip can still show the
+  slot. Not on the health routes: `GET /{book}/retention?keepAttempts=&deleteBytesAfterDays=` (dry
+  run) and `POST /{book}/retention/apply` (`admin,user`; 400 outside 1..K-max / 0..D-max), plus
+  `GET|POST /retention/org[/apply]` (admin only) — manual, no scheduler; no un-archive. The Ux752
+  canvas toolbar's "🗄 Retention" dialog drives dry run → Apply (Apply enabled only for a dry run of the
+  current K / D with ≥ 1 ARCHIVE / DELETE_BYTES item). Implementation §6.C 212, §13.6.]**
 
 ---
 
@@ -1721,6 +1748,7 @@ Ux implementation follows Ux752 patterns. Read `features/pictureBook.js`,
 | `POST /{book}/run/{runId}/resume`, `/cancel` | Durable run control **[2026-10-11 (P1-6): `/cancel` built — 200 `{runObjectId, runStatus, cancelRequested}`; 404 unless the run is of the book's workflow; 409 when terminal, already cancelling, or no job in this JVM. `/resume` is P1-7]** |
 | `PUT /artifact/{id}/select`, `/approve`, `/reject` | Review. **[2026-10-16 (P3-4): approving a LOCATION node's `landscape` artifact promotes it to the location's or variant's `approvedRender`; rejecting the approved artifact clears it; both 409 when the location is locked and 404 when the subject is outside the book's world or unreadable.]** |
 | `GET /{book}/stale` (with live drift), `GET /{book}/review-queue` | Staleness / review |
+| `GET /{book}/retention`, `POST /{book}/retention/apply`; `GET /retention/org`, `POST /retention/org/apply` | **[2026-10-29 (P6-3b), as built:** §23 retention sweep — dry run / apply for one book (`admin,user`; 404 book unreadable, 403 on apply unless the caller may update the book) and for every book in the caller's organization (admin only). Both take `keepAttempts` / `deleteBytesAfterDays` as query params (GET) or body ints (POST; absent → `PbRetentionSelector` defaults 3 / 30; outside range → 400 naming the field). Answer: `{scope, bookObjectId, slug, checkedAt|appliedAt, keepAttempts, deleteBytesAfterDays, nodes, items[], total, counts{keep, archive, deleteBytes, none}, bytesReclaimable}`, apply adding `archived, bytesDeleted, bytesFreed, refused, denied, failed` and an `outcome` per item. Written as the caller through `AccessPoint`; a 409 from `archive` (selected / APPROVED) counts as `refused`, never a failure of the sweep.]** |
 | `POST /character/{id}/portrait/render` (async), `PUT .../portrait/{artifact}/select` | Book portraits |
 | `GET /olio/illustration/models?task=` | Availability-checked models |
 

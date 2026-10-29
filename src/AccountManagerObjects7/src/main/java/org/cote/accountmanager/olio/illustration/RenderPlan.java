@@ -1461,11 +1461,17 @@ public final class RenderPlan {
 		/// §9.1: the render composed this scene itself because no composition existed; the scene was staged
 		/// without the story-order context the compose job gives it. Re-compose in order to clear it.
 		public static final String COMPOSED_OUT_OF_ORDER = "COMPOSED_OUT_OF_ORDER";
+		/// §23 (P6-2): a variant after the first was not rendered - its BASE stage failed - so the attempt
+		/// produced fewer finals than the preset planned. Vetoes auto-approve (the render fell short of its plan).
+		public static final String VARIANT_FAILED = "VARIANT_FAILED";
+		/// §23 (P6-2): the renderer reported no seed for variant 0, so the later variants rendered with random
+		/// seeds rather than seed0 + i; every planned final still rendered. Accepted by auto-approve.
+		public static final String VARIANT_SEED_UNKNOWN = "VARIANT_SEED_UNKNOWN";
 
 		/// Every code a plan can carry. Consumers that classify a degradation string by its prefix
 		/// (PbArtifactUtil.autoApprove) treat anything outside this set as free-form and do not waive it.
 		public static final Set<String> CODES = Set.of(ACTOR_TEXT_ONLY, ACTOR_UNRESOLVED, ACTOR_FAILED, LOCATION_TEXT_ONLY,
-			MODEL_SUBSTITUTED, PROMPT_TRUNCATED, QA_WARN, COMPOSED_OUT_OF_ORDER);
+			MODEL_SUBSTITUTED, PROMPT_TRUNCATED, QA_WARN, COMPOSED_OUT_OF_ORDER, VARIANT_FAILED, VARIANT_SEED_UNKNOWN);
 
 		public static boolean isKnownCode(String code) {
 			return code != null && CODES.contains(code);
