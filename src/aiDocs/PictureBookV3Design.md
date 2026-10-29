@@ -1861,6 +1861,14 @@ render path.
   `v3`/`v3`. **The verify stage (3) started for ChapBook on 2026-10-14**; check status is tracked in
   `PictureBookV3Implementation.md` §10.6 (checks 1, 4 and 5 are Stephen's). Contract:
   `TestChapBookRestContract.TestChapBookDefaultsToV3AndV1IsRollback`, `TestPbRenderPath` cases 01/03/10.]**
+- **[2026-10-28 (P5-3), Stage 1 Coexist inventory — as built:** no stage moved; `PICTUREBOOK_DEFAULT` stays `V1`. REMOVED (grep-proven
+  caller-free): `WorkflowCompiler.CLASS_TEXT_ENCODE_ADVANCED`, `ActorTarget.baseArtifactObjectId`. REDACTED (WARN, no refusal): PB1
+  `PictureBookUtil.generateSceneImage` under `picturebook.renderPath=v3` (`:9755`); legacy PB2 `REFERENCE_STRIP` / `COMPOSITE` node
+  dispatch (`PbNodeExecutor.warnLegacyNode` :501, one WARN per execution with book / node oid). DEPRECATED (`@Deprecated` + javadoc naming
+  the replacement and this staging; removed at Stage 4, Phase 10): `PictureBookService.generateSceneImage` :705 / `prepareImages` :775;
+  `SceneCompositeUtil.includesLandscapeReference` :187 / `buildSceneRequest` :222 / `applyPromptOverride` :333 / `defaultCreativity` :349;
+  `PbNodeExecutor.executeReferenceStrip` :1676 / `executeComposite` :1777. Stage 2 refusal (`REFUSAL_PREFIX`) for PictureBook stays
+  Phase 7; the §37.4 Kontext dead code stays Phase 10 (Stephen, 2026-10-28). Evidence: `PictureBookV3Implementation.md` §13.5, §6.C 211.]**
 
 **Verify-stage exit checks** (all with real tests and visual inspection):
 1. Scenarios A–G (notes §70) pass on the Docker stack.
@@ -2563,6 +2571,7 @@ design is unaffected either way — Kontext is not on any phase's critical path.
 
 Kontext-only means "delete"; shared means "keep, strip the Kontext branch/comment". Line numbers
 are as of 2026-10-09.
+**[2026-10-28 (P5-3): the rows below were checked against the tree; dated notes in a row correct it in place. `TestKontext` is still pom-excluded and still whole — Stephen's 2026-10-28 ruling defers the #3–#8 deletions to Phase 10; only the relocation of `testStripSDXLWeighting` was done. Evidence `PictureBookV3Implementation.md` §13.5, §6.C 211 b / h / j.]**
 
 **Main code**
 
@@ -2571,11 +2580,11 @@ are as of 2026-10-09.
 | `olio/sd/swarm/SWUtil.java` | `defaultKontextModel` :144-147; `newKontextSceneTxt2Img` ×4 :420-502; `newKontextBase` ×2 :540-569 | Yes | Delete |
 | `olio/sd/swarm/SWUtil.java` | `styleClause` :507-537 | Only prod caller is :494 inside the Kontext builder; `TestPictureBookFull.java:2013-2045` asserts PictureBook does **not** use it | Delete with the builder |
 | `olio/sd/swarm/SWUtil.java` | comments :135, :163-175, :209, :230, :240 (the FLUX.2 builder explains itself by contrast to Kontext) | Shared | Rewrite the comments to stand alone |
-| `olio/sd/SceneCompositeUtil.java` | `MODE_KONTEXT` :35, `SUPPORTED_MODES` :39, `KONTEXT_PANEL_SIZE` :42, `isSupportedMode` :55, `resolveMode` useKontext fallback :96-100, `includesLandscapeReference` :105, KONTEXT branch :226-239 | Shared (class survives until Phase 2 replaces it) | Strip the branch; `resolveMode` loses its `legacyKontextDefault` parameter |
-| `olio/sd/SDUtil.java` | `stitchSceneImages` :1538-1590 | **Shared** — `PbNodeExecutor.executeReferenceStrip:329` | Keep; retitle the javadoc (it says "for FLUX Kontext") |
+| `olio/sd/SceneCompositeUtil.java` | `MODE_KONTEXT` :35, `SUPPORTED_MODES` :39, `KONTEXT_PANEL_SIZE` :42, `isSupportedMode` :55, `resolveMode` useKontext fallback :96-100, `includesLandscapeReference` :105, KONTEXT branch :226-239 | Shared (class survives until Phase 2 replaces it) | Strip the branch; `resolveMode` loses its `legacyKontextDefault` parameter **[2026-10-28 (P5-3): `includesLandscapeReference` :187, `buildSceneRequest` :222, `applyPromptOverride` :333, `defaultCreativity` :349 are `@Deprecated` (javadoc names RENDER_PLAN / Phase 10); the mode vocabulary, `resolveMode` and the refusal are not.]** |
+| `olio/sd/SDUtil.java` | `stitchSceneImages` :1538-1590 | **Shared** — `PbNodeExecutor.executeReferenceStrip:329` | Keep; retitle the javadoc (it says "for FLUX Kontext") **[2026-10-28 (P5-3): retitled; now `:1772`, caller `PbNodeExecutor.executeReferenceStrip` :1677 (`@Deprecated`).]** |
 | `olio/sd/SDUtil.java` | comments :1748, :1941, :2084 | Shared | Rewrite |
-| `olio/picturebook/PictureBookUtil.java` | mode decision :10063-10074; landscape warn :10080-10086; `sceneCreativity` :10090; KONTEXT PIPELINE block :10196-10249; classic gate :10251; `SceneGenerationParams.compositeSdConfig` :1589-1591 | PB1 — removed wholesale at §28.1 Stage 4 anyway | Nothing extra |
-| `olio/picturebook/PbNodeExecutor.java` | javadoc :283-284; `resolveMode(effectiveConfig, false)` :456 | Shared | Follows `SceneCompositeUtil` |
+| `olio/picturebook/PictureBookUtil.java` | mode decision :10063-10074; landscape warn :10080-10086; `sceneCreativity` :10090; KONTEXT PIPELINE block :10196-10249; classic gate :10251; `SceneGenerationParams.compositeSdConfig` :1589-1591 | PB1 — removed wholesale at §28.1 Stage 4 anyway | Nothing extra **[2026-10-28 (P5-3): WARN at `:9755` when PB1 `generateSceneImage` runs under `picturebook.renderPath=v3`; no refusal until Phase 7.]** |
+| `olio/picturebook/PbNodeExecutor.java` | javadoc :283-284; `resolveMode(effectiveConfig, false)` :456 | Shared | Follows `SceneCompositeUtil` **[2026-10-28 (P5-3): `executeReferenceStrip` :1676 / `executeComposite` :1777 `@Deprecated`; one WARN per legacy-node dispatch, `warnLegacyNode` :501.]** |
 | `olio/llm/Chat.java` | comment :2408 | Shared | Rewrite |
 | Service7 `ChatService.java` | `isSupportedMode` 400 gate :1419-1422; `resolveMode(sdConfig, true)` :1488-1490; branch comment :1539 | Shared | Phase 0: `true`→`false`; Remove: follows `SceneCompositeUtil` |
 | `models/olio/sd/configModel.json` | `useKontext` :312-316, `compositeMode` description :322, `kontextModel` :390-393, `kontextSteps/Cfg/Sampler/Scheduler` :395-421 | Fields | Phase 0: deprecate in descriptions; Remove: drop six fields (column-drop property), reword `compositeMode` |
@@ -2585,15 +2594,15 @@ are as of 2026-10-09.
 
 | File | Lines | Action |
 |---|---|---|
-| `TestKontext.java` | whole class (pom-excluded) | Delete — **except** `testStripSDXLWeighting` (:298), which tests the shared SDXL-weighting strip used by the FLUX.2 builder: relocate to `TestFlux2Composite` first |
+| `TestKontext.java` | whole class (pom-excluded) | Delete — **except** `testStripSDXLWeighting` (:298), which tests the shared SDXL-weighting strip used by the FLUX.2 builder: relocate to `TestFlux2Composite` first **[2026-10-28 (P5-3): relocated — to the new pure-JUnit `objects/tests/TestSwUtilPromptText.java`, not `TestFlux2Composite` (which extends `BaseTest`); `TestKontext` keeps a one-line pointer and stays pom-excluded until Phase 10.]** |
 | `TestFlux2Composite.java` | `promptOverrideReplacesKontextComposedPrompt` :629, `kontextAndClassicAlwaysConsumeTheLandscape` :746, `kontextAndClassicAreNeverAutoSkipped` :848, `landscapeGateFollowsTheLegacyKontextFallback` :861; assertions :398-402, :414-423, :444-453, :458-462, :468-477, :815 | Delete the four methods; rewrite the mode-vocabulary assertions to `flux2\|classic` |
 | `TestPictureBookPipeline.java` | :297-319 (pom-excluded, PB1) | Goes with PB1 |
-| `olio/TestPictureBookUtilE2E.java` :171-182, :237-253; `TestPictureBookUtilPersistenceE2E.java` :644-668, :723-745, :785 | PB1 Kontext branches | Go with PB1 |
-| `TestPictureBookFull.java` | :2013-2045 (asserts `styleClause` is *not* used), :3128-3130 (writes to `kontext-test-output/`) | Drop the negative assertion when `styleClause` is deleted; redirect the output path in Phase 0 |
+| `olio/TestPictureBookUtilE2E.java` :171-182, :237-253; `TestPictureBookUtilPersistenceE2E.java` :644-668, :723-745, :785 | PB1 Kontext branches | Go with PB1 **[2026-10-28 (P5-3): `TestPictureBookUtilPersistenceE2E.java` does not exist in the tree; `TestPictureBookUtilE2E.java` is `objects/tests/olio/`, pom-excluded (`pom.xml:168`).]** |
+| `TestPictureBookFull.java` | :2013-2045 (asserts `styleClause` is *not* used), :3128-3130 (writes to `kontext-test-output/`) | Drop the negative assertion when `styleClause` is deleted; redirect the output path in Phase 0 **[2026-10-28 (P5-3): the writers already go to `./target/kontext-test-output` (`TestKontext.java:42`, `TestPictureBookFull.java:3129, :3131`); the Phase 0 redirect is done.]** |
 | `TestPbGraph.java:438` | lists `kontextModel` among fields a sparse diff must not carry | Keep until the field is dropped, then remove from the list |
 | Comments: `TestPictureBookCustom.java` :659, :667; `SdTestGate.java` :31, :298; `TestChatDuelLong.java` :221 | — | Reword |
-| `AccountManagerObjects7/pom.xml:154`; `src/test/resources/resource.properties:115-119`; `media/flux/bad.composite.png` fixture (if only `TestKontext` reads it — check before deleting) | — | Remove |
-| `AccountManagerObjects7/kontext-test-output/` (tracked `kontext-request.json`, untracked `portrait-fresh-render-*.png`) | scratch dir, not gitignored | Phase 0: delete and redirect writers |
+| `AccountManagerObjects7/pom.xml:154`; `src/test/resources/resource.properties:115-119`; `media/flux/bad.composite.png` fixture (if only `TestKontext` reads it — check before deleting) | — | Remove **[2026-10-28 (P5-3): `test.swarm.kontextModel=` is `resource.properties:126` (empty); `bad.composite.png` is named only in comments (`TestFlux2Composite.java:52, :233`, `TestPictureBookCustom.java:659`) — no reader.]** |
+| `AccountManagerObjects7/kontext-test-output/` (tracked `kontext-request.json`, untracked `portrait-fresh-render-*.png`) | scratch dir, not gitignored | Phase 0: delete and redirect writers **[2026-10-28 (P5-3): the directory is not present and `kontext-request.json` is not tracked — done.]** |
 
 **Ux752**
 
