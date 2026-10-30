@@ -306,7 +306,7 @@ is [`src/aiDocs/dockerDevSetup.md`](src/aiDocs/dockerDevSetup.md).
   `assemble-seed` with the staging directory set by `SEED_STAGING` in `src\.env`, and it copies
   the location data by default whenever you have staged it. The copy is idempotent, and the step is skipped with a warning if
   `SEED_STAGING` is unset. A fresh image ships this directory empty. Character and world generation and extraction 
-  draw on reference data that is loaded into the Olio universe:
+  draw on reference data that is loaded into the Olio universe or shared organization library:
   - **Bundled in `src/seedData/seedData.7z`:** first names and surnames, occupations and trades,
     colors and patterns, and personality traits. Unzip it into your staging directory.
   - **Downloaded separately**, following the `readme.txt` in each directory of the extracted corpus:
