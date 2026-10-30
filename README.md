@@ -305,13 +305,13 @@ is [`src/aiDocs/dockerDevSetup.md`](src/aiDocs/dockerDevSetup.md).
 - **Stages the Olio seed corpus** into `docker-data\am7\datagen` on every run. It calls
   `assemble-seed` with the staging directory set by `SEED_STAGING` in `src\.env`, and it copies
   the location data by default whenever you have staged it. The copy is idempotent, and the step is skipped with a warning if
-  `SEED_STAGING` is unset. A fresh image ships this directory empty. Character and world generation
+  `SEED_STAGING` is unset. A fresh image ships this directory empty. Character and world generation and extraction 
   draw on reference data that is loaded into the Olio universe:
   - **Bundled in `src/seedData/seedData.7z`:** first names and surnames, occupations and trades,
     colors and patterns, and personality traits. Unzip it into your staging directory.
   - **Downloaded separately**, following the `readme.txt` in each directory of the extracted corpus:
     - **Word data:** the Princeton WordNet dictionary files, in `wn3.1.dict/dict/` (`data.noun`,
-      `index.*`, and the rest; about 50 MB). These are required.
+      `index.*`, and the rest; about 50 MB). These are required for character generation and extraction.
     - **Location data:** the GeoNames gazetteer extract, in `location/`. It is **optional and
       large**: about 1.5 GB for a handful of countries, mostly the US file (about 290 MB) and the
       alternate-names table (about 620 MB). It needs one `<ISO>.txt` file per country you want,
