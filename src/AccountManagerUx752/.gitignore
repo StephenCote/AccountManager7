@@ -4,3 +4,9 @@ dist/
 *.log
 e2e/results/
 e2e/screenshots/
+# Playwright artifacts. Many specs write screenshots straight to test-results/
+# (OUT_DIR / RESULTS constants) instead of the configured outputDir e2e/results/.
+test-results/
+playwright-report/
+blob-report/
+coverage/

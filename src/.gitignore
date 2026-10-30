@@ -36,3 +36,20 @@ AccountManagerObjects7/src/test/resources/llm-fixtures/*/*.json
 !AccountManagerObjects7/src/test/resources/llm-fixtures/runaway/*.json
 # malformed-array/ likewise: the real glitched scene-extraction reply (2026-10-07) that TestLlmJsonArraySalvage reads directly.
 !AccountManagerObjects7/src/test/resources/llm-fixtures/malformed-array/*.json
+
+# curl cookie jars from ad hoc REST testing (`curl -c cookies.txt`). They hold a
+# live JSESSIONID, which is a session credential. NEVER commit one.
+cookies.txt
+**/cookies.txt
+
+# Files Java tests emit into the module working dir via FileUtil.emitFile("./...")
+# (BaseTest thumb.png, TestLandscape, img-*/land-*/comp-* SD output, TTS mp3s,
+# authZEmit.sql). Real test inputs live under media/ or src/test/resources/.
+/AccountManager*/*.png
+/AccountManager*/*.jpg
+/AccountManager*/*.jpeg
+/AccountManager*/*.webp
+/AccountManager*/*.mp3
+/AccountManager*/*.mp4
+/AccountManager*/*.wav
+/AccountManager*/authZEmit.sql

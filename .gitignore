@@ -5,3 +5,7 @@
 # says "never commit this" rather than "probably safe to delete".
 # Glob covers suffixed variants (volatile-old/, volatile.bak, ...).
 volatile*
+
+# Python bytecode (e.g. src/repo_scanner.py run leaves src/__pycache__/).
+__pycache__/
+*.py[cod]
