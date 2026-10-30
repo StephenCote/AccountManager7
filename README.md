@@ -1,7 +1,7 @@
 # AccountManager7
 
 AccountManager7 (AM7) is a multi-tenant platform for identity, authorization, and data management.
-Its object model is defined by schemas, and every operation is checked against participation-based
+Its object model is defined by schemas, and every operation is checked against policy-based
 access control (PBAC). On top of that core it runs LLM and image-generation features: chat with
 memory and retrieval, the Olio world/character simulation, PictureBook/ChapBook illustrated-story
 generation, and an ISO/IEC 42001 AI-bias testing and certification subsystem.
@@ -58,8 +58,10 @@ Deeper tours: [`src/aiDocs/Objects7DeepReference.md`](src/aiDocs/Objects7DeepRef
 ## Security philosophy
 
 - **Authorization is never bypassed at the edge.** User-driven operations go through
-  `AccessPoint`: query → PBAC evaluation → execution. Participation records link actors to
-  resources, which covers group-, role-, and attribute-based patterns in one mechanism. Schemas can
+  `AccessPoint`: query → policy evaluation → execution. Access decisions are made by evaluating
+  policies (`PolicyEvaluator`), and the policies are built on participation records that link
+  actors to resources. That gives one mechanism for group-, role-, and attribute-based patterns,
+  and the reasoning behind each decision can be traced (`PolicyUtil.setTrace`). Schemas can
   require roles on whole models or on individual fields. Every REST endpoint carries
   `@RolesAllowed`. The only exceptions are WebAuthn and first-run setup, which exist to create the
   first credential.
