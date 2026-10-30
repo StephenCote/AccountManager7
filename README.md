@@ -70,16 +70,27 @@ Deeper tours: [`src/aiDocs/Objects7DeepReference.md`](src/aiDocs/Objects7DeepRef
   or on individual fields. Every REST endpoint carries `@RolesAllowed`. The only exceptions are
   WebAuthn and first-run setup, which exist to create the first credential. The access model is
   described under [Authorization model](#authorization-model) below.
+- **Every authorization decision is audited.** Each operation that goes through `AccessPoint`
+  writes an audit record: who acted, the action, the resource, the query, the outcome (PERMIT,
+  DENY, or INVALID), and the policy response behind it. This includes the denials. Each record is
+  hashed and signed with the organization's private key, so a stored audit cannot be altered
+  without detection. Records are written in the background. If no IO context is available, for
+  example during shutdown, they are saved to disk and loaded on the next start instead of being
+  dropped.
 - **Organizations are the tenancy boundary.** Every deployment has the default organizations
   `/System`, `/Development`, and `/Public`, and each organization has its own keystore and vault.
   Per-organization values travel with the call and are never written into process-wide state.
 - **Encryption at rest.** Fields marked `encrypt: true` are encrypted transparently through the
   organization vault: a per-organization asymmetric key pair, rotating symmetric keys, and a
-  per-vault salt. The private vault key is protected by a credential kept on the filesystem, not
-  in the database. Protected data can therefore be recovered only when both the database and the
-  key store are present; a copy of the database alone is not enough. Binary data payloads can
-  also be gzip-compressed. Credentials are
-  stored as salted hashes and cannot be recovered.
+  per-vault salt. Binary data payloads can also be gzip-compressed.
+- **The vault splits key storage between the database and the filesystem.** The encrypted data,
+  the data keys wrapped by the vault, and the secret key that protects the vault credential are
+  kept in the database. The vault's enciphered private key and its protected credential are kept
+  on the filesystem, outside the database. Recovering protected data needs both halves. So, in
+  theory, someone who takes only the database (a dump, a backup, or SQL injection) or only the
+  file store cannot decrypt vaulted fields. This also means the two halves must be backed up and
+  restored together, because neither can be used without the other. Credentials are stored
+  separately, as salted hashes, and cannot be recovered.
 - **Authentication.** Login uses a JAAS login module and issues JWTs. Long-lived API tokens and
   WebAuthn passkeys are also supported. SCIM 2.0 user and group endpoints are available for
   provisioning.
@@ -124,7 +135,8 @@ AM7 uses **policy-based access control**, and the policies are built on **partic
   separation-of-duty, and approval rules use the same evaluator as basic CRUD.
 - **Decisions are explainable.** A policy response is PERMIT, DENY, PENDING, or an error, and it
   records the chain of rules and patterns that was evaluated. Turning on the policy trace
-  (`PolicyUtil.setTrace`) shows which rule, pattern, or participation decided the outcome.
+  (`PolicyUtil.setTrace`) shows which rule, pattern, or participation decided the outcome. Every
+  decision is also kept as a signed `system.audit` record that includes its policy response.
 - **Ready for authorization as a service (API pending).** The policy layer is designed for
   external callers, not just internal checks. A *policy definition* is a public description of a
   policy, including the parameters it needs. A client fills in a *policy request*, submits it for
@@ -140,7 +152,8 @@ AM7 uses **policy-based access control**, and the policies are built on **partic
 - **Generic model API.** Typed CRUD, search, pagination, and `PATCH` for any registered model
   (`/rest/model/...`), plus path-based access, schema introspection, and import/export.
 - **Identity and access.** Users, groups, roles, permissions, organizations, access requests,
-  credentials, SCIM 2.0, WebAuthn, and policy evaluation with tracing. Authorization as a service is ready in the
+  credentials, SCIM 2.0, WebAuthn, policy evaluation with tracing, and a signed audit trail of every authorization
+  decision. Authorization as a service is ready in the
   policy layer, with the REST API pending.
 - **LLM chat and memory.** Chat sessions with configurable prompt templates, long-term memory,
   vector search (pgvector embeddings), and PageIndex hierarchical document indexing. LLM servers are
