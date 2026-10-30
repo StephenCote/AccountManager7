@@ -291,24 +291,53 @@ The current backlog and known defects are tracked in
 
 One container runs nginx (TLS), Tomcat 11 with the Service7 WAR, and the built Ux752 frontend.
 `docker-compose.test.yml` also brings up its own tuned pgvector database. The step-by-step runbook
-is [`src/aiDocs/dockerDevSetup.md`](src/aiDocs/dockerDevSetup.md). In short:
+is [`src/aiDocs/dockerDevSetup.md`](src/aiDocs/dockerDevSetup.md).
+
+**Start with the wrapper script**, `am7-docker-up.bat` (Windows) or `am7-docker-up.sh`
+(Linux/macOS). It handles preparation that `docker-compose.test.yml` does not:
+
+- **Creates the database volume on a genuine first run.** The Postgres data volume
+  (`am7test_am7-test-pg`) is declared `external`, so a plain `docker compose up` on a fresh checkout
+  fails with "external volume … not found". This is deliberate: compose never silently starts an
+  empty database. The wrapper creates the volume only when the store has no `.setup.done`. If the
+  store is already configured but the volume is missing, the wrapper refuses to start, because an
+  empty database would not match the existing keystores.
+- **Stages the Olio seed corpus** into `docker-data\am7\datagen` on every run. It calls
+  `assemble-seed` with the staging directory set by `SEED_STAGING` in `src\.env`, including the
+  location grids by default. The copy is idempotent, and the step is skipped with a warning if
+  `SEED_STAGING` is unset. A fresh image ships this directory empty, and character generation
+  fails without it.
+- **Sets runtime values** that would otherwise need to be exported by hand:
+  - `CORS_ALLOWED_ORIGINS`: localhost, 127.0.0.1, the LAN IP, and the Vite dev ports.
+  - Tomcat `CATALINA_OPTS` and the Postgres tuning overrides.
+  - With `--ollama`, it points the app's embeddings at the container.
+- **Layers optional compose files** when they apply: the corporate-CA bundle
+  (`docker-compose.extra-ca.yml`, used when `volatile\extra-ca.pem` exists), the NVIDIA GPU
+  override, and the `llmproxy` env file.
+- **Warns before an embedding-provider switch** on an existing data volume. Stored vectors carry no
+  model provenance, so switching providers invalidates them.
+- **Prints the ready-to-open setup URL**, with the one-shot token filled in, for localhost and the
+  LAN.
+- **Manages the lifecycle across every profile.** `--stop` and `--start` act on all containers.
+  A bare `docker compose stop` misses the profile sidecars.
 
 ```powershell
 cd src
-docker compose -p am7test -f docker-compose.test.yml up --build -d
-# or use the wrapper: .\am7-docker-up.bat   (also accepts --no-build, --prebuilt, --llmproxy, --ollama)
+.\am7-docker-up.bat                 # build + start  (--no-build, --prebuilt, --llmproxy, --ollama, --app-only, --stop, --start)
 ```
 
-1. **Read the one-shot setup token.** The first boot writes it to
-   `src\docker-data\am7\store\.setup.token`. It is never printed, so do not look for it in
-   `up -d` output.
-2. **Run first-time setup.** Open `https://localhost:9443/#!/setup?token=<TOKEN>` and accept the
-   self-signed certificate. Choose the admin password (it applies to all three organizations). Use
-   `password` on the `am7test` stack, because the Playwright helpers expect it. You can optionally
-   create an initial user in `/Public` or `/Development` and set the media/AI server URLs here.
+With raw compose you must do these steps yourself. At minimum, run
+`docker volume create am7test_am7-test-pg` and the seed script first, then
+`docker compose -p am7test -f docker-compose.test.yml up --build -d`.
+
+1. **Open the setup URL.** The wrapper prints it. With raw compose, read the token from
+   `src\docker-data\am7\store\.setup.token`; it never appears in `up -d` output or the logs. The URL
+   is `https://localhost:9443/#!/setup?token=<TOKEN>`. Accept the self-signed certificate.
+2. **Run first-time setup.** Choose the admin password, which applies to all three organizations.
+   Use `password` on the `am7test` stack, because the Playwright helpers expect it. You can
+   optionally create an initial user in `/Public` or `/Development` and set the media/AI server URLs
+   here.
 3. **Sign in** at `https://localhost:9443`.
-4. **(Olio) Seed the corpus** before generating characters, using `assemble-seed.bat` (Windows) or
-   `assemble-seed.sh`. See runbook §2e.
 
 When you call REST through Docker, prefix the path with `/AccountManagerService7`, for example
 `https://127.0.0.1:9443/AccountManagerService7/rest/setup/state`.
