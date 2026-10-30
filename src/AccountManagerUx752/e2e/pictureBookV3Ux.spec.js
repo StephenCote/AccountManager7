@@ -8,8 +8,9 @@
  *   1b. (§6.C 109) The reader's Re-render on a CURRENT scene is an explicit re-roll: the click POSTs
  *      /scene/{id}/render?force=true and the planner re-executes the scene node (the current upstream
  *      portrait is reused), whereas the same route without force is a 409 "(N reused, 0 pinned)". A pin
- *      still wins over force: on a pinned scene the click is a 409 "(1 reused, 1 pinned)" shown verbatim in
- *      the "Scene is pinned" confirm; Cancel never calls the pin route; "Unpin and re-render" sends
+ *      still wins over force: on a pinned scene the click is the facade's 409 "Node … is pinned" (P7-5,
+ *      refused before planning) shown verbatim in the "Scene is pinned" confirm; Cancel never calls the
+ *      pin route; "Unpin and re-render" sends
  *      POST /node/{n}/pin {pinned:false} and the forced render once more.
  *   3. A charPerson edit shows the affected scenes. In the standalone character manager (reader header
  *      "Manage characters"), editing the name of the character the rendered node is bound to shows
@@ -605,7 +606,9 @@ test.describe('PictureBook V3 P1-10 — Phase 1 exit criteria through the reader
         expect(new URL(r1.url()).searchParams.get('force')).toBe('true');
         expect(r1.status(), 'forced render of a pinned scene is refused: ' + r1Text).toBe(409);
         const pinnedMsg = JSON.parse(r1Text).error;
-        expect(pinnedMsg).toMatch(/^Nothing to render: every node of this scene is current \(1 reused, 1 pinned\)$/);
+        // Since P7-5 (Scenario D) the facade refuses the pinned scene itself, before planning, with the regenerate /
+        // ChapBook page text - not the planner's "(1 reused, 1 pinned)".
+        expect(pinnedMsg).toBe('Node ' + fx.handleL + ' is pinned. Unpin it first - pinning means do not replace this artifact.');
         const dialog = page.locator('.am7-dialog');
         await expect(dialog).toBeVisible({ timeout: 10000 });
         await expect(dialog.locator('.am7-dialog-title')).toHaveText('Scene is pinned');

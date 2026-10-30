@@ -231,6 +231,17 @@ public class PictureBookUtil {
     // marks), lifted from the reduce step's physical block. Folded into the record-derived narration so
     // the manuscript's own words for a character's skin reach the prompt — never a substituted race.
     public static final String ATTR_APPEARANCE_NOTES = "pbAppearanceNotes";
+    // §28.1 Stage 2 (P7-2): the three PB1 entry points PbRenderPath.requirePb1Entry refuses under the
+    // picturebook v3 default, and the V3 route each refusal names. Labels are the REST paths the Ux and the
+    // e2e specs call, so the 409 reads back to the caller's own request.
+    public static final String PB1_ENTRY_GENERATE = "POST /olio/picture-book/scene/{sceneObjectId}/generate";
+    public static final String PB1_REPLACEMENT_GENERATE =
+            "POST /olio/picture-book/{bookObjectId}/scene/{sceneObjectId}/render-plan (one scene) or /{bookObjectId}/render-all";
+    public static final String PB1_ENTRY_PREPARE = "POST /olio/picture-book/{bookObjectId}/prepare-images";
+    public static final String PB1_REPLACEMENT_PREPARE =
+            "POST /olio/picture-book/{bookObjectId}/render-all (V3 resolves each scene's prompts inside its render plan)";
+    public static final String PB1_ENTRY_SETTINGS = "PUT /olio/picture-book/{bookObjectId}/settings";
+    public static final String PB1_REPLACEMENT_SETTINGS = "PUT /olio/picture-book/{bookObjectId}/style (sdConfig)";
     // Prepended to ATTR_DESCRIPTION when it drives a portrait render, matching
     // NarrativeUtil.getSDPrompt's own opening tokens so an Attr2-based portrait keeps render quality.
     private static final String PORTRAIT_QUALITY_PREAMBLE =
@@ -2102,6 +2113,11 @@ public class PictureBookUtil {
         long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
         BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
         if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        /// §28.1 Stage 2 (P7-2): the PB1 settings write refuses under the picturebook v3 default, after the
+        /// caller-scoped lookup above (an unreadable or missing book stays a 404). The V3 book-tier setter is
+        /// PUT /{book}/style. A CHAPBOOK oid resolved here is refused too (ChapBook uses chap-book/.../settings;
+        /// ledger §6.C 214 c, 215 d). GET /{book}/settings stays readable.
+        PbRenderPath.requirePb1Entry(PB1_ENTRY_SETTINGS, PB1_REPLACEMENT_SETTINGS);
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
         long bookGroupId = bookGroup.get(FieldNames.FIELD_ID);
         if (sdConfig != null) {
@@ -9748,13 +9764,12 @@ public class PictureBookUtil {
         String bookGroupPath = sceneGroupPath.endsWith("/Scenes")
                 ? sceneGroupPath.substring(0, sceneGroupPath.length() - "/Scenes".length()) : null;
 
-        // §28.1 Stage 1 Coexist (P5-3): this PB1 entry is not gated by the render-path switch - the UI hides
-        // it under v3 but a direct REST caller still lands here. Log the fact, never refuse: the server-side
-        // refusal is Stage 2 (Phase 7). The ~/Chat fallback answers to chat.renderPath and is not reported.
-        if (bookGroupPath != null && PbRenderPath.V3.equals(PbRenderPath.pictureBook())) {
-            logger.warn("PB1 generateSceneImage for scene " + sceneObjectId + " in " + bookGroupPath + " while "
-                    + PbRenderPath.PICTUREBOOK_CONFIG_KEY + "=" + PbRenderPath.V3
-                    + ": replaced by POST .../render-plan (RENDER_PLAN); refused at design §28.1 Stage 2 (Phase 7), removed Stage 4 (Phase 10)");
+        // §28.1 Stage 2 (P7-2): this PB1 entry refuses under the picturebook v3 default (409 "replaced by V3"),
+        // AFTER authorization (a stranger still gets 403) and before any SD/LLM work. The ~/Chat single-image
+        // fallback answers to chat.renderPath, not this switch, and is never gated here (ledger §6.C 215 c).
+        // picturebook.renderPath=v1 (rollback) admits it; removal is Stage 4 (Phase 10).
+        if (bookGroupPath != null) {
+            PbRenderPath.requirePb1Entry(PB1_ENTRY_GENERATE, PB1_REPLACEMENT_GENERATE);
         }
 
         // Resolve the ONE common olio.sd.config that drives this scene's portraits, landscape, and
@@ -10934,6 +10949,13 @@ public class PictureBookUtil {
             /// LLM/prompt failures, and swallowing an authorization denial there would turn "you
             /// may not act on this book" into a silent 200 with nothing done. A 403 must abort.
             authorizeSceneRecord(user, scene, SceneAccessType.WRITE);
+            /// §28.1 Stage 2 (P7-2): same placement and the same ~/Chat exemption as generateSceneImage -
+            /// after the scene's authorization, outside the swallowing catch, before any LLM call. The first
+            /// authorized book scene aborts the batch with the 409; a stranger still gets the 403 above.
+            String gatedGroupPath = scene.get(FieldNames.FIELD_GROUP_PATH);
+            if (gatedGroupPath != null && gatedGroupPath.endsWith("/Scenes")) {
+                PbRenderPath.requirePb1Entry(PB1_ENTRY_PREPARE, PB1_REPLACEMENT_PREPARE);
+            }
             try {
                 String sceneText = scene.get("text");
                 Map<String, Object> sceneData = sceneText != null ? parseLlmJsonObject(sceneText) : new LinkedHashMap<>();

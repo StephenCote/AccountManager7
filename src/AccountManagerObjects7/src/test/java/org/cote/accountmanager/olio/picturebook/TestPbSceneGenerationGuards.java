@@ -52,6 +52,8 @@ import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -84,6 +86,20 @@ public class TestPbSceneGenerationGuards extends BaseTest {
 
 	/// The literal {@code PictureBookUtil.BLANK_LANDSCAPE_FALLBACK} (private there).
 	private static final String BLANK_LANDSCAPE_FALLBACK = "A detailed environment";
+
+	/// P7-2: these guards drive the PB1 entries generateSceneImage / prepareSceneImagePrompts, which
+	/// refuse with 409 for book scenes under the default picturebook.renderPath=v3 (design §28.1
+	/// Stage 2). Pin the rollback value for this product only (ChapBook stays v3); BaseTest re-pins
+	/// v3 on every @Before and restorePb1Pin restores it after each case.
+	@Before
+	public void pinPb1Rollback() {
+		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
+	}
+
+	@After
+	public void restorePb1Pin() {
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
+	}
 
 	// ─────────────────────────────── P0-1 ───────────────────────────────
 

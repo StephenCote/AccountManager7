@@ -23,7 +23,7 @@
  * every assertion runs as e2etest_shared.
  */
 import { test, expect } from '@playwright/test';
-import { ensureSharedTestUser, ensureChatConfig, ensurePath } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig, ensurePath, pb1Retired, PB1_RETIRED_SKIP } from './helpers/api.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -169,6 +169,7 @@ test.describe.serial('PictureBook — scene text persists from extraction to rea
     test('/pages carries the blurb and the PB2 reader displays it (LLM+SD, gated)', async ({ page, request }) => {
         test.skip(!RENDER_ENABLED, 'PB_SD_TESTS!=1 — skips LLM/SD render');
         test.setTimeout(900000);
+        test.skip(await pb1Retired(request), PB1_RETIRED_SKIP); // P7-2: PB1 generate is 409 under v3
         await apiLoginShared(request);
         expect(pb2BookObjectId, 'beforeAll must have created the book').toBeTruthy();
         expect(metaScenes.length, 'beforeAll must have persisted scenes').toBeGreaterThan(0);

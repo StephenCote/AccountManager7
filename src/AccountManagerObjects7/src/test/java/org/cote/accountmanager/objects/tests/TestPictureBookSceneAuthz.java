@@ -254,6 +254,11 @@ public class TestPictureBookSceneAuthz extends BaseTest {
 	 * not a 403.
 	 *
 	 * <p>The permit path of these two is not exercised here — it needs a live SD backend.
+	 *
+	 * <p>Deliberately NOT pinned to {@code picturebook.renderPath=v1}: under the default v3 both entries
+	 * are PB1 entry points that refuse with 409 "replaced by V3" (P7-2, design §28.1 Stage 2), and that
+	 * gate must sit AFTER authorization (ledger §6.C 215 a). A stranger therefore still gets 403 here;
+	 * a 409 would mean the gate moved ahead of the authorization check.
 	 */
 	@Test
 	public void TestGenerationEntryPointsDenyBeforeAnyGeneration() throws Exception {

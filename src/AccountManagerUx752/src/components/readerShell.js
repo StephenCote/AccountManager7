@@ -30,6 +30,8 @@
  *   backTitle        string
  *   actionsLeft(nav)  → vnode|array               header buttons between the Next-arrow and Export
  *   actionsRight(nav) → vnode|array               header buttons between Export and Fullscreen
+ *   renderBanner(nav) → vnode|null                optional notice between the header and the body;
+ *                                                 not rendered in fullscreen
  *   enableExport     bool=true
  *   enableFullscreen bool=true
  *   containerClass   string='p-4 flex flex-col h-full'
@@ -332,8 +334,13 @@ export const ReaderShell = function () {
                 ]);
             }
 
+            // P7-3: an optional banner between the header and the body, hidden in fullscreen so the
+            // reading view stays clean; the body (incl. renderEmpty) is unchanged by it.
+            let banner = (!fs && typeof a.renderBanner === 'function') ? a.renderBanner(nav) : null;
+
             return m('div', { class: containerClass }, [
                 renderHeader(a, nav, exporting, doExport),
+                banner,
                 body
             ]);
         }

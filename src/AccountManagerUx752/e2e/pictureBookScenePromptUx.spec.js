@@ -48,7 +48,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ensureSharedTestUser, ensureChatConfig, ensurePath } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig, ensurePath, pb1Retired, PB1_RETIRED_SKIP } from './helpers/api.js';
 import { screenshot } from './helpers/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -348,6 +348,9 @@ test.describe('PictureBook wizard — per-scene prompt shown and overridable', (
 
         // ── Provision: shared user, the spec's own route-resolved chatConfig, and a fresh book ──
         const creds = await ensureSharedTestUser(request);
+        // P7-2: provisionBook drives PUT /{book}/settings + POST /{book}/prepare-images and the wizard's
+        // Generate drives POST /scene/{id}/generate - all three PB1 entries, 409 under v3.
+        test.skip(await pb1Retired(request), PB1_RETIRED_SKIP);
         const chatConfigName = await ensureChatConfig(request, null);   // prints "[e2e-llm] route=…"
         expect(chatConfigName, 'chatConfig provisioned via resolveChatRoute()').toBeTruthy();
         console.log('[setup] shared user =', creds.testUserName, '| chatConfig =', chatConfigName);

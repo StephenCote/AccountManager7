@@ -20,6 +20,39 @@ export async function getBookInfo(bookGroupObjectId) {
 }
 
 /**
+ * P7-3: resolve WHATEVER id the wizard / the edit pencils / the PB1 viewer route were handed to the
+ * olio.pb.book objectId the V3 reader route (/picture-book/v2/{oid}) needs, or null. The callers accept
+ * either id the server's PB1 bridge accepts (resolveBookGroupEither), so three lookups, cheapest first:
+ *   1. the id IS an olio.pb.book (list / series / reader pencils): GET /rest/model/olio.pb.book/{id};
+ *   2. the id is a PB1 book group (viewer pencil, /picture-book/:groupOid): GET /{id}/pb2 → pb2BookObjectId;
+ *   3. a shared chapter the by-id read cannot see for this caller but the /books DTO list still carries
+ *      (the same fallback loadViewer uses for the name).
+ * null means "no V3 record": a source data.data / data.note, a pure PB1 book, or an unknown id. Every
+ * miss is a 404 or an empty list; a failed step falls through to the next, never throws.
+ */
+export async function resolvePb2BookObjectId(id) {
+    if (!id || id === 'undefined') return null;
+    try {
+        let resp = await fetch(applicationPath + '/rest/model/olio.pb.book/' + encodeURIComponent(id), { credentials: 'include' });
+        if (resp.ok) {
+            let rec = null;
+            try { rec = await resp.json(); } catch (_) { rec = null; }
+            return (rec && rec.objectId) || id;
+        }
+    } catch (_) { /* fall through to the group bridge */ }
+    try {
+        let info = await getBookInfo(id);
+        if (info && info.pb2BookObjectId) return info.pb2BookObjectId;
+    } catch (_) { /* fall through to the list */ }
+    try {
+        let all = await listPb2Books();
+        let known = (Array.isArray(all) ? all : []).find(function (b) { return b && b.objectId === id; });
+        if (known) return known.objectId;
+    } catch (_) { /* no V3 record reachable */ }
+    return null;
+}
+
+/**
  * Classify a 404 body from GET /{id}/workflow. The facade returns two DIFFERENT 404s that the
  * canvas must render differently (PbServiceFacade.requireBook / requireWorkflow):
  *   - {"error":"Book not found"}  → the id is not an olio.pb.book at all (a PB1 group oid, or
@@ -370,13 +403,17 @@ export async function unpinNode(pb2BookObjectId, nodeObjectId) {
 }
 
 /**
- * Pure: does a render-submit failure mean "every target is pinned"? The planner's 409 reads
- * "Nothing to render: every node of scene 3 is current (0 reused, 1 pinned)". Only that shape with a
- * non-zero pinned count qualifies — an in-flight-node 409 or a 429 does not.
+ * Pure: does a render-submit failure mean "the target is pinned"? Two 409 shapes qualify: the facade's
+ * own refusal of a pinned scene node, "Node scene-3-image is pinned. Unpin it first - ..." (the same text
+ * regenerate / ChapBook page render give; since P7-5 the per-scene render gives it too, so a pinned
+ * scene whose character drifted is refused instead of re-rendering only the portrait), and the planner's
+ * "Nothing to render: every node of scene 3 is current (0 reused, 1 pinned)" with a non-zero pinned
+ * count (render-all, or a pinned terminal with nothing else to do). An in-flight-node 409 or a 429 does not.
  */
 export function isPinnedRefusal(err) {
     if (!err || err.status !== 409) return false;
     let text = String(err.message || '') + ' ' + String(err.body || '');
+    if (/\bis pinned\b/i.test(text)) return true;
     let mt = /\((\d+) reused, (\d+) pinned\)/.exec(text);
     return !!(mt && parseInt(mt[2], 10) > 0);
 }
@@ -391,6 +428,35 @@ export async function pinNode(pb2BookObjectId, nodeObjectId, pinned) {
     });
     if (!resp.ok) throw new Error('pinNode failed: ' + resp.status);
     return resp.json();
+}
+
+/**
+ * P7-4: import a pre-V3 (PB1) book into V3 — POST /migrate-v1 {groupObjectId}. PB1 records are never
+ * modified; a new olio.pb.book is created from the PB1 meta: the scenes' text and rendered-image
+ * references, one SCENE node per scene (DONE_UNVERIFIED) and every PB1 landscape as an unapproved
+ * landscape artifact (design §28 step 3). Portraits, composite renders and bindings are not carried.
+ * Returns {bookObjectId, slug, scenesImported, scenesFailed, landscapesImported, locationPass, warnings}.
+ * Non-2xx throws via throwNon2xx: 404 = no PB1 meta for the group, 409 = a V3 book with that slug
+ * already exists (delete or rename it first), 400 = unparseable meta.
+ */
+export async function migrateV1Book(groupObjectId) {
+    return wfFetch('/migrate-v1', { method: 'POST', body: { groupObjectId: groupObjectId } }, 'migrateV1Book failed');
+}
+
+/**
+ * Pure: normalize a /migrate-v1 result for display — counts as numbers, warnings as a string array
+ * (the server serializes NON_EMPTY, so an empty list and a zero count both vanish from the wire).
+ */
+export function normalizeMigration(r) {
+    r = (r && typeof r === 'object') ? r : {};
+    return {
+        bookObjectId: r.bookObjectId || null,
+        slug: r.slug || null,
+        scenesImported: Number(r.scenesImported) || 0,
+        scenesFailed: Number(r.scenesFailed) || 0,
+        landscapesImported: Number(r.landscapesImported) || 0,
+        warnings: (Array.isArray(r.warnings) ? r.warnings : []).map(function (w) { return String(w); })
+    };
 }
 
 /** Enrol users in the book (Writer or Admin tier). Body: {userNames:[], asAdmin?:false} */

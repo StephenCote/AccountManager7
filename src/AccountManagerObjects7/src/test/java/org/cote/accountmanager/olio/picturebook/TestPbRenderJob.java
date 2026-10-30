@@ -1291,6 +1291,84 @@ public class TestPbRenderJob extends BaseTest {
 		logger.info("PF-9 case11 PNG written: " + png.getAbsolutePath() + " (" + bytes.length + " bytes)");
 	}
 
+	/**
+	 * P7-5 Scenario D (PictureBookV3Implementation §6.C 219 o): a pinned scene whose upstream portrait drifted.
+	 * The planner skips the pinned terminal but still executes the STALE producer, so {@code submit} alone would
+	 * accept the request (202, portrait re-rendered, scene left pinned and stale) - which is what the Manage
+	 * Characters "Regenerate" hit on Docker. {@link PbServiceFacade#requestSceneRender} must refuse the pinned
+	 * scene itself, forced or not, with the same 409 {@code requestRegenerate} gives, before anything is planned:
+	 * no run row, no in-flight claim, the producer untouched. The precondition asserts the planner's own view
+	 * (execute = [producer], 1 pinned) so the refusal is provably the facade's. Offline - no SD call is made.
+	 */
+	@Test(timeout = LOCAL_TIMEOUT_MS)
+	public void case12_facadeRefusesPinnedSceneWithStaleUpstreamBeforePlanning() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		String gp = PbBookUtil.workflowGroupPath(SLUG);
+		int sceneIndex = 100000 + Math.abs(UUID.randomUUID().hashCode() % 800000);
+		BaseRecord scene = PbBookUtil.createScene(u, bk, sceneIndex, "p75-c12 scene", PbBookUtil.bookGroupPath(SLUG));
+		assertNotNull("scene " + sceneIndex, scene);
+		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord terminal = plainNode(u, wf, "p75-c12-S", PbNodeTypeEnumType.COMPOSITE, 0);
+		BaseRecord producer = plainNode(u, wf, "p75-c12-P", PbNodeTypeEnumType.PORTRAIT, 1);
+		assertNotNull(PbGraphUtil.addBinding(u, wf, terminal, PbPipelineUtil.ROLE_PORTRAIT, 0, producer, null, gp));
+		BaseRecord link = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SCENE_NODE);
+		link.set(OlioFieldNames.FIELD_PB_SCENE_NODE, terminal);
+		assertNotNull("scene.sceneNode link", ioContext.getAccessPoint().update(u, link));
+		/// Scenario D's shape: the scene was approved (pinned), then its character changed (producer STALE,
+		/// propagation marked the scene STALE too).
+		assertTrue(PbGraphUtil.persistStatus(u, producer, PbNodeStatusEnumType.STALE));
+		assertTrue(PbGraphUtil.persistStatus(u, terminal, PbNodeStatusEnumType.STALE));
+		assertTrue(PbGraphUtil.setPinned(u, terminal, true));
+		PbStaleUtil.clear();
+
+		PbRenderJobUtil.Plan plan = PbRenderJobUtil.plan(u, bk, wf, Collections.singletonList(idOf(terminal)), true);
+		logger.info("P7-5 case12 planner view execute=" + plan.handles() + " pinned=" + plan.pinned + " reused=" + plan.reused);
+		assertEquals("precondition: the planner alone would execute the stale producer", Arrays.asList(handleOf(producer)), plan.handles());
+		assertEquals("precondition: the planner only counts the pinned terminal", 1, plan.pinned);
+
+		long newestBefore = newestRunId(u, wf);
+		long inflightBefore = PbNodeInflight.size();
+		String bookOid = bk.get(FieldNames.FIELD_OBJECT_ID);
+		String expected = "Node " + handleOf(terminal) + " is pinned. Unpin it first - pinning means do not replace this artifact.";
+		for(boolean force : new boolean[] { true, false }) {
+			try {
+				PbServiceFacade.requestSceneRender(u, bookOid, sceneOid, SDAPIEnumType.SWARM.name(), swarmServer(), force);
+				fail("a render of a pinned scene must be refused (force=" + force + ")");
+			}
+			catch(PictureBookException e) {
+				logger.info("P7-5 case12 refusal force=" + force + ": " + e.getStatus() + " " + e.getMessage());
+				assertEquals(409, e.getStatus());
+				assertEquals(expected, e.getMessage());
+			}
+		}
+		assertEquals("no run row is written", newestBefore, newestRunId(u, wf));
+		assertEquals("no claim is left behind", inflightBefore, PbNodeInflight.size());
+		assertNull(PbNodeInflight.runOf(idOf(producer)));
+		BaseRecord freshP = PbGraphUtil.readNode(u, producer.get(FieldNames.FIELD_OBJECT_ID), orgOf(u));
+		assertEquals("the stale producer was not rendered", PbNodeStatusEnumType.STALE.name(), status(freshP, OlioFieldNames.FIELD_PB_NODE_STATUS));
+		assertNull("no artifact for the producer", PbArtifactUtil.findSelected(u, freshP, PbPipelineUtil.ROLE_PORTRAIT));
+		BaseRecord freshS = PbGraphUtil.readNode(u, terminal.get(FieldNames.FIELD_OBJECT_ID), orgOf(u));
+		assertTrue("the scene node stays pinned", Boolean.TRUE.equals(freshS.get(OlioFieldNames.FIELD_PB_PINNED)));
+
+		/// Unpinned, the same request reaches the planner: the SD-less seam is not available through the facade,
+		/// so prove the hand-off by the planner's own 500 "SD server not configured" when no server is given -
+		/// which is after the pin gate and before any run row.
+		assertTrue(PbGraphUtil.setPinned(u, terminal, false));
+		PbStaleUtil.clear();
+		try {
+			PbServiceFacade.requestSceneRender(u, bookOid, sceneOid, SDAPIEnumType.SWARM.name(), null, true);
+			fail("an unpinned scene with no SD server reaches the planner's 500");
+		}
+		catch(PictureBookException e) {
+			logger.info("P7-5 case12 unpinned hand-off: " + e.getStatus() + " " + e.getMessage());
+			assertEquals(500, e.getStatus());
+			assertEquals("SD server not configured", e.getMessage());
+		}
+		assertEquals("still no run row", newestBefore, newestRunId(u, wf));
+	}
+
 	// ─────────────────────────────── fixture ───────────────────────────────
 
 	private BaseRecord user() {

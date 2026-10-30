@@ -1,6 +1,8 @@
 # PictureBook V3 — Implementation State
 
-**As of:** 2026-10-29 local · **Phase 6 (Variants) IN PROGRESS** on Stephen's "implement this" (plan + architect verdict, defaults
+**As of:** 2026-10-29 ~20:10 local · **Phase 7 (PictureBook goes V3) IN PROGRESS** on Stephen's "keep going with implementation until you
+are stopped or have a question" — plan §14, rulings §6.C 214+, nothing DONE (159 b); the P6 report below stands as handed back (its
+"Yours" (1)–(8) at their defaults, 213 e included). **Phase 6 (Variants)** ran on Stephen's "implement this" (plan + architect verdict, defaults
 standing): P6-1 schema, P6-3a selector, P6-2 variant loop, P6-3b retention util + routes and P6-4 Ux752 strip + dialog are built and
 reported (§13.6, §6.C 212) — `am7db` 62 / 0 / 0 / 1, Service7 H2 23 / 0 / 0 / 0, Ux752 `VERIFY_OK`, Playwright on Docker 3 / 3;
 Scenario F ran live on `.39` once it came back (`TestPbVariantsLive` 1 / 0 / 0 / 0, `p65-live.log`; §13.6 "Scenario F"); the
@@ -8,8 +10,7 @@ verifier returned CHANGES-NEEDED (1 HIGH, 1 MEDIUM, 4 LOW) and all six are folde
 "Post-verifier": `am7db` 27 / 0 / 0 / 0 + the stages regression, Service7 H2 24 / 0 / 0 / 0, Vitest 25, `VERIFY_OK`); the new
 retention outcome is `detached` (a shared `data.data` row: this artifact's reference cleared, bytes kept); Yours (7), the Docker
 Playwright re-run, ran 2026-10-29 on the post-verifier WAR — 26 / 2 skipped / 1 failed, the red being inspector test 4's reader-image
-step, a latent P2-5 / P2-9 gap first executed today, not a P6 regression (§6.C 213 e; §13.6 "Yours (7)"). **Next: STOP for the
-P6 hand-back.** Phase 5
+step, a latent P2-5 / P2-9 gap first executed today, not a P6 regression (§6.C 213 e; §13.6 "Yours (7)"). Phase 5
 is reported through P5-3 (§13.5, §6.C 211; its "Yours" below is still Stephen's); every default through 209 accepted 2026-10-28
 (§6.C 210); nothing is DONE by me (archive §6.C 159 b). Phases 0–4 are closed (Phase 3 exit 2026-10-18, §6.C 182; Phase 4 exit 2026-10-26, §6.C 207); their history, the
 closed Phase 5 slices (§3 P5-2 probes, §4.11–§4.13, §13.1–§13.4) and §6.C entries 2–206 / 208–209 are in
@@ -47,7 +48,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | 4 — Composition + wardrobe | **DONE 2026-10-26** — Stephen confirmed the Phase 4 exit (§6.C 207, "will catch any issues in next") — full row archive §1 | archive §12 |
 | 5 — Multi-character strategies (spike first) | **IN PROGRESS** — P5-0 spike (archive §13.1, §6.C 204), P5-1 graph builder (archive §13.2 / §4.12, §6.C 205), P5-2 executor wiring (archive §13.4 / §4.13, §6.C 208–209) and P5-3 implementation cleanup (§13.5, §6.C 211) run and reported; 2026-10-25 went to the Part A doc consolidation (archive §13.3, §6.C 206); every default through 209 accepted 2026-10-28 (210); nothing DONE (159 b); **next: STOP for the P5-3 hand-back** — former row archive §1 | `TestP50SwarmSpike` 6 (gated); live on `.39`: `TestP51GraphLive` 5 / 5, `TestP52SequentialInpaintLive` 5 / 5 (`p52-t11d.log:2873`; P5-3 re-run 5 / 0 / 0 / 0, `p53-t11.log`), `TestPbRenderPlanExecutor` 8 / 8; offline `olio.illustration.*Test*` 187 / 187 (`p51-unit5.log`), P5-2 offline set 133 / 133 (`p52-run-final3.log`); P5-3 offline 28 + batches 49 + 108 + Service7 36, all 0 fail (`p53-offline2.log`, `p53-batch1.log`, `p53-batch2.log`, `p53-s7-tests.log`); 12-class regression set 116 / 0 / 0 / 1 (`p53-regression.log`; P5-2 116 / 0 / 0 / 1) |
 | 6 — Variants | **IN PROGRESS** 2026-10-29 — P6-1 schema, P6-3a selector, P6-2 variant loop, P6-3b retention util + routes, P6-4 Ux752 strip + dialog built and reported (§13.6, §6.C 212); Scenario F run live on `.39` (§13.6); verifier CHANGES-NEEDED → six findings folded in (212 q–w; `detached` retention outcome); nothing DONE (159 b) | `am7db` one JVM **62 / 0 / 0 / 1** (`p6-regress1.log:154677`; the skip was the `.39` outage) after one red run of mine (`p62-regress1.log`, concurrent recompile) and one red sweep (`p63b-sweep.log`, fixture grants); **Scenario F live `TestPbVariantsLive` 1 / 0 / 0 / 0** (`p65-live.log:496`, STANDARD 2 + FINAL 4 variants on `.39`, approve one, retention K = 1 archives 3); post-verifier `am7db` **27 / 0 / 0 / 0** (`p6f-sweep.log:1230`) + `TestPbRenderStagesOffline` (§13.6 "Post-verifier"); Service7 H2 `TestPictureBookRestContract` **24 / 0 / 0 / 0** (`p6f-contract.log:3322`); Ux752 Vitest 25 in the new file, quick gate `VERIFY_OK` (`p6f-ux752-gate.log:7`); Playwright on Docker 3 / 3 after a 1 / 2 first run; a 14-test adjacent-spec run is red on a host suspend (`p6-pw-regress.log`, 212 s) and not re-run |
-| 7 — PictureBook goes V3 | TODO | — |
+| 7 — PictureBook goes V3 | **IN PROGRESS** 2026-10-29 ~20:10 on Stephen's "keep going with implementation until you are stopped or have a question" — plan §14 (P7-1 switch → P7-2 Stage 2 refusals → P7-3 wizard hand-off / open-in-V3 → P7-4 pre-V3 import → P7-5 Scenarios A–G), rulings §6.C 214+; nothing DONE (159 b) | — |
 | 8 — Visual QA | TODO | — |
 | 9 — Cover & book art | TODO | — |
 | 10 — Removal (PB1, old ChapBook path, Kontext Remove) | TODO | — |
@@ -300,6 +301,161 @@ Every entry is a ⚠ MY JUDGMENT call under auto mode with its default; Stephen 
      page / node detail. Default: neither until you say; test stays red and recorded.
      (f) The old red `p6-pw-regress.log` set was inspector + `pictureBookWorldSwitch` + `renderPath`, not the workflow spec; 212 s named
      inspector + workflow. This run is the first that executes the workflow `[SD]` cases (28, 29) — both green.
+214. ⚠ **2026-10-29 ~20:10 (Phase 7 start — on Stephen's "keep going with implementation until you are stopped or have a question";
+     plan §14).** Nothing DONE (159 b).
+     (a) ✓ Phase 7 is the ledger's and design §30's next row; 213 e was asked and not answered → its default (neither) stands and
+     P7-5's pass criteria avoid the reader-page image. The P6 "Yours" (1)–(8) stay at their defaults.
+     (b) ⚠ Task order P7-1 → P7-5 as §14; the plan is mine (inventory read-only this evening) with the architect asked to review it in
+     parallel with P7-1, which is mechanical under the P2-6 precedent (165 g / h: per-product defaults, every surface together, no flag).
+     (c) ⚠ `PUT /{book}/settings` is refused under v3 (it is the "PB1 settings write" of design :1842: it rewrites `.pictureBookMeta`;
+     its book-tier side effect has a V3 setter, `PUT /{book}/style` `sdConfig`), `GET` stays readable. Default; say if the dual write
+     should stay for V3 books instead.
+     (d) ⚠ Refusals are product-level (`PbRenderPath.pictureBook()`), not `isV3(book)`: `/scene/{id}/generate` and `/{book}/prepare-images`
+     carry no `olio.pb.book`; `keyFor(book)` would fall to the picturebook key anyway. Default.
+     (e) ⚠ Only the three named entry points refuse. Scene text / status / blurb / character writes stay — they are V3 data too, and the
+     design's "…" is not read as a licence to retire more. Default; the list is Yours to extend.
+     (f) ⚠ The six PB1 e2e specs that drive the retired routes directly are gated on the live render path, not deleted or rewritten: they
+     remain the rollback (v1) proof and skip with the Stage 2 reason under v3. Their skips are reported as skips, never as passes.
+215. ⚠ **2026-10-29 ~21:05 (architect review of §14: CHANGES NEEDED to the plan text, design and P7-1 diff sound; folded in before P7-2).**
+     (a) ✓ H1 accepted — a product gate sits AFTER authorization and existence checks, never before (the `:9711` invariant, `requireV3`
+     after `requireBook`, `requireEnabledCompositeMode` at `:9876`). So: `generateSceneImage` gates in the 4-arg body at the P5-3 WARN site
+     (`:9751-9758`, after `authorizeSceneAccess`), not the 5-arg wrapper; `prepareSceneImagePrompts` gates per scene right after
+     `authorizeSceneRecord` (`:10936`) and outside the swallowing try, so a denied caller still gets 403 and an authorized one 409 on the
+     first book scene; `setBookSdConfig` gates after `resolveBookGroupEither`'s 404 (`:2104`). `TestPictureBookSceneAuthz:272-282` (403 for
+     userB) stays green by construction. Recorded as a rule in `.claude/rules/architecture.md` ("gates after authorization").
+     (b) ✓ H2 accepted — `BaseTest` re-pins v3 on every `@Before`, so every in-suite JUnit that drives the three entries meets the refusal:
+     `TestPictureBookWorkflow` (:217, :425, :441, :677, :788), `TestPbBookSettingsResolveEither` (:108-276), `TestPictureBookSceneAuthz`
+     (:272-282), `TestPbSceneGenerationGuards` (:114-538, 4-arg seam — gated by (a)), `TestPbSeriesChapterScenesResolve:184`; pom-excluded
+     but runnable: `TestPictureBookFull` (15), `TestPictureBookCustom` (5), `TestPictureBookUtilE2E` (:627, :706). Each pins v1 around the
+     PB1 call and restores (P2-6 precedent); no skip, no delete. `TestChapBook*`'s hits are `ChapBookUtil.setBookSdConfig` (not gated, (d)).
+     Ux Vitest that asserts PB1 wizard wiring (`pictureBookWiring.test.js:73-158`, `pictureBook.test.js:13`, `pictureBookExtractState.test.js:1228`)
+     is P7-3's, where the wiring changes.
+     (c) ⚠ M1 — the `~/Chat` single-image fallback (`bookGroupPath == null`) stays exempt from the PB1 gate: it answers to `chat.renderPath`
+     (default v1), exactly as the P5-3 WARN already treats it. Default.
+     (d) ⚠ M2 / L3 — `PbBookUtil.setBookSdConfig` (ChapBook's `chap-book/{book}/settings` setter, which also patches `olio.pb.book.sdConfig`)
+     is out of scope and not gated; `PUT picture-book/{chapbookOid}/settings` (reachable via `resolveBookGroupEither`) IS refused
+     product-level — no Ux caller. `compositeSdConfig` has no style-tier equivalent (only the deprecated COMPOSITE node). Defaults.
+     (e) ✓ L1 / L2 — inventory adds `docker/web.xml.template:81-82` (passthrough) and `docker-compose.test.yml:288`; `PbRenderPath.java:28`
+     "checked only at facade entry" corrected now; `PictureBookService` :718-721 (and the two sibling javadocs) corrected in P7-2.
+     (f) ✓ P7-1 Vitest caught a miss in my diff: `featureConfig.js:41` normalised an unrecognised picturebook value to `v1`; now `v3`
+     (mirrors the chapbook line and the server's "unrecognised = product default"). 1 red → fixed → 1470 / 1470 (§14.1).
+216. ⚠ **2026-10-29 ~22:20 (P7-2 close-out — the six-spec gate, the security review's hardening notes; results §14.2).** Nothing DONE (159 b).
+     (a) ✓ 214 f realised: the PB1 specs are gated by `pb1Retired(request, opts)` / `PB1_RETIRED_SKIP` (`e2e/helpers/api.js`, beside
+     `getOrgFeatures`; reads `GET /rest/config/render-path` as the test user and prints `[e2e-render-path] {…} -> PB1 entry points retired;
+     skipping`) placed before the first PB1 call: `pictureBook.spec.js:246` (Steps 2-5), `pictureBookPagesAfterRender.spec.js:197 / :215 / :254`,
+     `pictureBookSceneText.spec.js:169`, `pictureBookScenePromptUx.spec.js:324` (its `provisionBook` drives settings + prepare-images),
+     `pictureBookWorkflowOverhaul.spec.js:186` (CORE + W2; W5 not gated), `pictureBookLive.spec.js:406` (B.4, after its three env skips; CRLF
+     kept, `tr -cd '\r' | wc -c` = 1892 = line count). Load-safe cases in the same files keep running. `pictureBookLive` lists only under
+     `--project=chromium-vite` (`playwright.config.js:36-40` `VITE_SOURCE_SPECS`) — run it with `PLAYWRIGHT_VITE_URL` at a Vite that proxies the stack.
+     (b) ⚠ `TestPictureBookSceneAuthz` is deliberately NOT pinned to v1 (javadoc :257-261): its stranger 403 at :272-282 is the live proof of
+     215 a's ordering — a 409 there would mean the gate had moved ahead of authorization. Default.
+     (c) ⚠ `prepareSceneImagePrompts` keeps its pre-existing warn-and-skip for an id the caller cannot read; the gate fires on the first readable
+     + updatable book scene, so a mixed list answers 403 / 409 by list order — disclosing only what the caller can already read. Default.
+     (d) ⚠ Security-review hardening 1 (Yours): `setBookSdConfig` never checked `canUpdate` on the book group — under v1 a Read-only grantee gets
+     200 with every write swallowed (`persistBookSdConfig` :2043, `saveMeta` :1984, `persistBookSdConfigFk` :2142 all catch); under v3 that
+     reader now gets the 409, i.e. this gate sits after read-level, not write-level, authorization (no new disclosure — `GET /{book}/settings`
+     already answers them 200). Not changed in P7-2: pre-existing, the route is retired, and a `canUpdate` → 403 before :2120 changes the
+     rollback path too. Default: leave; say if you want the 403 added (one line + a case13 assertion).
+     (e) ⚠ Hardening 2 (Yours): `POST /{book}/prepare-images` authorizes per scene and ignores `bookObjectId` (documented,
+     `PictureBookService.java:785-787`), so a scene list spanning books is accepted; and the `~/Chat` exemption is a `groupPath` suffix test
+     (`endsWith("/Scenes")`, `PictureBookUtil:9761-9765`) rather than the resolved group name `resolveSceneBookGroup` uses — both derive from
+     `groupId`, so they cannot disagree today; a null `groupPath` would exempt via the `"~/Chat"` default. Pre-existing; not changed. Defaults.
+     (f) ✓ Working-tree edits that are not mine and untouched: `Console7/tmp.bat`, `vectorEnv.bat`, `Objects7/media/speaker_0.mp3` (deleted),
+     `Ux752/test-results/p44-*.png` — modified before this session; the reviewer flags `tmp.bat`'s dev credentials. Check before any commit
+     (I commit nothing).
+217. ⚠ **2026-10-29 ~23:30 (P7-3 close-out — the wizard hands off to the workspace; results §14.3).** Nothing DONE (159 b).
+     (a) ⚠ The wizard and the PB1 viewer read `GET /rest/config/render-path` once per open (`pictureBookRenderPath()`); a failed / missing read
+     counts as v3 (mirrors `featureConfig.js` after 215 f, "unrecognised = product default"), so a transport blip never resurrects steps 4–5. Default.
+     (b) ⚠ Under v3 the progress bar shows three steps (`Source / Scenes / Characters`, `workflows/pictureBook.js:2435`); steps 4–5 and their
+     code stay for v1 (removing PB1 code is out of scope). Default.
+     (c) ⚠ Under v3 `pictureBook()` resolves resume BEFORE `loadDefaults()` / `ensureSdConfig()` (:2902-2924): an existing book never builds
+     the step-4 SD config it cannot reach; a fresh source still loads defaults. Default.
+     (d) ⚠ The PB2 reader header's Edit pencil is hidden under v3 (`features/pictureBook.js:2194`) — the wizard would only hand straight back to
+     the reader; Characters stays. The list-row pencil and the canvas "Open in wizard" resolve to the reader (`resolvePb2BookObjectId`,
+     `pictureBookWorkflow.js:22-54`). Yours: the canvas label "Open in wizard to render" (`pictureBookWorkflow.js:405-433`) is stale wording
+     under v3 — not changed. Default: leave.
+     (e) ⚠ `ReaderShell` gained an optional `renderBanner(nav)` slot (`readerShell.js:33, :339`), hidden in fullscreen; the PB1 viewer's notice
+     uses it. Default.
+     (f) ✓ Specs: `pictureBookNavigation.spec.js` contract updated (row Edit → reader under v3; 8b "wizard-launched manager" skipped under v3 —
+     the wizard is not reachable from a book); `pictureBookWizardUx.spec.js` final step render-path aware (:259-269). New
+     `pictureBookV3Handoff.spec.js` builds its fixtures over REST (a bridged book via `/chapter` + `/create-from-scenes`; a pure PB1 book via a
+     directly POSTed `.pictureBookMeta` + `Scene 1` note) and skips as a whole on v1.
+     (g) ⚠ Observation (Yours): the V3 reader header shows the record `name` = `"Book <slug>"` (`PbBookUtil.bookName` :1478, by design — the
+     (name, groupId, org) unique index), not the typed "Picture Book Name", which becomes the slug + `title`. The v1 step-5 viewer showed the
+     typed name. Pre-existing V3 contract (the nav spec asserts it the same way); the hand-off spec asserts via the `/books` DTO. Default: leave.
+     (h) ⚠ Observation (Yours): the viewer's `{replace:true}` redirect is asserted in Vitest (`pictureBookV3Handoff.test.js:253, :261`) but is
+     not Playwright-provable through hash navigation — `router.js:215-232`'s `hashchange` bridge re-pushes an externally set hash (address bar,
+     `location.hash=`), so Back lands on the duplicate entry and redirects again. Pre-existing, every external hash set; not changed.
+     (i) ✓ Observations: under v3 `create-from-scenes` queues a background `pb.compose` job (`p73-run3.log:16` `"jobStatus":"queued"`), so the
+     hand-off lands on a reader whose scenes are composing; the live wizard run logs `detectBoundaries failed: 404` and extracts as a single
+     document (`p73-wizardux-live.log:223`) — pre-existing, not P7-3's.
+218. ⚠ **2026-10-30 ~00:45 (P7-4 close-out — Import on the legacy notice + verify check 2; results §14.4).** Nothing DONE (159 b).
+     (a) ⚠ Import is a direct button on the notice (no confirm; the server refuses a second import with 409), routes to the V3 reader first and
+     then opens the result dialog so a dialog dismissal never strands the user on the retired viewer; a non-2xx is a toast and the viewer stays;
+     `locationPass` is not shown (its warnings are already in `warnings`). Default.
+     (b) ⚠ Found inside P7-4 and fixed as part of it: `POST /migrate-v1` (`PictureBookService.java:2333`) read the body through `parseParams`
+     → `olio.pictureBookRequest`, which has no `groupObjectId`, so every request was 400 — the route was never callable. Now a plain JSON map
+     (`bodyMap` :2371; 400 on missing / malformed / absent key); `PictureBookException` → its status. Covered by Service7 H2
+     `TestPictureBookMigrateRoute` (6). Default (not an Objects7 change).
+     (c) ⚠ **Finding (Yours): cross-owner slug collision.** `importV1Book`'s pre-check (`PbBookUtil.findBookBySlug` :601) is PBAC-scoped, so
+     another owner's same-slug book reads as "no conflict", and `writeBookRow` (:582-587) then 409s with the "concurrent creation" message —
+     34 of 51 un-bridged Docker PB1 books (every second "AIME Test Book" / "AIME Chars Book" owner) cannot import at all (§14.4). Options:
+     per-owner slug (e.g. suffix the owner), an admin-side existence check with an honest message, or leave (slug is org-unique by design).
+     Default: leave, message unchanged.
+     (d) ⚠ Observation (Yours): an imported book's `/health` immediately reports "Meta note pb2BookObjectId is missing" (WARN, repairable) because
+     import never writes PB1 (§28 invariant); the PB1 group does not bridge via `/pb2` on the meta note but on the slug. Set it on import, or
+     leave to Repair? Default: leave.
+     (e) ⚠ Observation (Yours): the import-time location pass (step 12) hard-failed in all 27 sweep imports — Docker: the owner has no
+     `generalChat`, the library fallback resolves the admin's config on LiteLLM `:4000` (down); `am7db`: `No chat config available` after a
+     DENY-as-miss on `olio.llm.chatConfig` (`p74-am7db-sweep.log:329`). It never reached `.42`. Three warnings per import; not fixtured around.
+     Default: leave; the reader's Locations tab can re-run it.
+     (f) ⚠ Observation (Yours): `/reset` of an imported book deletes the owner's `~/Data/PictureBooks/<slug>` tree only when the PB1 group name
+     equals the slug (`PbDeleteUtil.deleteBookComplete` step 4) — never for a spaced name, which is why the sweeps left PB1 intact; a PB1 book
+     literally named after its slug would lose its PB1 data on reset. Default: leave.
+     (g) ⚠ Sweep design: Docker enumerates owners from `~/Data/PictureBooks` children carrying a meta note (`steve` / `admin` excluded), imports
+     back-to-back as each owner, resets every import at the end as its owner, fails only on import / media / reader / reset failures;
+     `am7db` caps at 2 newest PB1-only books per owner (5 owners, one per PB1 owner class). Both are opt-in gated measurement tests
+     (`PB_MIGRATE_SWEEP=1` / `-Dpb.sweep=true`), never part of the default suite; the Docker sweep's `EXIT=1` is (c), not a test defect. Default.
+     (h) ✓ Spec fixtures: a `.pictureBookMeta` note must carry `"schema":"olio.pictureBookMeta"` in its text or `importV1Book` 400s "parsed as
+     null"; the reader's cover backdrop is cached, so the image assertion is on the page `<img>` `src` + `naturalWidth` + a direct media GET.
+     (i) ✓ Observations: `ki42b…`'s import took 123 s vs 20–33 s for the others (`p74-am7db-sweep.log:21012`); the Docker spec's reader column
+     sometimes records the placeholder header "Picture Book" (read at first visibility) — screenshots show the real name; neither is a product
+     finding.
+219. ⚠ **2026-10-30 ~05:00 (P7-5 close-out — Scenarios A–G on Docker + verify checks 1 and 3; results §14.5).** Nothing DONE (159 b).
+     (a) ⚠ Fixture shape, not product: RENDER_PLAN nodes bind only their location, so the portrait→scene bindings D needs are hand-seeded
+     (`POST /node/{id}/bind`); `scene.sceneNode` is hand-linked and the RENDER_PLAN nodes pre-created by the handle `ensureRenderPlanNode`
+     finds (213 e stands); there is no charPerson version field, so the watched `hairStyle` stands in for "character changed"; portrait nodes
+     are unpinned after approval so D's propagation is not pre-blocked; `flux2Klein_9b` pinned per book via `PUT /style`. Default.
+     (b) ⚠ Found by D and fixed inside P7-5: `requestSceneRender(force=true)` returned 202 for a pinned scene node whose upstream was STALE —
+     the planner skips pinned candidates, so the run re-rendered the portrait, left the scene alone and reported success. The facade now
+     refuses a pinned scene node 409 before planning (`PbServiceFacade.java:741-747`), force or not; `isPinnedRefusal` widened to the facade
+     text; one ChapBook JUnit assertion and two exact-text e2e assertions updated. Default (a structured 409 body stays archive :7868 c, Yours).
+     (c) ✓ Spec correction, not product: a RENDER_PLAN node in a run renders the preset's variants per attempt (STANDARD = 2, P6-2), so run 4
+     failed on my "one artifact per node" assertion (`p75-scenarios-run4.log`); chains are now compared by attempt / variant 0 / selected.
+     (d) ⚠ Observation (Yours): E has no background-only regenerate — it is unpin + forced location render + approve, after which every bound
+     scene is STALE and G re-renders whole scenes; "character regions remain unchanged" is recorded as NOT met (§14.5 E). Default: leave.
+     (e) ⚠ Observation (Yours): after the `hairStyle` change the scene text follows the charPerson (`d-scene4-v2/v3.png`, `g-scene2-v2.png`
+     show short silver-white hair) while the portrait node's `promptText` is `narrative.sdPrompt` verbatim (+ "(professional photograph)."),
+     so portrait v2 still has the copper braid and a scene's reference image and text disagree (G scene 2 drew a white-haired and a red-haired
+     figure). Recompile the portrait prompt from the charPerson on drift, or keep `narrative.sdPrompt` as the source? Default: leave.
+     (f) ⚠ Observation (Yours) = 213 e, now measured on the reader: the cover reads "0 rendered of 6 scenes" with scenes 1 / 2 / 4 rendered —
+     `bookPageView` resolves a page image via `pageArtifactRole` (`composite` / `landscape`) or `scene.imageObjectId`, and a RENDER_PLAN scene
+     render writes `base` and never `scene.imageObjectId` (all six scene rows NULL); check 3's ChapBook path does set it. Default: neither.
+     (g) ⚠ Observations (Yours): render-all on an all-current book is 409 (G relies on E leaving scenes STALE); a regenerated scene references
+     the still-APPROVED older portrait until the new one is approved (D v2 vs v3); the LOCATION node self-drifts on approve (E); after
+     Regenerate the character manager's "N stale" badge clears although pinned scene 1 stays STALE (`d-after-regenerate.png`). Default: leave.
+     (h) ⚠ Image observations (Yours): every `flux2Klein_9b` location / scene render on `.39` is smeared, over-saturated, with a dark circular
+     vignette (`a-scene1`, `b-scene2`, `e-tavern-v2`, `g-scene2-v2`); portraits (same model) and check 3's juggernautXL landscape are crisp;
+     referenced actors' faces in DIRECT_REFERENCE scenes are low-fidelity. 4-actor SEQUENTIAL_INPAINT first exercised here (B 8.5 min, three
+     passes). Default: leave (flux2 sampler / step settings on `.39` are yours).
+     (i) ✓ Check 3 is proven on a freshly built ChapBook shaped like a pre-V3 one (scene-row lock, no composition), not on a row persisted
+     before V3 — the Docker DB has none that renders; `stagesRendered` is per-actor keyed (`ACTOR_REGION#<actor>`), spec corrected. Fixture
+     books 1667–1671 `p75-scen-*` and 1672 `e2e-cb-prev3-lock-…` left on Docker `am72db` by design (nodes / artifacts reference them).
+     (j) ✓ Independent verifier PASS (gate order / authz, real JUnit, matcher + Vitest, specs gated and non-admin, re-runs, ~40 ledger cites
+     spot-checked, diff confined to P7-5 + ledger). LOW only: stale comment / title in the two specs I edited (fixed, LF); old planner text
+     `(0 reused, 1 pinned)` still mocked in `src/test/pictureBookCharactersAffected.test.js:321-337` and `pictureBookV3Reader.test.js:345-386`
+     (green, out of scope, left); `PbServiceFacade.java:742-743` a null (deleted / unreadable) node falls through to the planner — pre-existing,
+     not covered by case12 (Yours, default leave).
 
 > Moved 2026-10-28 to `archive/PictureBookV3Implementation-P0-P4.md` §6.G, §6.L, §6.H–§6.N (Slice C findings, the nude-fixture question, Phase 0–1 infrastructure items; §6.H / §6.I / §6.J / §6.K RESOLVED, §6.M FIXED) (section numbering unchanged there). Still open there and Stephen's: §6.G (Slice C transport findings 1–12), §6.L (the `generateScene` e2e fixtures render nude), §6.N (`.39` outage log 2026-10-11 → 2026-10-14).
 
@@ -449,4 +605,282 @@ defaults (scratch kept; calibration residue left; no chat-path WARN; `TestKontex
 the one red is inspector test 4's reader-image step — 213 e: show the RENDER_PLAN `base` on the reader page (product), or re-scope the
 spec? default: neither, stays red and recorded; (8) 212 q — `detached` for a shared `data.data` row (vs refuse-and-keep, which would never
 free either sharer)? default: detached as built.
-next §6.C number 214.
+
+## 14. Phase 7 — tasks (PictureBook goes V3; started 2026-10-29 ~20:10 local on Stephen's "keep going with implementation until you are stopped or have a question"; rulings §6.C 214+, results §14.x)
+
+Scope: design §30 row 7 — "Book workspace Ux replaces wizard steps 4–5. PB1 disabled (§28.1 Stage 2). Exit: Scenarios A–G; PictureBook
+verify checks start." Stage 2 text (design :1842-1853): V3 is the only path for new books and for opening existing books; the PB1 entry
+points return a clear "replaced by V3" response and the Ux no longer calls them; PB1 stays in the build, unreachable unless re-enabled
+(`picturebook.renderPath=v1` + restart = rollback); PB1 data is read by migration and never written, deleted or reshaped. Precedent is
+P2-6 (ChapBook goes V3, archive §6.C 165): per-product defaults, every surface moves together, no new flag. Nothing here is DONE (159 b).
+
+**Inventory (read-only, 2026-10-29 evening).** The picturebook switch is pinned at eight surfaces, all `v1` except the test stack:
+`PbRenderPath.PICTUREBOOK_DEFAULT` (:53), Console7 `resource.properties:63`, Service7 `web.xml:83`, `docker/entrypoint.sh:49`,
+`docker-compose.yml:60`, Ux752 `featureConfig.js:35` (+ :41 normaliser, :281 / :285 admin text), `am7client.js:743` (comment);
+`docker/web.xml.template:81-82` is a pure `${PICTUREBOOK_RENDER_PATH}` passthrough; Objects7 test `resource.properties:51` and
+`docker-compose.test.yml:288` already say `v3` (215 e). Tests that assert the v1 default: `TestPbRenderPath`
+case01 / 03 / 10, `TestChapBookRestContract.TestChapBookDefaultsToV3AndV1IsRollback` (:276-312: constant, `configure(null,"graph")`,
+shipped `web.xml`, entrypoint `:=v1`), `TestPbRenderPathRefusal` :135 / :187, Ux `renderPathConfig.test.js:85,97,101`,
+`chapBookV3Render.test.js:93,182,496`, `pictureBookV3Reader.test.js:51-52`. PB1 entry points in `PictureBookService`: `POST
+/scene/{id}/generate` (:723, `@Deprecated`), `POST /{book}/prepare-images` (:793, `@Deprecated`), `PUT /{book}/settings` (:1117 →
+`PictureBookUtil.setBookSdConfig` :2101, which writes the `.pictureBookMeta` note AND patches `olio.pb.book.sdConfig` /
+`compositeSdConfig` — the book tier `PbConfigUtil` :214-221 reads; V3's own setter for that tier is `PUT /{book}/style` with `sdConfig`).
+Their only Ux752 callers are wizard step 4 (`workflows/pictureBook.js` :1305 settings, :1371 prepare-images, :1426 generate) and the
+resume path (:2784 `getBookSdConfig`); ChapBook uses its own `chap-book/…` routes. The hand-off points into steps 4–5: step 3's
+"Continue to Images" (:2557-2561), `tryResumeExistingBook` (:2763-2815, lands on 4 or 5), the pb2 edit pencil (`features/pictureBook.js`
+:160-178 → wizard resume) and the PB1 viewer pencil (:1041-1048). The V3 reader `/picture-book/v2/{book}` already hosts Render all /
+Review / Style / Locations / Compose / Characters / Canvas (:2055-2157) — it is the §26 workspace hub. `GET /{group}/pb2` (:1238) bridges a
+PB1 group oid to its `olio.pb.book`. Pure-PB1 books (no `olio.pb.book`) are not listed by the selector (:75-76) and only `POST /migrate-v1`
+(:2314, `PbMigrationUtil.importV1Book`, no Ux caller) imports them; no "first V3 open" trigger exists; §28 import steps 2 / 5 / 6 are not built.
+Six PB1 e2e specs call the retired routes directly (`pictureBook.spec.js:314`, `pictureBookLive.spec.js:418`, `pictureBookPagesAfterRender.spec.js`
+:117 / :155 / :285 / :290, `pictureBookScenePromptUx.spec.js:182 / :200`, `pictureBookSceneText.spec.js:176`, `pictureBookWorkflowOverhaul.spec.js:236`).
+
+**Tasks, in order (each with its own real tests; verifier at the end; nothing DONE by me):**
+- **P7-1 — the switch.** `PICTUREBOOK_DEFAULT → V3` and a `PICTUREBOOK_ROLLBACK_WARNING` WARN in `configure` (mirror of the ChapBook
+  one); every surface above moves to `v3` in the same change, no new flag (165 g / h); the v1 assertions move (`TestPbRenderPath`,
+  `TestChapBookRestContract` — which becomes "both products default to V3, v1 is rollback for both", `TestPbRenderPathRefusal`, the three
+  Vitest files); Ux fallback `{picturebook:'v3', chapbook:'v3', chat:'v1'}`. Tests: Objects7 `TestPbRenderPath` on `am7db`, Service7 H2
+  contract classes, Ux752 quick gate.
+- **P7-2 — Stage 2 refusals.** `PbRenderPath.PB1_REPLACED_PREFIX` + `requirePb1Entry(label, replacement)` (409, message names the V3
+  replacement, the rollback key / env var and "applied at startup only", like `requireV3`; built in P7-1), gated on `isPb1Retired()` =
+  `pictureBook() == V3` (product, not book: these routes take a scene or group oid). **Gates sit after authorization and existence checks
+  (215 a):** `generateSceneImage` in the 4-arg body at the P5-3 WARN site (`:9751`, after `authorizeSceneAccess`; the `~/Chat` fallback stays
+  exempt, 215 c), `prepareSceneImagePrompts` per scene after `authorizeSceneRecord` (`:10936`, outside the per-scene try), `setBookSdConfig`
+  after the 404 (`:2104`); `GET /{book}/settings` stays readable; `ChapBookUtil.setBookSdConfig` untouched (215 d). Tests: `TestPbRenderPath`
+  case11 (unit shape, P7-1) + live cases on `am7db` (403 before 409 for a stranger; 409 for the owner under v3 before any SD/LLM work;
+  admitted under v1 to the next failure), Service7 H2 `TestPbRenderPathRefusal` through the REST methods (409 body / `@Deprecated` stays),
+  and every in-suite JUnit that drives the three entries pins v1 around the call and restores (215 b list; pom-excluded `TestPictureBookFull`
+  / `Custom` / `UtilE2E` get the same pin). `PictureBookService` javadocs :718-721 and siblings say "refused since P7-2". The six PB1 specs:
+  gated on the live render path (skip with the Stage 2 reason when v3; they stay the rollback proof) — list recorded in §6.C.
+- **P7-3 — the wizard hands off to the workspace; existing books open in V3.** Under `renderPath.picturebook === 'v3'`: step 3 "Continue
+  to Images" → `/picture-book/v2/{pb2WizardBookOid}` (steps 4–5 stay for v1); `tryResumeExistingBook` → the V3 reader (via `/pb2` when
+  handed a group oid); the pb2 edit pencils stop opening steps 4–5; the PB1 viewer `/picture-book/:groupOid` redirects to the V3 reader
+  when `/pb2` resolves, else shows its images read-only with a "replaced by V3 — import" notice (P7-4's entry). Ux752 stops calling the
+  three routes under v3. Tests: Vitest (wiring), Playwright on Docker as `e2etest_shared` (create → step 3 → reader; resume; redirect).
+- **P7-4 — opening a pre-V3 book.** The notice's Import runs `POST /migrate-v1` and opens the V3 reader; the result (`scenesImported`,
+  `scenesFailed`, `landscapesImported`, `warnings`) is shown. Verify check 2 ("every existing book in the test DBs opens and migrates in
+  V3, images still show") is run against the Docker DB's PB1 books and `am7db`'s; what `importV1Book` does not carry (§28 steps 2 / 5 / 6:
+  portraits, composite renders, bindings) is measured there and reported as Yours, not built on my judgment.
+- **P7-5 — Scenarios A–G on Docker** (archive `PictureBookV3Notes.md:1883-1955`), `PB_SD_TESTS=1`, `.39`, `--workers=1`: A two
+  characters, B four, C repeated location, D character change, E background-only correction, F variant selection (P6, `TestPbVariantsLive`
+  — re-run only), G browser navigation (Render all continues after leaving; progress retained on return). Then verify checks 1–3
+  (design :1901-1907); 4 (two weeks) and 5 (sign-off) are Stephen's.
+
+**Out of scope here (Phase 10 / Yours):** removing PB1 code; the Kontext Remove; 213 e (reader image for RENDER_PLAN nodes — default
+"neither" stands, so Scenario A–E pass criteria read the review page / node detail, not the reader page, until you rule); the P6 Yours.
+
+### 14.1 P7-1 results — the switch (2026-10-29 20:15 → 21:05 local; §6.C 214 b, 215)
+
+Every picturebook surface moved to `v3` in one change, no new flag: `PbRenderPath.PICTUREBOOK_DEFAULT = V3` (:58) + `PICTUREBOOK_ROLLBACK_WARNING`
+WARN in `configure` + `PB1_REPLACED_PREFIX` / `isPb1Retired()` / `requirePb1Entry(label, replacement)` (built here, wired in P7-2); Console7
+`resource.properties:64`, `web.xml` comment (param-value stays empty = product default), `docker/entrypoint.sh:49` `:=v3`, `docker-compose.yml:61`
+`:-v3`, `featureConfig.js:35` default + `:41` normaliser, `am7client.js:743` comment. CRLF files checked (`tr -cd '\r' | wc -c` = line count).
+Tests moved with it: `TestPbRenderPath` case01 / 03 (v3 default, unrecognised → v3, no borrowing), case10 (explicit v1 = rollback), **new
+case11** (default retires PB1; `requirePb1Entry` 409 carries prefix, label, "Use … instead", key=v3, key=v1, env var, not the `requireV3` prefix;
+v1 re-admits without touching ChapBook; absent restores); `TestChapBookRestContract.TestChapBookDefaultsToV3AndV1IsRollback` (both products
+default V3; shipped `web.xml` both v3; entrypoint `:=v3` both; both rollbacks honoured — ChapBook via `requireV3`, PictureBook via
+`requirePb1Entry`); Ux `renderPathConfig.test.js` :82-102 / :112-118.
+- Objects7 `TestPbRenderPath` on `am7db` (`C:/tmp/p7-1-objects7-renderpath.log`): `Tests run: 11, Failures: 0, Errors: 0, Skipped: 0` (:36599),
+  `BUILD SUCCESS` (:36606), `EXIT=0`; the new WARN fires as `picturebook.renderPath=v1: legacy PictureBook (PB1) render path re-enabled (rollback)` (:62).
+- Service7 H2 (`C:/tmp/p7-1-service7-renderpath.log`): `TestChapBookRestContract` `Tests run: 9, Failures: 0` (:1215), `TestPbRenderPathRefusal`
+  `Tests run: 7, Failures: 0` (:2202), `BUILD SUCCESS` (:2209), `EXIT=0` (the `Unknown data type: "VECTOR"` DBUtil lines are the standing H2 noise).
+- Ux752 Vitest (`C:/tmp/p7-1-vitest.log`): first run **1 failed / 1469 passed** — my `featureConfig.js:41` miss (215 f); fixed → `Test Files 99 passed
+  (99)`, `Tests 1470 passed (1470)` (:5-6), `EXIT=0`. `npx vite build` `✓ built in 5.86s` (`p7-1-vite.log:146`), `EXIT=0`.
+- Not run: the Docker stack — no server behaviour changes until P7-2, and `am7test-am7-1` already runs `PICTUREBOOK_RENDER_PATH=v3`
+  (`docker-compose.test.yml:288`, `docker inspect` env), so the P7-1 default flip changes nothing there. Nothing DONE (159 b).
+
+### 14.2 P7-2 results — Stage 2 refusals (2026-10-29 21:05 → 22:20 local; §6.C 215, 216)
+
+`PbRenderPath.requirePb1Entry` (:220, built in P7-1) is wired at three `PictureBookUtil` sites, each AFTER its authorization / existence check
+(215 a): `setBookSdConfig` :2120 (after `resolveBookGroupEither`'s 404 at :2115), `generateSceneImage` 4-arg body :9772 (after
+`authorizeSceneAccess(WRITE)`, only when the scene's `groupPath` ends in `/Scenes` — the `~/Chat` single-image fallback stays exempt, 215 c),
+`prepareSceneImagePrompts` :10957 (per scene, after `authorizeSceneRecord(WRITE)` at :10951, outside the swallowing try; an unreadable id stays
+warn-and-skip). Labels / replacements are `PB1_ENTRY_*` / `PB1_REPLACEMENT_*` (:237-244: generate → `/{book}/scene/{id}/render-plan` or
+`/render-all`, prepare → `/render-all`, settings → `PUT /{book}/style (sdConfig)`). `GET /{book}/settings` stays readable. `PictureBookService`
+:718 / :790 / :1118 javadocs say "design §28.1 Stage 2 since P7-2"; `@Deprecated` / `@RolesAllowed` unchanged. The ordering rule is in
+`.claude/rules/architecture.md` ("Feature / product gates sit after authorization and existence checks, never before").
+Tests — all on the default v3; every PB1-driving JUnit pins `PbRenderPath.configure(V1, V3)` around the call and restores (215 b):
+- Objects7 `TestPbRenderPath` on `am7db`, `[LLM-GATE] route=direct tier=remote server=http://192.168.1.42:11434` (:56 — the remote `.42`; the
+  container `:11435` and LiteLLM `:4000` did not answer) — `C:/tmp/p7-2-TestPbRenderPath.log`: **new case12** (owner under v3: generate / prepare /
+  settings 409 carrying prefix, label, replacement, `=v3`, `=v1`, env var, BEFORE any SD / LLM / persist — SD host `http://127.0.0.1:1`, meta
+  stays null; unknown oids 404; v1 admits each to its next failure) and **case13** (second user in the org: no grant → 404 generate, silent skip
+  prepare, 404 settings; Read + Update on `/Scenes` → 403 generate / prepare (book-level `canUpdate`), 404 settings; never 409; nothing
+  persisted). `Tests run: 13, Failures: 0, Errors: 0, Skipped: 0` (:36749), `BUILD SUCCESS` (:36756).
+- Pinned JUnits, same DB / tier, `BUILD SUCCESS` each: `TestPbBookSettingsResolveEither` 2/2 (`C:/tmp/p7-2-…ResolveEither.log:301`, :308),
+  `TestPbSeriesChapterScenesResolve` 1/1 (:162, :169), `TestPbSceneGenerationGuards` 6/6 (:1462, :1469), `TestPictureBookWorkflow` 5/5
+  (`…Workflow.log:3595`, :3602, `EXIT=0` :3607; 2500 s wall — five FLUX.2 composites on `.39`, one of them ~8 min: observations), the v1 pin
+  WARN visible (`…Workflow.log:60`), zero `replaced by V3` inside a pinned call. `TestPictureBookSceneAuthz` 7/7 (:258, :265) is deliberately
+  NOT pinned (216 b). Pom-excluded `TestPictureBookFull` / `Custom` / `UtilE2E` got the same pin and compile; not run. Only the Workflow launch
+  appended `EXIT=`; for the others `BUILD SUCCESS` + `Finished at` are the exit evidence.
+- Service7 H2 (`C:/tmp/p7-2-svc-refusal-chapcontract.log`): `TestPbRenderPathRefusal` **new `TestPb1EntriesRefusedUnderV3`** through the REST
+  methods (409 body = the `requirePb1Entry` text for all three, `@Deprecated` stays) `Tests run: 8, Failures: 0` (:2398); `TestChapBookRestContract`
+  9/9 (:1215); `BUILD SUCCESS` (:2405).
+- Redeploy: Objects7 jar installed (`p7-2-obj-install.log`, `-q`; `~/.m2` jar 21:28:58, `javap` finds `requirePb1Entry`); Service7 `target/classes`
+  Eclipse-stub check (`Unresolved compilation` grep empty, `javap` 0) → `docker cp` jar + `PictureBookService*.class` into `am7test-am7-1`,
+  restart, `/rest/schema` 200, boot `Server startup in [10267] ms`; `GET /rest/config/render-path` → `{"picturebook":"v3","chapbook":"v3","chat":"v3"}`.
+- Docker live check as `e2etest_shared` (`C:/tmp/p7-2-live-check.mjs` → `p7-2-live-check.log`): generate / prepare-images / PUT settings 409
+  `replaced by V3` naming `render-plan` / `render-all` / `/style` / `PICTUREBOOK_RENDER_PATH` (:7-12); GET settings `200 {}` (:13); nil-UUID
+  generate `404 Scene not found` (:15); nil settings `404 Book not found` (:17); `LIVE-CHECK OK` (:20), EXIT=0; fixture deleted (:19).
+- Six PB1 specs gated (214 f, list in 216 a) via `pb1Retired` / `PB1_RETIRED_SKIP` — skips report as skips, never passes, zero SD calls.
+  Stack runs (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 --workers=1`, `[e2e-llm] route=direct server=http://192.168.1.42:11434` :13):
+  `p7-2-e2e-gate-skips.log` `5 skipped` / `5 passed` (:31-32; `[e2e-render-path] … retired; skipping` at :16 / :18 / :20 / :22 / :28; the
+  load-safe cases still pass), `p7-2-e2e-gate-skips2.log` `2 skipped` (:11; :4, :8), `p7-2-e2e-gate-live-b4.log` `1 skipped` (:17; :14 — B.4 on
+  `--project=chromium-vite` through the Vite on `:8898`, `PB_LLM_TESTS=1 E2E_SD_LIVE=1` so the gate is reached after its env skips; its setup
+  extracted 3 scenes on `.42` first, :10).
+- Security review (security-reviewer, ~22:03): PASS, no blocking findings — no existence leak at any site, the 409 body discloses only what
+  `render-path` already tells a `user`, the `~/Chat` exemption keys off the `groupId`-derived `groupPath` (not client-settable), `@RolesAllowed`
+  on all four routes, no admin auth in the tests. Its two hardening notes → 216 d / e.
+Noted, not fixed (out of scope): `PictureBookService.ensureSchema("{}")` (:193-202) yields `{"schema":…,}` — a trailing comma, so an empty body
+parses to null with a WARN; the REST `setBookSdConfig` (:1132) has no null-user guard (same as its siblings; container-enforced); the 15
+`[Thread-N] RecordUtil WriterException: Record failed validation` lines in the Workflow log are `system.audit` rows whose `description` (the
+audit line of a wide charPerson read) fails validation — pre-existing audit-writer noise. Employer-identifier grep over every added diff
+line: no matches. Nothing DONE (159 b).
+
+### 14.3 P7-3 results — the wizard hands off to the workspace (2026-10-29 22:25 → 23:30 local; §6.C 217)
+
+Ux752 only; no server change, the stack still carries P7-2's jar. `dist` rebuilt (`npx vite build`) and `docker cp`'d into
+`am7test-am7-1:/opt/ux752/dist/` before the Playwright runs.
+- Wizard (`src/workflows/pictureBook.js`): `pbIsV3()` / `readerRoute()` / `handOffToReader()` (:65-91). `pictureBook()` reads the render path
+  and, under v3, resolves resume first — an existing book (pb2 oid or PB1 group oid, through `resolvePb2BookObjectId`) routes to
+  `/picture-book/v2/{oid}` and the wizard never opens (:2902-2924); step 3 "Continue to Images" → `handOffToReader()` (:2610-2613); the
+  progress bar shows three steps (:2435). v1 keeps steps 4–5 untouched.
+- Id resolution (`src/workflows/pictureBookWorkflow.js:22-54` `resolvePb2BookObjectId`): by-id `olio.pb.book` → `GET /{id}/pb2` → `/books`
+  list; null = no V3 record (a source document, a pure PB1 book, an unknown id). Every miss falls through; nothing throws.
+- PB1 viewer (`src/features/pictureBook.js:804-870`): under v3 the route is a bridge — a resolvable id replace-redirects to the V3 reader
+  (:823-829; `viewerLoading` stays true so the empty state never flashes); otherwise `viewerLegacy = v3 && scenes.length > 0` (:870) shows the
+  book read-only with the amber `[data-pb1-legacy-notice]` banner (:1063-1076, "replaced by V3. Import the book…" — P7-4's entry, no action
+  yet) through the new `ReaderShell.renderBanner` slot (`readerShell.js:33, :339`); the Edit pencil is hidden (:1083), as is the PB2 reader
+  header's under v3 (:2194). Under v3 nothing in Ux752 calls `scene/{id}/generate`, `prepare-images` or `PUT settings` — the hand-off spec
+  records every POST / PUT on those routes and asserts the list empty on all four paths.
+- Vitest: new `src/test/pictureBookV3Handoff.test.js` (25, jsdom — hand-off route, resume → `{route}`, v1 unchanged, viewer redirect with
+  `{replace:true}` (:253, :261), legacy notice + no pencil, `resolvePb2BookObjectId` fall-through). Full suite `C:/tmp/p7-3-vitest.log`:
+  `Test Files 100 passed (100)` (:5), `Tests 1495 passed (1495)` (:6), `EXIT=0` (:10).
+- Playwright on the stack as `e2etest_shared` (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 --workers=1 --project=chromium`;
+  `[e2e-render-path] {"picturebook":"v3",…} -> PB1 entry points retired; skipping` `p73-run3.log:4, :15`): new `pictureBookV3Handoff.spec.js`
+  4/4 (:19-21, :36 — 17.6 s / 4.6 s / 2.3 s / 2.9 s, observations): (1) wizard on a fresh note → three-step bar, no Images / View, manual
+  scene → step 2 → step 3 "Continue to Images" → hash `/picture-book/v2/<oid>`, `/books` DTO `slug = e2e-p73-wizard-<tag>` + `title` = the
+  typed name, header = `name`, no dialog (`[p73] wizard book pb2=…` :18); (2) list-row Edit on a bridged book → reader, no wizard;
+  (3) `/picture-book/<groupOid>` with `/pb2` 200 → replace-redirect to the reader, no notice; (4) a pure PB1 book (`/pb2` 404) → notice
+  visible, hash unchanged, `h1` = workName, "1 Scene", no Edit pencil, Begin → scene page, notice stays. Zero retired-route calls on every
+  path. Fixtures: bridged book (`/chapter` + `/create-from-scenes`, `[p73] bridged … "jobStatus":"queued"` :16), pure PB1 book
+  (`[p73] legacy …` :17); cleanup `DELETE /{oid}/reset` → 200 (:22, :29), notes / groups deleted. `pictureBookNavigation.spec.js` in the same
+  run: 1, 2, 4, 7, 9 ok; 3 / 5 / 6 skipped (data-dependent, `rendered=null sibling=null` :3); 8 skipped (8b under v3). Totals `5 skipped`
+  (:39), `9 passed (1.2m)` (:40); this launch did not append `EXIT=` — the reporter's totals and the absence of a `failed` line are the exit
+  evidence. Earlier runs (`p73-handoff-run1.log` 2 failed, `run2` 1 failed) were my spec's assertions, not the product — header text (217 g)
+  and Back after the redirect (217 h) — fixed in the spec, no test weakened; run 3 is the first clean run.
+- Live LLM, same stack (`PB_ASYNC_TESTS=1`, `p73-wizardux-live.log`): `[e2e-llm] route=direct server=http://192.168.1.42:11434
+  analysis=qwen3:8b pb=goekdenizguelmez/JOSIEFIED-Qwen3:8b` (:5 — the remote `.42` Ollama, direct; the container `:11435` and LiteLLM `:4000`
+  did not answer). `pictureBookWizardUx`: extract → continue → real characters → Manage Characters → the render-path-aware final step lands on
+  the V3 reader: `ok 1 … (2.1m)` (:229), `1 passed (2.2m)` (:231), `EXIT=0` (:232). `[PAGE-WARNING] … detectBoundaries failed: 404` (:223) →
+  single-document extraction (217 i).
+- Line endings: every touched file uniform (LF files LF; CRLF files `i/lf w/crlf`). Employer-identifier grep over the touched files: no
+  matches. Nothing DONE (159 b).
+
+### 14.4 P7-4 results — opening a pre-V3 book + verify check 2 (2026-10-29 23:30 → 2026-10-30 00:45 local; §6.C 218)
+
+**Built.** The P7-3 notice's Import (`features/pictureBook.js:1083-1088` `[data-pb1-import]`, `importLegacyBook` :1124-1150 guarded by
+`viewerImporting`) calls `POST /migrate-v1` (`workflows/pictureBookWorkflow.js:438` `migrateV1Book`, `:446` `normalizeMigration`), routes to
+`/picture-book/v2/{bookObjectId}` and then opens a dialog with `scenesImported` / `scenesFailed` / `landscapesImported` / `warnings`
+(`[data-pb1-import-result]` :1107); a non-2xx is a toast, the viewer stays. Server: the route (`PictureBookService.java:2333`) was unusable —
+`parseParams` → `olio.pictureBookRequest` has no `groupObjectId`, so every body was 400 "groupObjectId is required" (218 b); it now reads the body
+as a plain map (`bodyMap` :2371 / `bodyString` :2376) and maps `PictureBookException` → its status. No Objects7 change.
+- Service7 H2 **new `TestPictureBookMigrateRoute`** (401 anonymous; 400 missing / malformed / no-`groupObjectId`; 404 unknown group; owned group
+  without meta 404 and a stranger's 404 — no existence leak): `Tests run: 6, Failures: 0` (`C:/tmp/p74-migrate-route.log:964`), `BUILD SUCCESS`
+  (:967), `EXIT=0` (:972).
+- Vitest **new `pictureBookV3Import.test.js`** (19 — button, guard, route-then-dialog, result text, error toast, `normalizeMigration`): full suite
+  `Test Files 101 passed (101)` / `Tests 1514 passed (1514)` (`p74-vitest-full.log:5-6`), `EXIT=0` (:10). `dist` rebuilt and `docker cp`'d;
+  `PictureBookService*.class` `docker cp`'d + restart.
+- Playwright on the stack as `e2etest_shared` (`PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 --workers=1 --project=chromium`) **new
+  `pictureBookV3Import.spec.js`** 2/2 (`p74-import-run4.log:40`, `EXIT=0` :41): a REST-built PB1 book (meta + scene note + a real PNG) → notice →
+  Import → reader + result dialog (`scenesImported 1, landscapesImported 1`, 3 warnings, :6-26) → the page `<img>` is the PB1 PNG
+  (`src=…/Images/scene-1-….png` :27, direct GET `200 image/png` :28); PB1 untouched, `/pb2` now bridges, re-import 409 (:30); reset 200 (:31).
+  `pictureBookV3Handoff.spec.js` re-run 4/4 (`p74-handoff-rerun.log:27`, `EXIT=0`).
+
+**Verify check 2 — "every existing book in the test DBs opens and migrates in V3, images still show".** Two sweeps, each as every owner
+(never admin), import → `/pages` → every imaged page's bytes / media → `/health` → (Docker) the reader, then `reset` as the owner so both DBs
+are left as found (verified: PB1 groups, `Scenes` notes and the three image rows ~1.4 MB each still present; 0 `olio.pb.book` rows for the
+imported slugs). Timings are observations.
+- **Docker `am72db`, new gated `e2e/pictureBookV3ImportSweep.spec.js`** (`PB_MIGRATE_SWEEP=1`, owners from the DB, `steve` / `admin` excluded;
+  `C:/tmp/p74-sweep.log`): **288 PB1 book groups across 38 owners — 237 already V3, 17 imported, 34 failed** (:347; table :57-346; the
+  Playwright retry reproduced it exactly, :693). Imported (7–42 s each): `e2etest_shared` ×15 "P4-4 Unbound Import …" (2/0 scenes, 2 pages),
+  one `e2etest_pbchars*` "AIME Chars Book" (3/0), one `e2etest_pbmv*` "AIME Test Book" (3/0) — pages = scenes, health errors `[]`, reader opens
+  ("Book <slug>", "0 rendered of N scenes", screenshots `e2e/screenshots/p74-sweep-<owner>.png`), every reset 200 (:348). **All 34 failures are
+  one defect** (218 c): 6 more "AIME Chars Book" and 28 more "AIME Test Book" owners got **409 "Failed to create book 'aime-test-book'. The unique
+  (slug, organizationId) index rejects a duplicate, so a concurrent creation … is the expected cause"** (:7-12, :14-41) — the slug is org-unique,
+  `findBookBySlug` is PBAC-scoped so another owner's book reads as "no conflict", and the DB index then refuses. The spec's verdict fails on it:
+  `1 failed`, `EXIT=1` (:826, :828) — a real finding, not a test defect; no cleanup needed (the collision throws before any world / group).
+  The three PB1 books that carry an image were among the collided, so re-run one owner per launch (`p74-sweep-imaged.log`): `e2etest_pbmv2vs25b`
+  3/0 scenes, **1 landscape, 3 pages / 1 imaged / media 200 `image/*`**, reader "1 rendered of 3 scenes" (:7-12, `1 passed` :15, `EXIT=0` :16);
+  `e2etest_pbmv2y0azy` 1/0, 1/1/1 (:23-32); `e2etest_pbmv4mgsud` 3/0, 3/1/1 (:39-48) — the PB1 render is the reader's cover backdrop
+  (`p74-sweep-e2etest_pbmv4mgsud.png`). Images still show.
+- **`am7db`, new gated Objects7 `TestPbMigrationSweep`** (`-Dpb.sweep=true`, default 5 owners × 2 newest PB1-only books, `-Dpb.sweep.perOwner=0`
+  for all; `C:/tmp/p74-am7db-sweep.log`, `[LLM-GATE] route=direct tier=remote server=http://192.168.1.42:11434` :61 — the remote `.42`, direct;
+  container `:11435` and LiteLLM `:4000` did not answer): **78 PB1 book groups with a meta note listed — 71 already V3, 7 imported, 0 failed**
+  (:21014; table :20934-21013): `pbGuardUser` ×2 "Guard p01ng-…" (1/0, 23–25 s), `pbCustomTestUser` "Extract Legacy Book …" (3/0, 27 s),
+  `pbTestUser` "Default Age Stats Book …" (1/0, 31 s) + "E2E Apparel Scene Test Book …" (3/0, 33 s), `ki42b…` "KI42 Book …" (1/0, **123 s**),
+  `ki42c…` "KI42C Book …" (1/0, 20 s); pages = scenes, health errors `[]`, every reset ok. `Tests run: 1, Failures: 0, Errors: 0` (:21020),
+  `BUILD SUCCESS` (:21023), `EXIT=0` (:21028). **No PB1-only book on `am7db` carries an image** — all 38 scene notes naming an `imageObjectId`
+  sit in V3 `…/Book/Scenes` groups (psql, `unbridged=0`), so "images still show" is measured on Docker only.
+- **Not carried by `importV1Book` (§28 steps 2 / 5 / 6), measured:** no character / portrait (PB1 `Characters` groups are empty in every swept book,
+  so nothing to measure here), no composite render, no binding; each PB1 image becomes one unapproved LANDSCAPE artifact (`landscapesImported`)
+  and the page shows it only through the scene note's `imageObjectId` fallback (`PbServiceFacade.bookPageView` :2315). `scenesFailed` was 0 in
+  all 27 imports. Yours: 218 c–f.
+- Line endings: touched files uniform (LF files LF; `web.xml` / `PictureBookService.java` keep their CRLF). Employer-identifier grep: no matches.
+  Nothing DONE (159 b).
+
+### 14.5 P7-5 results — Scenarios A–G on Docker + verify checks 1 and 3 (2026-10-30 01:50 → 05:00 local; §6.C 219)
+
+**Setup.** Docker stack `am7test` (`https://127.0.0.1:9443`, `PICTUREBOOK_RENDER_PATH=v3`), SD `.39` (`SD_SERVER=http://192.168.1.39:7801`),
+as `e2etest_shared` (never admin), `PB_SD_TESTS=1 --workers=1 --project=chromium --retries=0`. **New gated `e2e/pictureBookV3Scenarios.spec.js`**
+(one serial describe; the fixture builds a fresh book per run: world + workflow, tavern LOCATION node rendered + approved, four charPersons with
+PORTRAIT nodes rendered (174–178 s each) + approved + unpinned, six scenes with compositions / actor boxes for 1, 2, 4, RENDER_PLAN nodes by handle,
+bindings 1: Alice+Bob, 4: Alice, `scene.sceneNode` linked; `PUT /style` pins `flux2Klein_9b` for portrait / location / sceneDirect / inpaint :4).
+Timings are observations. Run 5 is the green run (`C:/tmp/p75-scenarios.log`; book 1671 `p75-scen-mvuq84sg` :29): **`6 passed (48.4m)` :190,
+`EXIT=0` :191**; runs 1–4 (`p75-scenarios-run2..4.log`) were fixture / spec defects and the D product defect (219 b, c).
+- **A two characters** — `render-plan` scene 1 200 in 221 s (:30); `DIRECT_REFERENCE: 2 referenced actors within 3 slots`, the approved tavern
+  reused (`renderArtifactId c0841fac…` :49); `a-scene1.png` seed 1689345618, 114 s (:50); ok (:51). PNG: both figures at the bar.
+- **B four characters** — 511 s (:52); `SEQUENTIAL_INPAINT: 4 referenced actors, 3 slots, 2 ACTOR_REGION passes` (:71); BASE=[Alice, Bob],
+  ACTOR_REGION=[Cara, Dev], `stagesRendered` = BASE + one `ACTOR_REGION#<actor>` each (:72); `b-scene2.png`; ok 8.5 m (:76). PNG: four round a chart.
+- **C repeated location** — scenes 3 / 7 / 12 plans share one `locationId` / `revisionHash 7fbc70dd…` / `renderArtifactId c0841fac…` (:77-79); ok,
+  no SD call (:80).
+- **D character change** — scene 4 v1 163 s (:81; `d-scene4-v1.png` :100); approve + pin scene 1 (chain `[r1 v0 sel, r2 v1]` :101); `PATCH
+  olio.charPerson.hairStyle` → affected-by drifted false → true, `staleSceneIndexes [1,4]` (:102-103); UI Regenerate: facade 409 "is pinned" →
+  "Scene 1 is pinned" confirm → Cancel → scene 4 `render?force=true` 202 (:104); job 345 s, executed 2 = portrait re-render 178 s + scene
+  (:118-121); toast "Regenerated 1 of 2 scenes, 1 skipped (pinned)" (:122); scene 4 chain = two attempts, the regenerate's variant 0 selected
+  (:123); the v2 plan still references the APPROVED portrait v1 (:124); `d-alice-portrait-v2.png` rev 2 GENERATED, unselected (:125); approve it →
+  scene 4 v3 158 s, rev 5 (:127, :146-147); scene 1's chain and pin unchanged; ok (:148).
+- **E background-only correction** — unpin the location (it self-drifted on approve :150), forced location render 39 s → `e-tavern-v2.png` rev 2
+  APPROVED (:151-154); affected-by = location + 3 render_plan (:155); scene 2 / 4 plans carry the new `revisionHash 09e75e09…` (:156-157);
+  "character regions remain unchanged" NOT met — no background-only regenerate exists, G re-renders whole scenes (:158); ok (:159).
+- **F variant selection** — `TestPbVariantsLive` re-run only (`C:/tmp/p75-scenF-live.log`; `[LLM-GATE] route=direct tier=remote
+  server=http://192.168.1.42:11434` — the remote `.42` Ollama, direct :56): `Tests run: 1, Failures: 0` (:495, :499), `BUILD SUCCESS` (:502),
+  `EXIT=0` (:507).
+- **G browser navigation** — cover "0 rendered of 6 scenes" (:160); Render all 202 (:161) → leave the page → first poll +648 ms `running`,
+  `terminal=false` (:175) → return: "Render (resumed watching) 0 of 2 · render_plan@3e0e867d" + Cancel (`g-reattached.png`, :176); job 685 s,
+  executed 2 (:180); "Render complete: 2 rendered" (:181, `g-terminal.png`); `g-scene2-v2.png` rev 3 / `g-scene4-v4.png` rev 7 (:182-183);
+  cover still "0 rendered of 6 scenes" (:184; 219 f); ok (:186). Book left in place (:185).
+
+**Verify check 1** (A–G pass on Docker): the run above, with the gaps in 219 a–h. **Check 2**: §14.4. **Verify check 3** ("a ChapBook created
+before V3 renders a page in V3 with its locked prompt intact"): **new gated `e2e/chapBookV3PreV3Lock.spec.js`** (`C:/tmp/p75-check3.log`): a fresh
+ChapBook (`createChapBook`, 2 pages :4) whose scene row alone is locked through generic `PATCH /rest/model` (`sdPrompt` = a lighthouse prompt,
+`promptLocked: true` — the pre-V3 shape, no composition :5); `POST /olio/chap-book/scene/{id}/generate` 200 in 30 s, `renderPath v3`, job + run +
+LANDSCAPE node + artifact (:6); node `promptText` = the locked prompt verbatim (:7); plan `location.description` = it, `TEXT_ONLY`, juggernautXL
+deployment default for `location` (:8); compiled BASE prompt = it (:9); generator request `prompt` = it (:10); scene row after: `sdPrompt` /
+`promptLocked` intact, `imageObjectId` set, `imageStale false` (:11); `/pages` carries `imageName` + `sceneNodeObjectId` (:12);
+`check3-prev3-locked-page.png` 1024² (:13) — a lighthouse on black sand under a green aurora, as prompted. **`1 passed (40.4s)` :17, `EXIT=0` :18.**
+Checks 4 (two weeks) and 5 (sign-off) are yours.
+
+**D product fix (219 b).** `PbServiceFacade.requestSceneRender` refuses a pinned scene node 409 "Node <handle> is pinned. Unpin it first - …"
+before planning (`PbServiceFacade.java:741-747`, force or not). Objects7 **new `TestPbRenderJob#case12_facadeRefusesPinnedSceneWithStaleUpstream
+BeforePlanning`**: `Tests run: 1, Failures: 0` (`C:/tmp/p75-case12.log:33796`), `BUILD SUCCESS` (:33803), `EXIT=0` (:33808);
+`TestChapBookV3Render#facadeForceRerendersACurrentPageAndPinStillWins` assertion updated, re-run live (`p75-cbforce.log:56` `[LLM-GATE]
+route=direct tier=remote` — `.42`; :428 the 409; :434 `Tests run: 1, Failures: 0`; :441 `BUILD SUCCESS`; :446 `EXIT=0`). UI `isPinnedRefusal`
+(`workflows/pictureBookWorkflow.js:413-416`) also matches the facade text (+1 Vitest case); full Vitest `Test Files 101 passed` / `Tests 1515 passed`
+(`p75-vitest-full.log:5-6`), `EXIT=0` (:10); `vite build` ok (`p75-vite-build.log:147`); jar + `dist` `docker cp`'d + restart. The exact-text
+pinned cases in `pictureBookV3PlainPb.spec.js` (:397-406) and `pictureBookV3Ux.spec.js` (~:607) were edited and both specs re-run on the stack
+(`PB_SD_TESTS=1`): PlainPb `4 passed (52.4s)` (`C:/tmp/p75-plainpb-rerun.log:61`), `EXIT=0` (:62); Ux `4 passed (2.3m)` (`p75-ux-rerun.log:114`),
+`EXIT=0` (:115).
+- Line endings: touched files uniform (LF files LF; `pictureBookWorkflow.js` keeps its CRLF). Employer-identifier grep over the touched files: no
+  matches. Nothing DONE (159 b).
+
+next §6.C number 220 (218 = P7-4 close-out; 219 = P7-5 close-out).

@@ -20,6 +20,8 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 /// Regression proof for {@code GET/PUT /rest/picturebook/{id}/settings} accepting the SAME two handles
@@ -40,6 +42,20 @@ import org.junit.Test;
 public class TestPbBookSettingsResolveEither extends BaseTest {
 
 	private static final String WORK_PATH = "~/PbSettingsEitherWork";
+
+	/// P7-2: setBookSdConfig is a PB1 entry that refuses with 409 under the default
+	/// picturebook.renderPath=v3 (design §28.1 Stage 2) - after resolveBookGroupEither's 404, so the
+	/// other-user case below still proves its 404s. Pin the rollback value for this product only so the
+	/// owner writes are admitted; BaseTest re-pins v3 on every @Before and restorePb1Pin restores it.
+	@Before
+	public void pinPb1Rollback() {
+		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
+	}
+
+	@After
+	public void restorePb1Pin() {
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
+	}
 
 	private static String shortId() {
 		return UUID.randomUUID().toString().replace("-", "").substring(0, 8);

@@ -989,7 +989,9 @@ public class TestChapBookV3Render extends BaseTest {
 	 * without force is the planner's 409 "(1 reused, 0 pinned)" and opens no run - the refusal the reader's
 	 * Re-render hit after an unpin; with force it is a new run, rendered live, producing revision 2 selected and
 	 * superseding revision 1 (both kept), the page pointing at the new image. Pinning the node and forcing again
-	 * is still a 409 "(0 reused, 1 pinned)" that opens no run: force never overrides a pin.
+	 * is still a 409 that opens no run: force never overrides a pin. Since P7-5 (Scenario D) that refusal is the
+	 * facade's own "Node … is pinned" - the same one {@code requestRegenerate} gives - rather than the planner's
+	 * "(0 reused, 1 pinned)", so a pinned scene with a STALE upstream is refused too instead of being accepted.
 	 */
 	@Test(timeout = 2L * RENDER_TIMEOUT_MS)
 	public void facadeForceRerendersACurrentPageAndPinStillWins() throws Exception {
@@ -1104,7 +1106,7 @@ public class TestChapBookV3Render extends BaseTest {
 		catch(PictureBookException e) {
 			logger.info("P1-10 facade force pinned refusal: " + e.getStatus() + " " + e.getMessage());
 			assertEquals(409, e.getStatus());
-			assertEquals("Nothing to render: every node of this scene is current (0 reused, 1 pinned)", e.getMessage());
+			assertEquals("Node " + handle + " is pinned. Unpin it first - pinning means do not replace this artifact.", e.getMessage());
 		}
 		assertEquals("The pinned refusal opens no run", runsBefore, newestRunId(workflow, fx.orgId));
 		assertEquals("The pinned page keeps its selected artifact", artifact2Oid,

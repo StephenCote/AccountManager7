@@ -717,8 +717,13 @@ public class PbServiceFacade {
 	 * {@code force} flag. An explicit per-scene (re-)render from the reader is a re-roll of that scene's
 	 * node even when it is current (the same contract the ChapBook page path uses, §21); without
 	 * {@code force} a current node is reused and the planner refuses with a 409. {@code force} never
-	 * overrides a pin: a pinned terminal is still reported as {@code pinned} and the request is still a
-	 * 409 until the caller unpins it (§10). The bulk {@link #requestRenderAll} does not force.
+	 * overrides a pin: a pinned scene node is the same 409 "is pinned" that {@link #requestRegenerate}
+	 * and {@link #requestChapBookPageRender} give, with or without {@code force}, until the caller
+	 * unpins it (§10). This refusal is the facade's, not the planner's: the planner skips a pinned
+	 * terminal and would still execute a STALE upstream (a drifted portrait), so without it a
+	 * single-scene render of a pinned scene whose character changed was accepted (202) and re-rendered
+	 * the portrait while leaving the scene pinned and stale (P7-5 Scenario D). The bulk
+	 * {@link #requestRenderAll} does not force and relies on the planner skipping pinned nodes.
 	 */
 	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String sdApiType, String sdServer, boolean force) {
@@ -732,6 +737,13 @@ public class PbServiceFacade {
 		if(nodeId == null || nodeId.longValue() <= 0L) {
 			throw new PictureBookException(409, "Scene " + scene.get(FieldNames.FIELD_NAME)
 				+ " has no graph node yet; build the book's graph before rendering it");
+		}
+		/// scene.sceneNode is an id-only FK; read the node for its pin flag before anything is planned.
+		BaseRecord node = PbGraphUtil.readNodeById(user, nodeId.longValue(), (long) workflow.get(FieldNames.FIELD_ORGANIZATION_ID));
+		Boolean pinned = (node != null ? node.get(OlioFieldNames.FIELD_PB_PINNED) : null);
+		if(pinned != null && pinned.booleanValue()) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is pinned. Unpin it first - pinning means do not replace this artifact.");
 		}
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));

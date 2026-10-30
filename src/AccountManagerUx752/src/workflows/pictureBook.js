@@ -11,7 +11,7 @@ import {
     getExtractCheckpoints, discardExtractCheckpoints
 } from './sceneExtractor.js';
 import { openCharacterManager, initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
-import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter } from './pictureBookWorkflow.js';
+import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter, resolvePb2BookObjectId } from './pictureBookWorkflow.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
@@ -30,6 +30,8 @@ import { am7sd } from '../components/sdConfig.js';
  *   5 — Picture Book View (read-only gallery preview of the generated scenes; reorder and
  *       blurb editing are NOT here — they live in the standalone viewer, features/pictureBook.js,
  *       reachable via this step's "Open in Viewer" action)
+ * Steps 4–5 are v1-only. Under picturebook renderPath v3 (the default, P7-3) step 3's "Continue to
+ * Images" closes the wizard and opens the V3 reader, and an existing book never re-enters the wizard.
  */
 
 // ── Wizard state ──────────────────────────────────────────────────────
@@ -40,6 +42,54 @@ let bookObjectId = null;  // Book group objectId (for scenes/viewer/reset APIs)
 let pb2WizardBookOid = null;  // olio.pb.book objectId — PB2 viewer/workflow navigation only
 let pb2WizardSlug = null;     // slug the pb2 book above was created for; a retry with the same slug reuses it
 let workName = '';
+// P7-3: picturebook render path for THIS wizard session ('v1' | 'v3'), read once at open. Under v3 the
+// wizard ends at step 3 and hands off to the V3 reader (/picture-book/v2/{oid}); steps 4–5 (per-scene
+// generate / prepare-images / PUT settings — the PB1 routes the server now answers 409 for) stay v1-only.
+let pbRenderPath = 'v1';
+
+/**
+ * Read the server's picturebook render path. Mirrors featureConfig.normalizeRenderPath: 'v1' only when the
+ * server says so explicitly, otherwise 'v3' — including when /rest/config/render-path cannot be read, so a
+ * wizard that cannot tell never shows steps 4–5 and drives a user into a 409.
+ */
+export async function pictureBookRenderPath() {
+    try {
+        let rp = await am7client.getRenderPath();
+        let pb = rp && rp.picturebook != null ? String(rp.picturebook).toLowerCase() : '';
+        return pb === 'v1' ? 'v1' : 'v3';
+    } catch (_) {
+        return 'v3';
+    }
+}
+
+function pbIsV3() {
+    return pbRenderPath === 'v3';
+}
+
+function readerRoute(pb2Oid) {
+    return '/picture-book/v2/' + pb2Oid;
+}
+
+/**
+ * P7-3 step-3 "Continue to Images" under v3: close the wizard and open the V3 reader on the pb2 book the
+ * step-2 Continue created. When the wizard was resumed on a PB1 group without a cached pb2 oid, resolve it
+ * through the /pb2 bridge first; no V3 record means the step-2 Continue has not run, so stay on step 3.
+ */
+async function handOffToReader() {
+    let oid = pb2WizardBookOid;
+    if (!oid && bookObjectId) {
+        oid = await resolvePb2BookObjectId(bookObjectId);
+        if (oid) pb2WizardBookOid = oid;
+    }
+    if (!oid) {
+        page.toast('error', 'This book has no V3 record to open; go Back and Continue again to create it.');
+        m.redraw();
+        return null;
+    }
+    Dialog.close();
+    m.route.set(readerRoute(oid));
+    return readerRoute(oid);
+}
 
 // Step 1
 let method = 'auto';
@@ -2381,7 +2431,8 @@ function renderStepContent() {
 }
 
 function renderProgressBar() {
-    let labels = ['Source', 'Scenes', 'Characters', 'Images', 'View'];
+    // P7-3: under v3 the wizard ends at Characters — Images/View happen in the V3 reader.
+    let labels = pbIsV3() ? ['Source', 'Scenes', 'Characters'] : ['Source', 'Scenes', 'Characters', 'Images', 'View'];
     return m('div', { class: 'flex items-center gap-1 px-4 pt-3 pb-1' },
         labels.map(function (label, i) {
             let n = i + 1;
@@ -2396,7 +2447,7 @@ function renderProgressBar() {
                     )
                 }, done ? m('span', { class: 'material-symbols-outlined text-sm' }, 'check') : String(n)),
                 m('span', { class: 'text-xs ' + (active ? 'text-blue-500 font-medium' : 'text-gray-400') }, label),
-                n < 5 ? m('span', { class: 'text-gray-300 dark:text-gray-600 mx-1' }, '›') : null
+                n < labels.length ? m('span', { class: 'text-gray-300 dark:text-gray-600 mx-1' }, '›') : null
             ]);
         })
     );
@@ -2557,7 +2608,11 @@ function buildActions() {
     } else if (step === 3) {
         actions.push({
             label: 'Continue to Images', icon: 'arrow_forward', primary: true,
-            onclick: function () { step = 4; m.redraw(); }
+            // P7-3: under v3 this hands off to the V3 reader instead of opening the retired step 4.
+            onclick: function () {
+                if (pbIsV3()) { handOffToReader(); return; }
+                step = 4; m.redraw();
+            }
         });
     } else if (step === 4) {
         if (bookObjectId) {
@@ -2761,6 +2816,20 @@ async function hydrateSceneThumbnails(sceneList) {
 }
 
 async function tryResumeExistingBook(id) {
+    if (pbIsV3()) {
+        // P7-3: the wizard never resumes onto steps 4–5 under v3. A book that already exists opens in the
+        // V3 reader (the id is a pb2 book, or a PB1 group bridged to one via /pb2); a pure PB1 book that
+        // has scenes opens in the read-only PB1 viewer (its "replaced by V3 — import" notice is P7-4's
+        // entry). Anything else is a fresh source document and the wizard opens at step 1. Returns the
+        // route to hand off to, or null to open the wizard.
+        let pb2 = await resolvePb2BookObjectId(id);
+        if (pb2) return { route: readerRoute(pb2) };
+        let legacyScenes = [];
+        try { legacyScenes = await loadPictureBook(id); } catch (e) { legacyScenes = []; }
+        if (legacyScenes && legacyScenes.length) return { route: '/picture-book/' + id };
+        return null;
+    }
+
     let existingScenes;
     try {
         existingScenes = await loadPictureBook(id);
@@ -2830,14 +2899,29 @@ async function pictureBook(entity, inst, onClose) {
         return;
     }
 
-    // Look up system defaults from the shared library (async — UI renders "Loading default..." meanwhile)
-    loadDefaults();
-    // Kick off the common SD config build early so it's ready by the image-generation step.
-    ensureSdConfig();
+    // P7-3: the render path decides whether this session can reach steps 4–5 at all.
+    pbRenderPath = await pictureBookRenderPath();
 
-    // Resume detection: the passed id may actually be an existing book's group objectId rather
-    // than a fresh source document — see tryResumeExistingBook().
-    await tryResumeExistingBook(workObjectId);
+    if (pbIsV3()) {
+        // Resume detection first: under v3 an existing book never opens the wizard — it hands off to
+        // the V3 reader (or the read-only PB1 viewer) before any defaults are loaded. Only a fresh
+        // source document continues into steps 1–3. The SD config is step 4's and is not built here.
+        let handoff = await tryResumeExistingBook(workObjectId);
+        if (handoff && handoff.route) {
+            m.route.set(handoff.route);
+            return;
+        }
+        loadDefaults();
+    } else {
+        // Look up system defaults from the shared library (async — UI renders "Loading default..." meanwhile)
+        loadDefaults();
+        // Kick off the common SD config build early so it's ready by the image-generation step.
+        ensureSdConfig();
+
+        // Resume detection: the passed id may actually be an existing book's group objectId rather
+        // than a fresh source document — see tryResumeExistingBook().
+        await tryResumeExistingBook(workObjectId);
+    }
 
     // Issue 9: check for AccountUsers role — same pattern as ChapBook.
     let pbRoles = page.context && page.context() && page.context().roles;
@@ -2956,12 +3040,17 @@ export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract, stoppedE
     describeFailedPassage, mergeRecoveredScenes, doRetryFailed, doRetryFailedChapters,
     loadPendingCheckpoints, discardPendingCheckpoint, describeCheckpointRow, renderCheckpointBanner,
     chapterSummaryState, renderChapterSummary, renderStep4 };
+
+// Test-only seam (P7-3): the v3 hand-off. buildActions' step-3 branch, the progress bar, the resume
+// decision and handOffToReader are the whole of "the wizard ends at step 3 under v3"; they are
+// module-private and reach m.route / Dialog directly, so the test drives them here and stubs those.
+export { buildActions, renderProgressBar, tryResumeExistingBook, handOffToReader };
 export function __extractStateForTest() {
     return {
         step, workObjectId, extracting, retryingFailed, extractChaptered, extractError, extractJobId, extractProgress,
         extractPartial, extractFailedChunks, extractedScenes, reattaching,
         extractChapterIndex, extractChapterCount, pb2SeriesObjectId, extractChapterSummary, chatConfigRef,
-        pendingCheckpoints, checkpointDiscarding
+        pendingCheckpoints, checkpointDiscarding, pbRenderPath, bookObjectId, pb2WizardBookOid
     };
 }
 export function __setExtractStateForTest(patch) {
@@ -2975,10 +3064,16 @@ export function __setExtractStateForTest(patch) {
     if ('pendingCheckpoints' in patch) pendingCheckpoints = patch.pendingCheckpoints;
     if ('extracting' in patch) extracting = patch.extracting;
     if ('workName' in patch) workName = patch.workName;
+    if ('pbRenderPath' in patch) pbRenderPath = patch.pbRenderPath;
+    if ('bookObjectId' in patch) bookObjectId = patch.bookObjectId;
+    if ('pb2WizardBookOid' in patch) pb2WizardBookOid = patch.pb2WizardBookOid;
 }
 export function __resetExtractStateForTest(work) {
     step = 1;
     workObjectId = work || null;
+    pbRenderPath = 'v1';
+    bookObjectId = null;
+    pb2WizardBookOid = null;
     pendingCheckpoints = [];
     checkpointDiscarding = false;
     extracting = false;

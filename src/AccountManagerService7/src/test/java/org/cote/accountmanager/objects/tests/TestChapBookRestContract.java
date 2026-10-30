@@ -266,37 +266,41 @@ public class TestChapBookRestContract extends BaseTest {
 		assertFalse("An omitted sdConfig must not read back as a record", r.get("sdConfig") instanceof BaseRecord);
 	}
 
-	/// P2-6 (design §28.1 Stage 2): a ChapBook deployment lands on v3 with NO configuration, and
-	/// chapbook.renderPath=v1 is the rollback. Pinned at every surface a Service7 deployment reads: the
-	/// resolver's product default (absent and unrecognised both land on v3, so a typo cannot roll back);
-	/// this module's shipped WEB-INF/web.xml, whose chapbook.renderPath param-value is fed through the
-	/// REAL resolver and must land on v3; and the Docker entrypoint, whose CHAPBOOK_RENDER_PATH default is
-	/// the only value that survives a container restart (web.xml is regenerated from the template on
-	/// every boot). PictureBook stays on its Stage 1 default, v1, at the same surfaces.
+	/// P2-6 (ChapBook) and P7-1 (PictureBook), design §28.1 Stage 2: both book products land on v3 with NO
+	/// configuration, and <product>.renderPath=v1 is the rollback. Pinned at every surface a Service7
+	/// deployment reads: the resolver's product defaults (absent and unrecognised both land on v3, so a typo
+	/// cannot roll back); this module's shipped WEB-INF/web.xml, whose param-values are fed through the REAL
+	/// resolver and must land both products on v3; and the Docker entrypoint, whose *_RENDER_PATH defaults
+	/// are the only values that survive a container restart (web.xml is regenerated from the template on
+	/// every boot). The rollback is honoured for both: ChapBook through requireV3, PictureBook through the
+	/// PB1 entry-point gate (requirePb1Entry refuses under v3, admits under v1).
 	@Test
 	public void TestChapBookDefaultsToV3AndV1IsRollback() throws Exception {
 		assertEquals(PbRenderPath.V3, PbRenderPath.CHAPBOOK_DEFAULT);
-		assertEquals("PictureBook stays on its Stage 1 default", PbRenderPath.V1, PbRenderPath.PICTUREBOOK_DEFAULT);
+		assertEquals("PictureBook retires PB1 by default (P7-1)", PbRenderPath.V3, PbRenderPath.PICTUREBOOK_DEFAULT);
 		OlioModelNames.use();
 		BaseRecord chap = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK);
 		chap.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, PbBookTypeEnumType.CHAPBOOK.toString());
 
-		PbRenderPath.configure(null, "graph");
+		PbRenderPath.configure("graph", "graph");
 		assertEquals("absent / unrecognised must land ChapBook on v3", PbRenderPath.V3, PbRenderPath.chapBook());
-		assertEquals("absent must land PictureBook on v1", PbRenderPath.V1, PbRenderPath.pictureBook());
+		assertEquals("absent / unrecognised must land PictureBook on v3", PbRenderPath.V3, PbRenderPath.pictureBook());
 		PbRenderPath.requireV3(chap);
+		assertTrue("the PictureBook default retires PB1", PbRenderPath.isPb1Retired());
 
 		File base = new File(System.getProperty("basedir", "."));
 		String webXml = Files.readString(new File(base, "src/main/webapp/WEB-INF/web.xml").toPath(), StandardCharsets.UTF_8);
 		String shipped = paramValue(webXml, PbRenderPath.CHAPBOOK_CONFIG_KEY);
 		assertNotNull("WEB-INF/web.xml must declare " + PbRenderPath.CHAPBOOK_CONFIG_KEY, shipped);
-		PbRenderPath.configure(paramValue(webXml, PbRenderPath.PICTUREBOOK_CONFIG_KEY), shipped);
+		String shippedPb = paramValue(webXml, PbRenderPath.PICTUREBOOK_CONFIG_KEY);
+		assertNotNull("WEB-INF/web.xml must declare " + PbRenderPath.PICTUREBOOK_CONFIG_KEY, shippedPb);
+		PbRenderPath.configure(shippedPb, shipped);
 		assertEquals("the shipped web.xml value '" + shipped + "' must land ChapBook on v3", PbRenderPath.V3, PbRenderPath.chapBook());
-		assertEquals("the shipped web.xml keeps PictureBook on v1", PbRenderPath.V1, PbRenderPath.pictureBook());
+		assertEquals("the shipped web.xml value '" + shippedPb + "' must land PictureBook on v3", PbRenderPath.V3, PbRenderPath.pictureBook());
 
 		String entrypoint = Files.readString(new File(base, "../docker/entrypoint.sh").toPath(), StandardCharsets.UTF_8);
 		assertTrue("the Docker entrypoint must default CHAPBOOK_RENDER_PATH to v3", entrypoint.contains(": \"${CHAPBOOK_RENDER_PATH:=v3}\""));
-		assertTrue("the Docker entrypoint keeps PICTUREBOOK_RENDER_PATH on v1", entrypoint.contains(": \"${PICTUREBOOK_RENDER_PATH:=v1}\""));
+		assertTrue("the Docker entrypoint must default PICTUREBOOK_RENDER_PATH to v3", entrypoint.contains(": \"${PICTUREBOOK_RENDER_PATH:=v3}\""));
 
 		PbRenderPath.configure(null, PbRenderPath.V1);
 		assertEquals("v1 is honoured as the rollback", PbRenderPath.V1, PbRenderPath.chapBook());
@@ -309,6 +313,23 @@ public class TestChapBookRestContract extends BaseTest {
 			assertTrue(e.getMessage(), e.getMessage().startsWith(PbRenderPath.REFUSAL_PREFIX));
 			assertTrue("the refusal tells the operator how to leave the rollback: " + e.getMessage(),
 				e.getMessage().contains(PbRenderPath.CHAPBOOK_CONFIG_KEY + "=" + PbRenderPath.V3) && e.getMessage().contains("CHAPBOOK_RENDER_PATH"));
+		}
+
+		PbRenderPath.configure(PbRenderPath.V1, null);
+		assertEquals("picturebook v1 is honoured as the rollback", PbRenderPath.V1, PbRenderPath.pictureBook());
+		assertFalse("the rollback re-enables PB1", PbRenderPath.isPb1Retired());
+		PbRenderPath.requirePb1Entry("PUT /{book}/settings", "PUT /{book}/style");
+		PbRenderPath.configure(null, null);
+		try {
+			PbRenderPath.requirePb1Entry("PUT /{book}/settings", "PUT /{book}/style");
+			fail("a PB1 entry point under the PictureBook default must be refused");
+		}
+		catch(PictureBookException e) {
+			assertEquals(409, e.getStatus());
+			assertTrue(e.getMessage(), e.getMessage().startsWith(PbRenderPath.PB1_REPLACED_PREFIX));
+			assertTrue("the refusal names the replacement and the rollback: " + e.getMessage(),
+				e.getMessage().contains("PUT /{book}/style") && e.getMessage().contains(PbRenderPath.PICTUREBOOK_CONFIG_KEY + "=" + PbRenderPath.V1)
+				&& e.getMessage().contains("PICTUREBOOK_RENDER_PATH"));
 		}
 	}
 

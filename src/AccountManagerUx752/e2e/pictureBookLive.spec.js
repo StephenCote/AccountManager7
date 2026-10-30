@@ -18,7 +18,8 @@ import { test as base, expect } from '@playwright/test';
 import { login } from './helpers/auth.js';
 import {
     setupWorkflowTestData, apiLogin, apiLogout,
-    ensurePath, createNote, createObject
+    ensurePath, createNote, createObject,
+    pb1Retired, PB1_RETIRED_SKIP
 } from './helpers/api.js';
 import fs from 'fs';
 import path from 'path';
@@ -402,11 +403,13 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             if (!extractedScenes.length) extractedScenes = result.scenes;
         });
 
-        test('B.4 Generate scene image', async ({ page }) => {
+        test('B.4 Generate scene image', async ({ page, request }) => {
             test.setTimeout(300000);
             test.skip(!SD_LIVE, NO_SD_REASON);
             test.skip(!workObjectId, 'No work created');
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
+            // P7-2: POST /scene/{id}/generate is a PB1 entry (409 under picturebook.renderPath=v3).
+            test.skip(await pb1Retired(request, { userName: testInfo.testUserName, password: testInfo.testPassword }), PB1_RETIRED_SKIP);
 
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 

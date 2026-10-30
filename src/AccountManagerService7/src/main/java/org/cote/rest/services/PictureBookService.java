@@ -715,10 +715,11 @@ public class PictureBookService {
      * Generate SD image for one scene using the 4-stage pipeline (see PictureBookUtil.generateSceneImage).
      * Body: { chatConfig, sdConfig: {steps,refinerSteps,cfg,hires}, promptOverride }
      *
-     * @deprecated PB1 (v1) entry, design §28.1 Stage 1 Coexist (P5-3): not gated by the render-path switch,
-     *             so it also runs under {@code picturebook.renderPath=v3} (the UI hides it there; the server
-     *             logs a WARN). Replaced by {@code POST /{bookObjectId}/render-plan} (RENDER_PLAN); the
-     *             Stage 2 refusal ({@code PbRenderPath.REFUSAL_PREFIX}) is Phase 7 and removal is Stage 4, Phase 10.
+     * @deprecated PB1 (v1) entry, design §28.1 Stage 2 since P7-2: under the {@code picturebook.renderPath=v3}
+     *             default the body refuses with 409 {@code PbRenderPath.PB1_REPLACED_PREFIX} (after authorization,
+     *             so a stranger still gets 403; the {@code ~/Chat} single-image fallback is exempt). Replaced by
+     *             {@code POST /{bookObjectId}/scene/{sceneObjectId}/render-plan} / {@code /{bookObjectId}/render-all};
+     *             {@code picturebook.renderPath=v1} is the rollback; removal is Stage 4, Phase 10.
      */
     @Deprecated
     @RolesAllowed({"admin", "user"})
@@ -786,9 +787,11 @@ public class PictureBookService {
      * everything PictureBookUtil needs.
      * Body: { sceneObjectIds: [...], chatConfig, promptTemplate, sdConfig: { style } }
      *
-     * @deprecated PB1 (v1) entry, design §28.1 Stage 1 Coexist (P5-3): prepares prompts for the PB1
-     *             {@code /scene/{id}/generate} loop and is not gated by the render-path switch. V3 compiles
-     *             prompts inside the render plan; Stage 2 refusal Phase 7, removal Stage 4, Phase 10.
+     * @deprecated PB1 (v1) entry, design §28.1 Stage 2 since P7-2: prepares prompts for the PB1
+     *             {@code /scene/{id}/generate} loop; under the {@code picturebook.renderPath=v3} default the
+     *             first authorized book scene refuses with 409 {@code PbRenderPath.PB1_REPLACED_PREFIX}
+     *             (a stranger still gets 403). V3 compiles prompts inside the render plan
+     *             ({@code /{bookObjectId}/render-all}); {@code v1} is the rollback; removal Stage 4, Phase 10.
      */
     @Deprecated
     @RolesAllowed({"admin", "user"})
@@ -1111,7 +1114,14 @@ public class PictureBookService {
      * { sdConfig: {...olio.sd.config...}, compositeSdConfig?: {...olio.sd.config...} }. Transport
      * only — the fill/merge logic lives in PictureBookUtil.setBookSdConfig. Returns the stored
      * common config (toFullString), or {"updated":true} if nothing was supplied.
+     *
+     * @deprecated PB1 (v1) settings write, design §28.1 Stage 2 since P7-2: under the
+     *             {@code picturebook.renderPath=v3} default it refuses with 409 {@code PbRenderPath.PB1_REPLACED_PREFIX}
+     *             (after the caller-scoped book lookup, so a missing / unreadable book stays 404). The V3 book-tier
+     *             setter is {@code PUT /{bookObjectId}/style} ({@code sdConfig}); the {@code GET} above stays readable;
+     *             {@code v1} is the rollback; removal Stage 4, Phase 10.
      */
+    @Deprecated
     @RolesAllowed({"admin", "user"})
     @PUT
     @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/settings")
@@ -2309,7 +2319,11 @@ public class PictureBookService {
      * POST /migrate-v1
      * Migrate a PB1 book group to a PB2 {@code olio.pb.book}.
      * Body: { groupObjectId: "&lt;v1 book group objectId&gt;" }
-     * Returns: { bookObjectId, slug, scenesImported, scenesFailed, warnings[] }
+     * Returns: { bookObjectId, slug, scenesImported, scenesFailed, landscapesImported, locationPass, warnings[] }
+     * <p>
+     * The body is read as a plain map ({@link #bodyMap}), not through {@link #parseParams}:
+     * {@code groupObjectId} is not a field of {@code olio.pictureBookRequest}, so the typed
+     * deserializer dropped it and the documented body was always a 400 (found by the P7-4 import spec).
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -2322,10 +2336,11 @@ public class PictureBookService {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         if (user == null) return errorResponse(401, "Unauthorized");
 
-        BaseRecord params = parseParams(json);
-        if (params == null) return errorResponse(400, "Request body required: {groupObjectId}");
+        if (json == null || json.isBlank()) return errorResponse(400, "Request body required: {groupObjectId}");
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return errorResponse(400, "Malformed request body: expected {groupObjectId}");
 
-        String groupObjectId = params.get("groupObjectId");
+        String groupObjectId = bodyString(body, "groupObjectId");
         if (groupObjectId == null || groupObjectId.isBlank()) {
             return errorResponse(400, "groupObjectId is required");
         }

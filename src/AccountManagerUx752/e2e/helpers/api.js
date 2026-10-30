@@ -1028,6 +1028,49 @@ export async function putOrgFeaturesStatus(request, features, opts = {}) {
     }
 }
 
+/**
+ * Read the boot-pinned PictureBook V3 render path per product (GET /rest/config/render-path) as a
+ * given (non-admin) test user. Returns {picturebook, chapbook, chat} ('v1' | 'v3'); throws on a
+ * non-200 so a gate never silently decides on a login failure.
+ */
+export async function readRenderPath(request, opts = {}) {
+    const org = opts.org || '/Development';
+    const userName = opts.userName || SHARED_USER;
+    const password = opts.password || SHARED_PASSWORD;
+
+    let ctx = await newApiContext();
+    try {
+        await loginCtx(ctx, { org, user: userName, password: password });
+        let resp = await ctx.get(REST + '/config/render-path');
+        let text = await resp.text();
+        await logoutCtx(ctx);
+        if (resp.status() !== 200) {
+            throw new Error('GET /rest/config/render-path as ' + userName + ' -> ' + resp.status() + ' ' + text.slice(0, 200));
+        }
+        return JSON.parse(text);
+    } finally {
+        await ctx.dispose();
+    }
+}
+
+/**
+ * P7-2 (design §28.1 Stage 2): under picturebook.renderPath=v3 the PB1 entry points
+ * POST /scene/{id}/generate, POST /{book}/prepare-images and PUT /{book}/settings answer 409
+ * ("replaced by V3"). A spec that drives them directly is the v1 rollback proof: it must skip with
+ * this reason when the stack is on v3 — reported as a skip, never as a pass.
+ */
+export const PB1_RETIRED_SKIP = 'picturebook.renderPath=v3: the PB1 entry points this spec drives '
+    + '(POST /scene/{id}/generate, POST /{book}/prepare-images, PUT /{book}/settings) answer 409 since P7-2 '
+    + '(design §28.1 Stage 2). This spec is the v1 rollback proof — set PICTUREBOOK_RENDER_PATH=v1 on the stack to run it.';
+
+/** True when the live stack retires the PB1 entry points (picturebook render path is not v1). Logs the read. */
+export async function pb1Retired(request, opts = {}) {
+    const rp = await readRenderPath(request, opts);
+    const retired = String(rp.picturebook || '').toLowerCase() !== 'v1';
+    console.log('[e2e-render-path] ' + JSON.stringify(rp) + (retired ? ' -> PB1 entry points retired; skipping' : ' -> PB1 entry points admitted'));
+    return retired;
+}
+
 /** Add an actor to a container (role/group) via the authorization member endpoint (null field = default participation). */
 async function memberCtx(ctx, containerType, containerObjectId, actorType, actorObjectId, enable) {
     let resp = await ctx.get(sAuthZ(containerType, containerObjectId, actorType, actorObjectId, enable));

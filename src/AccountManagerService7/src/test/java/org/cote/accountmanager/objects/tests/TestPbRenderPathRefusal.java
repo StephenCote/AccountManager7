@@ -5,19 +5,24 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.lang.reflect.Proxy;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
 import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.picturebook.PbRenderPath;
+import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.accountmanager.util.JSONUtil;
@@ -27,6 +32,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import jakarta.servlet.ServletContext;
 import jakarta.ws.rs.core.Response;
 
 /// P1-8 (design §28.1 Stage 1): a V3 route is refused with a clear 409 "render path is v1" body when the
@@ -43,15 +49,25 @@ import jakarta.ws.rs.core.Response;
 /// book needs a seeded world; the switch does not). The full V3 flow behind the gate is covered by the
 /// Objects7 suite (TestPbRenderPath, TestPbAutoApprove, TestPbRenderJob, ...) against a graph fixture.
 ///
+/// P7-2 (§28.1 Stage 2 for PictureBook): the three retired PB1 entries - POST /scene/{id}/generate, POST
+/// /{book}/prepare-images, PUT /{book}/settings - refuse with 409 "replaced by V3" under the picturebook v3
+/// default, after authorization / existence and before any SD or persist work (TestPb1EntriesRefusedUnderV3,
+/// on the PB1 storage shape: a data.group book, its Scenes sub-group and one data.note scene).
+///
 /// The switch is process-global; every case restores it in finally.
 public class TestPbRenderPathRefusal extends BaseTest {
 
 	private static final String USER_NAME = "pbrenderpathuser";
+	private static final String STRANGER_NAME = "pbrenderpathstranger";
 	private static final String GROUP_PATH = "~/PbRenderPathRefusal";
+	private static final String NIL_UUID = "00000000-0000-0000-0000-000000000000";
+	/// A syntactically valid SD host nothing listens on: reaching the SD stage would surface as a connection error.
+	private static final ServletContext SD_CONTEXT = initParams(Map.of("sd.server.apiType", "SWARM", "sd.server", "http://127.0.0.1:1"));
 
 	private final PictureBookService service = new PictureBookService();
 
 	private BaseRecord user;
+	private BaseRecord stranger;
 	private long orgId;
 	private String pb0;
 	private String cb0;
@@ -63,9 +79,31 @@ public class TestPbRenderPathRefusal extends BaseTest {
 		ServiceUtil.clearCache();
 		orgId = orgContext.getOrganizationId();
 		user = getCreateUser(USER_NAME);
+		stranger = getCreateUser(STRANGER_NAME);
 		assertNotNull("Test user is null", user);
+		assertNotNull("Stranger user is null", stranger);
+		assertNotEquals("owner and stranger must be different users", user.get(FieldNames.FIELD_ID), stranger.get(FieldNames.FIELD_ID));
 		pb0 = PbRenderPath.pictureBook();
 		cb0 = PbRenderPath.chapBook();
+	}
+
+	/// The same @Context ServletContext stand-in TestPictureBookRenderPlanRoute uses: only the two SD init-params.
+	private static ServletContext initParams(Map<String, String> params) {
+		return (ServletContext) Proxy.newProxyInstance(
+			TestPbRenderPathRefusal.class.getClassLoader(),
+			new Class<?>[] { ServletContext.class },
+			(proxy, method, args) -> {
+				if("getInitParameter".equals(method.getName()) && args != null && args.length == 1) {
+					return params.get(String.valueOf(args[0]));
+				}
+				Class<?> rt = method.getReturnType();
+				if(rt == boolean.class) return false;
+				if(rt == int.class) return 0;
+				if(rt == long.class) return 0L;
+				if(rt.equals(java.util.Enumeration.class)) return Collections.emptyEnumeration();
+				return null;
+			}
+		);
 	}
 
 	@After
@@ -111,6 +149,60 @@ public class TestPbRenderPathRefusal extends BaseTest {
 			assertTrue("Failed to delete the bare book fixture",
 				IOSystem.getActiveContext().getAccessPoint().delete(user, book));
 		}
+	}
+
+	/// The PB1 storage shape createFromScenes produces - ~/Data/PictureBooks/<book>/Scenes/<scene note> - owned
+	/// by the test user, created through AccessPoint as that user. No LLM: the note text is the extraction's JSON shape.
+	private static final class Pb1Book {
+		BaseRecord bookGroup;
+		BaseRecord scenesGroup;
+		BaseRecord scene;
+		String bookGroupOid;
+		String sceneOid;
+	}
+
+	private Pb1Book createPb1Book() throws Exception {
+		Pb1Book b = new Pb1Book();
+		String path = "~/Data/PictureBooks/p72-" + UUID.randomUUID().toString().substring(0, 8);
+		b.bookGroup = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("book group " + path, b.bookGroup);
+		b.bookGroupOid = b.bookGroup.get(FieldNames.FIELD_OBJECT_ID);
+		b.scenesGroup = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, path + "/Scenes", GroupEnumType.DATA.toString(), orgId);
+		assertNotNull("Scenes group", b.scenesGroup);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path + "/Scenes");
+		plist.parameter(FieldNames.FIELD_NAME, "Scene 1");
+		BaseRecord note = ioContext.getFactory().newInstance(ModelNames.MODEL_NOTE, user, null, plist);
+		note.set("text", "{\"title\":\"Scene 1\",\"setting\":\"a quiet room\",\"action\":\"nothing happens\",\"mood\":\"calm\"}");
+		b.scene = IOSystem.getActiveContext().getAccessPoint().create(user, note);
+		assertNotNull("scene note", b.scene);
+		b.sceneOid = b.scene.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("scene objectId", b.sceneOid);
+		return b;
+	}
+
+	private void deletePb1Book(Pb1Book b) {
+		if(b == null) return;
+		IOSystem.getActiveContext().getAccessPoint().delete(user, b.scene);
+		IOSystem.getActiveContext().getAccessPoint().delete(user, b.scenesGroup);
+		IOSystem.getActiveContext().getAccessPoint().delete(user, b.bookGroup);
+	}
+
+	/// 409 whose body starts with PB1_REPLACED_PREFIX and names the retired entry and its V3 replacement.
+	private void assertPb1Replaced(String what, Response r, String entry, String replacement) {
+		assertEquals(what + " under v3 must be 409", 409, r.getStatus());
+		String msg = String.valueOf(body(r).get("error"));
+		assertTrue(what + " must start with '" + PbRenderPath.PB1_REPLACED_PREFIX + "': " + msg, msg.startsWith(PbRenderPath.PB1_REPLACED_PREFIX));
+		assertTrue(what + " must name the retired entry: " + msg, msg.contains(entry));
+		assertTrue(what + " must name the V3 replacement: " + msg, msg.contains(replacement));
+		assertTrue(what + " must name the rollback env var: " + msg, msg.contains("PICTUREBOOK_RENDER_PATH"));
+	}
+
+	/// A non-409 answer that carries none of the PB1 refusal text.
+	private int assertNotPb1Replaced(String what, Response r) {
+		assertNotEquals(what + " must not be the PB1 409", 409, r.getStatus());
+		String msg = String.valueOf(body(r).get("error"));
+		assertTrue(what + " must not carry the PB1 refusal: " + msg, !msg.startsWith(PbRenderPath.PB1_REPLACED_PREFIX));
+		return r.getStatus();
 	}
 
 	/// ------------------------------------------------------------------------------------------
@@ -285,6 +377,50 @@ public class TestPbRenderPathRefusal extends BaseTest {
 		finally {
 			PbRenderPath.configure(pb0, cb0);
 			deleteBareBook(book);
+		}
+	}
+
+	/// P7-2 (§28.1 Stage 2): the three retired PB1 entries through the real REST methods. Owner under v3: 409
+	/// "replaced by V3" naming the entry and its replacement, with a dead SD host (generate never reached SD) and
+	/// GET /settings still {} afterwards (the settings PUT persisted nothing). Gate order (ledger §6.C 215 a): a
+	/// stranger is 404 on the unreadable scene / book and an unknown id is 404 - never the 409, which would confirm
+	/// the record exists. Under the v1 rollback the settings PUT is admitted (200 {"updated":true}, empty body).
+	@Test
+	public void TestPb1EntriesRefusedUnderV3() throws Exception {
+		Pb1Book b = createPb1Book();
+		/// A real field, not "{}": ensureSchema turns an empty object into "{\"schema\":...,}" which parseParams logs and drops.
+		String generateBody = "{\"isBook\":true}";
+		String prepareBody = "{\"sceneObjectIds\":[\"" + b.sceneOid + "\"]}";
+		String settingsBody = "{\"sdConfig\":{\"schema\":\"olio.sd.config\",\"steps\":7}}";
+		try {
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
+			assertPb1Replaced("POST /scene/{id}/generate", service.generateSceneImage(b.sceneOid, generateBody, requestAs(user), SD_CONTEXT),
+				PictureBookUtil.PB1_ENTRY_GENERATE, PictureBookUtil.PB1_REPLACEMENT_GENERATE);
+			assertPb1Replaced("POST /{book}/prepare-images", service.prepareSceneImagePrompts(b.bookGroupOid, prepareBody, requestAs(user)),
+				PictureBookUtil.PB1_ENTRY_PREPARE, PictureBookUtil.PB1_REPLACEMENT_PREPARE);
+			assertPb1Replaced("PUT /{book}/settings", service.setBookSdConfig(b.bookGroupOid, settingsBody, requestAs(user)),
+				PictureBookUtil.PB1_ENTRY_SETTINGS, PictureBookUtil.PB1_REPLACEMENT_SETTINGS);
+			Response get = service.getBookSdConfig(b.bookGroupOid, requestAs(user));
+			assertEquals("GET /{book}/settings stays readable under v3", 200, get.getStatus());
+			assertEquals("the refused PUT must not have persisted a config", "{}", String.valueOf(get.getEntity()));
+
+			assertEquals("stranger generate is 404 on the unreadable scene", 404,
+				assertNotPb1Replaced("generate(stranger)", service.generateSceneImage(b.sceneOid, generateBody, requestAs(stranger), SD_CONTEXT)));
+			assertEquals("stranger settings PUT is 404 on the unreadable book", 404,
+				assertNotPb1Replaced("settings(stranger)", service.setBookSdConfig(b.bookGroupOid, settingsBody, requestAs(stranger))));
+			assertEquals("unknown scene is 404 before the gate", 404,
+				assertNotPb1Replaced("generate(unknown)", service.generateSceneImage(NIL_UUID, generateBody, requestAs(user), SD_CONTEXT)));
+			assertEquals("unknown book is 404 before the gate", 404,
+				assertNotPb1Replaced("settings(unknown)", service.setBookSdConfig(NIL_UUID, settingsBody, requestAs(user))));
+
+			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
+			Response admitted = service.setBookSdConfig(b.bookGroupOid, "", requestAs(user));
+			assertEquals("settings PUT under the v1 rollback is admitted", 200, admitted.getStatus());
+			assertEquals(Boolean.TRUE, body(admitted).get("updated"));
+		}
+		finally {
+			PbRenderPath.configure(pb0, cb0);
+			deletePb1Book(b);
 		}
 	}
 }

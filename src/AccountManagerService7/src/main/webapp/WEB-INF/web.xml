@@ -73,7 +73,8 @@
 	</context-param>
 	<!--
 		PictureBook V3 render-path switch, one per product: v1 | v3. Empty = the product default:
-		picturebook v1 (the legacy render path stays live, Stage 1), chapbook v3 (the old ChapBook path
+		picturebook v3 (Stage 2 since Phase 7: the PB1 entry points refuse with 409 "replaced by V3";
+		picturebook v1 is the rollback and is logged at WARN), chapbook v3 (the old ChapBook path
 		is disabled, Stage 2; chapbook v1 is the rollback and is logged at WARN), chat v1 (the inline
 		scene composite stays live; chat v3 renders the scene through the shared illustration service
 		and never refuses). With v1 the V3 graph routes refuse with 409 "render path is v1".

@@ -8,13 +8,14 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 
 /**
- * The boot-pinned V3 render-path switch (design §28.1, P1-8 Stage 1 / P2-6 Stage 2 / P2-7 chat): one
+ * The boot-pinned V3 render-path switch (design §28.1, P1-8 Stage 1 / P2-6 + P7-1 Stage 2 / P2-7 chat): one
  * value per product, {@code picturebook.renderPath}, {@code chapbook.renderPath} and
  * {@code chat.renderPath}, each {@code v1} or {@code v3}. The defaults differ by product and by stage:
- * PictureBook stays on {@link #V1} ({@link #PICTUREBOOK_DEFAULT}, Stage 1 - PB1 is live and default),
- * ChapBook defaults to {@link #V3} ({@link #CHAPBOOK_DEFAULT}, Stage 2 - the old ChapBook path is
- * disabled, and {@code chapbook.renderPath=v1} is the documented rollback value, logged at WARN when it
- * is applied), and the chat scene image stays on {@link #V1} ({@link #CHAT_DEFAULT}: the inline
+ * PictureBook defaults to {@link #V3} ({@link #PICTUREBOOK_DEFAULT}, Stage 2 since Phase 7 - the PB1 entry
+ * points refuse with {@link #PB1_REPLACED_PREFIX} and {@code picturebook.renderPath=v1} is the rollback value,
+ * logged at WARN when it is applied), ChapBook defaults to {@link #V3} ({@link #CHAPBOOK_DEFAULT}, Stage 2 -
+ * the old ChapBook path is disabled, {@code chapbook.renderPath=v1} the rollback, likewise logged at WARN),
+ * and the chat scene image stays on {@link #V1} ({@link #CHAT_DEFAULT}: the inline
  * composite in {@code ChatService.generateScene} is live and default; {@code v3} routes the scene
  * through the shared illustration service, design §24.1).
  * <p>
@@ -24,10 +25,14 @@ import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
  * variables) and by Console7 ({@code resource.properties}). It is deliberately process-global, not
  * per-organization, and not DB-backed: rollback is "set {@code v1} and restart".
  * <p>
- * The switch is checked <b>only at facade entry</b> ({@link PbServiceFacade}; for chat, at the top of
- * the transport's scene route), never inside {@link PbRenderJobUtil} or {@link PbNodeExecutor}: a
- * value changed mid-run (which only a test can do) cannot abort a job that was admitted. Under
- * {@code v1} the Phase 1 routes refuse with a 409 whose message starts with {@link #REFUSAL_PREFIX};
+ * The switch is checked <b>at entry</b> - the V3 routes at facade entry ({@link PbServiceFacade}), the
+ * retired PB1 entries at the top of their {@link PictureBookUtil} bodies ({@link #requirePb1Entry}), the
+ * composite-mode gate ({@link #requireEnabledCompositeMode}) where a node or scene is about to render, and
+ * for chat at the top of the transport's scene route - always <b>after</b> authorization and existence
+ * checks (a stranger gets 403 / 404, never a 409 that confirms the record exists), and never deep inside
+ * {@link PbRenderJobUtil} or {@link PbNodeExecutor}: a value changed mid-run (which only a test can do)
+ * cannot abort a job that was admitted. Under {@code v1} the Phase 1 routes refuse with a 409 whose
+ * message starts with {@link #REFUSAL_PREFIX};
  * the P0/P1-2 read views ({@code workflowView}, {@code nodeView}, {@code artifactView},
  * {@code listStale}, {@code affectedByRecord}) stay readable under either value, and the boot-time
  * {@link PbRecoveryUtil} sweep runs regardless (it only touches V3 run/node rows, which exist only if
@@ -49,8 +54,12 @@ public final class PbRenderPath {
 	public static final String V1 = "v1";
 	public static final String V3 = "v3";
 
-	/** PictureBook product default (§28.1 Stage 1): the PB1 path stays live and default. */
-	public static final String PICTUREBOOK_DEFAULT = V1;
+	/**
+	 * PictureBook product default (§28.1 Stage 2, Phase 7 / P7-1): the V3 graph path is the only path for new
+	 * books and for opening existing books; the PB1 entry points refuse with {@link #PB1_REPLACED_PREFIX};
+	 * {@link #V1} is the rollback (PB1 stays in the build until Phase 10).
+	 */
+	public static final String PICTUREBOOK_DEFAULT = V3;
 
 	/** ChapBook product default (§28.1 Stage 2): the old ChapBook path is disabled; {@link #V1} is the rollback. */
 	public static final String CHAPBOOK_DEFAULT = V3;
@@ -61,8 +70,18 @@ public final class PbRenderPath {
 	/** Every refusal message starts with this, so clients and tests can key on it. */
 	public static final String REFUSAL_PREFIX = "render path is v1";
 
+	/**
+	 * Every Stage 2 "PB1 entry point retired" refusal ({@link #requirePb1Entry}) starts with this; the rest of
+	 * the message names the V3 replacement and the rollback. Same shape as
+	 * {@code SceneCompositeUtil.KONTEXT_RETIRED_MESSAGE} ("… has been replaced by V3 …"); match with startsWith.
+	 */
+	public static final String PB1_REPLACED_PREFIX = "replaced by V3";
+
 	/** Logged at WARN whenever the ChapBook rollback value is applied, so a rolled-back deployment is visible in the log. */
 	public static final String CHAPBOOK_ROLLBACK_WARNING = "legacy ChapBook render path re-enabled (rollback)";
+
+	/** Logged at WARN whenever the PictureBook rollback value is applied (P7-1), for the same reason. */
+	public static final String PICTUREBOOK_ROLLBACK_WARNING = "legacy PictureBook (PB1) render path re-enabled (rollback)";
 
 	private static volatile String pictureBook = PICTUREBOOK_DEFAULT;
 	private static volatile String chapBook = CHAPBOOK_DEFAULT;
@@ -75,13 +94,17 @@ public final class PbRenderPath {
 	 * Pin all three values. Null/blank means "absent" and pins the product default at INFO
 	 * ({@link #PICTUREBOOK_DEFAULT} / {@link #CHAPBOOK_DEFAULT} / {@link #CHAT_DEFAULT}); an unrecognised
 	 * value pins the product default at WARN naming the key and the value (a typo must never silently
-	 * move a product off its default); {@code chapbook.renderPath=v1} is honoured and logged at WARN as
-	 * {@link #CHAPBOOK_ROLLBACK_WARNING}; a change is logged at INFO. Never throws.
+	 * move a product off its default); {@code picturebook.renderPath=v1} / {@code chapbook.renderPath=v1} are
+	 * honoured and logged at WARN as {@link #PICTUREBOOK_ROLLBACK_WARNING} / {@link #CHAPBOOK_ROLLBACK_WARNING};
+	 * a change is logged at INFO. Never throws.
 	 */
 	public static void configure(String pictureBookValue, String chapBookValue, String chatValue) {
 		pictureBook = resolve(PICTUREBOOK_CONFIG_KEY, pictureBookValue, pictureBook, PICTUREBOOK_DEFAULT);
 		chapBook = resolve(CHAPBOOK_CONFIG_KEY, chapBookValue, chapBook, CHAPBOOK_DEFAULT);
 		chat = resolve(CHAT_CONFIG_KEY, chatValue, chat, CHAT_DEFAULT);
+		if(V1.equals(pictureBook)) {
+			logger.warn(PICTUREBOOK_CONFIG_KEY + "=" + V1 + ": " + PICTUREBOOK_ROLLBACK_WARNING);
+		}
 		if(V1.equals(chapBook)) {
 			logger.warn(CHAPBOOK_CONFIG_KEY + "=" + V1 + ": " + CHAPBOOK_ROLLBACK_WARNING);
 		}
@@ -175,6 +198,36 @@ public final class PbRenderPath {
 			+ " and restart: on Docker via the " + env + " environment variable (docker-compose / .env),"
 			+ " on a non-Docker Tomcat via the " + key + " init-param in WEB-INF/web.xml,"
 			+ " and for Console7 via " + key + " in resource.properties. Applied at startup only.");
+	}
+
+	/** True when the PictureBook product is on {@link #V3}, i.e. the PB1 entry points are retired (§28.1 Stage 2). */
+	public static boolean isPb1Retired() {
+		return V3.equals(pictureBook);
+	}
+
+	/**
+	 * §28.1 Stage 2 (Phase 7 / P7-2): refuse a PB1 entry point with a 409 while the PictureBook product is on
+	 * {@link #V3}. Product-level on purpose (§6.C 214 d): the PB1 routes carry a scene or group objectId, not an
+	 * {@code olio.pb.book}, so there is no book to read the product from — and {@link #keyFor} would fall to the
+	 * picturebook key anyway. The message starts with {@link #PB1_REPLACED_PREFIX}, names the V3 replacement the
+	 * caller should use ({@code replacement}, e.g. {@code "POST /{book}/run"}), and spells out the rollback the
+	 * same way {@link #requireV3} does, because on Docker {@code web.xml} is regenerated at boot. PB1 stays in the
+	 * build until Phase 10; under {@link #V1} this returns without a check.
+	 *
+	 * @param entryLabel  the retired entry point, e.g. {@code "POST /scene/{id}/generate"}
+	 * @param replacement the V3 surface that replaces it
+	 */
+	public static void requirePb1Entry(String entryLabel, String replacement) {
+		if(!isPb1Retired()) {
+			return;
+		}
+		throw new PictureBookException(409, PB1_REPLACED_PREFIX + ": " + entryLabel
+			+ " is a PB1 entry point retired at design section 28.1 Stage 2 (" + PICTUREBOOK_CONFIG_KEY + "=" + V3 + ")."
+			+ " Use " + replacement + " instead."
+			+ " To re-enable PB1 (rollback) set " + PICTUREBOOK_CONFIG_KEY + "=" + V1
+			+ " and restart: on Docker via the PICTUREBOOK_RENDER_PATH environment variable (docker-compose / .env),"
+			+ " on a non-Docker Tomcat via the " + PICTUREBOOK_CONFIG_KEY + " init-param in WEB-INF/web.xml,"
+			+ " and for Console7 via " + PICTUREBOOK_CONFIG_KEY + " in resource.properties. Applied at startup only.");
 	}
 
 	/**

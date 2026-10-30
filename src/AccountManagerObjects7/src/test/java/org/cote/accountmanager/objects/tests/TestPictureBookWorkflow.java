@@ -25,6 +25,7 @@ import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbDeleteUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
+import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.picturebook.PbSubRecordUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -39,6 +40,7 @@ import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
+import org.junit.After;
 import org.junit.Test;
 
 /**
@@ -103,6 +105,10 @@ public class TestPictureBookWorkflow extends BaseTest {
 
 	private void setupContext() {
 		AuditUtil.setLogToConsole(false);
+		/// P7-2: every case here drives the PB1 entry generateSceneImage, which refuses with 409 under
+		/// the default picturebook.renderPath=v3 (design §28.1 Stage 2). Pin the rollback value for this
+		/// product only; BaseTest re-pins v3 on the next @Before and restorePb1Pin restores it anyway.
+		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
 		Factory mf = IOSystem.getActiveContext().getFactory();
 		BaseRecord orgCtxUser = getTestOrganization(ORG_PATH).getAdminUser();
 		testUser = mf.getCreateUser(orgCtxUser, TEST_USER, (long) orgCtxUser.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -113,6 +119,11 @@ public class TestPictureBookWorkflow extends BaseTest {
 			+ " TestPictureBookCustom#TestPictureBookCustomPipeline once to build the cached catatone"
 			+ " content this test attaches to - it is deliberately not rebuilt here, and a stand-in"
 			+ " fixture would not exercise the real source document.", chatConfig);
+	}
+
+	@After
+	public void restorePb1Pin() {
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
 	}
 
 	/**

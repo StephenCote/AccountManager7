@@ -28,6 +28,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.SceneGenerationParams;
@@ -43,6 +44,8 @@ import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.FileUtil;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 /**
@@ -120,6 +123,19 @@ public class TestPictureBookUtilE2E extends BaseTest {
 	}
 
 	private static final String ORG_SUBPATH = "/Development/PictureBookUtilE2E";
+
+	/// P7-2: this class drives the PB1 entry generateSceneImage, which refuses with 409 under the
+	/// default picturebook.renderPath=v3 (design §28.1 Stage 2). Pin the rollback value for this product
+	/// only (ChapBook stays v3); BaseTest re-pins v3 on every @Before and restorePb1Pin restores it.
+	@Before
+	public void pinPb1Rollback() {
+		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
+	}
+
+	@After
+	public void restorePb1Pin() {
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
+	}
 
 	/**
 	 * Matches the same class of LLM "I don't know" placeholder tokens that

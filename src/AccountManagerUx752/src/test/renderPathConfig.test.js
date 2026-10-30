@@ -79,26 +79,26 @@ describe('featureConfig render-path (P1-8)', () => {
         expect(tags).not.toContain('input');
     });
 
-    it('falls back to the product defaults (v1/v3/v1) when the route is absent (older Service7) without failing the panel', async () => {
+    it('falls back to the product defaults (v3/v3/v1) when the route is absent (older Service7) without failing the panel', async () => {
         mockGetRenderPath.mockRejectedValue(Object.assign(new Error('Not Found'), { code: 404 }));
         await loadConfig();
-        expect(renderPath()).toEqual({ picturebook: 'v1', chapbook: 'v3', chat: 'v1' });
+        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
         let view = routes['/admin/features'].view();
-        expect(findByTestId(view, 'render-path-picturebook')[0].attrs['data-value']).toBe('v1');
+        expect(findByTestId(view, 'render-path-picturebook')[0].attrs['data-value']).toBe('v3');
         expect(findByTestId(view, 'render-path-chapbook')[0].attrs['data-value']).toBe('v3');
         expect(findByTestId(view, 'render-path-chat')[0].attrs['data-value']).toBe('v1');
         // The rest of the panel loaded: the profile line is present, no load error.
         expect(JSON.stringify(view)).not.toContain('Failed to load feature configuration');
     });
 
-    it('treats a null body or an unrecognised value as the product default (picturebook v1, chapbook v3, chat v1)', async () => {
+    it('treats a null body or an unrecognised value as the product default (picturebook v3 since P7-1, chapbook v3, chat v1)', async () => {
         mockGetRenderPath.mockResolvedValue(null);
         await loadConfig();
-        expect(renderPath()).toEqual({ picturebook: 'v1', chapbook: 'v3', chat: 'v1' });
+        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
 
         mockGetRenderPath.mockResolvedValue({ picturebook: 'v2', chapbook: 'V1', chat: 'V3' });
         await loadConfig();
-        expect(renderPath()).toEqual({ picturebook: 'v1', chapbook: 'v3', chat: 'v1' });
+        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
     });
 
     it('treats an older Service7 body with no chat key as chat v1 (P2-7)', async () => {
@@ -109,11 +109,12 @@ describe('featureConfig render-path (P1-8)', () => {
         expect(findByTestId(view, 'render-path-chat')[0].attrs['data-value']).toBe('v1');
     });
 
-    it('reports the ChapBook rollback value (v1) when the server set it explicitly', async () => {
+    it('reports the rollback value (v1) for either book product when the server set it explicitly', async () => {
         mockGetRenderPath.mockResolvedValue({ picturebook: 'v1', chapbook: 'v1', chat: 'v1' });
         await loadConfig();
         expect(renderPath()).toEqual({ picturebook: 'v1', chapbook: 'v1', chat: 'v1' });
         let view = routes['/admin/features'].view();
+        expect(findByTestId(view, 'render-path-picturebook')[0].attrs['data-value']).toBe('v1');
         expect(findByTestId(view, 'render-path-chapbook')[0].attrs['data-value']).toBe('v1');
     });
 });

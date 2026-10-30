@@ -39,7 +39,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { ensureSharedTestUser, ensureChatConfig, ensurePath } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig, ensurePath, pb1Retired, PB1_RETIRED_SKIP } from './helpers/api.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -185,6 +185,8 @@ test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM+SD e
 
     test('CORE + W2: extract -> create PB2 book -> render scene -> workflow graph populates', async ({ page }) => {
         test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — skips the live LLM extraction + SD render (W1/W2/W4)');
+        // P7-2: step 5 renders through the PB1 entry POST /scene/{id}/generate (409 under v3); W5 is not gated.
+        test.skip(await pb1Retired(page.request), PB1_RETIRED_SKIP);
         test.setTimeout(35 * 60 * 1000); // live LLM extraction + SD render (budget, not a threshold)
         const testStart = Date.now();
 

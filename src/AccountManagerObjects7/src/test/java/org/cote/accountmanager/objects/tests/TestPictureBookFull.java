@@ -28,6 +28,7 @@ import org.cote.accountmanager.olio.picturebook.PbArtifactUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
+import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
@@ -55,6 +56,8 @@ import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import jakarta.ws.rs.core.MediaType;
@@ -100,6 +103,20 @@ public class TestPictureBookFull extends BaseTest {
 	private static String pbLlmModel(java.util.Properties props) {
 		String m = OlioTestUtil.pbModel(props);
 		return (m != null && !m.isBlank()) ? m : "qwen3-vl:8b-instruct";
+	}
+
+	/// P7-2: this class drives the PB1 entries generateSceneImage / prepareSceneImagePrompts, which
+	/// refuse with 409 under the default picturebook.renderPath=v3 (design §28.1 Stage 2). Pin the
+	/// rollback value for this product only (ChapBook stays v3); BaseTest re-pins v3 on every @Before
+	/// and restorePb1Pin restores it after each case.
+	@Before
+	public void pinPb1Rollback() {
+		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
+	}
+
+	@After
+	public void restorePb1Pin() {
+		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
 	}
 
 	private void setupTestContext() {

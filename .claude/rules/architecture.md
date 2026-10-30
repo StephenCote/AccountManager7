@@ -135,6 +135,17 @@ pretending "0 affected". And invalidate-then-put is a check-then-act race: captu
 invalidation epoch before computing and refuse to cache if it moved, excluding the computation's own
 writes from the epoch (`PbStaleUtil.put(scan, epoch)`, `persistStatus(…, invalidateScan=false)`).
 
+## Feature / product gates sit after authorization and existence checks, never before
+
+A gate that refuses a call because a product switch is off (`PbRenderPath.requireV3`, `requirePb1Entry`,
+`requireEnabledCompositeMode`) must run **after** the caller has been authorized against the record and the
+record has been resolved: `requireV3` sits after `requireBook` in `PbServiceFacade`; the PB1 gate sits in the
+`PictureBookUtil` body after `authorizeSceneAccess` / `authorizeSceneRecord` / the 404 (`PictureBookUtil.java:9711`
+states the invariant). A gate in a wrapper, or at the top of a batch method whose authorization is per item,
+turns a stranger's 403 / 404 into a 409 that confirms the record exists and breaks the authz tests
+(`TestPictureBookSceneAuthz`). Gates never live deep inside a job or node executor either: a switch changed
+mid-run must not abort work that was already admitted (design §28.1, ledger §6.C 215 a).
+
 ## Config: DB-backed vs boot-pinned
 
 `docker/entrypoint.sh` regenerates `WEB-INF/web.xml` from a template via `envsubst` on **every** boot, so

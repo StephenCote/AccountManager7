@@ -181,7 +181,15 @@ public class TestPbSeriesChapterScenesResolve extends BaseTest {
 		String expectedStyle = "photograph";
 		BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
 		sdConfig.set("style", expectedStyle);
-		BaseRecord stored = PictureBookUtil.setBookSdConfig(testUser, bookOid, sdConfig, null);
+		// P7-2: setBookSdConfig is a PB1 entry that refuses with 409 under the default picturebook v3
+		// (design §28.1 Stage 2); pin the rollback value for this product around the one call and restore.
+		BaseRecord stored;
+		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
+		try {
+			stored = PictureBookUtil.setBookSdConfig(testUser, bookOid, sdConfig, null);
+		} finally {
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
+		}
 		assertNotNull("setBookSdConfig(pb.book objectId) must store and return the common config", stored);
 		BaseRecord settingsViaGroup = PictureBookUtil.getBookSdConfig(testUser, sceneGroupObjectId);
 		BaseRecord settingsViaBook = PictureBookUtil.getBookSdConfig(testUser, bookOid);

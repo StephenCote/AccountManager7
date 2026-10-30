@@ -16,7 +16,7 @@
  * every assertion runs as e2etest_shared.
  */
 import { test, expect } from '@playwright/test';
-import { ensureSharedTestUser, ensureChatConfig } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig, pb1Retired, PB1_RETIRED_SKIP } from './helpers/api.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -244,6 +244,8 @@ test.describe('PictureBook PB2 — full render journey (LLM+SD, gated)', () => {
     });
 
     test('Steps 2-5: create-from-scenes → node render → in-browser image byte proof', async ({ page, request }) => {
+        // P7-2: this journey renders through the PB1 entry POST /scene/{id}/generate (409 under v3).
+        test.skip(await pb1Retired(request), PB1_RETIRED_SKIP);
         await apiLoginShared(request);
 
         // A "work" record (findWork accepts data.data or data.note by objectId) is the source document

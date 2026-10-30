@@ -17,8 +17,8 @@
  *
  * Then: un-forced render → 202 → completes DONE_UNVERIFIED with an inputHash + artifact revision 1;
  * un-forced render again → 409 "(1 reused, 0 pinned)" [the PF-9 proof]; pinned + forced → 409
- * "(0 reused, 1 pinned)"; unpinned + ?force=true → 202 → revision 2 supersedes revision 1 and is the
- * page's image.
+ * "Node … is pinned" (the facade refuses before planning, P7-5); unpinned + ?force=true → 202 →
+ * revision 2 supersedes revision 1 and is the page's image.
  *
  * Live SD on .39 (two renders) — gated behind PB_SD_TESTS=1 and run serially:
  *
@@ -367,7 +367,7 @@ test.describe('PictureBook V3 PF-9 — plain-PB (STORY) render path over REST', 
         await request.get(REST + '/logout');
     });
 
-    test('PF-9 proof: an un-forced render of the now-current scene is refused 409 "(1 reused, 0 pinned)"; pinned, even a forced render is refused 409 "(0 reused, 1 pinned)"', async ({ request }) => {
+    test('PF-9 proof: an un-forced render of the now-current scene is refused 409 "(1 reused, 0 pinned)"; pinned, even a forced render is refused 409 "Node … is pinned"', async ({ request }) => {
         test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — needs the render from test 1');
         expect(r1.artifactObjectId, 'render 1 produced an artifact').toBeTruthy();
         const PB = PB_ROOT + '/' + bookObjectId;
@@ -393,7 +393,9 @@ test.describe('PictureBook V3 PF-9 — plain-PB (STORY) render path over REST', 
         const pg = (await (await request.get(PB + '/pages')).json()).find(p => p.objectId === fx.scene.objectId);
         expect(pg.artifactObjectId, 'the page still shows revision 1').toBe(r1.artifactObjectId);
 
-        // Pinned: the pin wins over force.
+        // Pinned: the pin wins over force. Since P7-5 (Scenario D) the refusal is the facade's own "Node … is
+        // pinned" (the regenerate / ChapBook page text), not the planner's "(0 reused, 1 pinned)": the facade
+        // refuses before planning so a pinned scene with a STALE upstream is refused too.
         const pinResp = await request.post(PB + '/node/' + fx.nodeL.objectId + '/pin', { data: { pinned: true } });
         const pinText = await pinResp.text();
         expect(pinResp.status(), 'pin L: ' + pinText).toBe(200);
@@ -401,7 +403,7 @@ test.describe('PictureBook V3 PF-9 — plain-PB (STORY) render path over REST', 
         const pinnedForced = await postRender(request, PB, fx.scene.objectId, true);
         console.log('[pf9-409-pinned] HTTP ' + pinnedForced.status + ' ' + pinnedForced.text.slice(0, 300));
         expect(pinnedForced.status, 'forced render of a pinned scene is refused: ' + pinnedForced.text).toBe(409);
-        expect(JSON.parse(pinnedForced.text).error).toMatch(/^Nothing to render: every node of this scene is current \(0 reused, 1 pinned\)$/);
+        expect(JSON.parse(pinnedForced.text).error).toBe('Node ' + fx.handleL + ' is pinned. Unpin it first - pinning means do not replace this artifact.');
         const pgPinned = (await (await request.get(PB + '/pages')).json()).find(p => p.objectId === fx.scene.objectId);
         expect(pgPinned.pinned, 'page reports the pin').toBe(true);
 

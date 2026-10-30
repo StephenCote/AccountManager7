@@ -11,6 +11,7 @@ import {
 // 409 bodies are the planner's real messages (PbRenderJobUtil / PbServiceFacade).
 
 const PINNED_409 = '{"error":"Nothing to render: every node of scene 3 is current (0 reused, 1 pinned)"}';
+const NODE_PINNED_409 = '{"error":"Node scene-3-image is pinned. Unpin it first - pinning means do not replace this artifact."}';
 const INFLIGHT_409 = '{"error":"Node scene-3-image is being rendered by run run-7"}';
 const RESUME_409 = '{"error":"Run run-7 is DONE; only an INTERRUPTED run can be resumed"}';
 const QUOTA_429 = '{"error":"Principal already has 2 of 2 picture-book render jobs in flight"}';
@@ -48,6 +49,17 @@ describe('uniform non-2xx pattern', () => {
         try { await renderScene('book', 'scene'); } catch (e) { err = e; }
         expect(err.message).toBe('(409) Nothing to render: every node of scene 3 is current (0 reused, 1 pinned)');
         expect(isPinnedRefusal(err)).toBe(true);
+    });
+    it('the facade\'s "Node … is pinned" 409 (per-scene render since P7-5) is a pinned refusal; a non-409 with that text is not', async () => {
+        mockFetch(409, NODE_PINNED_409);
+        let err;
+        try { await renderScene('book', 'scene', { force: true }); } catch (e) { err = e; }
+        expect(err.message).toBe('(409) Node scene-3-image is pinned. Unpin it first - pinning means do not replace this artifact.');
+        expect(err.status).toBe(409);
+        expect(isPinnedRefusal(err)).toBe(true);
+        mockFetch(500, NODE_PINNED_409);
+        let e5; try { await renderScene('book', 'scene', { force: true }); } catch (e) { e5 = e; }
+        expect(isPinnedRefusal(e5)).toBe(false);
     });
     it('an in-flight 409 and a 429 are NOT pinned refusals', async () => {
         mockFetch(409, INFLIGHT_409);

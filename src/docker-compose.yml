@@ -54,10 +54,11 @@ services:
       # Concurrent SD generations per backend for PictureBook render runs; empty = 1.
       PB_RENDER_SD_PERMITS: ${PB_RENDER_SD_PERMITS:-}
       # PictureBook V3 render-path switch per product: v1 | v3 (graph rendering). Boot-pinned;
-      # rollback = v1 + restart. PictureBook stays v1 through Stage 1; ChapBook is v3 from Stage 2
-      # (the old ChapBook path is disabled; CHAPBOOK_RENDER_PATH=v1 is the rollback, logged at WARN);
-      # chat stays v1 (CHAT_RENDER_PATH=v3 renders the chat scene through the shared illustration service).
-      PICTUREBOOK_RENDER_PATH: ${PICTUREBOOK_RENDER_PATH:-v1}
+      # rollback = v1 + restart. PictureBook is v3 from Stage 2 (Phase 7: the PB1 entry points refuse
+      # with "replaced by V3"; PICTUREBOOK_RENDER_PATH=v1 is the rollback, logged at WARN); ChapBook is v3
+      # from Stage 2 (the old ChapBook path is disabled; CHAPBOOK_RENDER_PATH=v1 is the rollback, logged at
+      # WARN); chat stays v1 (CHAT_RENDER_PATH=v3 renders the chat scene through the shared illustration service).
+      PICTUREBOOK_RENDER_PATH: ${PICTUREBOOK_RENDER_PATH:-v3}
       CHAPBOOK_RENDER_PATH: ${CHAPBOOK_RENDER_PATH:-v3}
       CHAT_RENDER_PATH: ${CHAT_RENDER_PATH:-v1}
       # Must include whatever origin the browser actually uses to reach nginx.

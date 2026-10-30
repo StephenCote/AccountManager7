@@ -26,7 +26,7 @@ import {
     resolveCharacterNames, sceneCharacterLabels,
     listExtractCheckpoints, discardExtractCheckpoints, pollJob
 } from '../workflows/sceneExtractor.js';
-import { pictureBookFromId, describeCheckpointRow } from '../workflows/pictureBook.js';
+import { pictureBookFromId, describeCheckpointRow, pictureBookRenderPath } from '../workflows/pictureBook.js';
 import { openCharacterManager } from '../workflows/pictureBookCharacters.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { routes as reviewRoutes } from './pictureBookReview.js';
@@ -41,7 +41,8 @@ import {
     renderScene, renderAll, getRun, resumeRun, cancelRun,
     getAutoApprove, setAutoApprove, unpinNode, isPinnedRefusal,
     planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS,
-    deriveStageList, runSummaryText
+    deriveStageList, runSummaryText, resolvePb2BookObjectId,
+    migrateV1Book, normalizeMigration
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -787,6 +788,13 @@ let imageUrls = {};      // imageObjectId → resolved media URL
 let characterNames = {}; // charPerson objectId → display name (see resolveCharacterNames)
 let viewerLoading = false;
 let viewerError = null;
+// P7-3: the picturebook render path the viewer was opened under, and whether the book on screen is a
+// PB1 book being shown read-only under v3 (it has scenes but no olio.pb.book — "replaced by V3 — import").
+let viewerRenderPath = 'v1';
+let viewerLegacy = false;
+// P7-4: an import of the PB1 book on screen is in flight (POST /migrate-v1); the notice's button is
+// disabled meanwhile so a double click cannot queue a second import that would 409 on the slug.
+let viewerImporting = false;
 
 
 // Reader nav state (currentPage: 0 = cover, 1..N = scene pages; fullscreen). Held in one object owned
@@ -804,10 +812,27 @@ async function loadViewer(bookObjectId) {
     viewerScenes = [];
     imageUrls = {};
     characterNames = {};
+    viewerLegacy = false;
+    viewerImporting = false;
     pbReader.currentPage = 0;
     pbReader.fullscreen = false;
     clearImageCache();
     m.redraw();
+
+    // P7-3: under v3 this route is only a bridge. A book with a V3 record (a PB1 group bridged via /pb2,
+    // or a pb2 book oid handed straight to this route) opens in the V3 reader; the redirect replaces the
+    // history entry so Back does not bounce through here. viewerLoading stays true across the redirect
+    // so the empty state never flashes. Anything else (a pure PB1 book, or a source document with no
+    // book yet) continues below.
+    viewerRenderPath = await pictureBookRenderPath();
+    if (viewerRenderPath === 'v3') {
+        let pb2 = null;
+        try { pb2 = await resolvePb2BookObjectId(bookObjectId); } catch (e) { pb2 = null; }
+        if (pb2) {
+            m.route.set('/picture-book/v2/' + pb2, null, { replace: true });
+            return;
+        }
+    }
     try {
         // Resolve the title: a legacy book group, the source document itself when the route was
         // opened straight from a data.data / data.note objectId (no book generated yet), or a PB2
@@ -846,6 +871,8 @@ async function loadViewer(bookObjectId) {
         let scenes = [];
         try { scenes = await loadPictureBook(bookObjectId); } catch (e) { /* meta may not exist */ }
         viewerScenes = Array.isArray(scenes) ? scenes : [];
+        // P7-3: scenes but no V3 record (the redirect above did not fire) ⇒ a PB1 book shown read-only.
+        viewerLegacy = viewerRenderPath === 'v3' && viewerScenes.length > 0;
 
         if (viewerScenes.length) {
             // Both resolutions are independent lookups over the same loaded scenes — run them
@@ -1036,11 +1063,101 @@ function renderViewerEmpty() {
     ]);
 }
 
+// P7-3: the "replaced by V3 — import" notice for a PB1 book shown read-only under v3. P7-4: its Import
+// button runs /migrate-v1 and opens the V3 reader on the imported book, with the result on top.
+function renderViewerLegacyNotice() {
+    if (!viewerLegacy) return null;
+    return m('div', {
+        class: 'mb-4 p-3 rounded bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 text-sm text-amber-900 dark:text-amber-100 flex items-start gap-2',
+        'data-pb1-legacy-notice': '1'
+    }, [
+        m('span', { class: 'material-symbols-outlined text-amber-500 mt-0.5' }, 'history'),
+        m('div', { class: 'flex-1' }, [
+            m('div', { class: 'font-medium' }, 'This picture book predates V3 and is shown read-only.'),
+            m('div', { class: 'text-xs mt-1 opacity-90' },
+                'The PB1 renderer has been replaced by V3. Import the book to open it in the V3 workspace (render, review and style it there). '
+                + 'Scene text, rendered scene images and landscapes are carried over; portraits, composites and the workflow are not, and nothing here is changed.')
+        ]),
+        m('button', {
+            class: 'btn btn-primary px-3 py-1 text-xs whitespace-nowrap',
+            'data-pb1-import': '1',
+            disabled: viewerImporting,
+            onclick: function () { importLegacyBook(); }
+        }, [
+            m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, viewerImporting ? 'hourglass_top' : 'upload'),
+            viewerImporting ? 'Importing…' : 'Import into V3'
+        ])
+    ]);
+}
+
+/**
+ * P7-4: pure — the one-line summary of a /migrate-v1 result (normalizeMigration shape):
+ * "3 scenes imported, 1 failed, 2 landscapes imported".
+ */
+export function migrationSummaryText(r) {
+    let parts = [r.scenesImported + ' scene' + (r.scenesImported !== 1 ? 's' : '') + ' imported'];
+    if (r.scenesFailed) parts.push(r.scenesFailed + ' failed');
+    parts.push(r.landscapesImported + ' landscape' + (r.landscapesImported !== 1 ? 's' : '') + ' imported');
+    return parts.join(', ');
+}
+
+// P7-4: the result dialog body — counts plus every server warning, verbatim (the server already strips
+// raw record dumps out of them). Opened over the V3 reader so the user reads it where the book now is.
+function renderMigrationResult(r) {
+    return m('div', { class: 'text-sm text-gray-700 dark:text-gray-300', 'data-pb1-import-result': '1' }, [
+        m('div', { class: 'font-medium' }, migrationSummaryText(r)),
+        r.slug ? m('div', { class: 'text-xs mt-1 opacity-80' }, 'V3 book "' + r.slug + '". Scene images and landscapes are carried over unapproved — review them in the V3 workspace; portraits, composites and bindings are rendered there.') : null,
+        r.warnings.length ? m('div', { class: 'mt-3' }, [
+            m('div', { class: 'text-xs font-medium text-amber-700 dark:text-amber-300' }, r.warnings.length + ' warning' + (r.warnings.length !== 1 ? 's' : '')),
+            m('ul', { class: 'list-disc pl-5 mt-1 text-xs space-y-1 max-h-48 overflow-y-auto' },
+                r.warnings.map(function (w) { return m('li', w); }))
+        ]) : null
+    ]);
+}
+
+/**
+ * P7-4: Import the PB1 book on screen into V3 — POST /migrate-v1 {groupObjectId} — then open the
+ * V3 reader on the new olio.pb.book and show the result (scenes / landscapes imported, failures,
+ * warnings) over it. PB1 records are never modified by the server, so a failure leaves this view as
+ * it was: the error (404 no meta, 409 slug already taken, 500) goes to a toast and the button re-arms.
+ */
+export async function importLegacyBook() {
+    if (!viewerLegacy || viewerImporting || !viewerBookId) return;
+    let groupOid = viewerBookId;
+    viewerImporting = true;
+    m.redraw();
+    let result;
+    try {
+        result = normalizeMigration(await migrateV1Book(groupOid));
+    } catch (e) {
+        viewerImporting = false;
+        page.toast('error', (e && e.message) || 'Import failed');
+        m.redraw();
+        return;
+    }
+    viewerImporting = false;
+    if (!result.bookObjectId) {
+        page.toast('error', 'Import returned no V3 book');
+        m.redraw();
+        return;
+    }
+    am7client.clearCache(0, true);
+    m.route.set('/picture-book/v2/' + result.bookObjectId);
+    Dialog.open({
+        title: 'Imported into V3',
+        size: 'sm',
+        content: renderMigrationResult(result),
+        actions: [{ label: 'Close', icon: 'close', attrs: { 'data-pb1-import-close': '1' }, onclick: function () { Dialog.close(); } }]
+    });
+    return result;
+}
+
 // ── Header action slots (between chevrons/export/fullscreen) ───────────
 
 function renderViewerActionsLeft(nav) {
-    // Edit Book — reopen wizard
-    return (!nav.fullscreen && viewerScenes.length) ? m('button', {
+    // Edit Book — reopen wizard. P7-3: not for a PB1 book shown read-only under v3 — the wizard's
+    // steps 4–5 are gone and the book has no V3 record for the reader; the notice above is its path.
+    return (!nav.fullscreen && viewerScenes.length && !viewerLegacy) ? m('button', {
         class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
         title: 'Edit Book',
         onclick: function () { pictureBookFromId(viewerBookId, viewerWorkName); }
@@ -1109,6 +1226,7 @@ var pictureBookView = {
             backTitle: 'Back to documents',
             actionsLeft: renderViewerActionsLeft,
             actionsRight: renderViewerActionsRight,
+            renderBanner: renderViewerLegacyNotice,
             // Export params — reproduce the legacy exportPictureBook() output byte-for-byte.
             coverImageUrl: getCoverImageUrl,
             exportCountNoun: 'Scene',
@@ -1119,6 +1237,27 @@ var pictureBookView = {
         });
     }
 };
+
+// Test-only seam (P7-3 / P7-4): the PB1 viewer's v3 bridge — redirect to the V3 reader when the id
+// resolves to an olio.pb.book, otherwise the read-only "replaced by V3 — import" notice (with its
+// Import action) and no Edit pencil. Module-private state, reached through m.route, so the test
+// drives loadViewer / importLegacyBook here and stubs that.
+export { loadViewer as __loadViewerForTest, renderViewerActionsLeft as __renderViewerActionsLeftForTest,
+    renderViewerLegacyNotice as __renderViewerLegacyNoticeForTest, importLegacyBook as __importLegacyBookForTest };
+export function __viewerStateForTest() {
+    return { viewerBookId, viewerWorkName, viewerScenes, viewerLoading, viewerError, viewerRenderPath, viewerLegacy, viewerImporting };
+}
+export function __setViewerStateForTest(patch) {
+    patch = patch || {};
+    if ('viewerBookId' in patch) viewerBookId = patch.viewerBookId;
+    if ('viewerWorkName' in patch) viewerWorkName = patch.viewerWorkName;
+    if ('viewerScenes' in patch) viewerScenes = Array.isArray(patch.viewerScenes) ? patch.viewerScenes : [];
+    if ('viewerLoading' in patch) viewerLoading = !!patch.viewerLoading;
+    if ('viewerError' in patch) viewerError = patch.viewerError;
+    if ('viewerRenderPath' in patch) viewerRenderPath = patch.viewerRenderPath === 'v3' ? 'v3' : 'v1';
+    if ('viewerLegacy' in patch) viewerLegacy = !!patch.viewerLegacy;
+    if ('viewerImporting' in patch) viewerImporting = !!patch.viewerImporting;
+}
 
 // ── PB2 Page Reader ───────────────────────────────────────────────────
 
@@ -2128,8 +2267,10 @@ export function renderPb2Header() {
             onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/compose'); }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'view_in_ar')) : null,
 
-        // Edit (wizard) and Characters — same pair the book list rows offer.
-        pb2BookObjectId ? renderPb2EditButton(
+        // Edit (wizard) and Characters — same pair the book list rows offer. P7-3: under v3 the
+        // wizard would only hand straight back to this reader (its steps 4–5 are gone), so the
+        // pencil is hidden here; Characters stays.
+        (pb2BookObjectId && !v3) ? renderPb2EditButton(
             { objectId: pb2BookObjectId, name: (pb2BookName && pb2BookName !== 'Loading...') ? pb2BookName : '' },
             'text-gray-500 hover:text-purple-600') : null,
         pb2BookObjectId ? renderPb2CharactersButton(

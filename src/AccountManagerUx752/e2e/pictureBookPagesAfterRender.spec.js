@@ -21,7 +21,7 @@
  * Runs as e2etest_shared (ensureSharedTestUser) — never admin.
  */
 import { test, expect } from '@playwright/test';
-import { ensureSharedTestUser, ensureChatConfig } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig, pb1Retired, PB1_RETIRED_SKIP } from './helpers/api.js';
 
 const REST = '/AccountManagerService7/rest';
 const PB = REST + '/olio/picture-book';
@@ -195,6 +195,7 @@ test.describe('PB2 book view sees wizard-rendered scene images (LLM+SD, gated)',
     });
 
     test('standalone book: render via /scene/{id}/generate -> /pages reports the composite', async ({ request }) => {
+        test.skip(await pb1Retired(request), PB1_RETIRED_SKIP); // P7-2: PB1 generate is 409 under v3
         await apiLoginShared(request);
         const tag = Date.now().toString(36);
 
@@ -212,6 +213,7 @@ test.describe('PB2 book view sees wizard-rendered scene images (LLM+SD, gated)',
     });
 
     test('series chapter book: render -> /pages reports the composite', async ({ request }) => {
+        test.skip(await pb1Retired(request), PB1_RETIRED_SKIP); // P7-2: PB1 generate is 409 under v3
         await apiLoginShared(request);
         const tag = Date.now().toString(36);
         const workOid = await uploadWorkDocument(request, tag);
@@ -251,6 +253,7 @@ test.describe('PB2 book view sees wizard-rendered scene images (LLM+SD, gated)',
     // on a two-revision chain). /pages must report both scenes with the latest composite.
     test('wizard Generate All shape: two scenes + a re-render -> /pages reports every composite', async ({ request }) => {
         test.setTimeout(1800000);
+        test.skip(await pb1Retired(request), PB1_RETIRED_SKIP); // P7-2: PUT /settings, prepare-images and generate are 409 under v3
         await apiLoginShared(request);
         const tag = Date.now().toString(36);
         const slug = 'pb2-pages-ga-' + tag;
