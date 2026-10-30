@@ -325,7 +325,7 @@ is [`src/aiDocs/dockerDevSetup.md`](src/aiDocs/dockerDevSetup.md).
   - `CORS_ALLOWED_ORIGINS`: localhost, 127.0.0.1, the LAN IP, and the Vite dev ports.
   - Tomcat `CATALINA_OPTS` and the Postgres tuning overrides.
   - With `--ollama`, it points the app's embeddings at the container.
-- **Layers optional compose files** when they apply: the corporate-CA bundle
+- **Layers optional compose files** when they apply: like any corporate-CA bundle
   (`docker-compose.extra-ca.yml`, used when `volatile\extra-ca.pem` exists), the NVIDIA GPU
   override, and the `llmproxy` env file.
 - **Warns before an embedding-provider switch** on an existing data volume. Stored vectors carry no
@@ -367,8 +367,7 @@ The runbook also covers these optional profiles:
 
 ### Option B: Host build (Tomcat or Eclipse)
 
-Build from `src/`. Use `-o` (offline) once dependencies are cached; the corporate TLS proxy breaks
-normal downloads.
+Build from `src/`. Use `-o` (offline) once dependencies are cached; any corporate TLS proxy may inhibit downloads.
 
 ```powershell
 cd src
