@@ -303,10 +303,24 @@ is [`src/aiDocs/dockerDevSetup.md`](src/aiDocs/dockerDevSetup.md).
   store is already configured but the volume is missing, the wrapper refuses to start, because an
   empty database would not match the existing keystores.
 - **Stages the Olio seed corpus** into `docker-data\am7\datagen` on every run. It calls
-  `assemble-seed` with the staging directory set by `SEED_STAGING` in `src\.env`, including the
-  location grids by default. The copy is idempotent, and the step is skipped with a warning if
-  `SEED_STAGING` is unset. A fresh image ships this directory empty, and character generation
-  fails without it.
+  `assemble-seed` with the staging directory set by `SEED_STAGING` in `src\.env`, and it copies
+  the location data by default whenever you have staged it. The copy is idempotent, and the step is skipped with a warning if
+  `SEED_STAGING` is unset. A fresh image ships this directory empty. Character and world generation
+  draw on reference data that is loaded into the Olio universe:
+  - **Bundled in `src/seedData/seedData.7z`:** first names and surnames, occupations and trades,
+    colors and patterns, and personality traits. Unzip it into your staging directory.
+  - **Downloaded separately**, following the `readme.txt` in each directory of the extracted corpus:
+    - **Word data:** the Princeton WordNet dictionary files, in `wn3.1.dict/dict/` (`data.noun`,
+      `index.*`, and the rest; about 50 MB). These are required.
+    - **Location data:** the GeoNames gazetteer extract, in `location/`. It is **optional and
+      large**: about 1.5 GB for a handful of countries, mostly the US file (about 290 MB) and the
+      alternate-names table (about 620 MB). It needs one `<ISO>.txt` file per country you want,
+      for example `US.txt` or `CA.txt`, plus `countryInfo.txt`, `admin1CodesASCII.txt`,
+      `admin2Codes.txt`, and `alternateNamesV2.txt`. Locations are loaded only when requested, and
+      only for the countries staged. A world can run on the generated grid map without them.
+
+    Put everything in the same staging directory before seeding. The seed scripts skip the
+    `readme.txt` / `README.md` files when copying.
 - **Sets runtime values** that would otherwise need to be exported by hand:
   - `CORS_ALLOWED_ORIGINS`: localhost, 127.0.0.1, the LAN IP, and the Vite dev ports.
   - Tomcat `CATALINA_OPTS` and the Postgres tuning overrides.
