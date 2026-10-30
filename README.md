@@ -30,7 +30,7 @@ WAR. The frontend is a Vite + Mithril single-page app.
 | `AccountManagerObjects7` | jar | Core: the `BaseRecord` object model, PBAC (`AccessPoint`), the query system, IO/persistence (PostgreSQL + pgvector, H2), vault/crypto, organizations/groups, Olio, and all runtime LLM prompt templates |
 | `AccountManagerISO42001` | jar | ISO 42001 bias-testing engine, scoring, reporting, and certification, exposed through `ISO42001ServiceFacade` |
 | `AccountManagerAgent7` | jar | Agent runtime (chain execution) over the LLM services |
-| `AccountManagerConsole7` | jar | Command-line admin, setup-repair, export, and Olio tools |
+| `AccountManagerConsole7` | jar | Command-line database/organization setup and repair, user admin, export, and Olio tools |
 | `AccountManagerService7` | war | REST (`/rest/...`), MCP, and WebSocket transport over Objects7 and ISO42001 |
 | `AccountManagerUx752` | web | The current frontend (Vite 6, Mithril 2, Tailwind; Vitest + Playwright). Not a Maven module |
 | `deprecated/AccountManagerUx7` | web | The old Mithril frontend. Kept only as a reference; Ux752 replaces it |
@@ -377,24 +377,61 @@ mvn -o -pl AccountManagerObjects7,AccountManagerISO42001 install -DskipTests
 mvn -o -pl AccountManagerService7 package -DskipTests         # -> AccountManagerService7/target/*.war
 ```
 
-Configuration for a host deployment:
-- **Database (Service7):** the JNDI pool in
-  `AccountManagerService7/src/main/webapp/META-INF/context.xml`. By default it points at
-  `jdbc:postgresql://localhost:15430/am72db`.
-- **File store (Service7):** `store.path` in `AccountManagerService7/src/main/webapp/WEB-INF/web.xml`.
-  This directory holds keys, certificates, and streams, for example `C:/Projects/data/am7`. Create
-  it before the first start.
-- **Console7:** `app.basePath` and the `test.db.*` settings in
-  `AccountManagerConsole7/src/main/resources/resource.properties`. **Check `test.db.reset` before
-  you point it at a database you care about.** When `true`, it drops that database's schema, keys,
-  and data.
+**1. Prepare the database and the file store.**
+- Create a PostgreSQL database with the `vector` extension available.
+- Create a store directory, for example `C:/Projects/data/am7`. It holds the organization
+  keystores, the vault keys, and streams. The store and the database are a matched pair: keys in
+  the store protect data in the database, so back them up and restore them together.
 
-Deploy the WAR to Tomcat 11 over HTTPS on `:8443`. On first boot the server creates the schema
-(about 132 `a7_*` tables) and the three default organizations. Then finish first-time setup in the
-UI, as in Option A. Alternatively, from Console7, run
-`java -jar AccountManagerConsole7/target/AccountManagerConsole7-7.0.0-SNAPSHOT.jar -setup -adminPassword <pw>`.
-This repair command is idempotent and never overwrites an existing credential, but running it
-**permanently closes** the web setup page for that database.
+**2. Point Service7 and Console7 at the same database and the same store.** Each has its own
+configuration file, and both are packaged into the build, so edit them before you build (or
+rebuild afterwards). Their committed defaults differ (Service7 uses port `15430`, Console7 uses
+`15432`).
+
+| | Database | Store path |
+|---|---|---|
+| Service7 | JNDI pool in `AccountManagerService7/src/main/webapp/META-INF/context.xml` | `store.path` in `AccountManagerService7/src/main/webapp/WEB-INF/web.xml` |
+| Console7 | `test.db.url` / `test.db.user` / `test.db.password` in `AccountManagerConsole7/src/main/resources/resource.properties` | `app.basePath` in the same file |
+
+**3. Initialize with Console7.** This is the setup path for a host deployment:
+
+```powershell
+cd src\AccountManagerConsole7\target
+java -jar AccountManagerConsole7-7.0.0-SNAPSHOT.jar -setup -adminPassword <admin-password>
+# optionally create a first user in the same run:
+#   ... -setup -adminPassword <admin-password> -organization /Public -username <name> -password <pw> -addUser
+```
+
+`-setup` does the following:
+- creates any missing tables (about 132 `a7_*` tables on an empty database)
+- creates the default organizations `/System`, `/Development`, and `/Public`, with their keystores
+- sets the admin credential in each organization
+- initializes each organization vault
+- writes the setup-complete marker, which permanently closes the web setup page for that database
+
+It is idempotent. Each step runs only when its target is missing, and it never overwrites an
+existing credential. That makes it safe to re-run as a repair against a partially provisioned
+database.
+
+> ⚠ **Resetting is opt-in: `test.db.reset` (default `false`).** With `test.db.reset=true` in
+> `resource.properties`, `-setup` first **drops and recreates every table** and empties the store's
+> `.jks/`, `.vault/`, `.streams/`, and `.queue/` directories, so all data, keystores, and vault keys
+> are lost. A reset needs both conditions (the `-setup` option and the property), and there is no
+> further prompt. Console7 reads `resource.properties` from its classpath, so changing the property
+> takes effect only after a rebuild (`mvn -o -pl AccountManagerConsole7 package -DskipTests`).
+> Set it back to `false` and rebuild straight after a deliberate reset.
+
+**4. Deploy the WAR** to Tomcat 11 over HTTPS on `:8443`, start the Ux752 dev server (below), and
+sign in at `https://localhost:8899` as `admin` in `/Development`. On each boot Service7 also
+initializes the vaults and provisions the ISO 42001 roles for the default organizations.
+
+*Without Console7:* Service7's own first boot also creates the schema, the default organizations,
+and the keystores. It does not create an admin credential, though, and on a host Tomcat the web
+setup page has no token. `docker/entrypoint.sh` is the only thing that creates `.setup.token`. To
+use the web setup page instead, start Tomcat with the `AM7_SETUP_TOKEN` environment variable set
+to a long random value, for example `openssl rand -hex 24`. Service7 does not enforce a minimum
+length outside Docker. Then run the Ux752 dev server and open
+`https://localhost:8899/#!/setup?token=<value>`.
 
 ### Frontend (Ux752)
 
