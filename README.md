@@ -6,6 +6,14 @@ access control (PBAC). On top of that core it runs LLM and image-generation feat
 memory and retrieval, the Olio world/character simulation, PictureBook/ChapBook illustrated-story
 generation, and an ISO/IEC 42001 AI-bias testing and certification subsystem.
 
+At its heart AM7 is a store for varied data where each item can have its own permissions and
+encryption. It supports complex permission relationships and keeps organizations logically
+separate. It is not a complete identity-management product with connectors and workflow engines.
+It is a foundation for multi-tenant identity and data services that can take in identity, account
+and entitlement data from other systems and evaluate policy over it. The data lives in a relational
+database (PostgreSQL) because hierarchy, membership and entitlement relationships are expressed
+more naturally there than in a directory service.
+
 The backend is Java (Maven, multi-module) and is served by Tomcat as a Jersey REST + MCP + WebSocket
 WAR. The frontend is a Vite + Mithril single-page app.
 
@@ -58,19 +66,20 @@ Deeper tours: [`src/aiDocs/Objects7DeepReference.md`](src/aiDocs/Objects7DeepRef
 ## Security philosophy
 
 - **Authorization is never bypassed at the edge.** User-driven operations go through
-  `AccessPoint`: query → policy evaluation → execution. Access decisions are made by evaluating
-  policies (`PolicyEvaluator`), and the policies are built on participation records that link
-  actors to resources. That gives one mechanism for group-, role-, and attribute-based patterns,
-  and the reasoning behind each decision can be traced (`PolicyUtil.setTrace`). Schemas can
-  require roles on whole models or on individual fields. Every REST endpoint carries
-  `@RolesAllowed`. The only exceptions are WebAuthn and first-run setup, which exist to create the
-  first credential.
+  `AccessPoint`: query → policy evaluation → execution. Schemas can require roles on whole models
+  or on individual fields. Every REST endpoint carries `@RolesAllowed`. The only exceptions are
+  WebAuthn and first-run setup, which exist to create the first credential. The access model is
+  described under [Authorization model](#authorization-model) below.
 - **Organizations are the tenancy boundary.** Every deployment has the default organizations
   `/System`, `/Development`, and `/Public`, and each organization has its own keystore and vault.
   Per-organization values travel with the call and are never written into process-wide state.
 - **Encryption at rest.** Fields marked `encrypt: true` are encrypted transparently through the
   organization vault: a per-organization asymmetric key pair, rotating symmetric keys, and a
-  per-vault salt. Credentials are stored as salted hashes and cannot be recovered.
+  per-vault salt. The private vault key is protected by a credential kept on the filesystem, not
+  in the database. Protected data can therefore be recovered only when both the database and the
+  key store are present; a copy of the database alone is not enough. Binary data payloads can
+  also be gzip-compressed. Credentials are
+  stored as salted hashes and cannot be recovered.
 - **Authentication.** Login uses a JAAS login module and issues JWTs. Long-lived API tokens and
   WebAuthn passkeys are also supported. SCIM 2.0 user and group endpoints are available for
   provisioning.
@@ -84,6 +93,46 @@ Deeper tours: [`src/aiDocs/Objects7DeepReference.md`](src/aiDocs/Objects7DeepRef
 
 The authoritative rules are in [`.claude/rules/architecture.md`](.claude/rules/architecture.md).
 
+### Authorization model
+
+AM7 uses **policy-based access control**, and the policies are built on **participation**:
+
+- **Ownership and containment.** Every record belongs to an organization and has a user as its
+  owner. Most records also sit in a group (a directory-like hierarchy) or under a parent. Ownership
+  gives the discretionary baseline: owners can act on what they own.
+- **Participation.** Participation records link a participant (a user, account, person, group, or
+  role) to a resource. A participation can carry an effect, either granting or denying a specific
+  permission. Group and role membership are participations too, so entitlements can be assigned
+  directly or inherited indirectly through role and group hierarchies. One mechanism covers ACL-,
+  group-, and role-based access.
+- **Policies.** Every decision comes from evaluating a policy, built as policy → rules → patterns →
+  facts:
+  - **Policy:** has an enabled flag and a `decisionAge`, which sets how long its decision may be
+    cached.
+  - **Rule:** has a type (PERMIT, DENY, or TRANSFORM) and a condition (ALL, ANY, NONE, or a numeric
+    threshold) for combining its patterns and sub-rules.
+  - **Pattern:** compares a subject fact to a match fact using a comparator. Pattern types are
+    authorization (a participation/entitlement check), expression, function, operation (custom
+    code or an external decision point), separation of duty, and approval (which can return
+    PENDING).
+  - **Fact:** can be a parameter supplied with the request, a static value, a record, an attribute,
+    a group, role, or permission, the request context, or the result of a function or operation.
+- **Built-in checks are themselves policies.** The standard create/read/update/delete/execute
+  checks are ordinary policy definitions: owner, group, parent, resource permission, model role,
+  and token access. They are JSON templates under
+  `AccountManagerObjects7/src/main/resources/{policies,rules,patterns,facts}/`. Attribute-based,
+  separation-of-duty, and approval rules use the same evaluator as basic CRUD.
+- **Decisions are explainable.** A policy response is PERMIT, DENY, PENDING, or an error, and it
+  records the chain of rules and patterns that was evaluated. Turning on the policy trace
+  (`PolicyUtil.setTrace`) shows which rule, pattern, or participation decided the outcome.
+- **Ready for authorization as a service (API pending).** The policy layer is designed for
+  external callers, not just internal checks. A *policy definition* is a public description of a
+  policy, including the parameters it needs. A client fills in a *policy request*, submits it for
+  evaluation, and gets back a *policy response* whose expiry comes from the policy's
+  `decisionAge`, so the client knows how long it may cache the decision. Those models and the
+  evaluator exist in Objects7. The REST endpoint that would let other systems use AM7 as their
+  policy decision point has not been wired up yet.
+
 ---
 
 ## Key features
@@ -91,14 +140,19 @@ The authoritative rules are in [`.claude/rules/architecture.md`](.claude/rules/a
 - **Generic model API.** Typed CRUD, search, pagination, and `PATCH` for any registered model
   (`/rest/model/...`), plus path-based access, schema introspection, and import/export.
 - **Identity and access.** Users, groups, roles, permissions, organizations, access requests,
-  credentials, SCIM 2.0, WebAuthn, and policy evaluation with tracing.
+  credentials, SCIM 2.0, WebAuthn, and policy evaluation with tracing. Authorization as a service is ready in the
+  policy layer, with the REST API pending.
 - **LLM chat and memory.** Chat sessions with configurable prompt templates, long-term memory,
   vector search (pgvector embeddings), and PageIndex hierarchical document indexing. LLM servers are
   configured as `system.connection` records (Ollama, OpenAI-compatible endpoints, and LiteLLM).
 - **MCP server.** Model Context Protocol tools for AM7 data and ISO 42001 operations.
-- **Olio.** World and character simulation: population, an MGRS-style map, time, events, apparel
-  and wear levels, statistics, and personality. Includes Stable Diffusion portrait and scene
-  generation (SwarmUI/ComfyUI), voice (TTS/STT), face analysis, and tagging.
+- **Olio.** World and character simulation. A universe holds shared reference data (names,
+  occupations, traits, a WordNet dictionary, map and location grids, and colors). Each world holds
+  its own population, which is generated by region on an MGRS-style map and then evolved over
+  epochs, by default one year of twelve monthly cycles. Evolution produces events for birth,
+  death, marriage, divorce, and immigration. Characters have statistics, personality, instincts,
+  apparel and wear levels, inventory, and position. Olio also includes Stable Diffusion portrait and scene generation
+  (SwarmUI/ComfyUI), voice (TTS/STT), face analysis, and tagging.
 - **PictureBook / ChapBook.** Turns source text into illustrated books: scene extraction, a cast for
   each book world, a workflow graph, and image composition. Long operations run as background jobs
   that you poll (`?async=true` → `GET /rest/job/{jobId}`). Current design:
