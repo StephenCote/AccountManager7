@@ -3459,8 +3459,8 @@ public class PictureBookService {
     public Response applyRetention(@PathParam("bookObjectId") String bookObjectId, String json,
             @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord params = parseParams(json);
         try {
+            BaseRecord params = parseRetentionBody(json);
             return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.applyRetention(user, bookObjectId,
                 optionalInt(params, "keepAttempts"), optionalInt(params, "deleteBytesAfterDays")))).build();
         } catch (PictureBookException e) {
@@ -3500,13 +3500,29 @@ public class PictureBookService {
     @Consumes(MediaType.APPLICATION_JSON)
     public Response applyOrgRetention(String json, @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord params = parseParams(json);
         try {
+            BaseRecord params = parseRetentionBody(json);
             return Response.status(200).entity(JSONUtil.exportObject(PbServiceFacade.applyRetentionOrg(user,
                 optionalInt(params, "keepAttempts"), optionalInt(params, "deleteBytesAfterDays")))).build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }
+    }
+
+    /**
+     * The retention apply body. Absent, blank or a bare {@code {}} (what Ux752 sends when both knobs are left
+     * blank) means "defaults" and returns null; anything else that parseParams cannot read is a 400 rather than
+     * a silent fall-through to the defaults - an apply deletes bytes, so a mistyped body must not run with K/D
+     * the caller did not ask for.
+     */
+    private BaseRecord parseRetentionBody(String json) {
+        if (json == null || json.trim().isEmpty()) return null;
+        if (json.replaceAll("\\s", "").equals("{}")) return null;
+        BaseRecord params = parseParams(json);
+        if (params == null) {
+            throw new PictureBookException(400, "request body must be a JSON object with optional integer keepAttempts / deleteBytesAfterDays");
+        }
+        return params;
     }
 
     /** An optional integer query parameter; a present non-integer is a 400 rather than Jersey's default 404. */

@@ -640,6 +640,37 @@ public class TestPictureBookRestContract extends BaseTest {
 		assertNull(optionalInt.invoke(svc, (BaseRecord) parse.invoke(svc, ""), "keepAttempts"));
 	}
 
+	/**
+	 * V3 Phase 6 retention (P6-3b, verifier 2026-10-29): the two apply POSTs read their body through
+	 * {@code parseRetentionBody}, not bare {@code parseParams}, so that an unreadable body is a 400 rather
+	 * than a silent run with the defaults - an apply deletes bytes. Absent, blank and a bare {@code {}}
+	 * (what Ux752 sends when both knobs are left blank) still mean "defaults".
+	 */
+	@Test
+	public void TestRetentionApplyBodyUnreadableIs400() throws Exception {
+		PictureBookService svc = new PictureBookService();
+		Method m = PictureBookService.class.getDeclaredMethod("parseRetentionBody", String.class);
+		m.setAccessible(true);
+		assertNull("absent body → defaults", m.invoke(svc, (String) null));
+		assertNull("blank body → defaults", m.invoke(svc, "  \n "));
+		assertNull("a bare {} → defaults (Ux752's both-blank body)", m.invoke(svc, "{}"));
+		assertNull("...with whitespace inside too", m.invoke(svc, " { } "));
+		BaseRecord sent = (BaseRecord) m.invoke(svc, "{\"keepAttempts\": 2, \"deleteBytesAfterDays\": 0}");
+		assertNotNull("a readable body is handed on", sent);
+		assertEquals(2, ((Number) sent.get("keepAttempts")).intValue());
+		for(String bad : new String[] { "{\"keepAttempts\": 2", "not json", "[1,2]" }) {
+			try {
+				m.invoke(svc, bad);
+				fail("an unreadable body must be a 400, not the defaults: " + bad);
+			}
+			catch(java.lang.reflect.InvocationTargetException ite) {
+				assertTrue("the service's own PictureBookException for '" + bad + "': " + ite.getCause(),
+					ite.getCause() instanceof org.cote.accountmanager.olio.picturebook.PictureBookException);
+				assertEquals(400, ((org.cote.accountmanager.olio.picturebook.PictureBookException) ite.getCause()).getStatus());
+			}
+		}
+	}
+
 	@Test
 	public void TestReorderScenesBodyRoundTrips() {
 		/// PUT /{bookObjectId}/scenes/order

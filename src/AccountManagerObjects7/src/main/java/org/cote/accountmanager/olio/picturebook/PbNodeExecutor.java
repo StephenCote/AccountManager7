@@ -864,10 +864,13 @@ public class PbNodeExecutor {
 		/// V3 §23 (P6-2): every final the attempt produced, variant 0 first. {@code variants.get(0)} is what
 		/// the scalar fields above describe; a single-variant render has exactly one entry.
 		final List<Variant> variants;
+		/// How many finals this render was asked for - the preset's count on the run path, 1 on every
+		/// single-variant path (LOCATION, the non-run scene render) whatever the preset says.
+		final int variantsPlanned;
 
 		private PlannedRender(RenderPlan plan, String planOid, CompiledPrompt compiled, BaseRecord frozen,
 				List<String> degradations, List<String> configNotApplied, List<Map<String, Object>> stageErrors,
-				boolean calibrationPersisted, List<Variant> variants) {
+				boolean calibrationPersisted, List<Variant> variants, int variantsPlanned) {
 			Variant v0 = variants.get(0);
 			this.plan = plan;
 			this.planOid = planOid;
@@ -886,6 +889,7 @@ public class PbNodeExecutor {
 			this.stageErrors = stageErrors;
 			this.calibrationPersisted = calibrationPersisted;
 			this.variants = variants;
+			this.variantsPlanned = variantsPlanned;
 		}
 
 		/// One final of the attempt (V3 §23): the last stage's image of its own BASE → ACTOR_REGION sequence,
@@ -931,12 +935,13 @@ public class PbNodeExecutor {
 			out.put(KEY_CALIBRATION_PERSISTED, Boolean.valueOf(calibrationPersisted));
 			out.put("planSummary", plan.actorSummary() + "; strategy " + strategy);
 			out.put(KEY_CONFIG_NOT_APPLIED, configNotApplied);
-			out.put(KEY_VARIANTS_PLANNED, Integer.valueOf(plan.getPreset() != null ? Math.max(1, plan.getPreset().getVariants()) : 1));
+			out.put(KEY_VARIANTS_PLANNED, Integer.valueOf(variantsPlanned));
 			out.put(KEY_VARIANTS_RENDERED, Integer.valueOf(variants.size()));
 		}
 	}
 
-	/// DTO key (V3 §23, P6-2): how many finals the preset planned for this attempt.
+	/// DTO key (V3 §23, P6-2): how many finals this attempt was asked for - the preset's count on the run path,
+	/// 1 on the single-variant paths (a LOCATION render, a scene rendered outside a run) whatever the preset says.
 	public static final String KEY_VARIANTS_PLANNED = "variantsPlanned";
 	/// DTO key (V3 §23, P6-2): how many finals this attempt actually produced; less than planned when a
 	/// later variant's BASE failed (reported as a stage error and a degradation, the attempt kept).
@@ -1061,14 +1066,23 @@ public class PbNodeExecutor {
 
 	/**
 	 * V3 §23 (P6-2): the seed of variant {@code variant} of an attempt whose variant 0 rendered with
-	 * {@code baseSeed}: {@code baseSeed + variant}, folded back into Swarm's positive int range when the sum
-	 * would leave it. Variant 0 is always random; the others are reproducible from its reported seed, so an
-	 * attempt's finals are distinct and the strip can say why.
+	 * {@code baseSeed}: {@code baseSeed + variant} for a base already in Swarm's positive int range (the
+	 * normal case, so a strip's seeds read as consecutive). A base outside that range (a renderer that
+	 * reported -1 or a 64-bit seed) is folded into it <em>once</em>, before the variant is added, and the
+	 * sum is then wrapped at the top - folding the sum instead (as this did until the P6 verifier's pass,
+	 * 2026-10-29) could map two variants of one attempt onto the same seed. Variant 0 is always random; the
+	 * others are reproducible from its reported seed, so an attempt's finals are distinct and the strip can
+	 * say why.
 	 */
 	static int variantSeed(long baseSeed, int variant) {
-		long s = baseSeed + variant;
-		if(s <= 0 || s >= Integer.MAX_VALUE) {
-			s = 1 + Math.floorMod(s, (long) (Integer.MAX_VALUE - 1));
+		final long range = Integer.MAX_VALUE - 1L;
+		long base = baseSeed;
+		if(base <= 0 || base >= Integer.MAX_VALUE) {
+			base = 1 + Math.floorMod(base, range);
+		}
+		long s = base + variant;
+		if(s >= Integer.MAX_VALUE) {
+			s = 1 + ((s - 1) % range);
 		}
 		return (int) s;
 	}
@@ -1240,7 +1254,16 @@ public class PbNodeExecutor {
 		String attempt = attemptOf(g);
 		/// The `stage` images of every variant of this attempt are written against the role's pre-batch
 		/// selection (the same rule as the finals - PbPipelineUtil.recordImage's batch overload), so variant 1's
-		/// passes never supersede variant 0's.
+		/// passes never supersede variant 0's. Consequence, deliberate (P6 verifier, 2026-10-29): the two paths
+		/// leave different `supersedes` shapes on the `stage` role. Single-variant: each pass supersedes the
+		/// role's selection at the moment it is written, so pass 2 of one attempt supersedes pass 1 and the
+		/// chain reads pass-by-pass. Multi-variant: every pass of every variant supersedes the SAME pre-batch
+		/// artifact (null in a fresh node), and the order of passes within a variant is carried by
+		/// `referenceArtifactObjectIds` (a chained pass references the one it painted over), `variantIndex` and
+		/// `attempt`, not by `supersedes`. Readers that walk `supersedes` to reconstruct a pass sequence must
+		/// use the references on a multi-variant attempt; nothing in the tree does so today (PbArtifactUtil
+		/// lists chains by role and revision; PbServiceFacade.artifactSummary only reports the pointer as
+		/// `supersedesObjectId`, and Ux752 does not read it).
 		BaseRecord preStage = (variantCount > 1 ? PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_STAGE) : null);
 
 		/// §2.4 step 5: nothing was persisted while a later stage could still cancel; now every stage of every
@@ -1304,7 +1327,7 @@ public class PbNodeExecutor {
 				last.backendGraph, seq.labels()));
 		}
 		return new PlannedRender(plan, planOid, compiled, frozen, degradations, configNotApplied, stageErrors,
-			(anyGraph && allCalibrated), finals);
+			(anyGraph && allCalibrated), finals, variantCount);
 	}
 
 	/// One stage's output, held in memory until the sequence ends (P5-2 §2.4 step 5).

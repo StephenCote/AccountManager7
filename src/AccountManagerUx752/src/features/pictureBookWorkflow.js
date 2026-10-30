@@ -1329,7 +1329,8 @@ async function doApplyRetention() {
     try {
         retention.result = await applyRetention(pb2BookObjectId, retentionInputs());
         retention.scan = null;   // the world changed; a fresh dry run is needed before applying again
-        page.toast('success', 'Retention applied: ' + retention.result.archived + ' archived, ' + retention.result.bytesDeleted + ' bytes-deleted');
+        page.toast('success', 'Retention applied: ' + retention.result.archived + ' archived, ' + retention.result.bytesDeleted + ' bytes-deleted'
+            + (retention.result.detached ? ', ' + retention.result.detached + ' detached (shared bytes kept)' : ''));
         if (selectedNodeId) reloadNodeDetails();
     } catch (e) {
         retention.error = (e && e.message) || 'Apply failed';
@@ -1340,7 +1341,7 @@ async function doApplyRetention() {
 
 const RETENTION_ACTION_LABEL = { KEEP: 'keep', ARCHIVE: 'archive', DELETE_BYTES: 'delete bytes', NONE: '—' };
 const RETENTION_ACTION_COLOR = { KEEP: '#16a34a', ARCHIVE: '#d97706', DELETE_BYTES: '#dc2626', NONE: '#94a3b8' };
-const RETENTION_OUTCOME_COLOR = { archived: '#d97706', bytesDeleted: '#dc2626', kept: '#16a34a', refused: '#7c3aed', denied: '#dc2626', failed: '#dc2626' };
+const RETENTION_OUTCOME_COLOR = { archived: '#d97706', bytesDeleted: '#dc2626', detached: '#0891b2', kept: '#16a34a', refused: '#7c3aed', denied: '#dc2626', failed: '#dc2626' };
 
 function retentionItemLabel(it) {
     return (it.nodeHandle || it.nodeObjectId || '?') + ' · ' + (it.role || '?') + ' r' + (it.revision != null ? it.revision : '?')
@@ -1418,6 +1419,7 @@ function renderRetentionDialogContent() {
                 m('span', { 'data-testid': 'pbwf-retention-archived', style: 'color:#d97706;' }, r.archived + ' archived'), ' · ',
                 m('span', { 'data-testid': 'pbwf-retention-bytes-deleted', style: 'color:#dc2626;' }, r.bytesDeleted + ' bytes-deleted'),
                 r.bytesFreed ? ' (' + formatBytes(r.bytesFreed) + ' freed)' : '',
+                r.detached ? [' · ', m('span', { 'data-testid': 'pbwf-retention-detached', style: 'color:#0891b2;', title: 'The bytes are shared with another artifact; only this reference was cleared' }, r.detached + ' detached')] : null,
                 r.refused ? [' · ', m('span', { style: 'color:#7c3aed;' }, r.refused + ' refused')] : null,
                 r.denied ? [' · ', m('span', { style: 'color:#dc2626;' }, r.denied + ' denied')] : null,
                 r.failed ? [' · ', m('span', { style: 'color:#dc2626;' }, r.failed + ' failed')] : null,

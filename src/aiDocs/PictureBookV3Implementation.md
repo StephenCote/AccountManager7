@@ -4,7 +4,12 @@
 standing): P6-1 schema, P6-3a selector, P6-2 variant loop, P6-3b retention util + routes and P6-4 Ux752 strip + dialog are built and
 reported (§13.6, §6.C 212) — `am7db` 62 / 0 / 0 / 1, Service7 H2 23 / 0 / 0 / 0, Ux752 `VERIFY_OK`, Playwright on Docker 3 / 3;
 Scenario F ran live on `.39` once it came back (`TestPbVariantsLive` 1 / 0 / 0 / 0, `p65-live.log`; §13.6 "Scenario F"); the
-verifier's verdict is in §13.6. **Next: STOP for the P6 hand-back.** Phase 5
+verifier returned CHANGES-NEEDED (1 HIGH, 1 MEDIUM, 4 LOW) and all six are folded in and re-run green (§6.C 212 q–w; §13.6
+"Post-verifier": `am7db` 27 / 0 / 0 / 0 + the stages regression, Service7 H2 24 / 0 / 0 / 0, Vitest 25, `VERIFY_OK`); the new
+retention outcome is `detached` (a shared `data.data` row: this artifact's reference cleared, bytes kept); Yours (7), the Docker
+Playwright re-run, ran 2026-10-29 on the post-verifier WAR — 26 / 2 skipped / 1 failed, the red being inspector test 4's reader-image
+step, a latent P2-5 / P2-9 gap first executed today, not a P6 regression (§6.C 213 e; §13.6 "Yours (7)"). **Next: STOP for the
+P6 hand-back.** Phase 5
 is reported through P5-3 (§13.5, §6.C 211; its "Yours" below is still Stephen's); every default through 209 accepted 2026-10-28
 (§6.C 210); nothing is DONE by me (archive §6.C 159 b). Phases 0–4 are closed (Phase 3 exit 2026-10-18, §6.C 182; Phase 4 exit 2026-10-26, §6.C 207); their history, the
 closed Phase 5 slices (§3 P5-2 probes, §4.11–§4.13, §13.1–§13.4) and §6.C entries 2–206 / 208–209 are in
@@ -41,7 +46,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | 3 — Locations + POI link | **DONE 2026-10-18** — Stephen confirmed the §11.8 report and answered every open ask (§6.C 182) — full row archive §1 | archive §11 |
 | 4 — Composition + wardrobe | **DONE 2026-10-26** — Stephen confirmed the Phase 4 exit (§6.C 207, "will catch any issues in next") — full row archive §1 | archive §12 |
 | 5 — Multi-character strategies (spike first) | **IN PROGRESS** — P5-0 spike (archive §13.1, §6.C 204), P5-1 graph builder (archive §13.2 / §4.12, §6.C 205), P5-2 executor wiring (archive §13.4 / §4.13, §6.C 208–209) and P5-3 implementation cleanup (§13.5, §6.C 211) run and reported; 2026-10-25 went to the Part A doc consolidation (archive §13.3, §6.C 206); every default through 209 accepted 2026-10-28 (210); nothing DONE (159 b); **next: STOP for the P5-3 hand-back** — former row archive §1 | `TestP50SwarmSpike` 6 (gated); live on `.39`: `TestP51GraphLive` 5 / 5, `TestP52SequentialInpaintLive` 5 / 5 (`p52-t11d.log:2873`; P5-3 re-run 5 / 0 / 0 / 0, `p53-t11.log`), `TestPbRenderPlanExecutor` 8 / 8; offline `olio.illustration.*Test*` 187 / 187 (`p51-unit5.log`), P5-2 offline set 133 / 133 (`p52-run-final3.log`); P5-3 offline 28 + batches 49 + 108 + Service7 36, all 0 fail (`p53-offline2.log`, `p53-batch1.log`, `p53-batch2.log`, `p53-s7-tests.log`); 12-class regression set 116 / 0 / 0 / 1 (`p53-regression.log`; P5-2 116 / 0 / 0 / 1) |
-| 6 — Variants | **IN PROGRESS** 2026-10-29 — P6-1 schema, P6-3a selector, P6-2 variant loop, P6-3b retention util + routes, P6-4 Ux752 strip + dialog built and reported (§13.6, §6.C 212); Scenario F run live on `.39` (§13.6); verifier verdict in §13.6; nothing DONE (159 b) | `am7db` one JVM **62 / 0 / 0 / 1** (`p6-regress1.log:154677`; the skip was the `.39` outage) after one red run of mine (`p62-regress1.log`, concurrent recompile) and one red sweep (`p63b-sweep.log`, fixture grants); **Scenario F live `TestPbVariantsLive` 1 / 0 / 0 / 0** (`p65-live.log:496`, STANDARD 2 + FINAL 4 variants on `.39`, approve one, retention K = 1 archives 3); Service7 H2 `TestPictureBookRestContract` 23 / 0 / 0 / 0 (`p63b-contract.log:3064`); Ux752 Vitest 1469 / 1469, quick gate `VERIFY_OK`; Playwright on Docker 3 / 3 after a 1 / 2 first run |
+| 6 — Variants | **IN PROGRESS** 2026-10-29 — P6-1 schema, P6-3a selector, P6-2 variant loop, P6-3b retention util + routes, P6-4 Ux752 strip + dialog built and reported (§13.6, §6.C 212); Scenario F run live on `.39` (§13.6); verifier CHANGES-NEEDED → six findings folded in (212 q–w; `detached` retention outcome); nothing DONE (159 b) | `am7db` one JVM **62 / 0 / 0 / 1** (`p6-regress1.log:154677`; the skip was the `.39` outage) after one red run of mine (`p62-regress1.log`, concurrent recompile) and one red sweep (`p63b-sweep.log`, fixture grants); **Scenario F live `TestPbVariantsLive` 1 / 0 / 0 / 0** (`p65-live.log:496`, STANDARD 2 + FINAL 4 variants on `.39`, approve one, retention K = 1 archives 3); post-verifier `am7db` **27 / 0 / 0 / 0** (`p6f-sweep.log:1230`) + `TestPbRenderStagesOffline` (§13.6 "Post-verifier"); Service7 H2 `TestPictureBookRestContract` **24 / 0 / 0 / 0** (`p6f-contract.log:3322`); Ux752 Vitest 25 in the new file, quick gate `VERIFY_OK` (`p6f-ux752-gate.log:7`); Playwright on Docker 3 / 3 after a 1 / 2 first run; a 14-test adjacent-spec run is red on a host suspend (`p6-pw-regress.log`, 212 s) and not re-run |
 | 7 — PictureBook goes V3 | TODO | — |
 | 8 — Visual QA | TODO | — |
 | 9 — Cover & book art | TODO | — |
@@ -250,6 +255,51 @@ Every entry is a ⚠ MY JUDGMENT call under auto mode with its default; Stephen 
      known only when > 0 (the legacy result card's convention). (p) ⚠ **Pre-existing, not fixed:** `PUT /{book}/node/{node}/canvas` 500s —
      `olio.pictureBookRequest` has no `x` / `y` / `w` / `h`, so `getInt` throws (`PictureBookService.java:234-239`, `:2186-2203`; same in
      HEAD; KI-24 shape); fix = declare the four ints + `optionalInt`; its own task. Default: stands.
+     **Verifier fold-in (17:10 → 17:45; verdict and re-runs §13.6):**
+     (q) ⚠ **HIGH, mine, fixed:** `PbRetentionUtil.deleteBytes` deleted the `data.data` row without asking who else referenced it — a
+     seeded LOCATION render (`PbServiceFacade.seedLocationNode` :4070) and a migrated PB1 image (`PbMigrationUtil` :537) hand an existing
+     row to `persistArtifact`, so two `olio.pb.artifact` rows share one `data.data`, and archiving the first referrer would have taken the
+     second's bytes. Now `otherReferencer()` (raw `findRecords` on `artifact.data` = the row + `organizationId`) runs first; a shared row
+     yields the new outcome **`detached`** — this artifact's FK cleared, row kept, 0 freed, the sharer named in `outcomeReason`; the row
+     goes when its last referrer is swept (`TestPbRetentionSweep.case05`). Alternative: refuse and keep the FK — rejected, both sharers
+     would then never free (deadlock). Default: detached. Known gap, open: a PB1 scene's landscape ref is a string inside a JSON blob
+     (`V1_LANDSCAPE_KEY`, `PbMigrationUtil:453-455`), not a model FK, so the probe cannot see it; Phase 10 removes PB1.
+     (r) ⚠ Ux752 carries `detached` (`normalizeRetention`, outcome colour, summary span `pbwf-retention-detached`, toast suffix); Vitest 25.
+     (s) ⚠ **MEDIUM, mine, recorded as-is:** a 14-test Playwright regression run of adjacent specs (`p6-pw-regress.log`, `EXIT=1` :96,
+     1.4 h) was left out of this ledger: `pictureBookV3PlanInspector.spec.js` test 2 failed on its 2400 s timeout (:28) with
+     `net::ERR_NETWORK_IO_SUSPENDED` on `…/render-plan` (:52) — the host suspended under the run, `SD_ENABLED:false` (:4) — tests 3–4 did
+     not run (:94), 11 passed (:95; `pictureBookWorldSwitch` 6, `renderPath` 4, inspector test 1). Environmental, not a P6 regression,
+     but unproven until re-run → "Yours" (7).
+     (t) ⚠ LOW, fixed: `POST …/retention/apply` and `/retention/org/apply` ran with the defaults on any body `parseParams` could not read
+     (WARN only). `parseRetentionBody`: absent / blank / bare `{}` (Ux752's both-blank body) → defaults; anything else unreadable → 400
+     (`TestRetentionApplyBodyUnreadableIs400`). (i) above still describes bare `parseParams`.
+     (u) ⚠ LOW, fixed: `PlannedRender.describe()` reported `variantsPlanned` from the preset even on the single-variant paths (LOCATION, a
+     scene rendered outside a run) — now the count the render was asked for (`PlannedRender.variantsPlanned`).
+     (v) ⚠ LOW, fixed: `variantSeed` folded the **sum** into range, so a base of −1 (renderer reported none) mapped variants 1 and 2 both
+     to seed 1; now the base is folded once and the sum wraps at the top; `seed0 + v` unchanged for in-range seeds (`TestPbVariantSeed`).
+     (w) ⚠ LOW, documented only: single-variant `stage` passes supersede the selection at write time (pass-by-pass chain); multi-variant
+     passes all supersede the one pre-batch artifact, order carried by references / `variantIndex` / `attempt` — nothing walks
+     `supersedes` today (`PbNodeExecutor` :1241-1251 comment). Default: as built.
+213. ⚠ **2026-10-29 (P6 Yours (7) — the Playwright re-run, on Stephen's pick; results §13.6 "Yours (7)").** Nothing DONE (159 b).
+     (a) ✓ Redeployed the post-verifier build first (jar + `PictureBookService*.class` + dist; stubs 0 by grep + `javap`), since the WAR
+     in the container predated 212 q–w. ⚠ Added `pictureBookVariants.spec.js` to the two named specs for the same reason. Default: stands.
+     (b) ⚠ Ran with `PB_SD_TESTS=1` so the `[SD]` cases executed rather than skipped (`.39` → 302 from the container; inventory 13).
+     (c) ⚠ Kept the host awake with a process-scoped `SetThreadExecutionState(ES_CONTINUOUS|ES_SYSTEM_REQUIRED)` helper (`C:\tmp\p6g-keepawake.ps1`,
+     released after the run); `powercfg /requests` needs elevation, so the request is unverified — the run simply completed (5.6 m).
+     (d) ⚠ First launch aborted by me (background-timeout doubt) and relaunched under `nohup`; its seed book `p29-plan-mvu95nrv` (scene 5582,
+     node `render_plan@2b55b096`) stays in the Docker DB like every other spec fixture. Trap recorded: `:9443/rest/schema` is the SPA
+     fallback (`text/html` 200); the Tomcat check is `/AccountManagerService7/rest/schema`.
+     (e) **Inspector test 4 `[SD]` red — not a P6 regression; a latent P2-5 / P2-9 contract gap, first ever seen.** The render succeeded
+     (`p6g-pw-rerun.log:12`, 95 s, 2 `base` variants v0 selected / v1 not + `renderPlan` — exactly the STANDARD preset), but the reader's
+     page view resolves an image only through `scene.sceneNode` + role `composite` / `landscape` or the ChapBook `imageObjectId` fallback
+     (`PbServiceFacade.java:2294-2316`, `pageArtifactRole` :2357), while `ensureRenderPlanNode` leaves `scene.sceneNode` unlinked by
+     design (:1031-1032) and records the image as `base`. So `GET …/pages` carries no `dataObjectId` / `imageGroupPath` / `imageName`
+     (live as `e2etest_shared`: page keys `objectId,sceneIndex,title,pageBgOpacity,imageStale,pinned`), `pb2ImageUrl` is null and
+     `pb2-scene-image` never renders (spec :359). Every earlier run skipped this case (`.39` DOWN, archive). Yours: (1) product — show the
+     RENDER_PLAN node's selected `base` on the reader page (pages-view fallback, or link `sceneNode`), or (2) re-scope :359 to the review
+     page / node detail. Default: neither until you say; test stays red and recorded.
+     (f) The old red `p6-pw-regress.log` set was inspector + `pictureBookWorldSwitch` + `renderPath`, not the workflow spec; 212 s named
+     inspector + workflow. This run is the first that executes the workflow `[SD]` cases (28, 29) — both green.
 
 > Moved 2026-10-28 to `archive/PictureBookV3Implementation-P0-P4.md` §6.G, §6.L, §6.H–§6.N (Slice C findings, the nude-fixture question, Phase 0–1 infrastructure items; §6.H / §6.I / §6.J / §6.K RESOLVED, §6.M FIXED) (section numbering unchanged there). Still open there and Stephen's: §6.G (Slice C transport findings 1–12), §6.L (the `generateScene` e2e fixtures render nude), §6.N (`.39` outage log 2026-10-11 → 2026-10-14).
 
@@ -358,7 +408,9 @@ Commit state: the twelve P5-3 code files are in Stephen's commit `54a80b2c` "PB3
 - Regression set, one JVM, 14:26 (`p6-regress1.log`): `TestPbV3Schema` 6 (:178), `TestPbAutoApprove` 9 (:134837, 427.6 s), `TestPbNodeRun` 7 / 0 / 0 / 1 (:135343; SdTestGate "Swarm http://192.168.1.39:7801 not reachable" :135345), `TestPbRenderStagesOffline` 9 (:137369, 632.4 s), `TestPbRetentionSelector` 19 (:137371), `TestPbRetentionSweep` 4 (:137932), `TestPbReview` 8 (:154673) → **62 / 0 / 0 / 1** (:154677), `BUILD SUCCESS` (:154680), `Total time: 23:06 min` (:154682). The skip is the `.39` outage, not a pass.
 - Ux752: `npx vitest run` 99 files / 1469 passed (24 in the new file); `npx vite build` exit 0; `LOOP_MODULE=AccountManagerUx752 bash .claude/loop/verify.sh --quick` → `VERIFY_OK` (`p6-ux752-gate.log:7`).
 - Docker (`am7test`, `:9443`): the installed Objects7 jar (`~/.m2`) and `PictureBookService*.class` `docker cp`'d into the deployed WAR, `docker restart`, `/rest/schema` 200 after ~25 s; the three P6-1 columns arrived by boot DDL (212 m); `vite build` + `docker cp dist/` twice. Playwright `e2e/pictureBookVariants.spec.js` (`ensureSharedTestUser()`, a fresh ChapBook per run, WS stub, `PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443`, `--workers=1`): **first run 1 passed / 2 failed** (3.5 min, foreground, no log file) — test 2 showed an `s0` badge on a pre-P6 archived row (the `seed` column is a `long` with DDL default 0 and my `normalizeArtifact` treated 0 as known; 212 o), test 3's click on `pbwf-retention-open` intercepted by the node detail panel's `READY` badge at 1280 px (212 n); fixed (seed > 0 rule + a Vitest case; the spec sets 1600 × 900) → **3 passed (22.5 s)**: dry run decides the fixture + rejects K = 0 (311 ms), strip grouping / badges / archived toggle / compare (3.5 s), dialog dry run → Apply archives the older attempt and the strip reloads (2.9 s). The failure screenshot was opened: strip, v / seed badges and the dialog table as described; a `saveCanvas` 500 toast is in it (212 p, pre-existing).
-- Verifier: PENDING at the time of this pass (its own Objects7 run against `am7db` is in `p6-obj7-a.log`); verdict added here when it lands.
+- Verifier (independent; its own re-runs): **CHANGES-NEEDED → folded in 17:10 → 17:45** (rulings 212 q–w). Its re-runs were all green — `TestPbRetentionSelector` 19 (`p6v-selector.log:47`, :50), `TestPbV3Schema` 6 + `TestPbRetentionSweep` 4 → 10 (`p6v-sweep.log:878`, :881), Service7 `TestPictureBookRestContract` 23 (`p6v-contract.log:3064`, :3067), Vitest 24 (`p6v-vitest.log:6`) — and it found one HIGH (a `data.data` row shared by two artifacts was deleted under the first referrer, 212 q), one MEDIUM (a red Playwright run of mine left out of this ledger, 212 s) and four LOW (apply body silently defaulting, `variantsPlanned` from the preset on single-variant paths, `variantSeed` collisions for a non-positive base, the multi-variant `supersedes` shape undocumented; 212 t–w). All six addressed; nothing out of scope touched.
+- **Post-verifier re-runs** (one JVM each): Objects7 `TestPbVariantSeed` 3 (new, pure) + `TestPbRetentionSweep` **5** (case05 = the shared-row detach: `detached=1 bytesFreed=0` `p6f-sweep.log:347`, then `bytesDeleted=1 bytesFreed=5000` once the sharer is swept :477) + `TestPbRetentionSelector` 19 → **27 / 0 / 0 / 0** (:1230), `BUILD SUCCESS` (:1233); Objects7 jar re-installed (`p6f-obj7-install.log`, `-q`, exit 0); Service7 `TestPictureBookRestContract` **24 / 0 / 0 / 0** (`p6f-contract.log:3322`, :3325; the new `TestRetentionApplyBodyUnreadableIs400`); Ux752 `pictureBookVariants.test.js` 25 (`p6f-vitest.log:6`), `verify.sh --quick` → `VERIFY_OK` (`p6f-ux752-gate.log:7`); `TestPbRenderStagesOffline` after the `PbNodeExecutor` edits: see the line below.
+- `TestPbRenderStagesOffline` after the `PbNodeExecutor` edits (`variantsPlanned`, `variantSeed`), one JVM, 17:36 → 17:43: **9 / 0 / 0 / 0** (375.7 s, `p6f-stages.log:2073`, :2077), `BUILD SUCCESS` (:2080), `Total time: 06:19 min` (:2082), `EXIT=0` (:2085); `[LLM-GATE]` route=direct tier=remote — the remote `.42` Ollama, not Azure, not the container (:55-57). So the post-verifier Objects7 total is 27 + 9 = **36 / 0 / 0 / 0** across two JVMs.
 
 **Scenario F — RUN 2026-10-29 16:58 → 17:01 on `.39` (back, with `.42`), 1 / 0 / 0 / 0.** New `TestPbVariantsLive` (one `@Test`, `SdTestGate.requireRenderConfig` gate — there is no `PB_SD_TESTS` env var; the earlier placeholder command here named one and two classes that never exercised variants, both mine); one JVM: `cd src && mvn -o -pl AccountManagerObjects7 -Dtest='TestPbVariantsLive' -DskipTests=false test > /c/tmp/p65-live.log 2>&1` → `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0` (192.1 s, `p65-live.log:496`), `BUILD SUCCESS` (:503), 3:15 min (:505). `[LLM-GATE]` in words: LiteLLM `:4000` and the container `:11435` refused, so route=direct tier=remote — the remote `.42` Ollama, not Azure, not the container (:54-57); no LLM call was made (user-edited MIGRATED composition → TEXT_ONLY). SD: Swarm `http://192.168.1.39:7801`, checkpoint `OfficialStableDiffusion/sd_xl_base_1.0.safetensors` (:60). The test drives the production `PbNodeExecutor.executeNodeRun` (SWARM backend) on one RENDER_PLAN node of a fresh book (`p65ffe644a7a`, owner `pbPlanOwner`, autoApprove OFF, deleted in `finally`):
 - STANDARD run: COMPLETED, planned = rendered = 2, no degradations, wall 50.3 s (:205); seeds 1494118935 / 1494118936 (v0 + 1), one `attempt` = the run id, only v0 selected, 1024 × 1024, 1.65 / 1.67 MB (:211, :213).
@@ -367,11 +419,25 @@ Commit state: the twelve P5-3 code files are in Stephen's commit `54a80b2c` "PB3
 - Retention K = 1: `scanBook` `counts={keep=5, archive=3, deleteBytes=0, none=0} total=8` (:390) — ARCHIVE = the STANDARD attempt's `base r1`, `base r2` **and its `renderPlan r1`** (the JSON artifact is its own attempt under the role-scoped rule, hence 3 not 2; :395, :398, :400), KEEP = the four FINAL finals (approved reason "approved") + the FINAL renderPlan; `applyBook` `archived=3 bytesDeleted=0 refused=0 denied=0 failed=0` (:402-403), `archivedAt` set, bytes still present (D = 30); the approved artifact re-read with its bytes (:412); a second apply archives 0 (:417).
 - PNGs opened (`target/p65-*-p65ffe644a7a.png`): standard-v0 two figures in dark coats on black basalt slabs, orange / purple dusk, sea behind; standard-v1 four figures walking across basalt rubble toward a grassy cliff with surf (four, not two — SDXL-base fidelity, not a pipeline defect); final-v0 two tiny figures atop a basalt stack, pink dusk; final-v2 (the approved one) overcast grey, basalt cliff, a few figures, breaking surf. final-v1 / v3 and `approved-kept` (= final-v2's bytes) exist, not opened. Real, distinct, on-prompt images.
 
-**Not claimed.** Nothing is DONE (159 b); no scheduler, no un-archive, no per-request variant count; `saveCanvas` not fixed; the panel / toolbar overlap not fixed; `TestPbNodeRun` was not re-run after `.39` came back (its skip in `p6-regress1.log` stands as an outage; Scenario F is the live proof). The FINAL preset's UPSCALE stage is still not rendered (Phase 2 limit). Commit state: nothing `git add`ed or committed by me — the P6 code, its tests (incl. `TestPbVariantsLive`), the two Ux752 test files, `qualityPresets.json`, design §23 / §27 and this pass are all uncommitted in the working tree.
+**Not claimed.** Nothing is DONE (159 b); no scheduler, no un-archive, no per-request variant count; `saveCanvas` not fixed; the panel / toolbar overlap not fixed; `TestPbNodeRun` was not re-run after `.39` came back (its skip in `p6-regress1.log` stands as an outage; Scenario F is the live proof). The FINAL preset's UPSCALE stage is still not rendered (Phase 2 limit). The `detached` probe cannot see a PB1 scene's JSON-string landscape reference (212 q; Phase 10). The red 14-test Playwright run (`p6-pw-regress.log`, 212 s) is recorded, not re-run, and the `detached` outcome is Vitest- and JUnit-proven but has no Playwright case (a shared-row fixture needs a seeded LOCATION node through the UI). Scenario F was not re-run after the verifier fold-in (`renderPlanned` was touched only in `PlannedRender` plumbing + `variantSeed`; the stages regression covers it). Commit state: the P6 code and tests through Scenario F are in Stephen's commit `54c8e690` "Mark" (2026-10-29 17:20 — his; nothing was `git add`ed or committed by me). Uncommitted, from the verifier fold-in: `PbNodeExecutor`, `PbRetentionUtil`, `TestPbRetentionSweep`, new `TestPbVariantSeed`, `PictureBookService`, `TestPictureBookRestContract`, the two Ux752 `pictureBookWorkflow.js`, `pictureBookVariants.test.js`, and this ledger pass.
 
-Next: **STOP for the P6 hand-back** (one "Yours" block; unanswered defaults stand). Then, in order and only on Stephen's word: fix any
-in-scope verifier defects and re-test; Phase 7 (PictureBook goes V3, §1 row 7) or the Phase 10 items parked by 211 h. Nothing is DONE
-by me (159 b).
+**Yours (7) — Playwright re-run, 2026-10-29 19:44 → 19:53:41 local (§6.C 213).** Stephen picked it over Phase 7. Post-verifier build
+redeployed first: `~/.m2` Objects7 jar (17:35, `PbNodeExecutor.class` 17:33 / `PbRetentionUtil.class` 17:24) + `PictureBookService*.class`
++ `dist` (vite 6.22 s, `p6g-vite-build.log` EXIT=0) → `docker restart` 19:44:36 → `/AccountManagerService7/rest/schema` 200 JSON 19:45:58,
+boot log 0 stub / NoSuchMethod lines; `.39` → 302, `.42` → 200 from the container. Run (`C:/tmp/p6g-pw-rerun.log`): `PB_SD_TESTS=1`,
+`--workers=1`, `https://127.0.0.1:9443`, `e2etest_shared`, specs inspector + variants + workflow, 29 tests — **26 passed / 2 skipped /
+1 failed (5.6 m), `EXIT=1`** (:113-117). Skips are the spec's own gates (:9 inventory available → test 2; :10 no node → test 3), not passes.
+- Variants 3 / 3 on the post-verifier WAR (:15-17): retention dry run + invalid K, strip badges / archived toggle, dialog K=1 → Apply.
+- Workflow 20 / 20 incl. both `[SD]` cases, first ever executed: 28 regenerate portrait 1024×1024 1 384 391 B on SWARM → STALE `refDrift`
+  (:39-42); 29 P1-6 async render terminal 42 422 ms, `COMPLETED` 1 / 0 (:63, :67).
+- Inspector 1 ok (:8); **4 `[SD]` red** (:14, :72-86): `[p29-plan-4] rendered in 95033 ms … artifact b4978987…` (:12) then `pb2-scene-image`
+  not found (:359). Diagnosed live as `e2etest_shared` (`C:\tmp\p6g-diag4.mjs`): node `render_plan@d3978877` holds `base` v0 (selected,
+  `data` 2bd7f013…, 1024×1024, 1 739 043 B) + v1 (not selected) + `renderPlan`; the pages view carries no image fields for the scene.
+  Cause = the reader page never reads a RENDER_PLAN node (§6.C 213 e). Not a P6 regression; this assertion had never run. Yours.
+- Artifacts: `e2e/results/pictureBookV3PlanInspector-c3f1e-nd-Plan-shows-its-inspector-chromium/` (png, trace, error-context).
+
+Next: **STOP for the P6 hand-back** (one "Yours" block; unanswered defaults stand; Yours (7) is now answered by its run and adds 213 e).
+Then, only on Stephen's word: Phase 7 (PictureBook goes V3, §1 row 7) or the Phase 10 items parked by 211 h. Nothing is DONE by me (159 b).
 
 Open: the P6 "Yours" — (1) Scenario F: taken at its default (run as the first thing when `.39` was back, reported above) — nothing to
 answer unless the test design (212 a) is wrong;
@@ -379,5 +445,8 @@ answer unless the test design (212 a) is wrong;
 not until you say; (3) 212 n — the node detail panel hiding the toolbar's right end at 1280 px: move the panel or the button? default:
 leave; (4) 212 c — a per-request `variants` override on `olio.pictureBookRequest`? default: none; (5) 212 b — keep sequential whole-sequence
 variants, or batch N images at the renderer when `.39` measures it? default: sequential; (6) the P5-3 "Yours" (1)–(4) above stay at their
-defaults (scratch kept; calibration residue left; no chat-path WARN; `TestKontext` stays).
-next §6.C number 213.
+defaults (scratch kept; calibration residue left; no chat-path WARN; `TestKontext` stays); (7) 212 s — **run 2026-10-29 (213): 26 / 2 / 1**;
+the one red is inspector test 4's reader-image step — 213 e: show the RENDER_PLAN `base` on the reader page (product), or re-scope the
+spec? default: neither, stays red and recorded; (8) 212 q — `detached` for a shared `data.data` row (vs refuse-and-keep, which would never
+free either sharer)? default: detached as built.
+next §6.C number 214.

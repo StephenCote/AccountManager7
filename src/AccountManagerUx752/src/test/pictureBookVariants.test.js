@@ -170,10 +170,18 @@ describe('normalizeArtifact / groupArtifactsByAttempt (§23 variants)', () => {
 describe('normalizeRetention / retentionActionable (PbRetentionUtil.Sweep.toMap)', () => {
     it('fills every count / list the server may omit and upper-cases actions', () => {
         let s = normalizeRetention({ scope: 'book', total: 0 });
-        expect(s).toMatchObject({ scope: 'book', total: 0, nodes: 0, items: [], warnings: [], counts: { keep: 0, archive: 0, deleteBytes: 0, none: 0 }, bytesReclaimable: 0, archived: 0, bytesDeleted: 0, applied: false });
+        expect(s).toMatchObject({ scope: 'book', total: 0, nodes: 0, items: [], warnings: [], counts: { keep: 0, archive: 0, deleteBytes: 0, none: 0 }, bytesReclaimable: 0, archived: 0, bytesDeleted: 0, detached: 0, applied: false });
         let t = normalizeRetention({ appliedAt: 'x', items: [{ objectId: 'i', action: 'archive', outcome: 'archived', byteLength: '7' }] });
         expect(t.applied).toBe(true);
         expect(t.items[0]).toMatchObject({ action: 'ARCHIVE', outcome: 'archived', byteLength: 7, variantIndex: 0, attempt: null, selected: false });
+    });
+    it('carries the `detached` apply count and outcome (a shared data.data row: reference cleared, bytes kept)', () => {
+        let d = normalizeRetention({ appliedAt: 'x', archived: 0, bytesDeleted: 0, detached: '1', bytesFreed: 0,
+            items: [{ objectId: 's0', action: 'DELETE_BYTES', outcome: 'detached', outcomeReason: 'data.data 9 is shared with artifact l0; reference cleared, row kept', hasBytes: false, byteLength: 5000 }] });
+        expect(d.detached).toBe(1);
+        expect(d.bytesFreed).toBe(0);
+        expect(d.items[0]).toMatchObject({ action: 'DELETE_BYTES', outcome: 'detached', hasBytes: false, bytesFreed: 0 });
+        expect(d.items[0].outcomeReason).toContain('shared with artifact l0');
     });
     it('retentionActionable keeps only ARCHIVE and DELETE_BYTES items', () => {
         expect(retentionActionable(SCAN).map(i => i.objectId)).toEqual(['a-r1v0', 'a-r1v1']);

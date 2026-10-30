@@ -596,7 +596,10 @@ export function countOrphans(scan) {
 //   variantIndex, revision, reviewStatus, selected, hasBytes, byteLength, archivedAt, action
 //   (KEEP|ARCHIVE|DELETE_BYTES|NONE), reason, bytesDueAt, outcome?, outcomeReason?, bytesFreed? }],
 //   total, counts:{keep, archive, deleteBytes, none}, bytesReclaimable,
-//   apply adds: archived, bytesDeleted, bytesFreed, refused, denied, failed ; warnings:[] }
+//   apply adds: archived, bytesDeleted, detached, bytesFreed, refused, denied, failed ; warnings:[] }
+// Item outcomes: archived | bytesDeleted | detached | kept | refused | denied | failed. `detached` = the
+// artifact's data.data row is shared with another artifact (a seeded LOCATION render, a migrated PB1
+// image), so only this artifact's reference was cleared; the row stays until its last referrer is swept.
 // GET = dry run (query params); POST …/apply = act. K/D absent → server defaults (PbRetentionSelector);
 // out-of-range/non-integer → 400 ("(400) …" from wfFetch). The org-wide routes exist (admin-only) but the
 // canvas only drives the book-scoped pair.
@@ -623,6 +626,7 @@ export function normalizeRetention(s) {
         bytesReclaimable: n(s.bytesReclaimable),
         archived: n(s.archived),
         bytesDeleted: n(s.bytesDeleted),
+        detached: n(s.detached),
         bytesFreed: n(s.bytesFreed),
         refused: n(s.refused),
         denied: n(s.denied),

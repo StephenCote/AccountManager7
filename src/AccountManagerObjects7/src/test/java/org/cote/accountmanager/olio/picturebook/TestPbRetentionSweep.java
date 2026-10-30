@@ -40,8 +40,8 @@ import org.junit.Test;
  * and {@link PbArtifactUtil#archive}, through the {@link PbServiceFacade} retention surface.
  * <p>
  * Live {@code am7db}. No SD server is involved: the attempts are byte-free TEXT artifacts (case01, 03, 04) or
- * IMAGE artifacts whose {@code data.data} bytes are written directly by the test (case02), so that the
- * "delete bytes" leg is exercised against real rows. The book is this test's own fixture ({@link #SLUG}, find or
+ * IMAGE artifacts whose {@code data.data} bytes are written directly by the test (case02, case05), so that the
+ * "delete bytes" leg - and the shared-row detach - is exercised against real rows. The book is this test's own fixture ({@link #SLUG}, find or
  * create) rather than the shared {@code pb2c-graph} one: {@code apply} writes to every node of the book it is
  * run against, and this test must not archive artifacts the review and node-run tests left behind. Every node
  * has a random handle and every assertion over a sweep is scoped to the node the case created
@@ -254,6 +254,84 @@ public class TestPbRetentionSweep extends BaseTest {
 			assertItem(items, a[i], "NONE", "archived, bytes already deleted");
 			assertEquals(Boolean.FALSE, byObjectId(items, a[i]).get("hasBytes"));
 		}
+	}
+
+	// ─────────────────────────────── case05: a shared data.data row is never deleted under a sibling ───────────────────────────────
+
+	/**
+	 * The verifier's Phase 6 finding (2026-10-29): {@code PbServiceFacade.seedLocationNode} and the PB1 migration
+	 * point a second artifact at an <i>existing</i> {@code data.data} row, and {@code DELETE_BYTES} on the first
+	 * artifact deleted that row under the sibling. Same shape here: node S's older attempt {@code s0} and node L's
+	 * seed artifact share one row. K=1, D=0: {@code s0} is archived, then <b>detached</b> (its reference cleared,
+	 * the row kept, nothing freed, the sibling named) and L's artifact still has its bytes. Once L's artifact is
+	 * itself archived and due, the row - now singly referenced - is deleted, so the sharing never deadlocks.
+	 */
+	@Test
+	public void case05_sharedDataRowIsDetachedNotDeleted() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		long orgId = orgOf(u);
+		String bookOid = bk.get(FieldNames.FIELD_OBJECT_ID);
+		String groupPath = PbBookUtil.artifactGroupPath(SLUG);
+		BaseRecord nS = node(u, wf, "p63-c05-s");
+		BaseRecord nL = node(u, wf, "p63-c05-l");
+
+		byte[] shared = bytesOf(5000, (byte) 7);
+		BaseRecord s0 = imageAttempt(u, nS, "c05-s0", shared);
+		long dataId = PbHealthUtil.fkId(s0, OlioFieldNames.FIELD_PB_DATA);
+		assertTrue(dataId > 0L);
+		BaseRecord row = rawData(dataId, orgId);
+		assertNotNull(row);
+		/// L's seed artifact references the same row (seedLocationNode's shape: data handed in, no bytes copied).
+		BaseRecord l0 = PbArtifactUtil.persistArtifact(u, nL, ROLE, PbArtifactTypeEnumType.IMAGE,
+			groupPath, row, null, null, null, null, 0, UUID.randomUUID().toString(), true);
+		assertNotNull(l0);
+		assertTrue(PbArtifactUtil.recordImageMetrics(u, l0, shared, "application/octet-stream", 0, 0, null));
+		assertEquals("both artifacts reference one row", dataId, PbHealthUtil.fkId(reread(u, l0, orgId), OlioFieldNames.FIELD_PB_DATA));
+		assertEquals("the probe sees the sibling", l0.get(FieldNames.FIELD_OBJECT_ID), PbRetentionUtil.otherReferencer(s0, row, orgId));
+		assertEquals("the probe ignores the artifact itself", s0.get(FieldNames.FIELD_OBJECT_ID), PbRetentionUtil.otherReferencer(l0, row, orgId));
+		/// A newer attempt on S makes s0 the older, unselected one.
+		BaseRecord s1 = imageAttempt(u, nS, "c05-s1", bytesOf(100, (byte) 8));
+		assertTrue(selected(reread(u, s1, orgId)));
+
+		Map<String, Object> apply = PbServiceFacade.applyRetention(u, bookOid, Integer.valueOf(1), Integer.valueOf(30));
+		assertEquals(PbRetentionUtil.OUTCOME_ARCHIVED, byObjectId(itemsOfNode(apply, nS), s0).get("outcome"));
+		assertItem(itemsOfNode(apply, nL), l0, "KEEP", "selected");
+
+		/// Due (D=0): the scan still says DELETE_BYTES - sharing is a fact of the row, decided at apply time.
+		Map<String, Object> scan = PbServiceFacade.scanRetention(u, bookOid, Integer.valueOf(1), Integer.valueOf(0));
+		assertItem(itemsOfNode(scan, nS), s0, "DELETE_BYTES", "archived 0+ day(s) ago");
+
+		apply = PbServiceFacade.applyRetention(u, bookOid, Integer.valueOf(1), Integer.valueOf(0));
+		Map<String, Object> it = byObjectId(itemsOfNode(apply, nS), s0);
+		assertEquals(String.valueOf(it.get("outcomeReason")), PbRetentionUtil.OUTCOME_DETACHED, it.get("outcome"));
+		assertTrue("the reason names the sibling: " + it.get("outcomeReason"),
+			String.valueOf(it.get("outcomeReason")).contains((String) l0.get(FieldNames.FIELD_OBJECT_ID)));
+		assertNull("no bytesFreed on a detach", it.get("bytesFreed"));
+		assertTrue("detached is counted", ((Number) apply.get("detached")).intValue() >= 1);
+		assertNotNull("the shared row survives", rawData(dataId, orgId));
+		assertFalse("s0 no longer references it", PbRetentionUtil.hasBytes(reread(u, s0, orgId)));
+		BaseRecord l0Fresh = reread(u, l0, orgId);
+		assertTrue("the sibling keeps its bytes", PbRetentionUtil.hasBytes(l0Fresh));
+		assertEquals(dataId, PbHealthUtil.fkId(l0Fresh, OlioFieldNames.FIELD_PB_DATA));
+		assertEquals(5000L, PbRetentionUtil.byteLength(l0Fresh));
+		assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(l0Fresh));
+		assertEquals(PbRetentionUtil.OUTCOME_KEPT, byObjectId(itemsOfNode(apply, nL), l0).get("outcome"));
+
+		/// The last reference goes the normal way: a newer attempt on L, archive, then delete.
+		BaseRecord l1 = imageAttempt(u, nL, "c05-l1", bytesOf(100, (byte) 9));
+		assertTrue(selected(reread(u, l1, orgId)));
+		apply = PbServiceFacade.applyRetention(u, bookOid, Integer.valueOf(1), Integer.valueOf(0));
+		assertEquals(PbRetentionUtil.OUTCOME_ARCHIVED, byObjectId(itemsOfNode(apply, nL), l0).get("outcome"));
+		assertNotNull("archived, not yet deleted", rawData(dataId, orgId));
+		apply = PbServiceFacade.applyRetention(u, bookOid, Integer.valueOf(1), Integer.valueOf(0));
+		it = byObjectId(itemsOfNode(apply, nL), l0);
+		assertEquals(String.valueOf(it.get("outcomeReason")), PbRetentionUtil.OUTCOME_BYTES_DELETED, it.get("outcome"));
+		assertEquals(Long.valueOf(5000L), it.get("bytesFreed"));
+		assertNull("singly referenced now, so the row is deleted", rawData(dataId, orgId));
+		assertFalse(PbRetentionUtil.hasBytes(reread(u, l0, orgId)));
+		assertEquals("s0 was already detached; nothing to do", PbRetentionUtil.OUTCOME_KEPT, byObjectId(itemsOfNode(apply, nS), s0).get("outcome"));
 	}
 
 	// ─────────────────────────────── case03: archive refuses the selection and approvals ───────────────────────────────

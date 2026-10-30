@@ -42,7 +42,10 @@ import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
  * itself stays, with its {@code byteLength}, {@code contentHash}, seed and sanitized request intact, so the
  * attempt is still explainable after its pixels are gone. The reference is cleared <i>after</i> the row is
  * deleted; a clear that then fails is reported {@link #OUTCOME_FAILED} naming the dangling reference, and the
- * next sweep reads a missing row as "no bytes" and repairs it.
+ * next sweep reads a missing row as "no bytes" and repairs it. A row another artifact still references (a
+ * LOCATION node's seed artifact shares the scene's landscape row; a migrated landscape shares the PB1 row) is
+ * never deleted: only this artifact's reference is cleared, reported {@link #OUTCOME_DETACHED} with nothing
+ * freed, and the row goes when its last reference is swept.
  * <p>
  * {@code K} (attempts kept per role) and {@code D} (days after archival before bytes go) default to
  * {@link PbRetentionSelector#DEFAULT_KEEP_ATTEMPTS} / {@link PbRetentionSelector#DEFAULT_DELETE_BYTES_AFTER_DAYS}
@@ -59,6 +62,11 @@ public final class PbRetentionUtil {
 	public static final String OUTCOME_ARCHIVED = "archived";
 	/** The artifact's {@code data.data} was deleted and its {@code data} reference cleared. */
 	public static final String OUTCOME_BYTES_DELETED = "bytesDeleted";
+	/**
+	 * The artifact's {@code data} reference was cleared but the {@code data.data} row was kept, because another
+	 * artifact still references it ({@code reason} names it); nothing was freed.
+	 */
+	public static final String OUTCOME_DETACHED = "detached";
 	/** KEEP or NONE: nothing was written. */
 	public static final String OUTCOME_KEPT = "kept";
 	/** {@link PbArtifactUtil#archive} refused (409): selected or APPROVED since the scan. */
@@ -135,7 +143,7 @@ public final class PbRetentionUtil {
 		Sweep s = new Sweep(SCOPE_BOOK, p, true);
 		sweepBook(user, book, workflow, s);
 		logger.info("Retention apply (book " + book.get(OlioFieldNames.FIELD_PB_SLUG) + ") by " + user.get(FieldNames.FIELD_NAME)
-			+ ": archived=" + s.archived + " bytesDeleted=" + s.bytesDeleted + " bytesFreed=" + s.bytesFreed
+			+ ": archived=" + s.archived + " bytesDeleted=" + s.bytesDeleted + " detached=" + s.detached + " bytesFreed=" + s.bytesFreed
 			+ " refused=" + s.refused + " denied=" + s.denied + " failed=" + s.failed);
 		return s.toMap();
 	}
@@ -156,7 +164,7 @@ public final class PbRetentionUtil {
 		Sweep s = new Sweep(SCOPE_ORG, p, true);
 		sweepOrg(user, orgId, s);
 		logger.info("Retention apply (org " + orgId + ") by " + user.get(FieldNames.FIELD_NAME)
-			+ ": books=" + s.books + " archived=" + s.archived + " bytesDeleted=" + s.bytesDeleted + " bytesFreed=" + s.bytesFreed
+			+ ": books=" + s.books + " archived=" + s.archived + " bytesDeleted=" + s.bytesDeleted + " detached=" + s.detached + " bytesFreed=" + s.bytesFreed
 			+ " refused=" + s.refused + " denied=" + s.denied + " failed=" + s.failed);
 		return s.toMap();
 	}
@@ -184,6 +192,7 @@ public final class PbRetentionUtil {
 		/// outcome counts (apply only)
 		int archived;
 		int bytesDeleted;
+		int detached;
 		long bytesFreed;
 		int refused;
 		int denied;
@@ -227,6 +236,7 @@ public final class PbRetentionUtil {
 			if(apply) {
 				out.put("archived", Integer.valueOf(archived));
 				out.put("bytesDeleted", Integer.valueOf(bytesDeleted));
+				out.put("detached", Integer.valueOf(detached));
 				out.put("bytesFreed", Long.valueOf(bytesFreed));
 				out.put("refused", Integer.valueOf(refused));
 				out.put("denied", Integer.valueOf(denied));
@@ -452,6 +462,7 @@ public final class PbRetentionUtil {
 		switch(outcome) {
 			case OUTCOME_ARCHIVED: s.archived++; break;
 			case OUTCOME_BYTES_DELETED: s.bytesDeleted++; s.bytesFreed += freed; item.put("bytesFreed", Long.valueOf(freed)); break;
+			case OUTCOME_DETACHED: s.detached++; break;
 			case OUTCOME_REFUSED: s.refused++; break;
 			case OUTCOME_DENIED: s.denied++; break;
 			case OUTCOME_FAILED: s.failed++; break;
@@ -495,6 +506,20 @@ public final class PbRetentionUtil {
 			}
 			return new Object[] {OUTCOME_BYTES_DELETED, "data.data " + dataId + " was already gone; reference cleared", Long.valueOf(0L)};
 		}
+		/// A data.data row can be shared: PbServiceFacade.seedLocationNode points a LOCATION node's seed artifact at
+		/// the scene's landscape row, and PbMigrationUtil points a migrated landscape artifact at the PB1 row. The row
+		/// is deleted only when this artifact is its last olio.pb.artifact reference; otherwise only this reference is
+		/// cleared, nothing is freed, and the sharer is named (OUTCOME_DETACHED). The sharer's own sweep frees the row
+		/// once it is the last reference, so nothing deadlocks. (A PB1 scene's JSON landscape key is not a reference
+		/// this probe can see - Phase 10 removes PB1.)
+		String sharer = otherReferencer(artifact, data, orgId);
+		if(sharer != null) {
+			if(!clearData(user, artifact)) {
+				return new Object[] {OUTCOME_FAILED, "data.data " + dataId + " is shared with artifact " + sharer
+					+ " and the reference of " + artifact.get(FieldNames.FIELD_OBJECT_ID) + " could not be cleared", Long.valueOf(0L)};
+			}
+			return new Object[] {OUTCOME_DETACHED, "data.data " + dataId + " is shared with artifact " + sharer + "; reference cleared, row kept", Long.valueOf(0L)};
+		}
 		DeleteResult del = PictureBookUtil.deleteRecordExplained(user, data);
 		if(!del.deleted) {
 			return new Object[] {(del.authorized ? OUTCOME_FAILED : OUTCOME_DENIED), del.reason, Long.valueOf(0L)};
@@ -504,6 +529,30 @@ public final class PbRetentionUtil {
 				+ " deleted (data.data " + dataId + ") but the artifact's data reference could not be cleared", Long.valueOf(freed)};
 		}
 		return new Object[] {OUTCOME_BYTES_DELETED, null, Long.valueOf(freed)};
+	}
+
+	/**
+	 * The objectId of another {@code olio.pb.artifact} in the organization whose {@code data} is this row, or null
+	 * when this artifact is the row's only reference. Raw, like the existence probe above: a sharer the caller
+	 * cannot read must still stop the delete.
+	 */
+	static String otherReferencer(BaseRecord artifact, BaseRecord data, long orgId) {
+		long selfId = PbHealthUtil.idOf(artifact);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_ARTIFACT, OlioFieldNames.FIELD_PB_DATA, data);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID});
+		q.setRequestRange(0, 10);
+		q.setCache(false);
+		BaseRecord[] rows = IOSystem.getActiveContext().getSearch().findRecords(q);
+		if(rows == null) {
+			return null;
+		}
+		for(BaseRecord row : rows) {
+			if(PbHealthUtil.idOf(row) != selfId) {
+				return row.get(FieldNames.FIELD_OBJECT_ID);
+			}
+		}
+		return null;
 	}
 
 	/**
