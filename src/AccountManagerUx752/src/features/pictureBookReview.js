@@ -14,7 +14,10 @@ import m from 'mithril';
 import { page } from '../core/pageClient.js';
 import { layout, pageLayout } from '../router.js';
 import { resolveImageUrl } from '../workflows/sceneExtractor.js';
-import { getReviewQueue, selectArtifact, approveArtifact, rejectArtifact, nodeView, loadNodePlan } from '../workflows/pictureBookWorkflow.js';
+import {
+    getReviewQueue, selectArtifact, approveArtifact, rejectArtifact, nodeView, loadNodePlan,
+    normalizeQa, qaBadge, qaFindings, qaReportsForNewestAttempt
+} from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
 
 let bookObjectId = null;
@@ -25,11 +28,12 @@ let filter = 'all';
 let busyArtifact = null;
 let imageUrls = {};
 let loadSeq = 0;
-let nodePlans = {};   // nodeObjectId → {open, loading, plan, artifact, error} (V3 P2-9 per-node plan expander)
+let nodePlans = {};   // nodeObjectId → {open, loading, plan, artifact, qa, error} (V3 P2-9 per-node plan expander; qa = P8-5 newest-attempt reports)
+let qaOpen = {};      // artifactObjectId → true while its inline visual-QA report is expanded (§17 / P8-5)
 
 /** Per-node "Plan" expander: nodeView → newest renderPlan artifact → GET /artifact → inspector. Lazy, once per node. */
 export async function toggleNodePlan(nodeObjectId) {
-    let st = nodePlans[nodeObjectId] || (nodePlans[nodeObjectId] = { open: false, loading: false, plan: null, artifact: null, error: null });
+    let st = nodePlans[nodeObjectId] || (nodePlans[nodeObjectId] = { open: false, loading: false, plan: null, artifact: null, qa: null, error: null });
     if (st.open) { st.open = false; m.redraw(); return; }
     st.open = true;
     if (st.plan || st.loading) { m.redraw(); return; }
@@ -46,6 +50,7 @@ export async function toggleNodePlan(nodeObjectId) {
         if (!r.plan) throw new Error('The render-plan artifact ' + (r.artifact && r.artifact.objectId) + ' does not carry plan JSON');
         st.plan = r.plan;
         st.artifact = r.artifact;
+        st.qa = qaReportsForNewestAttempt(nv && nv.artifacts);
     } catch (e) {
         if (bookId !== bookObjectId) return;
         st.error = (e && e.message) || 'Could not load the plan';
@@ -104,7 +109,7 @@ export function nodeLabel(n) {
 }
 
 export function __reviewStateForTest() {
-    return { bookObjectId, queue, loading, error, filter, busyArtifact, nodePlans };
+    return { bookObjectId, queue, loading, error, filter, busyArtifact, nodePlans, qaOpen };
 }
 export function __setReviewStateForTest(patch) {
     patch = patch || {};
@@ -115,6 +120,14 @@ export function __setReviewStateForTest(patch) {
     if ('filter' in patch) filter = patch.filter;
     if ('busyArtifact' in patch) busyArtifact = patch.busyArtifact;
     if ('nodePlans' in patch) nodePlans = patch.nodePlans || {};
+    if ('qaOpen' in patch) qaOpen = patch.qaOpen || {};
+}
+
+/** The §17 verdict badge beside the status pill: click toggles the artifact's inline report. Null for an unjudged image. */
+export function toggleQaReport(artifactObjectId) {
+    if (!artifactObjectId) return;
+    if (qaOpen[artifactObjectId]) delete qaOpen[artifactObjectId]; else qaOpen[artifactObjectId] = true;
+    m.redraw();
 }
 
 // ── Data ───────────────────────────────────────────────────────────────
@@ -183,11 +196,38 @@ function statusClass(rs) {
     }
 }
 
+/** The inline visual-QA report under a judged artifact row: provider/model, note, one line per check. */
+function renderQaReport(a, qa) {
+    let who = [qa.provider, qa.model].filter(Boolean).join(' / ');
+    return m('div', { 'data-testid': 'pb2-review-qa-report', 'data-artifact-id': a.objectId, 'data-result': qa.result, class: 'mt-1 p-1.5 rounded bg-gray-50 dark:bg-gray-800 text-xs' }, [
+        m('div', { class: 'text-gray-500' }, [
+            who || 'visual QA',
+            qa.durationMs ? ' · ' + (Math.round(qa.durationMs / 100) / 10) + ' s' : '',
+            qa.imageArtifactObjectId && qa.imageArtifactObjectId !== a.objectId ? ' · for ' + qa.imageArtifactObjectId : ''
+        ].join('')),
+        qa.note ? m('div', { class: 'text-gray-700 dark:text-gray-300 mt-0.5 break-words' }, qa.note) : null,
+        qa.checks.length
+            ? m('ul', { class: 'mt-1 space-y-0.5' }, qa.checks.map(function (c) {
+                let cb = qaBadge({ result: c.result });
+                return m('li', { 'data-testid': 'pb2-review-qa-check', 'data-kind': c.kind, 'data-result': c.result, class: 'flex gap-2 items-start' }, [
+                    m('span', { class: 'shrink-0 w-4 text-center', style: 'color:' + cb.color, title: cb.label }, cb.glyph),
+                    m('span', { class: 'font-medium shrink-0' }, c.kind + (c.actorId ? ' ' + c.actorId : '')),
+                    m('span', { class: 'text-gray-600 dark:text-gray-300 break-words' },
+                        (c.expected != null || c.observed != null ? 'expected ' + (c.expected != null ? c.expected : '—') + ' → observed ' + (c.observed != null ? c.observed : '—') : '')
+                        + (c.detail ? (c.expected != null || c.observed != null ? ' — ' : '') + c.detail : ''))
+                ]);
+            }))
+            : m('div', { class: 'text-gray-400 italic mt-0.5' }, 'No checks recorded.')
+    ]);
+}
+
 function renderArtifact(n, a) {
     let rs = reviewStatusOf(a);
     let acts = artifactActions(a, !!n.pinned);
     let busy = busyArtifact === a.objectId;
     let url = a.dataObjectId ? imageUrls[a.dataObjectId] : null;
+    let qa = normalizeQa(a.qa);
+    let badge = qaBadge(qa);
     let btn = 'px-2 py-0.5 text-xs rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed';
     return m('div', {
         key: a.objectId,
@@ -195,6 +235,7 @@ function renderArtifact(n, a) {
         'data-artifact-id': a.objectId,
         'data-review-status': rs,
         'data-selected': a.selected ? '1' : '0',
+        'data-qa-result': qa ? qa.result : undefined,
         class: 'flex items-center gap-3 p-2 rounded border dark:border-gray-700 ' + (a.selected ? 'border-purple-400 bg-purple-50/40 dark:bg-purple-900/10' : '')
     }, [
         url
@@ -206,14 +247,24 @@ function renderArtifact(n, a) {
                 m('span', { class: 'font-mono' }, 'rev ' + (a.revision != null ? a.revision : '?')),
                 m('span', { class: 'px-1.5 py-0.5 rounded ' + statusClass(rs) }, rs),
                 a.selected ? m('span', { 'data-testid': 'pb2-review-selected', class: 'px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200' }, 'current') : null,
-                isAutoApproved(a) ? m('span', { 'data-testid': 'pb2-review-auto-mark', class: 'text-gray-500' }, 'auto-approved') : null
+                isAutoApproved(a) ? m('span', { 'data-testid': 'pb2-review-auto-mark', class: 'text-gray-500' }, 'auto-approved') : null,
+                badge ? m('button', {
+                    'data-testid': 'pb2-review-qa',
+                    'data-qa-result': badge.result,
+                    'data-open': qaOpen[a.objectId] ? '1' : '0',
+                    class: 'px-1.5 py-0.5 rounded-full font-semibold cursor-pointer border-0',
+                    style: 'color:' + badge.color + ';background:' + badge.bg,
+                    title: [badge.label + (qa.provider ? ' (' + qa.provider + ')' : '')].concat(qaFindings(qa)).join('\n'),
+                    onclick: function (e) { e.stopPropagation(); toggleQaReport(a.objectId); }
+                }, badge.glyph + ' ' + badge.result) : null
             ]),
             m('div', { class: 'text-gray-500 mt-1 truncate' }, [
                 a.backend ? a.backend + ' · ' : '',
                 a.imageWidth && a.imageHeight ? a.imageWidth + '×' + a.imageHeight + ' · ' : '',
                 a.seed != null ? 'seed ' + a.seed : ''
             ].join('')),
-            rs === 'APPROVED' && a.approvedBy ? m('div', { class: 'text-gray-500 mt-0.5' }, 'approved by ' + a.approvedBy + (a.approvedAt ? ' · ' + a.approvedAt : '')) : null
+            rs === 'APPROVED' && a.approvedBy ? m('div', { class: 'text-gray-500 mt-0.5' }, 'approved by ' + a.approvedBy + (a.approvedAt ? ' · ' + a.approvedAt : '')) : null,
+            qa && qaOpen[a.objectId] ? renderQaReport(a, qa) : null
         ]),
         m('div', { class: 'flex flex-col gap-1' }, [
             m('button', {
@@ -259,7 +310,7 @@ function renderNode(n) {
         ps && ps.open && ps.error ? m('div', { 'data-testid': 'pb2-review-plan-error', class: 'mb-2 text-xs text-red-600 dark:text-red-400 break-words' }, ps.error) : null,
         ps && ps.open && ps.plan ? m('div', { 'data-testid': 'pb2-review-plan', class: 'mb-3 p-2 rounded border dark:border-gray-700 max-h-96 overflow-y-auto' }, [
             ps.artifact ? m('div', { class: 'text-[10px] text-gray-500 mb-1' }, 'rev ' + (ps.artifact.revision != null ? ps.artifact.revision : '?') + ' · ' + (ps.artifact.objectId || '')) : null,
-            m(PbPlanInspector, { plan: ps.plan })
+            m(PbPlanInspector, { plan: ps.plan, qa: ps.qa })
         ]) : null,
         chain.length
             ? m('div', { class: 'space-y-2' }, chain.map(function (a) { return renderArtifact(n, a); }))

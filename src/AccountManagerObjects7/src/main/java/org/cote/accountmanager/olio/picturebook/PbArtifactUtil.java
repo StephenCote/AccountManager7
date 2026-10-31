@@ -18,6 +18,8 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.illustration.QaReport;
+import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -27,10 +29,12 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.JSONUtil;
 
 /**
@@ -570,12 +574,153 @@ public class PbArtifactUtil {
 		}
 	}
 
+	/// The outcome of {@link #autoApprove(BaseRecord, List, Map, List, String)}: the variant approved (null when
+	/// none was) and the skip reason (null when one was).
+	public static final class AutoApproveOutcome {
+		private final BaseRecord approved;
+		private final String skipped;
+
+		AutoApproveOutcome(BaseRecord approved, String skipped) {
+			this.approved = approved;
+			this.skipped = skipped;
+		}
+
+		public BaseRecord getApproved() {
+			return approved;
+		}
+
+		public String getSkipped() {
+			return skipped;
+		}
+
+		public boolean isApproved() {
+			return approved != null && skipped == null;
+		}
+	}
+
+	/**
+	 * Auto-approve (rule 5) over an attempt's variants (§23) ordered by their visual-QA verdicts (§17, ledger
+	 * §6.C 220 c). Picks ONE candidate and hands it to {@link #autoApprove(BaseRecord, BaseRecord, List)}, so
+	 * the degradation veto and the existing-approved guard apply unchanged; {@link #approve} selects the
+	 * candidate, so approving variant 2 moves the selection off variant 0.
+	 * <ul>
+	 * <li><b>OFF</b> (or null / unknown mode): the first variant, verdicts ignored - the pre-Phase-8 behaviour.</li>
+	 * <li><b>CANONICAL</b>: only variant 0 is judged. A FAIL on it skips the attempt
+	 * ({@code "degraded: QA_FAIL: ..."}); otherwise variant 0 is the candidate. A list whose head is not variant 0
+	 * (variant 0 dropped because it could not be re-read) is skipped ({@code "failed: variant 0 is missing; ..."})
+	 * rather than approving an unjudged sibling.</li>
+	 * <li><b>ALL</b>: every variant competes. PASS before WARN before unchecked / UNAVAILABLE; FAIL is never a
+	 * candidate; ties keep variant order (lowest variantIndex). All FAIL skips the attempt.</li>
+	 * </ul>
+	 * {@code QA_FAIL} entries in {@code degradations} do not veto (they are accepted codes); the ordering here is
+	 * what a FAIL does to auto-approve. Never throws.
+	 *
+	 * @param variants the attempt's image artifacts in variant order (read with {@link #artifactRequest()}); null
+	 *        entries are skipped
+	 * @param verdicts QA result per artifact objectId; an artifact with no entry was not checked
+	 * @param degradations the executor's {@code degradations} list for this attempt; null reads as empty
+	 * @param qaMode {@code OFF} | {@code CANONICAL} | {@code ALL} ({@code QualityPresets.QA_*}); null reads OFF
+	 */
+	public static AutoApproveOutcome autoApprove(BaseRecord user, List<BaseRecord> variants,
+			Map<String, QaReport.Result> verdicts, List<String> degradations, String qaMode) {
+		List<BaseRecord> ordered = new ArrayList<>();
+		if(variants != null) {
+			for(BaseRecord v : variants) {
+				if(v != null) {
+					ordered.add(v);
+				}
+			}
+		}
+		if(ordered.isEmpty()) {
+			return new AutoApproveOutcome(null, "failed: no artifact");
+		}
+		String mode = (qaMode != null ? qaMode.trim().toUpperCase() : QualityPresets.QA_OFF);
+		Map<String, QaReport.Result> v = (verdicts != null ? verdicts : Collections.emptyMap());
+		BaseRecord candidate = null;
+		if(QualityPresets.QA_CANONICAL.equals(mode)) {
+			BaseRecord first = ordered.get(0);
+			int firstIndex = variantIndexOf(first);
+			if(firstIndex != 0) {
+				// variant 0 is the only judged variant; when it is missing from the list (the executor drops a
+				// variant it could not re-read) the sibling at the head is unjudged and must not be approved
+				return new AutoApproveOutcome(null, "failed: variant 0 is missing; variant " + firstIndex + " ("
+					+ first.get(FieldNames.FIELD_NAME) + ") is unjudged under " + QualityPresets.QA_CANONICAL);
+			}
+			if(verdictOf(v, first) == QaReport.Result.FAIL) {
+				return new AutoApproveOutcome(null, "degraded: " + RenderPlan.Degradation.QA_FAIL + ": variant "
+					+ variantIndexOf(first) + " (" + first.get(FieldNames.FIELD_NAME) + ") failed visual QA");
+			}
+			candidate = first;
+		}
+		else if(QualityPresets.QA_ALL.equals(mode)) {
+			int bestRank = Integer.MAX_VALUE;
+			for(BaseRecord a : ordered) {
+				int rank = qaRank(verdictOf(v, a));
+				if(rank < bestRank) {
+					bestRank = rank;
+					candidate = a;
+				}
+			}
+			if(candidate == null) {
+				return new AutoApproveOutcome(null, "degraded: " + RenderPlan.Degradation.QA_FAIL + ": all "
+					+ ordered.size() + " variant(s) failed visual QA");
+			}
+		}
+		else {
+			candidate = ordered.get(0);
+		}
+		String skipped = autoApprove(user, candidate, degradations);
+		return new AutoApproveOutcome((skipped == null ? candidate : null), skipped);
+	}
+
+	private static QaReport.Result verdictOf(Map<String, QaReport.Result> verdicts, BaseRecord artifact) {
+		String oid = artifact.get(FieldNames.FIELD_OBJECT_ID);
+		return (oid != null ? verdicts.get(oid) : null);
+	}
+
+	/// ALL-mode ordering (220 c): PASS, then WARN, then unchecked or UNAVAILABLE; FAIL is out of the running.
+	private static int qaRank(QaReport.Result r) {
+		if(r == null) {
+			return 2;
+		}
+		switch(r) {
+			case PASS:
+				return 0;
+			case WARN:
+				return 1;
+			case FAIL:
+				return Integer.MAX_VALUE;
+			default:
+				return 2;
+		}
+	}
+
+	/**
+	 * Flag an image for human review after a QA FAIL or WARN (§17, 220 d): a GENERATED artifact becomes
+	 * IN_REVIEW. Nothing else changes - not the selection, not the pin, not an APPROVED / REJECTED / ARCHIVED
+	 * verdict already on the row (QA never demotes an approval or reverses a rejection), and an artifact
+	 * already IN_REVIEW is left as is. Written as {@code user} through PBAC like every review write.
+	 *
+	 * @return the re-read artifact, or {@code artifact} itself when nothing was written
+	 */
+	public static BaseRecord flagForReview(BaseRecord user, BaseRecord artifact) {
+		if(artifact == null) {
+			throw new PictureBookException(400, "flagForReview needs an artifact");
+		}
+		if(reviewStatusOf(artifact) != PbReviewStatusEnumType.GENERATED) {
+			return artifact;
+		}
+		writeReview(user, artifact, PbReviewStatusEnumType.IN_REVIEW, null, null);
+		return readArtifact(user, artifact.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(artifact));
+	}
+
 	/**
 	 * The degradation codes that veto auto-approval (P4-7): a character that could not be read or rendered, a
 	 * setting rendered without its approved render, a prompt the compiler had to cut, and a composition written
 	 * out of order, and an attempt that produced fewer finals than its preset planned (§23, P6-2).
-	 * {@code ACTOR_TEXT_ONLY}, {@code MODEL_SUBSTITUTED}, {@code QA_WARN} and {@code VARIANT_SEED_UNKNOWN} are
-	 * reported on the plan but accepted.
+	 * {@code ACTOR_TEXT_ONLY}, {@code MODEL_SUBSTITUTED}, {@code QA_WARN}, {@code QA_FAIL}, {@code QA_UNAVAILABLE}
+	 * and {@code VARIANT_SEED_UNKNOWN} are reported on the plan but accepted - a QA FAIL acts through the variant
+	 * ordering in {@link #autoApprove(BaseRecord, List, Map, List, String)} (220 c), not through this set.
 	 */
 	public static final Set<String> AUTO_APPROVE_VETO_CODES = Set.of(
 		RenderPlan.Degradation.ACTOR_UNRESOLVED,
@@ -936,6 +1081,39 @@ public class PbArtifactUtil {
 		q.setRequest(artifactRequest());
 		q.setCache(false);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/**
+	 * Read the raw bytes stored in the {@code data.data} record linked by {@code artifact.data}, as
+	 * {@code user} (PBAC - a user who may not read the data record gets {@code null}, not a bypass).
+	 * Uses {@link ByteModelUtil#getValue} to handle compression/encryption transparently.
+	 * Returns {@code null} (logged) if the artifact carries no data FK, or if the data record
+	 * cannot be found or decoded. Lifted from {@code PbNodeExecutor} for Phase 8 so visual QA can read
+	 * reference portraits through the same path the renderer does.
+	 */
+	public static byte[] readArtifactBytes(BaseRecord user, BaseRecord artifact) {
+		if(artifact == null) return null;
+		BaseRecord dataStub = artifact.get(OlioFieldNames.FIELD_PB_DATA);
+		if(dataStub == null) return null;
+		String dataOid = dataStub.get(FieldNames.FIELD_OBJECT_ID);
+		if(dataOid == null) return null;
+		long orgId = PbGraphUtil.orgId(artifact);
+		Query dq = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, dataOid);
+		dq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		dq.planMost(false);
+		dq.setCache(false);
+		BaseRecord dataRecord = IOSystem.getActiveContext().getAccessPoint().find(user, dq);
+		if(dataRecord == null) {
+			logger.warn("readArtifactBytes: data record {} not found", dataOid);
+			return null;
+		}
+		try {
+			return ByteModelUtil.getValue(dataRecord);
+		}
+		catch(FieldException | ValueException e) {
+			logger.warn("readArtifactBytes: failed to decode bytes from data record {}: {}", dataOid, e.getMessage());
+			return null;
+		}
 	}
 
 	/**

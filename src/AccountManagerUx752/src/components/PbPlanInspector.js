@@ -6,10 +6,15 @@
  * prompts per stage, degradations, configNotApplied codes, the estimate and the content hash. Nothing
  * here is derived client-side beyond formatting; codes and reasons are shown as received.
  *
- * Usage: m(PbPlanInspector, { plan: normalizePlan(body) })
+ * §17 visual QA (P8-5): an optional `qa` attr — the output of qaReportsForNewestAttempt(nodeView.artifacts),
+ * one { role, artifact, qa } per judged image of the node's newest attempt — adds a "Visual QA" section after
+ * the degradations: one report per image (verdict, provider/model, note) with its checks. Undefined `qa`
+ * leaves the section out entirely (the scene-plan preview has no artifacts yet); [] says so in words.
+ *
+ * Usage: m(PbPlanInspector, { plan: normalizePlan(body), qa: qaReportsForNewestAttempt(artifacts) })
  */
 import m from 'mithril';
-import { normalizePlan } from '../workflows/pictureBookWorkflow.js';
+import { normalizePlan, normalizeQa, qaBadge } from '../workflows/pictureBookWorkflow.js';
 
 /** "N scenes · S stages · V variants · K steps" plus the time when measured, else the estimate source verbatim. Pure. */
 export function estimateText(estimate) {
@@ -56,6 +61,54 @@ function kv(k, v) {
     ]);
 }
 
+/** The { role, artifact, qa } entries of the `qa` attr with the report normalized; null when the attr is absent. Pure. */
+export function qaEntries(qa) {
+    if (qa == null) return null;
+    return (Array.isArray(qa) ? qa : []).map(function (e) {
+        e = e && typeof e === 'object' ? e : {};
+        let art = e.artifact && typeof e.artifact === 'object' ? e.artifact : {};
+        return {
+            role: e.role != null ? String(e.role) : '',
+            artifactObjectId: art.objectId != null ? String(art.objectId) : null,
+            variantIndex: art.variantIndex != null && isFinite(Number(art.variantIndex)) ? Number(art.variantIndex) : 0,
+            qa: normalizeQa(e.qa)
+        };
+    }).filter(function (e) { return e.qa != null; });
+}
+
+function qaPill(badge) {
+    return m('span', {
+        class: 'px-1.5 py-0.5 rounded-full font-semibold',
+        style: 'color:' + badge.color + ';background:' + badge.bg
+    }, badge.glyph + ' ' + badge.result);
+}
+
+function renderQaReport(e) {
+    let badge = qaBadge(e.qa);
+    let who = [e.qa.provider, e.qa.model].filter(Boolean).join(' / ');
+    return m('div', { 'data-testid': 'pb2-plan-qa-report', 'data-result': e.qa.result, 'data-artifact-id': e.artifactObjectId || '', 'data-role': e.role, class: 'mb-2' }, [
+        m('div', { class: 'flex flex-wrap items-center gap-2 text-xs' }, [
+            m('span', { class: 'font-semibold' }, e.role + ' v' + e.variantIndex),
+            qaPill(badge),
+            who ? m('span', { class: 'text-gray-500' }, who) : null,
+            e.qa.durationMs ? m('span', { class: 'text-gray-400' }, Math.round(e.qa.durationMs / 100) / 10 + ' s') : null
+        ]),
+        e.qa.note ? m('div', { class: 'text-xs text-gray-600 dark:text-gray-300 mt-0.5' }, e.qa.note) : null,
+        e.qa.checks.length
+            ? m('ul', { class: 'text-xs mt-1 space-y-0.5' }, e.qa.checks.map(function (c) {
+                let cb = qaBadge({ result: c.result });
+                return m('li', { 'data-testid': 'pb2-plan-qa-check', 'data-kind': c.kind, 'data-result': c.result, class: 'flex gap-2 items-start' }, [
+                    m('span', { class: 'shrink-0 w-4 text-center', style: 'color:' + cb.color, title: cb.label }, cb.glyph),
+                    m('span', { class: 'font-medium shrink-0' }, c.kind + (c.actorId ? ' ' + c.actorId : '')),
+                    m('span', { class: 'text-gray-600 dark:text-gray-300 break-words' },
+                        (c.expected != null || c.observed != null ? 'expected ' + (c.expected != null ? c.expected : '—') + ' → observed ' + (c.observed != null ? c.observed : '—') : '')
+                        + (c.detail ? (c.expected != null || c.observed != null ? ' — ' : '') + c.detail : ''))
+                ]);
+            }))
+            : null
+    ]);
+}
+
 const PbPlanInspector = {
     view: function (vnode) {
         let plan = normalizePlan(vnode.attrs.plan);
@@ -64,6 +117,7 @@ const PbPlanInspector = {
         let canvas = plan.canvas;
         let rows = modelRows(plan.models);
         let stages = Object.keys(plan.compiled);
+        let qa = qaEntries(vnode.attrs.qa);
         return m('div', { 'data-testid': 'pb2-plan-inspector', class: 'text-sm' }, [
             m('div', { class: 'flex flex-wrap items-center gap-2' }, [
                 m('span', { 'data-testid': 'pb2-plan-strategy', class: 'px-2 py-0.5 rounded-full text-xs bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200' },
@@ -129,6 +183,11 @@ const PbPlanInspector = {
                     ]);
                 }))
                 : m('div', { class: 'text-xs text-gray-400 italic' }, 'None.'),
+
+            qa
+                ? [label('Visual QA'), m('div', { 'data-testid': 'pb2-plan-qa', 'data-count': String(qa.length) },
+                    qa.length ? qa.map(renderQaReport) : m('div', { class: 'text-xs text-gray-400 italic' }, 'No visual-QA reports for this attempt.'))]
+                : null,
 
             plan.configNotApplied.length
                 ? [label('Config not applied'), m('div', { 'data-testid': 'pb2-plan-config-not-applied', class: 'text-xs text-gray-700 dark:text-gray-300' },

@@ -200,6 +200,9 @@ export function normalizeRun(r) {
  * The artifact `seed` column is a `long` with DDL default 0, so TEXT / renderPlan / pre-Phase-6 rows
  * arrive as `seed: 0` (Jackson NON_EMPTY keeps numeric 0): a seed is "known" only when > 0, the same
  * falsy-seed convention the legacy result card uses (pictureBook.js `if (result.seed && …)`).
+ * §17 visual QA (P8-5): `qa` is the image's NEWEST report (PbServiceFacade.attachQa — the QaReport map:
+ * result, provider, model, checks[], durationMs, note, imageArtifactObjectId), absent when the image was
+ * never judged; normalized by `normalizeQa` to null-or-report so a tile can test `art.qa` directly.
  */
 export function normalizeArtifact(a) {
     a = a || {};
@@ -214,8 +217,100 @@ export function normalizeArtifact(a) {
         seed: a.seed != null && isFinite(Number(a.seed)) && Number(a.seed) > 0 ? Number(a.seed) : null,
         byteLength: a.byteLength != null && isFinite(Number(a.byteLength)) ? Number(a.byteLength) : 0,
         archivedAt: a.archivedAt != null ? String(a.archivedAt) : null,
-        bytesDeleted: !!a.bytesDeleted
+        bytesDeleted: !!a.bytesDeleted,
+        qa: normalizeQa(a.qa)
     });
+}
+
+/** The four QaReport.Result names; anything else on the wire reads UNAVAILABLE (QaReport.parseResult does the same). */
+export const QA_RESULTS = ['PASS', 'WARN', 'FAIL', 'UNAVAILABLE'];
+
+export function qaResultOf(r) {
+    let s = String(r == null ? '' : r).trim().toUpperCase();
+    return QA_RESULTS.indexOf(s) >= 0 ? s : 'UNAVAILABLE';
+}
+
+/**
+ * One QaReport map (QaReport.toMap: the artifact's `qa`, or the run DTO's `variants[].qa`) with every
+ * omission filled; null when `q` is not an object, so "never judged" and "judged" are one test. Pure.
+ */
+export function normalizeQa(q) {
+    if (!q || typeof q !== 'object') return null;
+    let checks = (Array.isArray(q.checks) ? q.checks : []).map(function (c) {
+        c = c && typeof c === 'object' ? c : {};
+        return {
+            kind: c.kind != null ? String(c.kind) : '',
+            result: qaResultOf(c.result),
+            expected: c.expected != null ? String(c.expected) : null,
+            observed: c.observed != null ? String(c.observed) : null,
+            detail: c.detail != null ? String(c.detail) : null,
+            actorId: c.actorId != null ? String(c.actorId) : null
+        };
+    });
+    return {
+        result: qaResultOf(q.result),
+        provider: q.provider != null ? String(q.provider) : null,
+        model: q.model != null ? String(q.model) : null,
+        note: q.note != null ? String(q.note) : null,
+        durationMs: q.durationMs != null && isFinite(Number(q.durationMs)) ? Number(q.durationMs) : 0,
+        imageArtifactObjectId: q.imageArtifactObjectId != null ? String(q.imageArtifactObjectId) : null,
+        checks: checks
+    };
+}
+
+/**
+ * How a verdict is drawn: ✓ PASS green, ⚠ WARN amber, ✗ FAIL red, ? UNAVAILABLE grey. One place, so the
+ * tile badge, the review pill and the inspector agree. Pure; null for an unjudged image.
+ */
+export function qaBadge(qa) {
+    if (!qa) return null;
+    switch (qaResultOf(qa.result)) {
+        case 'PASS': return { result: 'PASS', glyph: '✓', label: 'QA pass', color: '#166534', bg: '#dcfce7' };
+        case 'WARN': return { result: 'WARN', glyph: '⚠', label: 'QA warn', color: '#92400e', bg: '#fef3c7' };
+        case 'FAIL': return { result: 'FAIL', glyph: '✗', label: 'QA fail', color: '#991b1b', bg: '#fee2e2' };
+        default: return { result: 'UNAVAILABLE', glyph: '?', label: 'QA unavailable', color: '#475569', bg: '#e2e8f0' };
+    }
+}
+
+/**
+ * The checks that were not PASS, one line each ("PERSON_COUNT: expected 2, observed 1 — one figure"), for
+ * tooltips and the review row; UNAVAILABLE with no checks falls back to the report's note. Pure.
+ */
+export function qaFindings(qa) {
+    qa = normalizeQa(qa);
+    if (!qa) return [];
+    let out = qa.checks.filter(function (c) { return c.result !== 'PASS'; }).map(function (c) {
+        let bits = [];
+        if (c.expected != null) bits.push('expected ' + c.expected);
+        if (c.observed != null) bits.push('observed ' + c.observed);
+        let line = c.kind + (c.actorId ? ' ' + c.actorId : '') + ' ' + c.result.toLowerCase();
+        if (bits.length) line += ': ' + bits.join(', ');
+        if (c.detail) line += ' — ' + c.detail;
+        return line;
+    });
+    if (!qa.checks.length && qa.note) out.push(qa.note);
+    return out;
+}
+
+/**
+ * The reports the plan inspector shows beside a node's plan: every judged image of the NEWEST attempt of
+ * each image role (the renderPlan artifact carries no attempt stamp, and a plan-driven run always writes
+ * the plan and its variants together), as [{ role, artifact, qa }] ordered by role then variantIndex.
+ * Bookkeeping roles (renderPlan, qa) never appear. Pure; [] for a node with no artifacts.
+ */
+export function qaReportsForNewestAttempt(artifacts) {
+    let out = [];
+    if (!artifacts || typeof artifacts !== 'object') return out;
+    Object.keys(artifacts).forEach(function (role) {
+        if (role === 'renderPlan' || role === 'qa') return;
+        let grouped = groupArtifactsByAttempt(artifacts[role]);
+        let newest = grouped.attempts.length ? grouped.attempts[0] : null;
+        if (!newest) return;
+        newest.variants.forEach(function (a) {
+            if (a.qa) out.push({ role: role, artifact: a, qa: a.qa });
+        });
+    });
+    return out;
 }
 
 /** Case-insensitive: is this artifact ARCHIVED (the only status the strip hides by default)? */

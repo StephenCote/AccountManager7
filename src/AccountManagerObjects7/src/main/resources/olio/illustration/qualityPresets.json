@@ -19,10 +19,19 @@
     "defaultPreset is the pre-selection for a new style and for a style whose qualityPreset reads",
     "NULL/UNKNOWN (design section 34 item 7, recorded as a default in PictureBookV3Implementation.md",
     "section 6.C 149 a). A book with NO style at all is a different case - section 29 says STANDARD -",
-    "and that lives in the resolver, not here."
+    "and that lives in the resolver, not here.",
+    "",
+    "qaModel is the vision model VlmQaProvider asks for on the run's chat route (design section 17,",
+    "Implementation section 6.C 220 e) - never the chat config's own model, which is a text model. It must",
+    "be listed by the route's /api/tags (Ollama) or /v1/models; when it is not, QA reports UNAVAILABLE and",
+    "the render is unaffected. Measured on .42 2026-10-30 (section 15.2): valkyriesys/eudaimonia-dryad3-vision",
+    "(qwen3vl 8.8B, thinking) answers in ~31 s only with a raised token budget (8192, VlmQaProvider.MAX_OUTPUT_TOKENS;",
+    "4096 was exhausted) - its Modelfile caps num_predict at 1024 and the whole cap goes to thinking;",
+    "qwen3-vl:8b-instruct answers in ~20 s. Alternate: qwen3-vl:8b-instruct."
   ],
 
   "defaultPreset": "DRAFT",
+  "qaModel": "valkyriesys/eudaimonia-dryad3-vision",
 
   "presets": {
     "DRAFT": {

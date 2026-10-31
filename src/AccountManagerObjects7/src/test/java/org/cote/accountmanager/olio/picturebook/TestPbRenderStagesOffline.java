@@ -28,6 +28,7 @@ import org.cote.accountmanager.olio.illustration.FixtureGraphClient;
 import org.cote.accountmanager.olio.illustration.MaskImage;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
+import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererAdapter;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
@@ -219,6 +220,11 @@ public class TestPbRenderStagesOffline extends BaseTest {
 			.build();
 	}
 
+	/// The note the offline backend answers the visual-QA selector with (P8-4): this suite never probes the
+	/// owner's chat route or a Swarm port, so a STANDARD / FINAL attempt here carries exactly one waived
+	/// QA_UNAVAILABLE degradation quoting it. The hook itself is covered by TestPbQaHookOffline.
+	private static final String NO_QA_NOTE = "offline test: no QA provider";
+
 	private static RenderBackend backend(ScriptedAdapter adapter, FixtureGraphClient client) {
 		return new RenderBackend() {
 			@Override
@@ -228,6 +234,10 @@ public class TestPbRenderStagesOffline extends BaseTest {
 			@Override
 			public SwarmGraphClient client(SDUtil sdu) {
 				return client;
+			}
+			@Override
+			public PbQaUtil.Selection qaProvider(BaseRecord user, BaseRecord chatConfig, SDUtil sdu, String checkpoint) {
+				return new PbQaUtil.Selection(null, NO_QA_NOTE);
 			}
 		};
 	}
@@ -955,8 +965,12 @@ public class TestPbRenderStagesOffline extends BaseTest {
 			assertEquals("a scene with no cast and no location plans TEXT_ONLY", PbStrategyEnumType.TEXT_ONLY.name(), out.get("strategy"));
 			assertEquals(2, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)));
 			assertEquals(2, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			/// STANDARD asks for CANONICAL visual QA (P8-4); with no provider the attempt carries exactly that one
+			/// waived degradation and nothing else, and still auto-approves below.
 			List<String> degradations = PbNodeExecutor.degradationsOf(out);
-			assertTrue("no degradations: " + degradations, degradations == null || degradations.isEmpty());
+			assertEquals("only the waived QA_UNAVAILABLE: " + degradations,
+				List.of(RenderPlan.Degradation.QA_UNAVAILABLE + ": no visual-QA provider is available (" + NO_QA_NOTE + ")"), degradations);
+			assertEquals("qaMode is reported", QualityPresets.QA_CANONICAL, out.get(PbNodeExecutor.KEY_QA_MODE));
 
 			/// The plain T2I path: variant 0 random, variant 1 derived from variant 0's reported seed.
 			assertEquals("requests sent", 2, adapter.requests.size());

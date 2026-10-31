@@ -880,6 +880,16 @@ public class PbGraphUtil {
 	 * dispatches work without passing through {@code markRunning} leaves nothing for the sweep to find.
 	 */
 	public static BaseRecord startRun(BaseRecord user, BaseRecord workflow, String groupPath, List<Long> requestedNodeIds) {
+		return startRun(user, workflow, groupPath, requestedNodeIds, null);
+	}
+
+	/**
+	 * {@link #startRun(BaseRecord, BaseRecord, String, List)} with the run's {@code chatConfig} FK set to
+	 * {@code chatConfig} when non-null (§6.C 224 a): the visual-QA hook routes the vision model through that
+	 * config's connection (220 e); null leaves the FK unset and the hook on the user's default analysis config.
+	 */
+	public static BaseRecord startRun(BaseRecord user, BaseRecord workflow, String groupPath, List<Long> requestedNodeIds,
+			BaseRecord chatConfig) {
 		if(workflow == null) {
 			throw new PictureBookException(400, "A run must name its workflow");
 		}
@@ -897,6 +907,9 @@ public class PbGraphUtil {
 			run.set(OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT, Integer.valueOf(0));
 			if(requestedNodeIds != null && !requestedNodeIds.isEmpty()) {
 				run.set(OlioFieldNames.FIELD_PB_REQUESTED_NODE_IDS, new ArrayList<>(requestedNodeIds));
+			}
+			if(chatConfig != null) {
+				run.set(OlioFieldNames.FIELD_PB_CHAT_CONFIG, chatConfig);
 			}
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
@@ -1026,7 +1039,8 @@ public class PbGraphUtil {
 			OlioFieldNames.FIELD_PB_WORKFLOW, OlioFieldNames.FIELD_PB_RUN_STATUS,
 			OlioFieldNames.FIELD_PB_STARTED_AT, OlioFieldNames.FIELD_PB_COMPLETED_AT,
 			OlioFieldNames.FIELD_PB_REQUESTED_NODE_IDS, OlioFieldNames.FIELD_PB_EXECUTED_NODE_COUNT,
-			OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT, OlioFieldNames.FIELD_PB_ERROR
+			OlioFieldNames.FIELD_PB_FAILED_NODE_COUNT, OlioFieldNames.FIELD_PB_ERROR,
+			OlioFieldNames.FIELD_PB_CHAT_CONFIG
 		};
 	}
 

@@ -31,6 +31,8 @@ public final class QualityPresets {
 	public static final String STEPS_HIGH = "high";
 
 	private static final PbQualityPresetEnumType FALLBACK_DEFAULT = PbQualityPresetEnumType.DRAFT;
+	/// The shipped qaModel (ledger §6.C 220 e); the resource's top-level "qaModel" wins when present.
+	static final String FALLBACK_QA_MODEL = "valkyriesys/eudaimonia-dryad3-vision";
 	private static final Map<PbQualityPresetEnumType, Preset> FALLBACK;
 	static {
 		Map<PbQualityPresetEnumType, Preset> m = new LinkedHashMap<>();
@@ -101,6 +103,22 @@ public final class QualityPresets {
 			}
 		}
 		return FALLBACK_DEFAULT;
+	}
+
+	/// The vision model visual QA asks the run's chat route for (design §17; §6.C 220 e): the resource's
+	/// top-level "qaModel", else the shipped value. Never the chat config's own (text) model. Never blank.
+	public static String qaModel() {
+		Map<String, Object> c = load();
+		if(c != null) {
+			Object v = c.get("qaModel");
+			if(v instanceof String && !((String) v).isBlank()) {
+				return ((String) v).trim();
+			}
+			if(v != null) {
+				logger.error("qualityPresets.json qaModel '" + v + "' is not a model name; using " + FALLBACK_QA_MODEL);
+			}
+		}
+		return FALLBACK_QA_MODEL;
 	}
 
 	/// Resolve a style's qualityPreset. null and UNKNOWN mean "unset" and resolve to defaultPreset().

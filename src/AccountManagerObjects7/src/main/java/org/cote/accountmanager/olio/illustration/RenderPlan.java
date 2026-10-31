@@ -1458,6 +1458,13 @@ public final class RenderPlan {
 		public static final String MODEL_SUBSTITUTED = ModelResolver.DEGRADATION_MODEL_SUBSTITUTED;
 		public static final String PROMPT_TRUNCATED = "PROMPT_TRUNCATED";
 		public static final String QA_WARN = "QA_WARN";
+		/// §17 (P8-1): visual QA judged a variant FAIL (a referenced foreground actor absent, fewer people than
+		/// planned). Attempt-level and accepted by the veto set like QA_WARN: QA never blocks a render, it orders
+		/// the attempt's variants for auto-approve and flags the image for review (ledger §6.C 220 c).
+		public static final String QA_FAIL = "QA_FAIL";
+		/// §17 (P8-1): no QA provider could run for this attempt (none reachable, or the provider threw), so the
+		/// variants are unchecked. Accepted: an unchecked render is a render, not a failure (220 g).
+		public static final String QA_UNAVAILABLE = "QA_UNAVAILABLE";
 		/// §9.1: the render composed this scene itself because no composition existed; the scene was staged
 		/// without the story-order context the compose job gives it. Re-compose in order to clear it.
 		public static final String COMPOSED_OUT_OF_ORDER = "COMPOSED_OUT_OF_ORDER";
@@ -1471,7 +1478,8 @@ public final class RenderPlan {
 		/// Every code a plan can carry. Consumers that classify a degradation string by its prefix
 		/// (PbArtifactUtil.autoApprove) treat anything outside this set as free-form and do not waive it.
 		public static final Set<String> CODES = Set.of(ACTOR_TEXT_ONLY, ACTOR_UNRESOLVED, ACTOR_FAILED, LOCATION_TEXT_ONLY,
-			MODEL_SUBSTITUTED, PROMPT_TRUNCATED, QA_WARN, COMPOSED_OUT_OF_ORDER, VARIANT_FAILED, VARIANT_SEED_UNKNOWN);
+			MODEL_SUBSTITUTED, PROMPT_TRUNCATED, QA_WARN, QA_FAIL, QA_UNAVAILABLE, COMPOSED_OUT_OF_ORDER, VARIANT_FAILED,
+			VARIANT_SEED_UNKNOWN);
 
 		public static boolean isKnownCode(String code) {
 			return code != null && CODES.contains(code);

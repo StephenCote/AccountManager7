@@ -112,6 +112,12 @@ public class PbPipelineUtil {
 	 * after a render; a RENDER_PLAN node binds the scene's location so {@code approvedRender} drift stales it.
 	 */
 	public static final String ROLE_LOCATION = "location";
+	/**
+	 * A visual-QA report (V3 §17, P8-1): the JSON of a {@code QaReport} on the SAME node as the image it judged,
+	 * stamped with that image's attempt + variantIndex and carrying its objectId (ledger §6.C 220 a). Never a
+	 * reviewable artifact: the review queue skips this role as it skips {@code renderPlan}.
+	 */
+	public static final String ROLE_QA = "qa";
 
 	private PbPipelineUtil() {
 		/// static utility
@@ -374,6 +380,16 @@ public class PbPipelineUtil {
 	 */
 	public static SceneGraph openNodeGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord node,
 			boolean withRun) {
+		return openNodeGraph(user, book, workflow, node, withRun, null);
+	}
+
+	/**
+	 * {@link #openNodeGraph(BaseRecord, BaseRecord, BaseRecord, BaseRecord, boolean)} opening the run with
+	 * {@code chatConfig} as its {@code chatConfig} FK (§6.C 224 a; {@link PbGraphUtil#startRun(BaseRecord, BaseRecord,
+	 * String, List, BaseRecord)}). Ignored when {@code withRun} is false.
+	 */
+	public static SceneGraph openNodeGraph(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord node,
+			boolean withRun, BaseRecord chatConfig) {
 		SceneGraph g = nodeGraph(user, book, workflow, node);
 		if(withRun) {
 			Long nodeId = node.get(FieldNames.FIELD_ID);
@@ -381,7 +397,7 @@ public class PbPipelineUtil {
 			if(nodeId != null && nodeId.longValue() > 0L) {
 				requested.add(nodeId);
 			}
-			g.run = PbGraphUtil.startRun(user, workflow, g.workflowGroupPath, requested);
+			g.run = PbGraphUtil.startRun(user, workflow, g.workflowGroupPath, requested, chatConfig);
 			PbGraphUtil.persistLastRun(user, workflow, g.run);
 		}
 		return g;

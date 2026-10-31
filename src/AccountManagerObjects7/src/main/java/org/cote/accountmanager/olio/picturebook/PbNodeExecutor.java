@@ -26,6 +26,9 @@ import org.cote.accountmanager.olio.illustration.Flux2Compiler;
 import org.cote.accountmanager.olio.illustration.GraphCompileException;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
+import org.cote.accountmanager.olio.illustration.QaProvider;
+import org.cote.accountmanager.olio.illustration.QaReport;
+import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererAdapter;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
@@ -271,7 +274,9 @@ public class PbNodeExecutor {
 			RenderBackend backend) {
 		PbNodeTypeEnumType nodeType = gate(node, sdu);
 		long started = System.currentTimeMillis();
-		SceneGraph g = PbPipelineUtil.openNodeGraph(user, book, workflow, node, true);
+		/// 224 a: the options' chat config becomes the run's chatConfig FK, which is what the visual-QA hook routes
+		/// its vision model through (220 e); null leaves the hook on the user's default analysis config.
+		SceneGraph g = PbPipelineUtil.openNodeGraph(user, book, workflow, node, true, (opts != null ? opts.getChatConfig() : null));
 		g.setPlanOptions(opts);
 		g.setCancelToken(cancelToken);
 		g.setRenderBackend(backend);
@@ -411,9 +416,15 @@ public class PbNodeExecutor {
 	/** The DTO keys {@link #applyAutoApprove} writes. */
 	public static final String KEY_AUTO_APPROVED = "autoApproved";
 	public static final String KEY_AUTO_APPROVE_SKIPPED = "autoApproveSkipped";
+	/** The objectId of the variant auto-approve pinned - variant 0 unless QA ordered another one ahead (§17). */
+	public static final String KEY_AUTO_APPROVED_ARTIFACT = "autoApprovedArtifactObjectId";
 	public static final String SKIP_OFF = "off";
 	/** Fixed text for an auto-approve failure; the exception detail goes to the log, never to the response. */
 	public static final String SKIP_FAILED_INTERNAL = "failed: internal error";
+	/** The QA mode the attempt ran under ({@code OFF} / {@code CANONICAL} / {@code ALL}), on the DTO when QA ran. */
+	public static final String KEY_QA_MODE = "qaMode";
+	/** Per-variant QA verdict under {@link #KEY_VARIANTS}: {@code {result, artifactObjectId}} (the report's). */
+	public static final String KEY_VARIANT_QA = "qa";
 
 	/**
 	 * Auto-approve (§10 rule 5) the attempt's new artifact when the book's {@code autoApprove} switch is on,
@@ -426,6 +437,15 @@ public class PbNodeExecutor {
 	 * a book handed in without the field reads as off. The artifact is re-read with
 	 * {@link PbArtifactUtil#artifactRequest()} because the executors' persisted records are not all projected
 	 * with {@code producedByNode}/{@code role}, which the chain walk needs.
+	 * <p>
+	 * <b>Variants (§23, §17; P8-1).</b> A DTO carrying {@link #KEY_VARIANTS} is auto-approved over the whole
+	 * attempt: the variants are re-read in order, each entry's {@link #KEY_VARIANT_QA}{@code .result} is its
+	 * verdict, {@link #KEY_QA_MODE} (absent = OFF) says how the verdicts order them, and
+	 * {@link PbArtifactUtil#autoApprove(BaseRecord, List, Map, List, String)} picks the candidate. The approved
+	 * variant is named in {@link #KEY_AUTO_APPROVED_ARTIFACT} and marked {@code selected} + {@code reviewStatus}
+	 * on its {@code variants[]} entry; the top-level {@code reviewStatus} is set only when it is the DTO's own
+	 * {@code artifactObjectId} (variant 0), so a caller reading the old key is never told variant 0 is approved
+	 * when variant 2 was. With no QA (every attempt before Phase 8), this is the first variant - unchanged.
 	 */
 	static void applyAutoApprove(SceneGraph g, Map<String, Object> out) {
 		BaseRecord book = g.getBook();
@@ -437,26 +457,83 @@ public class PbNodeExecutor {
 			return;
 		}
 		String skipped;
+		String approvedOid = null;
 		try {
 			BaseRecord user = g.getUser();
 			long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 			String artifactOid = (String) out.get("artifactObjectId");
-			BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactOid, orgId);
-			skipped = (artifact != null
-				? PbArtifactUtil.autoApprove(user, artifact, degradationsOf(out))
-				: "failed: artifact " + artifactOid + " could not be re-read");
+			List<Map<String, Object>> variants = variantsOf(out);
+			if(variants.isEmpty()) {
+				BaseRecord artifact = PbArtifactUtil.readArtifact(user, artifactOid, orgId);
+				skipped = (artifact != null
+					? PbArtifactUtil.autoApprove(user, artifact, degradationsOf(out))
+					: "failed: artifact " + artifactOid + " could not be re-read");
+				approvedOid = (skipped == null ? artifactOid : null);
+			}
+			else {
+				List<BaseRecord> arts = new ArrayList<>();
+				Map<String, QaReport.Result> verdicts = new LinkedHashMap<>();
+				for(Map<String, Object> v : variants) {
+					String oid = (String) v.get("artifactObjectId");
+					BaseRecord a = PbArtifactUtil.readArtifact(user, oid, orgId);
+					if(a == null) {
+						logger.warn("Auto-approve: variant " + v.get("variantIndex") + " (" + oid + ") could not be re-read and is out of the running");
+						continue;
+					}
+					arts.add(a);
+					QaReport.Result r = variantVerdict(v);
+					if(r != null) {
+						verdicts.put(oid, r);
+					}
+				}
+				Object mode = out.get(KEY_QA_MODE);
+				PbArtifactUtil.AutoApproveOutcome outcome = PbArtifactUtil.autoApprove(user, arts, verdicts, degradationsOf(out),
+					(mode != null ? mode.toString() : null));
+				skipped = outcome.getSkipped();
+				approvedOid = (outcome.isApproved() ? outcome.getApproved().get(FieldNames.FIELD_OBJECT_ID) : null);
+				if(approvedOid != null) {
+					for(Map<String, Object> v : variants) {
+						boolean isApproved = approvedOid.equals(v.get("artifactObjectId"));
+						v.put("selected", Boolean.valueOf(isApproved));
+						if(isApproved) {
+							v.put("reviewStatus", PbReviewStatusEnumType.APPROVED.name());
+						}
+					}
+				}
+			}
 		}
 		catch(RuntimeException e) {
 			logger.error("Auto-approve threw after a completed run: " + errorMessage(e), e);
 			skipped = SKIP_FAILED_INTERNAL;
+			approvedOid = null;
 		}
 		out.put(KEY_AUTO_APPROVED, Boolean.valueOf(skipped == null));
 		if(skipped != null) {
 			out.put(KEY_AUTO_APPROVE_SKIPPED, skipped);
 		}
 		else {
-			out.put("reviewStatus", PbReviewStatusEnumType.APPROVED.name());
+			out.put(KEY_AUTO_APPROVED_ARTIFACT, approvedOid);
+			if(approvedOid != null && approvedOid.equals(out.get("artifactObjectId"))) {
+				out.put("reviewStatus", PbReviewStatusEnumType.APPROVED.name());
+			}
 		}
+	}
+
+	/** The {@link #KEY_VARIANTS} list an executor put on its DTO, never null. */
+	@SuppressWarnings("unchecked")
+	static List<Map<String, Object>> variantsOf(Map<String, Object> out) {
+		Object v = (out != null ? out.get(KEY_VARIANTS) : null);
+		return (v instanceof List ? (List<Map<String, Object>>) v : Collections.emptyList());
+	}
+
+	/** The QA verdict a {@code variants[]} entry carries ({@link #KEY_VARIANT_QA}{@code .result}), or null when unchecked. */
+	static QaReport.Result variantVerdict(Map<String, Object> variant) {
+		Object qa = (variant != null ? variant.get(KEY_VARIANT_QA) : null);
+		if(!(qa instanceof Map)) {
+			return null;
+		}
+		Object r = ((Map<?, ?>) qa).get("result");
+		return (r != null ? QaReport.parseResult(r.toString()) : null);
 	}
 
 	/**
@@ -705,6 +782,12 @@ public class PbNodeExecutor {
 			}
 			artifacts.add(a);
 		}
+		/// §17 (P8-4): judge the recorded finals before the node completes; a FAIL / WARN flags its image for
+		/// review and the verdicts order auto-approve. The images stand whatever QA says (220 g).
+		AttemptQa qa = qaAttempt(g, sdu, r, artifacts, sceneLabel);
+		if(qa != null) {
+			r.degradations.addAll(qa.degradations);
+		}
 		BaseRecord artifact = artifacts.get(0);
 		bindSceneLocation(g, node, r.plan, r.degradations);
 
@@ -713,7 +796,10 @@ public class PbNodeExecutor {
 
 		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(r.bytes.length), downstream, r.degradations);
 		r.describe(out);
-		out.put(KEY_VARIANTS, variantsDto(artifacts, r.variants));
+		out.put(KEY_VARIANTS, variantsDto(artifacts, r.variants, qa));
+		if(qa != null) {
+			out.put(KEY_QA_MODE, qa.mode);
+		}
 		return out;
 	}
 
@@ -723,23 +809,232 @@ public class PbNodeExecutor {
 		return (g != null && g.getRun() != null ? g.getRun().get(FieldNames.FIELD_OBJECT_ID) : null);
 	}
 
-	/// {@link #KEY_VARIANTS}: one entry per recorded final, in variant order.
-	private static List<Map<String, Object>> variantsDto(List<BaseRecord> artifacts, List<PlannedRender.Variant> variants) {
+	/// {@link #KEY_VARIANTS}: one entry per recorded final, in variant order; {@code reviewStatus} is the
+	/// artifact's as recorded (IN_REVIEW after a QA flag), and {@link #KEY_VARIANT_QA} is present on every
+	/// variant the hook judged ({@code {result, artifactObjectId, provider, note}}, the report's).
+	private static List<Map<String, Object>> variantsDto(List<BaseRecord> artifacts, List<PlannedRender.Variant> variants, AttemptQa qa) {
 		List<Map<String, Object>> list = new ArrayList<>();
 		for(int i = 0; i < artifacts.size() && i < variants.size(); i++) {
 			BaseRecord a = artifacts.get(i);
 			PlannedRender.Variant v = variants.get(i);
 			Map<String, Object> m = new LinkedHashMap<>();
-			m.put("artifactObjectId", (a != null ? a.get(FieldNames.FIELD_OBJECT_ID) : null));
+			String oid = (a != null ? a.get(FieldNames.FIELD_OBJECT_ID) : null);
+			m.put("artifactObjectId", oid);
 			m.put("variantIndex", Integer.valueOf(v.variantIndex));
 			m.put("seed", v.seed);
 			m.put("byteLength", Long.valueOf(v.bytes != null ? v.bytes.length : 0L));
 			m.put("artifactRevision", (a != null ? a.get(OlioFieldNames.FIELD_PB_REVISION) : null));
 			Boolean sel = (a != null ? a.get(OlioFieldNames.FIELD_PB_SELECTED) : null);
 			m.put("selected", Boolean.valueOf(sel != null && sel.booleanValue()));
+			if(a != null && a.hasField(OlioFieldNames.FIELD_PB_REVIEW_STATUS)) {
+				m.put("reviewStatus", PbArtifactUtil.reviewStatusOf(a).name());
+			}
+			VariantQa vq = (qa != null && oid != null ? qa.byArtifact.get(oid) : null);
+			if(vq != null) {
+				Map<String, Object> q = new LinkedHashMap<>();
+				q.put("result", vq.report.getResult().name());
+				q.put("artifactObjectId", vq.reportArtifactObjectId);
+				q.put("provider", vq.report.getProvider());
+				if(vq.report.getNote() != null) {
+					q.put("note", vq.report.getNote());
+				}
+				m.put(KEY_VARIANT_QA, q);
+			}
 			list.add(m);
 		}
 		return list;
+	}
+
+	// ─── visual QA hook (V3 §17; ledger §6.C 220 g, P8-4) ──────────────────────
+
+	/// One judged variant: its report and the {@code qa} artifact that holds it (null when that write failed).
+	static final class VariantQa {
+		final QaReport report;
+		final String reportArtifactObjectId;
+
+		VariantQa(QaReport report, String reportArtifactObjectId) {
+			this.report = report;
+			this.reportArtifactObjectId = reportArtifactObjectId;
+		}
+	}
+
+	/// What the hook did for one attempt: the mode it ran under (never OFF), the provider's name (null when
+	/// none answered), the judged variants by image objectId, and the degradations to append to the attempt.
+	static final class AttemptQa {
+		final String mode;
+		String provider;
+		final Map<String, VariantQa> byArtifact = new LinkedHashMap<>();
+		final List<String> degradations = new ArrayList<>();
+
+		AttemptQa(String mode) {
+			this.mode = mode;
+		}
+	}
+
+	/**
+	 * The visual-QA hook (220 g): after the attempt's finals are recorded and before the node completes, judge
+	 * them under the plan's preset mode - {@code OFF} does nothing (no provider is even resolved), {@code CANONICAL}
+	 * judges variant 0 only, {@code ALL} judges every final. The provider is the graph's backend's
+	 * ({@link RenderBackend#qaProvider}), resolved once per attempt. Per judged variant: the report is persisted
+	 * as a {@code qa} artifact on the node ({@link PbQaUtil#persistReport}; a failed write is a graph-write
+	 * failure, not a failed render); a FAIL or WARN flags the image IN_REVIEW ({@link PbArtifactUtil#flagForReview},
+	 * 220 d) and the entry in {@code artifacts} is replaced with the re-read so the DTO reports the new status;
+	 * each non-PASS verdict is a {@code QA_FAIL} / {@code QA_WARN} / {@code QA_UNAVAILABLE} degradation, all of
+	 * which auto-approve accepts - the FAIL acts through the ordering in
+	 * {@link PbArtifactUtil#autoApprove(BaseRecord, List, Map, List, String)} (220 c). A provider that throws,
+	 * or none at all, is {@code QA_UNAVAILABLE} and the attempt stands. Never throws; timings are logged only.
+	 *
+	 * @param artifacts the recorded finals in variant order, fully projected ({@code PbPipelineUtil.recordImage}
+	 *        returns them so); flagged entries are replaced in place
+	 * @return null when the mode is OFF, else what was done
+	 */
+	static AttemptQa qaAttempt(SceneGraph g, SDUtil sdu, PlannedRender r, List<BaseRecord> artifacts, String sceneLabel) {
+		String mode = PbQaUtil.qaModeOf(r.plan);
+		if(QualityPresets.QA_OFF.equals(mode) || artifacts == null || artifacts.isEmpty()) {
+			return null;
+		}
+		AttemptQa qa = new AttemptQa(mode);
+		BaseRecord user = g.getUser();
+		RenderPlan.ModelPick pick = r.plan.pickForStage(RenderPlan.STAGE_BASE);
+		String checkpoint = (pick != null ? pick.getModel() : null);
+		PbQaUtil.Selection sel;
+		try {
+			sel = g.getRenderBackend().qaProvider(user, runChatConfig(g), sdu, checkpoint);
+		}
+		catch(RuntimeException e) {
+			logger.error("Visual QA of " + sceneLabel + ": provider selection threw: " + errorMessage(e), e);
+			sel = new PbQaUtil.Selection(null, "selection threw " + errorMessage(e));
+		}
+		QaProvider provider = (sel != null ? sel.getProvider() : null);
+		if(provider == null) {
+			String why = (sel != null ? sel.getNote() : "no selection");
+			qa.degradations.add(RenderPlan.Degradation.QA_UNAVAILABLE + ": no visual-QA provider is available (" + why + ")");
+			logger.warn("Visual QA of " + sceneLabel + " (" + mode + ") skipped: " + why);
+			return qa;
+		}
+		qa.provider = provider.name();
+		int count = (QualityPresets.QA_CANONICAL.equals(mode) ? 1 : artifacts.size());
+		for(int i = 0; i < count && i < artifacts.size() && i < r.variants.size(); i++) {
+			BaseRecord a = artifacts.get(i);
+			PlannedRender.Variant v = r.variants.get(i);
+			if(a == null) {
+				continue;
+			}
+			int vi = v.variantIndex;
+			String oid = a.get(FieldNames.FIELD_OBJECT_ID);
+			String name = a.get(FieldNames.FIELD_NAME);
+			String label = "variant " + vi + " (" + name + ")";
+			long t0 = System.currentTimeMillis();
+			QaReport rep;
+			try {
+				rep = provider.check(r.plan, v.bytes);
+				if(rep == null) {
+					rep = QaReport.unavailable(provider.name(), null, "provider returned no report", System.currentTimeMillis() - t0);
+				}
+			}
+			catch(RuntimeException e) {
+				logger.error("Visual QA of " + sceneLabel + " " + label + " threw: " + errorMessage(e), e);
+				rep = QaReport.unavailable(provider.name(), null, "provider error: " + errorMessage(e), System.currentTimeMillis() - t0);
+			}
+			logger.info("Visual QA of " + sceneLabel + " " + label + ": " + rep.getResult() + " via " + provider.name()
+				+ " in " + (System.currentTimeMillis() - t0) + " ms");
+			String qaOid = null;
+			try {
+				BaseRecord qaArtifact = PbQaUtil.persistReport(user, g.getArtifactGroupPath(), rep, a);
+				qaOid = (qaArtifact != null ? qaArtifact.get(FieldNames.FIELD_OBJECT_ID) : null);
+			}
+			catch(RuntimeException e) {
+				logger.error("Visual QA report for " + sceneLabel + " " + label + " could not be persisted: " + errorMessage(e));
+				g.addGraphWriteFailure("qa report for " + label + " could not be persisted: " + errorMessage(e));
+			}
+			switch(rep.getResult()) {
+				case FAIL:
+					qa.degradations.add(RenderPlan.Degradation.QA_FAIL + ": " + label + " failed visual QA: " + findings(rep));
+					artifacts.set(i, flagForReview(g, a, label));
+					break;
+				case WARN:
+					qa.degradations.add(RenderPlan.Degradation.QA_WARN + ": " + label + " visual QA warned: " + findings(rep));
+					artifacts.set(i, flagForReview(g, a, label));
+					break;
+				case UNAVAILABLE:
+					qa.degradations.add(RenderPlan.Degradation.QA_UNAVAILABLE + ": " + label + ": "
+						+ (rep.getNote() != null ? rep.getNote() : "no checks"));
+					break;
+				default:
+					break;
+			}
+			qa.byArtifact.put(oid, new VariantQa(rep, qaOid));
+		}
+		return qa;
+	}
+
+	/// 220 e / 224 a: the run's {@code chatConfig}, re-read in full as the user. The run projection carries the
+	/// FK's identity only and {@code Chat} needs the config's {@code connection} / {@code model} / {@code apiVersion}
+	/// to resolve a route, so a bare FK is not enough. Null when the run names none (or there is no run): the
+	/// selector then falls back to the user's default analysis config. A config the user cannot read is logged
+	/// and treated as none - the hook never throws.
+	static BaseRecord runChatConfig(SceneGraph g) {
+		BaseRecord run = g.getRun();
+		BaseRecord ref = (run != null ? run.get(OlioFieldNames.FIELD_PB_CHAT_CONFIG) : null);
+		if(ref == null) {
+			return null;
+		}
+		String oid = ref.get(FieldNames.FIELD_OBJECT_ID);
+		Long id = ref.get(FieldNames.FIELD_ID);
+		if(oid == null && (id == null || id.longValue() <= 0L)) {
+			return null;
+		}
+		try {
+			Query q = (oid != null
+				? QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_OBJECT_ID, oid)
+				: QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_ID, id));
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, PbGraphUtil.orgId(g.getUser()));
+			q.planMost(false);
+			q.setCache(false);
+			BaseRecord cfg = IOSystem.getActiveContext().getAccessPoint().find(g.getUser(), q);
+			if(cfg == null) {
+				logger.warn("Visual QA: run " + run.get(FieldNames.FIELD_NAME) + " names chatConfig " + (oid != null ? oid : id)
+					+ " which could not be read; using the default route");
+			}
+			return cfg;
+		}
+		catch(RuntimeException e) {
+			logger.warn("Visual QA: run chatConfig could not be read (" + errorMessage(e) + "); using the default route");
+			return null;
+		}
+	}
+
+	/// 220 d: flag a FAIL / WARN image for review as the user; a denied or failed write is a graph-write
+	/// failure (the verdict is on the persisted report regardless) and the artifact is returned as it was.
+	private static BaseRecord flagForReview(SceneGraph g, BaseRecord artifact, String label) {
+		try {
+			BaseRecord after = PbArtifactUtil.flagForReview(g.getUser(), artifact);
+			return (after != null ? after : artifact);
+		}
+		catch(RuntimeException e) {
+			logger.error("Visual QA: " + label + " could not be flagged for review: " + errorMessage(e));
+			g.addGraphWriteFailure(label + " could not be flagged for review after visual QA: " + errorMessage(e));
+			return artifact;
+		}
+	}
+
+	/// The report's FAIL / WARN checks in one line for a degradation message, capped so a chatty provider
+	/// cannot bloat the DTO; the full report is on the qa artifact.
+	private static String findings(QaReport rep) {
+		StringBuilder sb = new StringBuilder();
+		for(QaReport.Check c : rep.getChecks()) {
+			if(c.getResult() != QaReport.Result.FAIL && c.getResult() != QaReport.Result.WARN) {
+				continue;
+			}
+			if(sb.length() > 0) {
+				sb.append("; ");
+			}
+			sb.append(c.toString());
+		}
+		if(sb.length() == 0) {
+			sb.append(rep.getNote() != null ? rep.getNote() : "no detail");
+		}
+		return (sb.length() > 240 ? sb.substring(0, 237) + "..." : sb.toString());
 	}
 
 	/**
@@ -1093,10 +1388,24 @@ public class PbNodeExecutor {
 	 * production backend and the only one outside tests; a test hands in fakes so {@link #renderStages}
 	 * runs without a Swarm server (P5-3, §6.C 209 b). A parameter rather than a static so nothing is
 	 * process-global.
+	 * <p>
+	 * P8-4: the same seam chooses the attempt's visual-QA provider ({@link #qaProvider}), since the fallback
+	 * provider posts to the renderer this backend fronts. The default is {@link PbQaUtil#providerFor} - the
+	 * vision LLM on the user's default route, else Swarm YOLO on {@link #client}, else none; an offline test
+	 * overrides it with a scripted provider the way it overrides the adapter.
 	 */
 	interface RenderBackend {
 		RendererAdapter adapter(SDUtil sdu);
 		SwarmGraphClient client(SDUtil sdu);
+
+		/// The visual-QA provider for one attempt rendered through this backend by {@code user} with
+		/// {@code checkpoint} (the BASE stage's effective model). {@code chatConfig} is the run's config read in
+		/// full ({@link PbNodeExecutor#runChatConfig}), or null for the user's default analysis config (220 e /
+		/// 224 a). Never throws; a null provider in the selection means "none answered" and the hook degrades
+		/// {@code QA_UNAVAILABLE}.
+		default PbQaUtil.Selection qaProvider(BaseRecord user, BaseRecord chatConfig, SDUtil sdu, String checkpoint) {
+			return PbQaUtil.providerFor(user, chatConfig, client(sdu), checkpoint);
+		}
 
 		RenderBackend SWARM = new RenderBackend() {
 			@Override
@@ -1798,9 +2107,18 @@ public class PbNodeExecutor {
 			"Page " + sceneIndex + " has no text to render: set or generate its landscape prompt");
 		List<String> degradations = r.degradations;
 		byte[] bytes = r.bytes;
-		BaseRecord artifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE,
+		List<BaseRecord> artifacts = new ArrayList<>();
+		artifacts.add(PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_LANDSCAPE, PbArtifactTypeEnumType.IMAGE,
 			r.data, bytes, "image/png", r.seed, r.frozen, r.requestJson, r.referenceArtifactObjectIds, sdu.getApiType(), r.durationMs,
-			r.backendGraph, attemptOf(g));
+			r.backendGraph, attemptOf(g)));
+
+		/// §17 (P8-4; 220 g): a page is one final, judged for gross defects under the preset's mode like a
+		/// scene variant; a FAIL / WARN flags it for review, and the page stands whatever QA says.
+		AttemptQa qa = qaAttempt(g, sdu, r, artifacts, sceneLabel);
+		if(qa != null) {
+			degradations.addAll(qa.degradations);
+		}
+		BaseRecord artifact = artifacts.get(0);
 
 		/// The scene keeps pointing at the newest image so the v1 readers (bookPageView's fallback, the
 		/// health scan's SCENE_IMAGE_* findings) stay coherent; the artifact chain is what review acts on.
@@ -1832,6 +2150,11 @@ public class PbNodeExecutor {
 		out.put("sceneObjectId", sceneOid);
 		out.put("imageObjectId", imageOid);
 		r.describe(out);
+		/// One-entry variants list so a page reports its reviewStatus / qa the same way a scene variant does.
+		out.put(KEY_VARIANTS, variantsDto(artifacts, r.variants, qa));
+		if(qa != null) {
+			out.put(KEY_QA_MODE, qa.mode);
+		}
 		return out;
 	}
 
@@ -2404,32 +2727,10 @@ public class PbNodeExecutor {
 
 	/**
 	 * Read the raw bytes stored in the {@code data.data} record linked by {@code artifact.data}.
-	 * Uses {@link ByteModelUtil#getValue} to handle compression/encryption transparently.
-	 * Returns {@code null} (logged) if the artifact carries no data FK, or if the data record
-	 * cannot be found or decoded.
+	 * Delegates to {@link PbArtifactUtil#readArtifactBytes} (lifted there for Phase 8 so visual QA
+	 * reads reference portraits through the same PBAC path).
 	 */
 	private static byte[] readArtifactBytes(BaseRecord user, BaseRecord artifact) {
-		if(artifact == null) return null;
-		BaseRecord dataStub = artifact.get(OlioFieldNames.FIELD_PB_DATA);
-		if(dataStub == null) return null;
-		String dataOid = dataStub.get(FieldNames.FIELD_OBJECT_ID);
-		if(dataOid == null) return null;
-		long orgId = PbGraphUtil.orgId(artifact);
-		Query dq = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, dataOid);
-		dq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		dq.planMost(false);
-		dq.setCache(false);
-		BaseRecord dataRecord = IOSystem.getActiveContext().getAccessPoint().find(user, dq);
-		if(dataRecord == null) {
-			logger.warn("readArtifactBytes: data record {} not found", dataOid);
-			return null;
-		}
-		try {
-			return ByteModelUtil.getValue(dataRecord);
-		}
-		catch(FieldException | ValueException e) {
-			logger.warn("readArtifactBytes: failed to decode bytes from data record {}: {}", dataOid, e.getMessage());
-			return null;
-		}
+		return PbArtifactUtil.readArtifactBytes(user, artifact);
 	}
 }

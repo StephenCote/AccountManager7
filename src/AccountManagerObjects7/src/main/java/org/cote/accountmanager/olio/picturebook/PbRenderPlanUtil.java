@@ -81,18 +81,28 @@ public final class PbRenderPlanUtil {
 		private final boolean raw;
 		private final PbQualityPresetEnumType presetOverride;
 		private final String modelOverride;
+		private final BaseRecord chatConfig;
 
 		public PlanOptions(String promptOverride, boolean raw, PbQualityPresetEnumType presetOverride, String modelOverride) {
+			this(promptOverride, raw, presetOverride, modelOverride, null);
+		}
+
+		/// {@code chatConfig} is the {@code olio.llm.chatConfig} the run is opened with (§6.C 224 a): the visual-QA
+		/// hook routes the vision model through its connection (220 e). Null = the user's default analysis config.
+		public PlanOptions(String promptOverride, boolean raw, PbQualityPresetEnumType presetOverride, String modelOverride,
+				BaseRecord chatConfig) {
 			this.promptOverride = promptOverride;
 			this.raw = raw;
 			this.presetOverride = presetOverride;
 			this.modelOverride = modelOverride;
+			this.chatConfig = chatConfig;
 		}
 
 		public String getPromptOverride() { return promptOverride; }
 		public boolean isRaw() { return raw; }
 		public PbQualityPresetEnumType getPresetOverride() { return presetOverride; }
 		public String getModelOverride() { return modelOverride; }
+		public BaseRecord getChatConfig() { return chatConfig; }
 	}
 
 	/**

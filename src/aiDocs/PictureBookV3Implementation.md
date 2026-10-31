@@ -49,7 +49,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | 5 — Multi-character strategies (spike first) | **IN PROGRESS** — P5-0 spike (archive §13.1, §6.C 204), P5-1 graph builder (archive §13.2 / §4.12, §6.C 205), P5-2 executor wiring (archive §13.4 / §4.13, §6.C 208–209) and P5-3 implementation cleanup (§13.5, §6.C 211) run and reported; 2026-10-25 went to the Part A doc consolidation (archive §13.3, §6.C 206); every default through 209 accepted 2026-10-28 (210); nothing DONE (159 b); **next: STOP for the P5-3 hand-back** — former row archive §1 | `TestP50SwarmSpike` 6 (gated); live on `.39`: `TestP51GraphLive` 5 / 5, `TestP52SequentialInpaintLive` 5 / 5 (`p52-t11d.log:2873`; P5-3 re-run 5 / 0 / 0 / 0, `p53-t11.log`), `TestPbRenderPlanExecutor` 8 / 8; offline `olio.illustration.*Test*` 187 / 187 (`p51-unit5.log`), P5-2 offline set 133 / 133 (`p52-run-final3.log`); P5-3 offline 28 + batches 49 + 108 + Service7 36, all 0 fail (`p53-offline2.log`, `p53-batch1.log`, `p53-batch2.log`, `p53-s7-tests.log`); 12-class regression set 116 / 0 / 0 / 1 (`p53-regression.log`; P5-2 116 / 0 / 0 / 1) |
 | 6 — Variants | **IN PROGRESS** 2026-10-29 — P6-1 schema, P6-3a selector, P6-2 variant loop, P6-3b retention util + routes, P6-4 Ux752 strip + dialog built and reported (§13.6, §6.C 212); Scenario F run live on `.39` (§13.6); verifier CHANGES-NEEDED → six findings folded in (212 q–w; `detached` retention outcome); nothing DONE (159 b) | `am7db` one JVM **62 / 0 / 0 / 1** (`p6-regress1.log:154677`; the skip was the `.39` outage) after one red run of mine (`p62-regress1.log`, concurrent recompile) and one red sweep (`p63b-sweep.log`, fixture grants); **Scenario F live `TestPbVariantsLive` 1 / 0 / 0 / 0** (`p65-live.log:496`, STANDARD 2 + FINAL 4 variants on `.39`, approve one, retention K = 1 archives 3); post-verifier `am7db` **27 / 0 / 0 / 0** (`p6f-sweep.log:1230`) + `TestPbRenderStagesOffline` (§13.6 "Post-verifier"); Service7 H2 `TestPictureBookRestContract` **24 / 0 / 0 / 0** (`p6f-contract.log:3322`); Ux752 Vitest 25 in the new file, quick gate `VERIFY_OK` (`p6f-ux752-gate.log:7`); Playwright on Docker 3 / 3 after a 1 / 2 first run; a 14-test adjacent-spec run is red on a host suspend (`p6-pw-regress.log`, 212 s) and not re-run |
 | 7 — PictureBook goes V3 | **IN PROGRESS** 2026-10-29 ~20:10 on Stephen's "keep going with implementation until you are stopped or have a question" — plan §14 (P7-1 switch → P7-2 Stage 2 refusals → P7-3 wizard hand-off / open-in-V3 → P7-4 pre-V3 import → P7-5 Scenarios A–G), rulings §6.C 214+; nothing DONE (159 b) | — |
-| 8 — Visual QA | TODO | — |
+| 8 — Visual QA | **IN PROGRESS** 2026-10-30 ~06:00 on Stephen's "Start Phase 8 — Visual QA" — plan §15 (P8-1 contract / storage / ordering → P8-2 `VlmQaProvider` on `.42` → P8-3 `SwarmQaProvider` on `.39` → P8-4 selector + hook → P8-5 Ux → P8-6 exit criterion), rulings §6.C 220+; P8-1 … P8-6 results §15.1–§15.6 (P8-6 live run 2 green 2026-10-30 18:32, `TestPbQaExitCriterionLive` 3/3 on `.42` + `.39`); **verifier PASS 2026-10-30 ~19:05, 8 non-blocking findings, follow-ups §6.C 227** (t02 live re-run 3 green 20:40, 1/1); nothing DONE (159 b) | — |
 | 9 — Cover & book art | TODO | — |
 | 10 — Removal (PB1, old ChapBook path, Kontext Remove) | TODO | — |
 
@@ -456,6 +456,179 @@ Every entry is a ⚠ MY JUDGMENT call under auto mode with its default; Stephen 
      `(0 reused, 1 pinned)` still mocked in `src/test/pictureBookCharactersAffected.test.js:321-337` and `pictureBookV3Reader.test.js:345-386`
      (green, out of scope, left); `PbServiceFacade.java:742-743` a null (deleted / unreadable) node falls through to the planner — pre-existing,
      not covered by case12 (Yours, default leave).
+220. ⚠ **2026-10-30 ~06:00 (Phase 8 start — Visual QA defaults; plan §15).** Unanswered = these stand. Nothing DONE (159 b).
+     (a) ⚠ Storage: the report is a JSON artifact `role=qa` on the SAME node as the image (RENDER_PLAN / ChapBook LANDSCAPE), stamped with the
+     image's attempt + variantIndex and carrying `imageArtifactObjectId`; no QA node type, no new model field. Default.
+     (b) ⚠ Contract: `QaReport {result, provider, model, checks[], durationMs, note}`; `QaCheck {kind, result, expected, observed, detail}`; kinds
+     PERSON_COUNT / ACTOR_PRESENT (one per referenced foreground actor) / IDENTITY / OUTFIT / LOCATION / COMPOSITION; results PASS / WARN / FAIL /
+     UNAVAILABLE. Rollup: FAIL when any referenced foreground actor is absent or the count is below the foreground actor count; WARN on any other
+     mismatch; UNAVAILABLE when no check could run (never a failure). Default.
+     (c) ⚠ Ordering / veto: new known code `QA_FAIL` (attempt-level, waived like `QA_WARN`); per variant, auto-approve orders PASS before WARN,
+     skips FAIL, ties → lowest variantIndex; all FAIL → skipped `"degraded: QA_FAIL: …"`. CANONICAL = only variant 0 is checked and its FAIL
+     vetoes the attempt; ALL = every variant checked; OFF = no QA, the first variant as today. Default.
+     (d) ⚠ Review flag: a FAIL / WARN variant's image artifact gets `reviewStatus=IN_REVIEW` (the first write of that value; the review queue
+     already counts it as pending), a PASS stays GENERATED. Default.
+     (e) ⚠ `VlmQaProvider` route: the run's `chatConfig` if set, else `ChapBookUtil.resolveDefaultChatConfig(user)`; connection via `new Chat(user,
+     cfg, null)` getters; model = new `qualityPresets.json` key `qaModel` (default `valkyriesys/eudaimonia-dryad3-vision`, `qwen3-vl:8b-instruct`
+     the alternate), never the chat config's own model; one non-streaming `ClientUtil.postJSON` — Ollama `/api/chat` with `images[]` + `format:
+     "json"`, OPENAI_COMPAT content parts with `image_url` data URLs + `response_format json_object`; availability from `/api/tags` / `/v1/models`
+     (a main-code port of `LlmTestGate.ollamaTags`). Default.
+     (f) ⚠ `SwarmQaProvider`: raw graph `SwarmLoadImageB64 → SwarmYoloDetection (face_yolov8m.pt) → MaskToImage → SwarmSaveImageWS`, the mask's
+     connected components counted in Java, per-actor presence = a component centroid inside the actor's box when the plan has one; identity /
+     outfit UNAVAILABLE; gated on `object_info` listing the detector; spiked before built. Default.
+     (g) ⚠ Hook: QA runs for RENDER_PLAN variants and ChapBook pages (gross defects: count 0 expected → semantic / location only), never for
+     PORTRAIT / LOCATION; after the images are recorded, before `completeNode`; a provider exception is a `QA_UNAVAILABLE` degradation (waived),
+     never a failed render; timings logged, never asserted. Default.
+     (h) ⚠ Test key `test.llm.vision.model` (additive, blank = the live VLM tests skip with a printed reason); the live tests run against `.42`
+     direct. Default.
+221. ⚠ **2026-10-30 ~09:45 (P8-1 judgments; results §15.1).** Small ⚠ MY JUDGMENT calls inside 220 a–d, taken at their defaults; say so if wrong.
+     (a) ⚠ The review queue (`PbServiceFacade.listReviewQueue` :2494) now skips `role=qa` exactly as it skips `renderPlan` — a report judges an image,
+     it is never itself reviewable (220 a). Observation (Yours, out of scope): `renderGraph` JSON artifacts are NOT excluded there and never were;
+     they appear in the queue as pending. Default: leave until Phase 9.
+     (b) ⚠ `QaCheck` carries an optional `actorId` beyond 220 b's five fields (set by `actorPresent` and the per-actor `soft` kinds), so a consumer
+     can mark the actor and not only the image. Additive; null elsewhere. Default.
+     (c) ⚠ `QA_UNAVAILABLE` (220 g) was added to `Degradation.CODES` in P8-1 with `QA_FAIL`, not deferred to P8-4, so the code set is complete before
+     any provider exists; both are accepted (non-veto) codes — a QA FAIL acts only through the variant ordering (220 c), never through the veto set.
+     Under ALL a `[FAIL, unchecked]` attempt approves the unchecked variant (unchecked ranks with UNAVAILABLE, above FAIL). Default.
+     (d) ⚠ DTO shape ahead of P8-4: `autoApprovedArtifactObjectId` names the approved variant; the pre-existing top-level `reviewStatus=APPROVED` is
+     set only when that is variant 0 (the DTO's `artifactObjectId`), so an old reader is never told variant 0 is approved when variant 2 was; the
+     approved entry in `variants[]` gets `selected=true` + `reviewStatus=APPROVED`, the others `selected=false`. Default.
+222. ⚠ **2026-10-30 ~11:45 (P8-2 judgments; results §15.2).** ⚠ MY JUDGMENT calls inside 220 e, taken at defaults; say so if wrong.
+     (a) ⚠ `VlmQaProvider` lives in `olio.picturebook`, not `olio.illustration` (the plan's home for the contract): it needs the package-private
+     JSON salvage, the `Chat` route getters and PBAC artifact reads, and `olio.illustration` stays DB / LLM-free. Seams for the offline test:
+     `Route` (value), `Transport` (post / get), `PortraitResolver`. OLLAMA + OPENAI_COMPAT only (any other dialect → UNAVAILABLE "unsupported");
+     `Authorization: Bearer` sent for both when the connection has a key. Default.
+     (b) ⚠ Generic guards, never per-model options (feedback-model-agnostic-llm-safeguards): `temperature 0`, JSON format / `json_object`, and an
+     output budget `MAX_OUTPUT_TOKENS = 8192` (`num_predict` / `max_tokens`) on every call; an empty answer that stopped on `length` →
+     UNAVAILABLE "token budget exhausted while thinking". The budget was 4096 in run 1 and t04 (OPENAI_COMPAT) exhausted it; 8192 answered.
+     Default; the real fix for a slow thinker is chatConfig tuning (Yours).
+     (c) ⚠ Actors are `A1..An` in the prompt and mapped back to actorIds in-process (no identifier leaves the process); reference portraits
+     are sent only for **referenced** actors, capped at `MAX_REFERENCE_IMAGES = 3`, read via `PbArtifactUtil.readArtifactBytes` — lifted
+     from package-private to **public** for this (PBAC read as the user; `TestPbQaContract` re-run green after the lift). Default.
+     (d) ⚠ Portraits go up at full size (book 58's Duña portrait is 4.9 MB at 2048²); a `GraphicsUtil.createThumbnail` downscale was
+     considered and NOT applied — observation only, no measurement that it matters. Default: leave until a token / latency problem is shown.
+     (e) ⚠ `.42` observations, not thresholds: dryad3-vision's Modelfile caps `num_predict` at 1024 and it thinks the whole cap away → empty
+     content (hence b); OPENAI_COMPAT reasons ~4× longer than OLLAMA for the same prompt (t04 319 s vs t03 96 s, t02 44 s; ~5.5k completion
+     tokens); `think:false` / `reasoning_effort` are ignored by it; prompts run 9–10k tokens with 3 images. `.42` wedged during a
+     `qwen3-vl:8b-instruct` 3-image spike (Stephen restarted it); that spike was NOT re-run — the alternate model is unmeasured. t05: a
+     fresh owner's default chatConfig resolves to the down local container `:11435` → UNAVAILABLE by design (not a defect). Default.
+223. ⚠ **2026-10-30 ~12:00 (P8-3 judgments; results §15.3).** ⚠ MY JUDGMENT calls inside 220 f, taken at defaults; say so if wrong.
+     (a) ⚠ `SwarmQaProvider` in `olio.illustration` beside `SwarmGraphClient` (✓ plan), with a package-private `Backend` seam (`objectInfoJson` /
+     `generateRaw` / `fetchImage`) so the offline test scripts the renderer. The raw post still needs an installed checkpoint (Swarm's model
+     check runs on a raw graph, design §38) even though the graph has no sampler, so the ctor takes the model; P8-4 passes the render's
+     effective checkpoint. `detectorModels(json)` made public for the live test. Default.
+     (b) ⚠ Detector parameters: `face_yolov8m.pt`, `index 0` (all detections, one mask), `threshold 0.25` (the node's default), `sort_order
+     left-right`; mask thresholded at `LIT_LEVEL 128`, 4-connected components, components under `MIN_COMPONENT_PIXELS = 16` dropped as noise.
+     Two touching faces merge into one component (documented under-count, never an over-count). Default.
+     (c) ⚠ Attribution is greedy: in plan order, each referenced foreground actor with a box claims the first unclaimed face whose centroid
+     lies inside it; no box → ACTOR_PRESENT UNAVAILABLE; unreferenced foreground actors count toward PERSON_COUNT but get no presence check;
+     background roles count nothing. IDENTITY is always UNAVAILABLE; OUTFIT UNAVAILABLE only when the plan carries outfit text; LOCATION /
+     COMPOSITION are not emitted (a detector cannot judge them). Default.
+     (d) ⚠ The live test reuses the Swarm gate (`PB_SD_TESTS=1` / `-Dpb.sd.tests=1`); its three-actor layout puts Touvier on the right 28%
+     (not P8-2's thirds) because a detector attributes by geometry only, so the absence must land on a box with no face. Test-side extra raw
+     post keeps the mask under `target/p83/` (test-only instrumentation). New fixture `media/flux/qa/p83-faces-two.png` (18 KB, the `.39`
+     index-0 mask of `p52-t01-direct.png`) drives the offline attribution cases. Default.
+224. ⚠ **2026-10-30 ~13:00 (P8-4 judgments; results §15.4).** ⚠ MY JUDGMENT calls inside 220 g, taken at defaults; say so if wrong.
+     (a) ⚠ The selector is a seam on the graph, not a static: `RenderBackend.qaProvider(user, sdu, checkpoint)` (default →
+     `PbQaUtil.providerFor(user, null, client(sdu), checkpoint)`, `PbNodeExecutor.java:1366`), asked once per attempt, VLM first then Swarm YOLO
+     on the render's BASE checkpoint, else none → one `QA_UNAVAILABLE: no visual-QA provider is available (<probe note>)` degradation (waived).
+     **Deviation from 220 e:** the hook passes `chatConfig=null`, so the VLM route is always the user's default — `olio.pb.run.chatConfig` is set
+     by nothing and projected nowhere today; wiring it is a follow-up, not silently half-done. Default.
+     (b) ⚠ Placement: `qaAttempt` (`:889`) runs after `recordImage` and before `bindSceneLocation` / `completeNode` in both `executeRenderPlan` (`:785`)
+     and `executeChapBookPage` (`:2077`). OFF → nothing at all (no selection, no probe, no `qaMode`); CANONICAL → variant 0 only; ALL → every variant
+     in order. A page is judged through the same path with the page plan (no actors), so "gross defects only" is a property of the plan, not a
+     second code path. No cancel check inside the hook (follow-up, Yours). Default.
+     (c) ⚠ Every report is persisted, UNAVAILABLE included (`"provider error: <msg>"` / `"provider returned no report"` notes), so a run's QA history
+     is complete; the plan artifact is NOT patched with QA degradations (they live on the run DTO / `degradations`); a failed flag or persist is
+     logged + `g.addGraphWriteFailure`, never thrown. Default.
+     (d) ⚠ DTO: `variants[i]` gains `reviewStatus` and `qa {result, artifactObjectId, provider, note?}`; `qaMode` is present whenever QA was asked
+     for (incl. the no-provider case) and absent under OFF; a ChapBook page now emits a one-entry `variants[]` so `applyAutoApprove` takes the list
+     path there too. Default.
+     (e) ⚠ Two behaviours measured, not designed, recorded for Stephen: (1) FINAL always carries the `upscale: UPSCALE stage planned by the preset
+     but not rendered` pseudo-degradation (`StrategySelector.stagesFor` plans UPSCALE when `isUpscale()`; Phase 2 renders BASE only) and that
+     unknown code vetoes auto-approve on every FINAL attempt — so the ALL ordering is reachable today only through `autoApprove(...)` directly
+     (`TestPbQaHookOffline` case 3 shows both). Yours: flip FINAL's `upscale` off until UPSCALE renders, or exempt it; default leave. (2) `approve`
+     does not refuse IN_REVIEW, so a WARN on variant 0 under CANONICAL is flagged IN_REVIEW and auto-approved APPROVED in the same attempt (220 c
+     and d both hold; the persisted report keeps WARN). Default: as is.
+     (f) ⚠ The hook broke `TestPbRenderStagesOffline.runRecordsVariantsAsOneAttempt` (my regression, 8 / 9): its STANDARD attempt went through the
+     default seam, which probed `pbPlanOwner`'s chat route (UNKNOWN) and the fixture client (no `object_info`) and added the designed
+     `QA_UNAVAILABLE` line where the test asserted no degradations. Fix taken: that suite's `backend()` now answers the selector with
+     `Selection(null, "offline test: no QA provider")` so an offline suite never probes a chat route or a port (a configured route would have made
+     it call the VLM with a solid PNG), and the case asserts exactly that one waived line + `qaMode=CANONICAL` + auto-approve still true. Consequence:
+     the default seam (`RenderBackend.qaProvider` → `providerFor`) has no offline coverage; it is exercised live in P8-6. Default.
+225. ⚠ **2026-10-30 ~14:00 (P8-5 judgments; results §15.5).** ⚠ MY JUDGMENT calls inside P8-5, taken at defaults; say so if wrong.
+     (a) ⚠ Facade: the newest `QaReport` per image rides as `qa` on the **judged image summaries only** (`PbServiceFacade.attachQa` `:491`, in
+     `nodeView` `:462` and `listReviewQueue` `:2544-2560`); `qa` / `renderPlan` summaries never carry one; unjudged variants have no `qa` key.
+     The persisted `result` is authoritative — the Ux never re-derives a verdict from the checks. Default.
+     (b) ⚠ The plan artifact has no attempt / variantIndex (`persistPlanArtifact`), so the inspector's Visual QA section is keyed on the **newest
+     attempt per image role** (`qaReportsForNewestAttempt`, `workflows/pictureBookWorkflow.js:301`), not on the plan revision. Default.
+     (c) ⚠ QA is advisory everywhere: badge + tooltip findings on the tile / review row / compare caption, a `Visual QA` section in the inspector
+     (`pb2-plan-qa[data-count]`) and an inline report behind the review badge (`pb2-review-qa[data-open]`); never changes selection, never
+     disables Use / Approve (a FAIL row keeps both enabled; `data-selected` untouched). `qaFindings` falls back to the note when a non-PASS report
+     carries no checks (fixed while writing the Vitest). Default.
+     (d) ⚠ Spec design (`e2e/pictureBookQa.spec.js`): tests 1–3 seed a `done` portrait node + four image revisions + four `qa` JSON artifacts
+     (two on one image, WARN then FAIL, to prove newest-wins) + a plan through the generic model route as `e2etest_shared`; test 4 (`PB_SD_TESTS=1`)
+     renders a real STANDARD STORY scene through the reader dialog and asserts whatever verdict the stack's provider gives, end to end to the
+     canvas and the review row. Records are left in place (resettable stack DB). Default.
+     (e) ⚠ Stack observation, for P8-6: the library `contentAnalysis` / `generalChat` configs sit on connection 9 `http://litellm:4000`, which is
+     unresolvable inside the container, so `providerFor` falls through to `swarmYolo` on `http://192.168.1.39:7801` every time (`VlmQaProvider:
+     GET http://litellm:4000/v1/models failed: UnknownHostException`). A no-actor scene → `PERSON_COUNT PASS 0/0`. The VLM leg of P8-6 therefore
+     needs a `.42` route: 224 a's `olio.pb.run.chatConfig` wiring, or repointing that library connection. **Yours: repoint connection 9 to
+     `http://192.168.1.42:11434` on the stack, or let me wire 224 a; default = wire 224 a (test-visible, no shared-record change).**
+     (f) ⚠ Trap, recorded: a Playwright `card.click()` on a wide canvas node card lands on its centre = the actions row, which fired a real
+     `POST /node/{n}/regenerate` (🔄 mark-stale) instead of `selectNode` and re-rendered + re-judged the first live book (`88214793-…`, base r3,
+     one extra attempt on `.39`). `openNodeStrip` now clicks the header (`{x:14,y:12}`). Run 2 shows exactly one QA pass and no regenerate.
+     (g) Seen again, not fixed (212 p, Yours): `Save position failed: saveCanvas failed: 500` toast on every canvas open (`RecordValidator:88` NPE).
+226. ⚠ **2026-10-30 ~14:30 → 18:40 (P8-6 judgments; results §15.6).** ⚠ MY JUDGMENT calls inside P8-6, taken at defaults; say so if wrong.
+     (a) ⚠ 225 e default taken: 224 a wired, **Objects7-bounded** — `PlanOptions(…, chatConfig)` 5-arg ctor (`PbRenderPlanUtil:92`) →
+     `executeNodeRun` hands it to `openNodeGraph` (`PbNodeExecutor:277-279`) → `olio.pb.run.chatConfig` set at run creation (`PbGraphUtil:911-913`,
+     `runRequest()` now projects it `:1035-1045`) → `runChatConfig(g)` re-reads the FK by id + org, cache off (`PbNodeExecutor:976-1005`, warns + null
+     if unreadable) → `RenderBackend.qaProvider(user, chatConfig, sdu, checkpoint)` (`:1406`) → `providerFor`. No REST surface: the `chatConfig`
+     param on `render-plan` / `PbRenderJobUtil.submit` is **Yours**; until then a REST-launched run carries a null FK and QA uses the user's route.
+     (b) ⚠ "Observed on the stack" read as the production executor + facade on `am7db` (`executeNodeRun` → `nodeView` / `listReviewQueue` /
+     `latestReportsOf`), not Docker via REST: the stack's VLM route is dead (225 e) and (a) has no REST surface yet. Playwright re-run on Docker = Yours.
+     (c) ⚠ Test-only `StrippingBackend` / `StrippingAdapter` wrap the real `SwarmRendererAdapter`; the strip removes exactly the second actor's
+     marker-bounded sentence ("The second person is …") from the graph `scene` input (T2I prompt on that path), first BASE execute only, and
+     logs what it removed. Nothing in production code (test-only instrumentation). t03 forces `Selection(SwarmQaProvider)` from the backend so the
+     `.39` leg runs even though the VLM route answers; t02 uses the default seam.
+     (d) ⚠ Fixture = one referenced actor (Duña, approved portrait) + one text-only (Jideon) + location ref → `StrategySelector` DIRECT_REFERENCE,
+     one BASE graph stage, so the strip lands on the same graph path production FINAL / STANDARD renders take. `setAutoApprove(true)` + `touchEdited`
+     on the fixture book; t02 FINAL (ALL, 4 variants), t03 STANDARD (CANONICAL, 2). t01 is the plain leg: package ctor, name-keyed portrait resolver,
+     k=0 `Flux2Compiler` T2I prompt, no executor — saved as `target/p86/t01-broken.png` (the source-tree copy it also wrote was removed 2026-10-31, 228 a).
+     (e) ⚠ 224 e expected in t02: FINAL's `upscale: true` veto is already in `autoApproveSkipped`, so the assertion is "QA_FAIL: variant 0 (…)" in
+     `degradations` + `autoApproved=false` + `skipped` starts `degraded: ` and is **not** the QA_FAIL-only text; the ordering is then proved by a direct
+     `PbArtifactUtil.autoApprove(owner, arts, verdicts, List.of(), QA_ALL)` call (a real approve write in the fixture book; cleaned up). t03 asserts the
+     QA_FAIL-only text (`degraded: QA_FAIL: variant 0 (…) failed visual QA`). Proof of (a): t02 run row FK = the `.42` chatConfig, t03 FK null.
+     (f) ⚠ The `.42` chatConfig `p86 vlm qa` (direct OLLAMA target, not `fromProperties`) persists in `pbCustomTestUser`'s `~/Chat`. Limitation: it
+     and the user's default route both point at `.42` with `QualityPresets.qaModel()`, so the log cannot tell them apart; (e)'s FK assertions can.
+     (g) Mine, owned: run 1 went red (`Tests run: 3, Failures: 2`, 5033 s) on my `runScene` assertion of `out.get("executed")` — a `PbServiceFacade`
+     REST-DTO key (`:654,735,3641`) the executor DTO never carries. Both providers had already produced the exit FAIL before it fired. Fixed to
+     `executedNodeCount=1` / `failedNodeCount=0` (executor keys, `TestChapBookV3Render:1053` idiom), re-run as run 2 (§15.6).
+     (h) Observation, not asserted: on the reference-less t01 page the VLM also marks Duña absent (run 1: portrait mismatch; run 2: "only one person
+     visible"). Timings are observations (FINAL 24-step variants ≈ 16 min each on `.39`).
+227. ⚠ **2026-10-30 ~19:05 → 20:40 (P8-6 verifier follow-ups; results §15.6 addendum).** The verifier returned PASS with 8 non-blocking findings;
+     what was done with each, at defaults — say so if wrong.
+     (a) 1, mine: §15.6 cited `p86-exit2.log:260` for "YOLO available" — that line is `[WARN] AccessPoint - No policy responses`. Fixed to `:107,:1180`
+     (and `:106,:258` for the VLM route).
+     (b) 2, mine: `TestPbQaExitCriterionLive:264` asserted `variants.size() >= 2` under the message "4 FINAL variants". Tightened to `assertEquals(4)`
+     (run 2 rendered 4, `:625-654`); t02 re-run live, §15.6 addendum.
+     (c) 3, note only: `:309-321` `assertEquals(anyNonFail, outcome.isApproved())` is conditional on the live verdicts (an all-FAIL run would assert
+     "not approved" and pass). Run 2 took the intended branch (`:961 anyNonFail=true`); the deterministic ordering is `TestPbQaHookOffline:793-802` +
+     `TestPbQaContract.case07`. Left as is.
+     (d) 4, ⚠ code: `PbNodeExecutor.applyAutoApprove` drops a variant whose re-read returns null (`:478-482`), so under CANONICAL `ordered.get(0)`
+     could be an **unjudged variant 1** and be auto-approved. `PbArtifactUtil.autoApprove` CANONICAL branch now refuses a list whose head is not
+     variant 0 (`variantIndexOf(first) != 0` → `failed: variant 0 is missing; variant N (…) is unjudged under CANONICAL`); OFF and ALL unchanged (ALL:
+     unchecked outranks FAIL by design, 220 c). Legacy artifacts without `variantIndex` read 0 and are unaffected. Covered in `TestPbQaContract.case07`
+     (fixture `p81-c07f2`: CANONICAL over `[variant 1]` → skipped, `GENERATED`, 0 approved; OFF over the same list approves the head). Default.
+     (e) 5, mine: `qualityPresets.json:28-30` comment said "4096-token budget"; now 8192 = `VlmQaProvider.MAX_OUTPUT_TOKENS` (222 b). JSON parses, 0 CR.
+     (f) 6, acknowledged (226 e): through `executeNodeRun` a FINAL attempt never reaches the ALL ordering because the `upscale:` pseudo-degradation
+     vetoes it (224 e); the ordering is proven by the direct `autoApprove(…, QA_ALL)` call. Product gap until UPSCALE renders (§30, Yours).
+     (g) 7, Yours: `media/flux/qa/` is untracked as a whole — `p52-t01-direct.png` (read by `TestPbVlmQaLive` / `TestSwarmQaLive`), `p83-faces-two.png`
+     (read by the **offline** `TestSwarmQaProvider`, which fails on a clean checkout without it) and, until 2026-10-31, `p86-t01-broken.png`
+     (a t01 output, read by nothing — removed, 228 a). Default at commit time: commit the two inputs as fixtures (the tracked `media/flux/*.png`
+     siblings are the precedent).
+     (h) 8, out of scope: `Console7/tmp.bat`, `vectorEnv.bat`, `media/speaker_0.mp3` (deleted), the untracked `.doc/.docx` under `media/`,
+     `Agent7/plan.json` — not mine, not touched, not for a Phase 8 commit.
 
 > Moved 2026-10-28 to `archive/PictureBookV3Implementation-P0-P4.md` §6.G, §6.L, §6.H–§6.N (Slice C findings, the nude-fixture question, Phase 0–1 infrastructure items; §6.H / §6.I / §6.J / §6.K RESOLVED, §6.M FIXED) (section numbering unchanged there). Still open there and Stephen's: §6.G (Slice C transport findings 1–12), §6.L (the `generateScene` e2e fixtures render nude), §6.N (`.39` outage log 2026-10-11 → 2026-10-14).
 
@@ -883,4 +1056,300 @@ pinned cases in `pictureBookV3PlainPb.spec.js` (:397-406) and `pictureBookV3Ux.s
 - Line endings: touched files uniform (LF files LF; `pictureBookWorkflow.js` keeps its CRLF). Employer-identifier grep over the touched files: no
   matches. Nothing DONE (159 b).
 
-next §6.C number 220 (218 = P7-4 close-out; 219 = P7-5 close-out).
+## 15. Phase 8 — tasks (Visual QA; started 2026-10-30 ~06:00 local on Stephen's "Start Phase 8 — Visual QA"; rulings §6.C 220+, results §15.x)
+
+Scope: design §30 row 8 — "Visual QA provider + Ux. Exit: missing-character detection on a deliberately broken render, through each provider";
+§17 (:1064-1109): pluggable `QaProvider.check(plan, image) → QaReport {result PASS|WARN|FAIL, checks[]}`, default = vision LLM on the book's
+chat route, fallback = a Swarm detection graph (identity UNAVAILABLE), the report is a JSON artifact bound to the exact variant, QA never deletes
+or blocks — FAIL only orders variants and raises a review flag; presets DRAFT off / STANDARD canonical variant / FINAL all variants; ChapBook pages
+get gross-defect QA only. §10 rule 5: auto-approve takes "the best variant (QA ordering, else the first)" and skips a QA-FAIL variant. §19:
+`QA_WARN` is a known, waived code. Nothing here is DONE (159 b).
+
+**Inventory (read-only, 2026-10-30 ~05:30).** Nothing QA-shaped exists beyond the preset key: `qualityPresets.json` `qa` OFF / CANONICAL /
+ALL (:33 / :40 / :47) → `QualityPresets.QA_*` (:25-27, read :157) → `RenderPlan.PresetValues.qa`; `RenderPlan.Degradation.QA_WARN` (:1460) is in
+`CODES` (:1474) and never raised. Auto-approve: `PbArtifactUtil.autoApprove` (:548-571) / `AUTO_APPROVE_VETO_CODES` (:580-586 — ACTOR_UNRESOLVED,
+ACTOR_FAILED, LOCATION_TEXT_ONLY, PROMPT_TRUNCATED, COMPOSED_OUT_OF_ORDER, VARIANT_FAILED; known-and-not-vetoing codes are waived, :600) /
+`vetoingDegradations` (:589); `PbNodeExecutor.applyAutoApprove` (:430) reads `out.artifactObjectId` = variant 0 only, is called at :325 after the
+run closes, never throws. Review: `approve` (:445), private `writeReview` (:734), `reviewStatusOf` (:1014); `PbReviewStatusEnumType.IN_REVIEW` is
+declared, never written, and the facade review queue (`PbServiceFacade.java:2509`) already counts GENERATED + IN_REVIEW as pending. Hook points:
+RENDER_PLAN variants recorded `:694-707` (`recordImage` batch overload stamps attempt + variantIndex), `completeNode DONE_UNVERIFIED` :712,
+`KEY_VARIANTS` / `variantsDto` :716 / :727-743; ChapBook page `executeChapBookPage` :1763 records one `landscape` artifact :1801-1803;
+`PlannedRender.Variant` (:898) carries `bytes` + `variantIndex`; `RenderPlan.Actor` (:838) carries `role` / `isForeground` / `box` / `referenced`.
+JSON-artifact precedent: `PbRenderPlanUtil.persistPlanArtifact` :430-434 / `persistGraphArtifact` :447-465 (`PbArtifactTypeEnumType.JSON`);
+roles `PbPipelineUtil` :83-114 (no `qa`). LLM route: `new Chat(user, chatConfig, null)` → `configureChat` :688 loads the connection; getters
+`getModel` :798 / `getServerUrl` :806 / `getAuthorizationToken` :822 / `getServiceType` :830; `getServiceUrl` :5188-5208 (OLLAMA `/api/chat`,
+OPENAI_COMPAT `/v1/chat/completions`). **No image transport exists in the chat message models** (`ollamaMessageModel.json` `images` is marked
+"Not currently used or correct"; the OpenAI message has no content parts), and no main-code model lister — `LlmTestGate.ollamaTags` :367-379 /
+`parseTagNames` :382 / `hasModel` are test-only. `ClientUtil.postJSON(Class, WebTarget, token, json, MediaType)` :188 / `getResource` :395 is the
+one-shot transport `SwarmGraphClient` already uses. Chat-config resolution precedents: `PbComposeJobUtil.resolveChatConfig` :424-433,
+`ChapBookUtil.resolveDefaultChatConfig(user)` :426-451 (contentAnalysis → generalChat → library → user-owned); `olio.pb.run.chatConfig`
+(`runModel.json` :61-65) exists and nothing in picturebook Java reads it. Swarm: `ComfyGraph` (`PARAM_RAW` :40, `CLASS_LOAD_IMAGE_B64` :50,
+`CLASS_SAVE_IMAGE_WS` :51), `SwarmGraphClient.generateRaw` :129-154 / `fetchImage` :171 / `objectInfoJson` :178-188; `.39` `object_info` lists
+`SwarmYoloDetection` (`model_name ∈ [face_yolov8m.pt]`, `index`, `class_filter`, `sort_order`, `threshold`) and `SwarmLoadImageB64`. `.42`
+`/api/tags` lists `valkyriesys/eudaimonia-dryad3-vision` and `qwen3-vl:8b-instruct` (both named by §17). Ux752 seams: `features/pictureBookWorkflow.js`
+`renderArtifactTile` :911-950 (variant / seed badges :946-947), `workflows/pictureBookWorkflow.js` artifact normalisation :196-223 /
+`groupArtifactsByAttempt` :229-258, `features/pictureBookReview.js` `statusClass` :176-184 (IN_REVIEW yellow) / `renderArtifact` :186-230,
+`components/PbPlanInspector.js` degradations :122-124.
+
+**Tasks, in order (each with its own real tests; verifier at the end; nothing DONE by me):**
+- **P8-1 — contract, storage, ordering, flag (offline).** `QaReport` / `QaCheck` / `QaProvider` value objects + interface in `olio/illustration/`
+  (toJson / fromJson, 220 b); `PbPipelineUtil.ROLE_QA = "qa"`; `RenderPlan.Degradation.QA_FAIL` (220 c); `PbQaUtil.persistReport` = JSON artifact
+  on the node with the image's attempt + variantIndex + `imageArtifactObjectId` (220 a); `PbArtifactUtil.flagForReview` (public, IN_REVIEW, 220 d);
+  `autoApprove` over an ordered variant list per 220 c; `applyAutoApprove` reads `variants[]`. Tests: new offline `TestPbQaContract` (round-trip,
+  rollup, ordering, veto; `am7db`, no SD / LLM) + `TestPbAutoApprove` re-run.
+- **P8-2 — `VlmQaProvider`.** One-shot vision call on the run's / book's chat route (220 e), prompt from the plan (expected count, named
+  foreground actors with outfit / identity text, location, composition), JSON-only answer parsed through `NarrativeUtil.isMeaningful`; model
+  availability probed once per attempt; unavailable → `QaReport` UNAVAILABLE (never a failure). Tests: live gated JUnit on `.42` (new key
+  `test.llm.vision.model`, 220 h) against a real render + the inputs visually inspected.
+- **P8-3 — `SwarmQaProvider`.** Spike the raw graph on `.39` first (220 f); then count / presence from the mask on the Objects7 side; identity
+  UNAVAILABLE. Tests: live gated JUnit on `.39`.
+- **P8-4 — selector + executor hook + DTO.** `PbQaUtil.providerFor(g)` (VLM when a vision model answers, else Swarm when `object_info` has the
+  detector, else none → `QA_UNAVAILABLE` degradation, waived); hook per preset (220 g) after the variants are recorded and before `completeNode`;
+  DTO `variants[i].qa {result, artifactObjectId}`; ChapBook pages gross-defect only. Tests: `TestPbRenderStagesOffline`-style scripted provider.
+- **P8-5 — Ux.** QA ✓ / ⚠ / ✗ per variant on the artifact tiles + the report in the plan inspector + IN_REVIEW in the review page (read Ux752
+  first). Tests: Vitest + a Playwright spec on Docker as `e2etest_shared`.
+- **P8-6 — exit criterion.** Missing-character detection on a deliberately broken render through each provider (live `.42` + `.39`): a two-actor
+  plan rendered with one actor's text removed → FAIL from both; the ordering / review flag observed on the stack. Verifier at the end.
+
+Out of scope: Phase 9–10 items (§30), the open P6 / P7 "Yours" rulings (defaults stand), a QA node type, any PB1 path.
+
+### 15.1 P8-1 results — contract, storage, ordering, flag (offline; 2026-10-30 ~06:30 → 09:45 local; §6.C 220 a–d, 221)
+
+**Code (Objects7 only, no model / schema change).** New `olio/illustration/QaReport.java` (value object per 220 b: `Result PASS|WARN|FAIL|UNAVAILABLE`,
+six `KIND_*`, nested `Check {kind, result, expected, observed, detail, actorId}`, `rollup`, `parseResult`, `unavailable(...)`, `forImage(oid)`,
+`toJson` / `fromJson` — the persisted `result` is authoritative — and a `Builder` whose `personCount` / `actorPresent` / `soft` helpers hold the 220 b
+thresholds so every provider agrees) and `QaProvider.java` (`name()`, `isAvailable()`, `check(plan, bytes)`); new `picturebook/PbQaUtil.java`
+(`persistReport` = `qa` JSON artifact on the image's `producedByNode` via the 13-arg `persistArtifact` with the image's `attempt` + `variantIndex`,
+`supersedes` never resolved; `readReport`, `reportsOf`, `reportFor(node, imageOid)` newest-wins, `latestReportsOf`, `qaModeOf(plan)` → OFF unless
+CANONICAL / ALL). `PbPipelineUtil.ROLE_QA = "qa"`. `RenderPlan.Degradation.QA_FAIL` + `QA_UNAVAILABLE` added to `CODES` (both accepted, not veto;
+`AUTO_APPROVE_VETO_CODES` unchanged at 6). `PbArtifactUtil`: `AutoApproveOutcome {approved, skipped}`, `autoApprove(user, List variants, Map
+verdicts, degradations, qaMode)` (OFF / null → first; CANONICAL → variant 0 unless FAIL → `"degraded: QA_FAIL: variant 0 (<name>) failed visual QA"`;
+ALL → lowest rank PASS 0 < WARN 1 < unchecked / UNAVAILABLE 2, FAIL excluded, first-wins ties, all FAIL → `"degraded: QA_FAIL: all N variant(s) …"`;
+the chosen candidate then goes through the unchanged single-artifact `autoApprove`, so the veto and existing-approved guards still apply);
+`flagForReview(user, artifact)` (GENERATED → IN_REVIEW via the private `writeReview`, anything else returned unchanged). `PbNodeExecutor.applyAutoApprove`
+reads `variants[]` when present (each entry's `qa.result` → verdict, `qaMode` → mode; absent `variants[]` = the old single-artifact path), writes
+`autoApprovedArtifactObjectId` (new `KEY_AUTO_APPROVED_ARTIFACT`), flips `selected` / `reviewStatus` on the entries, and sets the top-level
+`reviewStatus=APPROVED` only when the approved variant is the DTO's own `artifactObjectId`; new `KEY_QA_MODE = "qaMode"`, `KEY_VARIANT_QA = "qa"`,
+`variantsOf(out)`, `variantVerdict(entry)`. `PbServiceFacade.listReviewQueue` :2494 skips `qa` like `renderPlan` (221 a).
+
+**Tests (real, `am7db`, no SD / LLM; LLM gate printed `route=direct tier=remote … server=http://192.168.1.42:11434` and was not used).**
+New `TestPbQaContract` (8 cases: JSON round-trip incl. explicit UNAVAILABLE; rollup order; builder thresholds + `soft()` refusing the hard kinds;
+QA codes known + non-vetoing; persist / read / newest-wins / review-queue exclusion on a fresh PORTRAIT node with 2 variants of one attempt;
+`flagForReview` promote / idempotent / never demotes APPROVED / shows IN_REVIEW in the queue; the nine 220 c orderings on real chains incl. veto and
+existing-approved after a QA-chosen approval; `applyAutoApprove` over a hand-built `variants[]` DTO in OFF / ALL / CANONICAL / no-variants / switch-off):
+run 1 7 / 8 — `case05` ClassCastException at `:250`, my test defect (two generic `get()`s in one `assertEquals` bind the `Object[]` overload;
+typed locals) — run 2 `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`, `EXIT=0` (`C:/tmp/p81-qacontract.log:17301,17308`).
+`TestPbAutoApprove` re-run with `case08` extended to the six accepted codes: `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0`, `BUILD SUCCESS`,
+`EXIT=0` (`C:/tmp/p81-autoapprove.log:138641,138648`). Nothing DONE; no provider runs yet (P8-2 / P8-3); fixture nodes `p81-c0*` left on `am7db`
+(`pb2c-graph`) by design.
+
+### 15.2 P8-2 results — `VlmQaProvider` (live `.42` direct; 2026-10-30 ~09:45 → 11:45 local; §6.C 220 e, 220 h, 222)
+
+**Code (Objects7 only).** New `picturebook/VlmQaProvider.java` (663 lines): `Route {serverUrl, serviceType, apiKey, model}` built by `routeFor(user,
+chatConfig)` from the `Chat` getters with `QualityPresets.qaModel()` as the model (new `qualityPresets.json` top-level key `qaModel` =
+`valkyriesys/eudaimonia-dryad3-vision`, `QualityPresets.java:34,110`); `isAvailable()` probes once per instance (`/api/tags` or `/v1/models`); `check()`
+builds one prompt from the plan (expected count, `A1..An` with identity / outfit text, location, composition, up to 3 reference portraits), posts once
+(Ollama `/api/chat` `images[]` + `format:"json"`, or OPENAI_COMPAT content parts + `response_format json_object`), salvages JSON via
+`PictureBookUtil.parseLlmJsonObject`, reads fields through `NarrativeUtil.isMeaningful`, and maps the answer onto `QaReport` through the 220 b builder;
+every failure mode → `QaReport.unavailable(...)` with the reason, never a throw. `PbArtifactUtil.readArtifactBytes` → public. Test key
+`test.llm.vision.model` added (`resource.properties:120`; `:119` the commented alternate `qwen3-vl:8b-instruct`).
+
+**Tests.** New `TestPbVlmQaLive` (7 cases; `t00` qaModel resource read, `t01` offline prompt + mapping over a scripted `Transport` with canned answers,
+`t02`–`t04` live, `t05` route for a fresh owner's default chatConfig, `t06` unreachable route; page = `media/flux/qa/p52-t01-direct.png`, cast = book 58
+Duña de Rosa / Jideon de Rosa / Touvier with their real portraits as reference images; gated on `test.llm.vision.model` + the model being listed, skip
+printed as "not a pass"). `[LLM-GATE] route=direct tier=remote … server=http://192.168.1.42:11434` — the remote `.42` Ollama, no LiteLLM, no local
+container (`C:/tmp/p82-vlm2.log:56`). Run 1 (`C:/tmp/p82-vlm.log`): 6 / 7 — `t04` OPENAI_COMPAT UNAVAILABLE "stop=length, 4096 tokens" (`:95,376`);
+budget raised to 8192 (222 b). Run 2 after Stephen restarted `.42` (`C:/tmp/p82-vlm2.log`): `t02` two actors → PASS, 9 checks, 2 reference images,
+43974 ms (`:372`); `t03` third actor planned on the right → FAIL, PERSON_COUNT 3 vs 2 "Touvier (A3) is missing from the right side of the frame", 3 refs,
+96369 ms (`:186`); `t04` OPENAI_COMPAT → WARN (count 2 / 2 PASS, outfit / identity mismatches as soft WARNs), 318974 ms (`:96`); `t05` UNAVAILABLE
+"model list unavailable from http://127.0.0.1:11435" (`:331`, the down local container — by design); `t06` UNAVAILABLE in 3 ms (`:238`).
+`Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 494.2 s` (`:384,388`), `BUILD SUCCESS` (`:391`), `EXIT=0` (`:396`). `TestPbQaContract`
+re-run after the `readArtifactBytes` lift: `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0` (`C:/tmp/p83-contract.log:17497,17501`), `BUILD SUCCESS`
+(`:17504`), `EXIT=0` (console). Inputs inspected: `target/p82/t0*-prompt.txt`, `t0*-response.json`, `t0*-report.json`, the three portraits
+(`portrait-*.png`, 4.9 / 1.75 / 1.6 MB). Timings are observations (222 e). Nothing DONE.
+
+### 15.3 P8-3 results — `SwarmQaProvider` (live `.39`; 2026-10-30 ~11:45 → 12:00 local; §6.C 220 f, 223)
+
+**Spike first (220 f).** `C:/tmp/p83-yolo.py` posted the raw graph `SwarmLoadImageB64 → SwarmYoloDetection(face_yolov8m.pt, index 0, left-right,
+0.25) → MaskToImage → SwarmSaveImageWS` to `.39` with `p52-t01-direct.png`: accepted unmodified, one mask back (`C:/tmp/p83-mask.png`, 18102 B);
+visually inspected — two white boxes on black 1024², left ≈ x368–432 / y172–260, right ≈ x600–672 / y115–216 = the two faces. Copied in as the
+fixture `media/flux/qa/p83-faces-two.png` (223 d).
+
+**Code (Objects7 only).** New `illustration/SwarmQaProvider.java` (404 lines): `qaGraph()` (4 `v3_qa_*` nodes, save `v3_save_final`, one image tag
+`qaPage`), `faces(bytes)` (threshold 128, 4-connected flood fill, min 16 px, sorted left-right; null on undecodable), `mapFaces(plan, faces, ms)` (223 c),
+`detectorModels(objectInfoJson)` (public), `isAvailable()` probed once (notes "no object_info from …", "SwarmYoloDetection not listed by …",
+"face_yolov8m.pt not installed on … (models)"), `check()` → UNAVAILABLE with a reason on every degradation ("renderer unreachable", "renderer error: …",
+"renderer returned no mask", "mask image could not be fetched", "mask image did not decode", "provider error: …"), never a throw; package-private
+`Backend` seam + `ClientBackend` over `SwarmGraphClient`.
+
+**Tests.** New offline `illustration/TestSwarmQaProvider` (9 cases, no network: synthetic masks for the component counter incl. noise / merge / 1-px
+gap / grey 127 vs 128; the real fixture → 2 faces at (0.39,0.21) / (0.62,0.16) and PASS / FAIL against the two- and three-actor plans; edge cases of
+223 c incl. JSON round-trip; graph shape + `NodeCatalogue.validateStructure`; `detectorModels` over `.39`'s real `object_info` body; end-to-end over a
+scripted `Backend` incl. every unavailable note and "unavailable never posts"): `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.784 s`
+(`C:/tmp/p83-offline.log:93,97`), `BUILD SUCCESS` (`:100`), `EXIT=0` (console). New live `picturebook/TestSwarmQaLive` (gated `-Dpb.sd.tests=1`;
+checkpoint from `SdTestGate.resolveInstalledCheckpoints` = `OfficialStableDiffusion/sd_xl_base_1.0.safetensors` `C:/tmp/p83-live.log:50`; server
+`http://192.168.1.39:7801` Swarm `0.9.8.4.GIT-d74f8ce4` `:58`): `t01` detector listed, probe 2046 ms (`:59`); `t02` test-side raw post →
+`View/local/raw/2026-10-30/1152001--…png` in 1973 ms, mask 18101 B → `target/p83/t02-mask.png` (inspected: identical boxes to the spike), faces
+`[(0.39,0.21),(0.62,0.16)]` (`:63`); provider check → PASS, 5 checks, 134 ms (`:65` — ComfyUI answered the identical repeat post from cache, not a
+detection timing); `t03` → FAIL, 7 checks, 222 ms, `ACTOR_PRESENT FAIL expected=Touvier … no unclaimed face inside the planned box [x 0.70 y 0.10 w 0.28
+h 0.85]` (`:75,81`). `Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.20 s` (`:84,89`), `BUILD SUCCESS` (`:92`), `EXIT=0` (console).
+Timings are observations. Nothing DONE; P8-4 (selector + hook + DTO) next.
+
+### 15.4 P8-4 results — selector + executor hook + DTO (offline; 2026-10-30 ~12:00 → 13:10 local; §6.C 220 g, 224)
+
+**Code (Objects7 only, no model / schema change).** `PbQaUtil.providerFor(user, chatConfig, client, checkpoint)` + `Selection {provider, note}`
+(`PbQaUtil.java:48-108`: VLM probed first, then `SwarmQaProvider(client, checkpoint)`, each once, a throwing probe read as unavailable; the note is the
+`QA_UNAVAILABLE` text). `PbNodeExecutor`: `RenderBackend.qaProvider(user, chatConfig, sdu, checkpoint)` default seam (`:1406`, 224 a; the
+`chatConfig` argument and `runChatConfig` `:976` came in P8-6, 226 a — at P8-4 it was `qaProvider(user, sdu, checkpoint)`); `qaAttempt` (`:891-969`)
+called after `recordImage` in `executeRenderPlan` (`:785`) and `executeChapBookPage` (`:2077`) — OFF returns null before any selection, CANONICAL
+judges variant 0, ALL every final; per variant the report is persisted (`PbQaUtil.persistReport`, UNAVAILABLE included), FAIL / WARN flag the image
+IN_REVIEW through `PbArtifactUtil.flagForReview` and replace the entry with the re-read, every non-PASS becomes a `QA_FAIL` / `QA_WARN` /
+`QA_UNAVAILABLE` degradation carrying the failed checks (`findings`, capped 240); a throwing provider or a failed persist / flag is logged +
+`g.addGraphWriteFailure`, never thrown. `variantsDto` (`:813-844`) adds `reviewStatus` and `qa {result, artifactObjectId, provider, note?}`;
+`KEY_QA_MODE` is written only when the hook ran; a ChapBook page now emits a one-entry `variants[]`. `TestPbRenderStagesOffline.backend()` stubs the
+selector (224 f).
+
+**Tests (real, `am7db`, no SD / LLM; `[LLM-GATE] route=direct tier=remote … server=http://192.168.1.42:11434` printed, not used —
+`C:/tmp/p84-offline.log:56`).** New `TestPbQaHookOffline` (7 cases over a scripted `RendererAdapter` + scripted `QaProvider` + a `RenderBackend`
+whose selector counts its calls and records the checkpoint; TEXT_ONLY scenes; the ChapBook case builds a real ChapBook from Stephen's poem via
+`ChapBookUtil.createChapBook` with no chatConfig): (1) STANDARD + FAIL → selector asked once with the BASE checkpoint, variant 0's exact bytes judged
+once, `qaMode=CANONICAL`, `variants[0].qa` FAIL naming the persisted `qa` artifact, `variants[0].reviewStatus=IN_REVIEW`, variant 1 unjudged,
+`QA_FAIL: variant 0 (…)` carrying `PERSON_COUNT` + `Tobin`, `autoApproved=false` skipped `degraded: QA_FAIL: variant 0 (`, DB a0 IN_REVIEW + selected,
+a1 GENERATED, one `qa` artifact stamped with the run + variantIndex 0, `reportFor(a0)` FAIL round-tripping 2 checks, `reportFor(a1)` null
+(`:175`); (2) STANDARD + WARN → `QA_WARN`, flagged then auto-approved APPROVED by auto, report keeps WARN (`:724`); (3) FINAL + [WARN, PASS, FAIL, PASS]
+→ 4 judged in order with matching bytes, `qaMode=ALL`, 0 / 2 IN_REVIEW, 1 / 3 GENERATED, four reports, skip = `degraded: upscale: …` (the FINAL veto,
+224 e) and then `autoApprove(bases, verdicts, [], ALL)` directly approves variant 1 and moves the selection off variant 0 (`:432-462`); (4) DRAFT →
+selector never called, provider never probed, no `qaMode` / `qa` / `qa` artifacts, the one variant APPROVED; (5) provider throws `boom` →
+`QA_UNAVAILABLE: variant 0 (…): provider error: boom`, UNAVAILABLE report persisted with that note, not flagged, auto-approved (`:1415-1457`);
+(6) `Selection(null, note)` → exactly `QA_UNAVAILABLE: no visual-QA provider is available (<note>)`, `qaMode` present, no `qa` keys / artifacts,
+auto-approved (`:969`); (7) ChapBook page + FAIL → one render, one-entry `variants[]` with `qa` FAIL + IN_REVIEW, landscape artifact IN_REVIEW
++ selected on the DB, report on the page node (`:1696`). Run 1: `Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 354.8 s`
+(`:1824,1828`), `BUILD SUCCESS` (`:1831`), `EXIT=0` (console). Regression set, one JVM each: `TestPbRenderStagesOffline` run 1 **8 / 9** —
+`runRecordsVariantsAsOneAttempt` `no degradations: [QA_UNAVAILABLE: … (vlm: unsupported route Route{UNKNOWN …}; swarmYolo: no object_info from
+http://127.0.0.1:9 …)]` (`C:/tmp/p84-TestPbRenderStagesOffline.log:2084`), my regression, fixed per 224 f; run 2 `Tests run: 9, Failures: 0, Errors: 0,
+Skipped: 0` (`C:/tmp/p84-TestPbRenderStagesOffline2.log:2076`), `BUILD SUCCESS` (`:2083`), `EXIT=0`, the probe line gone (`:1013,1953` show only the
+hook's skip). `TestPbAutoApprove` `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0` (`C:/tmp/p84-TestPbAutoApprove.log:139745`), `BUILD SUCCESS`
+(`:139752`), `EXIT=0`; `TestPbQaContract` `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0` (`C:/tmp/p84-TestPbQaContract.log:17693`), `BUILD SUCCESS`
+(`:17700`), `EXIT=0`; `TestSwarmQaProvider` `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0` (`C:/tmp/p84-TestSwarmQaProvider.log:93`), `BUILD
+SUCCESS` (`:100`), `EXIT=0`. Timings are observations. Nothing DONE; P8-5 (Ux) next, then P8-6 (live exit criterion, verifier).
+
+### 15.5 P8-5 results — Ux (2026-10-30 ~13:10 → 14:00 local; §6.C 225)
+
+**Code.** Facade: `PbServiceFacade.attachQa` (`:491`) puts the newest report (`PbQaUtil.latestReportsOf`) as `qa` on judged image summaries in
+`nodeView` (`:462`) and `listReviewQueue` (`:2544-2560`); `TestPbQaContract` gains a case for it. Ux752: `workflows/pictureBookWorkflow.js`
+`qaResultOf` / `normalizeQa` / `qaBadge` / `qaFindings` / `qaReportsForNewestAttempt` (`:228-319`); `components/PbPlanInspector.js` `Visual QA`
+section `pb2-plan-qa[data-count]` + `pb2-plan-qa-report[data-result][data-artifact-id][data-role]` + `pb2-plan-qa-check` (`:64-106,187-195`);
+`features/pictureBookWorkflow.js` tile badge `pbwf-art-qa-badge[data-qa-result]` + findings in the tile title (`:891-918`), compare caption
+`pbwf-art-compare-qa` (`:1029`), `pbwf-node-plan-toggle` → inspector with the newest attempt's reports (`:1081-1092`); `features/pictureBookReview.js`
+row `data-qa-result`, badge button `pb2-review-qa[data-open]` toggling an inline `pb2-review-qa-report` (`:200-259`), `pb2-review-plan-toggle` (`:303-314`).
+
+**Tests.** Vitest `src/test/pictureBookQa.test.js` (17 cases: badge / findings / newest-attempt grouping / inspector section / review row + report /
+advisory Use + Approve) inside the full run: `Test Files 102 passed (102)`, `Tests 1532 passed (1532)` (`C:/tmp/p85-vitest-all.log:5-6`); `npx vite
+build` `✓ built in 7.10s` (`C:/tmp/p85-vite-build.log:146`); `TestPbQaContract` `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0`
+(`C:/tmp/p85-TestPbQaContract.log:33981,33985`), `BUILD SUCCESS` (`:33988`), `EXIT=0`. Playwright `e2e/pictureBookQa.spec.js` on the Docker stack
+(`https://127.0.0.1:9443`) as `e2etest_shared`, jar + dist deployed first. Fixture run (`C:/tmp/p85-playwright-fixture.log`): tests 1–3 `ok`
+(`:6-8`), `3 passed (16.4s)` + `1 skipped` (`:12-13`), `EXIT=0` — (1) REST: node view / review queue carry r1 WARN, r2 **FAIL** (q4 over the older
+q2 WARN, newest wins, with provider / model / durationMs / 2 checks), r3 PASS, r4 no `qa`, `qa` / `renderPlan` chains clean, r2 IN_REVIEW; (2) canvas:
+portrait0 tiles `[FAIL, PASS, –, WARN]` glyphs `✗ ✓ – ⚠`, FAIL tooltip carries both findings, compare captions ` · qa fail` / ` · qa pass`, `View plan`
+→ `pb2-plan-qa[data-count="2"]` with the FAIL report (`portrait0 v0`, `p85-fixture / p85-model`, `1.2 s`, `expected Tobin → observed absent — no
+second figure`); (3) review: rows newest first `[–, PASS, FAIL, WARN]`, the FAIL row keeps Use + Approve enabled and `data-selected=0`, badge click
+opens one inline report (`p85-fixture / p85-model · 1.2 s`, 2 checks) and closes it, `Plan` shows the same section. Live run 2 (`C:/tmp/p85-playwright2.log`,
+`PB_SD_TESTS=1`; run 1 failed on the 225 f click trap): `ok 1-4` (`:6-8,13`), `4 passed (1.2m)` (`:15`), `EXIT=0`. Test 4: inventory 13, sceneDirect
+→ `flux2Klein_9b.safetensors` DEPLOYMENT_DEFAULT (`:9`); STANDARD render through the reader dialog `rendered + judged in 46385 ms`, artifact
+`eb3d81ee-…` (`:10`); server: `VlmQaProvider: GET http://litellm:4000/v1/models failed: UnknownHostException` → `Visual QA provider: swarmYolo on
+http://192.168.1.39:7801 … (probes 3379 + 11 ms)` → `QaReport{PASS by swarmYolo/face_yolov8m.pt, 1 check(s)} in 1499 ms` → `Visual QA of scene 0
+variant 0 (… base r1): PASS via swarmYolo in 1527 ms` (`C:/tmp/p85-server2.log:921557-921560`); REST: exactly one judged image (variant 0,
+`qa.imageArtifactObjectId` = its own id, `PERSON_COUNT PASS 0/0`, reviewStatus GENERATED, 2 variants, sibling unjudged) (`:11`); canvas tile `✓` on v0
+only + inspector `pb2-plan-qa[data-count="1"]`; review row `✓ PASS`, report `swarmYolo / face_yolov8m.pt · 1.5 s`, `PERSON_COUNT expected 0 → observed
+0 — 0 face(s) detected by face_yolov8m.pt`. Screenshots looked at: `test-results/p85-qa/02-canvas-tiles.png`, `02-canvas-inspector.png`,
+`03-review-report.png`, `03-review-plan.png`, `04-live-canvas.png`, `04-live-review.png` — badges and reports as asserted; the `saveCanvas failed:
+500` toast (212 p) is in both canvas shots. SD URL hit: `http://192.168.1.39:7801`; LLM: none (the VLM route is dead on the stack, 225 e), so the
+VLM half of the Ux is proven only by the seeded fixture reports, not by a live `vlm` verdict. Timings are observations. Nothing DONE; P8-6 next
+(needs the 225 e ruling or its default).
+
+### 15.6 P8-6 results — exit criterion, live `.42` + `.39` (2026-10-30 ~14:30 → 18:40 local; §6.C 226; verifier PASS ~19:05, follow-ups §6.C 227)
+
+**Code (224 a, Objects7-bounded — 226 a).** `PbRenderPlanUtil.PlanOptions` 5-arg ctor with `chatConfig` (`:92`, `getChatConfig()` `:105`);
+`PbNodeExecutor.executeNodeRun` hands it to `openNodeGraph` (`:277-279`); `PbGraphUtil` sets `olio.pb.run.chatConfig` at run creation (`:911-913`)
+and `runRequest()` projects it (`:1035-1045`); `PbNodeExecutor.runChatConfig(g)` re-reads the FK, cache off (`:976-1005`); `qaAttempt` selects via
+`g.getRenderBackend().qaProvider(user, runChatConfig(g), sdu, checkpoint)` (`:902`), default seam `RenderBackend.qaProvider(user, chatConfig,
+sdu, checkpoint)` → `PbQaUtil.providerFor` (`:1406`). No REST surface yet (Yours). `TestPbRenderStagesOffline` / `TestPbQaHookOffline` /
+`TestPbAutoApprove` follow the new seam signature.
+
+**Test.** `TestPbQaExitCriterionLive` (1068 lines; gated `pb.sd.tests=1`, `am7db`, `pbCustomTestUser`, book-58 cast Duña (approved 2048² portrait)
++ Jideon (text-only), `landscape1.png`; `.42` chatConfig `p86 vlm qa` `f4521214-…` in `~/Chat`). t01: a plain k=0 `Flux2Compiler` T2I page with
+Jideon's sentence removed → `VlmQaProvider` (production ctor route) and `SwarmQaProvider` on the same bytes. t02: fixture book through the production
+`executeNodeRun`, FINAL (ALL, 4 variants), `StrippingBackend` removes Jideon's sentence from the graph `scene` input on the first BASE execute only
+→ default seam picks `vlm`. t03: same through STANDARD (CANONICAL, 2 variants), `Selection(SwarmQaProvider)` forced, no chatConfig. Pages saved to
+`target/p86/`; run row FK asserted; facade `nodeView` + `listReviewQueue(ALL)` + `latestReportsOf` asserted; a direct
+`PbArtifactUtil.autoApprove(…, QA_ALL)` proves the ordering; fixtures deleted in `finally`.
+
+**Run 1 (`C:/tmp/p86-exit-run1.log`, 15:42 → 17:06) — red on my test, not on the feature (226 g).** `Tests run: 3, Failures: 2, Errors: 0,
+Skipped: 0, Time elapsed: 5033 s` (`:1675`), t02 + t03 `AssertionError: executed expected:<true> but was:<null>` (`:1677,:1695`), `BUILD FAILURE`
+(`:1722`): `runScene` asserted the facade-only `executed` key. Before it fired: t01 PASSED (VLM FAIL 183676 ms `:189-194`, YOLO FAIL 4710 ms `:196-203`);
+t02 strip `:618`, four FINAL renders 996613 / 962372 / 969839 / 976929 ms (`:701-730`), `Visual QA provider: vlm (probe 191 ms)` (`:835`), verdicts
+**FAIL** 132484 ms / PASS / PASS / PASS (`:839,:861,:871,:885`), `QA_FAIL: variant 0 (…) failed visual QA: PERSON_COUNT=FAIL (expected 2, observed 1)`
+in `degradations` (`:946`); t03 strip `:1369`, `QaReport{FAIL by swarmYolo/face_yolov8m.pt, 3 check(s)} in 1573 ms on http://192.168.1.39:7801`,
+`FAIL via swarmYolo in 1628 ms` (`:1526`), `runStatus=COMPLETED` (`:1592`); both fixtures `deleted=true` (`:1035,:1672`). Fixed to
+`executedNodeCount=1` / `failedNodeCount=0`, `test-compile` EXIT=0, javap-checked.
+
+**Run 2 (`C:/tmp/p86-exit2.log`, 17:08 → 18:32): `Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5063 s` (`:1783`), `BUILD
+SUCCESS` (`:1790`), `Total time: 01:24 h` (`:1792`), `EXIT=0`.** Environment line (`:59`): SD Swarm `http://192.168.1.39:7801` (0.9.8.4.GIT-165cd29b,
+`flux2Klein_9b`); LLM = **the remote `.42` box, direct Ollama `http://192.168.1.42:11434`** (`[LLM-GATE] tier=remote route=direct` — not the local
+container, not Azure/LiteLLM), vision model `valkyriesys/eudaimonia-dryad3-vision` (`:106,:258`); YOLO `face_yolov8m.pt` available (`:107,:1180`).
+- **t01** (`:191-201`): broken page seed 1716875568 in 39702 ms → `vlm → FAIL in 120312 ms` `PERSON_COUNT FAIL expected=2 observed=1 — Expected two
+  people but only one visible in foreground`; `swarmYolo → FAIL in 4166 ms` `PERSON_COUNT FAIL 2→1 — 1 face(s) … at [(0.50,0.20)]`. Page looked at
+  (`target/p86/t01-broken.png`; the `media/flux/qa/` copy was removed 2026-10-31, 228 a): one woman in Duña's outfit, centred, nobody else. Observation: YOLO
+  attributes the centred face to Jideon's box (x ≥ 0.50) and marks Duña absent — box attribution of a single centred figure, not asserted.
+- **t02 — VLM through the production executor** (fixture `p86vlm3b0c0715` `:478`; strip `removed 'The second person is Jideon de Rosa, …'` `:542`):
+  four FINAL 24-step renders 995980 / 997548 / 995263 / 991480 ms (`:625,:634,:644,:654`); `Visual QA provider: vlm (probe 186 ms)` (`:759`) — the
+  default seam, run chatConfig FK = `f4521214-…` (asserted); `QaReport{FAIL by vlm/… 5 check(s), Only one foreground figure present instead of two.}
+  in 86349 ms via OLLAMA http://192.168.1.42:11434` (`:762`); `Visual QA of scene 0 variant 0 … FAIL via vlm in 86350 ms` (`:763`), variants 1–3
+  `PASS` in 88996 / 116839 / 127092 ms (`:780,:794,:804`). Summary (`:865`): `runStatus=COMPLETED nodeStatus=DONE_UNVERIFIED qaMode=ALL
+  degradations=[ACTOR_TEXT_ONLY: Jideon …, upscale: UPSCALE stage planned …, QA_FAIL: variant 0 (Artifact render_plan@08f5ce8b base r1) failed
+  visual QA: PERSON_COUNT=FAIL (expected 2, observed 1): …]`. **Review flag:** `variant 0 qa=FAIL review=IN_REVIEW selected=true`, variants 1–3
+  `qa=PASS review=GENERATED` (`:878-881`) — the same seen through `nodeView` and `listReviewQueue(all)` (asserted). `autoApproved=false`,
+  `autoApproveSkipped=degraded: upscale: UPSCALE stage planned by the preset but not rendered` (`:882`; 224 e veto, the QA_FAIL is not the vetoing
+  line under ALL with three PASS siblings — 226 e). **Ordering:** direct `autoApprove(…, QA_ALL)` over `[FAIL, PASS, PASS, PASS]` →
+  `approved=8139fbba-… skipped=null (anyNonFail=true)` (`:961`): the FAIL variant is skipped and a non-FAIL sibling approved. Cleanup `deleted=true`
+  (`:1050`). Pages looked at: `t02-variant0.png` = Duña alone, no second figure (FAIL right); `t02-variant1..3.png` = Duña + Jideon (red jacket, pale
+  blue cargo pants) both present (PASS right). Observation, out of P8 scope: Jideon's face is badly rendered on all three PASS pages — nothing in the
+  P8 contract judges face quality for a text-only actor.
+- **t03 — Swarm/YOLO through the production executor** (fixture `p86yolo6049123d` `:1400`; strip `:1464`): two STANDARD renders 170713 / 170608 ms
+  (`:1547,:1564`); `SwarmQaProvider: QaReport{FAIL by swarmYolo/face_yolov8m.pt, 3 check(s)} in 1687 ms on http://192.168.1.39:7801` (`:1620`);
+  `Visual QA of scene 0 variant 0 (… base r1): FAIL via swarmYolo in 1789 ms` (`:1621`); summary (`:1687`) `qaMode=CANONICAL … QA_FAIL: variant 0
+  (…) failed visual QA: PERSON_COUNT=FAIL (expected 2, observed 1): 1 face(s) … at [(0.50,0.29)]; ACTOR_PRESENT[…]=FAIL (expected Duña …`; variant 1
+  unjudged (`qa` absent, asserted); `autoApproveSkipped=degraded: QA_FAIL: variant 0 (Artifact render_plan@4891c3a6 base r1) failed visual QA`
+  (`:1694`) — here the QA FAIL **is** the vetoing line; run chatConfig FK null (asserted). Cleanup `deleted=true` (`:1780`). Pages looked at:
+  `t03-variant0.png` = Duña alone (FAIL right); `t03-variant1.png` = both (unjudged under CANONICAL).
+
+**Exit criterion read-out.** A two-actor plan rendered with one actor's text removed → FAIL from the VLM on `.42` (t01, t02) and from YOLO on
+`.39` (t01, t03), through the production executor; the ordering (FAIL variant skipped, non-FAIL sibling approved) and the review flag (IN_REVIEW on
+the FAIL variant, visible in `nodeView` / review queue) observed on `am7db` through the facade (226 b). Not done: Docker/REST re-run (226 b), the
+REST `chatConfig` surface (226 a). Timings are observations. Nothing DONE by me; verifier next.
+
+**Verifier (independent subagent, 2026-10-30 ~18:45 → 19:05): PASS** — "P8-1…P8-6 verified as described in §15.1–§15.6", 8 non-blocking findings
+(§6.C 227 a–h). It re-ran offline, one JVM at a time: `TestPbQaContract` 9/9 (`C:/tmp/verify-p8-contract.log:34481,34488`), `TestPbQaHookOffline` 7/7
+(`verify-p8-hook.log:1824,1831`), `TestPbAutoApprove` 9/9 (`verify-p8-autoapprove.log:143153,143160`), `TestPbRenderStagesOffline` 9/9
+(`verify-p8-stages.log:2076,2083`), `TestSwarmQaProvider` 9/9 (`verify-p8-swarmqa.log:93,100`), Ux752 Vitest 17/17 (`verify-p8-vitest.log:5-6`),
+`vite build` OK (`verify-p8-vite.log:146`); every §15.5 / §15.6 log citation spot-checked (one wrong, 227 a). Not proven by it: the live runs (logs
+read, not re-run), Docker/REST, the REST `chatConfig` surface (226 a/b). Confirmed by it: tests go through the production `executeNodeRun`, owner is
+`pbCustomTestUser`, no admin; hook order; per-instance `Route`, no non-final statics; find-only chatConfig resolution; `ByteModelUtil` reads.
+
+**Follow-ups (227; 2026-10-30 19:05 → 19:30 offline).** `test-compile` EXIT=0 (javap: no stub, both `autoApprove` overloads present). Re-run after
+the 227 b/d/e edits, one JVM at a time: `TestPbQaContract` `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0` (`C:/tmp/p86-fu-contract.log:34914`),
+`BUILD SUCCESS` (`:34921`), EXIT=0 — the new CANONICAL guard fixture `p81-c07f2` exercised (`:304-323`); `TestPbAutoApprove` 9/9
+(`p86-fu-autoapprove.log:144349,144356`), EXIT=0; `TestPbQaHookOffline` 7/7 (`p86-fu-hook.log:1824,1831`), EXIT=0.
+**Run 3 — live t02 re-run with the `== 4` assertion (`C:/tmp/p86-exit3.log`, 19:22 → 20:40): `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0,
+Time elapsed: 4692 s` (`:907`), `BUILD SUCCESS` (`:914`), `Total time: 01:18 h` (`:916`), `EXIT=0`.** Same environment (`:56` `[LLM-GATE] route=direct
+tier=remote` = the remote `.42` box, direct Ollama; `:59` Swarm `.39`), strip `:390`, four FINAL renders 1040646 / 998737 / 996054 / 996973 ms
+(`:473,:482,:492,:502`), `Visual QA provider: vlm (probe 216 ms)` (`:607`). Verdicts this time **[FAIL, PASS, WARN, WARN]**: variant 0 `FAIL via vlm in
+102622 ms` "Only one person visible in foreground instead of two." (`:610-611`), variant 1 PASS 130814 ms (`:628`), variants 2–3 WARN 209515 / 133753 ms
+on the soft LOCATION check ("two cement walls instead of one") (`:642,:654`); flags `v0 FAIL/IN_REVIEW/selected`, `v1 PASS/GENERATED`, `v2–3
+WARN/IN_REVIEW` (`:732-735`; WARN → IN_REVIEW is 220 d), `QA_FAIL: variant 0 …` + `QA_WARN: variant 2/3 …` in `degradations` (`:719`),
+`autoApproveSkipped=degraded: upscale: …` (`:736`; 224 e), ordering `approved=a0d77738-… skipped=null (anyNonFail=true)` (`:815`) — asserted ≠ the
+stripped variant 0; the log does not name which of 1–3 it is (by `qaRank` the sole PASS, variant 1 — read from the code, not observed). Cleanup
+`deleted=true` (`:904`). Pages looked at: `t02-variant0.png` Duña alone (FAIL right); `t02-variant1..3.png` both present
+(Jideon's face again badly rendered on all three — the same out-of-scope observation as run 2). Timings are observations.
+
+next §6.C number 228 (219 = P7-5 close-out; 220 = Phase 8 defaults; 221 = P8-1 judgments; 222 = P8-2 judgments; 223 = P8-3 judgments; 224 = P8-4 judgments; 225 = P8-5 judgments; 226 = P8-6 judgments; 227 = P8-6 verifier follow-ups).

@@ -21,7 +21,8 @@ import {
     saveCanvas, addBinding, deleteBinding, detectBoundaries,
     listSeriesBooks, listPb2Books, loadNodePlan,
     normalizeArtifact, isArchivedArtifact, groupArtifactsByAttempt, formatBytes,
-    scanRetention, applyRetention, retentionActionable
+    scanRetention, applyRetention, retentionActionable,
+    qaBadge, qaFindings, qaReportsForNewestAttempt
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -886,7 +887,7 @@ function artifactTileStyle(art) {
     return { border: '2px solid #e2e8f0', opacity: '1' };
 }
 
-/** Pure: one-line tooltip for a tile — rev, variant, seed, status, archive/bytes facts. */
+/** Pure: one-line tooltip for a tile — rev, variant, seed, status, archive/bytes facts, then the QA verdict + its findings (§17). */
 function artifactTileTitle(art) {
     let bits = ['Rev ' + (art.revision != null ? art.revision : '?')];
     if (art.attempt != null) bits.push('v' + art.variantIndex);
@@ -895,7 +896,25 @@ function artifactTileTitle(art) {
     if (art.reviewStatus) bits.push(String(art.reviewStatus).toLowerCase());
     if (art.archivedAt) bits.push('archived ' + art.archivedAt);
     if (art.bytesDeleted) bits.push('bytes deleted');
-    return bits.join(' · ');
+    let line = bits.join(' · ');
+    if (art.qa) {
+        line += ' · qa ' + String(art.qa.result).toLowerCase() + (art.qa.provider ? ' (' + art.qa.provider + ')' : '');
+        let findings = qaFindings(art.qa);
+        if (findings.length) line += '\n' + findings.join('\n');
+    }
+    return line;
+}
+
+/** The ✓ / ⚠ / ✗ / ? verdict badge overlaid bottom-right of a judged tile's thumbnail; null for an unjudged image. */
+function renderArtifactQaBadge(art) {
+    let badge = qaBadge(art.qa);
+    if (!badge) return null;
+    return m('span', {
+        'data-testid': 'pbwf-art-qa-badge',
+        'data-qa-result': badge.result,
+        title: badge.label,
+        style: 'position:absolute;bottom:2px;right:2px;font-size:10px;font-weight:700;line-height:1;border-radius:9999px;padding:2px 4px;color:' + badge.color + ';background:' + badge.bg + ';'
+    }, badge.glyph);
 }
 
 function toggleCompare(objectId) {
@@ -919,6 +938,7 @@ function renderArtifactTile(art) {
         'data-variant-index': art.variantIndex,
         'data-review-status': String(art.reviewStatus || '').toLowerCase(),
         'data-compare': compareIdx >= 0 ? String(compareIdx + 1) : undefined,
+        'data-qa-result': art.qa ? art.qa.result : undefined,
         style: 'display:flex;flex-direction:column;align-items:center;width:60px;cursor:pointer;',
         title: artifactTileTitle(art),
         onclick: function (e) { e.stopPropagation(); toggleCompare(art.objectId); }
@@ -941,6 +961,7 @@ function renderArtifactTile(art) {
                         : 'r' + (art.revision != null ? art.revision : '?')),
             compareIdx >= 0 ? m('span', { style: 'position:absolute;top:2px;right:2px;background:#f59e0b;color:#fff;font-size:9px;font-weight:700;border-radius:9999px;padding:0 5px;' }, compareIdx === 0 ? 'A' : 'B') : null,
             art.selected ? m('span', { style: 'position:absolute;top:2px;left:2px;background:#3b82f6;color:#fff;font-size:9px;border-radius:9999px;padding:0 4px;' }, '●') : null,
+            renderArtifactQaBadge(art),
         ]),
         m('div', { style: 'font-size:9px;color:#64748b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60px;' }, [
             art.attempt != null ? m('span', { 'data-testid': 'pbwf-art-variant-badge', style: 'font-weight:600;color:#374151;' }, 'v' + art.variantIndex) : m('span', { style: 'font-weight:600;color:#374151;' }, 'r' + (art.revision != null ? art.revision : '?')),
@@ -1005,6 +1026,7 @@ function renderArtifactCompare() {
                     a.seed != null ? ' · seed ' + a.seed : '',
                     a.reviewStatus ? ' · ' + String(a.reviewStatus).toLowerCase() : '',
                     a.byteLength ? ' · ' + formatBytes(a.byteLength) : '',
+                    a.qa ? m('span', { 'data-testid': 'pbwf-art-compare-qa', 'data-qa-result': a.qa.result, title: qaFindings(a.qa).join('\n') }, ' · qa ' + String(a.qa.result).toLowerCase()) : '',
                 ]),
             ]);
         })),
@@ -1066,7 +1088,8 @@ function renderNodeDetailPanel() {
                 nodePlan.open && nodePlan.error ? m('div', { 'data-testid': 'pbwf-node-plan-error', style: 'font-size:11px;color:#dc2626;margin-top:4px;word-break:break-word;' }, nodePlan.error) : null,
                 nodePlan.open && nodePlan.plan ? m('div', { style: 'margin-top:6px;' }, [
                     nodePlan.artifact ? m('div', { style: 'font-size:10px;color:#64748b;margin-bottom:4px;' }, 'rev ' + (nodePlan.artifact.revision != null ? nodePlan.artifact.revision : '?') + ' · ' + (nodePlan.artifact.objectId || '')) : null,
-                    m(PbPlanInspector, { plan: nodePlan.plan })
+                    // §17 / P8-5: the newest attempt's QA reports ride on the image summaries nodeView already returned.
+                    m(PbPlanInspector, { plan: nodePlan.plan, qa: qaReportsForNewestAttempt(nodeDetails.artifacts) })
                 ]) : null
             ])
             : null,

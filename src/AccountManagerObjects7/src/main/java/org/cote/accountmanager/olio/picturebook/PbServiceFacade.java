@@ -26,6 +26,7 @@ import org.cote.accountmanager.olio.illustration.DeploymentModelDefaults;
 import org.cote.accountmanager.olio.illustration.ModelInventory;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
+import org.cote.accountmanager.olio.illustration.QaReport;
 import org.cote.accountmanager.olio.illustration.RenderEstimate;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
@@ -425,7 +426,8 @@ public class PbServiceFacade {
 	}
 
 	/**
-	 * One node in detail: its summary, its bindings, and the full artifact revision chain per role.
+	 * One node in detail: its summary, its bindings, and the full artifact revision chain per role. A judged
+	 * image summary carries its newest visual-QA report as {@code qa} ({@link #attachQa}).
 	 * <p>
 	 * The status comes from the book's cached drift scan, so a cold cache costs a whole-book scan here;
 	 * within the TTL it is one node read plus this node's own bindings and artifacts.
@@ -446,16 +448,60 @@ public class PbServiceFacade {
 		/// The revision history, per role, newest first - what the Ux workflow view needs to offer
 		/// "restore this revision". Roles are discovered from the artifacts themselves rather than from a
 		/// hardcoded list, so a role added to the pipeline shows up here without an edit.
-		Map<String, List<Map<String, Object>>> chains = new LinkedHashMap<>();
+		Map<String, List<BaseRecord>> records = new LinkedHashMap<>();
 		for(String role : artifactRoles(user, node)) {
+			records.put(role, PbArtifactUtil.listChain(user, node, role));
+		}
+		/// §17 / P8-5: the newest QA verdict per judged image rides on the image's own summary as {@code qa}, read
+		/// off the {@code qa} chain this view already lists - no second read, and an unjudged image carries no key.
+		Map<String, QaReport> latestQa = latestReports(records.get(PbPipelineUtil.ROLE_QA));
+		Map<String, List<Map<String, Object>>> chains = new LinkedHashMap<>();
+		for(Map.Entry<String, List<BaseRecord>> e : records.entrySet()) {
 			List<Map<String, Object>> chain = new ArrayList<>();
-			for(BaseRecord a : PbArtifactUtil.listChain(user, node, role)) {
-				chain.add(artifactSummary(a));
+			for(BaseRecord a : e.getValue()) {
+				chain.add(attachQa(artifactSummary(a), latestQa));
 			}
-			chains.put(role, chain);
+			chains.put(e.getKey(), chain);
 		}
 		out.put("artifacts", chains);
 		return out;
+	}
+
+	/** The newest parseable report per judged image in one {@code qa} chain (ascending by revision), keyed by image objectId. */
+	private static Map<String, QaReport> latestReports(List<BaseRecord> qaChain) {
+		if(qaChain == null || qaChain.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		Map<String, QaReport> out = new LinkedHashMap<>();
+		for(BaseRecord a : qaChain) {
+			QaReport r = PbQaUtil.readReport(a);
+			if(r != null && r.getImageArtifactObjectId() != null) {
+				out.put(r.getImageArtifactObjectId(), r);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * {@code summary} with the image's newest QA report (design §17) under {@code qa} - the report's full map
+	 * ({@code result}, {@code provider}, {@code model}, {@code checks[]}, {@code durationMs}, {@code note},
+	 * {@code imageArtifactObjectId}), the same key the run DTO's {@code variants[].qa} uses. Absent when the image
+	 * was never judged, and never placed on a bookkeeping artifact (a report does not judge a report).
+	 */
+	private static Map<String, Object> attachQa(Map<String, Object> summary, Map<String, QaReport> latestQa) {
+		if(latestQa == null || latestQa.isEmpty()) {
+			return summary;
+		}
+		String role = (summary.get("role") != null ? summary.get("role").toString() : null);
+		if(PbPipelineUtil.ROLE_QA.equals(role) || PbPipelineUtil.ROLE_RENDER_PLAN.equals(role)) {
+			return summary;
+		}
+		Object oid = summary.get("objectId");
+		QaReport r = (oid != null ? latestQa.get(oid.toString()) : null);
+		if(r != null) {
+			summary.put(PbNodeExecutor.KEY_VARIANT_QA, r.toMap());
+		}
+		return summary;
 	}
 
 	/**
@@ -2472,7 +2518,8 @@ public class PbServiceFacade {
 	 * {@link PbArtifactUtil#APPROVED_BY_AUTO}); anything else is a 400 here, so REST and MCP share one
 	 * validation. Nodes with no artifacts are omitted. One uncached chain read per (node, role). The
 	 * {@code renderPlan} role is left out: a plan artifact is the record of what a render decided (§12),
-	 * not an output anyone reviews, and a plan-driven node always carries one beside its image.
+	 * not an output anyone reviews, and a plan-driven node always carries one beside its image. The {@code qa}
+	 * role is left out the same way, but a judged image carries its newest report as {@code qa} ({@link #attachQa}).
 	 */
 	public static Map<String, Object> listReviewQueue(BaseRecord user, String bookObjectId, String filter) {
 		String f = (filter == null || filter.trim().length() == 0 ? REVIEW_FILTER_ALL : filter.trim().toLowerCase());
@@ -2490,8 +2537,14 @@ public class PbServiceFacade {
 		int pendingCount = 0;
 		for(BaseRecord node : PbGraphUtil.listNodes(user, workflow)) {
 			List<Map<String, Object>> arts = new ArrayList<>();
-			for(String role : artifactRoles(user, node)) {
-				if(PbPipelineUtil.ROLE_RENDER_PLAN.equals(role)) {
+			List<String> roles = artifactRoles(user, node);
+			/// §17 / P8-5: the newest verdict per judged image rides on its summary as {@code qa} (one uncached read
+			/// of the node's qa chain, only when the node carries one) - the queue is where a FAIL / WARN is resolved.
+			Map<String, QaReport> latestQa = (roles.contains(PbPipelineUtil.ROLE_QA)
+				? PbQaUtil.latestReportsOf(user, node) : Collections.emptyMap());
+			for(String role : roles) {
+				/// Bookkeeping artifacts are never reviewed: the plan is the recipe, a qa report judges an image (§17).
+				if(PbPipelineUtil.ROLE_RENDER_PLAN.equals(role) || PbPipelineUtil.ROLE_QA.equals(role)) {
 					continue;
 				}
 				for(BaseRecord a : PbArtifactUtil.listChain(user, node, role)) {
@@ -2504,7 +2557,7 @@ public class PbServiceFacade {
 								&& PbArtifactUtil.APPROVED_BY_AUTO.equals(a.get(OlioFieldNames.FIELD_PB_APPROVED_BY)))) {
 						continue;
 					}
-					arts.add(artifactSummary(a));
+					arts.add(attachQa(artifactSummary(a), latestQa));
 					artifactCount++;
 					if(rs == PbReviewStatusEnumType.GENERATED || rs == PbReviewStatusEnumType.IN_REVIEW) {
 						pendingCount++;

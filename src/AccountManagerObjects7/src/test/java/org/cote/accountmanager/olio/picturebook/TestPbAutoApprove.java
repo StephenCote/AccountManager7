@@ -361,8 +361,9 @@ public class TestPbAutoApprove extends BaseTest {
 	// ─────────────────────────────── P4-7: the veto set over the plan's degradation codes ───────────────────────────────
 
 	/**
-	 * P4-7: the plan degradations an attempt carries are classified by their {@code CODE: message} prefix. The four
-	 * accepted codes never veto (§23 added {@code VARIANT_SEED_UNKNOWN}: every planned variant still rendered), each
+	 * P4-7: the plan degradations an attempt carries are classified by their {@code CODE: message} prefix. The six
+	 * accepted codes never veto (§23 added {@code VARIANT_SEED_UNKNOWN}: every planned variant still rendered; §17 /
+	 * P8-1 added {@code QA_FAIL} and {@code QA_UNAVAILABLE}: QA orders the variants, it never blocks the attempt), each
 	 * of the six {@link PbArtifactUtil#AUTO_APPROVE_VETO_CODES} does (§23 added {@code VARIANT_FAILED}: a planned
 	 * variant is missing), the executor's {@code upscale:} pseudo-entry and any free-form entry veto (they are not
 	 * known codes), and a mixed list is reduced to exactly its vetoing entries, in order. Pure classification: no
@@ -376,10 +377,13 @@ public class TestPbAutoApprove extends BaseTest {
 		String textOnly = RenderPlan.Degradation.ACTOR_TEXT_ONLY + ": Mara rendered from description (no approved portrait)";
 		String substituted = RenderPlan.Degradation.MODEL_SUBSTITUTED + ": location model substituted (flux2Klein_9b not installed)";
 		String qaWarn = RenderPlan.Degradation.QA_WARN + ": soft QA warning";
+		String qaFail = RenderPlan.Degradation.QA_FAIL + ": variant 0 (x) failed visual QA";
+		String qaUnavailable = RenderPlan.Degradation.QA_UNAVAILABLE + ": vision model unreachable";
 		String seedUnknown = RenderPlan.Degradation.VARIANT_SEED_UNKNOWN + ": variant 1 rendered with a random seed: the renderer reported no seed for variant 0";
-		assertTrue("the four accepted codes never veto", PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn, seedUnknown)).isEmpty());
+		assertTrue("the six accepted codes never veto",
+			PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn, qaFail, qaUnavailable, seedUnknown)).isEmpty());
 		for(String code : new String[] { RenderPlan.Degradation.ACTOR_TEXT_ONLY, RenderPlan.Degradation.MODEL_SUBSTITUTED, RenderPlan.Degradation.QA_WARN,
-				RenderPlan.Degradation.VARIANT_SEED_UNKNOWN }) {
+				RenderPlan.Degradation.QA_FAIL, RenderPlan.Degradation.QA_UNAVAILABLE, RenderPlan.Degradation.VARIANT_SEED_UNKNOWN }) {
 			assertTrue(code + " is a known code", RenderPlan.Degradation.isKnownCode(code));
 			assertFalse(code + " is not in the veto set", PbArtifactUtil.AUTO_APPROVE_VETO_CODES.contains(code));
 			assertTrue("a bare code with no message is still accepted", PbArtifactUtil.vetoingDegradations(List.of(code)).isEmpty());
