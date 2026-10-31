@@ -6,6 +6,12 @@
 # Glob covers suffixed variants (volatile-old/, volatile.bak, ...).
 volatile*
 
+# Session scratch (helper scripts, captured mvn/playwright run logs, cleanup
+# manifests) written by coding-assistant sessions. Disposable by the rule in
+# .claude/rules/artifacts.md; inventory in src/aiDocs/ArtifactInventory.md.
+# Never credentials — those go under volatile*.
+/scratch/
+
 # Python bytecode (e.g. src/repo_scanner.py run leaves src/__pycache__/).
 __pycache__/
 *.py[cod]
