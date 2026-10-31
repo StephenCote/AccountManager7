@@ -133,7 +133,7 @@ the record — where this index and the entry disagree, the entry wins; each sta
 - **224 b / e = 227 f** (P8-4) — no cancel check inside the QA hook (one VLM call per artifact); FINAL always carries the `upscale: UPSCALE stage planned by the preset but not rendered` pseudo-degradation, which vetoes auto-approve on every FINAL attempt (the ALL ordering is reachable only via `autoApprove(…)` directly); `approve` does not refuse IN_REVIEW. Defaults: leave; leave (flip FINAL's `upscale` off until UPSCALE renders, or exempt it — yours); leave.
 - **225 e** (P8-5) — the stack library `contentAnalysis` / `generalChat` configs sit on connection 9 `http://litellm:4000`, unresolvable in the container, so the VLM leg falls through to `swarmYolo` on `.39`. Default taken: 224 a wired Objects7-side (226 a); repointing connection 9 to `http://192.168.1.42:11434` on the stack is yours.
 - **226 a / b** (P8-6) — no REST surface for `olio.pb.run.chatConfig` (`render-plan` / `PbRenderJobUtil.submit`): a REST-launched run carries a null FK and QA uses the user's route; the Docker / REST QA re-run was not done (the stack's VLM route is dead, 225 e). Defaults: leave; the §16 gate covers the REST path as far as REST allows.
-- **227 g / h** (P8-6 verifier) — `media/flux/qa/` fixtures → 228 a, answered 229 a (Stephen commits them); the non-mine working-tree edits (`Console7/tmp.bat`, `vectorEnv.bat`, `media/speaker_0.mp3` deleted, the untracked `.doc` / `.docx` under `media/`, `Agent7/plan.json`) — not mine, not touched.
+- **227 g / h** (P8-6 verifier) — `media/flux/qa/` fixtures → 228 a, answered 229 a, quality disputed 230 (Stephen commits them as they are; remake waits on 219 h); the non-mine working-tree edits (`Console7/tmp.bat`, `vectorEnv.bat`, `media/speaker_0.mp3` deleted, the untracked `.doc` / `.docx` under `media/`, `Agent7/plan.json`) — not mine, not touched.
 - **Still open in archive P0-P4:** §6.A, §6.D, §6.E, §6.G, §6.L, §6.N; §13.2 out-of-scope (5) / (8); archive P0-P4 `:7868` c (the structured 409 body).
 
 228. ⚠ **2026-10-31 (Stephen: "1: media/flux/qa/ — is this a required set of data, or improperly placed test data? 2: Do a PB
@@ -151,9 +151,10 @@ the record — where this index and the entry disagree, the entry wins; each sta
      (b) ⚠ **Archive move** under the §1 terseness rule: the former header (`:3-19`), §1 rows 5–8 (`:49-52`), §6.C 207 and 210–227
      (`:121-631`), §13.5–§13.6 (`:689-781`), §14 (`:782-1058`) and §15 (`:1059-1353`) moved verbatim to
      `archive/PictureBookV3Implementation-P5-P8.md` under their original numbers, with the P0-P4 banner / `## 0.` / `## 1.` / `## 6.` +
-     `### 6.C` / `## 13.` parent-heading convention; one-line stubs here under the kept headings. Conservation: live 1355 → 496 lines
-     (1197 moved out, 338 added: header, rows, index, 228, stubs, §16, §17); archive 1214 = the 1197 moved lines + 17 banner /
-     parent-heading / spacer lines (the script checked every moved line is present in order); 0 CR in both.
+     `### 6.C` / `## 13.` parent-heading convention; one-line stubs here under the kept headings. Conservation at the moment of the
+     move: live 1355 → 494 lines (1197 moved out, 336 added: header, rows, index, 228, stubs, §16, §17; entries 229+ grow it from
+     there); archive 1214 = the 1197 moved lines + 17 banner / parent-heading / spacer lines (the script checked every moved line is
+     present in order); 0 CR in both.
      (c) §1 rows 5–8 reduced to one line each (the full rows are archive P5-P8 §1); row 9 points at §16 / §17 / §18.
      (d) The "Open — Yours" index above is an **index**, not a re-ruling: the archived entry is the record and wins on any disagreement.
      One proposal in it is mine: 212 p / 225 g (the canvas 500) folded into P9-0, because the §16 walk opens the canvas on every book
@@ -187,6 +188,23 @@ the record — where this index and the entry disagree, the entry wins; each sta
      (b) **212 p / 225 g ruled: "Fix in P9"** → placed in **P9-0** as 228 d proposed (the §16 walk opens the canvas on every book). Scope
      recorded in §17 P9-0: the four ints on `olio.pictureBookRequest` + `optionalInt`, WAR redeploy, a Service7 H2 contract case, §16
      step 8 asserts no toast. Removed from the "Open — Yours" index. Nothing built yet — Phase 9 remains NOT STARTED.
+230. ✓ **2026-10-31 (Stephen on 229 a: "Well p52-t01-direct.png is a terrible looking image (very bad quality, a lot of pixellation,
+     just terrible all around) — so if it's supposed to represent what a valid test is, it should be remade"; then: "i'll commit though —
+     just make a note that you think it's ok that it looks so terrible"):**
+     (a) **The note, as asked: I judged the fixture acceptable despite its quality** (229 a), on the ground that the QA kinds grade
+     people / identity / outfit / location / composition and never image quality, so the draft look does not change what the fixture
+     exercises, and that remaking it would move the faces and invalidate `p83-faces-two.png` + `TestSwarmQaProvider`'s box assertions
+     together. Stephen disagrees: the image is terrible, and a fixture standing for a valid QA page should be remade. He is committing
+     both files as they are. Not remade, not regenerated; no file under `media/flux/qa/` touched.
+     (b) What his point exposes, so it is not lost in (a): the fixture is a render that **passed 9/9 VLM checks while being unusable as
+     a product image**. No QA kind grades render quality, so a posterised / pixellated page passes QA and reaches the review queue with
+     human review as the only quality gate. That is a gap in the QA layer, not a fixture cosmetic. Two threads, both Yours: **219 h**
+     (the `.39` flux2 Klein sampler / steps that produce this look — the fixture is a specimen of it) and whether a render-quality
+     signal (a QA kind, or a VLM "image quality" check) belongs in the QA set. **Default: not in Phase 9 scope — noted as a P10
+     candidate.** When 219 h is settled, the fixture should be remade against the corrected `.39` profile and the mask + box assertions
+     re-captured with it — I will not do that unprompted.
+     (c) Nothing else changed: this entry, the 228 b conservation wording (counts pinned to the moment of the move) and the §6.C
+     counters in §17's prompt (architect → 231, P9-0 hand-back → 232).
 
 > Moved 2026-10-28 to `archive/PictureBookV3Implementation-P0-P4.md` §6.G, §6.L, §6.H–§6.N (Slice C findings, the nude-fixture question, Phase 0–1 infrastructure items; §6.H / §6.I / §6.J / §6.K RESOLVED, §6.M FIXED) (section numbering unchanged there). Still open there and Stephen's: §6.G (Slice C transport findings 1–12), §6.L (the `generateScene` e2e fixtures render nude), §6.N (`.39` outage log 2026-10-11 → 2026-10-14).
 
@@ -502,13 +520,13 @@ PHASE 9 TASKS — ledger §17 is the plan; summary:
 FIRST ACTIONS, in order:
 1. Confirm `.39`, `.42`, `postgres3` and the Docker stack answer (one curl each; STOP and say so if not).
 2. Run the `architect` agent over ledger §17 (hand it §17, design §25 / §26 / §30 row 9, the inventory files); fold its findings into
-   §17 and record them as §6.C 230 (the 215 precedent). Do not start P9-1 before this.
+   §17 and record them as §6.C 231 (the 215 precedent). Do not start P9-1 before this.
 3. Start P9-0 with the 212 p fix. Hand back after P9-0 with: the per-step table, the screenshots seen, the `[e2e-llm]` line in words,
-   the SD URL, and the §6.C 231 entry — then wait for Stephen.
+   the SD URL, and the §6.C 232 entry — then wait for Stephen.
 
-LEDGER DISCIPLINE: results → new `## 18. Phase 9 — results` (§18.1 P9-0 … §18.6 P9-6; §16.1 for the gate runs); rulings → §6.C 230+
+LEDGER DISCIPLINE: results → new `## 18. Phase 9 — results` (§18.1 P9-0 … §18.6 P9-6; §16.1 for the gate runs); rulings → §6.C 231+
 (the tail line `next §6.C number …` is the counter — bump it); §1 row 9 one line; keep the live file LF, 0 CR; never edit the
 archives. Report in the shape of archive P5-P8 §15.6 / §6.C 226: what ran, where, `log:line`, what was seen, what is Yours.
 ~~~
 
-next §6.C number 230 (228 = Q1 `media/flux/qa/` + the 2026-10-31 doc pass + the §16 gate and §17 Phase 9 drafts; 229 = Stephen's fixture answer + "Fix in P9" for 212 p; 207–227 archived in P5-P8, 2–206 / 208–209 in P0-P4).
+next §6.C number 231 (228 = Q1 `media/flux/qa/` + the 2026-10-31 doc pass + the §16 gate and §17 Phase 9 drafts; 229 = Stephen's fixture answer + "Fix in P9" for 212 p; 230 = the fixture-quality note — I called the terrible-looking `p52-t01-direct.png` acceptable, Stephen commits it as is, remake waits on 219 h; 207–227 archived in P5-P8, 2–206 / 208–209 in P0-P4).
