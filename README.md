@@ -385,8 +385,8 @@ mvn -o -pl AccountManagerService7 package -DskipTests         # -> AccountManage
 
 **2. Point Service7 and Console7 at the same database and the same store.** Each has its own
 configuration file, and both are packaged into the build, so edit them before you build (or
-rebuild afterwards). Their committed defaults differ (Service7 uses port `15430`, Console7 uses
-`15432`).
+rebuild afterwards). Both default to `jdbc:postgresql://localhost:15432/am72db` and
+`C:/Projects/data/am7`.
 
 | | Database | Store path |
 |---|---|---|
@@ -412,6 +412,17 @@ java -jar AccountManagerConsole7-7.0.0-SNAPSHOT.jar -setup -adminPassword <admin
 It is idempotent. Each step runs only when its target is missing, and it never overwrites an
 existing credential. That makes it safe to re-run as a repair against a partially provisioned
 database.
+
+**Leave `-olio` and `-list` off for a plain setup.** Both have side effects:
+- **`-olio`** (which needs `-organization`/`-username`/`-password`) builds or loads the Olio grid
+  context for that user, and enrolls the user as an Olio reader. The first run in an organization
+  does two slow things. It loads the seed corpus from `test.datagen.path` into the universe, which
+  takes minutes, so the corpus must be staged first (see the seed-data notes under Option A). It
+  also constructs a world with one region and **creates 50 randomly generated people** in it.
+- **Every `-olio` run**, not just the first, outfits anyone without apparel and gives money to
+  anyone without any. About a quarter of those get a piece of lint instead.
+- **`-olio -reset`** cleans up the world and repopulates it.
+- **`-list`** with `-olio` prints a narrative description of each person in the population.
 
 > ⚠ **Resetting is opt-in: `test.db.reset` (default `false`).** With `test.db.reset=true` in
 > `resource.properties`, `-setup` first **drops and recreates every table** and empties the store's
