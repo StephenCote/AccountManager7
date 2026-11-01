@@ -536,7 +536,10 @@ public class TestPictureBookRestContract extends BaseTest {
 			"seriesObjectId",
 			/// V3 Phase 6 retention (P6-3b): POST .../retention/apply and /retention/org/apply. Undeclared
 			/// when first written - the body was silently ignored and the defaults always applied.
-			"keepAttempts", "deleteBytesAfterDays"
+			"keepAttempts", "deleteBytesAfterDays",
+			/// V3 Phase 9 (P9-0, 212 p): PUT .../node/{node}/canvas. Undeclared until 2026-10-31 - the body was
+			/// dropped whole, the facade set four nulls on int columns and every card drop was a 500 toast.
+			"x", "y", "w", "h"
 		};
 		List<String> undeclared = new ArrayList<>();
 		for(String f : read) {

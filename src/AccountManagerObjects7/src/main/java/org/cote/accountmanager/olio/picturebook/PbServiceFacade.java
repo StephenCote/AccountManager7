@@ -3263,8 +3263,13 @@ public class PbServiceFacade {
 	/**
 	 * Persist canvas geometry ({@code canvasX, canvasY, canvasW, canvasH}) on a node.
 	 * <p>
-	 * Any combination of the four keys is accepted; absent keys are not touched (PATCH semantics).
-	 * All four are nullable — a null value clears the stored position, falling back to auto-layout.
+	 * Any combination of the four keys is accepted; a null argument is an absent key and is not touched
+	 * (PATCH semantics) - only the supplied values enter the patch. A null can never be <i>written</i>
+	 * through this path: the canvas columns are {@code int} and {@code RecordValidator} auto-unboxes the
+	 * field value ({@code RecordValidator:88}), which is exactly how the 212 p 500 arose when the transport
+	 * handed four nulls down. The response is the merged state - supplied values plus the node's stored
+	 * values for the keys not supplied - so a partial body reads back the whole position. No keys at all
+	 * is a no-op that returns the stored position without writing.
 	 */
 	public static Map<String, Object> saveCanvas(BaseRecord user, String bookObjectId, String nodeObjectId,
 			Integer x, Integer y, Integer w, Integer h) {
@@ -3272,31 +3277,33 @@ public class PbServiceFacade {
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
 
-		List<String> changedFields = new ArrayList<>();
-		changedFields.add(OlioFieldNames.FIELD_PB_CANVAS_X);
-		changedFields.add(OlioFieldNames.FIELD_PB_CANVAS_Y);
-		changedFields.add(OlioFieldNames.FIELD_PB_CANVAS_W);
-		changedFields.add(OlioFieldNames.FIELD_PB_CANVAS_H);
-		BaseRecord patch = PbGraphUtil.patchOf(node, OlioModelNames.MODEL_PB_NODE,
-			changedFields.toArray(new String[0]));
-		try {
-			patch.set(OlioFieldNames.FIELD_PB_CANVAS_X, x);
-			patch.set(OlioFieldNames.FIELD_PB_CANVAS_Y, y);
-			patch.set(OlioFieldNames.FIELD_PB_CANVAS_W, w);
-			patch.set(OlioFieldNames.FIELD_PB_CANVAS_H, h);
-		}
-		catch(Exception e) {
-			throw new PictureBookException(500, "Failed to assemble canvas patch: " + e.getMessage());
-		}
-		if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
-			throw new PictureBookException(500, "Failed to save canvas geometry for node " + nodeObjectId);
+		Map<String, Integer> supplied = new LinkedHashMap<>();
+		if(x != null) supplied.put(OlioFieldNames.FIELD_PB_CANVAS_X, x);
+		if(y != null) supplied.put(OlioFieldNames.FIELD_PB_CANVAS_Y, y);
+		if(w != null) supplied.put(OlioFieldNames.FIELD_PB_CANVAS_W, w);
+		if(h != null) supplied.put(OlioFieldNames.FIELD_PB_CANVAS_H, h);
+
+		if(!supplied.isEmpty()) {
+			BaseRecord patch = PbGraphUtil.patchOf(node, OlioModelNames.MODEL_PB_NODE,
+				supplied.keySet().toArray(new String[0]));
+			try {
+				for(Map.Entry<String, Integer> e : supplied.entrySet()) {
+					patch.set(e.getKey(), e.getValue());
+				}
+			}
+			catch(Exception e) {
+				throw new PictureBookException(500, "Failed to assemble canvas patch: " + e.getMessage());
+			}
+			if(IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+				throw new PictureBookException(500, "Failed to save canvas geometry for node " + nodeObjectId);
+			}
 		}
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("nodeObjectId", nodeObjectId);
-		out.put("canvasX", x);
-		out.put("canvasY", y);
-		out.put("canvasW", w);
-		out.put("canvasH", h);
+		out.put("canvasX", supplied.getOrDefault(OlioFieldNames.FIELD_PB_CANVAS_X, node.get(OlioFieldNames.FIELD_PB_CANVAS_X)));
+		out.put("canvasY", supplied.getOrDefault(OlioFieldNames.FIELD_PB_CANVAS_Y, node.get(OlioFieldNames.FIELD_PB_CANVAS_Y)));
+		out.put("canvasW", supplied.getOrDefault(OlioFieldNames.FIELD_PB_CANVAS_W, node.get(OlioFieldNames.FIELD_PB_CANVAS_W)));
+		out.put("canvasH", supplied.getOrDefault(OlioFieldNames.FIELD_PB_CANVAS_H, node.get(OlioFieldNames.FIELD_PB_CANVAS_H)));
 		return out;
 	}
 

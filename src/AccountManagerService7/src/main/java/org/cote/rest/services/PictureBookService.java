@@ -2198,10 +2198,12 @@ public class PictureBookService {
             @Context HttpServletRequest request) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         BaseRecord params = parseParams(json);
-        Integer x = getInt(params, "x");
-        Integer y = getInt(params, "y");
-        Integer w = getInt(params, "w");
-        Integer h = getInt(params, "h");
+        // x/y/w/h are declared ints on olio.pictureBookRequest (KI-24) and read by presence (KI-25):
+        // an absent key is null = "not touched", never 0.
+        Integer x = optionalInt(params, "x");
+        Integer y = optionalInt(params, "y");
+        Integer w = optionalInt(params, "w");
+        Integer h = optionalInt(params, "h");
         try {
             return Response.status(200)
                 .entity(JSONUtil.exportObject(

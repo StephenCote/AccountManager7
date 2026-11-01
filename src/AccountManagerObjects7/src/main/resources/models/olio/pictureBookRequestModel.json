@@ -229,6 +229,26 @@
 			"name": "deleteBytesAfterDays",
 			"type": "int",
 			"description": "V3 Phase 6 retention (P6-3b): same two routes — days after archivedAt before an archived artifact's data.data bytes are deleted (PbRetentionSelector.DEFAULT_DELETE_BYTES_AFTER_DAYS when absent; 0..MAX_DELETE_BYTES_AFTER_DAYS, else 400). Read through hasField() for the same KI-25 reason, and here it matters more: an absent value read as 0 would delete every archived artifact's bytes immediately instead of after the default grace period."
+		},
+		{
+			"name": "x",
+			"type": "int",
+			"description": "V3 Phase 9 (P9-0, 212 p): PUT /{bookObjectId}/node/{nodeObjectId}/canvas — the node's canvas X. Until declared here RecordDeserializer dropped all four geometry keys (KI-24), the facade set four nulls on olio.pb.node's int canvas columns and RecordValidator NPE'd — the 'Save position failed: 500' toast on every drop. Read through hasField() (KI-25): an absent key is 'not touched', never 0."
+		},
+		{
+			"name": "y",
+			"type": "int",
+			"description": "V3 Phase 9 (P9-0, 212 p): PUT …/canvas — the node's canvas Y. See x."
+		},
+		{
+			"name": "w",
+			"type": "int",
+			"description": "V3 Phase 9 (P9-0, 212 p): PUT …/canvas — the node's canvas width. See x."
+		},
+		{
+			"name": "h",
+			"type": "int",
+			"description": "V3 Phase 9 (P9-0, 212 p): PUT …/canvas — the node's canvas height. See x."
 		}
 	]
 }

@@ -43,7 +43,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | 6 — Variants | Reported 2026-10-29 (archive P5-P8 §13.6, §6.C 212–213); verifier CHANGES-NEEDED folded in (212 q–w, the `detached` outcome); Scenario F live on `.39`; open Yours 212 b / c / n / p / q, 213 e; nothing DONE | `am7db` 62 / 0 / 0 / 1 + 27 / 0 / 0 / 0; Service7 H2 24 / 0 / 0 / 0; `TestPbVariantsLive` 1 / 0 / 0 / 0; Playwright Docker 3 / 3, the 212 s re-run 26 / 2 skipped / 1 red (213 e) — archive P5-P8 §1 |
 | 7 — PictureBook goes V3 | Reported 2026-10-30 (archive P5-P8 §14.1–§14.5, §6.C 214–219): switch, Stage 2 refusals, wizard hand-off, Import, Scenarios A–G + verify checks 1–3; verifier PASS (219 j); open Yours 216 d / e, 217 d / g / h, 218 c–f, 219 d / e / g / h / j; nothing DONE | archive P5-P8 §14.1–§14.5 |
 | 8 — Visual QA | Reported 2026-10-30 (archive P5-P8 §15.1–§15.6, §6.C 220–227): P8-1 … P8-6 built; exit criterion live on `.42` + `.39` (`TestPbQaExitCriterionLive` 3 / 3 run 2, t02 re-run 1 / 1); verifier PASS, 8 follow-ups (227); open Yours 221 a, 222 b / d, 224 b / e, 225 e / g, 226 a / b, 227 f / g / h; nothing DONE | archive P5-P8 §15.1–§15.6 |
-| 9 — Cover & book art | **NOT STARTED** — plan + start prompt §17 (drafted 2026-10-31, §6.C 228 f; architect review of §17 is the first step); P9-0 = the 212 p canvas fix (Stephen "Fix in P9", 229 b) + the §16 usability gate; results will be §18 | — |
+| 9 — Cover & book art | **IN PROGRESS** — plan + start prompt §17 (architect review folded in, §6.C 232); **P9-0 built and run 2026-10-31**: the 212 p canvas fix (28/28) + the §16 usability gate, 14 runs, run 14 = 13/14 (step 7 red on a product defect, 233 d) — §16.1 / §18.1 / §6.C 233, waiting on Stephen; P9-1…P9-6 not started | §18.1 |
 | 10 — Removal (PB1, old ChapBook path, Kontext Remove) | TODO | — |
 
 ---
@@ -227,6 +227,59 @@ the record — where this index and the entry disagree, the entry wins; each sta
      `test-results/` + `e2e/screenshots/` 68 MB from Phase 8. Pending cleanup list there, ordered, all yours; defaults stated.
      (d) Root `.gitignore` + `/scratch/`; README row; §17 prompt gains `artifacts.md` in the reading list, an Artifacts rule line, the
      `scratch/p9-<n>/` capture path, and an `ARTIFACTS:` block in the hand-back (counters → 232 / 233). Memory rule saved.
+232. ⚠ **2026-10-31 ~12:05 (architect review of §17: CHANGES-NEEDED to the plan text; folded into §17 before P9-1 — the 215 precedent;
+     the agent read §17, design §25 / §26 / §30 row 9 and the inventory code).** Nothing built from it yet; Phase 9 started with P9-0 (233).
+     (a) ✓ H1 — `GET /{book}/pages` is a JSON **array** (`bookPageView` :2304 → `List<Map>`; consumers guard `Array.isArray` at
+     `pictureBook.js:1960`, `chapBook.js:2566`, `pictureBookCompose.js:145`): no `cover` entry on it. The cover is served only by a find-only
+     `GET /{book}/covers`; both readers add that call beside their pages fetch (`pictureBook.js:1954-1959`, `chapBook.js:2665`) and fall back to
+     `pages[0]`; P9-5 reads back through `/covers`. (b) ✓ H2 — `PbNodeExecutor.executeRenderPlan` :738-804 resolves `scopeRef` as a scene and
+     `renderPlannedScene` :767 calls `ensureComposition` (a SCENE write); the composition branch resolves the composition, builds via
+     `buildCompositionPlan`, calls the plan-taking `renderPlanned(SceneGraph, BaseRecord, RenderPlan, …)` overload (:1324), skips
+     `bindSceneLocation` :792; `recordImage` / `qaAttempt` / `completeNode` unchanged. (c) ✓ H3 — read paths never create: `coverView` is
+     find-only (never `ensureWorkflow` :1073, never `ensure…Node`, never `getCreate`); `getCreate` only behind POST after `requireBookUpdate` :270,
+     as the requesting user through AccessPoint; `TestPbCoverUtil` asserts a reader cannot create.
+     (d) ⚠ M1–M6 at their defaults: M1 "hero cast" is a template input only (HERO-role actors across the book's SCENE compositions, most frequent
+     first, else baseline cast); the plan's actors are the composition's own `sceneActor` rows. M2 `titleSafeBand` = new nullable enum on
+     `olio.pb.composition` (`PbTitleSafeBandEnumType` UNKNOWN / NONE / TOP / BOTTOM; UNKNOWN mandatory for a boot-patched enum column),
+     written to the plan manifest, applied by clipping boxes out of the band + a negative-space clause — not `configOverride`, not `props`.
+     M3 one private `ensurePlanNode(user, book, workflow, type, scope, scopeRef, handle, ordinal)` extracted from the three `ensure…Node`
+     siblings (:1026 / :1092 / :4082). M4 one-per-purpose rides the unique `(name, groupId, organizationId)` (`compositionModel.json:14`) with
+     the deterministic name `cover.<bookOid>` / `title_page.<bookOid>` / `chapter_opener.<bookOid>` / `series_art.<seriesOid>`; `getCreate` =
+     find → create → re-find on duplicate. M5 221 a is one token — `ROLE_RENDER_GRAPH` joins the queue exclusion at `:2546-2549` — P9-1's
+     first bullet with a queue test. M6 gate order stays the facade's `requireBook` → `requireV3` → `requireBookUpdate` (404 → 409 → 403).
+     (e) ✓ L1–L3 folded: node RENDER_PLAN, `SCOPE_COMPOSITION = "composition"`, handle `composition_plan@<shortRef>`, ordinal 0,
+     `multiVariant = true`; template `pictureBook.compose-cover.json` (`{style} {purpose} {title} {summary} {cast} {locations}`,
+     `PROMPT_COMPOSE_COVER`, `callLlmForChapBook` + retry, no bias directive); `RenderPlan.PURPOSE_COVER / TITLE_PAGE / CHAPTER_OPENER / SERIES_ART`.
+     (f) ⚠ Rulings 1–8 at the architect's defaults, now the §17 text: nullable `series` FK + hint `series, purpose`, SERIES_ART last and
+     deferrable; `buildCompositionPlan(user, book, composition, node, PlanOptions, apiType, sdServer)` mirroring `buildLocationPlan` :289-305,
+     400 when no text; the `/covers` DTO shape in P9-3; POST `/covers/{purpose}` idempotent, `…/render` 409 on pinned + `tryClaim`. Yours to overrule.
+233. ⚠ **2026-10-31 ~18:50 (P9-0 built and run: the 212 p canvas fix (28/28, deployed) + the §16 usability gate, `e2e/pictureBookV3Usability.spec.js`,
+     14 runs, run 14 = 13/14 — results §16.1 / §18.1; every default below is yours).** LLM = the remote `.42` box, direct Ollama
+     (`[e2e-llm] route=direct server=http://192.168.1.42:11434`, `qwen3:8b` analysis / `goekdenizguelmez/JOSIEFIED-Qwen3:8b` PB — not the
+     local container, not Azure/LiteLLM); SD = `.39` SwarmUI `http://192.168.1.39:7801`, `flux2Klein_9b` for sceneDirect/location.
+     (a) ⚠ Spec defaults: soft-step walk (a red step records, the walk continues; an inner `expect.soft` also reds its step), `retries:0`, 6 h
+     test timeout with per-wait ceilings as fail-safes only; `Kiss of the Sun Queen.docx`; chat config `000-p90-gate-llm`; style STANDARD +
+     `flux2Klein_9b` + lock/unlock; nodes from Plan & generate ×2 on scene 1 (Render all / per-scene Render 409 "no graph node yet" on a wizard
+     book — asserted); Propose in the UI first, REST fallback with the gate's config; ChapBook over REST; step 14 exports the ChapBook (the PB2
+     reader has no Export control) + a second un-imported PB1 fixture. §16.1 lists the hook mislabels (§16 keeps its hooks; the spec has the real ones).
+     (b) ✗ Runs 1–13 were my defects, all in the spec: run 3 hung 75 min while I waited blind, run 4 died on an `openReader` assumption (Stephen:
+     "tokenmaxxing again" / "a single invalid backend request (15 min ago)"); run 6 waited 900 s on a button text carrying the icon ligature; 7–12:
+     a toast race, a `?force=true` regex, IN_REVIEW and PB1-viewer assumptions, a re-extract wait, an unconditional `chevron_left`, a same-URL re-init.
+     (c) ⚠ Run 13 step 6 unexplained: 16 Begin clicks in ~1 s on a loaded cover never gave "Page 1 of N"; 30 s later the same click worked; no
+     exception, no second button, no job polls; `probe-reader-begin.mjs` did not reproduce it. Default: `openFirstPage` clicks at a user's pace
+     and carries a per-turn state trail into the failure; green in run 14. Not closed.
+     (d) ✗ **The one red step (7) is a product defect**: on the second open of the chat-config picker the clicked row never shows
+     `tabular-row-active` though the selection toggles and confirm applies it — `decorator.js` `TabularMemo` :439-457 keeps its memo key in a
+     module-global `_tabState`, so a fresh table whose first post-click key equals the old instance's skips the re-render
+     (`scratch/p9-0/probe-picker-memo.mjs`, deterministic). Not fixed (scope). Default: per-instance memo (`vnode.state`) + a Vitest, P9-x.
+     (e) ⚠ Product findings seen on the walk, defaults = P9-x candidates: UI "Propose from scenes" rides the server-default chat config and failed
+     on runs 13 and 14 ("The model returned no usable reply", `failedAt 2`) while the REST route with the gate's config succeeds; canvas / inspector
+     / compare thumbnails are broken images (`pictureBookWorkflow.js:93-94` `imageUrl()` → `/rest/resource/data.data/{oid}` 404, ~31 a run;
+     `pictureBookVariants.test.js:291` asserts that URL) while the review queue's load; the board's second placement box is labelled by actor UUID
+     and the compiled plan repeats the location text (07a); "Model (config) juggernautXL" beside effective `flux2Klein_9b`; `am7-dialog-lg`
+     uncapped (1568 px); ChapBook title overlay illegible on a pale page (13b); base location "Not rendered yet" beside its rendered variant (06b);
+     location node STALE right after render + approve; 213 e / 219 f again (12); review rows mix IN_REVIEW and GENERATED; character rows say
+     "no portrait" right after a portrait renders; the affected panel shows the raw workflow 404; `prompt_eval_cached_count` deserializer ERROR spam.
 
 > Moved 2026-10-28 to `archive/PictureBookV3Implementation-P0-P4.md` §6.G, §6.L, §6.H–§6.N (Slice C findings, the nude-fixture question, Phase 0–1 infrastructure items; §6.H / §6.I / §6.J / §6.K RESOLVED, §6.M FIXED) (section numbering unchanged there). Still open there and Stephen's: §6.G (Slice C transport findings 1–12), §6.L (the `generateScene` e2e fixtures render nude), §6.N (`.39` outage log 2026-10-11 → 2026-10-14).
 
@@ -300,7 +353,7 @@ is parked here from P5-1 — the out-of-scope list is §6.C 205 (aa).
 
 > Moved 2026-10-31 to `archive/PictureBookV3Implementation-P5-P8.md` §15 (Phase 8 — Visual QA: scope, inventory, tasks P8-1 … P8-6, out of scope, results §15.1–§15.6 incl. the exit-criterion live runs and the verifier follow-ups; rulings §6.C 220–227 there) (section numbering unchanged there).
 
-## 16. E2E usability gate — every V3 Ux surface, in workflow order (defined 2026-10-31, §6.C 228 e; NOT yet written, NOT yet run; ordered as P9-0 in §17)
+## 16. E2E usability gate — every V3 Ux surface, in workflow order (defined 2026-10-31, §6.C 228 e; written and run as P9-0 2026-10-31 — 14 runs, run 14 = 13/14, §16.1 / §18.1 / §6.C 233)
 
 Stephen, 2026-10-31: "Make sure at some point you have defined a thorough end-to-end usability test where you verify all the Ux
 elements, particularly work flow, actually works." This section is that definition. It is a **gate**, not a feature: it proves the
@@ -377,7 +430,38 @@ between steps (the book the wizard made is the book the review approves); and a 
 **Report** (→ §16.1 when run): the `[e2e-llm]` line in words; the SD URL; per-step pass / fail with `log:line`; the screenshot list
 with what was seen in each; timings as observations; every gap as a §6.C sub-item with a default; `Tests run:` / `EXIT=` quoted.
 
-## 17. Phase 9 — Cover & book art: plan and start prompt (drafted 2026-10-31, §6.C 228 f; **NOT STARTED**; results → §18, rulings → §6.C 229+)
+### 16.1 Gate runs (P9-0, 2026-10-31 13:43 → 18:49 local; §6.C 233; per-step detail of the reported run in §18.1)
+
+**Spec** `src/AccountManagerUx752/e2e/pictureBookV3Usability.spec.js` (~1,190 lines, one serial test, 14 `test.step`s, `expect.soft` per step
+so one red step never hides the ones after it). Run: `PB_SD_TESTS=1 PB_LLM_TESTS=1 SD_SERVER=http://192.168.1.39:7801
+PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/pictureBookV3Usability.spec.js --workers=1 --project=chromium --retries=0`
+from `src/AccountManagerUx752`, as `ensureSharedTestUser()` (`e2etest_shared`), WebSocket stubbed before `goto`. Logs `scratch/p9-0/pw-usability[-runN].log`;
+screenshots `test-results/usability[-runN]/NN-<step>.png` + `results.json`.
+**Environment, every run:** LLM = **the remote `.42` box, direct Ollama `http://192.168.1.42:11434`** (`[e2e-llm] route=direct … analysis=qwen3:8b
+pb=goekdenizguelmez/JOSIEFIED-Qwen3:8b`, run14 log:4) — not the local container, not Azure/LiteLLM; SD = `.39` SwarmUI `http://192.168.1.39:7801`,
+inventory "13 installed · OK → flux2Klein_9b.safetensors", deployment default `juggernautXL_ragnarokBy` (log:5); stack `https://127.0.0.1:9443`.
+
+| Run | OK | Red steps (cause — all mine unless marked) | log |
+|---|---|---|---|
+| 1, 2 | 1/14 | 2–14 — wizard assumptions (`pw-usability.log` / `-run2.log` steps :7-20) | `1 failed` :277, `EXIT=1` :279 |
+| 3 | 2 | hung 75 min on one line, killed (steps :6-8) | `EXIT=127` :8 |
+| 4 | 5 | 4–11 — `openReader` assumed a Begin button; killed (steps :6-19) | `EXIT=127` :19 |
+| 5, 6 | 4 | 5–14 — `/affected-by` 404 assumption; run 6 step 6 waited 900,402 ms on `toHaveText("Propose from scenes")` (button text carries the `auto_awesome` ligature) | :269/:271; :274/:276 |
+| 7 | 1 | 2–14 — weak scene assertion after extraction | :276/:278 |
+| 8 | 7 | 6–11, 14 — toast race on Propose | :202/:204 |
+| 9 | 10 | 7, 9, 11, 14 — `?force=true` regex, IN_REVIEW assumption, imported-group PB1-viewer assumption | :168/:170 |
+| 10 | 1 | 2–14 — re-extract wait on a degenerate scene list | :276/:278 |
+| 11, 12 | 13 | 7 — unconditional `chevron_left`; same-URL `goto` re-init (fixed by the `openReader` URL guard) | :118/:120; :119/:121 |
+| 13 | 12 | 6 — Begin → "Page 1 of N" never (unexplained, 233 c); 7 — picker row class (**product**, 233 d) | :129/:131 |
+| **14** | **13/14** | **7 — picker row highlight only (233 d); the step's compose ran and read back** | **`1 failed` :130, `EXIT=1` :132** |
+
+Timings (run 14, observations): extraction 64 s → 10 scenes; characters 71 s → 5; legacy portrait 70 s; wizard compose job 81 s; location
+variant render 64 s; board re-compose (LLM) 6 s; Plan & generate 82 s and 102 s (2 variants each); ChapBook page re-render 34 s; whole walk 11.1 min (log:80).
+**Hook mislabels in the §16 text** (the spec uses the real ones; §16 left as written): the Propose button's text is `auto_awesome` + label;
+`pb-loc-approve` is absent on auto-approved artifacts; empty board = `pb-cmp-compose-scene`, composed = `pb-cmp-recompose`; ChapBook "Begin" only on
+the cover; per-scene render URL carries `?force=true`; review rows pending are GENERATED *and* IN_REVIEW; an imported legacy group has no PB1 viewer.
+
+## 17. Phase 9 — Cover & book art: plan and start prompt (drafted 2026-10-31, §6.C 228 f; **started 2026-10-31 ~11:45 local** on Stephen's reply to the prompt below — P9-0 first; architect review of this section folded in as §6.C 232; results → §18, rulings → §6.C 229+)
 
 **Scope (design of record).** §25 Covers (`PictureBookV3Design.md:1648-1660`): COVER, TITLE_PAGE, CHAPTER_OPENER and SERIES_ART are
 compositions with book or series scope; three creation modes — **Auto** (a `pictureBook.compose-cover` template proposes a
@@ -407,7 +491,12 @@ cover page 0, `coverImageUrl()`, `coverLabel`). Missing: a `pictureBook.compose-
 (`resources/olio/llm/prompts/` has 15 `pictureBook.*.json`, none for covers); any cover util; a composition-keyed render-plan node /
 plan builder; facade methods; REST routes; a Ux surface; reader integration (both readers show a scene / page image as the cover); a
 `series` reference on the composition (SERIES_ART has nothing to hang on — architect call: a nullable `series` FK, or SERIES_ART on
-the series' first book).
+the series' first book). **Architect review 2026-10-31 (§6.C 232), facts that bind the tasks below:** `GET /{book}/pages` is a JSON
+**array** (`bookPageView` :2304; `Array.isArray` guards at `pictureBook.js:1960`, `chapBook.js:2566`, `pictureBookCompose.js:145`) — no
+`cover` entry can be added to it; `executeRenderPlan` :738-804 is scene-keyed end to end (`renderPlannedScene` :767 → `ensureComposition`,
+a SCENE write; `bindSceneLocation` :792); `PbCastUtil` has no hero ranking; the composition's uniqueness is `(name, groupId,
+organizationId)` (`compositionModel.json:14`); the review-queue exclusion is `:2546-2549` (`ROLE_RENDER_PLAN || ROLE_QA`); the facade's
+standing gate order is `requireBook` → `requireV3` → `requireBookUpdate` (404 → 409 → 403).
 
 **Tasks (each: build → real tests → ledger §18.x → verifier; nothing DONE by me):**
 - **P9-0 — the §16 usability gate**, written and run green on the Docker stack before any Phase 9 code (steps 1–14). **First, the 212 p
@@ -415,42 +504,66 @@ the series' first book).
   `optionalInt` (`PictureBookService.java:234-239`, `:2186-2203`; the KI-24 shape), rebuild + redeploy the WAR to the stack, a Service7 H2
   contract case for `PUT /{book}/node/{node}/canvas` (200 + the position read back; 404 unknown node), and §16 step 8 asserts no toast.
   Every other red step is a finding with a default, not a fix.
-- **P9-1 — model + `PbCoverUtil` (Objects7).** One composition per (book, purpose) for COVER / TITLE_PAGE / CHAPTER_OPENER, per
-  (series, SERIES_ART); `getCreate(user, book, purpose, mode, sceneObjectId)` with `mode` Auto (new `pictureBook.compose-cover`
-  template on the book's chat route — same resolution as `composeScene`; inputs: book title / summary, hero cast from `PbCastUtil`,
-  the most-used approved location, the style; output: the composition fields + `titleSafeBand` TOP / BOTTOM / NONE), From-scene
-  (copy the scene composition's fields, `scene` null, `source` = clone, `revision` 0, `userEdited` false), Manual (empty). Guard
-  against the literal "null" (`NarrativeUtil.isMeaningful`). The review-queue filter for `renderGraph` (221 a) lands here with the
-  cover's artifact kinds. Tests: `TestPbCoverUtil` (am7db; three modes; one-per-purpose idempotence; PBAC: a reader of the book cannot
-  create). Patch only changed fields (`newInstance(model, String[])`).
-- **P9-2 — render + review through the production RENDER_PLAN path.** A composition-keyed node (`SCOPE_COMPOSITION` or
-  `SCOPE_COVER`, `scopeRef` = composition objectId, handle from the composition objectId) beside the private scene-keyed
-  `ensureRenderPlanNode`; `PbRenderPlanUtil.buildCompositionPlan(user, book, composition, options)` (no scene: actors from
-  `focalActor` / the hero cast, location from the composition, the title-safe band as a `PbLayoutUtil` constraint); `executeRenderPlan`
-  branches on scope, everything after (`recordImage`, `qaAttempt`, `completeNode`) unchanged; QA applies (person count from the
-  composition's actors); the page format comes from the book style (cover aspect = page aspect unless the style says otherwise).
-  Tests: `TestPbCoverPlanOffline` (fixture client) + `TestPbCoverRenderLive` (gated, `.39`, book 58 cast, image looked at).
-- **P9-3 — facade + REST (Service7 transport only).** `PbServiceFacade.coverView / createCover / renderCover` → `GET /{book}/covers`,
-  `POST /{book}/covers/{purpose}` (`mode`, `sceneObjectId`), `POST /{book}/covers/{purpose}/render` (async job like `render-plan`);
-  approve through the existing queue / `approve`; `GET /{book}/pages` gains a `cover` entry (= the approved COVER artifact, null until
-  one exists) and the ChapBook pages DTO the same — a ChapBook is an `olio.pb.book` with `bookType = CHAPBOOK`, so the routes are the
-  same routes. `@RolesAllowed({"admin","user"})`; `requireV3` after `requireBook` / `requireBookUpdate` (gates after authz); Service7 H2
-  contract tests in `TestPictureBookRestContract` style (404 / 403 / 409 shapes, pre-V3 book 409). Security review of the routes.
-- **P9-4 — Ux752 "Cover & Art".** Read `features/pictureBook.js:895-935, 2015-2040, 2236-2283`, `features/chapBook.js:2664-2689`,
-  `components/readerShell.js`, `features/pictureBookCompose.js` (the board) **first**. A surface at `/picture-book/{book}/cover`
-  reached from a sixth header icon link `pb2-cover-link` (the V3 header is a row of icon links, not tabs — ask whether §26's tab bar
-  should replace it; default: icon link); on it: the four purposes, Auto / From scene (scene picker) / Manual, the composition editor
-  reused from the board, render, the variant strip, status; the reader's cover page uses the approved COVER render
-  (`getCoverImageUrl()` → the pages DTO `cover`, falling back to today's first-scene image), the title overlaid inside the title-safe
-  band; the ChapBook reader the same; export carries the cover. Hooks `pb2-cover-*`. **Re-ask 213 e here**: the page-image resolution
-  (`PbServiceFacade.java:2294-2316`, `pageArtifactRole` :2357) is the same code the cover entry goes through — show the RENDER_PLAN
-  `base` on the page, or not? Tests: Vitest for the view, Playwright `e2e/pictureBookV3Cover.spec.js` on Docker (`PB_SD_TESTS=1`).
+- **P9-1 — model + `PbCoverUtil` (Objects7).** First, standalone: **221 a** — add `ROLE_RENDER_GRAPH` to the review-queue exclusion at
+  `PbServiceFacade.java:2546-2549` (+ its javadoc :2519-2522 and `PbPipelineUtil.java:96-100`), with a queue test (232 d M5). Model:
+  `olio.pb.composition` gains a nullable `series` FK (`olio.pb.series`) + hint `series, purpose`, and a nullable enum `titleSafeBand`
+  (`PbTitleSafeBandEnumType` UNKNOWN / NONE / TOP / BOTTOM — UNKNOWN mandatory, boot-patched enum column), editable through
+  `patchCompositionFields` (232 d M2, 232 f 1). One composition per (book, purpose) for COVER / TITLE_PAGE / CHAPTER_OPENER and per
+  (series, SERIES_ART) — enforced by the deterministic **name** `cover.<bookOid>` / `title_page.<bookOid>` / `chapter_opener.<bookOid>` /
+  `series_art.<seriesOid>` on the existing unique `(name, groupId, organizationId)`; SERIES_ART's `book` = the host chapter, row in the host
+  book's group, last and deferrable (232 d M4). `getCreate(user, book, purpose, mode, sceneObjectId)` = find → create → re-find on
+  duplicate, **as the requesting user through AccessPoint, called only from a write path** (232 c H3); `mode` Auto (new
+  `pictureBook.compose-cover.json` in `resources/olio/llm/prompts/`, vars `{style} {purpose} {title} {summary} {cast} {locations}`,
+  `PROMPT_COMPOSE_COVER` beside `PbComposeUtil.java:76`, called via `PictureBookUtil.callLlmForChapBook` with its retry, on the book's chat
+  route, no bias directive — 232 e L3; "hero cast" = a template input only: HERO-role actors across the book's SCENE compositions, most
+  frequent first, else the baseline cast — 232 d M1; plus the most-used approved location and the style; output: the composition fields +
+  `titleSafeBand`), From-scene (copy the scene composition's fields, `scene` null, `source` = clone, `revision` 0, `userEdited` false),
+  Manual (empty). Guard against the literal "null" (`NarrativeUtil.isMeaningful`). Tests: `TestPbCoverUtil` (am7db; three modes;
+  one-per-purpose idempotence; PBAC: **a reader of the book cannot create**). Patch only changed fields (`newInstance(model, String[])`).
+- **P9-2 — render + review through the production RENDER_PLAN path.** `PbPipelineUtil.SCOPE_COMPOSITION = "composition"` beside :73-79,
+  handle `compositionPlanHandle(oid) = "composition_plan@" + shortRef(oid)`, node type RENDER_PLAN, ordinal 0, no `sceneIndex`,
+  `multiVariant = true` like the scene RENDER_PLAN (232 e L1 / L2); one private `ensurePlanNode(user, book, workflow, type, scope,
+  scopeRef, handle, ordinal)` extracted from `ensureChapBookPageNode` :1026 / `ensureRenderPlanNode` :1092 / `ensureLocationNode` :4082 — no
+  fourth sibling (232 d M3). `PbRenderPlanUtil.buildCompositionPlan(user, book, composition, node, PlanOptions, apiType, sdServer)` mirroring
+  `buildLocationPlan` :289-305, `resolveSceneLocation` :205-265 refactored to take the FK holder; actors = the composition's own `sceneActor`
+  rows via `actorsOf`; 400 "has no description to render from" when the composition has no text (232 f 3); `RenderPlan.PURPOSE_COVER /
+  TITLE_PAGE / CHAPTER_OPENER / SERIES_ART`; the title-safe band recorded on the plan manifest and applied by clipping boxes out of the band in
+  `defaultPlacement` + a negative-space prompt clause. `executeRenderPlan` :738-804 branches on scope: the composition branch resolves the
+  composition from `scopeRef`, builds via `buildCompositionPlan`, calls the plan-taking `renderPlanned(SceneGraph, BaseRecord, RenderPlan, …)`
+  overload (:1324) — never `renderPlannedScene` / `ensureComposition` (a SCENE write) — and skips `bindSceneLocation` :792; `recordImage`
+  :770-784, `qaAttempt` :787, `completeNode` :795 unchanged (232 b H2). QA applies (person count from the composition's actors); the page
+  format comes from the book style (cover aspect = page aspect unless the style says otherwise). Tests: `TestPbCoverPlanOffline` (fixture
+  client) + `TestPbCoverRenderLive` (gated, `.39`, book 58 cast, image looked at).
+- **P9-3 — facade + REST (Service7 transport only).** `PbServiceFacade.coverView` (**find-only**: composition lookup +
+  `PbPipelineUtil.findNodeByHandle`; never `ensureWorkflow` :1073, never `ensure…Node`, never `getCreate` — 232 c H3) → `GET /{book}/covers`
+  returning `{ covers: { COVER: e | null, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART } }`, e = `{ compositionObjectId, nodeObjectId, nodeStatus,
+  pinned, reviewStatus, titleSafeBand, approved: { artifactObjectId, dataObjectId, imageGroupPath, imageName, imageContentType } | null,
+  latest: same | null }` (232 f 4); `createCover` → `POST /{book}/covers/{purpose}` (`mode`, `sceneObjectId`; idempotent, no 409; order
+  `requireBook` :249 → `requireV3` → `requireBookUpdate` :270 → From-scene `requireSceneOfBook` :1236 → 400 on a bad mode — 232 d M6);
+  `renderCover` → `POST /{book}/covers/{purpose}/render` (async job like `render-plan`; 409 on pinned; `PbNodeInflight.tryClaim` as
+  `executePlanScene` :711-741). Approve through the existing queue / `approve`. **`GET /{book}/pages` is untouched** — it is a JSON array
+  (232 a H1); the cover rides `/covers` only. A ChapBook is an `olio.pb.book` with `bookType = CHAPBOOK`, so the routes are the same routes.
+  `@RolesAllowed({"admin","user"})`; Service7 H2 contract tests in `TestPictureBookRestContract` style (404 / 403 / 409 shapes, pre-V3 book
+  409, the reader-cannot-create case). Security review of the routes.
+- **P9-4 — Ux752 "Cover & Art".** Read `features/pictureBook.js:895-935, 1954-1960, 2015-2040, 2236-2283`, `features/chapBook.js:2566,
+  2664-2689`, `components/readerShell.js:41,122`, `features/pictureBookCompose.js` (the board) **first**. A surface at
+  `/picture-book/{book}/cover` reached from a sixth header icon link `pb2-cover-link` (the V3 header is a row of icon links, not tabs — ask
+  whether §26's tab bar should replace it; default: icon link); on it: the four purposes, Auto / From scene (scene picker) / Manual, the
+  composition editor reused from the board (+ the `titleSafeBand` control), render, the variant strip, status; the reader adds `GET
+  /{book}/covers` to the `Promise.all` at `pictureBook.js:1954-1959` and feeds `readerShell`'s `coverImageUrl()` with the approved COVER
+  render, falling back to today's `pages[0]` image (232 a H1); the title overlaid inside the title-safe band; the ChapBook reader the same at
+  `chapBook.js:2665`; export carries the cover. Hooks `pb2-cover-*`. **Re-ask 213 e here**: the page-image resolution
+  (`PbServiceFacade.java:2294-2316`, `pageArtifactRole` :2357) stays the readers' page path — show the RENDER_PLAN `base` on the page, or
+  not? Tests: Vitest for the view, Playwright `e2e/pictureBookV3Cover.spec.js` on Docker (`PB_SD_TESTS=1`).
 - **P9-5 — exit criterion, live.** `TestPbCoverExitCriterionLive` (Objects7, gated, `.39` + `.42` for Auto): one book **and** one
-  ChapBook each end with an APPROVED COVER artifact, read back through the pages DTO; the images looked at and described; book 58 cast /
-  Stephen's real content; `[LLM-GATE]` in words, the SD URL named. Plus the Playwright spec from P9-4 approving through the UI.
+  ChapBook each end with an APPROVED COVER artifact, read back through `GET /{book}/covers` (the `approved` entry; 232 a H1); the images
+  looked at and described; book 58 cast / Stephen's real content; `[LLM-GATE]` in words, the SD URL named. Plus the Playwright spec from
+  P9-4 approving through the UI.
 - **P9-6 — §16 step 15** added and the whole gate re-run green; §16.1 updated.
-- **Verifier** after P9-5 / P9-6 (independent; findings → §6.C); **architect review of this §17 before P9-1** (the `series` reference,
-  the scope constant, the node-keying, the DTO `cover` shape) — its CHANGES-NEEDED items are folded in and recorded, as 215 did for §14.
+- **Verifier** after P9-5 / P9-6 (independent; findings → §6.C). **Architect review of this §17 done 2026-10-31 before P9-1** (verdict
+  CHANGES-NEEDED: H1 pages array, H2 scene-keyed executor, H3 read-path creates; M1–M6; L1–L3; rulings 1–8) — folded into the bullets
+  above and recorded as §6.C 232, as 215 did for §14. One architect proposal not acted on: a line in `architecture.md` codifying the
+  404 → 409 → 403 gate order (232 d M6) — Yours.
 
 **Out of scope:** Phase 10 removals; a title-text renderer in SD (the reader overlays text, §25); per-chapter openers for non-series
 books (CHAPTER_OPENER is per book = per series chapter); re-rendering existing scenes.
@@ -559,4 +672,47 @@ LEDGER DISCIPLINE: results → new `## 18. Phase 9 — results` (§18.1 P9-0 …
 archives. Report in the shape of archive P5-P8 §15.6 / §6.C 226: what ran, where, `log:line`, what was seen, what is Yours.
 ~~~
 
-next §6.C number 232 (228 = Q1 `media/flux/qa/` + the 2026-10-31 doc pass + the §16 gate and §17 Phase 9 drafts; 229 = Stephen's fixture answer + "Fix in P9" for 212 p; 230 = the fixture-quality note — I called the terrible-looking `p52-t01-direct.png` acceptable, Stephen commits it as is, remake waits on 219 h; 231 = the artifact rule + `C:	mp` manifest; 207–227 archived in P5-P8, 2–206 / 208–209 in P0-P4).
+## 18. Phase 9 — results
+
+### 18.1 P9-0 — the 212 p canvas fix + the §16 usability gate (2026-10-31, §6.C 233; built and tested — nothing here is DONE until Stephen says so)
+
+**Code (212 p / 225 g).** `olio.pictureBookRequest` declares `x` / `y` / `w` / `h` as `int` (`pictureBookRequestModel.json`; undeclared, the
+deserializer dropped all four and the facade wrote four nulls into `olio.pb.node`'s int canvas columns → `RecordValidator` NPE → the
+`Save position failed: 500` toast on every drop); `PictureBookService` canvas route reads them by presence (`optionalInt`: absent = untouched, never 0);
+`PbServiceFacade.saveCanvas` patches only the supplied keys (a null can never be written: the columns are `int`, `RecordValidator:88` unboxes),
+no keys = read-only no-op, the response is the merged position. **Test:** `TestPictureBookCanvasRoute` (new, 4) + `TestPictureBookRestContract` (24) —
+`Tests run: 28, Failures: 0, Errors: 0, Skipped: 0` / `BUILD SUCCESS` (`scratch/p9-0/s7-canvas.log:4001`, `:4004`); Objects7 installed with
+`mvn -o -q … install` first (`o7-install.log` is quiet — warnings only, no BUILD line; the Service7 run above compiled against that jar). Proven on the walk: run 14 step 8 drag sent `{180,270,200,110}`, read back `{180,270}` from
+`{0,0}`, 0 failure toasts (log:18).
+
+**Gate, run 14 (`scratch/p9-0/pw-usability-run14.log`; 13/14; `1 failed` :130, `EXIT=1` :132; book `458366b9-d0c3-455e-89f5-20e71b1c2307`
+"Book p90-mvx1l57x-kiss-of-the-sun-queen-docx" and ChapBook `b7f223e4-…` left in the stack DB, log:45).** LLM / SD as §16.1.
+
+| # | Step | ms | Result | What was done and read back (log:line) |
+|---|---|---|---|---|
+| 1 | Book list + PB1 import | 69,237 | OK | rows 122 → 123 after import; org health META_MISSING / WORKFLOW_MISSING INFO (:6) |
+| 2 | Wizard from the manuscript | 142,742 | OK | doc `2fe84d47-…`; extraction 64 s → 10 titled scenes; characters 71 s → 5 (Alekhya, Biju Rao, Nirmay, Syna, Vaanika Rajanigandha); compose job queued; `/workflow` 404 at create (:7) |
+| 3 | Reader shell | 4,875 | OK | cover "0 rendered of 10 scenes", no chip, no image (213 e) (:8) |
+| 4 | Style | 1,906 | OK | inventory 11 ms; own style + sdConfig seed 9090; lock → true, unlock → false; `effective.sceneDirect=flux2Klein_9b` (:9) |
+| 5 | Characters | 75,820 | OK | affected panel 404 "no workflow yet"; legacy Regenerate Portrait → `Created 1 image(s)` in 70 s, `hasPortrait=true`; description edit read back (:10) |
+| 6 | Locations | 71,431 | OK | compose job done (81 s); UI Propose with the server default → "Location pass failed … no usable reply" in 5 s; REST fallback with the gate's config → "Temple" accepted, 9 scenes repointed; variant `64c0d60d-…` rendered 64 s, approved; chips on 5 of 6 pages (:12) |
+| 7 | Composition board | 16,013 | **FAIL (soft, completed)** | picker row never `tabular-row-active` (233 d); pick applied; re-compose with `000-p90-gate-llm` in 6 s "2 actors, 0 elements"; rev 3 → 4 USER userEdited; per-scene Render 409 "no graph node yet" (:17) |
+| 8 | Workflow canvas | 217,302 | OK | Render all 409 (expected); Plan & generate ×2 → node `e211ec88-…` 4 base / 2 QA artifacts, TEXT_ONLY; 212 p drag read back (:18) |
+| 9 | Variant strip + retention | 1,827 | OK | 2 attempts / 4 tiles / 2 QA badges; dry run "7 keep · 3 archive"; apply "3 archived"; REST statuses in_review / archived (:19) |
+| 10 | QA | 522 | OK | WARN PERSON_COUNT (swarmYolo face_yolov8m, expected 1 → observed 9) on 2 badges (:20) |
+| 11 | Review queue | 1,968 | OK | "3 pending" → "2 pending"; Use → "Revision 4 is now current"; approved → APPROVED selected (:21) |
+| 12 | Reader after approval | 1,107 | OK | approved RENDER_PLAN base still not the page image — 213 e / 219 f (:22) |
+| 13 | ChapBook | 43,597 | OK | `p90-chap-mvx1l57x` 6 pages; "Prompt saved"; re-render 34 s "Page re-rendered", promptLocked, revision 3; reader cover + page image (:23) |
+| 14 | Export | 12,363 | OK | `Book_p90-chap-mvx1l57x-chapbook.html` cover + 6, 1 with image; imported legacy banner "Meta note pb2BookObjectId is missing"; un-imported PB1 export cover + 1 (:24) |
+
+**Looked at (`test-results/usability/`, 41 files):** `01` list with the imported row; `02c` wizard Characters (5, each "no portrait"); `05c` the real
+Alekhya portrait in the gallery over the manager; `06b` Locations — "Temple" used by 9 scenes, variant "dusk" DONE_UNVERIFIED with a rendered
+thumbnail, base "Not rendered yet"; `07a` board — placement boxes "Biju Rao" + `actor.85c5bb9e-…`, compiled plan with the location text twice,
+"Model (config) juggernautXL" beside models-by-task `flux2Klein_9b`; `08b` Plan & generate dialog (TEXT_ONLY, "~1.6 min", four stacked toasts
+incl. two red 409s); `08d` canvas + inspector (RenderPlan r2/r1, QA, 2 attempts × 2 variants — thumbnails broken); `09c` Retention dialog full
+width, "Applied: 3 archived"; `10` review queue — real fiery temple renders, rev 3 WARN "9 faces"; `12` page 1 "Morning at Temple" with the
+Temple chip and an empty image box under "Revision 4 is now current" / "Approved"; `13b` the re-rendered ChapBook page — watercolour, crowned
+woman in gold on a sunlit balcony, title overlay nearly invisible; `14a` PB1 viewer read-only banner, silhouette cover, "Picture book exported".
+Browser console: 33 errors, all resource 404/409 (canvas thumbnails, expected 409s); no JS exception.
+
+next §6.C number 234 (233 = P9-0: the 212 p fix + 14 gate runs, run 14 = 13/14, step 7 red on the picker memo defect; 228 = Q1 `media/flux/qa/` + the 2026-10-31 doc pass + the §16 gate and §17 Phase 9 drafts; 229 = Stephen's fixture answer + "Fix in P9" for 212 p; 230 = the fixture-quality note — I called the terrible-looking `p52-t01-direct.png` acceptable, Stephen commits it as is, remake waits on 219 h; 231 = the artifact rule + `C:	mp` manifest; 232 = the architect review of §17 folded in; 207–227 archived in P5-P8, 2–206 / 208–209 in P0-P4).
