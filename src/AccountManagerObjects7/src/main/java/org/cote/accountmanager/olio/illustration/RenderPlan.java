@@ -30,6 +30,13 @@ public final class RenderPlan {
 	public static final String PURPOSE_PORTRAIT = "PORTRAIT";
 	public static final String PURPOSE_LOCATION = "LOCATION";
 	public static final String PURPOSE_SCENE = "SCENE";
+	/// Cover-family purposes (V3 §40, P9-2): a composition of the book's own cast and locations rendered
+	/// as a page-shaped image that is not a scene. They pick models like a scene (LOCATION / SCENE_DIRECT
+	/// by strategy); what sets them apart is the optional {@link #getReserved() reserved} band.
+	public static final String PURPOSE_COVER = "COVER";
+	public static final String PURPOSE_TITLE_PAGE = "TITLE_PAGE";
+	public static final String PURPOSE_CHAPTER_OPENER = "CHAPTER_OPENER";
+	public static final String PURPOSE_SERIES_ART = "SERIES_ART";
 
 	public static final String STAGE_BASE = "BASE";
 	public static final String STAGE_UPSCALE = "UPSCALE";
@@ -60,6 +67,7 @@ public final class RenderPlan {
 	private final Map<String, Object> config;
 	private final Location location;
 	private final Camera camera;
+	private final Box reserved;
 	private final List<Actor> actors;
 	private final List<Element> elements;
 	private final Intent intent;
@@ -78,6 +86,7 @@ public final class RenderPlan {
 		this.config = Collections.unmodifiableMap(new LinkedHashMap<>(b.config));
 		this.location = b.location;
 		this.camera = b.camera;
+		this.reserved = b.reserved;
 		this.actors = Collections.unmodifiableList(new ArrayList<>(b.actors));
 		this.elements = Collections.unmodifiableList(new ArrayList<>(b.elements));
 		this.intent = (b.intent == null ? new Intent(null, false) : b.intent);
@@ -118,6 +127,14 @@ public final class RenderPlan {
 
 	public Camera getCamera() {
 		return camera;
+	}
+
+	/// The region of the canvas reserved for typography (V3 §40 title-safe band): a cover's title band,
+	/// top or bottom. Null for every plan that reserves nothing - scenes, portraits, locations and covers
+	/// whose composition says NONE. When set, the plan builder has already clipped every actor and element
+	/// box out of it ({@link Box#clip}) and the compilers add a never-dropped negative-space clause.
+	public Box getReserved() {
+		return reserved;
 	}
 
 	public List<Actor> getActors() {
@@ -271,6 +288,7 @@ public final class RenderPlan {
 		b.config = new LinkedHashMap<>(config);
 		b.location = location;
 		b.camera = camera;
+		b.reserved = reserved;
 		b.actors = new ArrayList<>(actors);
 		b.elements = new ArrayList<>(elements);
 		b.intent = intent;
@@ -293,6 +311,7 @@ public final class RenderPlan {
 		m.put("config", new LinkedHashMap<>(config));
 		m.put("location", location == null ? null : location.toMap());
 		m.put("camera", camera == null ? null : camera.toMap());
+		m.put("reserved", reserved == null ? null : reserved.toMap());
 		List<Object> al = new ArrayList<>();
 		for(Actor a : actors) {
 			al.add(a.toMap());
@@ -360,6 +379,7 @@ public final class RenderPlan {
 		}
 		b.location = Location.fromMap(mapOf(m, "location"));
 		b.camera = Camera.fromMap(mapOf(m, "camera"));
+		b.reserved = Box.fromMap(mapOf(m, "reserved"));
 		for(Map<?, ?> a : listOfMaps(m, "actors")) {
 			b.actors.add(Actor.fromMap(a));
 		}
@@ -408,6 +428,7 @@ public final class RenderPlan {
 		private Map<String, Object> config = new LinkedHashMap<>();
 		private Location location;
 		private Camera camera;
+		private Box reserved;
 		private List<Actor> actors = new ArrayList<>();
 		private List<Element> elements = new ArrayList<>();
 		private Intent intent;
@@ -454,6 +475,12 @@ public final class RenderPlan {
 
 		public Builder camera(Camera camera) {
 			this.camera = camera;
+			return this;
+		}
+
+		/// The canvas region reserved for typography (see {@link RenderPlan#getReserved()}); null reserves nothing.
+		public Builder reserved(Box reserved) {
+			this.reserved = reserved;
 			return this;
 		}
 
@@ -726,6 +753,50 @@ public final class RenderPlan {
 
 		public double getH() {
 			return h;
+		}
+
+		/// A full-width band {@code height} tall along the top edge (V3 §40 title-safe band).
+		public static Box topBand(double height) {
+			return new Box(0.0, 0.0, 1.0, height);
+		}
+
+		/// A full-width band {@code height} tall along the bottom edge.
+		public static Box bottomBand(double height) {
+			return new Box(0.0, 1.0 - height, 1.0, height);
+		}
+
+		/// True when this band hugs the top edge of the canvas (y == 0); a reserved band that is not top is bottom.
+		public boolean isTop() {
+			return y <= 0.0;
+		}
+
+		/**
+		 * This box with the horizontal band {@code band} cut out of it: the box is moved and shrunk along y so it
+		 * no longer overlaps the band, keeping x and w. A box wholly inside the band keeps its height and is pushed
+		 * to the band's near edge. The band is treated as full-width (a title band), so x never changes. Returns
+		 * {@code this} when the band is null, has no height, or does not overlap.
+		 */
+		public Box clip(Box band) {
+			if(band == null || band.h <= 0.0 || h <= 0.0) {
+				return this;
+			}
+			double bTop = band.y;
+			double bBottom = band.y + band.h;
+			double top = y;
+			double bottom = y + h;
+			if(bottom <= bTop || top >= bBottom) {
+				return this;
+			}
+			if(band.isTop()) {
+				// band along the top: push the box down to the band's lower edge, shrink if it would leave the canvas
+				double ny = bBottom;
+				double nh = Math.min(h, Math.max(0.0, 1.0 - ny));
+				return new Box(x, ny, w, nh);
+			}
+			// band along the bottom: slide the box up so it ends at the band's upper edge, shrink if it would leave the canvas
+			double ny = Math.max(0.0, bTop - h);
+			double nh = Math.max(0.0, bTop - ny);
+			return new Box(x, ny, w, nh);
 		}
 
 		Map<String, Object> toMap() {

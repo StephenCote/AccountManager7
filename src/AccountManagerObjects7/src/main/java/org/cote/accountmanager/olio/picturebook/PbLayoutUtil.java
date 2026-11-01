@@ -7,8 +7,10 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.schema.type.PbActorRoleEnumType;
 import org.cote.accountmanager.schema.type.PbShotTypeEnumType;
+import org.cote.accountmanager.schema.type.PbTitleSafeBandEnumType;
 import org.cote.accountmanager.schema.type.PbViewpointEnumType;
 
 /**
@@ -214,6 +216,45 @@ public final class PbLayoutUtil {
 			cycle = ord / SPREAD.length;
 		}
 		return build(shotType, h, defaultPlane(role).further(cycle), false, false);
+	}
+
+	/**
+	 * Height of the title-safe band as a fraction of the page (V3 §40, P9-2): the top or bottom quarter is kept
+	 * clear of faces, figures and text for the title. One number for every cover; a first guess to be tuned from
+	 * the cover board like the templates above.
+	 */
+	public static final double TITLE_SAFE_BAND_HEIGHT = 0.25;
+
+	/**
+	 * The reserved box a composition's {@code titleSafeBand} denotes: a full-width band
+	 * {@link #TITLE_SAFE_BAND_HEIGHT} tall along the top or bottom edge; null for NONE, UNKNOWN or null, which
+	 * reserve nothing. Accepts the enum name in any case (the field reads back as the enum or its wire form).
+	 */
+	public static RenderPlan.Box titleSafeBand(String band) {
+		if (band == null) return null;
+		String b = band.trim().toUpperCase(Locale.ROOT);
+		if (PbTitleSafeBandEnumType.TOP.name().equals(b)) return RenderPlan.Box.topBand(TITLE_SAFE_BAND_HEIGHT);
+		if (PbTitleSafeBandEnumType.BOTTOM.name().equals(b)) return RenderPlan.Box.bottomBand(TITLE_SAFE_BAND_HEIGHT);
+		return null;
+	}
+
+	/** {@link #titleSafeBand(String)} for the enum itself. */
+	public static RenderPlan.Box titleSafeBand(PbTitleSafeBandEnumType band) {
+		return (band == null ? null : titleSafeBand(band.name()));
+	}
+
+	/**
+	 * {@code placement} with {@code band} clipped out of its box ({@link RenderPlan.Box#clip}); the placement
+	 * itself when the band is null or does not overlap. Everything but the box (depth, plane, shot type,
+	 * recognized) is kept, and the result is rounded like every other box this class produces.
+	 */
+	public static Placement clipToBand(Placement placement, RenderPlan.Box band) {
+		if (placement == null || band == null) return placement;
+		RenderPlan.Box box = new RenderPlan.Box(placement.x, placement.y, placement.w, placement.h);
+		RenderPlan.Box clipped = box.clip(band);
+		if (clipped == box) return placement;
+		return new Placement(round4(clipped.getX()), round4(clipped.getY()), round4(clipped.getW()), round4(clipped.getH()),
+			placement.depth, placement.horizontal, placement.plane, placement.shotType, placement.recognized);
 	}
 
 	/** Plane a role sits in when the placement names none: HERO / SUPPORTING front, EXTRA / CROWD back, everything else (including null) MIDGROUND. */

@@ -1169,6 +1169,91 @@ public class PbBookUtil {
 	}
 
 	/**
+	 * The scene-less counterpart of {@link #markSceneNodeStale} for a composition that is rendered on its
+	 * own - a COVER / SERIES_ART composition whose node is the {@code composition_plan@&lt;oid&gt;} node of
+	 * the book's workflow (P9-2) rather than a scene's {@code sceneNode}. An edit to the composition (its
+	 * text, an actor, an element, a pin) makes a DONE cover render out of date, and the render path refuses
+	 * a DONE node without {@code force}, so the write sites mark the node STALE here.
+	 * <p>
+	 * Find-only, and the lookup is as the caller: the composition's {@code book} FK stub carries the book's
+	 * objectId, the book is re-read by it in the composition's own organization, and the workflow is
+	 * {@link PbGraphUtil#findWorkflow}'s. Nothing is mirrored (a composition's text reaches the plan through
+	 * {@link PbRenderPlanUtil#buildCompositionPlan}, not through a node copy). Same contract otherwise:
+	 * never throws; no book, workflow or node is a no-op; a RUNNING node is left alone; an already STALE
+	 * node is not rewritten; a denied or failed write is logged and reported as {@code false}.
+	 *
+	 * @return true when the node is STALE on return (freshly marked or already so); false when there is no
+	 *         node, the node is RUNNING, or a write failed
+	 */
+	public static boolean markCompositionNodeStale(BaseRecord user, BaseRecord composition) {
+		if(user == null || composition == null) {
+			return false;
+		}
+		try {
+			return markNodeStale(user, findCompositionNode(user, composition));
+		}
+		catch(Exception e) {
+			logger.error("markCompositionNodeStale failed for composition " + composition.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+			return false;
+		}
+	}
+
+	/**
+	 * The status half of {@link #markCompositionNodeStale} for a node the caller already resolved
+	 * ({@link #findCompositionNode}): null is a no-op, RUNNING is left alone, STALE is not rewritten, else
+	 * STALE is persisted as {@code user}. Never throws. Does not mutate {@code node}: the caller that wants
+	 * the status on return reads it from the result, not from the record.
+	 */
+	public static boolean markNodeStale(BaseRecord user, BaseRecord node) {
+		if(user == null || node == null) {
+			return false;
+		}
+		try {
+			PbNodeStatusEnumType status = (node.hasField(OlioFieldNames.FIELD_PB_NODE_STATUS) ? node.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS) : null);
+			if(status == PbNodeStatusEnumType.RUNNING) {
+				logger.info("Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE) + " is RUNNING; the composition edit is not marked stale until the run closes");
+				return false;
+			}
+			if(status == PbNodeStatusEnumType.STALE) {
+				return true;
+			}
+			return PbGraphUtil.persistStatus(user, node, PbNodeStatusEnumType.STALE);
+		}
+		catch(Exception e) {
+			logger.error("markNodeStale failed for node " + node.get(OlioFieldNames.FIELD_PB_HANDLE) + ": " + e.getMessage());
+			return false;
+		}
+	}
+
+	/**
+	 * The {@code composition_plan@&lt;oid&gt;} node that renders {@code composition} on its own, as the caller
+	 * reads it, or null when the composition carries no book stub, the book / its workflow cannot be read, or
+	 * the node was never created (nothing has been rendered yet). Find-only; uncached through
+	 * {@link PbGraphUtil#findWorkflow} and {@link PbPipelineUtil#findNodeByHandle}.
+	 */
+	public static BaseRecord findCompositionNode(BaseRecord user, BaseRecord composition) {
+		if(user == null || composition == null) {
+			return null;
+		}
+		BaseRecord bookRef = (composition.hasField(OlioFieldNames.FIELD_PB_BOOK) ? composition.get(OlioFieldNames.FIELD_PB_BOOK) : null);
+		String bookOid = (bookRef != null ? bookRef.get(FieldNames.FIELD_OBJECT_ID) : null);
+		Long orgId = composition.get(FieldNames.FIELD_ORGANIZATION_ID);
+		if(bookOid == null || orgId == null) {
+			return null;
+		}
+		BaseRecord book = readBook(user, bookOid, orgId.longValue());
+		if(book == null) {
+			return null;
+		}
+		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+		if(workflow == null) {
+			return null;
+		}
+		String compOid = composition.get(FieldNames.FIELD_OBJECT_ID);
+		return PbPipelineUtil.findNodeByHandle(user, workflow, PbPipelineUtil.compositionPlanHandle(compOid));
+	}
+
+	/**
 	 * Copy the scene's effective prompt to {@code node.promptText} and its effective {@code configOverride}
 	 * to {@code node.configOverride} when they differ. Resolves the scene's book from its {@code book} FK;
 	 * see the four-argument overload for the resolution order.

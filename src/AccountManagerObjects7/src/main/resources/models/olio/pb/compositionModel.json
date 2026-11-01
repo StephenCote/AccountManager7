@@ -12,8 +12,8 @@
 	"group": "Book",
 	"dedicatedParticipation": false,
 	"constraints": ["name, groupId, organizationId"],
-	"hints": ["book", "scene", "book, purpose"],
-	"description": "PictureBook V3 §8 composition: the structured scene plan that replaces the scene's bare sdPrompt - what the picture is for (purpose), where it is (location/variant or free settingText), what happens and how it feels (action/mood copied from the scene at compose time), how the camera frames it (shotType/viewpoint/focalActor/cameraText), loose props, and the per-composition overrides (configOverride as sparse JSON, promptOverride + promptLocked). Actors and elements are child rows (olio.pb.sceneActor / olio.pb.sceneElement) keyed by their 'composition' FK, never a list on this record. Rows live in the book's group, owned by the request user, one per scene for SCENE/CHAPBOOK_PAGE and one per book for COVER/TITLE_PAGE/CHAPTER_OPENER/SERIES_ART. Deleted with the book by PbDeleteUtil (element -> actor -> composition). No field carries a schema default (PB2 convention rule 3, TestPbModelSchema): the enum columns read NULL as UNKNOWN, booleans materialise false, revision reads 0 on legacy rows.",
+	"hints": ["book", "scene", "book, purpose", "series, purpose"],
+	"description": "PictureBook V3 §8 composition: the structured scene plan that replaces the scene's bare sdPrompt - what the picture is for (purpose), where it is (location/variant or free settingText), what happens and how it feels (action/mood copied from the scene at compose time), how the camera frames it (shotType/viewpoint/focalActor/cameraText), loose props, and the per-composition overrides (configOverride as sparse JSON, promptOverride + promptLocked). Actors and elements are child rows (olio.pb.sceneActor / olio.pb.sceneElement) keyed by their 'composition' FK, never a list on this record. Rows live in the book's group, owned by the request user, one per scene for SCENE/CHAPBOOK_PAGE, one per book for COVER/TITLE_PAGE/CHAPTER_OPENER (names cover.<bookOid> etc., PbCoverUtil) and one per series for SERIES_ART (series FK set, hosted in one chapter's group). Deleted with the book by PbDeleteUtil (element -> actor -> composition). No field carries a schema default (PB2 convention rule 3, TestPbModelSchema): the enum columns read NULL as UNKNOWN, booleans materialise false, revision reads 0 on legacy rows.",
 	"fields": [
 		{
 			"name": "name",
@@ -38,6 +38,13 @@
 			"type": "model",
 			"foreign": true,
 			"description": "The scene this composition plans; set for SCENE and CHAPBOOK_PAGE, null for cover/title/opener/series art."
+		},
+		{
+			"name": "series",
+			"baseModel": "olio.pb.series",
+			"type": "model",
+			"foreign": true,
+			"description": "The series a SERIES_ART composition is for; null for every other purpose. The row still lives in its host chapter's group with book = that chapter (Phase 9)."
 		},
 		{
 			"name": "location",
@@ -93,6 +100,13 @@
 			"name": "cameraText",
 			"type": "string",
 			"description": "Free-text camera direction beyond shotType/viewpoint (lens, motion, framing notes)."
+		},
+		{
+			"name": "titleSafeBand",
+			"baseClass": "org.cote.accountmanager.schema.type.PbTitleSafeBandEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"description": "Cover-type compositions only (Phase 9): where the title text goes (TOP/BOTTOM) so the render keeps that band clear of faces and focal detail; NONE for art with no title. Reads NULL as UNKNOWN on rows written before the field existed and on SCENE rows."
 		},
 		{
 			"name": "props",

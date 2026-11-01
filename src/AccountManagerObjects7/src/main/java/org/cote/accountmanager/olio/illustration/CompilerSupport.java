@@ -77,6 +77,35 @@ final class CompilerSupport {
 		return negative(style == null ? null : style.getExclusions(), configString(config, "negativePrompt"));
 	}
 
+	/**
+	 * The negative-space clause for a plan's reserved band (V3 §40 title-safe band), or null when the plan
+	 * reserves nothing: "the top quarter of the frame is calm, uncluttered negative space with no faces,
+	 * figures or text, left clear for a title". Both compilers emit it and neither ever drops it - a cover
+	 * whose title lands on a face has failed its one job.
+	 */
+	static String reservedClause(RenderPlan plan) {
+		RenderPlan.Box band = (plan == null ? null : plan.getReserved());
+		if(band == null || band.getH() <= 0.0) {
+			return null;
+		}
+		String edge = (band.isTop() ? "top" : "bottom");
+		return "the " + edge + " " + fraction(band.getH()) + " of the frame is calm, uncluttered negative space with no faces, figures or text, left clear for a title";
+	}
+
+	/// "quarter" / "third" / "half" for the common bands, else "N%".
+	static String fraction(double h) {
+		if(Math.abs(h - 0.25) < 0.02) {
+			return "quarter";
+		}
+		if(Math.abs(h - (1.0 / 3.0)) < 0.02) {
+			return "third";
+		}
+		if(Math.abs(h - 0.5) < 0.02) {
+			return "half";
+		}
+		return Math.round(h * 100) + "%";
+	}
+
 	static String configString(Map<String, Object> config, String key) {
 		if(config == null) {
 			return null;

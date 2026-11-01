@@ -1602,7 +1602,8 @@ export const COMPOSITION_ENUMS = {
     facing: ['left', 'right', 'toward', 'away', 'profile'],
     referencePolicy: ['auto', 'require_reference', 'text_only'],
     elementType: ['prop', 'furniture', 'animal', 'vehicle', 'structure', 'nature', 'other'],
-    importance: ['low', 'medium', 'high']
+    importance: ['low', 'medium', 'high'],
+    titleSafeBand: ['none', 'top', 'bottom']
 };
 
 /**
@@ -1630,7 +1631,7 @@ export function sameEnum(a, b) {
     return x === y;
 }
 
-const ENUM_KEYS = { shotType: 1, viewpoint: 1, role: 1, facing: 1, referencePolicy: 1, elementType: 1, importance: 1 };
+const ENUM_KEYS = { shotType: 1, viewpoint: 1, role: 1, facing: 1, referencePolicy: 1, elementType: 1, importance: 1, titleSafeBand: 1 };
 const NUMERIC_KEYS = { x: 1, y: 1, w: 1, h: 1, depth: 1, priority: 1, count: 1 };
 // int on the model (sceneActorModel/sceneElementModel); the server's intField truncates silently, so round here.
 const INT_KEYS = { depth: 1, priority: 1, count: 1 };
@@ -1702,6 +1703,8 @@ export function normalizeBoardComposition(c) {
         locationObjectId: c.locationObjectId != null ? c.locationObjectId : null,
         variantObjectId: c.variantObjectId != null ? c.variantObjectId : null,
         focalActorObjectId: c.focalActorObjectId != null ? c.focalActorObjectId : null,
+        titleSafeBand: c.titleSafeBand != null ? String(c.titleSafeBand).toLowerCase() : null,
+        seriesObjectId: c.seriesObjectId != null ? c.seriesObjectId : null,
         userEdited: !!c.userEdited,
         promptLocked: !!c.promptLocked,
         revision: c.revision != null ? c.revision : 0
@@ -1783,10 +1786,14 @@ export function normalizeEditResult(r) {
     });
 }
 
-/** Pure: a board-route 404 that means "no composition yet" (compose it / set the page prompt), not an unknown scene. */
+/**
+ * Pure: a board-route 404 that means "no composition yet" (compose it / set the page prompt), not an unknown scene.
+ * Matches the scene form ("Scene 3 has no composition yet") and the cover form ("Book x has no COVER composition -
+ * create it first", PbServiceFacade.requireCover), where the purpose word sits between "no" and "composition".
+ */
 export function isNoCompositionYet(err) {
     if (!err || err.status !== 404) return false;
-    return /has no composition/i.test(String(err.message || '') + ' ' + String(err.body || ''));
+    return /has no (?:[A-Za-z_]+ )?composition/i.test(String(err.message || '') + ' ' + String(err.body || ''));
 }
 
 /**
@@ -2056,4 +2063,200 @@ export function degradationSummary(plan) {
         if (code === 'PROMPT_TRUNCATED') dropped.push(String(d.message || ''));
     });
     return { count: list.length, codes: codes, truncatedDropped: dropped };
+}
+
+// ── Covers (V3 §40; P9-3 routes, P9-4 surface) ───────────────────────────────
+// A cover is a composition of a cover-type purpose (COVER, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART) keyed by
+// purpose rather than by scene: GET /{book}/covers lists them with their render state, the per-purpose
+// routes (POST create, GET board, PATCH, POST plan, POST render) are the scene composition routes keyed by
+// purpose. Reads are find-only on the server (a book that has never rendered has no workflow/node, so
+// nodeObjectId is null); only create and render write. The image refs are the page-view shape (dataObjectId
+// + imageGroupPath + imageName) so the feature builds the MediaServlet URL exactly as it does for a page.
+
+export const COVER_PURPOSES = ['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER', 'SERIES_ART'];
+
+/** Pure: the route path word of a cover purpose - 'cover', 'title-page', 'chapter-opener', 'series-art' (PbCoverUtil.purposeOf accepts either case/separator). */
+export function coverPathWord(purpose) {
+    return String(purpose == null ? '' : purpose).trim().toLowerCase().replace(/_/g, '-');
+}
+
+/** Pure: a route path word or any spelling back to the canonical purpose ('title-page' → 'TITLE_PAGE'); null when not a cover purpose. */
+export function coverPurposeOf(word) {
+    let norm = String(word == null ? '' : word).trim().toUpperCase().replace(/[- ]/g, '_');
+    return COVER_PURPOSES.indexOf(norm) >= 0 ? norm : null;
+}
+
+/** Pure: the reader label of a cover purpose. */
+export function coverPurposeLabel(purpose) {
+    switch (coverPurposeOf(purpose)) {
+        case 'COVER': return 'Cover';
+        case 'TITLE_PAGE': return 'Title page';
+        case 'CHAPTER_OPENER': return 'Chapter opener';
+        case 'SERIES_ART': return 'Series art';
+        default: return String(purpose == null ? '' : purpose);
+    }
+}
+
+/** Pure: one cover image ref → {artifactObjectId, revision, reviewStatus, dataObjectId, imageGroupPath, imageName, imageContentType}; null for no ref. */
+export function normalizeCoverImageRef(r) {
+    if (!r || typeof r !== 'object') return null;
+    return Object.assign({}, r, {
+        artifactObjectId: r.artifactObjectId != null ? r.artifactObjectId : null,
+        revision: r.revision != null ? r.revision : 0,
+        reviewStatus: r.reviewStatus != null ? String(r.reviewStatus).toUpperCase() : null,
+        dataObjectId: r.dataObjectId != null ? r.dataObjectId : null,
+        imageGroupPath: r.imageGroupPath != null ? r.imageGroupPath : null,
+        imageName: r.imageName != null ? r.imageName : null,
+        imageContentType: r.imageContentType != null ? r.imageContentType : null
+    });
+}
+
+/**
+ * Pure: one covers-list entry (PbServiceFacade.coverEntryDto) with every flag boolean and every enum upper-cased:
+ * {compositionObjectId, purpose, source, titleSafeBand, seriesObjectId, nodeObjectId, nodeStatus, pinned, lastError,
+ * chainLength, reviewStatus, selectedArtifactObjectId, approved: ref|null, latest: ref|null}. null in → null out.
+ */
+export function normalizeCoverEntry(e) {
+    if (!e || typeof e !== 'object') return null;
+    return Object.assign({}, e, {
+        compositionObjectId: e.compositionObjectId != null ? e.compositionObjectId : null,
+        purpose: e.purpose != null ? String(e.purpose).toUpperCase() : null,
+        source: e.source != null ? String(e.source).toUpperCase() : null,
+        titleSafeBand: e.titleSafeBand != null ? String(e.titleSafeBand).toUpperCase() : null,
+        seriesObjectId: e.seriesObjectId != null ? e.seriesObjectId : null,
+        nodeObjectId: e.nodeObjectId != null ? e.nodeObjectId : null,
+        nodeStatus: e.nodeStatus != null ? String(e.nodeStatus).toUpperCase() : null,
+        pinned: !!e.pinned,
+        lastError: e.lastError != null ? e.lastError : null,
+        chainLength: e.chainLength != null ? e.chainLength : 0,
+        reviewStatus: e.reviewStatus != null ? String(e.reviewStatus).toUpperCase() : null,
+        selectedArtifactObjectId: e.selectedArtifactObjectId != null ? e.selectedArtifactObjectId : null,
+        approved: normalizeCoverImageRef(e.approved),
+        latest: normalizeCoverImageRef(e.latest)
+    });
+}
+
+/** Pure: GET /{book}/covers body → {bookObjectId, workflowObjectId, covers: {COVER, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART}} with every purpose present (null = no composition). */
+export function normalizeCoverView(r) {
+    r = r || {};
+    let src = r.covers && typeof r.covers === 'object' ? r.covers : {};
+    let covers = {};
+    COVER_PURPOSES.forEach(function (p) {
+        let hit = src[p] != null ? src[p] : src[p.toLowerCase()];
+        covers[p] = normalizeCoverEntry(hit);
+    });
+    return Object.assign({}, r, {
+        bookObjectId: r.bookObjectId != null ? r.bookObjectId : null,
+        workflowObjectId: r.workflowObjectId != null ? r.workflowObjectId : null,
+        covers: covers
+    });
+}
+
+/**
+ * Pure: the cover image a reader shows for a purpose, approved first, then the latest render; null when the
+ * book has no such cover or it has never rendered. `view` is a normalizeCoverView result (or null).
+ */
+export function coverImageRefFor(view, purpose, allowLatest) {
+    let p = coverPurposeOf(purpose);
+    let entry = view && view.covers && p ? view.covers[p] : null;
+    if (!entry) return null;
+    if (entry.approved) return entry.approved;
+    return allowLatest ? entry.latest : null;
+}
+
+/** GET /{book}/covers → normalizeCoverView. Read-only on the server. 404 book. */
+export async function getCovers(pb2BookObjectId) {
+    return normalizeCoverView(await wfFetch('/' + pb2BookObjectId + '/covers', { method: 'GET' }, 'getCovers failed'));
+}
+
+/**
+ * GET /{book}/covers/{purpose} → normalizeBoard + {purpose, cover: normalizeCoverEntry}. 404 when the book has no
+ * composition of that purpose yet (isNoCompositionYet - the board shows an empty state with Create).
+ */
+export async function getCover(pb2BookObjectId, purpose) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/covers/' + coverPathWord(purpose), { method: 'GET' }, 'getCover failed');
+    let b = normalizeBoard(r);
+    b.purpose = r && r.purpose != null ? String(r.purpose).toUpperCase() : coverPurposeOf(purpose);
+    b.cover = normalizeCoverEntry(r ? r.cover : null);
+    return b;
+}
+
+/**
+ * POST /{book}/covers/{purpose} {mode?: 'auto'|'from_scene'|'manual', sceneObjectId?, chatConfigName?} - get-or-create,
+ * idempotent (existingReturned:true for an existing one, never 409). AUTO is LLM-bound and synchronous; an LLM
+ * failure comes back on the result (llmFailure / hardFailure / failureReason) with nothing written. → {bookObjectId,
+ * purpose, mode, created, existingReturned, written, source, castTier, heroCast[], llmFailure, hardFailure,
+ * failureReason, warnings[], unresolvedNames[], unrecognizedPlacements[], locationHint, sourceSceneObjectId, elapsedMs,
+ * compositionObjectId, composition, actors[], elements[]}. 400 purpose/mode, 403, 404 book/scene, 409 not V3.
+ */
+export async function createCover(pb2BookObjectId, purpose, opts) {
+    let o = opts || {};
+    let body = {};
+    if (o.mode) body.mode = String(o.mode).toLowerCase();
+    if (o.sceneObjectId) body.sceneObjectId = o.sceneObjectId;
+    if (o.chatConfigName) body.chatConfigName = o.chatConfigName;
+    let r = await wfFetch('/' + pb2BookObjectId + '/covers/' + coverPathWord(purpose), { method: 'POST', body: body }, 'createCover failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        bookObjectId: r.bookObjectId != null ? r.bookObjectId : null,
+        purpose: r.purpose != null ? String(r.purpose).toUpperCase() : coverPurposeOf(purpose),
+        mode: r.mode != null ? String(r.mode).toUpperCase() : null,
+        created: !!r.created,
+        existingReturned: !!r.existingReturned,
+        written: !!r.written,
+        source: r.source != null ? String(r.source).toUpperCase() : null,
+        castTier: r.castTier != null ? r.castTier : null,
+        heroCast: Array.isArray(r.heroCast) ? r.heroCast : [],
+        llmFailure: !!r.llmFailure,
+        hardFailure: !!r.hardFailure,
+        failureReason: r.failureReason != null ? r.failureReason : null,
+        warnings: Array.isArray(r.warnings) ? r.warnings : [],
+        unresolvedNames: Array.isArray(r.unresolvedNames) ? r.unresolvedNames : [],
+        unrecognizedPlacements: Array.isArray(r.unrecognizedPlacements) ? r.unrecognizedPlacements : [],
+        locationHint: r.locationHint != null ? r.locationHint : null,
+        sourceSceneObjectId: r.sourceSceneObjectId != null ? r.sourceSceneObjectId : null,
+        elapsedMs: r.elapsedMs != null ? r.elapsedMs : 0,
+        compositionObjectId: r.compositionObjectId != null ? r.compositionObjectId : null,
+        composition: r.composition ? normalizeBoardComposition(r.composition) : null,
+        actors: (Array.isArray(r.actors) ? r.actors : []).map(normalizeActorRow),
+        elements: (Array.isArray(r.elements) ? r.elements : []).map(normalizeElementRow)
+    });
+}
+
+/**
+ * POST /{book}/covers/{purpose}/render[?force=true] → 202 {bookObjectId, purpose, compositionObjectId, nodeObjectId,
+ * nodeMaterialized, jobId, runObjectId, …plan summary}. The composition must exist (404 "has no … composition");
+ * 409 pinned (isPinnedNodeRefusal), 409 current without force, 409 already being rendered, 429 job cap.
+ */
+export async function renderCover(pb2BookObjectId, purpose, force) {
+    let qs = force ? '?force=true' : '';
+    let r = await wfFetch('/' + pb2BookObjectId + '/covers/' + coverPathWord(purpose) + '/render' + qs, { method: 'POST' }, 'renderCover failed');
+    r = r || {};
+    return Object.assign({}, r, {
+        bookObjectId: r.bookObjectId != null ? r.bookObjectId : null,
+        purpose: r.purpose != null ? String(r.purpose).toUpperCase() : coverPurposeOf(purpose),
+        compositionObjectId: r.compositionObjectId != null ? r.compositionObjectId : null,
+        nodeObjectId: r.nodeObjectId != null ? r.nodeObjectId : null,
+        nodeMaterialized: !!r.nodeMaterialized,
+        jobId: r.jobId != null ? r.jobId : null,
+        runObjectId: r.runObjectId != null ? r.runObjectId : null
+    });
+}
+
+/**
+ * PATCH /{book}/covers/{purpose} with a row-level delta (boardDelta over the composition keys plus titleSafeBand) →
+ * normalizeEditResult + {purpose, composition}. Same 400s as patchComposition; the cover's render node (when it has
+ * one) is marked STALE so the next render needs no force.
+ */
+export async function patchCover(pb2BookObjectId, purpose, delta) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/covers/' + coverPathWord(purpose), { method: 'PATCH', body: delta || {} }, 'patchCover failed');
+    let out = normalizeEditResult(r);
+    out.purpose = r && r.purpose != null ? String(r.purpose).toUpperCase() : coverPurposeOf(purpose);
+    out.composition = r && r.composition ? normalizeBoardComposition(r.composition) : null;
+    return out;
+}
+
+/** POST /{book}/covers/{purpose}/plan {preset?, promptOverride?, raw?, model?} → the cover's illustration plan (not persisted; 400 when the composition has nothing to render from yet). */
+export function planCover(pb2BookObjectId, purpose, body) {
+    return wfFetch('/' + pb2BookObjectId + '/covers/' + coverPathWord(purpose) + '/plan', { method: 'POST', body: body || {} }, 'Could not plan the cover');
 }

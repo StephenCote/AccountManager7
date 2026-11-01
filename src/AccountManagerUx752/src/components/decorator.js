@@ -436,19 +436,25 @@ function renderTabular(ctl, rset) {
     );
 }
 
-let _tabState = null;
-
+// The memo key lives on the component instance (vnode.state), never in a module global: every table alive
+// (the list view behind a picker overlay, each re-opened picker) is its own instance, and a shared key
+// survived a table's teardown — a fresh picker whose first post-click key equalled the previous picker's
+// last key skipped its re-render, so the clicked row never showed `tabular-row-active` (P9-0 §16 step 7).
 const TabularMemo = {
+    oninit(vnode) {
+        vnode.state.memo = null;
+    },
     onbeforeupdate(vnode) {
         let pg = vnode.attrs.ctl.pagination.pages();
         let k = { data: vnode.attrs.rset, sort: pg.sort, order: pg.order,
             start: pg.startRecord, type: vnode.attrs.ctl.listType, checked: checkedKey(pg) };
-        if (_tabState && _tabState.data === k.data && _tabState.sort === k.sort &&
-            _tabState.order === k.order && _tabState.start === k.start &&
-            _tabState.type === k.type && _tabState.checked === k.checked) {
+        let prev = vnode.state.memo;
+        if (prev && prev.data === k.data && prev.sort === k.sort &&
+            prev.order === k.order && prev.start === k.start &&
+            prev.type === k.type && prev.checked === k.checked) {
             return false;
         }
-        _tabState = k;
+        vnode.state.memo = k;
         return true;
     },
     view(vnode) {

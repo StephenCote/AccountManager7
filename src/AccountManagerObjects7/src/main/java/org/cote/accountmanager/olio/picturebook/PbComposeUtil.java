@@ -25,6 +25,7 @@ import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PbLayoutUtil.Placement;
@@ -43,8 +44,10 @@ import org.cote.accountmanager.schema.type.PbCompositionSourceEnumType;
 import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
 import org.cote.accountmanager.schema.type.PbFacingEnumType;
 import org.cote.accountmanager.schema.type.PbImportanceEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbReferencePolicyEnumType;
 import org.cote.accountmanager.schema.type.PbShotTypeEnumType;
+import org.cote.accountmanager.schema.type.PbTitleSafeBandEnumType;
 import org.cote.accountmanager.schema.type.PbViewpointEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
@@ -74,6 +77,8 @@ public class PbComposeUtil {
 	public static final Logger logger = LogManager.getLogger(PbComposeUtil.class);
 
 	public static final String PROMPT_COMPOSE_SCENE = "pictureBook.compose-scene";
+	/** Phase 9 cover-type compositions (COVER / TITLE_PAGE / CHAPTER_OPENER / SERIES_ART) are composed from this template by {@link PbCoverUtil}. */
+	public static final String PROMPT_COMPOSE_COVER = "pictureBook.compose-cover";
 	public static final String COMPOSITION_NAME_PREFIX = "composition.";
 	/** A ChapBook page's {@code CHAPBOOK_PAGE} composition is named {@code page.<sceneObjectId>} (P4-8). */
 	public static final String PAGE_COMPOSITION_NAME_PREFIX = "page.";
@@ -109,6 +114,10 @@ public class PbComposeUtil {
 		SCENE_REFS,
 		/** The whole population (capped at {@link #MAX_POPULATION_CAST}). */
 		POPULATION,
+		/** Phase 9 cover compose: the characters cast as HERO in the book's SCENE compositions, most frequent first. */
+		HEROES,
+		/** Phase 9 cover compose: the series' baseline cast group (a chapter with no hero rows yet). */
+		BASELINE_CAST,
 		/** No characters were available at all. */
 		NONE
 	}
@@ -185,6 +194,10 @@ public class PbComposeUtil {
 		List<ActorSpec> actors = new ArrayList<>();
 		List<ElementSpec> elements = new ArrayList<>();
 		String mood;
+		/** Phase 9 cover template keys; the scene template never emits them and a scene compose reads them from the scene instead. */
+		String setting;
+		String action;
+		String titleSafeBandWord;
 		/** Rows the reply carried beyond {@link #MAX_ACTORS} / {@link #MAX_ELEMENTS}, dropped. */
 		int droppedActors;
 		int droppedElements;
@@ -246,6 +259,10 @@ public class PbComposeUtil {
 		String cameraText;
 		String mood;
 		String settingText;
+		/** Only read when the context has no scene (Phase 9 cover compose); a scene compose copies the scene's action. */
+		String action;
+		/** Cover-type compositions only; stays UNKNOWN for a scene compose. */
+		PbTitleSafeBandEnumType titleSafeBand = PbTitleSafeBandEnumType.UNKNOWN;
 		List<ResolvedActor> actors = new ArrayList<>();
 		List<ResolvedElement> elements = new ArrayList<>();
 		int focalIndex = -1;
@@ -264,7 +281,7 @@ public class PbComposeUtil {
 			OlioFieldNames.FIELD_PB_VIEWPOINT, OlioFieldNames.FIELD_PB_FOCAL_ACTOR, OlioFieldNames.FIELD_PB_CAMERA_TEXT,
 			OlioFieldNames.FIELD_PB_PROPS, OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE,
 			OlioFieldNames.FIELD_PB_PROMPT_LOCKED, OlioFieldNames.FIELD_PB_SOURCE, OlioFieldNames.FIELD_PB_USER_EDITED,
-			OlioFieldNames.FIELD_PB_REVISION
+			OlioFieldNames.FIELD_PB_REVISION, OlioFieldNames.FIELD_PB_SERIES, OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND
 		};
 	}
 
@@ -755,8 +772,13 @@ public class PbComposeUtil {
 		OlioContext octx;
 		boolean octxTried;
 		String octxFailure;
+		/** Set instead of {@link #scene} by a Phase 9 cover compose; names the log label and nothing else. */
+		PbCompositionPurposeEnumType purpose;
 
 		String label() {
+			if(scene == null && purpose != null) {
+				return slug + ":" + purpose.toString().toLowerCase(Locale.ROOT);
+			}
 			return slug + ":scene" + sceneIndex;
 		}
 	}
@@ -766,11 +788,7 @@ public class PbComposeUtil {
 		if(scene == null) {
 			throw new PictureBookException(400, "No scene");
 		}
-		Context ctx = new Context();
-		ctx.book = PbBookUtil.requireBookUpdate(user, book, what);
-		ctx.bctx = PbLocationUtil.requireBookContext(user, ctx.book);
-		ctx.orgId = PbGraphUtil.orgId(ctx.book);
-		ctx.slug = str(ctx.book.get(OlioFieldNames.FIELD_PB_SLUG));
+		Context ctx = openBookContext(user, book, what);
 		String sceneOid = str(scene.get(FieldNames.FIELD_OBJECT_ID));
 		BaseRecord fresh = PbBookUtil.readScene(user, sceneOid, ctx.orgId);
 		if(fresh == null) {
@@ -782,16 +800,28 @@ public class PbComposeUtil {
 		if(sceneBookId == null || bookId == null || sceneBookId.longValue() != bookId.longValue()) {
 			throw new PictureBookException(400, "Scene " + sceneOid + " does not belong to book " + ctx.slug);
 		}
+		ctx.scene = fresh;
+		Integer idx = fresh.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+		ctx.sceneIndex = (idx != null ? idx.intValue() : 0);
+		return ctx;
+	}
+
+	/// The book half of {@link #openContext}: authorization (403 from {@link PbBookUtil#requireBookUpdate}), the
+	/// world (409), the org and the book's group (409). A Phase 9 cover compose ({@link PbCoverUtil}) stops here
+	/// and leaves {@link Context#scene} null; everything downstream that reads the scene tolerates that.
+	static Context openBookContext(BaseRecord user, BaseRecord book, String what) {
+		Context ctx = new Context();
+		ctx.book = PbBookUtil.requireBookUpdate(user, book, what);
+		ctx.bctx = PbLocationUtil.requireBookContext(user, ctx.book);
+		ctx.orgId = PbGraphUtil.orgId(ctx.book);
+		ctx.slug = str(ctx.book.get(OlioFieldNames.FIELD_PB_SLUG));
 		// Compositions are keyed on the BOOK's group, not the scene's: the planner, listSceneCompositions and the
 		// page path all look there, and a chapter-group scene would otherwise write where nothing reads.
 		Long gid = ctx.book.get(FieldNames.FIELD_GROUP_ID);
 		if(gid == null) {
 			throw new PictureBookException(409, "Book " + ctx.slug + " has no group");
 		}
-		ctx.scene = fresh;
 		ctx.bookGroupId = gid.longValue();
-		Integer idx = fresh.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
-		ctx.sceneIndex = (idx != null ? idx.intValue() : 0);
 		return ctx;
 	}
 
@@ -852,7 +882,11 @@ public class PbComposeUtil {
 	}
 
 	/// Mirrors PbRenderPlanUtil.sceneActors: participations of scene.characters, then one IN query as the caller.
-	private static List<BaseRecord> sceneMembers(BaseRecord user, Context ctx, ComposeResult result) {
+	/// Empty when the context has no scene (a cover compose).
+	static List<BaseRecord> sceneMembers(BaseRecord user, Context ctx, ComposeResult result) {
+		if(ctx.scene == null) {
+			return Collections.emptyList();
+		}
 		try {
 			List<BaseRecord> parts = IOSystem.getActiveContext().getMemberUtil().findMembers(ctx.scene,
 				OlioFieldNames.FIELD_PB_CHARACTERS, OlioModelNames.MODEL_CHAR_PERSON, 0L);
@@ -886,7 +920,7 @@ public class PbComposeUtil {
 
 	/// The population of every character group the book resolves names in, shadow first (same order as
 	/// PictureBookUtil.findSceneCharacterGroups), de-duplicated by id, at most MAX_CAST_LIST per group.
-	private static List<BaseRecord> populationMembers(BaseRecord user, Context ctx, ComposeResult result) {
+	static List<BaseRecord> populationMembers(BaseRecord user, Context ctx, ComposeResult result) {
 		LinkedHashMap<Long, BaseRecord> byId = new LinkedHashMap<>();
 		for(BaseRecord grp : characterGroups(user, ctx)) {
 			try {
@@ -918,7 +952,7 @@ public class PbComposeUtil {
 
 	/// The chapter's shadow character group first (only when the book is a chapter of a series), then the
 	/// world's population group. Same precedence as PictureBookUtil.findSceneCharacterGroups.
-	private static List<BaseRecord> characterGroups(BaseRecord user, Context ctx) {
+	static List<BaseRecord> characterGroups(BaseRecord user, Context ctx) {
 		List<BaseRecord> groups = new ArrayList<>();
 		BaseRecord series = (ctx.book.hasField(OlioFieldNames.FIELD_PB_SERIES) ? ctx.book.get(OlioFieldNames.FIELD_PB_SERIES) : null);
 		BaseRecord world = (ctx.book.hasField(OlioFieldNames.FIELD_PB_WORLD) ? ctx.book.get(OlioFieldNames.FIELD_PB_WORLD) : null);
@@ -960,7 +994,7 @@ public class PbComposeUtil {
 		return vars;
 	}
 
-	private static String styleName(BaseRecord user, Context ctx, ComposeResult result) {
+	static String styleName(BaseRecord user, Context ctx, ComposeResult result) {
 		BaseRecord styleRef = (ctx.book.hasField(OlioFieldNames.FIELD_STYLE) ? ctx.book.get(OlioFieldNames.FIELD_STYLE) : null);
 		if(styleRef == null) {
 			return NONE;
@@ -996,7 +1030,7 @@ public class PbComposeUtil {
 		return orNone(PbLocationUtil.sanitizeForPrompt(text, MAX_SCENE_TEXT_CHARS));
 	}
 
-	private static String castBlock(Cast cast) {
+	static String castBlock(Cast cast) {
 		if(cast.members.isEmpty()) {
 			return NONE;
 		}
@@ -1016,7 +1050,7 @@ public class PbComposeUtil {
 		return (sb.length() == 0 ? NONE : sb.toString().trim());
 	}
 
-	private static String locationsBlock(BaseRecord user, Context ctx, ComposeResult result) {
+	static String locationsBlock(BaseRecord user, Context ctx, ComposeResult result) {
 		List<BaseRecord> locs;
 		try {
 			locs = PbLocationUtil.listLocations(user, ctx.bctx);
@@ -1025,6 +1059,12 @@ public class PbComposeUtil {
 			result.warnings.add("Could not list the book's locations: " + e.getMessage());
 			return NONE;
 		}
+		return locationLines(locs, 0L, null);
+	}
+
+	/// The KNOWN LOCATIONS lines for {@code locs} in the order given: "- name (aliases: a, b)". When {@code tagId}
+	/// names one of them its line ends with {@code tag} (the cover compose marks the book's most-used location).
+	static String locationLines(List<BaseRecord> locs, long tagId, String tag) {
 		if(locs == null || locs.isEmpty()) {
 			return NONE;
 		}
@@ -1047,6 +1087,9 @@ public class PbComposeUtil {
 				if(!clean.isEmpty()) {
 					sb.append(" (aliases: ").append(String.join(", ", clean)).append(')');
 				}
+			}
+			if(tag != null && tagId > 0L && tagId == PbHealthUtil.idOf(loc)) {
+				sb.append(' ').append(tag);
 			}
 			sb.append('\n');
 		}
@@ -1079,7 +1122,9 @@ public class PbComposeUtil {
 	}
 
 	private static List<BaseRecord> readLocationItems(BaseRecord user, Context ctx, ComposeResult result) {
-		BaseRecord locRef = (ctx.scene.hasField(FieldNames.FIELD_LOCATION) ? ctx.scene.get(FieldNames.FIELD_LOCATION) : null);
+		// A cover compose has no scene and so no scene location; the LLM may still name a known location, but items
+		// hang off the scene's resolved location only (§7), so the ITEMS block is "(none)" there.
+		BaseRecord locRef = (ctx.scene != null && ctx.scene.hasField(FieldNames.FIELD_LOCATION) ? ctx.scene.get(FieldNames.FIELD_LOCATION) : null);
 		if(locRef == null) {
 			return Collections.emptyList();
 		}
@@ -1158,7 +1203,7 @@ public class PbComposeUtil {
 	 * usual cause is a stray brace that dropped the {@code actors}/{@code elements} wrappers), so the caller's
 	 * single {@link #RETRY_HINT} retry covers both.
 	 */
-	private static Proposal parseStagedProposal(String reply, String which, Context ctx, ComposeResult result) {
+	static Proposal parseStagedProposal(String reply, String which, Context ctx, ComposeResult result) {
 		Proposal p = parseProposal(reply, ctx, result);
 		if(p != null && p.isEmpty()) {
 			String w = "The " + which + " staged no actors and no elements; treated as malformed";
@@ -1273,7 +1318,31 @@ public class PbComposeUtil {
 			}
 		}
 		p.mood = text(m.get("mood"), MAX_MOOD_CHARS);
+		// Cover template keys (Phase 9). The scene template does not emit them; a scene compose ignores them.
+		p.setting = text(m.get("setting"), MAX_FIELD_CHARS);
+		p.action = text(m.get("action"), MAX_FIELD_CHARS);
+		// Raw, not text(): "none" is a legal answer here, and text() drops it as a null-word.
+		Object band = m.get("titlesafeband");
+		p.titleSafeBandWord = (band == null || band instanceof Map || band instanceof List ? null : band.toString());
 		return p;
+	}
+
+	/** Tolerant title-band words → enum; UNKNOWN when the word is missing or unrecognized, NONE for an explicit "none". */
+	static PbTitleSafeBandEnumType titleSafeBandFor(String word) {
+		if(word == null || word.trim().isEmpty()) {
+			return PbTitleSafeBandEnumType.UNKNOWN;
+		}
+		String w = word.trim().toLowerCase(Locale.ROOT).replace('-', '_').replaceAll("\\s+", " ");
+		switch(w) {
+			case "top": case "upper": case "above": case "header":
+				return PbTitleSafeBandEnumType.TOP;
+			case "bottom": case "lower": case "below": case "footer":
+				return PbTitleSafeBandEnumType.BOTTOM;
+			case "none": case "no title": case "notitle": case "n/a":
+				return PbTitleSafeBandEnumType.NONE;
+			default:
+				return PbTitleSafeBandEnumType.UNKNOWN;
+		}
 	}
 
 	/** Tolerant role words → enum; null when the word is unknown so the caller can apply its own rule. */
@@ -1447,9 +1516,16 @@ public class PbComposeUtil {
 		s.shot = PbLayoutUtil.resolveShotType(PbLayoutUtil.parseShotType(p.shotWord), n);
 		s.viewpoint = PbLayoutUtil.resolveViewpoint(PbLayoutUtil.parseViewpoint(p.viewpointWord));
 		s.cameraText = cameraText(p);
+		// A cover compose (no scene, Phase 9 / V3 §40) resolves its title-safe band before layout so every box - named
+		// placement or default - is clipped out of it here, where the board reads the rows. A scene has no band.
+		if(ctx.scene == null) {
+			s.titleSafeBand = titleSafeBandFor(p.titleSafeBandWord);
+		}
+		RenderPlan.Box band = (ctx.scene == null ? PbLayoutUtil.titleSafeBand(s.titleSafeBand) : null);
 		for(int i = 0; i < n; i++) {
 			ResolvedActor ra = s.actors.get(i);
 			layoutActor(ra, i, n, s.shot, result);
+			ra.placement = PbLayoutUtil.clipToBand(ra.placement, band);
 		}
 		s.focalIndex = focalIndex(s.actors, p.focalName);
 
@@ -1474,17 +1550,26 @@ public class PbComposeUtil {
 			if(re.placement == null) {
 				re.placement = PbLayoutUtil.defaultPlacement(i, en, s.shot, null);
 			}
+			re.placement = PbLayoutUtil.clipToBand(re.placement, band);
 			s.elements.add(re);
 		}
 
-		String sceneMood = str(ctx.scene.get(OlioFieldNames.FIELD_PB_MOOD));
+		// The scene's own mood/setting outrank the reply's. A cover compose (no scene, Phase 9) takes the reply's
+		// setting/action/mood/titleSafeBand - there is no scene to copy from.
+		String sceneMood = (ctx.scene != null ? str(ctx.scene.get(OlioFieldNames.FIELD_PB_MOOD)) : null);
 		s.mood = (NarrativeUtil.isMeaningful(sceneMood) ? sceneMood.trim() : p.mood);
-		String sceneSetting = str(ctx.scene.get(OlioFieldNames.FIELD_PB_SETTING));
+		String sceneSetting = (ctx.scene != null ? str(ctx.scene.get(OlioFieldNames.FIELD_PB_SETTING)) : null);
 		if(NarrativeUtil.isMeaningful(sceneSetting)) {
 			s.settingText = sceneSetting.trim();
 		}
+		else if(ctx.scene == null && p.setting != null) {
+			s.settingText = p.setting;
+		}
 		else if(p.locationName != null) {
 			s.settingText = (p.variant != null ? p.locationName + ", " + p.variant : p.locationName);
+		}
+		if(ctx.scene == null) {
+			s.action = p.action;
 		}
 		result.locationHint = locationHint(p);
 		return s;
@@ -1812,7 +1897,8 @@ public class PbComposeUtil {
 
 	/// A composition whose rows are partially written must not read as a finished LLM/USER one: mark it MIGRATED
 	/// and unedited so needsCompose() flags it. Best effort - a failure here is logged, the hard failure already stands.
-	private static void flagForRecompose(BaseRecord user, BaseRecord comp) {
+	/// Package-private: PbCoverUtil flags a half-written cover the same way.
+	static void flagForRecompose(BaseRecord user, BaseRecord comp) {
 		try {
 			BaseRecord patch = PbGraphUtil.patchOf(comp, OlioModelNames.MODEL_PB_COMPOSITION, OlioFieldNames.FIELD_PB_SOURCE,
 				OlioFieldNames.FIELD_PB_USER_EDITED);
@@ -1878,22 +1964,28 @@ public class PbComposeUtil {
 		return fresh;
 	}
 
-	/// The fields both the create and the recompose patch carry. Enum fields are set as their names.
-	private static void applyStagingFields(BaseRecord comp, Context ctx, Staging s) {
+	/// The fields both the create and the recompose patch carry. Enum fields are set as their names. With a scene,
+	/// action / location / locationVariant are the scene's; without one (a Phase 9 cover compose) action is the
+	/// reply's, there is no location, and titleSafeBand is written.
+	static void applyStagingFields(BaseRecord comp, Context ctx, Staging s) {
 		setQuiet(comp, OlioFieldNames.FIELD_PB_SETTING_TEXT, s.settingText);
-		String action = str(ctx.scene.get(OlioFieldNames.FIELD_PB_ACTION));
+		String action = (ctx.scene != null ? str(ctx.scene.get(OlioFieldNames.FIELD_PB_ACTION)) : s.action);
 		setQuiet(comp, OlioFieldNames.FIELD_PB_ACTION, (NarrativeUtil.isMeaningful(action) ? action.trim() : null));
 		setQuiet(comp, OlioFieldNames.FIELD_PB_MOOD, cap(s.mood, MAX_MOOD_CHARS));
 		setQuiet(comp, OlioFieldNames.FIELD_PB_SHOT_TYPE, s.shot.toString());
 		setQuiet(comp, OlioFieldNames.FIELD_PB_VIEWPOINT, s.viewpoint.toString());
 		setQuiet(comp, OlioFieldNames.FIELD_PB_CAMERA_TEXT, s.cameraText);
 		setQuiet(comp, OlioFieldNames.FIELD_PB_SOURCE, s.source.toString());
+		if(ctx.scene == null) {
+			setQuiet(comp, OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND, s.titleSafeBand.toString());
+			return;
+		}
 		setQuiet(comp, FieldNames.FIELD_LOCATION, (ctx.scene.hasField(FieldNames.FIELD_LOCATION) ? ctx.scene.get(FieldNames.FIELD_LOCATION) : null));
 		setQuiet(comp, OlioFieldNames.FIELD_PB_LOCATION_VARIANT,
 			(ctx.scene.hasField(OlioFieldNames.FIELD_PB_LOCATION_VARIANT) ? ctx.scene.get(OlioFieldNames.FIELD_PB_LOCATION_VARIANT) : null));
 	}
 
-	private static BaseRecord createActor(BaseRecord user, Context ctx, BaseRecord comp, String compOid, ResolvedActor ra, int index) {
+	static BaseRecord createActor(BaseRecord user, Context ctx, BaseRecord comp, String compOid, ResolvedActor ra, int index) {
 		String name = ACTOR_NAME_PREFIX + compOid + "." + index;
 		BaseRecord row;
 		try {
@@ -1926,7 +2018,7 @@ public class PbComposeUtil {
 		return created;
 	}
 
-	private static BaseRecord createElement(BaseRecord user, Context ctx, BaseRecord comp, String compOid, ResolvedElement re, int index) {
+	static BaseRecord createElement(BaseRecord user, Context ctx, BaseRecord comp, String compOid, ResolvedElement re, int index) {
 		String name = ELEMENT_NAME_PREFIX + compOid + "." + index;
 		BaseRecord row;
 		try {
@@ -1948,7 +2040,7 @@ public class PbComposeUtil {
 		return IOSystem.getActiveContext().getAccessPoint().create(user, row);
 	}
 
-	private static void applyPlacement(BaseRecord row, Placement pl) throws FieldException, ValueException, ModelNotFoundException {
+	static void applyPlacement(BaseRecord row, Placement pl) throws FieldException, ValueException, ModelNotFoundException {
 		if(pl == null) {
 			return;
 		}
@@ -1961,7 +2053,7 @@ public class PbComposeUtil {
 
 	/// Group = the scene's group (no makePath: a compose never creates a directory); owner = the caller.
 	/// None of the three models inherits common.name, so the name is set explicitly.
-	private static void own(BaseRecord user, BaseRecord rec, Context ctx, String name) throws FieldException, ValueException, ModelNotFoundException {
+	static void own(BaseRecord user, BaseRecord rec, Context ctx, String name) throws FieldException, ValueException, ModelNotFoundException {
 		IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, rec, ctx.orgId);
 		rec.set(FieldNames.FIELD_GROUP_ID, Long.valueOf(ctx.bookGroupId));
 		rec.set(FieldNames.FIELD_NAME, name);
@@ -2018,7 +2110,7 @@ public class PbComposeUtil {
 		OlioFieldNames.FIELD_PB_SETTING_TEXT, OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_MOOD,
 		OlioFieldNames.FIELD_PB_SHOT_TYPE, OlioFieldNames.FIELD_PB_VIEWPOINT, OlioFieldNames.FIELD_PB_CAMERA_TEXT,
 		OlioFieldNames.FIELD_PB_PROPS, OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE,
-		OlioFieldNames.FIELD_PB_PROMPT_LOCKED, "focalActorObjectId");
+		OlioFieldNames.FIELD_PB_PROMPT_LOCKED, OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND, "focalActorObjectId");
 	static final List<String> ACTOR_EDITABLE = Arrays.asList(
 		OlioFieldNames.FIELD_PB_ROLE, OlioFieldNames.FIELD_PB_PRIORITY, OlioFieldNames.FIELD_PB_POSE, FieldNames.FIELD_EXPRESSION,
 		OlioFieldNames.FIELD_PB_ACTION, OlioFieldNames.FIELD_PB_FACING, OlioFieldNames.FIELD_PB_X, OlioFieldNames.FIELD_PB_Y,
@@ -2031,6 +2123,7 @@ public class PbComposeUtil {
 	static final Map<String, String> COMPOSITION_REFUSED = refusedMap(
 		OlioFieldNames.FIELD_PB_BOOK, "a composition's book is fixed",
 		OlioFieldNames.FIELD_PB_SCENE, "a composition's scene is fixed",
+		OlioFieldNames.FIELD_PB_SERIES, "a composition's series is fixed",
 		OlioFieldNames.FIELD_PB_PURPOSE, "a composition's purpose is fixed",
 		OlioFieldNames.FIELD_PB_SOURCE, "source is set by the composer and by edits",
 		OlioFieldNames.FIELD_PB_REVISION, "revision is bumped by every edit",
@@ -2275,6 +2368,10 @@ public class PbComposeUtil {
 				case OlioFieldNames.FIELD_PB_VIEWPOINT:
 					values.put(key, requiredEnum(enumField(in, key, PbViewpointEnumType.values()), key, PbViewpointEnumType.values()).toString());
 					break;
+				case OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND:
+					// Phase 9: meaningful on cover-type compositions; a SCENE row may carry it too, the render ignores it there.
+					values.put(key, requiredEnum(enumField(in, key, PbTitleSafeBandEnumType.values()), key, PbTitleSafeBandEnumType.values()).toString());
+					break;
 				case OlioFieldNames.FIELD_PB_PROMPT_LOCKED:
 					values.put(key, booleanField(in, key));
 					break;
@@ -2462,7 +2559,9 @@ public class PbComposeUtil {
 	 * Records that a user edited {@code comp} or one of its rows: {@code userEdited = true}, {@code source = USER},
 	 * {@code revision + 1}, the in-process stale cache touched, and the scene's render node marked STALE through
 	 * {@link PbBookUtil#markSceneNodeStale} (never a 409 on a RUNNING node - the write lands, the result says the
-	 * node did not go stale). {@code scene} may be null (a composition without a scene); then no node is touched.
+	 * node did not go stale). {@code scene} may be null (a composition without a scene - a cover, P9-4); then the
+	 * composition's own {@code composition_plan@} node is the one marked, through
+	 * {@link PbBookUtil#markCompositionNodeStale}, so an edit to a rendered cover invalidates it the same way.
 	 *
 	 * @throws PictureBookException 500 when the composition patch is refused
 	 */
@@ -2492,6 +2591,13 @@ public class PbComposeUtil {
 			long nodeId = (nodeRef != null ? PbHealthUtil.idOf(nodeRef) : 0L);
 			BaseRecord node = (nodeId > 0L ? PbGraphUtil.readNodeById(user, nodeId, PbGraphUtil.orgId(comp)) : null);
 			out.nodeStatus = (node != null ? str(node.get(OlioFieldNames.FIELD_PB_NODE_STATUS)) : null);
+		}
+		else {
+			BaseRecord node = PbBookUtil.findCompositionNode(user, comp);
+			out.nodeStale = PbBookUtil.markNodeStale(user, node);
+			if(node != null) {
+				out.nodeStatus = (out.nodeStale ? PbNodeStatusEnumType.STALE.toString() : str(node.get(OlioFieldNames.FIELD_PB_NODE_STATUS)));
+			}
 		}
 		return out;
 	}
@@ -3094,7 +3200,7 @@ public class PbComposeUtil {
 
 	// ─────────────────────────────── small helpers ───────────────────────────────
 
-	private static void setQuiet(BaseRecord rec, String field, Object value) {
+	static void setQuiet(BaseRecord rec, String field, Object value) {
 		try {
 			rec.set(field, value);
 		}
@@ -3103,7 +3209,7 @@ public class PbComposeUtil {
 		}
 	}
 
-	private static PbCompositionSourceEnumType sourceOf(BaseRecord comp) {
+	static PbCompositionSourceEnumType sourceOf(BaseRecord comp) {
 		String s = str(comp.get(OlioFieldNames.FIELD_PB_SOURCE));
 		if(s == null) {
 			return PbCompositionSourceEnumType.UNKNOWN;
@@ -3125,7 +3231,7 @@ public class PbComposeUtil {
 		return null;
 	}
 
-	private static String cap(String s, int max) {
+	static String cap(String s, int max) {
 		if(s == null) {
 			return null;
 		}
@@ -3133,11 +3239,11 @@ public class PbComposeUtil {
 		return (t.length() > max ? t.substring(0, max).trim() : t);
 	}
 
-	private static String orNone(String s) {
+	static String orNone(String s) {
 		return (NarrativeUtil.isMeaningful(s) ? s.trim() : NONE);
 	}
 
-	private static String str(Object v) {
+	static String str(Object v) {
 		return (v == null ? null : v.toString());
 	}
 }

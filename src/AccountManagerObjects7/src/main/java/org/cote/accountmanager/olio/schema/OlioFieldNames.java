@@ -525,5 +525,7 @@ public class OlioFieldNames {
 	public static final String FIELD_PB_REFERENCE_POLICY = "referencePolicy";
 	public static final String FIELD_PB_ELEMENT_TYPE = "elementType";
 	public static final String FIELD_PB_IMPORTANCE = "importance";
+	/// Phase 9 (cover / title page / chapter opener / series art): composition.series reuses FIELD_PB_SERIES.
+	public static final String FIELD_PB_TITLE_SAFE_BAND = "titleSafeBand";
 
 }

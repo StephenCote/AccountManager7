@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -741,7 +742,10 @@ public class PbNodeExecutor {
 		String handle = node.get(OlioFieldNames.FIELD_PB_HANDLE);
 		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
 		if(scopeRef == null || scopeRef.trim().isEmpty()) {
-			throw new PictureBookException(400, "Render-plan node " + handle + " carries no scopeRef (scene objectId)");
+			throw new PictureBookException(400, "Render-plan node " + handle + " carries no scopeRef (scene or composition objectId)");
+		}
+		if(PbPipelineUtil.SCOPE_COMPOSITION.equals(node.get(OlioFieldNames.FIELD_PB_SCOPE))) {
+			return executeCompositionPlan(g, node, sdu, scopeRef);
 		}
 
 		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
@@ -801,6 +805,93 @@ public class PbNodeExecutor {
 			out.put(KEY_QA_MODE, qa.mode);
 		}
 		return out;
+	}
+
+	/**
+	 * {@link #executeRenderPlan} for a RENDER_PLAN node whose scope is {@link PbPipelineUtil#SCOPE_COMPOSITION}
+	 * (V3 §40, P9-2): a cover-type composition rendered through the production plan path. The composition is
+	 * read from {@code scopeRef} as the run user (404 when unreadable, not this book's, or - for SERIES_ART - not
+	 * this book's series), the plan is {@link PbRenderPlanUtil#buildCompositionPlan} and goes straight to the
+	 * plan-taking {@link #renderPlanned(SceneGraph, BaseRecord, RenderPlan, String, SDUtil, String, String, int)}:
+	 * never {@link #renderPlannedScene} (which composes a SCENE) and nothing here writes a composition. Finals,
+	 * QA and completion are the scene branch's; {@link #bindSceneLocation} is skipped (no scene to bind). Inside a
+	 * run the preset's {@code variants} finals are rendered, as for a scene (§23).
+	 */
+	private static Map<String, Object> executeCompositionPlan(SceneGraph g, BaseRecord node, SDUtil sdu, String scopeRef) {
+		BaseRecord user = g.getUser();
+		BaseRecord book = g.getBook();
+		BaseRecord composition = PbComposeUtil.readComposition(user, scopeRef.trim(), PbGraphUtil.orgId(book));
+		if(composition == null || !compositionOfBook(book, composition)) {
+			throw new PictureBookException(404, "Composition " + scopeRef + " not found in this book");
+		}
+		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOfRow(composition);
+		String purposeWord = (purpose != null ? purpose.toString().toLowerCase(Locale.ROOT).replace('_', ' ') : "composition");
+		String label = purposeWord + " of book " + book.get(OlioFieldNames.FIELD_PB_SLUG);
+
+		BaseRecord preBatch = PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_BASE);
+		String attempt = attemptOf(g);
+
+		RenderPlan plan = PbRenderPlanUtil.buildCompositionPlan(user, book, composition, node, g.getPlanOptions(),
+			sdu.getApiType(), sdu.getServer());
+		int variants = 1;
+		if(g.getRun() != null && plan.getPreset() != null) {
+			variants = Math.max(1, plan.getPreset().getVariants());
+		}
+		PlannedRender r = renderPlanned(g, node, plan, label, sdu,
+			"composition_plan_" + (purpose != null ? purpose.toString().toLowerCase(Locale.ROOT) : "x"),
+			"The " + label + " has no text to render: set its setting/action or prompt override", variants);
+		List<BaseRecord> artifacts = new ArrayList<>();
+		for(PlannedRender.Variant v : r.variants) {
+			BaseRecord a;
+			if(r.variants.size() > 1) {
+				a = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
+					v.data, v.bytes, "image/png", v.seed, r.frozen, v.requestJson, v.referenceArtifactObjectIds, sdu.getApiType(), v.durationMs,
+					v.backendGraph, preBatch, v.variantIndex, attempt);
+			}
+			else {
+				a = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
+					v.data, v.bytes, "image/png", v.seed, r.frozen, v.requestJson, v.referenceArtifactObjectIds, sdu.getApiType(), v.durationMs,
+					v.backendGraph, attempt);
+			}
+			artifacts.add(a);
+		}
+		AttemptQa qa = qaAttempt(g, sdu, r, artifacts, label);
+		if(qa != null) {
+			r.degradations.addAll(qa.degradations);
+		}
+		BaseRecord artifact = artifacts.get(0);
+
+		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
+		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
+
+		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(r.bytes.length), downstream, r.degradations);
+		r.describe(out);
+		out.put(KEY_VARIANTS, variantsDto(artifacts, r.variants, qa));
+		if(qa != null) {
+			out.put(KEY_QA_MODE, qa.mode);
+		}
+		out.put("compositionObjectId", composition.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("purpose", (purpose != null ? purpose.toString() : null));
+		return out;
+	}
+
+	/// Whether {@code composition} belongs to {@code book}: its book FK is this book, or it is SERIES_ART of this
+	/// book's series (hosted in whichever chapter's group it was first made in - PbCoverUtil.findSeriesArt).
+	static boolean compositionOfBook(BaseRecord book, BaseRecord composition) {
+		Long bookId = book.get(FieldNames.FIELD_ID);
+		BaseRecord compBook = (composition.hasField(OlioFieldNames.FIELD_PB_BOOK) ? composition.get(OlioFieldNames.FIELD_PB_BOOK) : null);
+		Long compBookId = (compBook != null ? compBook.get(FieldNames.FIELD_ID) : null);
+		if(bookId != null && bookId.equals(compBookId)) {
+			return true;
+		}
+		if(PbCoverUtil.purposeOfRow(composition) != PbCompositionPurposeEnumType.SERIES_ART) {
+			return false;
+		}
+		BaseRecord bookSeries = (book.hasField(OlioFieldNames.FIELD_PB_SERIES) ? book.get(OlioFieldNames.FIELD_PB_SERIES) : null);
+		BaseRecord compSeries = (composition.hasField(OlioFieldNames.FIELD_PB_SERIES) ? composition.get(OlioFieldNames.FIELD_PB_SERIES) : null);
+		Long bs = (bookSeries != null ? bookSeries.get(FieldNames.FIELD_ID) : null);
+		Long cs = (compSeries != null ? compSeries.get(FieldNames.FIELD_ID) : null);
+		return (bs != null && bs.equals(cs));
 	}
 
 	/// V3 §23: the attempt an artifact recorded on this graph belongs to - the run's objectId, or null in Test

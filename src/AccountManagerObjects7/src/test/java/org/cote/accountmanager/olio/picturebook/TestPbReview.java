@@ -567,6 +567,70 @@ public class TestPbReview extends BaseTest {
 		assertExactlyOneSelected(u, n);
 	}
 
+	// ─────────────────────────────── P9-1: bookkeeping roles stay out of the queue (221 a) ───────────────────────────────
+
+	/**
+	 * Ledger §6.C 221 a / 232 d M5: a {@code renderGraph} JSON artifact (the compiled Comfy graph a raw-graph
+	 * stage posted, §38.3) is bookkeeping beside the image, like {@code renderPlan} and {@code qa} - the review
+	 * queue must list the node's reviewable artifact only, never the graph, under both filters, and the counts
+	 * must not include it. A node carrying ONLY bookkeeping artifacts is omitted from the queue altogether.
+	 */
+	@Test
+	public void case09_renderGraphArtifactsAreNotReviewed() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		String bookOid = bk.get(FieldNames.FIELD_OBJECT_ID);
+		String groupPath = PbBookUtil.artifactGroupPath(SLUG);
+
+		/// Node A: one reviewable portrait artifact + the three bookkeeping roles beside it.
+		BaseRecord nA = node(u, wf, "p91-c09a");
+		BaseRecord img = artifact(u, nA, "c09 image");
+		BaseRecord graph = PbArtifactUtil.persistArtifact(u, nA, PbPipelineUtil.ROLE_RENDER_GRAPH, PbArtifactTypeEnumType.JSON,
+			groupPath, null, "{\"stage\":\"base\",\"nodes\":{}}", null, null);
+		assertNotNull("renderGraph artifact", graph);
+		BaseRecord plan = PbArtifactUtil.persistArtifact(u, nA, PbPipelineUtil.ROLE_RENDER_PLAN, PbArtifactTypeEnumType.JSON,
+			groupPath, null, "{\"plan\":\"c09\"}", null, null);
+		assertNotNull("renderPlan artifact", plan);
+		/// Node B: bookkeeping only - no reviewable output at all.
+		BaseRecord nB = node(u, wf, "p91-c09b");
+		BaseRecord graphOnly = PbArtifactUtil.persistArtifact(u, nB, PbPipelineUtil.ROLE_RENDER_GRAPH, PbArtifactTypeEnumType.JSON,
+			groupPath, null, "{\"stage\":\"base\",\"nodes\":{}}", null, null);
+		assertNotNull("renderGraph-only artifact", graphOnly);
+		assertEquals("precondition: the graph is stored under the renderGraph role",
+			PbPipelineUtil.ROLE_RENDER_GRAPH, graphOnly.get(OlioFieldNames.FIELD_PB_ROLE));
+
+		Map<String, Object> all = PbServiceFacade.listReviewQueue(u, bookOid, null);
+		Map<String, Object> qa = nodeEntry(all, nA);
+		assertNotNull("node A is in the queue (it has a reviewable artifact)", qa);
+		List<Map<String, Object>> aArts = artifactsOf(qa);
+		assertEquals("node A lists only its reviewable artifact: " + aArts, 1, aArts.size());
+		assertNotNull("the portrait artifact is listed", byObjectId(aArts, img));
+		assertNull("the renderGraph artifact is never listed", byObjectId(aArts, graph));
+		assertNull("the renderPlan artifact is never listed", byObjectId(aArts, plan));
+		assertNull("a node carrying only bookkeeping artifacts is omitted", nodeEntry(all, nB));
+		for(Map<String, Object> ne : nodesOf(all)) {
+			for(Map<String, Object> ae : artifactsOf(ne)) {
+				assertFalse("no renderGraph entry anywhere in the queue: " + ae,
+					PbPipelineUtil.ROLE_RENDER_GRAPH.equals(ae.get("role")));
+			}
+		}
+
+		/// The counts are per listed artifact, so a second read after one more graph revision does not move them.
+		int total = ((Number) all.get("artifactCount")).intValue();
+		int pending = ((Number) all.get("pendingCount")).intValue();
+		BaseRecord graph2 = PbArtifactUtil.persistArtifact(u, nA, PbPipelineUtil.ROLE_RENDER_GRAPH, PbArtifactTypeEnumType.JSON,
+			groupPath, null, "{\"stage\":\"base\",\"nodes\":{\"1\":{}}}", null, null);
+		assertNotNull("second renderGraph revision", graph2);
+		Map<String, Object> again = PbServiceFacade.listReviewQueue(u, bookOid, null);
+		assertEquals("artifactCount does not count graph revisions", total, ((Number) again.get("artifactCount")).intValue());
+		assertEquals("pendingCount does not count graph revisions", pending, ((Number) again.get("pendingCount")).intValue());
+
+		Map<String, Object> auto = PbServiceFacade.listReviewQueue(u, bookOid, PbServiceFacade.REVIEW_FILTER_AUTO_APPROVED);
+		assertNull("nothing on node A is auto-approved, and the graph does not leak through the filter", nodeEntry(auto, nA));
+		assertNull(nodeEntry(auto, nB));
+	}
+
 	// ─────────────────────────────── fixture ───────────────────────────────
 
 	private BaseRecord user() {

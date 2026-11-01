@@ -428,12 +428,13 @@ describe('reader Plan & generate dialog', () => {
         expect(page.toast).not.toHaveBeenCalledWith('error', expect.anything());
     });
 
-    it('Generate success closes the dialog, toasts the artifact id and re-reads /pages (+health, + the scene node for its degradations)', async () => {
+    it('Generate success closes the dialog, toasts the artifact id and re-reads /pages (+health, + covers on V3, + the scene node for its degradations)', async () => {
         let calls = planFetch([
             { re: /^POST .*\/plan$/, fn: () => jsonResponse(200, PLAN) },
             { re: /^POST .*\/render-plan$/, fn: () => jsonResponse(200, { artifactObjectId: 'art-9', nodeObjectId: 'n1', planArtifactObjectId: PLAN_OID }) },
             { re: /^GET .*\/pages$/, fn: () => jsonResponse(200, [Object.assign({}, SCENE, { artifactObjectId: 'art-9', reviewStatus: 'GENERATED' })]) },
-            { re: /^GET .*\/health$/, fn: () => jsonResponse(404, { error: 'none' }) }
+            { re: /^GET .*\/health$/, fn: () => jsonResponse(404, { error: 'none' }) },
+            { re: /^GET .*\/covers$/, fn: () => jsonResponse(200, { bookObjectId: 'B1', covers: {} }) }
         ]);
         let openSpy = vi.spyOn(Dialog, 'open');
         findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render').attrs.onclick();
@@ -447,10 +448,12 @@ describe('reader Plan & generate dialog', () => {
             'POST /rest/olio/picture-book/B1/scene/s1/render-plan',
             'GET /rest/olio/picture-book/B1/pages',
             'GET /rest/olio/picture-book/B1/health',
+            'GET /rest/olio/picture-book/B1/covers',
             'GET /rest/olio/picture-book/B1/workflow/node/n1'
         ]);
         expect(am7client.clearCache).toHaveBeenCalledWith('olio.pb.artifact', true);
         expect(pbf.__pb2V3StateForTest().pb2Pages[0].artifactObjectId).toBe('art-9');
+        expect(pbf.__pbHealthStateForTest().pb2Covers.covers.COVER).toBeNull();
         expect(pbf.__pb2PlanStateForTest().open).toBe(false);
         expect(pbf.__pb2PlanStateForTest().rendering).toBe(false);
     });

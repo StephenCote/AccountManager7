@@ -42,7 +42,8 @@ import {
     getAutoApprove, setAutoApprove, unpinNode, isPinnedRefusal,
     planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS,
     deriveStageList, runSummaryText, resolvePb2BookObjectId,
-    migrateV1Book, normalizeMigration
+    migrateV1Book, normalizeMigration,
+    getCovers, coverImageRefFor
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -1286,8 +1287,21 @@ let pb2PollIntervalMs = undefined; // pollJob default (3s); Vitest shortens it t
 // {loading, summary: degradationSummary() | null, error}. Emptied by pb2RefreshPages (a render or
 // compose may have produced a new plan); a scene whose node has no renderPlan yet caches a null summary.
 let pb2SceneDegradations = {};
+// P9-4 (V3 §40): the book's cover-art view (GET /{id}/covers, normalizeCoverView) under v3; null when not read or
+// the read failed. The reader's cover page shows the APPROVED COVER render when there is one, else page 1's image.
+let pb2Covers = null;
 
 function pb2TotalPages() { return pb2Pages.length + 1; } // cover + scenes
+
+/** The approved COVER image ref (page-view shape: imageGroupPath + imageName) or null; never the unapproved latest. */
+function pb2CoverRef() { return coverImageRefFor(pb2Covers, 'COVER', false); }
+
+/** The COVER composition's title-safe band ('TOP' | 'BOTTOM' | null) - where the reader puts the title block. */
+function pb2CoverBand() {
+    let e = pb2Covers && pb2Covers.covers ? pb2Covers.covers.COVER : null;
+    let b = e && e.titleSafeBand ? String(e.titleSafeBand).toUpperCase() : null;
+    return b === 'TOP' || b === 'BOTTOM' ? b : null;
+}
 
 /** Read (once per refresh) the degradation summary of the open scene's last compiled plan; nothing to read without a node. */
 async function pb2EnsureSceneDegradations(scene) {
@@ -1374,11 +1388,13 @@ async function pb2RefreshPages(bookId) {
     try {
         let loaded = await Promise.all([
             bookPages(bookId),
-            bookHealth(bookId).catch(function () { return null; })
+            bookHealth(bookId).catch(function () { return null; }),
+            pb2RenderPath === 'v3' ? getCovers(bookId).catch(function () { return null; }) : Promise.resolve(null)
         ]);
         if (bookId !== pb2BookObjectId) return;
         pb2Pages = Array.isArray(loaded[0]) ? loaded[0] : [];
         pb2Health = loaded[1] || null;
+        pb2Covers = loaded[2] || null;
         pb2CurrentPage = Math.max(0, Math.min(pb2CurrentPage, pb2TotalPages() - 1));
         pb2EnsureSceneDegradations(pb2CurrentScene());
     } catch (e) {
@@ -1926,6 +1942,7 @@ async function loadPb2Pages(pb2ObjId) {
     pb2Pages = [];
     pb2SceneTotal = null;
     pb2Health = null;
+    pb2Covers = null;
     pb2CurrentPage = 0;
     pb2BookName = pb2NameHint() || 'Loading...';
     m.redraw();
@@ -1963,15 +1980,18 @@ async function loadPb2Pages(pb2ObjId) {
         pb2RenderPath = pb2IsV3(loaded[3]) ? 'v3' : 'v1';
         await loadPb2Chapters(pb2ObjId, bookFull);
         if (pb2RenderPath === 'v3' && pb2ObjId === pb2BookObjectId) {
-            // v3 only: the auto-approve setting for the header badge + Render dialog, and the workflow's
-            // last run so an in-flight or interrupted render re-attaches from server state. Neither
-            // failure blocks the pages (a book with no workflow yet has no run to re-attach).
+            // v3 only: the auto-approve setting for the header badge + Render dialog, the workflow's
+            // last run so an in-flight or interrupted render re-attaches from server state, and the
+            // cover-art view for the cover page. No failure blocks the pages (a book with no workflow
+            // yet has no run to re-attach; a book with no covers shows page 1 on its cover).
             let v3 = await Promise.all([
                 getAutoApprove(pb2ObjId).catch(function () { return null; }),
-                workflowView(pb2ObjId).catch(function () { return null; })
+                workflowView(pb2ObjId).catch(function () { return null; }),
+                getCovers(pb2ObjId).catch(function () { return null; })
             ]);
             if (pb2ObjId === pb2BookObjectId) {
                 pb2AutoApprove = !!(v3[0] && v3[0].autoApprove);
+                pb2Covers = v3[2] || null;
                 await pb2ReattachRun(pb2ObjId, v3[1]);
             }
         }
@@ -2012,18 +2032,27 @@ function pb2CoverCountLabel() {
     return rendered + ' rendered of ' + total + ' scene' + (total !== 1 ? 's' : '');
 }
 
+// The cover page: the APPROVED COVER render (P9-4, V3 §40) when the book has one, else page 1's image dimmed
+// behind the title as before. With a real cover the title block sits in the composition's title-safe band
+// (TOP / BOTTOM quarter) over a scrim; without a band it stays centered.
 function renderPb2Cover() {
     let firstPage = pb2Pages.length > 0 ? pb2Pages[0] : null;
-    let coverImgUrl = firstPage ? pb2ImageUrl(firstPage) : null;
+    let coverRef = pb2CoverRef();
+    let coverImgUrl = coverRef ? pb2ImageUrl(coverRef) : (firstPage ? pb2ImageUrl(firstPage) : null);
+    let band = coverRef ? pb2CoverBand() : null;
+    let justify = band === 'TOP' ? 'justify-start' : (band === 'BOTTOM' ? 'justify-end' : 'justify-center');
     return m('div', {
-        class: 'flex flex-col items-center justify-center min-h-[60vh] relative overflow-hidden rounded-lg',
+        'data-pb2-cover-source': coverRef ? 'cover' : (coverImgUrl ? 'page' : 'none'),
+        'data-pb2-cover-band': band || '',
+        class: 'flex flex-col items-center ' + justify + ' min-h-[60vh] relative overflow-hidden rounded-lg',
         style: 'background: linear-gradient(135deg, #2d1b69 0%, #1a1a4e 50%, #0f0f3d 100%);'
     }, [
         coverImgUrl ? m('img', {
+            'data-pb2-cover-image': true,
             src: coverImgUrl,
-            class: 'absolute inset-0 w-full h-full object-cover opacity-40'
+            class: 'absolute inset-0 w-full h-full object-cover ' + (coverRef ? 'opacity-100' : 'opacity-40')
         }) : null,
-        m('div', { class: 'relative z-10 text-center p-8' }, [
+        m('div', { class: 'relative z-10 text-center p-8' + (coverRef ? ' bg-black/40 backdrop-blur-sm rounded-lg m-4' : '') }, [
             m('div', { class: 'text-purple-300 text-sm mb-2 uppercase tracking-widest' }, 'PB2 · Workflow Book'),
             m('h1', {
                 class: 'text-4xl font-bold text-white mb-3',
@@ -2266,6 +2295,12 @@ export function renderPb2Header() {
             title: 'Composition board (camera, actors, elements, wardrobe)',
             onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/compose'); }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'view_in_ar')) : null,
+        v3 ? m('button', {
+            'data-testid': 'pb2-cover-link',
+            class: 'text-gray-500 hover:text-purple-600',
+            title: 'Cover art (cover, title page, chapter opener, series art)',
+            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/cover'); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'menu_book')) : null,
 
         // Edit (wizard) and Characters — same pair the book list rows offer. P7-3: under v3 the
         // wizard would only hand straight back to this reader (its steps 4–5 are gone), so the
@@ -2376,7 +2411,7 @@ export function __pbHealthStateForTest() {
     return {
         pbHealth, pbHealthLoading, pbHealthError, pbHealthRepairing, pbHealthOverwriteTemplates,
         pbOrphanScanning, pbOrphanPurging, pbOrphanOrgWide,
-        pb2Health, pb2HealthRepairing, pb2BookObjectId, pb2SceneTotal, pb2Pages
+        pb2Health, pb2HealthRepairing, pb2BookObjectId, pb2SceneTotal, pb2Pages, pb2Covers
     };
 }
 export function __setPbHealthStateForTest(patch) {
@@ -2394,7 +2429,10 @@ export function __setPbHealthStateForTest(patch) {
     if ('pb2BookObjectId' in patch) pb2BookObjectId = patch.pb2BookObjectId;
     if ('pb2SceneTotal' in patch) pb2SceneTotal = patch.pb2SceneTotal;
     if ('pb2Pages' in patch) pb2Pages = Array.isArray(patch.pb2Pages) ? patch.pb2Pages : [];
+    if ('pb2Covers' in patch) pb2Covers = patch.pb2Covers || null;
+    if ('pb2BookName' in patch) pb2BookName = patch.pb2BookName;
 }
+export { renderPb2Cover as __renderPb2CoverForTest };
 
 function renderPb2PageDots() {
     let total = pb2TotalPages();
@@ -2439,7 +2477,7 @@ var pb2PageReaderView = {
                 ? m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading scenes...')
                 : pb2PageError
                     ? m('div', { class: 'text-red-500 text-sm text-center py-12' }, pb2PageError)
-                    : pb2Pages.length === 0
+                    : (pb2Pages.length === 0 && !pb2CoverRef())
                         ? m('div', { class: 'text-center py-12' }, [
                             m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 block mb-4' }, 'auto_stories'),
                             // Honest empty state: /pages is empty when the book has no olio.pb.scene rows —

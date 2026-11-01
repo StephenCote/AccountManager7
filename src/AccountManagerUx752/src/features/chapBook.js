@@ -11,7 +11,7 @@ import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
-import { bookPages, unpinNode, listLocations, setSceneLocation } from '../workflows/pictureBookWorkflow.js';
+import { bookPages, unpinNode, listLocations, setSceneLocation, getCovers, coverImageRefFor } from '../workflows/pictureBookWorkflow.js';
 import { resolveImageUrl, pollJob, cancelJob, listJobs } from '../workflows/sceneExtractor.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
@@ -2503,6 +2503,9 @@ let readerLoading = false;
 let readerError = null;
 let readerAnalyzing = false;
 let readerRendering = false;
+// P9-4 (V3 §40): the book's cover-art view (GET /{id}/covers); null when unread or the read failed. The reader's
+// cover page (and the HTML export's cover) shows the APPROVED COVER render when there is one, else page 1's image.
+let readerCovers = null;
 // D5: page-flip reader nav state (cover = page 0, poem pages 1..N; fullscreen). Owned here and passed
 // to the shared ReaderShell (components/readerShell.js), the same reader PictureBook uses — the shell
 // mutates this object and provides keyboard nav, chevrons, page dots, fullscreen and HTML export.
@@ -2562,8 +2565,14 @@ async function loadReaderBook(bookObjectId) {
         }
         // bookPages returns [{objectId, sceneIndex, title, blurb, summary, poemStanza, dataObjectId}, ...]
         // — poemStanza is visible immediately (6D) and dataObjectId is the render fallback image.
-        let pages = await bookPages(bookObjectId);
+        // The cover-art view rides along (find-only on the server); its failure never blocks the pages.
+        let loaded = await Promise.all([
+            bookPages(bookObjectId),
+            getCovers(bookObjectId).catch(function () { return null; })
+        ]);
+        let pages = loaded[0];
         readerPages = Array.isArray(pages) ? pages : [];
+        readerCovers = loaded[1] || null;
         // FIX C: union server-derived (durable, book-FK-scoped) poem ids with any carried in
         // localStorage, so Analyze is available for books opened without local create-flow state.
         let serverIds = await fetchBookScopedPoemIds(bookObjectId);
@@ -2573,6 +2582,7 @@ async function loadReaderBook(bookObjectId) {
     } catch (e) {
         readerError = e.message || 'Failed to load book';
         readerPages = [];
+        readerCovers = null;
     }
     readerLoading = false;
     m.redraw();
@@ -2660,18 +2670,43 @@ function readerTitle() {
     return (readerBook && (readerBook.name || readerBook.slug)) || 'ChapBook';
 }
 
-// ReaderShell cover slot (page 0) — mirrors PictureBook's cover but with ChapBook poem-book styling.
+// The approved COVER render's page-view ref (imageGroupPath + imageName, which chapImageUrl resolves) or null.
+function readerCoverRef() {
+    return coverImageRefFor(readerCovers, 'COVER', false);
+}
+
+// The COVER composition's title-safe band ('TOP' | 'BOTTOM' | null): where the cover page puts the title block.
+function readerCoverBand() {
+    let e = readerCovers && readerCovers.covers ? readerCovers.covers.COVER : null;
+    let b = e && e.titleSafeBand ? String(e.titleSafeBand).toUpperCase() : null;
+    return b === 'TOP' || b === 'BOTTOM' ? b : null;
+}
+
+// The reader's and the export's cover image: the approved COVER render when there is one, else page 1's image.
+function readerCoverImageUrl() {
+    let ref = readerCoverRef();
+    return ref ? chapImageUrl(ref) : chapImageUrl(readerPages[0]);
+}
+
+// ReaderShell cover slot (page 0) — mirrors PictureBook's cover but with ChapBook poem-book styling. With an
+// approved cover render (P9-4, V3 §40) the art is shown undimmed and the title block sits in the title-safe band.
 function renderReaderCover(nav) {
-    let coverImg = chapImageUrl(readerPages[0]);
+    let ref = readerCoverRef();
+    let coverImg = readerCoverImageUrl();
+    let band = ref ? readerCoverBand() : null;
+    let justify = band === 'TOP' ? 'justify-start' : (band === 'BOTTOM' ? 'justify-end' : 'justify-center');
     return m('div', {
-        class: 'flex flex-col items-center justify-center min-h-[60vh] relative overflow-hidden rounded-lg',
+        'data-cb-cover-source': ref ? 'cover' : (coverImg ? 'page' : 'none'),
+        'data-cb-cover-band': band || '',
+        class: 'flex flex-col items-center ' + justify + ' min-h-[60vh] relative overflow-hidden rounded-lg',
         style: 'background: linear-gradient(135deg, #2a1a3e 0%, #1e163e 50%, #34104a 100%);'
     }, [
         coverImg ? m('img', {
+            'data-cb-cover-image': true,
             src: coverImg,
-            class: 'absolute inset-0 w-full h-full object-cover opacity-50'
+            class: 'absolute inset-0 w-full h-full object-cover ' + (ref ? 'opacity-100' : 'opacity-50')
         }) : null,
-        m('div', { class: 'relative z-10 text-center p-8' }, [
+        m('div', { class: 'relative z-10 text-center p-8' + (ref ? ' bg-black/40 backdrop-blur-sm rounded-lg m-4' : '') }, [
             m('h1', {
                 class: 'text-4xl font-bold text-white mb-3',
                 style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;'
@@ -2860,8 +2895,9 @@ const ChapBookReader = {
                 backTitle: 'Back to Poem Library',
                 actionsLeft: renderReaderActionsLeft,
                 actionsRight: renderReaderActionsRight,
-                // Export params — self-contained ChapBook HTML with poem text over each landscape image.
-                coverImageUrl: function () { return chapImageUrl(readerPages[0]); },
+                // Export params — self-contained ChapBook HTML with poem text over each landscape image; the
+                // export's cover is the reader's (approved COVER render, else page 1).
+                coverImageUrl: readerCoverImageUrl,
                 // Thread the reader book's fixPageHeight clamp into the shared export engine.
                 exportPageHtml: function (p, i, imgB64, total) {
                     return chapExportPageHtml(p, i, imgB64, total, !!(readerBook && readerBook.fixPageHeight));
@@ -4647,4 +4683,12 @@ export function __setReviewStateForTest(patch) {
     if ('reviewScenes' in patch) reviewScenes = patch.reviewScenes;
     if ('roleWarning' in patch) roleWarning = patch.roleWarning;
 }
+// Exported for Vitest (P9-4): seed the reader's module state and render its cover slot without mounting the route.
+export function __setReaderStateForTest(patch) {
+    patch = patch || {};
+    if ('readerBook' in patch) readerBook = patch.readerBook;
+    if ('readerPages' in patch) readerPages = Array.isArray(patch.readerPages) ? patch.readerPages : [];
+    if ('readerCovers' in patch) readerCovers = patch.readerCovers || null;
+}
+export { renderReaderCover as __renderReaderCoverForTest, readerCoverImageUrl as __readerCoverImageUrlForTest };
 export default ChapBookFeature;

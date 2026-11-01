@@ -8,7 +8,10 @@
  * the wizard made is the book the reader shows, the style editor locks, the board composes, the canvas
  * drags, the queue approves. Where a §16 step has no UI control today (ChapBook creation from a .docx,
  * Propose-from-scenes with a chosen chat config) the REST route is used and the short-cut is recorded in
- * the step note so it lands in §6.C.
+ * the step note so it lands in §6.C. Step 15 (P9-6, §16 "Cover & Art") rides the P9-4 cover board and reader
+ * hooks: Auto cover on the walk's book (LLM + the picked chat config) and a Manual cover with a saved camera on
+ * the step-13 ChapBook, each rendered, approved, read back from GET /{book}/covers and shown by its reader;
+ * the ChapBook export's cover slot carries the approved render.
  *
  * Every step is a test.step that (a) asserts a visible outcome in the DOM, (b) reads the same fact back
  * over REST (/rest/olio/picture-book/{book}/… or POST /rest/model/search with cache:false), (c) saves a
@@ -25,6 +28,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { gunzipSync } from 'zlib';
 import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, resolveChatRoute, ensureChatConfig, ensurePath, createObject } from './helpers/api.js';
@@ -252,7 +256,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
         try { fs.writeFileSync(path.join(OUT_DIR, 'results.json'), JSON.stringify({ results, fx, consoleErrors, route: fx.route }, null, 2)); } catch (e) { /* report only */ }
     });
 
-    test('one user journey, 14 steps', async ({ page, request }) => {
+    test('one user journey, 15 steps', async ({ page, request }) => {
         test.setTimeout(6 * 60 * 60 * 1000);
         test.skip(!SD_ENABLED || !LLM_ENABLED, 'PB_SD_TESTS=1 and PB_LLM_TESTS=1 are both required: the gate renders on the SD server and extracts on the LLM');
         page.on('console', msg => { if (msg.type() === 'error') consoleErrors.push(msg.text().slice(0, 300)); });
@@ -370,15 +374,25 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             let sceneCount = parseInt((heading.match(/\((\d+)\)/) || [])[1] || '0', 10);
             let extractMs = Date.now() - tExtract;
             expect(sceneCount, 'scenes extracted').toBeGreaterThan(0);
-            // A scene with no title is not a scene. Run 7: the model dropped the outer [ ] of its reply,
+            // A scene with no description is not a scene. Run 7: the model dropped the outer [ ] of its reply,
             // parseLlmJsonArray latched onto scene 0's nested "characters":[…] and the wizard showed one
             // blank "scene" (name/role of Biju Rao) — the spec continued and the book was built from it.
-            // Do what a user does: Re-extract once, then insist on titled scenes.
+            // Run 15: the same latch (the reply opened with `{` where the `[` belonged → "Scene List (1)",
+            // blank), then the Re-extract came back as ten real scenes (blurb, setting, action, mood,
+            // characters, diffusionPrompt) every one with "title":"" — the server's NON_EMPTY mapper drops
+            // the empty string, so the wizard showed ten untitled scenes and the spec's "titled = real"
+            // test failed a legitimate list. An untitled scene IS a scene: the title field is there to be
+            // typed into, and create-from-scenes names a missing title "Scene N" (PictureBookUtil :7134).
+            // Do what a user does: Re-extract once when there is no scene with a description, then insist
+            // on described scenes; the titled count is reported, not asserted.
             const titleInputs = dialog.locator('input[placeholder="Scene title"]');
+            const blurbInputs = dialog.locator('textarea[placeholder="Scene description/blurb"]');
             const titledScenes = async () => (await titleInputs.evaluateAll(els => els.map(e => e.value.trim()))).filter(Boolean);
+            const describedScenes = async () => (await blurbInputs.evaluateAll(els => els.map(e => e.value.trim()))).filter(Boolean);
             let titles = await titledScenes();
+            let blurbs = await describedScenes();
             let reExtractNote = '';
-            if (!titles.length) {
+            if (!blurbs.length) {
                 await shot(page, '02b0-wizard-scenes-degenerate');
                 const tRe = Date.now();
                 // Run 10: "Extracting..." only appears on Mithril's next redraw, so a bare toHaveCount(0) passed at once
@@ -393,11 +407,12 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
                 heading = await sceneList.first().textContent();
                 sceneCount = parseInt((heading.match(/\((\d+)\)/) || [])[1] || '0', 10);
                 titles = await titledScenes();
-                reExtractNote = '; first extraction yielded untitled scene(s) → Re-extract' + reExtractNote + ' ' + Math.round((Date.now() - tRe) / 1000) + ' s → ' + sceneCount + ' scene(s)';
+                blurbs = await describedScenes();
+                reExtractNote = '; first extraction yielded no described scene → Re-extract' + reExtractNote + ' ' + Math.round((Date.now() - tRe) / 1000) + ' s → ' + sceneCount + ' scene(s)';
                 extractMs = Date.now() - tExtract;
             }
             await shot(page, '02b-wizard-scenes');
-            expect(titles.length, 'scenes with a title (of ' + sceneCount + ')' + reExtractNote).toBeGreaterThan(0);
+            expect(blurbs.length, 'scenes with a description (of ' + sceneCount + ')' + reExtractNote).toBeGreaterThan(0);
 
             // Continue → POST /{work}/create-from-scenes: characters, scenes, then a whole-book pb.compose job
             // (PbServiceFacade.createFromScenesAndCompose → composeJob {jobId…}). That job keeps the book's
@@ -451,12 +466,12 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             expect(chars.status, 'GET /characters').toBe(200);
             const cast = Array.isArray(chars.body) ? chars.body : [];
             fx.cast = cast.map(c => ({ objectId: c.objectId, name: c.name }));
-            return 'doc=' + doc.objectId + '; extraction ' + Math.round(extractMs / 1000) + ' s → ' + sceneCount + ' scenes (' + titles.length + ' titled: ' + titles.join(' | ').slice(0, 160) + ')' + reExtractNote + '; characters ' + Math.round(charsMs / 1000) + ' s → ' + charCount + ' shown / ' + cast.length + ' via /characters (' + cast.map(c => c.name).join(', ').slice(0, 200) + ')'
+            return 'doc=' + doc.objectId + '; extraction ' + Math.round(extractMs / 1000) + ' s → ' + sceneCount + ' scenes (' + blurbs.length + ' described, ' + titles.length + ' titled: ' + titles.join(' | ').slice(0, 160) + ')' + reExtractNote + '; characters ' + Math.round(charsMs / 1000) + ' s → ' + charCount + ' shown / ' + cast.length + ' via /characters (' + cast.map(c => c.name).join(', ').slice(0, 200) + ')'
                 + '; job polls ' + jobPolls.length + '; book ' + bookOid + ' "' + fx.book.name + '" slug=' + fx.book.slug + ' health scope=' + fx.book.healthScope + ' findings=' + fx.book.healthFindings + '; ' + composeNote + '; GET /workflow at create → ' + fx.book.workflowAtCreate;
         });
         if (!fx.book) {
             // Nothing downstream can run without the book: record every remaining step as unreachable, keep the report shape.
-            for (const [n, name] of [[3, 'Reader shell'], [4, 'Style'], [5, 'Characters'], [6, 'Locations'], [7, 'Composition board'], [8, 'Workflow canvas'], [9, 'Variant strip and retention'], [10, 'QA'], [11, 'Review queue'], [12, 'Reader after approval'], [13, 'ChapBook'], [14, 'Export']]) {
+            for (const [n, name] of [[3, 'Reader shell'], [4, 'Style'], [5, 'Characters'], [6, 'Locations'], [7, 'Composition board'], [8, 'Workflow canvas'], [9, 'Variant strip and retention'], [10, 'QA'], [11, 'Review queue'], [12, 'Reader after approval'], [13, 'ChapBook'], [14, 'Export'], [15, 'Cover and Art']]) {
                 await step(page, n, name, async () => { throw new Error('unreachable: the wizard made no book'); });
             }
             return;
@@ -1208,6 +1223,213 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             return 'ChapBook reader opened on ' + openedOn + '; export "' + d1.suggestedFilename() + '": cover ' + cb.cover + ' coverImg ' + cb.coverImg + ' scenes ' + cb.scenes + ' with images ' + cb.sceneImgs + ' (nav total = cover + ' + cb.scenes + ')'
                 + '; PB2 reader Export controls ' + pb2Export + ' (none exists — §16 hook gap); imported legacy group route → ' + importedRoute + ' Export controls ' + importedExport + ' banner "' + importedBanner + '"'
                 + '; un-imported PB1 viewer ' + fx.legacy2.group + ' "' + d2.suggestedFilename() + '": cover ' + pb.cover + ' coverImg ' + pb.coverImg + ' scenes ' + pb.scenes + ' with images ' + pb.sceneImgs;
+        });
+
+        // ── 15. Cover & Art (P9-6; V3 §40, the P9-4 board + reader hooks) ────────────────────────────
+        await step(page, 15, 'Cover and Art', async () => {
+            const notes = [];
+            // Cover board (cover mode of the composition board, pictureBookCompose.js) on the book the wizard made.
+            const openCoverBoard = async (bookOid) => {
+                await page.goto('/#!/picture-book/' + bookOid + '/cover', { timeout: T.ui });
+                await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover art', { timeout: T.ui });
+                await expect(page.getByTestId('pb-cmp-purpose-tabs')).toBeVisible();
+            };
+            // Render → the job strip goes terminal → Approve latest. Either the approve click or the book's
+            // auto-approve (a QA verdict on the stack) may be what approves; both end with the approved tile set.
+            const renderAndApprove = async (label) => {
+                const strip = page.getByTestId('pb-cmp-cover');
+                await expect(strip).toBeVisible({ timeout: T.ui });
+                const t0 = Date.now();
+                await page.getByTestId('pb-cmp-render-cover').click();
+                await waitForToast(page, /^Cover render started/, 60000);
+                const run = page.getByTestId('pb-cmp-render-run');
+                await expect(run).toBeVisible({ timeout: T.ui });
+                await expect(run).toHaveAttribute('data-run-terminal', 'true', { timeout: T.render });
+                const counter = ((await page.getByTestId('pb-cmp-render-counter').textContent()) || '').trim();
+                const renderMs = Date.now() - t0;
+                expect(counter, label + ' cover render job finished without an error').toBe('Rendered');
+                await waitForToast(page, /Cover: Rendered/, 60000);
+                // The board re-reads the covers after the job; wait for a tile to carry an artifact before deciding
+                // whether the render's QA verdict already approved it (no Latest tile) or Approve latest is ours to click.
+                const latestTile = page.getByTestId('pb-cmp-cover-latest');
+                const approvedTile = page.getByTestId('pb-cmp-cover-approved');
+                await expect(page.getByTestId('pb-cmp-cover-state')).not.toHaveText('Not rendered yet', { timeout: 60000 });
+                await expect.poll(async () => (await latestTile.count()) ? latestTile.getAttribute('data-artifact') : approvedTile.getAttribute('data-artifact'), { timeout: 60000 }).toMatch(/^[0-9a-f-]{36}$/);
+                const state = ((await page.getByTestId('pb-cmp-cover-state').textContent()) || '').trim();
+                const nodeStatus = await strip.getAttribute('data-node-status');
+                let latestOid = null, autoApproved = false;
+                if (await latestTile.count()) {
+                    latestOid = await latestTile.getAttribute('data-artifact');
+                    await expect(page.getByTestId('pb-cmp-approve-cover')).toBeEnabled({ timeout: 60000 });
+                    await page.getByTestId('pb-cmp-approve-cover').click();
+                    await waitForToast(page, /Cover approved/, 60000);
+                    await expect(approvedTile).toHaveAttribute('data-artifact', latestOid, { timeout: 60000 });
+                } else {
+                    autoApproved = true;   // the render's QA verdict approved it before the click could
+                }
+                const approvedOid = await approvedTile.getAttribute('data-artifact');
+                expect(approvedOid, label + ' approved tile carries the artifact').toMatch(/^[0-9a-f-]{36}$/);
+                await expect(approvedTile).toContainText('approved');
+                await expect(approvedTile.locator('img')).toHaveCount(1);
+                await expect.poll(() => approvedTile.locator('img').evaluate(img => img.complete && img.naturalWidth), { timeout: 60000 }).toBeGreaterThan(0);
+                await expect(page.getByTestId('pb-cmp-approve-cover')).toBeDisabled();
+                await expect(page.getByTestId('pb-cmp-cover-state')).toContainText('approved');
+                return { renderMs, counter, state, nodeStatus, latestOid, approvedOid, autoApproved };
+            };
+            // The approved entry, read back the way the readers read it (GET /{book}/covers → covers.COVER).
+            const approvedEntry = async (bookOid, label) => {
+                const v = await pbGet(request, '/' + bookOid + '/covers');
+                expect(v.status, label + ' GET /covers').toBe(200);
+                const c = (v.body.covers || {}).COVER;
+                expect(c && c.approved && c.approved.artifactObjectId, label + ' covers.COVER.approved: ' + JSON.stringify(c).slice(0, 400)).toBeTruthy();
+                expect(upper(c.approved.reviewStatus), label + ' approved.reviewStatus').toBe('APPROVED');
+                expect(c.selectedArtifactObjectId, label + ' selected = approved').toBe(c.approved.artifactObjectId);
+                expect(c.approved.imageGroupPath && c.approved.imageName, label + ' approved ref carries the media path').toBeTruthy();
+                expect(v.body.workflowObjectId, label + ' the render created the workflow').toBeTruthy();
+                return c;
+            };
+
+            // 15a — the book: Auto (the LLM stages it from the book's cast + premise, chat config CONFIG_NAME).
+            await openCoverBoard(fx.book.objectId);
+            const existsBefore = await page.getByTestId('pb-cmp-purpose-cover').getAttribute('data-exists');
+            expect(existsBefore, 'the walk made no cover yet').toBe('false');
+            await expect(page.getByTestId('pb-cmp-empty')).toBeVisible({ timeout: T.ui });
+            await expect(page.getByTestId('pb-cmp-empty-message')).toContainText(/no cover composition/i);
+            // The board's chat-config pick is module state keyed to the book: step 7 picked CONFIG_NAME on this book's
+            // scene board, so it usually still shows here; pick again only when it does not.
+            const cfgShown = ((await page.getByTestId('pb-cmp-chatconfig').textContent()) || '').trim();
+            if (cfgShown.indexOf(CONFIG_NAME) < 0) {
+                await page.getByTestId('pb-cmp-chatconfig').click();
+                await pickFromOverlay(page, CONFIG_NAME);
+                await expect(page.getByTestId('pb-cmp-chatconfig')).toContainText(CONFIG_NAME, { timeout: T.ui });
+                notes.push('chat config picked');
+            } else notes.push('chat config carried from step 7');
+            await page.getByTestId('pb-cmp-create-cover-open').click();
+            await expect(page.getByTestId('pb-cmp-create-cover')).toBeVisible();
+            await expect(page.getByTestId('pb-cmp-create-auto')).toBeChecked();
+            await expect(page.getByTestId('pb-cmp-create-from-scene')).toBeEnabled();
+            await shot(page, '15a-book-create-dialog');
+            const tAuto = Date.now();
+            await page.getByTestId('pb-cmp-create-submit').click();
+            const createdToast = (await waitForToast(page, /^Cover (created|was not created|already exists)/, T.compose)).trim();
+            const autoMs = Date.now() - tAuto;
+            expect(createdToast, 'Auto cover created through the dialog').toMatch(/^Cover created/);
+            await expect(page.getByTestId('pb-cmp-cover')).toBeVisible({ timeout: T.ui });
+            await expect(page.getByTestId('pb-cmp-source')).toHaveText(/llm/i);
+            await expect(page.getByTestId('pb-cmp-purpose')).toHaveText(/cover/i);
+            await expect(page.getByTestId('pb-cmp-purpose-cover')).toHaveAttribute('data-exists', 'true');
+            await expect(page.getByTestId('pb-cmp-cover-state')).toHaveText('Not rendered yet');
+            const bandChip = (await page.getByTestId('pb-cmp-cover-band').count()) ? ((await page.getByTestId('pb-cmp-cover-band').textContent()) || '').trim() : '(no band chip — band UNKNOWN/NONE)';
+            const setting = await page.getByTestId('pb-cmp-setting').inputValue();
+            const actorCards = await page.locator('li[data-actor-objectid]').count();
+            await shot(page, '15b-book-cover-created');
+            const board0 = await pbGet(request, '/' + fx.book.objectId + '/covers/cover');
+            expect(board0.status, 'GET /covers/cover after Auto').toBe(200);
+            const comp0 = board0.body.composition || {};
+            expect(upper(comp0.source), 'Auto = LLM-source composition').toBe('LLM');
+            expect(upper(comp0.purpose)).toBe('COVER');
+            const actors0 = board0.body.actors || [];
+            const heroes = actors0.map(a => a.characterName || a.description || a.objectId).join(', ');
+            const bookRender = await renderAndApprove('book');
+            await shot(page, '15c-book-cover-approved');
+            const bookCover = await approvedEntry(fx.book.objectId, 'book');
+            expect(bookCover.approved.artifactObjectId, 'the approved tile is the approved entry').toBe(bookRender.approvedOid);
+            // The V3 reader's cover page: the approved render, undimmed, title block in the band.
+            await openReader(page, fx.book.objectId);
+            await page.keyboard.press('Home');   // the reader keeps its page across visits (pictureBook.js pb2OnKeyDown Home → cover)
+            const coverRoot = page.locator('[data-pb2-cover-source]');
+            await expect(coverRoot).toHaveCount(1, { timeout: T.ui });
+            await expect(coverRoot).toHaveAttribute('data-pb2-cover-source', 'cover', { timeout: T.ui });
+            const readerBand = await coverRoot.getAttribute('data-pb2-cover-band');
+            const readerImg = page.locator('[data-pb2-cover-image]');
+            await expect(readerImg).toHaveCount(1);
+            await expect(readerImg).toHaveClass(/opacity-100/);
+            expect(await readerImg.getAttribute('src'), 'reader cover src = approved imageGroupPath/imageName').toContain(bookCover.approved.imageGroupPath + '/' + bookCover.approved.imageName);
+            await expect.poll(() => readerImg.evaluate(el => el.complete && el.naturalWidth), { timeout: 60000 }).toBeGreaterThan(0);
+            await shot(page, '15d-book-reader-cover');
+            notes.push('book: Auto in ' + Math.round(autoMs / 1000) + ' s → "' + createdToast + '" source ' + comp0.source + ' band "' + bandChip + '" (' + upper(comp0.titleSafeBand) + ') actors ' + actors0.length + ' [' + heroes + '] (cards ' + actorCards + ') setting ' + (setting ? setting.length + ' chars' : 'empty')
+                + '; render ' + Math.round(bookRender.renderMs / 1000) + ' s → "' + bookRender.counter + '" node ' + bookRender.nodeStatus + ' state "' + bookRender.state + '"' + (bookRender.autoApproved ? ' auto-approved by the render' : ' approved by the click on latest ' + bookRender.latestOid)
+                + '; GET /covers approved ' + bookCover.approved.artifactObjectId + ' rev ' + bookCover.approved.revision + ' chain ' + bookCover.chainLength + ' band ' + upper(bookCover.titleSafeBand) + '; reader source=cover band="' + readerBand + '" image loaded');
+
+            // 15e — the ChapBook: the same board on the olio.pb.book the step-13 ChapBook is; Manual + camera (setting,
+            // action, mood, band) saved through the board, then render → approve → the ChapBook reader + export.
+            // Auto on a ChapBook (no cast → NONE tier) is the Objects7 P9-5 live test's t02, not repeated here.
+            const cbOid = fx.chapBook.objectId;
+            await openCoverBoard(cbOid);
+            expect(await page.getByTestId('pb-cmp-purpose-cover').getAttribute('data-exists'), 'the ChapBook has no cover yet').toBe('false');
+            await expect(page.getByTestId('pb-cmp-empty')).toBeVisible({ timeout: T.ui });
+            await page.getByTestId('pb-cmp-create-cover-open').click();
+            await expect(page.getByTestId('pb-cmp-create-cover')).toBeVisible();
+            const fromSceneEnabled = await page.getByTestId('pb-cmp-create-from-scene').isEnabled();
+            await page.getByTestId('pb-cmp-create-manual').check();
+            await page.getByTestId('pb-cmp-create-submit').click();
+            const cbCreated = (await waitForToast(page, /^Cover (created|was not created|already exists)/, 60000)).trim();
+            expect(cbCreated, 'Manual cover created on the ChapBook').toMatch(/^Cover created/);
+            await expect(page.getByTestId('pb-cmp-cover')).toBeVisible({ timeout: T.ui });
+            await expect(page.getByTestId('pb-cmp-source')).toHaveText(/user/i);
+            const cbSetting = 'A sun-drenched palace terrace at golden hour, long shadows across pale stone, a queen in a gown of woven light seen from behind, storybook watercolour (P9-0 ' + stamp + ')';
+            const cbAction = 'she rests one hand on the balustrade and looks out over the gardens';
+            const cbMood = 'warm, hushed, golden';
+            await page.getByTestId('pb-cmp-setting').fill(cbSetting);
+            await page.getByTestId('pb-cmp-action').fill(cbAction);
+            await page.getByTestId('pb-cmp-mood').fill(cbMood);
+            await page.getByTestId('pb-cmp-title-band').selectOption('bottom');
+            await page.getByTestId('pb-cmp-save-camera').click();
+            await waitForToast(page, /Composition saved/, T.ui);
+            await expect(page.getByTestId('pb-cmp-cover-band')).toHaveText('band bottom', { timeout: T.ui });
+            await shot(page, '15e-chapbook-cover-created');
+            const cbBoard = await pbGet(request, '/' + cbOid + '/covers/cover');
+            expect(cbBoard.status, 'GET /covers/cover on the ChapBook').toBe(200);
+            expect((cbBoard.body.composition || {}).settingText, 'ChapBook cover setting persisted').toBe(cbSetting);
+            expect(upper((cbBoard.body.composition || {}).titleSafeBand)).toBe('BOTTOM');
+            const cbRender = await renderAndApprove('ChapBook');
+            await shot(page, '15f-chapbook-cover-approved');
+            const cbCover = await approvedEntry(cbOid, 'ChapBook');
+            expect(upper(cbCover.titleSafeBand)).toBe('BOTTOM');
+            // ChapBook reader (ReaderShell): Home → the cover slot shows the approved render in the BOTTOM band.
+            await page.goto('/#!/chap-book/read/' + cbOid, { timeout: T.ui });
+            await expect(page.locator('button[title="Export as HTML"]')).toBeEnabled({ timeout: 60000 });
+            await page.keyboard.press('Home');
+            const cbRoot = page.locator('[data-cb-cover-source]');
+            await expect(cbRoot).toHaveCount(1, { timeout: T.ui });
+            await expect(cbRoot).toHaveAttribute('data-cb-cover-source', 'cover', { timeout: T.ui });
+            await expect(cbRoot).toHaveAttribute('data-cb-cover-band', 'BOTTOM');
+            await expect(cbRoot).toHaveClass(/justify-end/);
+            const cbImg = page.locator('[data-cb-cover-image]');
+            await expect(cbImg).toHaveCount(1);
+            await expect(cbImg).toHaveClass(/opacity-100/);
+            const cbReaderSrc = await cbImg.getAttribute('src');
+            expect(cbReaderSrc, 'ChapBook reader cover src = approved imageGroupPath/imageName').toContain(cbCover.approved.imageGroupPath + '/' + cbCover.approved.imageName);
+            await expect.poll(() => cbImg.evaluate(el => el.complete && el.naturalWidth), { timeout: 60000 }).toBeGreaterThan(0);
+            // The ChapBook reader sits below the config panel + poem queue in an inner scroller, so a full-page shot taken
+            // here framed only the queue (runs 16 / 17); scroll the cover into view first so the shot shows what was asserted.
+            await cbRoot.scrollIntoViewIfNeeded();
+            await shot(page, '15g-chapbook-reader-cover');
+            // Export carries it: the cover slot's <img> is the approved render, not page 1's image (step 14's shape).
+            // The export inlines the cover as a data URI (readerShell.js fetchImageAsBase64 → readAsDataURL), so the
+            // imageName never appears in the HTML — run 16 asserted the name substring and failed a correct export.
+            // Decode the data URI and compare its bytes with the approved artifact's media, fetched as the same user
+            // from the URL the reader showed (the media route may gzip, as pictureBookV3Cover.spec.js found).
+            const dl = page.waitForEvent('download', { timeout: 120000 });
+            await page.locator('button[title="Export as HTML"]').click();
+            const html = fs.readFileSync(await (await dl).path(), 'utf8');
+            const coverSlot = /<div class="cover">\s*<img [^>]*src="([^"]*)"/.exec(html);
+            expect(coverSlot && coverSlot[1], 'ChapBook export cover slot carries an image').toBeTruthy();
+            const DATA_PNG = 'data:image/png;base64,';
+            expect(coverSlot[1].slice(0, DATA_PNG.length), 'export cover is an inlined PNG data URI').toBe(DATA_PNG);
+            const exportBytes = Buffer.from(coverSlot[1].slice(DATA_PNG.length), 'base64');
+            expect(exportBytes.subarray(0, 8).toString('hex'), 'export cover bytes are a PNG').toBe('89504e470d0a1a0a');
+            const mediaResp = await request.get(cbReaderSrc);
+            expect(mediaResp.ok(), 'GET approved cover media ' + cbReaderSrc + ' HTTP ' + mediaResp.status()).toBe(true);
+            let mediaBytes = await mediaResp.body();
+            if (mediaBytes[0] === 0x1f && mediaBytes[1] === 0x8b) mediaBytes = gunzipSync(mediaBytes);
+            expect(exportBytes.length, 'export cover byte length = approved media byte length').toBe(mediaBytes.length);
+            expect(exportBytes.equals(mediaBytes), 'export cover bytes = the approved render\'s media bytes').toBe(true);
+            fs.writeFileSync(path.join(OUT_DIR, '15-export-chapbook-cover.html'), html);
+            notes.push('ChapBook: board opened on the CHAPBOOK book (from-scene offered ' + fromSceneEnabled + '); Manual → "' + cbCreated + '" camera saved band bottom'
+                + '; render ' + Math.round(cbRender.renderMs / 1000) + ' s → "' + cbRender.counter + '" node ' + cbRender.nodeStatus + (cbRender.autoApproved ? ' auto-approved by the render' : ' approved by the click on latest ' + cbRender.latestOid)
+                + '; GET /covers approved ' + cbCover.approved.artifactObjectId + ' rev ' + cbCover.approved.revision + ' chain ' + cbCover.chainLength + '; reader source=cover band BOTTOM image loaded; export cover <img> = data URI, ' + exportBytes.length + ' bytes = approved media ' + cbCover.approved.imageName);
+            return notes.join(' || ');
         });
     });
 });

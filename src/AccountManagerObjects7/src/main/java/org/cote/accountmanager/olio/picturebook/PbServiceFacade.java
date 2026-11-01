@@ -1028,18 +1028,7 @@ public class PbServiceFacade {
 		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
 		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
 		String handle = PbPipelineUtil.landscapeHandle(sceneOid);
-		BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
-		if(node == null) {
-			String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
-			node = PbGraphUtil.addNode(user, workflow, handle, PbNodeTypeEnumType.LANDSCAPE,
-				PbBookUtil.workflowGroupPath(slug), idx);
-			if(node == null) {
-				throw new PictureBookException(500, "Failed to create the page node " + handle);
-			}
-			if(!PbPipelineUtil.patchNodeScope(user, workflow, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx)) {
-				throw new PictureBookException(500, "Failed to record the page scope on node " + handle);
-			}
-		}
+		BaseRecord node = ensurePlanNode(user, book, workflow, PbNodeTypeEnumType.LANDSCAPE, PbPipelineUtil.SCOPE_SCENE, sceneOid, handle, idx, "page").node();
 
 		if(!PbBookUtil.mirrorSceneOntoNode(user, scene, node, book)) {
 			throw new PictureBookException(500, "Failed to mirror the page prompt / config override onto node " + handle);
@@ -1094,20 +1083,58 @@ public class PbServiceFacade {
 		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
 		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
 		String handle = PbPipelineUtil.renderPlanHandle(sceneOid);
-		BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
-		if(node == null) {
-			String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
-			node = PbGraphUtil.addNode(user, workflow, handle, PbNodeTypeEnumType.RENDER_PLAN,
-				PbBookUtil.workflowGroupPath(slug), idx);
-			if(node == null) {
-				throw new PictureBookException(500, "Failed to create the render-plan node " + handle);
-			}
-			if(!PbPipelineUtil.patchNodeScope(user, workflow, node, PbPipelineUtil.SCOPE_SCENE, sceneOid, idx)) {
-				throw new PictureBookException(500, "Failed to record the scene scope on node " + handle);
-			}
-		}
+		BaseRecord node = ensurePlanNode(user, book, workflow, PbNodeTypeEnumType.RENDER_PLAN, PbPipelineUtil.SCOPE_SCENE, sceneOid, handle, idx, "render-plan").node();
 		BaseRecord fresh = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(node));
 		return (fresh != null ? fresh : node);
+	}
+
+	/**
+	 * The RENDER_PLAN node of a cover-type composition (V3 §40, P9-2), created on first use: found by handle
+	 * ({@link PbPipelineUtil#compositionPlanHandle} of the composition objectId - deterministic, so this is
+	 * idempotent) or created with {@code scope=composition}, {@code scopeRef=} the composition objectId and
+	 * ordinal 0 (a cover has no scene index). Nothing is mirrored onto it: the executor reads the composition and
+	 * the plan is the record. {@code out}, when given, receives {@code nodeObjectId} and {@code nodeMaterialized}.
+	 * Package-private for the P9-2 executor test; the P9-3 render route is its caller.
+	 */
+	static BaseRecord ensureCompositionPlanNode(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord composition,
+			Map<String, Object> out) {
+		String compOid = composition.get(FieldNames.FIELD_OBJECT_ID);
+		String handle = PbPipelineUtil.compositionPlanHandle(compOid);
+		Ensured e = ensurePlanNode(user, book, workflow, PbNodeTypeEnumType.RENDER_PLAN, PbPipelineUtil.SCOPE_COMPOSITION, compOid, handle, 0, "composition-plan");
+		BaseRecord fresh = PbGraphUtil.readNode(user, e.node().get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(e.node()));
+		BaseRecord node = (fresh != null ? fresh : e.node());
+		if(out != null) {
+			out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+			out.put("nodeMaterialized", Boolean.valueOf(e.created()));
+		}
+		return node;
+	}
+
+	/** What {@link #ensurePlanNode} found or made: the node as found / created (not re-read) and whether it was created now. */
+	private record Ensured(BaseRecord node, boolean created) {}
+
+	/**
+	 * Find-or-create of one node by its deterministic {@code handle} (P9-2; the shape every ensure*Node shares):
+	 * found by handle in {@code workflow}, else added as {@code type} in the book's workflow group at
+	 * {@code ordinal} and patched with {@code scope} / {@code scopeRef} / {@code ordinal} as its sceneIndex. Reached
+	 * only after the gates, so the create is an authorized write by the book's updater; a failed create or scope
+	 * patch is a 500 naming {@code what} and the handle, never silent.
+	 */
+	private static Ensured ensurePlanNode(BaseRecord user, BaseRecord book, BaseRecord workflow, PbNodeTypeEnumType type,
+			String scope, String scopeRef, String handle, int ordinal, String what) {
+		BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
+		if(node != null) {
+			return new Ensured(node, false);
+		}
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+		node = PbGraphUtil.addNode(user, workflow, handle, type, PbBookUtil.workflowGroupPath(slug), ordinal);
+		if(node == null) {
+			throw new PictureBookException(500, "Failed to create the " + what + " node " + handle);
+		}
+		if(!PbPipelineUtil.patchNodeScope(user, workflow, node, scope, scopeRef, ordinal)) {
+			throw new PictureBookException(500, "Failed to record the " + scope + " scope on node " + handle);
+		}
+		return new Ensured(node, true);
 	}
 
 	/**
@@ -2518,8 +2545,11 @@ public class PbServiceFacade {
 	 * {@link PbArtifactUtil#APPROVED_BY_AUTO}); anything else is a 400 here, so REST and MCP share one
 	 * validation. Nodes with no artifacts are omitted. One uncached chain read per (node, role). The
 	 * {@code renderPlan} role is left out: a plan artifact is the record of what a render decided (§12),
-	 * not an output anyone reviews, and a plan-driven node always carries one beside its image. The {@code qa}
-	 * role is left out the same way, but a judged image carries its newest report as {@code qa} ({@link #attachQa}).
+	 * not an output anyone reviews, and a plan-driven node always carries one beside its image. The
+	 * {@code renderGraph} role is left out for the same reason (ledger §6.C 221 a, P9-1): the compiled Comfy
+	 * graph a raw-graph stage posted (§38.3) is bookkeeping beside the image, not a reviewable output. The
+	 * {@code qa} role is left out the same way, but a judged image carries its newest report as {@code qa}
+	 * ({@link #attachQa}).
 	 */
 	public static Map<String, Object> listReviewQueue(BaseRecord user, String bookObjectId, String filter) {
 		String f = (filter == null || filter.trim().length() == 0 ? REVIEW_FILTER_ALL : filter.trim().toLowerCase());
@@ -2543,8 +2573,10 @@ public class PbServiceFacade {
 			Map<String, QaReport> latestQa = (roles.contains(PbPipelineUtil.ROLE_QA)
 				? PbQaUtil.latestReportsOf(user, node) : Collections.emptyMap());
 			for(String role : roles) {
-				/// Bookkeeping artifacts are never reviewed: the plan is the recipe, a qa report judges an image (§17).
-				if(PbPipelineUtil.ROLE_RENDER_PLAN.equals(role) || PbPipelineUtil.ROLE_QA.equals(role)) {
+				/// Bookkeeping artifacts are never reviewed: the plan is the recipe, the compiled graph is what the stage
+				/// posted, a qa report judges an image (§17; renderGraph per ledger §6.C 221 a).
+				if(PbPipelineUtil.ROLE_RENDER_PLAN.equals(role) || PbPipelineUtil.ROLE_RENDER_GRAPH.equals(role)
+						|| PbPipelineUtil.ROLE_QA.equals(role)) {
 					continue;
 				}
 				for(BaseRecord a : PbArtifactUtil.listChain(user, node, role)) {
@@ -2808,17 +2840,28 @@ public class PbServiceFacade {
 			Map<String, Object> body, String sdApiType, String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		SDAPIEnumType apiType = requireSdApiType(sdApiType, sdServer);
+		PbRenderPlanUtil.PlanOptions opts = planOptionsOf(body);
+		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(user, book, scene, opts, apiType, sdServer);
+		return planDto(user, plan, sdServer);
+	}
+
+	/// 500 when the SD server is unconfigured or its API type is not an SDAPIEnumType; the plan routes share it.
+	private static SDAPIEnumType requireSdApiType(String sdApiType, String sdServer) {
 		if(sdServer == null || sdServer.isBlank()) {
 			throw new PictureBookException(500, "SD server is not configured");
 		}
-		SDAPIEnumType apiType;
 		try {
-			apiType = SDAPIEnumType.valueOf(sdApiType == null ? "" : sdApiType.trim().toUpperCase());
+			return SDAPIEnumType.valueOf(sdApiType == null ? "" : sdApiType.trim().toUpperCase());
 		}
 		catch(IllegalArgumentException e) {
 			logger.error("SD server API type '" + sdApiType + "' is not recognised");
 			throw new PictureBookException(500, "SD server API type is not recognised");
 		}
+	}
+
+	/// The plan body's optional keys as PlanOptions: promptOverride, raw, preset (400 when unknown), model.
+	private static PbRenderPlanUtil.PlanOptions planOptionsOf(Map<String, Object> body) {
 		Map<String, Object> in = (body != null ? body : Collections.emptyMap());
 		Object presetIn = in.get("preset");
 		PbQualityPresetEnumType preset = null;
@@ -2835,13 +2878,15 @@ public class PbServiceFacade {
 		}
 		Object promptIn = in.get("promptOverride");
 		Object modelIn = in.get("model");
-		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(
+		return new PbRenderPlanUtil.PlanOptions(
 			promptIn == null || promptIn.toString().isBlank() ? null : promptIn.toString(),
 			Boolean.TRUE.equals(in.get("raw")) || "true".equalsIgnoreCase(String.valueOf(in.get("raw"))),
 			preset,
 			modelIn == null || modelIn.toString().isBlank() ? null : modelIn.toString());
+	}
 
-		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(user, book, scene, opts, apiType, sdServer);
+	/// plan.toMap() + estimate + contentHash + planSummary - the shape every plan route returns.
+	private static Map<String, Object> planDto(BaseRecord user, RenderPlan plan, String sdServer) {
 		Map<String, Object> out = new LinkedHashMap<>(plan.toMap());
 		out.put("estimate", RenderEstimate.estimate(plan, PbCalibrationUtil.samplesFor(user, sdServer, plan)));
 		out.put("contentHash", plan.contentHash());
@@ -4092,19 +4137,9 @@ public class PbServiceFacade {
 		String subjectOid = (variant != null ? variant.get(FieldNames.FIELD_OBJECT_ID) : locOid);
 		String scope = (variant != null ? PbPipelineUtil.SCOPE_LOCATION_VARIANT : PbPipelineUtil.SCOPE_LOCATION);
 		String handle = (variant != null ? PbPipelineUtil.locationVariantHandle(subjectOid) : PbPipelineUtil.locationHandle(locOid));
-		BaseRecord node = PbPipelineUtil.findNodeByHandle(user, workflow, handle);
-		boolean created = false;
-		if(node == null) {
-			String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
-			node = PbGraphUtil.addNode(user, workflow, handle, PbNodeTypeEnumType.LOCATION, PbBookUtil.workflowGroupPath(slug), 0);
-			if(node == null) {
-				throw new PictureBookException(500, "Failed to create the location node " + handle);
-			}
-			if(!PbPipelineUtil.patchNodeScope(user, workflow, node, scope, subjectOid, 0)) {
-				throw new PictureBookException(500, "Failed to record the location scope on node " + handle);
-			}
-			created = true;
-		}
+		Ensured e = ensurePlanNode(user, book, workflow, PbNodeTypeEnumType.LOCATION, scope, subjectOid, handle, 0, "location");
+		BaseRecord node = e.node();
+		boolean created = e.created();
 		BaseRecord fresh = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(node));
 		node = (fresh != null ? fresh : node);
 		if(out != null) {
@@ -4824,14 +4859,18 @@ public class PbServiceFacade {
 	}
 
 	/// The compose-result composition DTO plus the editable text/config fields, with the SCENE's location pointers.
+	/// A cover-type composition (V3 §40, P9-3) has no scene: its location pointers are the composition's own, and
+	/// it carries the cover-only fields {@code titleSafeBand} (§40.3) and {@code seriesObjectId} (SERIES_ART).
 	private static Map<String, Object> boardCompositionDto(BaseRecord c, BaseRecord scene) {
 		Map<String, Object> m = compositionDto(c);
 		m.put("props", c.get(OlioFieldNames.FIELD_PB_PROPS));
 		m.put("promptOverride", c.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
 		m.put("configOverride", c.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
-		m.put("locationObjectId", fkObjectId(scene, FieldNames.FIELD_LOCATION, null));
-		m.put("variantObjectId", fkObjectId(scene, OlioFieldNames.FIELD_PB_LOCATION_VARIANT, null));
+		m.put("locationObjectId", fkObjectId((scene != null ? scene : c), FieldNames.FIELD_LOCATION, null));
+		m.put("variantObjectId", (scene != null ? fkObjectId(scene, OlioFieldNames.FIELD_PB_LOCATION_VARIANT, null) : null));
 		m.remove("locationVariant");
+		m.put("titleSafeBand", (c.hasField(OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND) ? enumString(c, OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND) : null));
+		m.put("seriesObjectId", (c.hasField(OlioFieldNames.FIELD_PB_SERIES) ? fkObjectId(c, OlioFieldNames.FIELD_PB_SERIES, null) : null));
 		return m;
 	}
 
@@ -4892,6 +4931,348 @@ public class PbServiceFacade {
 		m.put("label", ro.label());
 		m.put("warning", ro.warning);
 		return m;
+	}
+
+	// ─────────────────────────────── covers (V3 §40, P9-3) ───────────────────────────────
+
+	/** The {@code what} of the cover 403s, one per write so the message names the refused act. */
+	private static final String WHAT_CREATE_COVER = "create cover art";
+	private static final String WHAT_RENDER_COVER = "render cover art";
+	private static final String WHAT_EDIT_COVER = "edit cover art";
+
+	/**
+	 * The book's cover-type compositions and their render state (V3 §40, P9-3), keyed by purpose:
+	 * {@code { bookObjectId, covers: { COVER: e | null, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART } }}. <b>Find-only</b>
+	 * (232 c H3): the compositions through {@link PbCoverUtil#listCovers}, the workflow through
+	 * {@link PbGraphUtil#findWorkflow} (null tolerated - a book that has never rendered has none), each node by its
+	 * deterministic handle through {@link PbPipelineUtil#findNodeByHandle}. Nothing is created, never
+	 * {@link #ensureWorkflow}, never an {@code ensure…Node}, never {@code getCreate}. Readable by anyone who can read
+	 * the book; the render path is not gated here, a v1 book's view just reports what exists.
+	 * <p>
+	 * One entry: {@code compositionObjectId, nodeObjectId, nodeStatus, pinned, reviewStatus, titleSafeBand,
+	 * approved, latest}. {@code approved} is the APPROVED artifact of the node's {@code base} chain (the selected one
+	 * when several are - a chain holds at most one, {@code PbArtifactUtil.approve} demotes the rest), {@code latest}
+	 * the highest-revision artifact that is not ARCHIVED; each is {@code { artifactObjectId, dataObjectId,
+	 * imageGroupPath, imageName, imageContentType }} (the page-view image ref, 232 f 4) or null. {@code reviewStatus}
+	 * is the selected artifact's, null when the node has none. A null entry means the purpose has no composition.
+	 */
+	public static Map<String, Object> coverView(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		long orgId = PbGraphUtil.orgId(book);
+		Map<PbCompositionPurposeEnumType, BaseRecord> covers = PbCoverUtil.listCovers(user, book);
+		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
+		Map<String, Object> entries = new LinkedHashMap<>();
+		for(PbCompositionPurposeEnumType p : PbCompositionPurposeEnumType.values()) {
+			if(!PbCoverUtil.isCoverPurpose(p)) {
+				continue;
+			}
+			BaseRecord comp = covers.get(p);
+			entries.put(p.name(), (comp != null ? coverEntryDto(user, workflow, comp, orgId) : null));
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("workflowObjectId", (workflow != null ? workflow.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("covers", entries);
+		return out;
+	}
+
+	/// One cover-view entry; the node lookup is find-only and tolerates a book with no workflow.
+	private static Map<String, Object> coverEntryDto(BaseRecord user, BaseRecord workflow, BaseRecord comp, long orgId) {
+		String compOid = comp.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord node = (workflow != null ? PbPipelineUtil.findNodeByHandle(user, workflow, PbPipelineUtil.compositionPlanHandle(compOid)) : null);
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("compositionObjectId", compOid);
+		m.put("purpose", enumString(comp, OlioFieldNames.FIELD_PB_PURPOSE));
+		m.put("source", enumString(comp, OlioFieldNames.FIELD_PB_SOURCE));
+		m.put("titleSafeBand", (comp.hasField(OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND) ? enumString(comp, OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND) : null));
+		m.put("seriesObjectId", (comp.hasField(OlioFieldNames.FIELD_PB_SERIES) ? fkObjectId(comp, OlioFieldNames.FIELD_PB_SERIES, null) : null));
+		m.put("nodeObjectId", (node != null ? node.get(FieldNames.FIELD_OBJECT_ID) : null));
+		m.put("nodeStatus", (node != null ? enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS) : null));
+		m.put("pinned", Boolean.valueOf(node != null && Boolean.TRUE.equals(node.get(OlioFieldNames.FIELD_PB_PINNED, null))));
+		m.put("lastError", (node != null ? node.get(OlioFieldNames.FIELD_PB_LAST_ERROR) : null));
+		BaseRecord selected = null;
+		BaseRecord approved = null;
+		BaseRecord latest = null;
+		int chainLength = 0;
+		if(node != null) {
+			for(BaseRecord a : PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_BASE)) {
+				chainLength++;
+				PbReviewStatusEnumType rs = PbArtifactUtil.reviewStatusOf(a);
+				boolean sel = Boolean.TRUE.equals(a.get(OlioFieldNames.FIELD_PB_SELECTED, null));
+				if(sel) {
+					selected = a;
+				}
+				if(rs == PbReviewStatusEnumType.APPROVED && (approved == null || sel)) {
+					approved = a;
+				}
+				// listChain is ascending by revision, so the last non-ARCHIVED one wins
+				if(rs != PbReviewStatusEnumType.ARCHIVED) {
+					latest = a;
+				}
+			}
+		}
+		m.put("chainLength", Integer.valueOf(chainLength));
+		m.put("reviewStatus", (selected != null ? PbArtifactUtil.reviewStatusOf(selected).name() : null));
+		m.put("selectedArtifactObjectId", (selected != null ? selected.get(FieldNames.FIELD_OBJECT_ID) : null));
+		m.put("approved", (approved != null ? coverImageRef(user, approved, orgId) : null));
+		m.put("latest", (latest != null ? coverImageRef(user, latest, orgId) : null));
+		return m;
+	}
+
+	/// The page-view image ref of one artifact: its objectId, the bytes' objectId and the MediaServlet path fields.
+	private static Map<String, Object> coverImageRef(BaseRecord user, BaseRecord artifact, long orgId) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("artifactObjectId", artifact.get(FieldNames.FIELD_OBJECT_ID));
+		m.put("revision", artifact.get(OlioFieldNames.FIELD_PB_REVISION));
+		m.put("reviewStatus", PbArtifactUtil.reviewStatusOf(artifact).name());
+		BaseRecord dataRef = artifact.get(OlioFieldNames.FIELD_PB_DATA);
+		String dataObjectId = (dataRef != null ? dataRef.get(FieldNames.FIELD_OBJECT_ID) : null);
+		m.put("dataObjectId", dataObjectId);
+		String imageGroupPath = null;
+		String imageName = null;
+		String imageContentType = null;
+		if(dataObjectId != null) {
+			BaseRecord data = resolveImageData(user, dataObjectId, orgId);
+			if(data != null) {
+				imageGroupPath = data.get(FieldNames.FIELD_GROUP_PATH);
+				imageName = data.get(FieldNames.FIELD_NAME);
+				imageContentType = data.get(FieldNames.FIELD_CONTENT_TYPE);
+			}
+		}
+		m.put("imageGroupPath", imageGroupPath);
+		m.put("imageName", imageName);
+		m.put("imageContentType", imageContentType);
+		return m;
+	}
+
+	/**
+	 * Get-or-create the book's cover-type composition of {@code purposeWord} (V3 §40, P9-3): idempotent, an
+	 * existing row is returned untouched ({@code existingReturned}), never a 409. Gate order (232 d M6):
+	 * {@link #requireBook} 404 → {@link PbRenderPath#requireV3} 409 → {@link #requireBookUpdate} 403 → purpose /
+	 * mode words 400 → FROM_SCENE {@link #requireSceneOfBook} 404 → AUTO chat-config resolution → the util.
+	 * AUTO is LLM-bound and synchronous; an LLM failure is reported on the result ({@code llmFailure},
+	 * {@code hardFailure}, {@code failureReason}) with nothing written, never thrown.
+	 *
+	 * @param modeWord       {@code auto} (default), {@code from_scene}, {@code manual}
+	 * @param sceneObjectId  FROM_SCENE only: the scene whose SCENE composition is cloned
+	 * @param chatConfigName AUTO only; null means the book's resolved config
+	 * @param dataPath       the deployment's {@code datagen.path}, may be null
+	 */
+	public static Map<String, Object> createCover(BaseRecord user, String bookObjectId, String purposeWord, String modeWord,
+			String sceneObjectId, String chatConfigName, String dataPath) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, WHAT_CREATE_COVER);
+		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
+		PbCoverUtil.Mode mode = PbCoverUtil.modeOf(modeWord);
+		BaseRecord cfg = null;
+		if(mode == PbCoverUtil.Mode.FROM_SCENE) {
+			requireSceneOfBook(user, book, sceneObjectId);
+		}
+		else if(mode == PbCoverUtil.Mode.AUTO) {
+			cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
+		}
+		PbCoverUtil.CoverResult r = PbCoverUtil.getCreate(user, book, purpose, mode, sceneObjectId, cfg, dataPath);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("purpose", purpose.name());
+		out.put("mode", (r.mode != null ? r.mode.name() : mode.name()));
+		out.put("created", Boolean.valueOf(r.created));
+		out.put("existingReturned", Boolean.valueOf(r.existingReturned));
+		out.put("written", Boolean.valueOf(r.isWritten()));
+		out.put("source", (r.source != null ? r.source.name() : null));
+		out.put("castTier", (r.castTier != null ? r.castTier.name() : null));
+		out.put("heroCast", (r.heroCast != null ? new ArrayList<>(r.heroCast) : new ArrayList<>()));
+		out.put("llmFailure", Boolean.valueOf(r.llmFailure));
+		out.put("hardFailure", Boolean.valueOf(r.hardFailure));
+		out.put("failureReason", r.failureReason);
+		out.put("warnings", stripRaw(r.warnings));
+		out.put("unresolvedNames", (r.unresolvedNames != null ? new ArrayList<>(r.unresolvedNames) : new ArrayList<>()));
+		out.put("unrecognizedPlacements", (r.unrecognizedPlacements != null ? new ArrayList<>(r.unrecognizedPlacements) : new ArrayList<>()));
+		out.put("locationHint", r.locationHint);
+		out.put("sourceSceneObjectId", r.sourceSceneObjectId);
+		out.put("elapsedMs", Long.valueOf(r.elapsedMs));
+		out.put("compositionObjectId", (r.composition != null ? r.composition.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("composition", (r.composition != null ? boardCompositionDto(r.composition, null) : null));
+		List<Map<String, Object>> actors = new ArrayList<>();
+		if(r.actors != null) {
+			for(BaseRecord a : r.actors) {
+				actors.add(actorDto(a));
+			}
+		}
+		out.put("actors", actors);
+		List<Map<String, Object>> elements = new ArrayList<>();
+		if(r.elements != null) {
+			for(BaseRecord e : r.elements) {
+				elements.add(elementDto(e));
+			}
+		}
+		out.put("elements", elements);
+		return out;
+	}
+
+	/**
+	 * Queue a render of the book's cover-type composition of {@code purposeWord} (V3 §40, P9-3): the
+	 * {@link #requestLocationRender} shape over the composition's RENDER_PLAN node. Gate order: {@link #requireBook}
+	 * 404 → {@link PbRenderPath#requireV3} 409 → {@link #requireBookUpdate} 403 → purpose word 400 → the composition
+	 * must already exist (404 naming the purpose: the render path never creates one - make it through
+	 * {@link #createCover} first) → {@link #ensureWorkflow} → {@link #ensureCompositionPlanNode} (the one write a
+	 * render may make, an authorized one by the book's updater) → {@link #requireNotPinned} 409 →
+	 * {@link PbRenderJobUtil#submit} (409 when the node is current and {@code force} is false, 429 at the
+	 * per-principal job cap, 500 when no SD server is configured).
+	 *
+	 * @return {@code compositionObjectId}, {@code purpose}, {@code nodeObjectId}, {@code nodeMaterialized}, then
+	 *         {@code jobId}, {@code runObjectId} and the plan summary
+	 */
+	public static Map<String, Object> requestCoverRender(BaseRecord user, String bookObjectId, String purposeWord,
+			String sdApiType, String sdServer, boolean force) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, WHAT_RENDER_COVER);
+		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
+		BaseRecord comp = requireCover(user, book, purpose);
+		BaseRecord workflow = ensureWorkflow(user, book);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("purpose", purpose.name());
+		out.put("compositionObjectId", comp.get(FieldNames.FIELD_OBJECT_ID));
+		BaseRecord node = ensureCompositionPlanNode(user, book, workflow, comp, out);
+		requireNotPinned(node);
+		Long nodeId = node.get(FieldNames.FIELD_ID);
+		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of(nodeId), sdApiType, sdServer,
+			PbRenderJobUtil.KIND_RENDER, force));
+		return out;
+	}
+
+	/**
+	 * Synchronous counterpart of {@link #requestCoverRender} over an {@code SDUtil} the caller built (test seam,
+	 * the {@link #renderLocation} shape): same gates, same materialization, then {@link PbNodeExecutor#executeNodeRun}
+	 * under the in-flight claim so a concurrent job cannot double-render the node.
+	 */
+	static Map<String, Object> renderCover(BaseRecord user, String bookObjectId, String purposeWord,
+			org.cote.accountmanager.olio.sd.SDUtil sdu) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, WHAT_RENDER_COVER);
+		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
+		BaseRecord comp = requireCover(user, book, purpose);
+		BaseRecord workflow = ensureWorkflow(user, book);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("purpose", purpose.name());
+		out.put("compositionObjectId", comp.get(FieldNames.FIELD_OBJECT_ID));
+		BaseRecord node = ensureCompositionPlanNode(user, book, workflow, comp, out);
+		requireNotPinned(node);
+
+		List<Long> nodeIds = List.of((Long) node.get(FieldNames.FIELD_ID));
+		String claimKey = "sync:" + UUID.randomUUID();
+		Long conflict = PbNodeInflight.tryClaim(nodeIds, claimKey);
+		if(conflict != null) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is being rendered by run " + PbNodeInflight.runOf(conflict.longValue()));
+		}
+		try {
+			out.putAll(PbNodeExecutor.executeNodeRun(user, book, workflow, node, sdu));
+			out.put("executed", Boolean.TRUE);
+			return out;
+		}
+		finally {
+			PbNodeInflight.release(nodeIds, claimKey);
+		}
+	}
+
+	/**
+	 * The board of one cover-type composition (V3 §40, P9-4): the {@link #getSceneComposition} shape keyed by purpose
+	 * instead of scene, plus the {@link #coverView} entry for its render state. {@code { bookObjectId, purpose,
+	 * compositionObjectId, composition, actors, elements, cover }}. A READ, find-only like {@link #coverView}: a book
+	 * that has never rendered has no workflow and {@code cover.nodeObjectId} is null. Readable by anyone who can read
+	 * the book; not gated on the render path. Gate order: book 401/400/404 → purpose word 400 → 404 naming the
+	 * purpose when the book has no such composition.
+	 */
+	public static Map<String, Object> getCover(BaseRecord user, String bookObjectId, String purposeWord) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
+		BaseRecord comp = requireCover(user, book, purpose);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("purpose", purpose.name());
+		out.put("compositionObjectId", comp.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("composition", boardCompositionDto(comp, null));
+		List<Map<String, Object>> actors = new ArrayList<>();
+		for(BaseRecord a : PbComposeUtil.listActors(user, comp)) {
+			actors.add(actorDto(a));
+		}
+		out.put("actors", actors);
+		List<Map<String, Object>> elements = new ArrayList<>();
+		for(BaseRecord e : PbComposeUtil.listElements(user, comp)) {
+			elements.add(elementDto(e));
+		}
+		out.put("elements", elements);
+		out.put("cover", coverEntryDto(user, PbGraphUtil.findWorkflow(user, book), comp, PbGraphUtil.orgId(book)));
+		return out;
+	}
+
+	/**
+	 * Row-level edit of a cover-type composition's fields (V3 §40, P9-4): the {@link #patchSceneComposition} shape
+	 * keyed by purpose, with {@code titleSafeBand} among the patchable keys and nothing to mirror (a cover has no
+	 * scene). The edit lands through {@link PbComposeUtil#patchCompositionFields} (400 on an unknown key) and
+	 * {@link PbComposeUtil#touchEdited} with no scene, which marks the composition's own {@code composition_plan@}
+	 * node STALE when one exists so a DONE cover re-renders without {@code force}. Gate order: book 404 →
+	 * {@link PbRenderPath#requireV3} 409 → {@link #requireBookUpdate} 403 → purpose word 400 → 404 when the book
+	 * has no such composition → body 400.
+	 *
+	 * @return {@link #editResultDto} ({@code sceneObjectId} absent) + {@code purpose}, {@code updated: true} and the
+	 *         re-read {@code composition}
+	 */
+	public static Map<String, Object> patchCover(BaseRecord user, String bookObjectId, String purposeWord, Map<String, Object> body) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, WHAT_EDIT_COVER);
+		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
+		BaseRecord comp = requireCover(user, book, purpose);
+		PbComposeUtil.patchCompositionFields(user, comp, body);
+		PbComposeUtil.EditResult r = PbComposeUtil.touchEdited(user, comp, null);
+		Map<String, Object> out = editResultDto(book, null, comp, r);
+		out.put("purpose", purpose.name());
+		out.put("updated", Boolean.TRUE);
+		out.put("composition", boardCompositionDto(comp, null));
+		return out;
+	}
+
+	/**
+	 * The RenderPlan for a cover-type composition as the caller would render it (V3 §40, P9-4): the
+	 * {@link #planScene} shape over {@link PbRenderPlanUtil#buildCompositionPlan}. A READ: nothing is persisted and
+	 * nothing is sent to the renderer; the SD server URL is never part of the response. Same body keys as
+	 * {@code planScene}. Gate order: book 401/400/404 → purpose word 400 → 404 when the book has no such composition
+	 * → SD server unconfigured 500 → API type 500 → preset 400 → 400 when the composition has no description to
+	 * render from (an empty MANUAL cover - fill it in first) → style chain partial 409.
+	 */
+	public static Map<String, Object> planCover(BaseRecord user, String bookObjectId, String purposeWord,
+			Map<String, Object> body, String sdApiType, String sdServer) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
+		BaseRecord comp = requireCover(user, book, purpose);
+		SDAPIEnumType apiType = requireSdApiType(sdApiType, sdServer);
+		PbRenderPlanUtil.PlanOptions opts = planOptionsOf(body);
+		BaseRecord node = PbBookUtil.findCompositionNode(user, comp);
+		RenderPlan plan = PbRenderPlanUtil.buildCompositionPlan(user, book, comp, node, opts, apiType, sdServer);
+		Map<String, Object> out = planDto(user, plan, sdServer);
+		out.put("purpose", purpose.name());
+		out.put("compositionObjectId", comp.get(FieldNames.FIELD_OBJECT_ID));
+		return out;
+	}
+
+	/**
+	 * The book's existing composition of a cover {@code purpose} as {@code user} reads it; 404 naming the purpose
+	 * when there is none. Read-only ({@link PbCoverUtil#findCover}): the render path never creates a composition.
+	 */
+	private static BaseRecord requireCover(BaseRecord user, BaseRecord book, PbCompositionPurposeEnumType purpose) {
+		BaseRecord comp = PbCoverUtil.findCover(user, book, purpose);
+		if(comp == null) {
+			throw new PictureBookException(404, "Book " + book.get(OlioFieldNames.FIELD_PB_SLUG) + " has no " + purpose.name()
+				+ " composition - create it first");
+		}
+		return comp;
 	}
 
 	// ─────────────────────────────── health check + self-heal ───────────────────────────────

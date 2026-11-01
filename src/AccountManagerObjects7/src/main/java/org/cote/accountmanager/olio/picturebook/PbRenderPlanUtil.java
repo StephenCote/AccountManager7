@@ -146,8 +146,8 @@ public final class PbRenderPlanUtil {
 		String renderOid = resolveSceneLocation(user, book, scene, composition, s.builder);
 
 		s.builder
-			.actors(actorsOf(user, book, composition, s.caps, s.inpaintResolved(), renderOid != null, out))
-			.elements(elementsOf(user, composition, out));
+			.actors(actorsOf(user, book, composition, s.caps, s.inpaintResolved(), renderOid != null, null, out))
+			.elements(elementsOf(user, composition, null, out));
 		/// A SCENE composition's shot type / viewpoint / cameraText is the plan's camera (P4-10 A2); the compiler
 		/// (SdxlCompiler) already consumes plan.camera, so nothing else changes when there is none.
 		String camera = cameraText(composition);
@@ -203,14 +203,24 @@ public final class PbRenderPlanUtil {
 	 * render is carried - the actor resolver counts it against the renderer's reference slots (P4-7).
 	 */
 	static String resolveSceneLocation(BaseRecord user, BaseRecord book, BaseRecord scene, BaseRecord composition, RenderPlan.Builder builder) {
-		String sceneText = locationText(scene, composition);
-		String locOid = fkObjectId(scene, FieldNames.FIELD_LOCATION);
+		return resolveLocation(user, book, scene, locationText(scene, composition), builder);
+	}
+
+	/**
+	 * {@link #resolveSceneLocation} with the FK holder and the subject text separated (P9-2): a scene plan hands
+	 * in the scene and its composed text; a cover plan ({@link #buildCompositionPlan}) hands in the composition
+	 * itself, whose {@code location} / {@code locationVariant} FKs and {@code organizationId} are projected by
+	 * {@code PbComposeUtil.compositionRequest()}. Everything above about hashes, renders, refusals and the
+	 * {@code LOCATION_TEXT_ONLY} degradation holds for either holder.
+	 */
+	static String resolveLocation(BaseRecord user, BaseRecord book, BaseRecord fkHolder, String sceneText, RenderPlan.Builder builder) {
+		String locOid = fkObjectId(fkHolder, FieldNames.FIELD_LOCATION);
 		if(locOid == null) {
 			builder.location(new RenderPlan.Location(null, null, null, null, sceneText));
 			return null;
 		}
-		String varOid = fkObjectId(scene, OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
-		long orgId = ((Number) scene.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+		String varOid = fkObjectId(fkHolder, OlioFieldNames.FIELD_PB_LOCATION_VARIANT);
+		long orgId = ((Number) fkHolder.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 
 		BaseRecord loc = PbLocationUtil.readLocation(user, locOid, orgId);
 		BaseRecord var = (varOid != null ? PbLocationUtil.readVariant(user, varOid, orgId) : null);
@@ -302,6 +312,70 @@ public final class PbRenderPlanUtil {
 			.purpose(RenderPlan.PURPOSE_LOCATION)
 			.location(new RenderPlan.Location(locationObjectId, text));
 		return finish(s);
+	}
+
+	/**
+	 * The plan for a cover-type {@code olio.pb.composition} of {@code book} - COVER, TITLE_PAGE, CHAPTER_OPENER or
+	 * SERIES_ART (V3 §40, P9-2) - as {@code user} sees it. Same style chain, config tiers, model policy, preset and
+	 * canvas as a scene plan, and the same actor / element / camera / intent / location resolution read off the
+	 * composition instead of a scene: the composition is the plan's only subject, there is no scene and nothing
+	 * here composes one. What a cover adds is the {@code reserved} band ({@link PbLayoutUtil#titleSafeBand} of the
+	 * composition's {@code titleSafeBand}): it travels on the plan, every actor and element box is clipped out of
+	 * it at plan time ({@code RenderPlan.Box.clip}, so a band changed after compose is still honoured; the stored
+	 * rows are not touched) and both compiler families speak it as a never-dropped negative-space clause.
+	 * The plan's purpose is the composition's ({@code RenderPlan.PURPOSE_COVER} etc.); 400 for a composition that
+	 * is not a cover type, and 400 when the composition carries no text at all and no prompt override - a cover is
+	 * rendered from its own setting / action / mood / props, never from a scene.
+	 */
+	public static RenderPlan buildCompositionPlan(BaseRecord user, BaseRecord book, BaseRecord composition, BaseRecord node,
+			PlanOptions options, SDAPIEnumType apiType, String sdServer) {
+		if(user == null) throw new PictureBookException(401, "No authenticated principal");
+		if(book == null) throw new PictureBookException(400, "A book is required");
+		if(composition == null) throw new PictureBookException(400, "A composition is required");
+		PlanOptions opts = (options != null ? options : PlanOptions.NONE);
+		String compositionObjectId = composition.get(FieldNames.FIELD_OBJECT_ID);
+		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOfRow(composition);
+		if(!PbCoverUtil.isCoverPurpose(purpose)) {
+			throw new PictureBookException(400, "Composition " + compositionObjectId + " is not a cover-type composition (" + purpose + ")");
+		}
+		String text = locationText(null, composition);
+		if(text.isEmpty() && !NarrativeUtil.isMeaningful(opts.getPromptOverride())) {
+			throw new PictureBookException(400, "Composition " + compositionObjectId + " has no description to render from");
+		}
+		RenderPlan.Box reserved = PbLayoutUtil.titleSafeBand(strField(composition, OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND));
+
+		Scaffold s = scaffold(user, book, node, opts, apiType, sdServer, purpose.toString().toLowerCase() + " " + compositionObjectId);
+		s.builder.purpose(coverPurpose(purpose)).reserved(reserved);
+		List<RenderPlan.Degradation> out = new ArrayList<>();
+		String renderOid = resolveLocation(user, book, composition, text, s.builder);
+		s.builder
+			.actors(actorsOf(user, book, composition, s.caps, s.inpaintResolved(), renderOid != null, reserved, out))
+			.elements(elementsOf(user, composition, reserved, out));
+		String camera = cameraText(composition);
+		if(camera != null) {
+			s.builder.camera(new RenderPlan.Camera(camera));
+		}
+		if(!NarrativeUtil.isMeaningful(opts.getPromptOverride())) {
+			String compOverride = strField(composition, OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE);
+			if(NarrativeUtil.isMeaningful(compOverride)) {
+				s.builder.intent(new RenderPlan.Intent(compOverride.trim(), opts.isRaw()));
+			}
+		}
+		for(RenderPlan.Degradation d : out) {
+			s.builder.degradation(d);
+		}
+		return finish(s);
+	}
+
+	/// The plan purpose a cover-type composition purpose maps to.
+	static String coverPurpose(PbCompositionPurposeEnumType purpose) {
+		switch(purpose) {
+			case COVER: return RenderPlan.PURPOSE_COVER;
+			case TITLE_PAGE: return RenderPlan.PURPOSE_TITLE_PAGE;
+			case CHAPTER_OPENER: return RenderPlan.PURPOSE_CHAPTER_OPENER;
+			case SERIES_ART: return RenderPlan.PURPOSE_SERIES_ART;
+			default: throw new PictureBookException(400, "Purpose " + purpose + " is not a cover-type purpose");
+		}
 	}
 
 	/// The builder every plan shares before its subject is set, plus what the reference decision needs: the
@@ -680,12 +754,12 @@ public final class PbRenderPlanUtil {
 	 */
 	static List<RenderPlan.Actor> sceneActors(BaseRecord user, BaseRecord book, BaseRecord scene, RendererCapabilities caps,
 			boolean inpaintResolved, boolean hasLocationRef, List<RenderPlan.Degradation> out) {
-		return actorsOf(user, book, findComposition(user, book, scene, out), caps, inpaintResolved, hasLocationRef, out);
+		return actorsOf(user, book, findComposition(user, book, scene, out), caps, inpaintResolved, hasLocationRef, null, out);
 	}
 
 	/// The scene's elements from its SCENE-purpose composition; empty without one. No degradation is raised.
 	static List<RenderPlan.Element> sceneElements(BaseRecord user, BaseRecord book, BaseRecord scene, List<RenderPlan.Degradation> out) {
-		return elementsOf(user, findComposition(user, book, scene, out), out);
+		return elementsOf(user, findComposition(user, book, scene, out), null, out);
 	}
 
 	/// The scene's SCENE-purpose composition as {@code user} reads it, or null (none, no book group). A read that
@@ -739,8 +813,10 @@ public final class PbRenderPlanUtil {
 		}
 	}
 
+	/// {@code reserved} is the cover plan's title-safe band (P9-2): every row box is clipped out of it here, so the plan
+	/// honours the band the composition carries now, not the one it was composed with. Null (every scene plan) clips nothing.
 	private static List<RenderPlan.Actor> actorsOf(BaseRecord user, BaseRecord book, BaseRecord composition,
-			RendererCapabilities caps, boolean inpaintResolved, boolean hasLocationRef, List<RenderPlan.Degradation> out) {
+			RendererCapabilities caps, boolean inpaintResolved, boolean hasLocationRef, RenderPlan.Box reserved, List<RenderPlan.Degradation> out) {
 		if(composition == null) return Collections.emptyList();
 		List<BaseRecord> rows;
 		Map<Long, PbWardrobeUtil.ResolvedOutfit> outfits = new HashMap<>();
@@ -856,7 +932,7 @@ public final class PbRenderPlanUtil {
 					}
 				}
 			}
-			RenderPlan.Box box = boxOf(row);
+			RenderPlan.Box box = boxOf(row, reserved);
 			entry.hasBox = (box != null);
 			b.role(role).priority(priority).box(box).depth(intOf(row, OlioFieldNames.FIELD_PB_DEPTH, 0))
 				.pose(meaningful(strField(row, OlioFieldNames.FIELD_PB_POSE)))
@@ -927,7 +1003,7 @@ public final class PbRenderPlanUtil {
 		}
 	}
 
-	private static List<RenderPlan.Element> elementsOf(BaseRecord user, BaseRecord composition, List<RenderPlan.Degradation> out) {
+	private static List<RenderPlan.Element> elementsOf(BaseRecord user, BaseRecord composition, RenderPlan.Box reserved, List<RenderPlan.Degradation> out) {
 		if(composition == null) return Collections.emptyList();
 		try {
 			List<BaseRecord> rows = PbComposeUtil.listElements(user, composition);
@@ -939,7 +1015,7 @@ public final class PbRenderPlanUtil {
 					enumStr(strField(row, OlioFieldNames.FIELD_PB_ELEMENT_TYPE)),
 					rowDisplayName(row),
 					(NarrativeUtil.isMeaningful(text) ? text.trim() : null),
-					boxOf(row),
+					boxOf(row, reserved),
 					intOf(row, OlioFieldNames.FIELD_PB_DEPTH, 0),
 					enumStr(strField(row, OlioFieldNames.FIELD_PB_IMPORTANCE)),
 					fkObjectId(row, OlioFieldNames.FIELD_ITEM)));
@@ -987,12 +1063,14 @@ public final class PbRenderPlanUtil {
 		return actorDescription(cp);
 	}
 
-	/// The row's box when it has any extent, else null (an unset box reads back as four zeros).
-	private static RenderPlan.Box boxOf(BaseRecord row) {
+	/// The row's box when it has any extent, else null (an unset box reads back as four zeros); clipped out of
+	/// {@code reserved} when a cover plan carries a band (null clips nothing).
+	private static RenderPlan.Box boxOf(BaseRecord row, RenderPlan.Box reserved) {
 		double w = doubleOf(row, OlioFieldNames.FIELD_PB_W);
 		double h = doubleOf(row, OlioFieldNames.FIELD_PB_H);
 		if(w <= 0 && h <= 0) return null;
-		return new RenderPlan.Box(doubleOf(row, OlioFieldNames.FIELD_PB_X), doubleOf(row, OlioFieldNames.FIELD_PB_Y), w, h);
+		RenderPlan.Box box = new RenderPlan.Box(doubleOf(row, OlioFieldNames.FIELD_PB_X), doubleOf(row, OlioFieldNames.FIELD_PB_Y), w, h);
+		return (reserved != null ? box.clip(reserved) : box);
 	}
 
 	private static String label(String name, String actorId) {

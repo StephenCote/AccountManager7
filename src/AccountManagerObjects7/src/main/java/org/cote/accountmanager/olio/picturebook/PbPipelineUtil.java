@@ -77,6 +77,12 @@ public class PbPipelineUtil {
 	public static final String SCOPE_LOCATION = "location";
 	/** {@code node.scope} for a LOCATION node whose {@code scopeRef} is an {@code olio.pb.locationVariant} objectId; the variant's {@code location} FK names the location. */
 	public static final String SCOPE_LOCATION_VARIANT = "locationVariant";
+	/**
+	 * {@code node.scope} for a RENDER_PLAN node whose {@code scopeRef} is an {@code olio.pb.composition} objectId
+	 * that is not a scene's: a cover / title page / chapter opener / series art composition (V3 §40, P9-2). The
+	 * executor builds the plan from the composition itself and never touches a scene.
+	 */
+	public static final String SCOPE_COMPOSITION = "composition";
 
 	/// Binding + artifact roles. These are the wire names §2.5 and §9's level-1 assertions use, so they
 	/// are constants rather than literals scattered across the pipeline.
@@ -95,7 +101,9 @@ public class PbPipelineUtil {
 	public static final String ROLE_RENDER_PLAN = "renderPlan";
 	/**
 	 * The compiled Comfy graph a raw-graph stage posted (V3 §38.3, P5-1): a JSON artifact on the same node as
-	 * the image it produced, with image tags only - never image bytes. One revision per render.
+	 * the image it produced, with image tags only - never image bytes. One revision per render. Bookkeeping,
+	 * never a reviewable artifact: the review queue skips this role as it skips {@code renderPlan} (ledger
+	 * §6.C 221 a, P9-1).
 	 */
 	public static final String ROLE_RENDER_GRAPH = "renderGraph";
 	/** The image a RENDER_PLAN node's BASE stage produced (V3 §11, P2-5); same node as its {@code renderPlan} JSON. */
@@ -1244,6 +1252,15 @@ public class PbPipelineUtil {
 	/** The scene's RENDER_PLAN node (V3 §12, P2-5): one per scene, beside its landscape/composite nodes, never {@code scene.sceneNode}. */
 	public static String renderPlanHandle(String sceneObjectId) {
 		return "render_plan@" + shortRef(sceneObjectId);
+	}
+
+	/**
+	 * A cover-purpose composition's RENDER_PLAN node (V3 §40, P9-2): one per composition, keyed on the
+	 * composition rather than a scene, so its version chain holds every render of that cover. The node's scope
+	 * is {@link #SCOPE_COMPOSITION} and its {@code scopeRef} the composition objectId.
+	 */
+	public static String compositionPlanHandle(String compositionObjectId) {
+		return "composition_plan@" + shortRef(compositionObjectId);
 	}
 
 	/**

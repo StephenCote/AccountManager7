@@ -107,6 +107,11 @@ public final class SdxlCompiler implements PromptCompiler {
 				elemMediumNames.add(name != null ? name : desc);
 			}
 		}
+		// the reserved band's negative-space clause rides with the HIGH elements: never dropped (V3 §40)
+		String reserved = CompilerSupport.reservedClause(plan);
+		if(reserved != null) {
+			elemHigh.add(reserved);
+		}
 
 		String camera = clean(plan.getCamera() == null ? null : plan.getCamera().getDescription());
 		RenderPlan.Style style = plan.getStyle();

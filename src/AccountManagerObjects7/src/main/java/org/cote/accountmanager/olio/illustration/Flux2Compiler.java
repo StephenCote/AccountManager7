@@ -188,7 +188,10 @@ public final class Flux2Compiler implements PromptCompiler {
 		if(styleText != null && main != null && main.toLowerCase().endsWith(styleText.toLowerCase())) {
 			styleText = null;
 		}
-		String rules = raw ? null : rules(k > 0 || hasLocationRef, extras.isEmpty());
+		/// The reserved band's sentence (V3 §40) rides in front of the rules: a layout fact, not style, so a raw
+		/// intent keeps it, and like the rules it is never dropped.
+		String reserved = reservedSentence(plan);
+		String rules = withReserved(reserved, raw ? null : rules(k > 0 || hasLocationRef, extras.isEmpty()));
 
 		RenderPlan.ModelPick pick = plan.pickForStage(stg);
 		RendererCapabilities caps = (pick == null ? null : RendererCapabilities.forModel(pick.getModel()));
@@ -218,7 +221,7 @@ public final class Flux2Compiler implements PromptCompiler {
 			CompilerSupport.recordDrop(out, GROUP_EXTRAS + " dropped", extraNames, tokens - budget, budget, stg);
 			keepExtras = false;
 			n = fg.size() + bgFull.size();
-			rules = raw ? null : rules(k > 0 || hasLocationRef, true);
+			rules = withReserved(reserved, raw ? null : rules(k > 0 || hasLocationRef, true));
 			joined = assemble(opening(k, n, main, locationOrdinal), fg, bgFull, null, elemHigh, null, null, styleText, rules);
 			tokens = PromptBudget.estimateTokens(joined);
 		}
@@ -349,6 +352,24 @@ public final class Flux2Compiler implements PromptCompiler {
 		}
 		r.append(RULE_SINGLE_SCENE);
 		return r.toString();
+	}
+
+	/// "The top quarter of the frame is calm, uncluttered negative space ... for a title. " for a plan with a
+	/// reserved band (V3 §40), or null.
+	static String reservedSentence(RenderPlan plan) {
+		String clause = CompilerSupport.reservedClause(plan);
+		if(clause == null) {
+			return null;
+		}
+		return Character.toUpperCase(clause.charAt(0)) + clause.substring(1) + SENTENCE_END;
+	}
+
+	/// The reserved sentence in front of the rules; either may be null.
+	static String withReserved(String reserved, String rules) {
+		if(reserved == null) {
+			return rules;
+		}
+		return (rules == null ? reserved : reserved + rules);
 	}
 
 	static String assemble(String opening, List<String> fg, List<String> bg, List<String> extras, List<String> elemHigh, List<String> elemMedium, List<String> elemLow,

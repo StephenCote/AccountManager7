@@ -2617,6 +2617,175 @@ public class PictureBookService {
         }
     }
 
+    // ----- Covers (V3 §40; P9-3). Transport only; PbServiceFacade/PbCoverUtil own every rule -----
+
+    /**
+     * GET /{bookObjectId}/covers
+     * The book's cover-type compositions (COVER, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART) with their render state:
+     * { bookObjectId, workflowObjectId, covers: { COVER: entry | null, ... } }, entry = { compositionObjectId,
+     * nodeObjectId, nodeStatus, pinned, reviewStatus, titleSafeBand, approved: imageRef | null, latest: imageRef
+     * | null }. Read-only - nothing is materialized by a GET (no workflow, no node, no composition). 404 book.
+     * A ChapBook is an olio.pb.book, so this is its route too.
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/covers")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response covers(@PathParam("bookObjectId") String bookObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.coverView(user, bookObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("covers", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/covers/{purpose}
+     * Body: { mode?, sceneObjectId?, chatConfigName? }. Get-or-create the composition of {purpose} (cover,
+     * title-page, chapter-opener, series-art): idempotent - an existing composition is returned untouched
+     * (existingReturned:true), never a 409. mode is auto (the LLM stages it from the book; default), from_scene
+     * (clone the SCENE composition of sceneObjectId) or manual (an empty composition to fill in). 200 the
+     * composition with its actors and elements; 400 bad purpose / mode; 403; 404 book or scene; 409 when the
+     * book is not on the V3 path, or series-art on a book that is not a chapter of a series.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/covers/{purpose:[0-9A-Za-z_\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response createCover(@PathParam("bookObjectId") String bookObjectId, @PathParam("purpose") String purpose,
+            String json, @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.createCover(user, bookObjectId, purpose,
+                    bodyString(body, "mode"), bodyString(body, "sceneObjectId"), bodyString(body, "chatConfigName"),
+                    context.getInitParameter("datagen.path"))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("createCover", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/covers/{purpose}/render?force=
+     * Asynchronous render of the {purpose} composition on its RENDER_PLAN node, materialized on first use. The
+     * composition must already exist (create it first). 202 { jobId, runObjectId, nodeObjectId, ... }; 404 book
+     * or no composition of that purpose; 403; 409 not on the V3 path, pinned, current (without force) or already
+     * being rendered; 429 too many jobs. The SD backend comes from the server, never the caller.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/covers/{purpose:[0-9A-Za-z_\\-]+}/render")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response renderCover(@PathParam("bookObjectId") String bookObjectId, @PathParam("purpose") String purpose,
+            @QueryParam("force") @DefaultValue("false") boolean force,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(202)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestCoverRender(user, bookObjectId, purpose,
+                    resolveSdApiType(context), resolveSdServer(context), force)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("renderCover", e);
+        }
+    }
+
+    /**
+     * GET /{bookObjectId}/covers/{purpose}
+     * The board of the {purpose} composition (P9-4): { bookObjectId, purpose, compositionObjectId, composition,
+     * actors, elements, cover } - the scene composition GET shape keyed by purpose, plus the covers-list entry
+     * for its render state. Read-only; readable by anyone who can read the book. 400 bad purpose; 404 book or no
+     * composition of that purpose (create it first).
+     */
+    @RolesAllowed({"admin", "user"})
+    @GET
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/covers/{purpose:[0-9A-Za-z_\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response cover(@PathParam("bookObjectId") String bookObjectId, @PathParam("purpose") String purpose,
+            @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.getCover(user, bookObjectId, purpose)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("cover", e);
+        }
+    }
+
+    /**
+     * PATCH /{bookObjectId}/covers/{purpose}
+     * Body: the composition fields to change (settingText, action, mood, shotType, viewpoint, cameraText, props,
+     * configOverride, promptOverride, promptLocked, focalActorObjectId, titleSafeBand). Same contract as the scene
+     * composition PATCH, keyed by purpose: revision bumps, source becomes USER, and the cover's render node (when
+     * it has one) is marked STALE so the next render needs no force. 200 { ..., updated:true, revision, nodeStale,
+     * nodeStatus, composition }; 400 unknown key / bad purpose; 403; 404 book or no composition; 409 not on V3.
+     */
+    @RolesAllowed({"admin", "user"})
+    @PATCH
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/covers/{purpose:[0-9A-Za-z_\\-]+}")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response patchCover(@PathParam("bookObjectId") String bookObjectId, @PathParam("purpose") String purpose,
+            String json, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.patchCover(user, bookObjectId, purpose, body)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("patchCover", e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/covers/{purpose}/plan
+     * The RenderPlan the {purpose} composition would render with (P9-4): the scene plan inspector keyed by purpose.
+     * Body (all optional): { promptOverride, raw, preset, model }. Read-only - nothing is persisted or sent to SD;
+     * the SD backend comes from the server. 200 the plan + estimate + contentHash + planSummary; 400 bad purpose /
+     * preset / a composition with no description to render from; 404 book or no composition; 409 style chain partial.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/covers/{purpose:[0-9A-Za-z_\\-]+}/plan")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response planCover(@PathParam("bookObjectId") String bookObjectId, @PathParam("purpose") String purpose,
+            String json, @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) return malformedBody();
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.planCover(user, bookObjectId, purpose, body,
+                    resolveSdApiType(context), resolveSdServer(context))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        } catch (RuntimeException e) {
+            return unexpectedFailure("planCover", e);
+        }
+    }
+
     // ----- Compose (V3 §9, §9.1, §21; P4-4). Transport only; PbServiceFacade/PbComposeJobUtil own every rule -----
 
     private static boolean bodyBoolean(Map<String, Object> body, String key, boolean dflt) {
