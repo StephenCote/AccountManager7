@@ -186,13 +186,49 @@ public class TestPbRenderPath extends BaseTest {
 		assertTrue(PbRenderPath.isPb1Retired());
 	}
 
-	/** The test properties pin v3/v3 and BaseTest re-applies them, so after setup both products read v3. */
+	/** The test properties pin v3/v3/v3 and BaseTest re-applies them, so after setup all three products read v3. */
 	@Test
 	public void case04_testPropertiesPinV3() {
 		assertEquals(PbRenderPath.V3, testProperties.getProperty(PbRenderPath.PICTUREBOOK_CONFIG_KEY));
 		assertEquals(PbRenderPath.V3, testProperties.getProperty(PbRenderPath.CHAPBOOK_CONFIG_KEY));
+		assertEquals(PbRenderPath.V3, testProperties.getProperty(PbRenderPath.CHAT_CONFIG_KEY));
 		assertEquals(PbRenderPath.V3, PbRenderPath.pictureBook());
 		assertEquals(PbRenderPath.V3, PbRenderPath.chapBook());
+		assertEquals(PbRenderPath.V3, PbRenderPath.chat());
+	}
+
+	/**
+	 * P10-A 0 (§6.C 249): the chat scene default is v3 - a plain boot with the key absent, blank or misspelled
+	 * renders the chat scene through the illustration service; {@code chat.renderPath=v1} is honoured as the
+	 * rollback and is independent of the two book products; the two-value configure leaves chat where it is.
+	 */
+	@Test
+	public void case12_chatDefaultIsV3AndV1IsRollback() {
+		try {
+			assertEquals(PbRenderPath.V3, PbRenderPath.CHAT_DEFAULT);
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3, null);
+			assertEquals("absent pins the chat default v3", PbRenderPath.V3, PbRenderPath.chat());
+			assertTrue(PbRenderPath.isChatV3());
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3, "   ");
+			assertEquals("blank pins the chat default v3", PbRenderPath.V3, PbRenderPath.chat());
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3, "v2");
+			assertEquals("a misspelling must not roll chat back", PbRenderPath.V3, PbRenderPath.chat());
+
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3, "V1");
+			assertEquals("an explicit v1 is honoured (rollback)", PbRenderPath.V1, PbRenderPath.chat());
+			assertFalse(PbRenderPath.isChatV3());
+			assertEquals("rollback leaves PictureBook alone", PbRenderPath.V3, PbRenderPath.pictureBook());
+			assertEquals("rollback leaves ChapBook alone", PbRenderPath.V3, PbRenderPath.chapBook());
+			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1);
+			assertEquals("the two-value configure must not move chat", PbRenderPath.V1, PbRenderPath.chat());
+
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3, null);
+			assertEquals("absent after a rollback restores the chat default", PbRenderPath.V3, PbRenderPath.chat());
+			assertTrue(PbRenderPath.isChatV3());
+		}
+		finally {
+			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3, PbRenderPath.V3);
+		}
 	}
 
 	/**

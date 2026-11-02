@@ -1,7 +1,7 @@
 /**
  * P1-8 / P2-6: the admin feature panel reads the boot-pinned PictureBook V3 render-path switch
  * (GET /rest/config/render-path -> {picturebook, chapbook}) read-only, and falls back to the server's
- * product defaults - picturebook v1, chapbook v3 (§28.1 Stage 2) - when the route is missing or fails;
+ * product defaults - v3 for all three since P7-1 / P2-6 / P10-A 0 (§28.1 Stage 2) - when the route is missing or fails;
  * a 404 from an older Service7 must not break the whole panel.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -79,37 +79,46 @@ describe('featureConfig render-path (P1-8)', () => {
         expect(tags).not.toContain('input');
     });
 
-    it('falls back to the product defaults (v3/v3/v1) when the route is absent (older Service7) without failing the panel', async () => {
+    it('falls back to the product defaults (v3/v3/v3) when the route is absent (older Service7) without failing the panel', async () => {
         mockGetRenderPath.mockRejectedValue(Object.assign(new Error('Not Found'), { code: 404 }));
         await loadConfig();
-        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
+        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v3' });
         let view = routes['/admin/features'].view();
         expect(findByTestId(view, 'render-path-picturebook')[0].attrs['data-value']).toBe('v3');
         expect(findByTestId(view, 'render-path-chapbook')[0].attrs['data-value']).toBe('v3');
-        expect(findByTestId(view, 'render-path-chat')[0].attrs['data-value']).toBe('v1');
+        expect(findByTestId(view, 'render-path-chat')[0].attrs['data-value']).toBe('v3');
         // The rest of the panel loaded: the profile line is present, no load error.
         expect(JSON.stringify(view)).not.toContain('Failed to load feature configuration');
     });
 
-    it('treats a null body or an unrecognised value as the product default (picturebook v3 since P7-1, chapbook v3, chat v1)', async () => {
+    it('treats a null body or an unrecognised value as the product default (v3 for all three: picturebook since P7-1, chapbook since P2-6, chat since P10-A 0)', async () => {
         mockGetRenderPath.mockResolvedValue(null);
         await loadConfig();
-        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
+        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v3' });
 
-        mockGetRenderPath.mockResolvedValue({ picturebook: 'v2', chapbook: 'V1', chat: 'V3' });
+        mockGetRenderPath.mockResolvedValue({ picturebook: 'v2', chapbook: 'V1', chat: 'V1' });
         await loadConfig();
-        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
+        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v3' });
     });
 
-    it('treats an older Service7 body with no chat key as chat v1 (P2-7)', async () => {
+    it('treats a body with no chat key as the chat product default v3 (P10-A 0; a pre-P2-7 Service7 is not a deployment that exists)', async () => {
         mockGetRenderPath.mockResolvedValue({ picturebook: 'v3', chapbook: 'v3' });
+        await loadConfig();
+        expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v3' });
+        let view = routes['/admin/features'].view();
+        expect(findByTestId(view, 'render-path-chat')[0].attrs['data-value']).toBe('v3');
+    });
+
+    it('reports the chat rollback value (v1) when the server set it explicitly, without moving the book products', async () => {
+        mockGetRenderPath.mockResolvedValue({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
         await loadConfig();
         expect(renderPath()).toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
         let view = routes['/admin/features'].view();
         expect(findByTestId(view, 'render-path-chat')[0].attrs['data-value']).toBe('v1');
+        expect(findByTestId(view, 'render-path-picturebook')[0].attrs['data-value']).toBe('v3');
     });
 
-    it('reports the rollback value (v1) for either book product when the server set it explicitly', async () => {
+    it('reports the rollback value (v1) for every product when the server set it explicitly', async () => {
         mockGetRenderPath.mockResolvedValue({ picturebook: 'v1', chapbook: 'v1', chat: 'v1' });
         await loadConfig();
         expect(renderPath()).toEqual({ picturebook: 'v1', chapbook: 'v1', chat: 'v1' });

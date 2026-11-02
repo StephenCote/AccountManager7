@@ -1521,8 +1521,8 @@ public class ChatService {
 
 		/// P2-7 (V3 §24.1): under chat.renderPath=v3 the scene renders through the shared illustration
 		/// service - one BASE stage from a transient RenderPlan, no landscape pass, no composite. The
-		/// switch is read here, at the top of the route, and nowhere below it. The v1 composite stays
-		/// the default and is untouched.
+		/// switch is read here, at the top of the route, and nowhere below it. v3 is the default since
+		/// P10-A 0; the v1 composite below stays live as the rollback (chat.renderPath=v1) and is untouched.
 		if (PbRenderPath.isChatV3()) {
 			return generateSceneV3(user, chat, req, sdu, sdConfig, systemChar, userChar, clientModel, objectId);
 		}

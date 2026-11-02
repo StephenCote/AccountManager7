@@ -28,11 +28,11 @@ let successMsg = null;
 // D2: a client wiring id with no manifest entry is a hard error surfaced here, never a silent skip.
 let manifestErrors = [];
 // PictureBook V3 render-path switch per product (design §28.1; Stage 2 for ChapBook since P2-6 and for
-// PictureBook since P7-1, chat scene since P2-7). Boot-pinned on the server and read-only here; a missing
-// or failed GET, a null body or an unrecognised value means the server's own product default -
-// picturebook v3, chapbook v3 (v1 is the rollback value for either, which the server only ever reports
-// when it was set explicitly), chat v1.
-const RENDER_PATH_DEFAULT = Object.freeze({ picturebook: 'v3', chapbook: 'v3', chat: 'v1' });
+// PictureBook since P7-1, chat scene v3 since P10-A 0). Boot-pinned on the server and read-only here; a
+// missing or failed GET, a null body or an unrecognised value means the server's own product default -
+// v3 for all three (v1 is the rollback value for each, which the server only ever reports when it was
+// set explicitly).
+const RENDER_PATH_DEFAULT = Object.freeze({ picturebook: 'v3', chapbook: 'v3', chat: 'v3' });
 let renderPathState = RENDER_PATH_DEFAULT;
 
 function normalizeRenderPath(rp) {
@@ -40,7 +40,7 @@ function normalizeRenderPath(rp) {
     return {
         picturebook: rp.picturebook === 'v1' ? 'v1' : 'v3',
         chapbook: rp.chapbook === 'v1' ? 'v1' : 'v3',
-        chat: rp.chat === 'v3' ? 'v3' : 'v1'
+        chat: rp.chat === 'v1' ? 'v1' : 'v3'
     };
 }
 

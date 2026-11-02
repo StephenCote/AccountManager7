@@ -26,7 +26,7 @@ import jakarta.ws.rs.core.Response;
  * PictureBook V3 P2-7: the boot-pinned {@code chat.renderPath} switch as the transport consumes it.
  * {@code ChatService.generateScene} branches on {@link PbRenderPath#isChatV3()} at route entry and the
  * client discovers the value from {@code GET /rest/config/render-path}; this file pins the switch's
- * semantics (three-value configure, two-value configure leaving chat alone, the v1 default) and the
+ * semantics (three-value configure, two-value configure leaving chat alone, the v3 default since P10-A 0) and the
  * v1 {@code render} marker ({@link ChatSceneRenderUtil#describeV1()}). Same H2 fixture as
  * {@link TestFeatureConfigService}; the asserting principal is a plain non-admin user.
  * <p>
@@ -73,16 +73,16 @@ public class TestChatSceneRenderPath extends BaseTest {
 		assertEquals(PbRenderPath.V3, PbRenderPath.chat());
 		assertTrue("chat=v3 must be v3", PbRenderPath.isChatV3());
 
-		/// case and whitespace are normalised; anything else pins the chat default (v1)
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, " V3 ");
-		assertTrue("' V3 ' normalises to v3", PbRenderPath.isChatV3());
+		/// case and whitespace are normalised; anything else pins the chat default (v3 since P10-A 0)
+		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, " V1 ");
+		assertFalse("' V1 ' normalises to v1", PbRenderPath.isChatV3());
 		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, "v2");
-		assertFalse("an unrecognised chat value pins the chat default v1", PbRenderPath.isChatV3());
+		assertTrue("an unrecognised chat value pins the chat default v3 (a typo must not roll chat back)", PbRenderPath.isChatV3());
 		assertEquals(PbRenderPath.CHAT_DEFAULT, PbRenderPath.chat());
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, PbRenderPath.V3);
+		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, PbRenderPath.V1);
 		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, null);
-		assertEquals("an absent chat value pins the chat default v1", PbRenderPath.V1, PbRenderPath.chat());
-		assertEquals("the chat default is v1 (the inline composite stays live)", PbRenderPath.V1, PbRenderPath.CHAT_DEFAULT);
+		assertEquals("an absent chat value pins the chat default v3", PbRenderPath.V3, PbRenderPath.chat());
+		assertEquals("the chat default is v3 (P10-A 0: the inline composite is the v1 rollback)", PbRenderPath.V3, PbRenderPath.CHAT_DEFAULT);
 	}
 
 	@Test

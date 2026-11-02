@@ -344,4 +344,133 @@ public class TestLlmJsonArraySalvage {
 		assertEquals(2, items.size());
 		assertEquals("Gilded Tankard", items.get(1).get("name"));
 	}
+
+	// ── a reply that opens with '{' where an array was asked for (V3 ledger 240 b) ──────────────
+
+	/// One scene object in the exact extract-scenes schema, not wrapped in an array. SYNTHESIZED to the
+	/// prompt's schema: the live run-15 reply (2026-11-01) was not captured, because the old latch
+	/// reported a clean parse and so persisted no failure record. The old '['…']' latch landed on the
+	/// nested "characters" array, bound one {name,role} map, said ok=true, and the wizard showed one
+	/// blank "Scene 0" with no retry. Now: the scene itself, as one element, ok=false, one parse record.
+	private static String bareScene() {
+		return "{\"index\":0,\"title\":\"Dawn at the Harbour\",\"blurb\":\"Mira meets the ferryman.\","
+			+ "\"setting\":\"Harbour Road at dawn\",\"action\":\"Mira bargains for passage.\",\"mood\":\"tense\","
+			+ "\"characters\":[{\"name\":\"Mira\",\"role\":\"protagonist\"},{\"name\":\"Ferryman\",\"role\":\"gatekeeper\"}],"
+			+ "\"diffusionPrompt\":\"a young woman on a misty harbour road at dawn\"}";
+	}
+
+	@Test
+	public void TestBareSceneObjectIsOneElementNotItsCharacters() {
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> scenes = PictureBookUtil.parseLlmJsonArray(bareScene(), CTX, failures, ok);
+		assertFalse("a bare element is not a whole parse — the caller must retry", ok[0]);
+		assertEquals(1, scenes.size());
+		assertEquals("the element is the scene, not its first character", "Dawn at the Harbour", scenes.get(0).get("title"));
+		assertEquals("Harbour Road at dawn", scenes.get(0).get("setting"));
+		assertEquals(1, failures.size());
+		Map<String, Object> rec = record(failures.get(0));
+		assertEquals("parse", rec.get("kind"));
+		assertTrue(String.valueOf(rec.get("error")).contains("single JSON object"));
+		assertEquals("the raw reply is kept for investigation", bareScene(), rec.get("rawResponse"));
+		/// Think block and code fences in front of it change nothing.
+		scenes = PictureBookUtil.parseLlmJsonArray("<think>one scene</think>\n```json\n" + bareScene() + "\n```", CTX, null, ok);
+		assertFalse(ok[0]);
+		assertEquals(1, scenes.size());
+		assertEquals("Dawn at the Harbour", scenes.get(0).get("title"));
+	}
+
+	/// Through the single-shot caller: the bare object costs exactly one corrective retry, the clean
+	/// retry wins, and the retry prompt carries the hint.
+	@Test
+	public void TestBareSceneObjectIsRetriedAndCleanRetryWins() {
+		AtomicInteger calls = new AtomicInteger();
+		List<Map<String, String>> seen = new ArrayList<>();
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> scenes = PictureBookUtil.extractSingleShot(v -> {
+			seen.add(v);
+			return calls.incrementAndGet() == 1 ? bareScene() : cleanArray(10);
+		}, vars(), CTX, failures, null);
+		assertEquals("exactly one retry", 2, calls.get());
+		assertEquals(10, scenes.size());
+		assertTrue(seen.get(1).get("text").contains("could not be parsed as JSON"));
+		assertTrue(failures.isEmpty());
+		/// Both replies bare: the first is kept (equal size, no reason to prefer the second) and its record.
+		calls.set(0);
+		failures.clear();
+		scenes = PictureBookUtil.extractSingleShot(v -> {
+			calls.incrementAndGet();
+			return bareScene();
+		}, vars(), CTX, failures, null);
+		assertEquals(2, calls.get());
+		assertEquals("the one real scene is still better than nothing", 1, scenes.size());
+		assertEquals("Dawn at the Harbour", scenes.get(0).get("title"));
+		assertEquals(1, failures.size());
+		assertEquals("parse", record(failures.get(0)).get("kind"));
+	}
+
+	/// A thin wrapper around the array that was asked for is unwrapped and counts as a whole parse —
+	/// with and without a scalar member beside the array (the old latch handled both by accident, so
+	/// neither may regress), and a wrapper around an empty array is an empty whole parse like a bare [].
+	@Test
+	public void TestWrapperObjectIsUnwrappedAsAWholeParse() {
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> scenes = PictureBookUtil.parseLlmJsonArray("{\"scenes\":" + cleanArray(10) + "}", CTX, failures, ok);
+		assertTrue("a wrapper is a whole parse", ok[0]);
+		assertEquals(10, scenes.size());
+		assertEquals("Scene 7", scenes.get(7).get("title"));
+		assertTrue(failures.isEmpty());
+
+		scenes = PictureBookUtil.parseLlmJsonArray("{\"title\":\"The Work\",\"scenes\":" + cleanArray(3) + "}", CTX, failures, ok);
+		assertTrue("a scalar beside the array does not make a 4-field-element wrapper an element", ok[0]);
+		assertEquals(3, scenes.size());
+		assertEquals("Scene 2", scenes.get(2).get("title"));
+		assertTrue(failures.isEmpty());
+
+		scenes = PictureBookUtil.parseLlmJsonArray("{\"scenes\":[]}", CTX, failures, ok);
+		assertTrue(ok[0]);
+		assertTrue(scenes.isEmpty());
+		assertTrue(failures.isEmpty());
+	}
+
+	/// A brace in a conversational preamble is not the payload: the array after it is the reply.
+	@Test
+	public void TestDecoyBraceInPreambleStillLatchesTheArray() {
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> scenes = PictureBookUtil.parseLlmJsonArray(
+			"Sure — here is the {json} array you asked for:\n" + cleanArray(4), CTX, failures, ok);
+		assertTrue(ok[0]);
+		assertEquals(4, scenes.size());
+		assertEquals("Scene 3", scenes.get(3).get("title"));
+		assertTrue(failures.isEmpty());
+	}
+
+	/// An unreadable wrapper whose first member is the array hands over to the per-element salvage,
+	/// so the good elements before the glitch (4 of 10 on the captured reply) still come back.
+	@Test
+	public void TestUnreadableWrapperFallsThroughToElementSalvage() {
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> scenes = PictureBookUtil.parseLlmJsonArray("{\"scenes\":" + fixture() + "}", CTX, failures, ok);
+		assertFalse(ok[0]);
+		assertEquals("the same four scenes the bare fixture salvages", 4, scenes.size());
+		assertEquals(1, failures.size());
+		assertEquals("parse", record(failures.get(0)).get("kind"));
+	}
+
+	/// Two arrays of objects and no way to tell which was asked for: the larger one, flagged for a retry.
+	@Test
+	public void TestAmbiguousWrapperTakesTheLargerArrayAndFlagsIt() {
+		boolean[] ok = new boolean[1];
+		List<String> failures = new ArrayList<>();
+		List<Map<String, Object>> scenes = PictureBookUtil.parseLlmJsonArray(
+			"{\"characters\":[{\"name\":\"Mira\",\"role\":\"lead\"}],\"scenes\":" + cleanArray(5) + "}", CTX, failures, ok);
+		assertFalse(ok[0]);
+		assertEquals(5, scenes.size());
+		assertEquals("Scene 0", scenes.get(0).get("title"));
+		assertEquals(1, failures.size());
+		assertTrue(String.valueOf(record(failures.get(0)).get("error")).contains("used 'scenes'"));
+	}
 }

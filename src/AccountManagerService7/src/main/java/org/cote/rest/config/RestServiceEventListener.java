@@ -384,8 +384,8 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		}
 
 		/// PictureBook V3 render-path switch (design §28.1; P1-8 Stage 1, P2-6 Stage 2, P2-7 chat): v1 | v3 per
-		/// product; absent/unrecognised pins the product default (picturebook v1, chapbook v3, chat v1; chapbook
-		/// v1 is the rollback, logged at WARN). Boot-pinned, read once; on Docker web.xml is regenerated from the template at every boot,
+		/// product; absent/unrecognised pins the product default (v3 for all three since P7-1 / P2-6 / P10-A 0;
+		/// v1 is the rollback for each, logged at WARN). Boot-pinned, read once; on Docker web.xml is regenerated from the template at every boot,
 		/// so the Docker-side value is PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH / CHAT_RENDER_PATH. Propagation bound
 		/// is a restart; exposed read-only through GET /rest/config/render-path.
 		org.cote.accountmanager.olio.picturebook.PbRenderPath.configure(

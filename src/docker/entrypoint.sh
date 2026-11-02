@@ -48,12 +48,13 @@ set -euo pipefail
 # Concurrent SD generations per backend for PictureBook render runs; empty uses the code default of 1.
 : "${PICTUREBOOK_RENDER_PATH:=v3}"
 : "${CHAPBOOK_RENDER_PATH:=v3}"
-: "${CHAT_RENDER_PATH:=v1}"
-# PictureBook V3 render-path switch per product: v1 | v3 (graph rendering). Defaults differ by stage:
+: "${CHAT_RENDER_PATH:=v3}"
+# PictureBook V3 render-path switch per product: v1 | v3 (graph rendering). All three default to v3:
 # PictureBook v3 (Stage 2 since Phase 7: the PB1 entry points refuse with "replaced by V3";
 # PICTUREBOOK_RENDER_PATH=v1 is the rollback and is logged at WARN); ChapBook v3 (the old ChapBook path is
-# disabled, Stage 2; CHAPBOOK_RENDER_PATH=v1 is the rollback and is logged at WARN); chat v1 (the inline scene composite
-# stays live; CHAT_RENDER_PATH=v3 renders the chat scene through the shared illustration service).
+# disabled, Stage 2; CHAPBOOK_RENDER_PATH=v1 is the rollback and is logged at WARN); chat v3 (P10-A 0: the chat
+# scene renders through the shared illustration service; CHAT_RENDER_PATH=v1 is the rollback to the inline
+# scene composite, which stays live, and is logged at WARN).
 # Boot-pinned: web.xml is regenerated from the template below on every start, so these variables are
 # the only place the value survives a restart on Docker. Rollback = v1 + restart.
 : "${LLM_EMULATOR_FIXTURE_ROOT:=}"

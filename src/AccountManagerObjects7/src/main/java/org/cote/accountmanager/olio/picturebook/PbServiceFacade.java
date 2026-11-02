@@ -2325,10 +2325,12 @@ public class PbServiceFacade {
 	 * data objectId (or null when no composite has been generated yet).
 	 * <p>
 	 * Authorized via {@code requireBook} before anything else — KI-67 pattern. Scenes are listed
-	 * ordered by {@code sceneIndex}. For each scene the composite node is resolved via the
-	 * {@code sceneNode} FK and the selected composite artifact is fetched. Migrated scenes
-	 * ({@code sceneNode} null) return {@code dataObjectId: null} — correct, since migration does not
-	 * produce PB2 artifacts.
+	 * ordered by {@code sceneIndex}. For each scene the page image is resolved in this order (V3 P10-A 2):
+	 * the selected {@code base} of the scene's RENDER_PLAN node ({@link PbPipelineUtil#renderPlanHandle},
+	 * what a V3 scene render writes); else the {@code sceneNode} FK's selected artifact
+	 * ({@link #pageArtifactRole}: PB1 composite / ChapBook landscape); else {@code scene.imageObjectId}.
+	 * Migrated scenes with none of these return {@code dataObjectId: null} — correct, since migration
+	 * does not produce artifacts.
 	 */
 	public static List<Map<String, Object>> bookPageView(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
@@ -2345,6 +2347,15 @@ public class PbServiceFacade {
 		}
 		catch(PictureBookException e) {
 			// no workflow yet — pages have null dataObjectId
+		}
+		/// V3 P10-A 2 (213 e): a scene's RENDER_PLAN node is keyed by handle, not by a scene FK, so index the
+		/// one node list by handle too. Same read as nodesById - nodeRequest() already projects the handle.
+		Map<String, BaseRecord> nodeByHandle = new HashMap<>();
+		for(BaseRecord n : nodeMap.values()) {
+			String h = n.get(OlioFieldNames.FIELD_PB_HANDLE);
+			if(h != null) {
+				nodeByHandle.put(h, n);
+			}
 		}
 
 		List<Map<String, Object>> out = new ArrayList<>();
@@ -2379,8 +2390,26 @@ public class PbServiceFacade {
 			BaseRecord node = null;
 			BaseRecord artifact = null;
 			if(!nodeMap.isEmpty()) {
+				/// V3 P10-A 2 (213 e / 219 f / 240 f): a V3 scene render (requestRenderPlanScene) lands as the
+				/// selected 'base' of the scene's RENDER_PLAN node and links neither sceneNode nor imageObjectId,
+				/// so look there first. A selected base wins over the PB1 composite / ChapBook landscape below:
+				/// in a both-case the RENDER_PLAN render is the newer one by construction and the composite path
+				/// is what Phase 10 removes. A RENDER_PLAN node with no selected base yet (render in flight or
+				/// failed) is still the page's node when the scene has no sceneNode, so its status reaches the
+				/// reader; when a sceneNode exists it keeps the page.
+				String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
+				BaseRecord planNode = nodeByHandle.get(PbPipelineUtil.renderPlanHandle(sceneOid));
+				if(planNode != null) {
+					BaseRecord base = PbArtifactUtil.findSelected(user, planNode, PbPipelineUtil.ROLE_BASE);
+					BaseRecord baseData = (base != null ? base.get(OlioFieldNames.FIELD_PB_DATA) : null);
+					if(baseData != null && baseData.get(FieldNames.FIELD_OBJECT_ID) != null) {
+						node = planNode;
+						artifact = base;
+						dataObjectId = baseData.get(FieldNames.FIELD_OBJECT_ID);
+					}
+				}
 				BaseRecord sceneNodeRef = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
-				if(sceneNodeRef != null) {
+				if(node == null && sceneNodeRef != null) {
 					Object nodeIdObj = sceneNodeRef.get(FieldNames.FIELD_ID);
 					Long nodeId = (nodeIdObj instanceof Number) ? ((Number) nodeIdObj).longValue() : null;
 					if(nodeId != null) {
@@ -2395,6 +2424,9 @@ public class PbServiceFacade {
 							}
 						}
 					}
+				}
+				if(node == null && planNode != null) {
+					node = planNode;
 				}
 			}
 			// For ChapBook scenes with no workflow node, fall back to the directly-generated image
@@ -2439,7 +2471,9 @@ public class PbServiceFacade {
 	/**
 	 * The artifact role a page shows for its {@code sceneNode}: a PictureBook scene's node is the
 	 * COMPOSITE ({@code composite}); a ChapBook page's node (V3 P1-9) is a LANDSCAPE
-	 * ({@link PbPipelineUtil#ROLE_LANDSCAPE}). Anything else keeps the historical default.
+	 * ({@link PbPipelineUtil#ROLE_LANDSCAPE}). Anything else keeps the historical default. The scene's
+	 * RENDER_PLAN node is not reached through {@code sceneNode} at all - {@link #bookPageView} finds it by
+	 * handle and reads its {@link PbPipelineUtil#ROLE_BASE} before consulting this.
 	 */
 	static String pageArtifactRole(BaseRecord node) {
 		PbNodeTypeEnumType t = (node != null && node.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE)

@@ -15,9 +15,9 @@ import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
  * points refuse with {@link #PB1_REPLACED_PREFIX} and {@code picturebook.renderPath=v1} is the rollback value,
  * logged at WARN when it is applied), ChapBook defaults to {@link #V3} ({@link #CHAPBOOK_DEFAULT}, Stage 2 -
  * the old ChapBook path is disabled, {@code chapbook.renderPath=v1} the rollback, likewise logged at WARN),
- * and the chat scene image stays on {@link #V1} ({@link #CHAT_DEFAULT}: the inline
- * composite in {@code ChatService.generateScene} is live and default; {@code v3} routes the scene
- * through the shared illustration service, design §24.1).
+ * and the chat scene image defaults to {@link #V3} ({@link #CHAT_DEFAULT}, since P10-A 0 / §6.C 249: the scene
+ * renders through the shared illustration service, design §24.1; {@code chat.renderPath=v1} is the rollback
+ * to the inline composite in {@code ChatService.generateScene}, which stays live and is logged at WARN).
  * <p>
  * Read once at start-up by the transport's startup listener (Service7 {@code web.xml} init-param,
  * which on Docker is regenerated from {@code docker/web.xml.template} on every boot from the
@@ -64,8 +64,12 @@ public final class PbRenderPath {
 	/** ChapBook product default (§28.1 Stage 2): the old ChapBook path is disabled; {@link #V1} is the rollback. */
 	public static final String CHAPBOOK_DEFAULT = V3;
 
-	/** Chat scene default (P2-7): the inline v1 composite stays live and default; {@link #V3} is opt-in. */
-	public static final String CHAT_DEFAULT = V1;
+	/**
+	 * Chat scene default. P2-7 pinned {@link #V1} because V3 was TEXT_ONLY with no portrait references until
+	 * Phase 4; the test stacks have run chat on V3 since. Flipped to {@link #V3} at P10-A 0 (§6.C 249) so a
+	 * plain Docker boot renders the chat scene through the illustration service; {@link #V1} is the rollback.
+	 */
+	public static final String CHAT_DEFAULT = V3;
 
 	/** Every refusal message starts with this, so clients and tests can key on it. */
 	public static final String REFUSAL_PREFIX = "render path is v1";
@@ -83,6 +87,9 @@ public final class PbRenderPath {
 	/** Logged at WARN whenever the PictureBook rollback value is applied (P7-1), for the same reason. */
 	public static final String PICTUREBOOK_ROLLBACK_WARNING = "legacy PictureBook (PB1) render path re-enabled (rollback)";
 
+	/** Logged at WARN whenever the chat rollback value is applied (P10-A 0), for the same reason. */
+	public static final String CHAT_ROLLBACK_WARNING = "legacy chat scene composite re-enabled (rollback)";
+
 	private static volatile String pictureBook = PICTUREBOOK_DEFAULT;
 	private static volatile String chapBook = CHAPBOOK_DEFAULT;
 	private static volatile String chat = CHAT_DEFAULT;
@@ -94,9 +101,9 @@ public final class PbRenderPath {
 	 * Pin all three values. Null/blank means "absent" and pins the product default at INFO
 	 * ({@link #PICTUREBOOK_DEFAULT} / {@link #CHAPBOOK_DEFAULT} / {@link #CHAT_DEFAULT}); an unrecognised
 	 * value pins the product default at WARN naming the key and the value (a typo must never silently
-	 * move a product off its default); {@code picturebook.renderPath=v1} / {@code chapbook.renderPath=v1} are
-	 * honoured and logged at WARN as {@link #PICTUREBOOK_ROLLBACK_WARNING} / {@link #CHAPBOOK_ROLLBACK_WARNING};
-	 * a change is logged at INFO. Never throws.
+	 * move a product off its default); {@code picturebook.renderPath=v1} / {@code chapbook.renderPath=v1} /
+	 * {@code chat.renderPath=v1} are honoured and logged at WARN as {@link #PICTUREBOOK_ROLLBACK_WARNING} /
+	 * {@link #CHAPBOOK_ROLLBACK_WARNING} / {@link #CHAT_ROLLBACK_WARNING}; a change is logged at INFO. Never throws.
 	 */
 	public static void configure(String pictureBookValue, String chapBookValue, String chatValue) {
 		pictureBook = resolve(PICTUREBOOK_CONFIG_KEY, pictureBookValue, pictureBook, PICTUREBOOK_DEFAULT);
@@ -107,6 +114,9 @@ public final class PbRenderPath {
 		}
 		if(V1.equals(chapBook)) {
 			logger.warn(CHAPBOOK_CONFIG_KEY + "=" + V1 + ": " + CHAPBOOK_ROLLBACK_WARNING);
+		}
+		if(V1.equals(chat)) {
+			logger.warn(CHAT_CONFIG_KEY + "=" + V1 + ": " + CHAT_ROLLBACK_WARNING);
 		}
 	}
 

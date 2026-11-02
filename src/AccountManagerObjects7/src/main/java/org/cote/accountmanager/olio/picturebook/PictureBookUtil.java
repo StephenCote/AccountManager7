@@ -4145,8 +4145,22 @@ public class PictureBookUtil {
             if (nl >= 0) trimmed = trimmed.substring(nl + 1);
             if (trimmed.endsWith("```")) trimmed = trimmed.substring(0, trimmed.lastIndexOf("```")).trim();
         }
+        /// A reply that opens with an OBJECT where an array was asked for. Latching on the first
+        /// '['…last ']' inside it is wrong in the common case: the extract-scenes schema nests
+        /// "characters":[{"name":…,"role":…}] inside every scene, so a bare single scene object
+        /// latched to its characters array, parsed cleanly as one {name,role} map, reported ok=true
+        /// (no corrective retry) and surfaced as one blank "Scene 0" (V3 ledger §16.1 run 15, 240 b).
+        /// Decide from the object itself: a thin wrapper ({"scenes":[…]}) is unwrapped; a fat element
+        /// is kept as a one-element result with ok=false so the single-shot caller retries once.
+        int objStart = trimmed.indexOf('{');
+        int arrStart = trimmed.indexOf('[');
+        if (objStart >= 0 && (arrStart < 0 || objStart < arrStart)) {
+            List<Map<String, Object>> unwrapped = unwrapObjectReply(trimmed, objStart, arrStart, response, context,
+                failedExtractions, okOut);
+            if (unwrapped != null) return unwrapped;
+        }
         // Find first [ ... ] array
-        int start = trimmed.indexOf('[');
+        int start = arrStart;
         int end = trimmed.lastIndexOf(']');
         if (start < 0 || end < 0 || end <= start) {
             recordFailedExtraction(failedExtractions, context, KIND_NO_JSON,
@@ -4213,6 +4227,116 @@ public class PictureBookUtil {
     static List<Map<String, Object>> dropEmptyElements(List<Map<String, Object>> parsed) {
         parsed.removeIf(m -> m == null || m.isEmpty());
         return parsed;
+    }
+
+    /// Text following a '{' whose first member is itself an array ({"scenes":[ …).
+    private static final Pattern FIRST_MEMBER_ARRAY = Pattern.compile("\\s*\"[^\"]*\"\\s*:\\s*\\[");
+
+    /**
+     * Resolve a reply whose first JSON token is a '{' (at {@code objStart}) when an array was asked
+     * for. Returns {@code null} when the brace is not the payload — a decoy in prose before the
+     * array, or an unreadable object whose first member is itself an array — so the caller's
+     * '['…']' latch and per-element salvage proceed as before. Otherwise the resolved list, with
+     * {@code okOut} set:
+     * <ul>
+     * <li>wrapper — the object carries only containers, or one non-empty array of objects whose
+     *   elements are wider than the wrapper itself ({@code {"title":"…","scenes":[…]}}): that
+     *   array, ok=true;</li>
+     * <li>wrapper around an empty array ({@code {"scenes":[]}}): empty, ok=true, like a bare [];</li>
+     * <li>bare element — scalar members and no wider nested array (one scene object): the object
+     *   as a one-element list, ok=false plus a parse record, so {@link #extractSingleShot} retries
+     *   once and keeps whichever reply read more;</li>
+     * <li>two or more candidate arrays: the largest, ok=false plus a parse record.</li>
+     * </ul>
+     * The wrapper/element distinction is structural (a wrapper is thin, an element is fat) because
+     * this parser serves every array prompt in the module and knows no schema; a wrapper that
+     * carries as many scalar members as its elements have fields reads as an element and costs a
+     * retry, never a silent blank.
+     */
+    @SuppressWarnings("unchecked")
+    static List<Map<String, Object>> unwrapObjectReply(String trimmed, int objStart, int arrStart, String response,
+            String context, List<String> failedExtractions, boolean[] okOut) {
+        int objEnd = findBalancedEnd(trimmed, objStart);
+        /// A balanced brace pair that closes before the array opens is prose ("I will return a
+        /// {json} array:"), not the payload.
+        if (objEnd >= 0 && arrStart >= 0 && objEnd < arrStart) return null;
+        String candidate = objEnd >= 0
+            ? trimmed.substring(objStart, objEnd + 1)
+            : repairTruncatedJson(trimmed.substring(objStart));
+        String[] err = new String[1];
+        Map<String, Object> obj = JSONUtil.getLenientMap(candidate.getBytes(StandardCharsets.UTF_8),
+            String.class, Object.class, err);
+        if (obj == null && objEnd >= 0) {
+            String second = repairTruncatedJson(candidate);
+            if (!second.equals(candidate)) {
+                obj = JSONUtil.getLenientMap(second.getBytes(StandardCharsets.UTF_8), String.class, Object.class, err);
+            }
+        }
+        String label = context != null ? context : "LLM JSON array";
+        if (obj == null) {
+            /// Unreadable. When the first member is an array ({"scenes":[ …glitched… ]}) the latch
+            /// lands on that array and the per-element salvage can still recover its good elements.
+            if (FIRST_MEMBER_ARRAY.matcher(trimmed.substring(objStart + 1)).lookingAt()) return null;
+            String msg = "The reply opened with a JSON object that could not be read ("
+                + (err[0] != null ? err[0] : "unparseable") + ")";
+            logger.warn("Failed to parse " + label + ": " + msg);
+            recordFailedExtraction(failedExtractions, context, KIND_PARSE, msg, response);
+            return new ArrayList<>();
+        }
+        List<String> listKeys = new ArrayList<>();
+        boolean hasScalar = false;
+        int emptyLists = 0;
+        for (Map.Entry<String, Object> e : obj.entrySet()) {
+            Object v = e.getValue();
+            if (v instanceof List) {
+                List<?> l = (List<?>) v;
+                if (l.isEmpty()) emptyLists++;
+                else if (l.stream().allMatch(x -> x instanceof Map)) listKeys.add(e.getKey());
+                else hasScalar = true; /// a list of scalars (aliases, tags) is element data, not a payload
+            } else if (v != null && !(v instanceof Map)) {
+                hasScalar = true;
+            }
+        }
+        if (listKeys.isEmpty()) {
+            if (!hasScalar && emptyLists > 0) {
+                /// {"scenes":[]} — the model answered "none" inside a wrapper; same as a bare [].
+                if (okOut != null && okOut.length > 0) okOut[0] = true;
+                return new ArrayList<>();
+            }
+            return bareElement(obj, response, context, failedExtractions, label);
+        }
+        if (listKeys.size() == 1) {
+            String key = listKeys.get(0);
+            List<Map<String, Object>> list = (List<Map<String, Object>>) obj.get(key);
+            int widest = list.stream().mapToInt(Map::size).max().orElse(0);
+            if (!hasScalar || widest > obj.size()) {
+                logger.info("Unwrapped " + label + ": array of " + list.size() + " element(s) under key '" + key + "'");
+                if (okOut != null && okOut.length > 0) okOut[0] = true;
+                return dropEmptyElements(list);
+            }
+            return bareElement(obj, response, context, failedExtractions, label);
+        }
+        /// Two or more arrays of objects and nothing says which one was asked for: take the largest,
+        /// but flag it so the caller retries.
+        String best = listKeys.get(0);
+        for (String k : listKeys) {
+            if (((List<?>) obj.get(k)).size() > ((List<?>) obj.get(best)).size()) best = k;
+        }
+        String msg = "The reply was a JSON object carrying " + listKeys.size() + " arrays of objects ("
+            + String.join(", ", listKeys) + "); used '" + best + "'";
+        logger.warn("Recovered " + label + ": " + msg);
+        recordFailedExtraction(failedExtractions, context, KIND_PARSE, msg, response);
+        return dropEmptyElements((List<Map<String, Object>>) obj.get(best));
+    }
+
+    private static List<Map<String, Object>> bareElement(Map<String, Object> obj, String response, String context,
+            List<String> failedExtractions, String label) {
+        String msg = "The reply was a single JSON object where an array was asked for; kept it as one element";
+        logger.warn("Recovered " + label + ": " + msg);
+        recordFailedExtraction(failedExtractions, context, KIND_PARSE, msg, response);
+        List<Map<String, Object>> one = new ArrayList<>();
+        one.add(obj);
+        return dropEmptyElements(one);
     }
 
     /**

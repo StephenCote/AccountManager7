@@ -44,7 +44,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | 7 — PictureBook goes V3 | Reported 2026-10-30 (archive P5-P8 §14.1–§14.5, §6.C 214–219): switch, Stage 2 refusals, wizard hand-off, Import, Scenarios A–G + verify checks 1–3; verifier PASS (219 j); open Yours 216 d / e, 217 d / g / h, 218 c–f, 219 d / e / g / h / j; nothing DONE | archive P5-P8 §14.1–§14.5 |
 | 8 — Visual QA | Reported 2026-10-30 (archive P5-P8 §15.1–§15.6, §6.C 220–227): P8-1 … P8-6 built; exit criterion live on `.42` + `.39` (`TestPbQaExitCriterionLive` 3 / 3 run 2, t02 re-run 1 / 1); verifier PASS, 8 follow-ups (227); open Yours 221 a, 222 b / d, 224 b / e, 225 e / g, 226 a / b, 227 f / g / h; nothing DONE | archive P5-P8 §15.1–§15.6 |
 | 9 — Cover & book art | **IN PROGRESS** — plan + start prompt §17 (architect review folded in, §6.C 232); **P9-0 built and run 2026-10-31**: the 212 p canvas fix (28/28) + the §16 usability gate, 14 runs, run 14 = 13/14 (step 7 red on a product defect, 233 d) — §16.1 / §18.1 / §6.C 233; **P9-x** the 233 d picker memo fix built and tested 2026-10-31 on Stephen's "yes, fix" (§18.2 / 234); **P9-1 built and tested 2026-10-31** on his "keep going" (234 d): 221 a + `olio.pb.composition` `series` / `titleSafeBand` + `PbCoverUtil` three modes, `TestPbCoverUtil` 6/6 with AUTO on the remote `.42` (§18.3 / 235); **P9-2 built and tested 2026-11-01**: `SCOPE_COMPOSITION` + `ensurePlanNode` + `buildCompositionPlan` + the executor branch, `TestPbCoverPlanOffline` 6/6, `TestPbCoverRenderLive` 1/1 on `.39` + `.42` VLM, images looked at — the band is not honoured by FLUX.2 (236 i, Yours) (§18.4 / 236); **P9-3 built and tested 2026-11-01**: `coverView` / `createCover` / `requestCoverRender` + the three `/covers` routes, `TestPictureBookCoverRoutes` 11/11 on H2 (§18.5 / 237); **P9-4 built and tested 2026-11-01**: cover mode of the compose board + `pb2-cover-link` + both readers' cover page, `getCover` / `patchCover` / `planCover` routes (14/14 on H2), Vitest 46/46 (full 1581), Playwright `pictureBookV3Cover` 3/3 on Docker with a real `.39` render approved through the UI; the reader's title block vs the band is 238 d (Yours) (§18.6 / 238); **P9-5 built and tested 2026-11-01**: `TestPbCoverExitCriterionLive` 2/2 on `.39` + the remote `.42` — a book cover (POPULATION tier, DIRECT_REFERENCE, explicit approve) and a ChapBook cover (NONE tier, TEXT_ONLY, QA auto-approve) each read back through `coverView`'s `approved` entry, six images looked at; TEXT_ONLY on a FLUX.2 pick renders with the SDXL cfg and the VLM passed the blown-out result (239 c, Yours) (§18.7 / 239); **P9-6 built and tested 2026-11-01**: §16 step 15 "Cover and Art" added (book Auto cover with the carried chat config, ChapBook Manual cover, both approved through the UI, both readers, the ChapBook export compared by bytes), the whole 15-step gate re-run — run 17 = 15/15 on Docker + `.39` + the remote `.42`, step 7 green after P9-x; two of my assertions corrected on the way (240 b / c) (§16.1 / §18.8 / 240); **verifier PASS over P9-5 / P9-6** (241, three LOW citation nits fixed); committed by Stephen as `f4482f2d P3 P9 Initial` (242; gate run 18 15/15 closed 240 e); **P9-9 built and tested 2026-11-01** on 242 b: `pictureBookV3Cover.spec.js` test 4, From-scene → TITLE_PAGE rendered and approved through the UI on `.39`, 4/4 (§18.11 / 243); **P9-8 built and tested 2026-11-01**: `coverPageLayout` (238 d), the carried chat config for ChapBook boards (240 d), the review export's cover (238 k), Vitest full 1595, cover spec 4/4 on the new dist (§18.10 / 244); **P9-7 built and tested 2026-11-01**: FLUX.2 cfg / sampler / scheduler on a zero-reference BASE **and** on the graph path (239 c, both branches of `PbNodeExecutor`), `lastError` host scrub at the node DTOs (237 l), 13 new offline cases green (6 + 6 + 1, §18.9), `TestPbCoverExitCriterionLive` run 4 2/2 on `.39` + the remote `.42` — the graph-path cover went from run 2's dark grainy halo to a clean interior with the three knobs the only change, which is the claim that archive 219 h was this defect and not `.39`'s settings (245 g, Yours) (§18.9 / 245); **verifier PASS-WITH-NITS over P9-7 / P9-8 / P9-9** (246: the DTO-test over-claim fixed by two more assertions, run 2 1/1; the stale §17 band sentence annotated; the scheme-less `scrubHosts` note left as Yours) and **gate run 19 15/15** on the P9-7 jar + the P9-8 dist (§16.1); P9-1 … P9-9 all built and tested, nothing DONE; open Yours 233 d-family, 236 i, 237 j / l, 238 d, 239 c / f, 240 b / d / f, 241 d, 243 b / d, 244 b / c, 245 b / e / g, 246 3 | §18.1–§18.11 |
-| 10 — Removal (PB1, old ChapBook path, Kontext Remove) | **PLANNED** — §19 plan + start prompt drafted 2026-11-01 (§6.C 247); the removal slices P10-1 … P10-6 are gated on design §28.1 checks 4 (two weeks of no rollback, earliest 2026-11-12) and 5 (Stephen's sign-off); P10-0 (inventory refresh) and P10-A (carry-over defects) are ungated; nothing started | §19 |
+| 10 — Removal (PB1, old ChapBook path, Kontext Remove) | **IN PROGRESS** — §19 plan + start prompt drafted 2026-11-01 (§6.C 247); **P10-0 done as a doc pass 2026-11-02** (the grep-proven §19 inventory table + the architect review folded in, §6.C 248 / §20.0: chat key outside the phase with a test-stack / prod drift for Stephen, the node-type enum values outlive P10-1, chat's composite builders survive P10-3, my `chapBook.js:261` mis-rowing fixed); **Stephen's reply 2026-11-02** (249): no prod exists, a Docker build at chat v1 is an issue, delete the excluded PB1-era test classes, P10-1 default stands, "continue implementation"; **P10-A 0 built and tested 2026-11-02**: chat render-path default v3 on every surface with v1 the logged rollback — `TestPbRenderPath` 14/14 (`.42` direct), `TestChatSceneRenderPath` 4/4 (H2), Vitest 6/6, no deploy (§20.1 / 249); **P10-A 1 built and tested 2026-11-02**: `parseLlmJsonArray` no longer latches a bare scene object's nested `characters` array — `unwrapObjectReply` (wrapper → ok=true, bare element → one element + retry), `TestLlmJsonArraySalvage` 21/21, emulator 25/25, no deploy (§20.2 / 250); **P10-A 2 built and tested 2026-11-02**: `bookPageView` reads a scene's RENDER_PLAN `base` first (then `sceneNode`, then `imageObjectId`) so V3-rendered pages count as rendered — `TestPbPageViewRenderPlanBase` 3/3 + the two page-view regressions 15/15, jar installed, no deploy, the live cover-count Playwright waits on the next `am7test` deploy (§20.3 / 251); P10-A 3 … 7 next in §19's order (ask before 7); P10-1 … P10-6 gated on design §28.1 checks 4 (earliest 2026-11-12) and 5 (sign-off) | §19, §20.0–§20.3 |
 
 ---
 
@@ -542,6 +542,114 @@ the record — where this index and the entry disagree, the entry wins; each sta
      a recorded default — no `v1` after Stage 4 — and the prompt says ask first anyway, because it decides which tests go. (e) ⚠ The inventory
      numbers are line numbers as of 2026-11-01 and will drift; P10-0 re-greps them before anything is deleted — stated in §19 twice so a new
      conversation does not trust them. (f) ✓ No code, no tests, no deploy in this entry; the §19 prompt is reproduced in the hand-back reply.
+248. ✓ **2026-11-02 09:15 → ~10:20 (P10-0: inventory refresh + architect review of §19; no code, no tests, no deploy).** The grep
+     (`scratch/p10-0/inventory-grep.sh` → `.log`, 1437 lines at `c08a6990`) is the §19 table; the architect's verdict was CHANGES-NEEDED (three
+     HIGH, each re-verified against the code before folding in — §20.0). Rulings, all at their defaults unless you say otherwise:
+     (a) ⚠ **`chat.renderPath` is outside Phase 10.** §28.1 names two keys (`:1847-1848`); the `~/Chat` scene answers to the chat key (215 c,
+     `PictureBookUtil.java:9767-9770`); `CHAT_DEFAULT = V1` and chat has never entered Stage 2. Default: Phase 10 leaves the chat key, `isChatV3`,
+     `ChatService:1433-1461` / `:1526` and the `featureConfig.js` chat chip alone. **Config drift, yours:** the Docker gate runs chat at **v3**
+     (`docker-compose.test.yml:290`) while prod defaults **v1** (`docker-compose.yml:63`, Console7 `resource.properties:67`) — the gate never
+     exercises the production chat path. Default: no change until you say which is intended. (b) ⚠ HIGH, folded in — the `REFERENCE_STRIP` /
+     `COMPOSITE` enum values outlive P10-1 and go in P10-5 after zero rows (`EnumValueType:41-45` throws, `StatementUtil.populateRecord:1528`
+     fails the whole result set). (c) ⚠ The Ux `legacyScenes` PB1 viewer (`pictureBook.js:2821-2829`) — no rule covers it. Default: it outlives
+     P10-5 (the last read of PB1 data once the routes go) and is removed only after verify check 2 is re-confirmed on the import path; the
+     `data-pb1-import` notice stays. (d) ⚠ `RendererCapabilities.PATTERN_KONTEXT` + `capabilities.json:109` are a disabled-family row, not
+     §37.4's list; design §37.5 `:2652-2653` says "no kontext family in the capabilities resource" → P10-3 removes the row with a resolver test
+     (a `flux1Kontext*` checkpoint → "not installed"). (e) ⚠ The surefire-excluded PB1-era classes (`TestPictureBookFull` 8 PB1 calls,
+     `…Custom` 4, `…Pipeline` 1, `…UtilE2E` 21, `pom.xml` `:110` / `:140` / `:142` / `:168`) are yours: default = P10-1 deletes only the PB1-calling
+     methods and keeps each class while anything else in it still runs; say "delete the classes" if you prefer. (f) ✓ P10-7's grep widened
+     and scoped to the build (docs excluded; §30 row 10 says "nothing in the build"). (g) ⚠ P10-1's ask rephrased: not "does `PbRenderPath`
+     keep `v1`" (it must — chat) but "do the `picturebook` / `chapbook` keys, their `/render-path` members and the DTO `renderPath` field
+     survive" — default no; asked again when P10-1 opens. (h) ✗ **Mine:** the first draft of table row 6 (and the 2026-11-01 list) called
+     `features/chapBook.js:261` a PB1 caller; it is `cbBase()` → `ChapBookService:455`, ChapBook V3's front door — deleting it in P10-1 would have
+     broken per-scene ChapBook render. Fixed in the table; the real PB1 fetches are `sceneExtractor.js` `:380` / `:413` / `:503`. (i) ✓ Gate-after-
+     authz holds at every site once the gates go (architect Q C; every `requireV3` follows `requireBook` `PbServiceFacade:251-264`). (j) ⚠ HIGH,
+     folded in — P10-3 keeps `buildSceneRequest` / `defaultCreativity` / `resolveMode` live for chat and strips only the Kontext branch. (k) ⚠
+     `resolveModeValue:126-128` downgrades an unknown saved `compositeMode` to classic with a WARN; after P10-3 a saved `kontext` must reject
+     (feedback-validate-dont-workaround) — in P10-3, with a test. (l) ⚠ The column drop is global (`IOSystem:152-158`); P10-4's hand-back lists
+     every statement across all models. (m) ⚠ "PB1-only" for P10-5 = unreferenced by any V3 artifact / scene / page, checked through
+     `PbOrphanUtil` / `PbMigrationUtil`, never by group path; `compositeMode='kontext'` configs added to its list. (n) ✓ Q G: no hard-prohibition
+     violation in §19. Not verified by the architect: `PbBookUtil.readBook` internals, `persistBookSdConfigFk` authorization, `ModelResolver`'s
+     unknown-family result. Nothing DONE by me; P10-A waits for your reply.
+249. ✓ **2026-11-02 ~15:00 → 15:15 (your reply to 248 + P10-A 0 built and tested: the chat render-path default goes v3; §20.1).** Your
+     rulings on 248, recorded: (a) there is no "prod" — only Docker and the Eclipse/Tomcat + `am72db` box, whose staleness is fine; **but a
+     Docker build starting chat at v1 is an issue** → treated as a new ungated defect, P10-A 0, fixed first. (c) OK — the `legacyScenes` PB1
+     viewer outlives P10-5. (e) "delete if/when unused/deprecated" — the surefire-excluded PB1-era classes (`TestPictureBookFull` / `…Custom` /
+     `…Pipeline` / `…UtilE2E`) are unused (excluded from the run) and deprecated (PB1-era), so P10-1 deletes the classes, not just the PB1 methods.
+     (g) OK — the P10-1 default (the two book keys, their `/render-path` members and the DTO field go; the class stays for chat) applies and is
+     re-confirmed when P10-1 opens. **P10-A 0.** (a) ⚠ **One default everywhere, not Docker-only:** `PbRenderPath.CHAT_DEFAULT = V3`
+     (`PbRenderPath.java`), `docker-compose.yml:63` `:-v3`, `entrypoint.sh:51` `:=v3`, Console7 `resource.properties:67` `chat.renderPath=v3`,
+     Ux752 `featureConfig.js` `RENDER_PATH_DEFAULT.chat = 'v3'` + `normalizeRenderPath` (`'v1'` → v1, anything else → v3); `v1` stays the
+     rollback and now logs `CHAT_ROLLBACK_WARNING` at WARN like the two book keys. The Docker-only alternative (compose + entrypoint only, code
+     default left v1) would have left the Eclipse Tomcat (empty `web.xml` → code default) and a bare `configure(null…)` on v1 — say so if you
+     wanted that narrower change. The P2-7 reason for v1 (TEXT_ONLY chat until Phase 4; archive P0-P4 `:9590-9593`) is gone since Phase 4.
+     (b) ✓ Evidence: Objects7 `TestPbRenderPath` 14/14 incl. new `case12_chatDefaultIsV3AndV1IsRollback` (`scratch/p10-a/0-TestPbRenderPath.log:39062`
+     `Tests run: 14, Failures: 0, Errors: 0`, `:39069` `BUILD SUCCESS`, `:39074` `EXIT=0`; the three log shapes `:9054` absent → v3, `:9056` WARN
+     `v2` → v3, `:9058` the rollback WARN; `[LLM-GATE]` `:55` route=direct tier=remote = the DGX Spark `.42` directly, container Ollama and LiteLLM
+     refused `:52-53`); jar installed (`0-objects7-install.log` EXIT=0); Service7 `TestChatSceneRenderPath` 4/4 on H2 (`0-TestChatSceneRenderPath.log:609`,
+     `:616` BUILD SUCCESS, `:621` EXIT=0); Vitest `renderPathConfig.test.js` 6/6 (`0-vitest-renderPath.log:5-6`, `:10` EXIT=0); `vite build` OK
+     (`0-vite-build.log:4`, `:5` EXIT=0). (c) ⚠ Stale "picturebook v1" comments corrected on the way (`web.xml.template:71-78`, `web.xml:75-82`,
+     `RestServiceEventListener:386-388`, `ConsoleMain:135-136`, `docker-compose.test.yml:285-288`, `ChatService:1522-1526`) — comments only; no
+     param-value in `web.xml` changed (still empty → code default). (d) ⚠ Not exercised: the compose / entrypoint defaults are text (no boot with
+     the env unset); the running `am7test` stack pins chat v3 explicitly, so no live behaviour change and **no redeploy**. (e) ⚠ Consequence,
+     yours: the chat v1 inline composite (`ChatService:1536-1641` → `SceneCompositeUtil.buildSceneRequest` / `defaultCreativity`) is now reachable
+     only by an explicit `CHAT_RENDER_PATH=v1`, so `SceneCompositeUtil`'s own `@deprecated` condition ("after the chat default flips") is met —
+     a future gated removal candidate (would need its own §28.1 verify window), **not** folded into P10-2 / P10-3 here; 248 j's "keep for chat"
+     ruling in P10-3 stands until you say otherwise. Default: a P10-8 line in §19, nothing removed. (f) ✓ `scratch/p10-0/inventory-grep.log`
+     deleted (class 1, you replied); the script kept until the phase closes. Nothing DONE by me; P10-A 1 next.
+
+250. ✓ **2026-11-02 ~15:15 → 15:35 (P10-A 1 built and tested: `parseLlmJsonArray` on a `{`-opened reply, 240 b; §20.2).** (a) ✓ Cause,
+     confirmed from the prompt not the (unrecovered) reply: `promptTemplate.pictureBook.extract-scenes.json` nests
+     `"characters":[{"name","role"}]` in every scene, so a bare single scene object latched to its characters array
+     (`:4149-4150` first `[` … last `]`), bound one `{name,role}` map, reported ok=true — no corrective retry — and the wizard showed one
+     blank "Scene 0" (§16.1 run 15). Fix: before the latch, a `{` that precedes the first `[` goes to new package-private
+     `unwrapObjectReply` (`PictureBookUtil.java:4257+`; branch `:4155-4161`): a balanced brace closing before the array is prose → latch as before; the
+     object is parsed (balanced end, else `repairTruncatedJson`); **wrapper** (only containers, or one array of objects whose elements
+     are wider than the wrapper — `{"title":…,"scenes":[…]}`) → that array, ok=true, INFO `Unwrapped …`; `{"scenes":[]}` → empty, ok=true;
+     **bare element** → the object as one element, **ok=false + a `parse` record** so `extractSingleShot` retries once and keeps the
+     larger; two candidate arrays → the larger, ok=false; unreadable object whose first member is an array → latch + per-element
+     salvage as before, otherwise `parse` record, empty. (b) ⚠ The wrapper/element rule is structural (thin wrapper vs. fat element)
+     because the parser serves every array prompt and knows no schema: a wrapper carrying as many scalar members as its elements have
+     fields reads as an element — cost one retry, never a silent blank. Yours if you want a key-name hint instead. (c) ⚠ The fixture
+     is **synthesized** to the prompt schema; the run-15 reply was not captured (the old path reported a clean parse, so no
+     `rawResponse` was persisted; the container app log has no 2026-11-01 03:10 → 09:37 entries). (d) ⚠ Out of scope, noted: the
+     `"Scene " + idx` default at `:7258` on an empty LLM `title` (the re-extract consequence); `extractSingleShot`'s hint text
+     ("truncated or malformed") not reworded. (e) ✓ Evidence: 6 new cases in `TestLlmJsonArraySalvage` (bare scene → 1 element with its
+     `title`, ok=false, one `parse` record carrying the raw reply, think/fence-prefixed too; through `extractSingleShot` → 2 calls, clean
+     retry wins 10/10 with the hint, both-bare keeps the one scene; wrapper 10 / wrapper+scalar 3 / `{"scenes":[]}` all ok=true; decoy
+     `{json}` preamble 4/4 ok=true; `{"scenes":<glitched fixture>}` → the same 4 salvaged; ambiguous two-array → 5, flagged `used 'scenes'`):
+     `scratch/p10-a/1-TestLlmJsonArraySalvage.log:646` `Tests run: 21, Failures: 0, Errors: 0`, `:585` `TestLlmEmulator` 25/25, `:651`
+     `TestLlmJsonSalvage` 18/18, `:655` 64/64, `:658` `BUILD SUCCESS`, EXIT=0; `[LLM-GATE]` `:55` route=direct tier=remote = the DGX Spark `.42`
+     directly (the emulator class; the salvage cases are pure); jar installed (`1-objects7-install.log` EXIT=0). No deploy; Service7 does not
+     call the parser. Nothing DONE by me; P10-A 2 next.
+251. ✓ **2026-11-02 ~15:40 → 16:10 (P10-A 2 built and tested: the reader's "0 rendered of N" on RENDER_PLAN `base` pages, 213 e /
+     219 f / 240 f; §20.3).** (a) ✓ Cause: a V3 scene render (`requestRenderPlanScene` `:676` → `executePlanScene` `:713` →
+     `ensureRenderPlanNode` `:1083`, "scene.sceneNode is left alone") lands as the selected `base` of the scene's RENDER_PLAN node
+     (`PbNodeExecutor.executeRenderPlan` `:765-808`, `recordImage(… ROLE_BASE …)`), keyed only by handle `render_plan@<shortRef>`;
+     `bookPageView` resolved a page image through `scene.sceneNode` (`composite` / `landscape`) or `scene.imageObjectId` only, so
+     `dataObjectId` was null and `pb2RenderedCount()` (`pictureBook.js:1842`) counted 0. Fix, `PbServiceFacade.java:2351-2358` +
+     `:2393-2430`: a handle→node index from the one `nodesById` read; per page, `renderPlanHandle(sceneOid)` → `findSelected(…, ROLE_BASE)`
+     first — a base with data is the page's image, node and artifact — else the `sceneNode` path as before, else `imageObjectId`. No Ux
+     change: the count already keys on `dataObjectId`; `sceneChip` / the degradation view now get `nodeStatus` / `reviewStatus` /
+     `artifactObjectId` / `pinned` for these pages. (b) ⚠ **Precedence, default taken:** a selected base wins over a linked COMPOSITE's
+     composite in a both-case (v1 book re-rendered on v3) — the RENDER_PLAN render is the newer one by construction and the composite path
+     is what Phase 10 removes. Yours if the older composite should win while P10-1 is gated. (c) ⚠ A RENDER_PLAN node with **no** selected
+     base (render in flight / failed) is still the page's node when the scene has no `sceneNode` — its status reaches the reader — and
+     the image falls back to `imageObjectId`; when a `sceneNode` exists it keeps the page. (d) ⚠ Out of scope, noted: the reader's Render
+     button (`pb2SubmitRenderScene` → `requestSceneRender` `:776`) still 409s "build the book's graph" for a scene with no `sceneNode`,
+     so a V3-rendered page cannot be re-rendered from the reader (the compose board can); in a both-case Render targets the composite node
+     while unpin targets `sceneNodeObjectId` = the RENDER_PLAN node. (e) ✓ Evidence: new `TestPbPageViewRenderPlanBase` 3/3 (base → page
+     image / node / artifact / GENERATED / unpinned, sibling null, 1 of 2 counted; second revision auto-selected, approve → APPROVED +
+     pinned; precedence: composite first, base-less plan leaves it, base wins; base-less plan + `imageObjectId`; untouched page):
+     `scratch/p10-a/2-TestPbPageView.log:601` `Tests run: 3, Failures: 0, Errors: 0`, `:2344` `TestPbSceneLocationPointer` 11/11, `:2525`
+     `TestPbScenePageBackfill` 1/1, `:2530` 15/15, `:2533` `BUILD SUCCESS`, EXIT=0; `[LLM-GATE]` `:60` route=direct tier=remote = the
+     DGX Spark `.42` directly (nothing in these tests calls it); jar installed (`2-objects7-install.log` EXIT=0); Ux752 `vite build`
+     EXIT=0, Vitest 105 files / 1596 passed (`2-ux-vitest.log`). No deploy — `am7test` still runs the P9-7 jar — so **no Playwright**: the
+     `data-pb2-cover-count` label is asserted live only on the ChapBook LANDSCAPE path (`pictureBookV3Ux.spec.js:341` / `:425`,
+     `pictureBookV3PlainPb.spec.js:482`, `pictureBookRestartRecovery.spec.js:817`), never after a `/render-plan` render; the JUnit lays the
+     base down with the executor's own `persistArtifact(… ROLE_BASE …)` call, not through the executor. (f) ⚠ Default: a live
+     `[SD]` cover-count assertion after `/scene/{id}/render-plan` is added when the jar + dist next go to `am7test` (P10-A 4 needs a dist
+     deploy and a Playwright anyway). Nothing DONE by me; P10-A 3 next.
 
 > Moved 2026-10-28 to `archive/PictureBookV3Implementation-P0-P4.md` §6.G, §6.L, §6.H–§6.N (Slice C findings, the nude-fixture question, Phase 0–1 infrastructure items; §6.H / §6.I / §6.J / §6.K RESOLVED, §6.M FIXED) (section numbering unchanged there). Still open there and Stephen's: §6.G (Slice C transport findings 1–12), §6.L (the `generateScene` e2e fixtures render nude), §6.N (`.39` outage log 2026-10-11 → 2026-10-14).
 
@@ -1431,7 +1539,7 @@ enabled, the compiled BASE prompt in the right pane. `11`: `DONE_UNVERIFIED · p
 buttons disabled, two toasts. `12`: the reader's cover is still test 3's purple dusk shore with the centred title block, "0 rendered of
 1 scene" (213 e / 219 f, P10) — the title block sits mid-image, not in the BOTTOM band (238 d, P9-8's slice; this `dist` predates it).
 
-## 19. Phase 10 — Removal: plan and start prompt (drafted 2026-11-01 on Stephen's "show comprehensive prompt for phase 10 to be used in a new conversation", §6.C 247; **not started**; results → §20, rulings → §6.C 248+)
+## 19. Phase 10 — Removal: plan and start prompt (drafted 2026-11-01 on Stephen's "show comprehensive prompt for phase 10 to be used in a new conversation", §6.C 247; **P10-0 started 2026-11-02 ~09:15 local** on the §19 prompt in a new conversation — inventory refreshed below, architect review §6.C 248, results §20.0; P10-A / P10-1+ not started; results → §20, rulings → §6.C 248+)
 
 **What Phase 10 is.** Design §30 row 10 (`:1955`): *Removal (post-completion) — §28.1 Stage 4 for PB1, after the verify checks and your
 sign-off; Kontext Remove stage per the §37.4 inventory; same for the old ChapBook path. Code removed; nothing in the build references PB1
@@ -1444,37 +1552,48 @@ normal use with no rollback** — PictureBook has been at Stage 2 since P7-1 (20
 since 2026-10-14. **5 = Stephen signs off.** Phase 10's removal slices (P10-1 … P10-6) do not start before both; what can start earlier is the
 inventory refresh (P10-0) and the carry-over product defects (P10-A), which remove nothing.
 
-**Inventory, as grep-verified 2026-11-01 (re-verify every line in P10-0; the numbers drift).** PB1 entry points: `PictureBookService`
-`@Deprecated` routes `:724` / `:796` / `:1124` (`/scene/{id}/generate`, `prepare-images`, PB1 settings) and their `PictureBookUtil`
-`requirePb1Entry` sites `:2120` (settings) / `:9772` (generate) / `:10957` (prepare); `PbRenderPath` (`PICTUREBOOK_DEFAULT = V3` `:62`,
-`CHAPBOOK_DEFAULT = V3` `:65`, `REFUSAL_PREFIX` `:71`, `requireV3` `:190`, `requirePb1Entry` `:220`, `requireEnabledCompositeMode` `:242`);
-`PbNodeExecutor.executeReferenceStrip` `:1676` / `executeComposite` `:1777` (`@Deprecated`) + `warnLegacyNode` `:501`; `SDUtil.stitchSceneImages`
-`:1772`; Ux752 PB1 callers `workflows/pictureBook.js` `:47` (the "PB1 routes answer 409" comment) / `:165` / `:178` / `:1348` / `:2688-2690` /
-`:2765`, `features/chapBook.js` `:171` / `:185` / `:261`. Old ChapBook path: `ChapBookUtil.renderResolvedScene` / `renderChapBookSummary` v1
-branches; `ChatService` `:1419-1422` / `:1488-1490` / `:1539`; `Chat.java:2408`. Kontext: design §37.4 (`:2598-2644`) is the inventory —
-`SWUtil` (`defaultKontextModel` `:144-147`, `newKontextSceneTxt2Img` ×4 `:420-502`, `newKontextBase` `:540-569`, `styleClause` `:507-537`),
-`SceneCompositeUtil` (`MODE_KONTEXT` `:37`, `isSupportedMode`, `resolveMode`'s `useKontext` fallback, the KONTEXT branch `:286`, the four
-`@Deprecated` helpers), `ModelResolver.MODE_KO…` `:35`, `PictureBookUtil` `useKontext` `:10383` + the PB1 blocks, `configModel.json`
-`useKontext` `:312-316` / `kontextModel` `:390-393` / `kontextSteps|Cfg|Sampler|Scheduler` `:395-421` (`compositeMode` `:322` stays — FLUX.2
-uses it), text in `pictureBookMetaModel.json:74`, `pictureBookRequestModel.json:53`, `flux2Defaults.json:18`, `web.xml:45`,
-`resource.properties:126-130` (`test.swarm.kontextModel=` `:130`), `pom.xml:154` (`TestKontext` excluded) and `:168` (`TestPictureBookUtilE2E`).
-Tests that go or change: `TestKontext` (whole; `testStripSDXLWeighting` already lives in `objects/tests/TestSwUtilPromptText.java`),
-`TestFlux2Composite` `:629` / `:746` / `:848` / `:861` + asserts `:398-402` / `:414-423` / `:444-453` / `:458-462` / `:468-477` / `:815`,
-`TestPictureBookPipeline` `:297-319`, `TestPictureBookUtilE2E` `:171-182` / `:237-253`, `TestPictureBookFull` `:2013-2045`, `TestPbGraph.java:438`,
-`SdTestGate` `:31` / `:298`, `TestChatDuelLong:221`; the Stage 2 tests that assert the **refusals** — `TestPbRenderPath`, `TestChapBookRenderStyle`
-(Objects7), `TestPbRenderPathRefusal` (Service7), `TestKontextDeprecation`, `TestPbKontextDisable`, `TestChatSceneKontextDisable` — change
-meaning at Stage 4 (a removed route is a 404, not a 409). Ux752: `modelDef.js` `:10312-10316` / `:10322` / `:10383-10414`,
-`chatChainSceneReimageRoutes.spec.js` `:186` / `:196`, `pictureBookScenePromptUx.spec.js:18`, comments in `chat/SceneGenerator.js`,
-`workflows/pictureBook.js` `:225-230` / `:2700`, `workflows/sceneExtractor.js` `:357` / `:364` / `:496`. Docs: `KnownIssues.md` (34 Kontext
-lines), the design (17), `archive/PictureBookSdConfigRefactor.md` (14), `PictureBook2Plan.md` (8).
+**Inventory, grep-proven 2026-11-02 at `c08a6990` (P10-0; supersedes the 2026-11-01 paragraph — the 2026-11-01 numbers are kept in the
+"was" column only where they drifted).** Evidence: `scratch/p10-0/inventory-grep.sh` → `scratch/p10-0/inventory-grep.log` (1437 lines,
+`HEAD c08a6990` `:2`, `DONE 2026-11-02 09:19:38` `:1437`; section markers cited as `log:line`). Line numbers are as of that commit and drift
+again with every edit — the slice that deletes a row re-greps it first. "Replaced by" = what is live on V3 today; "proof" = the test that
+already exercises the replacement, so deleting the row cannot be the only test of the feature.
+
+| # | File · symbol (lines 2026-11-02; *was* 2026-11-01) | Slice | Replaced by | Proof | Log |
+|---|---|---|---|---|---|
+| 1 | `PictureBookService` `@Deprecated` `:724` (`/scene/{id}/generate`, javadoc `:718-722`), `:796` (`prepare-images`, `:791`), `:1124` (PB1 settings, `:1119`) | P10-1 | `PbServiceFacade` RENDER_PLAN routes (`/render`, `/nodes/{id}/render`) + `/sd-config` | `TestPictureBookRenderPlanRoute`, `TestPbRenderPathRefusal` (Service7); `pictureBookV3RenderPlan.spec.js` | `:4` |
+| 2 | `PictureBookUtil.requirePb1Entry` `:2120` (`setBookSdConfig` `:2112`), `:9772` (`generateSceneImage` `:9725`; the gate sits AFTER `authorizeSceneAccess` `:9744` — comment `:9767-9770`, **not** `:9711` as P10-1 said), `:10957` (prepare); `requireEnabledCompositeMode` `:9891`; the PB1 pipeline body `:10315-10710` (`useKontext` `:10383`, Kontext block `:10517-10568`, classic `:10572`) | P10-1 / P10-3 | `PbNodeExecutor.executeRenderPlan` + `Flux2Compiler` (graph path); `SceneCompositeUtil` FLUX.2 branch | `TestPbRenderPlanExecutor`, `TestFlux2Compiler`, `TestP51GraphLive` (`.39`), `TestPictureBookSceneAuthz` (403 before 409) | `:29`, `:639` |
+| 3 | `PbRenderPath` — `V1` `:54`, `V3` `:55`, `PICTUREBOOK_DEFAULT` `:62`, `CHAPBOOK_DEFAULT` `:65`, **`CHAT_DEFAULT = V1` `:68`**, `REFUSAL_PREFIX` `:71`, `PB1_REPLACED_PREFIX` `:78`, `isChatV3` `:157`, `isV3` `:181`, `requireV3` `:190`, `requirePb1Entry` `:220`, `requireEnabledCompositeMode` `:242`; `configure` callers `ConsoleMain.java:137-140`, `RestServiceEventListener.java:391-394`; `FeatureConfigService` `/render-path` `:157-174`; `PbServiceFacade.requireV3` ×23 (`:632 … :5253`) + `isV3` `:3820`; `ChatService.isChatV3` `:1526` | P10-1 (PB / CB keys); **chat key: 248 a** | the switch has no successor — `requireV3` / `requireEnabledCompositeMode` collapse to the `requireBook` / mode-validation checks they sit behind | `TestPbRenderPath` (Objects7) and `TestPbRenderPathRefusal` (Service7) become "route absent" tests or go; `TestPictureBookComposeRoutes` / `…CoverRoutes` already assert the authz checks that stay | `:38`, `:94` |
+| 4 | `PbNodeExecutor` — dispatch `case REFERENCE_STRIP` `:572` / `COMPOSITE` `:577`, `warnLegacyNode` `:591` (*was* `:501`), `executeReferenceStrip` `:2384-2385` (*was* `:1676`), `executeComposite` `:2485-2486` (*was* `:1777`), stitch caller `:2440`, `PbPipelineUtil.ROLE_REFERENCE_STRIP` `:2465`; `EXECUTABLE_TYPES` `:107-108` / `SD_BACKED_TYPES` `:117` list the two types | P10-1 (code); **enum values `REFERENCE_STRIP` / `COMPOSITE`: 248 b** | `executeRenderPlan` (RENDER_PLAN nodes; FLUX.2 multi-reference takes the portraits + landscape as separate refs, no stitched strip) | `TestPbRenderPlanExecutor`, `TestPbNodeExecutorTypes`, `TestFlux2Composite` (`flux2IncludeLandscapeRef`) | `:157`, `:1292` |
+| 5 | `SDUtil.stitchSceneImages` `:1772` (javadoc `:1763` names `executeReferenceStrip`); Kontext text `:1974` / `:2178` / `:2321` | P10-1 / P10-3 | nothing — V3 never stitches | `TestFlux2Composite` | `:168`, `:865` |
+| 6 | Ux752 PB1 callers — **the fetches are in `workflows/sceneExtractor.js`** (`pbBase()` `:12-14` = `/rest/olio/picture-book`): `generateSceneImage` `:371` / `:380` (`/scene/{id}/generate`), `prepareSceneImagePrompts` `:413` (`/prepare-images`), `saveBookSdConfig` `:503` (`PUT /settings` — the `@Deprecated` `PictureBookService:1127`; `getBookSdConfig` `:482` is the `GET` `:1096`, which stays); consumed by `workflows/pictureBook.js` `:7`, `:33` ("Steps 4–5 are v1-only"), `:47`, `:52` (unreadable render-path → `v3`), `:75`, `:159` Step 4, `:164`, `:199-201` Step 5, `:275-280` (Kontext comment; *was* `:225-230`), `:1350`, `:1476` (the Step 4 per-scene loop), `:2209` `renderStep4`, `:2383` `renderStep5`, `:2428-2429`, `:2611`, `:2686-2690`, `:2781`, `:2821-2829` (`legacyScenes` PB1 read-only viewer), `:2907-2908`, `:3042`. **Not PB1 (the 2026-11-01 list and the first draft of this row had them wrong — 248 h):** `features/chapBook.js` `:261` is `cbBase()` = `/rest/olio/chap-book/scene/{id}/generate` (`ChapBookService:455`, the ChapBook V3 front door, §28.1 `:1873-1878`) and `:171` / `:185` are the ChapBook `/settings`; its `:217-225` / `:241` / `:343-355` / `:403` / `:1489-1502` / `:3883` / `:4013-4016` / `:4122-4125` are `renderPath` reads + comments (P10-1 shrinks them, deletes nothing there); `features/pictureBook.js` `:7-8`, `:77`, `:164`, `:793-796`, `:823-826`, `:875`, `:1067-1084` (`data-pb1-legacy-notice` / `data-pb1-import`), `:1120-1122`, `:1159`, `:1242`, `:1276`, `:1326`, `:1970`, `:2262`; `workflows/pictureBookCharacters.js` `:62` (`let renderPath = 'v1'`), `:91`, `:160`, `:1120-1123` (unreadable → **`v1`**, the opposite of `pictureBook.js:52`), `:1159`, `:1170`; `core/am7client.js` `:743-746` `getRenderPath`; `features/featureConfig.js` `:30` / `:36` / `:47` / `:62` / `:282-289` / `:313` | P10-1; **`legacyScenes` viewer + the import notice: 248 c** | the V3 wizard hand-off (P7-3) + Import (P7-4) + the compose / review boards | Vitest `pictureBookV3Handoff` / `pictureBookV3Import` / `pictureBookV3Reader` / `renderPathConfig`; Playwright `pictureBookV3Handoff` / `pictureBookV3Import` / `pictureBookWizardUx` | `:186`, `:202`, `:222`, `:1272`, `:1381` |
+| 7 | Config — Console7 `resource.properties:59-67` (`picturebook.renderPath=v3` `:65`, `chapbook.renderPath=v3` `:66`, `chat.renderPath=v1` `:67`); `RestServiceEventListener.java:386-390`; Service7 `web.xml` `:75` / `:84` / `:88` / `:92` (+ Kontext text `:45`); `docker/web.xml.template:71-90`; `docker/entrypoint.sh` `:49-56` / `:78` / `:118`; `docker-compose.yml:56-63` (`CHAT_RENDER_PATH:-v1`); **`docker-compose.test.yml:285-290` (`CHAT_RENDER_PATH:-v3` — the test stack and prod disagree on chat)**; `ChapBookService` `:128` / `:527` (`"renderPath":` in the board JSON); `ChatService` `:1455` / `:1522` / `:1662` | P10-1 / P10-6; chat lines 248 a | — | `renderPathConfig.test.js`, e2e `renderPath.spec.js` go or shrink to the chat key | `:396` |
+| 8 | Old ChapBook path — `ChapBookUtil` `:125` (`SceneRenderResult` v1 ctor → `PbRenderPath.V1`), `:179` (`ChapBookRenderSummary` v1 ctor), `:1532-1583` `renderChapBookSummary` overloads, `:1603` `boolean v3 = PbRenderPath.isV3(book)`, `:1663` v1 loop, `:1933-1954` `renderResolvedScene` (`:1948` `isV3` → `:1952` V3 / `:1954` `renderResolvedSceneV1`), `renderResolvedSceneV1` body from `:2172`; `ChatService` `:1433-1442` (400s; *was* `:1419-1422`), `:1455-1461` (`resolveMode` → 409; *was* `:1488-1490`), `:1535`, `:1586` ("3b–3d: Branch between Kontext … and classic"; *was* `:1539`), `:1600`, `:1621-1623`; `Chat.java:2412` (*was* `:2408`) | P10-2 (ChapBook); **`ChatService` lines are chat's inline composite, 248 a** | `renderResolvedSceneV3` `:2242-2314`, `renderChapBookSummaryV3` `:2359-2421` | `TestChapBookV3Render`, `TestChapBookRestContract` (Service7); `chapBookRenderPathV3.spec.js`; `TestChapBookRenderStyle`'s v1 cases go | `:451`, `:495`, `:515` |
+| 9 | Kontext — `SWUtil` `:135`, `defaultKontextModel` `:143-147`, builder comments `:163-240`, `newKontextSceneTxt2Img` ×4 (`:428` / `:437` / `:451` / `:462`), `styleClause` `:507` (called only from `:494` inside the Kontext builder — `TestPictureBookFull:2917`'s "KI-38 deleted `styleClause`" comment is stale, `:2061-2063` still calls it), `newKontextBase` ×2 `:540` / `:547`, `:573`; `SceneCompositeUtil` `:18` / `:26`, `MODE_KONTEXT` `:37`, `SUPPORTED_MODES` `:41`, `KONTEXT_RETIRED_MESSAGE` `:46-47`, `KONTEXT_PANEL_SIZE` `:50`, `isSupportedMode` `:62`, `isRetiredMode` `:71-72`, `resolveMode` `:107-110`, `resolveModeValue` `:117-135` (`:123` accepts `kontext`, `:131-132` `useKontext` fallback), `@Deprecated` `includesLandscapeReference` `:187`, `buildSceneRequest` `:222` (KONTEXT branch `:286-296`), `applyPromptOverride` `:333`, `defaultCreativity` `:349`; `ModelResolver.MODE_KONTEXT` `:35` / `:275` / `:303`; `PictureBookUtil` `:1596` / `:1608` / `:2085` / `:3158` / `:3793-3800` / `:9718` (javadoc "Stage 4: Flux Kontext") / `:9809` / `:9887` / `:10361-10401` / `:10421` / `:10457-10464` | P10-3 | FLUX.2 (`SceneCompositeUtil` flux2 branch, `Flux2Compiler`) + classic; `compositeMode=kontext` → an unknown-mode validation error | `TestFlux2Composite` (`:410-426` asserts `SUPPORTED_MODES == "flux2\|classic"` — changes with the row), `TestFlux2Compiler`, `TestModelResolver` (`:466` parity assert goes), `TestStrategySelector` | `:518`, `:561`, `:634`, `:639` |
+| 10 | `configModel.json` — `useKontext` `:312-315`, `kontextModel` `:391-393` (*was* `:390`), `kontextSteps` `:396-401`, `kontextCfg` `:404-409`, `kontextSampler` `:412-415`, `kontextScheduler` `:418-421` (`compositeMode` `:318-322` **stays**); Ux752 `modelDef.js` mirror `:10276` / `:10314-10317` / `:10324` / `:10386-10416`; **`sdConfigModelParity.test.js:66` expects `kontextModel`** (not in the 2026-11-01 list) | P10-4 (Stephen runs the drop) | nothing — FLUX.2 reads `flux2Model` / `flux2Steps` / `flux2Cfg` / `flux2Sampler` / `flux2Scheduler` (P9-7) | `TestPbFlux2TextOnlyOffline`, `TestPbConfigPrecedence`; the parity Vitest changes with the field | `:692`, `:1034` |
+| 11 | Other Kontext text — `pictureBookMetaModel.json:74`, `pictureBookRequestModel.json:53`, `flux2Defaults.json:18`, `web.xml:45`, Objects7 test `resource.properties:126-130` (`test.swarm.kontextModel=` `:130`), Objects7 `pom.xml` `:154` (`TestKontext` excluded) / `:168` (`TestPictureBookUtilE2E`) / `:142` (`TestPictureBookPipeline`) / `:140` (`TestPictureBookFull`) / `:110` (`TestPictureBookCustom`); `ConfigNotApplied.java:20`; `PbRenderPath.java` `:76` / `:235-246`; **`RendererCapabilities.PATTERN_KONTEXT = "*kontext*"` `:31` + the disabled-family row `:72`, `capabilities.json` `:13` / `:31` / `:54` / `:61` / `:109`** (not in §37.4 — 248 d); `SdTestGate` `:31` / `:298` | P10-3 / P10-6 | — | — | `:708`, `:865` |
+| 12 | Tests that go or change (Kontext mentions, file:count, `:966`; PB1 entry-point callers, `:1017`): `TestKontext` 75 (whole; `testStripSDXLWeighting` already in `TestSwUtilPromptText`), `TestKontextDeprecation` 57, `TestPbKontextDisable` 19, Service7 `TestChatSceneKontextDisable` 32, `TestFlux2Composite` 43 (`:400-402`, `:410-426`, `:436-450`, `:459-465`, `:468-480`, `:629-635`, `:744-751`, `:821`, `:851-855`, `:865-872`), `TestPictureBookPipeline` 14 (`:305`; 1 PB1 call), `TestPictureBookUtilE2E` 24 (`:170` / `:184` / `:198` / `:526`; **21 PB1 calls**), `TestPictureBookFull` 2 (`:2030`, `:2061-2063`, `:2917`; **8 PB1 calls**), `TestPictureBookCustom` 2 (4 PB1 calls), `TestPictureBookWorkflow` (7 PB1 calls), `TestPbCanvas` (4), `TestPbSceneGenerationGuards` (6), `TestPbRenderPath` (5; `:38` / `:155` / `:164` / `:182`), `TestPbRenderPathRefusal` (3), `TestPbAutoApprove` (2), `TestPbGraph` (1, `objects/tests/`), `TestPbStale` 1, `TestModelResolver` 19 (`:466`), `TestModelResolverLive` 8, `TestIllustrationResources` 9, `TestStrategySelector` 8, `TestPbRenderPlanActors` 19, `TestSdCalibrationRecord` 1, `TestChatSceneRenderUtil` 1, `TestChatDuelLong` 1, `TestChapBookRestContract` (`:276` / `:321` / `:324`); refusal-naming tests (`:991`): `TestPbRenderPath` 17, `TestKontextDeprecation` 15, `TestPbKontextDisable` 10, `TestChapBookRestContract` 7, `TestPbRenderPathRefusal` 7, `TestPictureBookComposeRoutes` 5, `TestPictureBookCoverRoutes` 5, `TestChatSceneKontextDisable` 4, `TestPbRenderPlanExecutor` 2, `TestPictureBookRenderPlanRoute` 2, 1 each in `TestFlux2Composite` / `TestPictureBookSceneAuthz` / `TestChapBookV3Render` | P10-1 / P10-2 / P10-3; **the excluded PB1-era classes: 248 e** | — | a removed route is a 404 / an unknown mode is a validation error, not a 409: each refusal assertion is rewritten to the new status or deleted with the row it tested | `:883`–`:1033` |
+| 13 | Ux752 Kontext / renderPath test surface — Vitest `chapBookV3Render` (26 lines), `pictureBookCharactersAffected` (6), `pictureBookV3Handoff` (3), `pictureBookV3Reader` (`:49` `pb2IsV3`), `pictureBookWardrobe` (`:75` / `:162` / `:164` / `:300`, uses `renderPath: 'v2'`), `renderPathConfig` (whole), `pictureBookWiring:111`, `sdConfigPanelLandscapeToggle:7`; e2e `chatChainSceneReimageRoutes.spec.js` `:30-33`, `:260-310` (Kontext 400 / 409 at `:265` / `:285`; *was* `:186` / `:196`), `:572`, `:615-624` `readRenderPath`, `:691-699`, `:773-821`; `helpers/api.js` `:1032-1048` `readRenderPath`, `:1057-1070` (`PB1_RETIRED_SKIP` `:1062`, `[e2e-render-path]` `:1070`); `chapBookRenderPathV3` (`:4` / `:10` / `:127` / `:331` / `:385` / `:433`), `chapBookV3PreV3Lock` (`:5` / `:17` / `:192`), `pictureBookV3Handoff.spec.js:34` `V1_SKIP`, `pictureBookV3Import` (`:5` / `:22` / `:34`), `pictureBookV3ImportSweep:38`, `pictureBookV3RenderPlan` (`:13` / `:273`), `pictureBookCompose` (`:13` / `:189-191`), `pictureBookComposition:243`, `pictureBookLive:411`, `pictureBookNavigation` (`:18` / `:123`), `pictureBookV3Scenarios:179`, `pictureBookV3Ux:985`, `pictureBookWizardUx` (`:4` / `:55`), `renderPath.spec.js` (whole), `pictureBookScenePromptUx:18` (`pictureBookWorkflow.spec.js:1430-1435`'s `renderPath` is a local V3 URL, not the switch); comments `chat/SceneGenerator.js:49-50`, `workflows/sceneExtractor.js` `:357` / `:364` / `:376` / `:491-502` | P10-1 / P10-3 | the `PB1_RETIRED_SKIP` / `V1_SKIP` skips are dead after Stage 4 — their specs run unconditionally | — | `:222`, `:1050`, `:1100` |
+| 14 | Docs (Kontext lines, file:count, `:1109`): `KnownIssues.md` 23 (+ 26 PB1 / Kontext lines, `:1434`), `PictureBook2Plan.md` 8, `PictureBookImageGenerationDesign.md` 5, `PictureBookV3Design.md` 84, this ledger 24, `README` 2; archives (never edited; one-line "superseded" note only): `IssueLog-2026-09-22` 3, `KnownIssues-closed` 12, `GapAnalysis` 1, `PB2ImplementationState` 2, `PictureBookRevisions` 1, `PictureBookSdConfigRefactor` 14, `V3Impl-P0-P4` 222, `V3Impl-P5-P8` 15, `V3Notes` 1, `imageComposite` 3. Stale design cites found on the way: §28.1 `:1898` (`executeReferenceStrip :1676 / executeComposite :1777`), §37.4 rows `:2608` / `:2611` / `:2612` / `:2615` | P10-6 | — | — | `:1109` |
+| 15 | **Not PB1-only — stays (found by the H sweep, recorded so no slice deletes it):** `SceneGenerationParams.compositeSdConfig` `:1610` is read by `IllustrationModelPolicy.currentModel` `:1635` and the FLUX.2 branch `:10472-10473`; `persistBookCompositeSdConfig` `:2088-2095` / `setBookSdConfig` `:2112-2132` (the route is PB1, the util is not); the `olio.pictureBookMeta` / `…Request` / `…Result` / `…Scene` / `…CharacterStub` / `…CharacterStyle` models are read by `PictureBookUtil` (38), `PbMigrationUtil` (6), `PbOrphanUtil` (2), `PbDeleteUtil` (1), `PbServiceFacade` (1), `OlioModelNames` (6), `ChapBookService` (4), `PictureBookService` (15), Ux752 `sceneExtractor.js` (10) / `chapBook.js` (4) / `modelDef.js` / `pictureBook.js` / `pictureBookWorkflow.js` — only their Kontext *text* (`:74`, `:53`) changes; `compositeMode` on `olio.sd.config`; `ChapBookUtil.renderResolvedSceneV3` / `renderChapBookSummaryV3` | — | — | — | `:1332`, `:1350` |
+
+**P10-7 exit grep baseline (`git grep -n "MODE_KONTEXT\|requirePb1Entry\|executeReferenceStrip\|newKontext"` over `src/`, `:1127`, count by file
+`:1219`):** `SWUtil` 13, `SceneCompositeUtil` 8, `TestKontext` 8, `PictureBookUtil` 6, `TestFlux2Composite` 6, `TestKontextDeprecation` 6,
+`TestPictureBookUtilE2E` 4, `TestPbRenderPath` 4, `PbRenderPath` 3, `TestChapBookRestContract` 3, `PbNodeExecutor` 2, 1 each `ModelResolver` /
+`SDUtil` / `TestPictureBookPipeline` / `TestModelResolver` / `TestPbKontextDisable` / `KnownIssues.md:2244` / `PictureBook2Plan.md:1611`; the design
+12 and this ledger 9. The architect widened the P10-7 pattern and scoped it to the build (`:(exclude)src/aiDocs`, 248 f) — the widened pattern's
+baseline is not measured here; P10-7 runs it and records the before / after counts.
 
 **Slices (each: built, tested, §20.x results, §6.C entry; nothing DONE by the session):**
 - **P10-0 — inventory refresh + architect review (no code; may start before the gate).** Re-grep every item above into a table (file, symbol,
   lines as of the day, what replaces it, which test proves the replacement), add anything the grep finds that §37.4 does not list, and run
   the `architect` agent over §19 against design §28.1 / §30 row 10 / §37.3–§37.4 (the 215 / 232 precedent). Findings folded in → §6.C.
 - **P10-A — carry-over product defects (ungated, no removal; each its own small slice, in this order unless Stephen reorders):**
-  (1) 240 b — `parseLlmJsonArray` latch on a `{`-wrapped reply (`PictureBookUtil.java:4137-4151`). (2) 213 e / 219 f / 240 f — the reader's
-  "0 rendered of N" subtitle when the pages are RENDER_PLAN `base` renders. (3) 243 b — `pictureBookV3Cover.spec.js` test 3's `generated`
+  (0) 248 a as ruled 2026-11-02 — the chat render-path default goes v3 on every surface, v1 the logged rollback (**built and tested
+  2026-11-02**, §20.1 / §6.C 249). (1) 240 b — `parseLlmJsonArray` latch on a `{`-wrapped reply (**built and tested 2026-11-02**, §20.2 /
+  §6.C 250: `unwrapObjectReply`, `TestLlmJsonArraySalvage` 21/21). (2) 213 e / 219 f / 240 f — the reader's
+  "0 rendered of N" subtitle when the pages are RENDER_PLAN `base` renders (**built and tested 2026-11-02**, §20.3 / §6.C 251:
+  `bookPageView` reads the RENDER_PLAN `base` first, `TestPbPageViewRenderPlanBase` 3/3; live cover-count Playwright waits on the next
+  `am7test` deploy, 251 f). (3) 243 b — `pictureBookV3Cover.spec.js` test 3's `generated`
   literal (`:486`, `:497`) can redden on the QA race; fix shape = 243 b's regex. (4) 244 c — the reader page root does not fill `[role=main]`
   (both readers left-pinned at 740 px). (5) 239 c family, P9-7's out-of-scope: `ChatSceneRenderUtil.java:262-274` builds a T2I request with
   the SDXL knobs on any pick; `RendererCapabilities.cfgRange` is never applied; `flux2Defaults.json` `negativePrompt` is not applied on the plan
@@ -1484,30 +1603,59 @@ lines), the design (17), `archive/PictureBookSdConfigRefactor.md` (14), `Picture
   `olio.pb.book` so a deep-linked ChapBook board carries its config), 236 i (band enforcement on FLUX.2), 241 d (a post-approve band assert),
   232 d (the architecture.md gate-order line), the V1 `renderCover` frame, `reanalyzeChatConfigRef` precedence.
 - **P10-1 — PB1 removal (gated).** Delete the three `@Deprecated` routes and their `PictureBookUtil` bodies, `executeReferenceStrip` /
-  `executeComposite` / `warnLegacyNode` / `stitchSceneImages`, the Ux752 callers (the PB1 branches in `workflows/pictureBook.js` and
-  `features/chapBook.js`; the Ux manifests' `renderPath` reading), and the tests named above; the Stage 2 refusal tests become
-  "route absent" tests or go. **Ask first (plain question, default):** does `PbRenderPath` keep a `v1` value after Stage 4? Default: no —
-  the switch, `REFUSAL_PREFIX`, `requirePb1Entry` and the `v1` tests go in this slice; `requireV3` / `requireEnabledCompositeMode` collapse
-  to their existence / authz checks (gates stay after authz, `PictureBookUtil.java:9711`).
+  `executeComposite` / `warnLegacyNode` / `stitchSceneImages`, the Ux752 callers (`sceneExtractor.js` `:380` / `:413` / `:503` and the PB1
+  branches of `workflows/pictureBook.js` — **not** `features/chapBook.js:261`, which is ChapBook V3; the Ux manifests' `renderPath` reading
+  shrinks to the chat key), and the tests named above; the Stage 2 refusal tests become "route absent" tests or go. **The
+  `REFERENCE_STRIP` / `COMPOSITE` enum values stay in this slice** (248 b): remove them only from `EXECUTABLE_TYPES` / `SD_BACKED_TYPES`
+  (`PbNodeExecutor.java:107-108` / `:117`) and the dispatch (`:572-577`) — `gate()` then answers 501 "not implemented" (`:552-555`) — and
+  delete the constants in P10-5 after the dry run reports zero rows, because `EnumValueType.setValue` throws `ValueException` on a persisted
+  value the enum no longer declares (`:41-45`) and `StatementUtil.populateRecord` (`:1528`, `:1542-1544`) fails the **whole result set**, so
+  one legacy node would make every `nodeType` projection of its book unreadable. **Ask first (plain question, default; 248 g):** after Stage 4,
+  do the `picturebook` / `chapbook` keys of `PbRenderPath`, their `/render-path` members, and the `renderPath` field on the ChapBook board /
+  scene DTOs (`ChapBookUtil` `:1939` / `:2263-2314` / `:2395-2421`, `ChapBookService` `:128` / `:527`) survive? Default: no — the two keys,
+  their defaults, `REFUSAL_PREFIX` / `PB1_REPLACED_PREFIX`, `keyFor` / `valueFor` / `isV3` / `requireV3` / `isPb1Retired` / `requirePb1Entry` /
+  `requireEnabledCompositeMode`, the 2-arg `configure`, the DTO field and the `v1` tests go; **the class itself stays** for the chat key
+  (`CHAT_CONFIG_KEY`, `V1`, `V3`, `CHAT_DEFAULT`, `chat()`, `isChatV3`, `resolve`, the 1-arg `configure`), consumed by `ChatService:1526`,
+  `FeatureConfigService:172-174`, `RestServiceEventListener:391-394`, `ConsoleMain:137-140`, `featureConfig.js` / `am7client.js:745`.
+  `requireV3` / `requireEnabledCompositeMode` collapse to the checks they sit behind — every `requireV3` site follows `requireBook`
+  (`PbServiceFacade.java:251-264`; writes also `requireBookUpdate`), `requirePb1Entry` `:9772` sits after `authorizeSceneAccess` `:9744`
+  (comment `:9767-9770`; the `:9711` cited on 2026-11-01 is the previous method's closing brace) and `:10957` after `authorizeSceneRecord`
+  `:10951`; no site is left bare (248 i).
 - **P10-2 — old ChapBook path removal (gated).** The v1 branches of `renderResolvedScene` / `renderChapBookSummary`, the `ChatService` /
   `Chat.java` references, `TestChapBookRenderStyle`'s v1 cases; `TestChapBookV3Render` stays the proof.
-- **P10-3 — Kontext Remove (gated), design §37.3 Remove row (`:2591`) / §37.4.** Everything in the Kontext inventory above; `SUPPORTED_MODES`
-  = FLUX.2 (+ whatever P10-0 finds live); `compositeMode=kontext` becomes an unknown-mode validation error, not a 409; `pom.xml:154` and
-  `resource.properties:126-130` removed; the Ux752 `modelDef.js` entries and the two spec references.
+- **P10-3 — Kontext Remove (gated), design §37.3 Remove row (`:2591`) / §37.4.** Everything in the Kontext inventory above **except what
+  chat's live `v1` default still calls** (248 a / 248 j): `ChatService` `:1536` / `:1615` / `:1637` / `:1641` call `SceneCompositeUtil.buildSceneRequest`
+  and `defaultCreativity`, whose own `@deprecated` text (`:183-186`, `:218-221`) conditions removal on "after the chat default flips (Phase 7+)" —
+  chat has never entered Stage 2 (`CHAT_DEFAULT = V1`). So P10-3 strips only the KONTEXT branch (`:286-296`), `MODE_KONTEXT`, `KONTEXT_RETIRED_MESSAGE` /
+  `KONTEXT_PANEL_SIZE`, `isRetiredMode`, the `useKontext` fallback and the `legacyKontextDefault` parameter of `resolveMode` (every caller passes
+  `false` — a signature change), and keeps `buildSceneRequest` / `defaultCreativity` / `MODE_CLASSIC` / `resolveMode` live for chat (§37.4's own
+  "shared = keep, strip the branch" rule, design `:2600`). `SUPPORTED_MODES` = `flux2|classic`; `compositeMode=kontext` becomes an unknown-mode
+  validation error at the transport boundary (`ChatService:1442`) **and** at `resolveModeValue` (`:126-128` today downgrades an unknown saved mode to
+  classic with a WARN — a saved `kontext` config must reject, not silently downgrade; 248 k); `pom.xml:154` and `resource.properties:126-130`
+  removed; the Ux752 `modelDef.js` entries and the spec references; `RendererCapabilities.PATTERN_KONTEXT` / `capabilities.json:109` (248 d) with a
+  `TestModelResolver` case asserting a `flux1Kontext*` checkpoint resolves "not installed" once the family row is gone.
 - **P10-4 — the six `kontext*` fields (gated; Stephen runs the drop).** Remove them from `configModel.json`; the columns are dropped only
   through `IOProperties.dropColumns` (off by default; `DBUtil.generateDropColumnSchema`, `DROP COLUMN IF EXISTS`, logged) — never from a test,
-  never by the session; the hand-back names the exact statements the property would issue.
-- **P10-5 — PB1-only data cleanup (gated; an explicit, logged admin task).** Enumerate first (dry run, counts per org: stitched reference-strip
-  artifacts, legacy `warnLegacyNode` nodes, PB1 settings rows), as a Console7 entry point that logs what it would delete and deletes only
-  with an explicit flag; never a read-path side effect (architecture.md "read paths must not create").
+  never by the session; **the boot drop is global** (`IOSystem.java:152-158` runs `generateDropColumnSchema` for every registered model when the
+  property is on, `DBUtil.java:1032`), so the hand-back enumerates every statement the flip would issue across all models, not the six (248 l).
+- **P10-5 — PB1-only data cleanup (gated; an explicit, logged admin task).** "PB1-only" = not referenced by any V3 artifact / scene / page
+  (verify check 2 says existing books' images still show in V3, so the check is through `PbOrphanUtil` / `PbMigrationUtil` references, never by
+  group path; 248 m). Enumerate first (dry run, counts per org: stitched reference-strip artifacts, legacy `REFERENCE_STRIP` / `COMPOSITE` nodes,
+  PB1 settings rows, `olio.sd.config` rows with `compositeMode='kontext'`), as a Console7 entry point that logs what it would delete and deletes
+  only with an explicit flag; never a read-path side effect (architecture.md "read paths must not create"); then the two enum constants go (P10-1
+  note). Cross-JVM bound stated in the hand-back: a Console7 delete does not invalidate Service7's in-process `CacheDBSearch` — restart or TTL.
 - **P10-6 — docs sweep.** `KnownIssues.md`, the design (§37 gets a "removed 2026-…" line, §28.1 the Stage 4 date), the archive docs get a
   one-line "superseded" note only (never edited otherwise), the module `CLAUDE.md`s, `web.xml` / `flux2Defaults.json` text.
 - **P10-7 — the gate.** §16 usability gate 15/15 on Docker (`.42` + `.39`), the Phase 9 Objects7 set (`TestPbCoverUtil`, `TestPbCoverPlanOffline`,
   `TestPbCoverRenderLive`, `TestPbCoverExitCriterionLive`, `TestPbFlux2TextOnlyOffline`, `TestPbLastErrorScrub` / `…DtoOffline`,
   `TestChapBookV3Render`, `TestP51GraphLive`), the Service7 H2 set (`TestPictureBookCoverRoutes`, `TestPictureBookRestContract`,
   `TestChapBookRestContract`, `TestModelServicePatch`), Vitest full, Playwright `pictureBookV3Cover` + `pictureBookSeriesChapters` +
-  `pictureBookV3Usability`; `git grep -n "MODE_KONTEXT\|requirePb1Entry\|executeReferenceStrip\|newKontext"` over `src/` returns nothing
-  outside the archives; verifier → §6.C.
+  `pictureBookV3Usability`; the exit grep (248 f — §30 row 10 says "nothing in the **build**", so docs are out of its scope):
+  `git grep -n -E "MODE_KONTEXT|requirePb1Entry|executeReferenceStrip|newKontext|PB1_ENTRY_|PB1_REPLACED_PREFIX|prepareSceneImagePrompts|REFERENCE_STRIP|useKontext|kontextModel|PATTERN_KONTEXT" -- src ":(exclude)src/aiDocs"`
+  returns nothing; verifier → §6.C.
+- **P10-8 — candidate only, not scheduled (249 e).** With chat defaulting to v3, the chat v1 inline composite (`ChatService:1536-1641`,
+  `SceneCompositeUtil.buildSceneRequest` / `defaultCreativity` / `MODE_CLASSIC`) is reachable only by an explicit `CHAT_RENDER_PATH=v1` and its
+  own `@deprecated` condition is met; its removal needs its own §28.1 verify window for chat and Stephen's say-so — P10-3 still keeps it (248 j).
 
 **Out of scope:** new product features beyond P10-A; any schema reset; touching `am72db`; re-rendering existing scenes; the §37.4 "keep"
 option (ruled: retire, §37.3).
@@ -1622,4 +1770,84 @@ LEDGER DISCIPLINE: results → new `## 20. Phase 10 — results` (§20.0 P10-0, 
 archives. Report in the shape of §18.9–§18.11 / §6.C 243–245: what ran, where, `log:line`, what was seen, what is Yours.
 ~~~
 
-next §6.C number 248 (247 = the Phase 10 plan + start prompt drafted as §19 on Stephen's request — removal slices gated on design §28.1 checks 4 (earliest 2026-11-12) / 5, P10-0 / P10-A ungated, nothing started; 246 = verifier PASS-WITH-NITS over P9-7 / P9-8 / P9-9 — the `TestPbLastErrorDtoOffline` over-claim fixed with two more assertions (run 2 1/1), the stale §17 band sentence annotated, the scheme-less `scrubHosts` note left as Yours; gate run 19 15/15 on the P9-7 jar + the P9-8 dist; 245 = P9-7 built and tested: FLUX.2 cfg / sampler / scheduler on a zero-reference BASE and on the graph path, `lastError` host scrub at the three node DTOs, 13 new offline cases, `TestPbCoverExitCriterionLive` run 4 2/2 on `.39` + the remote `.42` with the graph-path cover visibly fixed — the claim that archive 219 h was this defect (245 g, Yours); 244 = P9-8 built and tested: `coverPageLayout` (238 d), the carried chat config for ChapBook boards (240 d), the review export's cover (238 k), Vitest 1595, cover spec 4/4 on the new dist; 243 = P9-9 built and tested: cover spec test 4 From-scene → TITLE_PAGE rendered and approved on `.39`, 4/4, run 1's red my `generated` literal; 242 = Stephen's "commit made, keep your defaults … continue with any and all remaining phase 9 items, then show comprehensive prompt for phase 10" — `f4482f2d`, gate run 18 15/15 closed 240 e, P9-7 / P9-8 / P9-9 cut; 241 = verifier PASS over P9-5 / P9-6, three LOW citation nits fixed in place, two coverage caveats left as stated; 240 = P9-6 built and tested: §16 step 15 + the whole 15-step gate green on Docker with the remote `.42` and Swarm `.39`, run 17 15/15, step 7 re-asserted green after P9-x, two of my assertions corrected on the way (step 2 titled → described, step 15 export data URI by bytes), `parseLlmJsonArray` latch on `{`-wrapped replies and the reader's "0 rendered" subtitle noted as P10 candidates; 239 = P9-5 built and tested: `TestPbCoverExitCriterionLive` 2/2 on `.39` + the remote `.42`, book cover POPULATION tier / DIRECT_REFERENCE / explicit approve, ChapBook cover NONE tier / TEXT_ONLY / QA auto-approve, both read back through `coverView`'s `approved` entry, images looked at — TEXT_ONLY on a FLUX.2 pick renders through the SDXL-tuned T2I request (239 c, Yours); 238 = P9-4 built and tested: cover mode of the compose board + `pb2-cover-link` + both readers' cover page, `getCover` / `patchCover` / `planCover` routes, `TestPictureBookCoverRoutes` 14/14 on H2, Vitest 46/46 + full 1581, Playwright 3/3 on Docker with a real `.39` render approved through the UI; 237 = P9-3 built and tested: `coverView` / `createCover` / `requestCoverRender` + the three `/covers` routes, `TestPictureBookCoverRoutes` 11/11 on H2, security review PASS with six NOTEs; 236 = P9-2 built and tested: SCOPE_COMPOSITION + `ensurePlanNode` + `buildCompositionPlan` + the executor branch, `TestPbCoverPlanOffline` 6/6, `TestPbCoverRenderLive` 1/1 on `.39` + `.42` VLM, band not honoured by FLUX.2; 235 = P9-1 built and tested: 221 a + the model + `PbCoverUtil`, `TestPbCoverUtil` 6/6 with AUTO on the remote `.42`; 234 = Stephen's "yes, fix / yes delete / keep going" on 233 + P9-x; 233 = P9-0: the 212 p fix + 14 gate runs, run 14 = 13/14, step 7 red on the picker memo defect; 228 = Q1 `media/flux/qa/` + the 2026-10-31 doc pass + the §16 gate and §17 Phase 9 drafts; 229 = Stephen's fixture answer + "Fix in P9" for 212 p; 230 = the fixture-quality note — I called the terrible-looking `p52-t01-direct.png` acceptable, Stephen commits it as is, remake waits on 219 h; 231 = the artifact rule + `C:	mp` manifest; 232 = the architect review of §17 folded in; 207–227 archived in P5-P8, 2–206 / 208–209 in P0-P4).
+## 20. Phase 10 — results
+
+### 20.0 P10-0 — inventory refresh + architect review (2026-11-02 09:15 → ~10:20; no code, no tests, no deploy; rulings §6.C 248)
+
+**Environment first (FIRST ACTION 1):** `.39` Swarm `http://192.168.1.39:7801/` 302, `.42` Ollama `http://192.168.1.42:11434/api/tags` 200,
+`postgres3` up, Docker `am7-pg` healthy + `am7test-am7-1` up, `https://127.0.0.1:9443` 200. `git status`: HEAD `c08a6990 PB3 P10 Prep` (P9-7/8/9
+committed); uncommitted = the same not-mine set 227 h records (`Console7/tmp.bat`, `vectorEnv.bat` modified; `media/speaker_0.mp3` deleted;
+untracked `Agent7/plan.json`, six `.doc`/`.docx` under `Objects7/media/`, `media/flux/out/`) — untouched.
+
+**What ran.** `scratch/p10-0/inventory-grep.sh` (sections A–H: PB1 entry points and every `PbRenderPath` caller, the old ChapBook path, Kontext in
+`src/main` / resources / tests / Ux752 / docs, the P10-7 exit grep baseline, and an H sweep for things §37.4 / §19 did not list) →
+`scratch/p10-0/inventory-grep.log` (`HEAD c08a6990` `:2`, `DONE 2026-11-02 09:19:38` `:1437`). One script defect: D3 named `TestPbGraph` under
+`olio/picturebook/` (it is `objects/tests/`), so that section printed "no such path" — D4 counted the file anyway (1 Kontext line); harmless, noted.
+Then the `architect` agent over §19 against design §28.1 / §30 row 10 / §37.3–§37.4 + architecture.md (read-only; 13 findings, verdict
+CHANGES-NEEDED). **Every HIGH was re-verified in the code before it went into §19** (248 b / h / j): `PbNodeTypeEnumType:26-27` +
+`EnumValueType:41-45` + `StatementUtil:1542-1544`; `ChatService` `:1536` / `:1615` / `:1637` / `:1641` + `SceneCompositeUtil` `:183-186` / `:218-221`;
+`chapBook.js:24-26` / `:261` + `ChapBookService:455` + `sceneExtractor.js` `:12-14` / `:380` / `:413` / `:482` / `:503` + `PictureBookService` `:1096` /
+`:1127`.
+
+**What changed in the ledger.** §19: the 2026-11-01 inventory paragraph replaced by the 15-row table (file · symbol · lines as of today with the
+2026-11-01 numbers where they drifted · slice · replaced by · proof · `log:line`) plus the P10-7 grep baseline; P10-1 / P10-3 / P10-4 / P10-5 /
+P10-7 amended per 248; the `:9711` cite corrected. Drift worth knowing: `warnLegacyNode` `:501` → `:591`, `executeReferenceStrip` `:1676` → `:2385`,
+`executeComposite` `:1777` → `:2486`, `ChatService` `:1419` → `:1433`, `Chat.java` `:2408` → `:2412`, Ux `chapBook.js` `:171` / `:185` → `:217-225` /
+`:241`; design §28.1 `:1898` and §37.4 rows `:2608-2615` carry the old numbers (P10-6). New since §37.4 / §19 (248 a–e, k–m): the chat key and
+its test-stack / prod drift, the two node-type enum values, the `legacyScenes` viewer, `PATTERN_KONTEXT` / `capabilities.json:109`, the excluded
+PB1-era test classes, `resolveModeValue`'s silent downgrade, the global column drop, the `compositeSdConfig` / PB1-era models that are **not**
+PB1-only (row 15). Ledger CR count 0; identifier grep clean on the two touched docs; `ArtifactInventory.md` updated.
+
+**Nothing DONE by me.** P10-A waits for Stephen's reply; P10-1 … P10-6 wait for "checks 4 and 5 hold" (earliest 2026-11-12).
+
+### 20.1 P10-A 0 — chat render-path default v3 (2026-11-02 ~15:00 → 15:15; built and tested; no deploy; rulings §6.C 249)
+
+**Why.** Stephen's reply to 248 a: a Docker build starting chat at v1 is an issue. It did — `docker-compose.yml:63` `:-v1`, `entrypoint.sh:51`
+`:=v1`, `PbRenderPath.CHAT_DEFAULT = V1`, Console7 `resource.properties:67` — while every test stack pinned v3, so the gate never ran the
+default. **What changed.** `CHAT_DEFAULT = V3` + `CHAT_ROLLBACK_WARNING` (WARN on `v1`, like the book keys) in `PbRenderPath`; `:-v3` / `:=v3` in
+the compose / entrypoint; `chat.renderPath=v3` in Console7; Ux752 `featureConfig.js` fallback `chat: 'v3'` with `normalizeRenderPath` keeping only
+an explicit `'v1'`; six stale comments corrected (249 c); `web.xml` param-values untouched (empty → code default, so the Eclipse Tomcat also
+gets v3 at its next start). **Tests.** `TestPbRenderPath` case04 now asserts v3 + new case12 (default, absent / blank / `v2` → v3, `V1` →
+rollback with the books untouched, 2-arg `configure` leaves chat alone); `TestChatSceneRenderPath.TestChatV3IsOnlyWhenPinnedV3` inverted to
+the v3 default; `renderPathConfig.test.js` fallback / null / unrecognised / no-chat-key → `'v3'` + a new explicit-`v1` test (6 tests).
+**Runs** (evidence `log:line` in 249 b): Objects7 14/14 on `am7db` with `[LLM-GATE]` route=direct tier=remote — the DGX Spark `.42` direct
+(container Ollama `:11435` and LiteLLM `:4000` refused); Service7 4/4 on H2; Vitest 6/6; `vite build` OK. **Not done:** no boot with the env
+unset (the compose defaults are text), no redeploy (the `am7test` stack pins v3 explicitly — no behaviour change there), no Playwright
+(`renderPath.spec.js:114` expects v3/v3/v3 on the test stack and is unaffected). **Yours:** 249 a (everywhere vs Docker-only), 249 e (the
+chat v1 composite is now a removal candidate — P10-8 line in §19, nothing removed).
+
+### 20.2 P10-A 1 — `parseLlmJsonArray` on a `{`-opened reply, 240 b (2026-11-02 ~15:15 → 15:35; built and tested; no deploy; §6.C 250)
+
+**Why.** §16.1 run 15: one blank "Scene 0" from a single-scene extraction. The parser latched the first `[` … last `]` of the reply; the
+extract-scenes schema nests `"characters":[{"name","role"}]` in every scene, so a bare scene object (no outer array) latched to its
+characters, bound one `{name,role}` map, reported ok=true and `extractSingleShot` never retried. **What changed.** `PictureBookUtil.java:4155-4161`:
+a `{` before the first `[` goes to new package-private `unwrapObjectReply` (`:4257+`) — prose brace closing before the array → old latch;
+thin wrapper (`{"scenes":[…]}`, also with a scalar beside it) → the array, ok=true, INFO `Unwrapped …`; `{"scenes":[]}` → empty, ok=true;
+bare element → one element, ok=false + `parse` record (so the single-shot caller retries once with the hint and keeps the larger); two
+candidate arrays → the larger, ok=false, flagged; unreadable object whose first member is an array → old latch + per-element salvage.
+Rule is structural — a wrapper is thin, an element is fat — because the parser serves every array prompt and knows no schema (250 b).
+**Tests.** `TestLlmJsonArraySalvage` +6 (bare scene direct and through `extractSingleShot`, wrapper ×3, decoy preamble, glitched-fixture
+wrapper → the same 4 salvaged, ambiguous two-array). The fixture is synthesized to the prompt schema; the live reply was not captured (250 c).
+**Runs** (evidence `log:line` in 250 e): `TestLlmJsonArraySalvage` 21/21, `TestLlmEmulator` 25/25, `TestLlmJsonSalvage` 18/18 — 64/64, BUILD
+SUCCESS, EXIT=0, `[LLM-GATE]` route=direct tier=remote — the DGX Spark `.42` direct (container Ollama and LiteLLM refused); jar installed.
+**Not done:** no live re-extraction (the shape is the model's choice on a given sample; the unit cases cover the parser), no deploy —
+Service7 does not call the parser; the `am7test` stack still runs the P9-7 jar. **Yours:** 250 b (structural rule vs a key-name hint).
+
+### 20.3 P10-A 2 — the reader's "0 rendered of N" on RENDER_PLAN `base` pages, 213 e / 219 f / 240 f (2026-11-02 ~15:40 → 16:10; built and tested; no deploy; §6.C 251)
+
+**Why.** A V3 scene render (`PbServiceFacade.requestRenderPlanScene` → `executePlanScene` → `ensureRenderPlanNode`) writes its image as
+the selected `base` of the scene's RENDER_PLAN node (`render_plan@<shortRef>`) and, by design, links neither `scene.sceneNode` nor
+`scene.imageObjectId`. `bookPageView` only looked at those two, so every V3-rendered page had `dataObjectId: null`, the reader showed no
+image and the cover counted 0. **What changed.** `PbServiceFacade.java:2351-2358` + `:2393-2430`: the one `nodesById` read is also indexed
+by handle; per page the RENDER_PLAN node's selected `base` is tried first (image, node, artifact), then the `sceneNode` path
+(`pageArtifactRole`: composite / landscape), then `imageObjectId`. A base-less RENDER_PLAN node is still the page's node when there is no
+`sceneNode` (status reaches the reader). No Ux change — `pb2RenderedCount` already keys on `dataObjectId`. **Tests.** New
+`TestPbPageViewRenderPlanBase` (3 cases: base → page image / node / artifact / GENERATED / unpinned with the sibling null and 1 of 2
+counted; newer revision auto-selected and approve → APPROVED + pinned; precedence — composite first, base-less plan leaves it, base wins,
+base-less plan + `imageObjectId`, untouched page). **Runs** (evidence `log:line` in 251 e): 3/3, `TestPbSceneLocationPointer` 11/11,
+`TestPbScenePageBackfill` 1/1 — 15/15, BUILD SUCCESS, EXIT=0, `[LLM-GATE]` route=direct tier=remote — the DGX Spark `.42` directly (not
+called by these tests); jar installed; Ux752 `vite build` EXIT=0, Vitest 1596/1596. **Not done:** no deploy, so no live Playwright of the
+cover count after a `/render-plan` render (251 f — folded into the next `am7test` deploy). **Yours:** 251 b (base over composite in a
+both-case), 251 d (the reader's Render button still 409s on a scene without `sceneNode`).
+
+next §6.C number 252 (251 = P10-A 2 built and tested: `bookPageView` reads the scene's RENDER_PLAN `base` first, then `sceneNode`, then `imageObjectId`; `TestPbPageViewRenderPlanBase` 3/3 + the two page-view regressions 15/15, jar installed, no deploy, the live cover-count Playwright waits on the next `am7test` deploy; 250 = P10-A 1 built and tested: `unwrapObjectReply` before the `[`…`]` latch — wrapper unwrapped ok=true, bare element one element ok=false + parse record so the single-shot retry fires, `TestLlmJsonArraySalvage` 21/21 + emulator 25/25, synthesized fixture, no deploy; 249 = Stephen's rulings on 248 a / c / e / g recorded — no prod, a Docker build at chat v1 is an issue, delete the excluded PB1-era test classes, the P10-1 default stands — and P10-A 0 built and tested: `CHAT_DEFAULT = V3` + the rollback WARN on every surface, `TestPbRenderPath` 14/14, `TestChatSceneRenderPath` 4/4, Vitest 6/6, no deploy; the chat v1 composite becomes a gated candidate (P10-8 line), nothing removed; 248 = P10-0: the grep-proven §19 inventory table + the architect review of §19 folded in — chat key outside Phase 10 with a test-stack / prod drift for Stephen, enum values outlive P10-1, chat's `buildSceneRequest` survives P10-3, my `chapBook.js:261` mis-rowing fixed, the P10-1 ask rephrased; nothing started beyond P10-0; 247 = the Phase 10 plan + start prompt drafted as §19 on Stephen's request — removal slices gated on design §28.1 checks 4 (earliest 2026-11-12) / 5, P10-0 / P10-A ungated, nothing started; 246 = verifier PASS-WITH-NITS over P9-7 / P9-8 / P9-9 — the `TestPbLastErrorDtoOffline` over-claim fixed with two more assertions (run 2 1/1), the stale §17 band sentence annotated, the scheme-less `scrubHosts` note left as Yours; gate run 19 15/15 on the P9-7 jar + the P9-8 dist; 245 = P9-7 built and tested: FLUX.2 cfg / sampler / scheduler on a zero-reference BASE and on the graph path, `lastError` host scrub at the three node DTOs, 13 new offline cases, `TestPbCoverExitCriterionLive` run 4 2/2 on `.39` + the remote `.42` with the graph-path cover visibly fixed — the claim that archive 219 h was this defect (245 g, Yours); 244 = P9-8 built and tested: `coverPageLayout` (238 d), the carried chat config for ChapBook boards (240 d), the review export's cover (238 k), Vitest 1595, cover spec 4/4 on the new dist; 243 = P9-9 built and tested: cover spec test 4 From-scene → TITLE_PAGE rendered and approved on `.39`, 4/4, run 1's red my `generated` literal; 242 = Stephen's "commit made, keep your defaults … continue with any and all remaining phase 9 items, then show comprehensive prompt for phase 10" — `f4482f2d`, gate run 18 15/15 closed 240 e, P9-7 / P9-8 / P9-9 cut; 241 = verifier PASS over P9-5 / P9-6, three LOW citation nits fixed in place, two coverage caveats left as stated; 240 = P9-6 built and tested: §16 step 15 + the whole 15-step gate green on Docker with the remote `.42` and Swarm `.39`, run 17 15/15, step 7 re-asserted green after P9-x, two of my assertions corrected on the way (step 2 titled → described, step 15 export data URI by bytes), `parseLlmJsonArray` latch on `{`-wrapped replies and the reader's "0 rendered" subtitle noted as P10 candidates; 239 = P9-5 built and tested: `TestPbCoverExitCriterionLive` 2/2 on `.39` + the remote `.42`, book cover POPULATION tier / DIRECT_REFERENCE / explicit approve, ChapBook cover NONE tier / TEXT_ONLY / QA auto-approve, both read back through `coverView`'s `approved` entry, images looked at — TEXT_ONLY on a FLUX.2 pick renders through the SDXL-tuned T2I request (239 c, Yours); 238 = P9-4 built and tested: cover mode of the compose board + `pb2-cover-link` + both readers' cover page, `getCover` / `patchCover` / `planCover` routes, `TestPictureBookCoverRoutes` 14/14 on H2, Vitest 46/46 + full 1581, Playwright 3/3 on Docker with a real `.39` render approved through the UI; 237 = P9-3 built and tested: `coverView` / `createCover` / `requestCoverRender` + the three `/covers` routes, `TestPictureBookCoverRoutes` 11/11 on H2, security review PASS with six NOTEs; 236 = P9-2 built and tested: SCOPE_COMPOSITION + `ensurePlanNode` + `buildCompositionPlan` + the executor branch, `TestPbCoverPlanOffline` 6/6, `TestPbCoverRenderLive` 1/1 on `.39` + `.42` VLM, band not honoured by FLUX.2; 235 = P9-1 built and tested: 221 a + the model + `PbCoverUtil`, `TestPbCoverUtil` 6/6 with AUTO on the remote `.42`; 234 = Stephen's "yes, fix / yes delete / keep going" on 233 + P9-x; 233 = P9-0: the 212 p fix + 14 gate runs, run 14 = 13/14, step 7 red on the picker memo defect; 228 = Q1 `media/flux/qa/` + the 2026-10-31 doc pass + the §16 gate and §17 Phase 9 drafts; 229 = Stephen's fixture answer + "Fix in P9" for 212 p; 230 = the fixture-quality note — I called the terrible-looking `p52-t01-direct.png` acceptable, Stephen commits it as is, remake waits on 219 h; 231 = the artifact rule + `C:	mp` manifest; 232 = the architect review of §17 folded in; 207–227 archived in P5-P8, 2–206 / 208–209 in P0-P4).

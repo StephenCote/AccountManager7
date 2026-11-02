@@ -283,8 +283,9 @@ services:
       LLM_EMULATOR_FIXTURE_ROOT: ${LLM_EMULATOR_FIXTURE_ROOT:-/fixtures/llm}
       LLM_EMULATOR_RECORD_DIR: ${LLM_EMULATOR_RECORD_DIR:-}
       # PictureBook V3 render-path switch per product (design §28.1 Stage 1; chat §24.1). The TEST
-      # stack boots all three on v3 so every Phase 1/2 Playwright spec exercises the graph render path;
-      # the production docker-compose.yml keeps v1. Boot-pinned: a change needs `up -d am7`, not `restart`.
+      # stack boots all three on v3 so every Playwright spec exercises the graph render path; since
+      # P10-A 0 the main docker-compose.yml defaults all three to v3 as well (v1 is the per-product
+      # rollback). Boot-pinned: a change needs `up -d am7`, not `restart`.
       PICTUREBOOK_RENDER_PATH: ${PICTUREBOOK_RENDER_PATH:-v3}
       CHAPBOOK_RENDER_PATH: ${CHAPBOOK_RENDER_PATH:-v3}
       CHAT_RENDER_PATH: ${CHAT_RENDER_PATH:-v3}
