@@ -43,7 +43,7 @@ import {
     planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS,
     deriveStageList, runSummaryText, resolvePb2BookObjectId,
     migrateV1Book, normalizeMigration,
-    getCovers, coverImageRefFor
+    getCovers, coverImageRefFor, coverPageLayout
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -2033,39 +2033,43 @@ function pb2CoverCountLabel() {
 }
 
 // The cover page: the APPROVED COVER render (P9-4, V3 §40) when the book has one, else page 1's image dimmed
-// behind the title as before. With a real cover the title block sits in the composition's title-safe band
-// (TOP / BOTTOM quarter) over a scrim; without a band it stays centered.
+// behind the title as before. With a real cover (P9-8, 238 d) the frame is a fixed-aspect square showing the
+// whole render and the slim title block sits inside the composition's title-safe band (TOP / BOTTOM quarter)
+// over a scrim — see coverPageLayout; without a band it stays centered.
 function renderPb2Cover() {
     let firstPage = pb2Pages.length > 0 ? pb2Pages[0] : null;
     let coverRef = pb2CoverRef();
     let coverImgUrl = coverRef ? pb2ImageUrl(coverRef) : (firstPage ? pb2ImageUrl(firstPage) : null);
     let band = coverRef ? pb2CoverBand() : null;
     let justify = band === 'TOP' ? 'justify-start' : (band === 'BOTTOM' ? 'justify-end' : 'justify-center');
+    let lay = coverPageLayout(!!coverRef);
     return m('div', {
         'data-pb2-cover-source': coverRef ? 'cover' : (coverImgUrl ? 'page' : 'none'),
         'data-pb2-cover-band': band || '',
-        class: 'flex flex-col items-center ' + justify + ' min-h-[60vh] relative overflow-hidden rounded-lg',
+        class: 'flex flex-col items-center ' + justify + ' ' + lay.frame + ' relative overflow-hidden rounded-lg',
         style: 'background: linear-gradient(135deg, #2d1b69 0%, #1a1a4e 50%, #0f0f3d 100%);'
     }, [
         coverImgUrl ? m('img', {
             'data-pb2-cover-image': true,
             src: coverImgUrl,
-            class: 'absolute inset-0 w-full h-full object-cover ' + (coverRef ? 'opacity-100' : 'opacity-40')
+            class: 'absolute inset-0 w-full h-full ' + lay.image + ' ' + (coverRef ? 'opacity-100' : 'opacity-40')
         }) : null,
-        m('div', { class: 'relative z-10 text-center p-8' + (coverRef ? ' bg-black/40 backdrop-blur-sm rounded-lg m-4' : '') }, [
-            m('div', { class: 'text-purple-300 text-sm mb-2 uppercase tracking-widest' }, 'PB2 · Workflow Book'),
+        m('div', { class: 'relative z-10 text-center ' + lay.block }, [
+            m('div', { class: 'text-purple-300 uppercase tracking-widest ' + lay.kicker }, 'PB2 · Workflow Book'),
             m('h1', {
-                class: 'text-4xl font-bold text-white mb-3',
+                class: lay.title,
                 style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;'
             }, pb2BookName || 'Untitled'),
-            m('p', { 'data-pb2-cover-count': true, class: 'text-lg text-gray-300 opacity-70' }, pb2CoverCountLabel()),
-            pb2Pages.length > 0 ? m('button', {
-                class: 'mt-8 px-6 py-2 bg-purple-500/30 hover:bg-purple-500/50 text-white rounded-full backdrop-blur-sm transition-colors',
-                onclick: function () { pb2GoToPage(1); }
-            }, [
-                m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
-                'Begin'
-            ]) : null
+            m('div', { class: lay.meta }, [
+                m('p', { 'data-pb2-cover-count': true, class: lay.count }, pb2CoverCountLabel()),
+                pb2Pages.length > 0 ? m('button', {
+                    class: lay.button + ' bg-purple-500/30 hover:bg-purple-500/50 text-white rounded-full backdrop-blur-sm transition-colors',
+                    onclick: function () { pb2GoToPage(1); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
+                    'Begin'
+                ]) : null
+            ])
         ])
     ]);
 }

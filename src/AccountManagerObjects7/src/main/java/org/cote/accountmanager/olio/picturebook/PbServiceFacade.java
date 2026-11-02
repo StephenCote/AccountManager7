@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -1959,7 +1961,7 @@ public class PbServiceFacade {
 		m.put("configOverride", node.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
 		m.put("inputHash", node.get(OlioFieldNames.FIELD_PB_INPUT_HASH));
 		m.put("configHash", node.get(OlioFieldNames.FIELD_PB_CONFIG_HASH));
-		m.put("lastError", node.get(OlioFieldNames.FIELD_PB_LAST_ERROR));
+		m.put("lastError", scrubHosts(node.get(OlioFieldNames.FIELD_PB_LAST_ERROR)));
 		/// The int columns carry DDL default 0 and are read without wasNull (StatementUtil), so "never
 		/// placed" is 0 on the wire, not null; null only when the node was projected without them.
 		m.put("canvasX", node.get(OlioFieldNames.FIELD_PB_CANVAS_X, null));
@@ -4308,7 +4310,7 @@ public class PbServiceFacade {
 		m.put("handle", node.get(OlioFieldNames.FIELD_PB_HANDLE));
 		m.put("storedStatus", enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS));
 		m.put("pinned", node.get(OlioFieldNames.FIELD_PB_PINNED));
-		m.put("lastError", node.get(OlioFieldNames.FIELD_PB_LAST_ERROR));
+		m.put("lastError", scrubHosts(node.get(OlioFieldNames.FIELD_PB_LAST_ERROR)));
 		List<Map<String, Object>> chain = new ArrayList<>();
 		for(BaseRecord a : PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_LANDSCAPE)) {
 			Map<String, Object> am = artifactSummary(a);
@@ -4380,6 +4382,28 @@ public class PbServiceFacade {
 			return (m != null && !m.isBlank() ? m : e.getClass().getSimpleName());
 		}
 		return INTERNAL_ERROR_MESSAGE;
+	}
+
+	/** What a {@code scheme://host[:port]} in a node's error text is replaced with on the wire. */
+	public static final String SD_SERVER_MARKER = "<sd-server>";
+
+	/// scheme "://" authority - the authority (userinfo, host, port) ends at the path, query, fragment,
+	/// whitespace, a quote or a bracket; the path is kept, it names an API route, not a host.
+	private static final Pattern URL_AUTHORITY = Pattern.compile("(?i)[a-z][a-z0-9+.-]*://[^\\s/?#\"'<>()\\[\\]]+");
+
+	/**
+	 * A node's {@code lastError} for a Reader's DTO (§6.C 237 l): every {@code scheme://host[:port]} in the
+	 * text - with any port and any userinfo - becomes {@link #SD_SERVER_MARKER}; the rest of the message, a
+	 * URL path after the authority, and a message carrying no URL are returned unchanged (null stays null).
+	 * A failed render's message can quote the SD server it could not reach, and the three node DTOs
+	 * ({@code nodeSummary}, {@code locationNodeDto}, {@code coverEntryDto}) all copy the stored field; this
+	 * is the one scrub they share. The stored field itself is never rewritten.
+	 */
+	public static String scrubHosts(String text) {
+		if(text == null || text.isEmpty() || text.indexOf("://") < 0) {
+			return text;
+		}
+		return URL_AUTHORITY.matcher(text).replaceAll(Matcher.quoteReplacement(SD_SERVER_MARKER));
 	}
 
 	/**
@@ -4989,7 +5013,7 @@ public class PbServiceFacade {
 		m.put("nodeObjectId", (node != null ? node.get(FieldNames.FIELD_OBJECT_ID) : null));
 		m.put("nodeStatus", (node != null ? enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS) : null));
 		m.put("pinned", Boolean.valueOf(node != null && Boolean.TRUE.equals(node.get(OlioFieldNames.FIELD_PB_PINNED, null))));
-		m.put("lastError", (node != null ? node.get(OlioFieldNames.FIELD_PB_LAST_ERROR) : null));
+		m.put("lastError", (node != null ? scrubHosts(node.get(OlioFieldNames.FIELD_PB_LAST_ERROR)) : null));
 		BaseRecord selected = null;
 		BaseRecord approved = null;
 		BaseRecord latest = null;

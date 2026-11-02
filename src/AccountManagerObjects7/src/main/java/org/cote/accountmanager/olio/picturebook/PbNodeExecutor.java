@@ -1832,7 +1832,11 @@ public class PbNodeExecutor {
 		boolean baseTakesReferences = (baseCaps != null && baseCaps.isSupportsReferences());
 		String locationRef = (references && baseTakesReferences && plan.getLocation() != null ? plan.getLocation().getRenderArtifactId() : null);
 
-		StageRequest baseReq = req;
+		/// The shared request carries the SDXL-tuned cfg / sampler / scheduler from the config snapshot, and both
+		/// branches below send them: the plain T2I request as-is, the graph path through the generator params
+		/// (WorkflowCompiler.compile). A FLUX.2 pick renders with the FLUX.2 knobs the snapshot also carries, so
+		/// the mapping is applied once, here, before the request is compiled or sent (ledger §6.C 239 c, 245 g).
+		StageRequest baseReq = (baseCaps != null && RendererCapabilities.PATTERN_FLUX2.equals(baseCaps.getPattern()) ? flux2Request(req, plan.getConfig()) : req);
 		WorkflowCompiler.CompiledGraph baseGraph = null;
 		List<String> baseRefIds = new ArrayList<>();
 		if(!baseActors.isEmpty() || locationRef != null) {
@@ -1856,12 +1860,12 @@ public class PbNodeExecutor {
 					refs.add(new WorkflowCompiler.Reference("location", locationRef, png));
 					baseRefIds.add(locationRef);
 				}
-				baseGraph = compiler.compileBase(req, refs, client);
+				baseGraph = compiler.compileBase(baseReq, refs, client);
 			}
 			catch(GraphCompileException | IllegalArgumentException e) {
 				throw baseFailure(seq, sceneLabel, planOid, RendererAdapter.ERROR_GRAPH_INVALID + ": " + e.getMessage(), null);
 			}
-			baseReq = req.toBuilder().graph(baseGraph.getGraph()).inputs(baseGraph.getInputs()).seed((int) baseGraph.getSeed())
+			baseReq = baseReq.toBuilder().graph(baseGraph.getGraph()).inputs(baseGraph.getInputs()).seed((int) baseGraph.getSeed())
 				.steps(baseGraph.getSteps()).build();
 		}
 
@@ -1934,6 +1938,10 @@ public class PbNodeExecutor {
 				try {
 					WorkflowCompiler.ActorTarget target = new WorkflowCompiler.ActorTarget(a, lastGood.bytes, List.of(a.getBox()));
 					StageRequest reqA = req.toBuilder().stage(RenderPlan.STAGE_ACTOR_REGION).prompt(cp).model(regionPick.getModel()).build();
+					/// the pass has its own pick (INPAINT, or BASE's as a fallback): the FLUX.2 knobs follow that pick, not BASE's
+					if(RendererCapabilities.PATTERN_FLUX2.equals(caps.getPattern())) {
+						reqA = flux2Request(reqA, plan.getConfig());
+					}
 					cg = compiler.compileActorRegion(reqA, passRefs, target, inpaint, client);
 					reqA = reqA.toBuilder().graph(cg.getGraph()).inputs(cg.getInputs()).seed((int) cg.getSeed()).steps(cg.getSteps()).build();
 					StageResult res = adapter.execute(reqA, g::isCancelRequested);
@@ -2012,6 +2020,37 @@ public class PbNodeExecutor {
 		seq.added.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_FAILED,
 			"ACTOR_REGION pass for " + a.getName() + " failed: " + coded, a.getActorId(), RenderPlan.STAGE_ACTOR_REGION));
 		logger.warn("{}: {}", label, coded);
+	}
+
+	/**
+	 * A stage request on a FLUX.2 pick (ledger §6.C 239 c; the graph path too, 245 g).
+	 * <p>
+	 * The shared request is built from the config snapshot's {@code cfg} / {@code sampler} /
+	 * {@code scheduler}, which are the SDXL-tuned values ({@code 7.0 / dpmpp_2m / karras}), and every
+	 * branch sends them: a zero-reference BASE as the plain T2I request, a referenced BASE and the
+	 * ACTOR_REGION passes through the generator params {@code WorkflowCompiler.compile} builds from the
+	 * request. The same snapshot carries {@code flux2Cfg} ({@link PbConfigUtil#applyFlux2Defaults} fills
+	 * it from {@code flux2Defaults.json}), and the resource carries the FLUX.2 sampler and scheduler - the
+	 * same precedence {@code SWUtil.newFlux2SceneTxt2Img} applies for the composite. Only those three knobs
+	 * change. Steps are left alone: on the plan path they are preset-governed (D6), and for a
+	 * zero-reference BASE the preset's count already comes from this pick's family
+	 * ({@code PbRenderPlanUtil.scaffold} takes {@code recommendedSteps} from the LOCATION pick, which is the
+	 * BASE pick of a TEXT_ONLY / ACTOR_TEXT_ONLY plan); an ACTOR_REGION pass takes its steps from the
+	 * family's inpaint parameters in the compiler. So {@code flux2Steps} is not read here.
+	 * Package-private for the offline test.
+	 *
+	 * @param req the stage request as built from the shared one
+	 * @param cfg the plan's config snapshot (may be null or empty - then the resource cfg applies)
+	 */
+	static StageRequest flux2Request(StageRequest req, Map<String, Object> cfg) {
+		double cfgScale = Flux2Defaults.cfgScale();
+		if(cfg != null) {
+			Object c = cfg.get("flux2Cfg");
+			if(c instanceof Number && ((Number) c).doubleValue() > 0d) {
+				cfgScale = ((Number) c).doubleValue();
+			}
+		}
+		return req.toBuilder().cfg(cfgScale).sampler(Flux2Defaults.sampler()).scheduler(Flux2Defaults.scheduler()).build();
 	}
 
 	/// The PNG bytes of a reference artifact, read as the user; null when the artifact or its data cannot be

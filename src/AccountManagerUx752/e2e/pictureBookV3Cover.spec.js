@@ -15,6 +15,15 @@
  *      the latest render appears in the strip (its PNG bytes are fetched through the media servlet and written
  *      to OUT_DIR); Approve latest → the approved tile; GET /covers carries it; the reader shows the approved
  *      cover ([data-pb2-cover-source="cover"]) with its title block in the BOTTOM band.
+ *   4. [SD] (same gate) the From-scene creation mode and a second purpose, live: on the TITLE_PAGE tab the Create
+ *      dialog's "From a scene" picks scene 0 and creates a CLONE-source composition (PbCoverUtil.cloneFromScene:
+ *      setting / action / mood / camera copied from the scene's SCENE composition, revision 0, no band) that is a
+ *      separate composition from the COVER one and from the scene's own; the repeat POST is idempotent
+ *      (existingReturned); Render → job to terminal → Approve latest → GET /covers shows TITLE_PAGE approved
+ *      (approved == selected, APPROVED) while the COVER entry is byte-for-byte what it was before; the PNG is saved.
+ *      Fixture note: the seed creates a raw olio.pb.scene only, so the test first GETs the scene's composition and,
+ *      on 404, seeds the SCENE composition through POST /rest/model as the shared user (the same shape
+ *      pictureBookComposition.spec.js uses) — the cover create itself goes through the UI.
  *
  * Run:
  *   cd src/AccountManagerUx752
@@ -38,6 +47,9 @@ const SCENE_ACTION = 'a fisherman coils rope beside an upturned boat while gulls
 const COVER_SETTING = 'a lighthouse on a black headland under a wide violet evening sky, the sea calm below';
 const COVER_ACTION = 'the lamp has just been lit and a single small boat rows toward the shore';
 const COVER_MOOD = 'hushed, expectant';
+const SCENE_MOOD = 'quiet, end-of-day';
+const SCENE_CAMERA = 'from the end of the quay, looking back along the lantern line';
+const SCENE_PROPS = 'coiled rope, upturned boat, lit lanterns';
 const COVER_PURPOSES = ['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER', 'SERIES_ART'];
 
 function b64(str) { return Buffer.from(str).toString('base64'); }
@@ -157,6 +169,60 @@ async function openCoverBoard(page, bookOid) {
     await expect(page.getByTestId('pb-cmp-purpose-tabs')).toBeVisible();
 }
 
+/**
+ * Wait for a toast matching `re`; on timeout the error names every toast text seen meanwhile (toasts expire after
+ * 5 s — pageClient.js — so a failed action's error toast would otherwise vanish before the assertion reports).
+ */
+async function waitForToast(page, re, timeout) {
+    const seen = [];
+    const deadline = Date.now() + (timeout || 60000);
+    while (Date.now() < deadline) {
+        const texts = await page.locator('.toast-text').allTextContents();
+        for (const t of texts) {
+            if (!seen.includes(t)) seen.push(t);
+            if (re.test(t)) return t;
+        }
+        await page.waitForTimeout(250);
+    }
+    throw new Error('toast ' + re + ' did not appear within ' + (timeout || 60000) + ' ms; toasts seen: ' + JSON.stringify(seen));
+}
+
+/** GET /{book}/scene/{scene}/composition → {status, text, body} (404 "Scene N has no composition; compose it first" when none). */
+async function getSceneComposition(request, bookOid, sceneOid) {
+    const resp = await request.get(PB_ROOT + '/' + bookOid + '/scene/' + sceneOid + '/composition');
+    const text = await resp.text();
+    return { status: resp.status(), text, body: (resp.ok() ? JSON.parse(text) : null) };
+}
+
+/**
+ * The scene's SCENE-purpose composition, seeding one when the scene has none. The beforeAll creates a raw
+ * olio.pb.scene only and no read path lazily composes it, so From-scene would 404 "Scene 0 has no composition to
+ * copy" (PbCoverUtil.cloneFromScene). Seeded as the shared user through the generic model route — the proven shape
+ * from pictureBookComposition.spec.js — never through the cover routes: the cover create is the UI's job.
+ */
+async function ensureSceneComposition(request, bookOid, sceneRef, bookRef) {
+    let got = await getSceneComposition(request, bookOid, sceneRef.objectId);
+    if (got.status === 404) {
+        console.log('[p94-cover-4] scene ' + sceneRef.sceneIndex + ' has no composition (' + got.text.slice(0, 160) + ') — seeding a SCENE composition');
+        const resp = await request.post(REST + '/model', {
+            data: {
+                schema: 'olio.pb.composition', name: 'composition ' + bookRef.slug + ' 0', groupId: bookRef.groupId, groupPath: bookRef.groupPath,
+                book: { schema: 'olio.pb.book', id: bookRef.id, objectId: bookRef.objectId },
+                scene: { schema: 'olio.pb.scene', id: sceneRef.id, objectId: sceneRef.objectId },
+                purpose: 'scene', source: 'user', settingText: SCENE_SETTING, action: SCENE_ACTION, mood: SCENE_MOOD,
+                shotType: 'wide', viewpoint: 'eye_level', cameraText: SCENE_CAMERA, props: SCENE_PROPS, revision: 1
+            }
+        });
+        const text = await resp.text();
+        expect(resp.ok(), 'POST /model olio.pb.composition (scene seed): HTTP ' + resp.status() + ' ' + text.slice(0, 300)).toBe(true);
+        got = await getSceneComposition(request, bookOid, sceneRef.objectId);
+    }
+    expect(got.status, 'GET /scene/' + sceneRef.objectId + '/composition: ' + got.text.slice(0, 300)).toBe(200);
+    expect(got.body.compositionObjectId, 'scene composition objectId').toBeTruthy();
+    expect(upper(got.body.composition.purpose)).toBe('SCENE');
+    return got.body;
+}
+
 async function openReader(page, bookOid) {
     await page.goto('/#!/picture-book/v2/' + bookOid, { timeout: 30000 });
     await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible({ timeout: 30000 });
@@ -166,7 +232,9 @@ async function openReader(page, bookOid) {
 
 let bookObjectId = null;
 let slug = null;
-const fx = { book: null, scene: null, inventoryUnavailable: null, inventoryError: null, compositionObjectId: null, latestArtifactOid: null, pngPath: null, planVariants: null };
+const fx = { book: null, scene: null, inventoryUnavailable: null, inventoryError: null, compositionObjectId: null, latestArtifactOid: null, pngPath: null, planVariants: null,
+    // test 4: the scene's SCENE composition (seeded or found), the TITLE_PAGE clone and its approved artifact / PNG
+    titlePage: { sceneCompositionObjectId: null, sceneCompositionSeeded: null, compositionObjectId: null, planVariants: null, latestArtifactOid: null, autoApproved: null, pngPath: null } };
 
 test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover routes, reader cover', () => {
     // Generous budgets on purpose: POST /plan resolves models against the renderer inventory (slow while that server
@@ -193,7 +261,7 @@ test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover route
         const sceneResp = await request.post(REST + '/model', {
             data: { schema: 'olio.pb.scene', name: 'Scene ' + slug + ' 0', groupId: book.groupId, groupPath: book.groupPath,
                 book: { schema: 'olio.pb.book', id: book.id, objectId: book.objectId }, sceneIndex: 0,
-                title: 'Lanterns on the quay', setting: SCENE_SETTING, action: SCENE_ACTION, mood: 'quiet, end-of-day' }
+                title: 'Lanterns on the quay', setting: SCENE_SETTING, action: SCENE_ACTION, mood: SCENE_MOOD }
         });
         const sceneText = await sceneResp.text();
         expect(sceneResp.ok(), 'create olio.pb.scene: HTTP ' + sceneResp.status() + ' ' + sceneText.slice(0, 300)).toBe(true);
@@ -468,5 +536,276 @@ test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover route
         await expect.poll(() => img.evaluate(el => el.complete && el.naturalWidth), { timeout: 60000 }).toBeGreaterThan(0);
         await page.screenshot({ path: OUT_DIR + '/07-reader-cover.png', fullPage: true });
         console.log('[p94-cover-3] reader shows the approved cover: ' + (await img.getAttribute('src')));
+    });
+
+    test('4. [SD] the TITLE_PAGE tab\'s Create "From a scene" clones scene 0 as a separate CLONE-source composition; Render → Approve makes it the approved title page while COVER is untouched', async ({ page, request }) => {
+        test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — skips the live SD render');
+        test.skip(fx.inventoryUnavailable, 'the renderer inventory is unavailable (' + JSON.stringify(fx.inventoryError) + ') — nothing can render');
+        expect(fx.compositionObjectId, 'cover composition from test 1').toBeTruthy();
+        expect(fx.scene && fx.scene.id && fx.scene.objectId, 'scene 0 from the seed: ' + JSON.stringify(fx.scene)).toBeTruthy();
+        const tp = fx.titlePage;
+
+        // ── REST pre-state, as the shared user: the scene's SCENE composition (seeded if the scene has none — see
+        // ensureSceneComposition), no TITLE_PAGE yet, and a snapshot of the COVER entry to compare against at the end.
+        await login(request);
+        const sceneBefore = await getSceneComposition(request, bookObjectId, fx.scene.objectId);
+        tp.sceneCompositionSeeded = sceneBefore.status === 404;
+        const sceneComp = await ensureSceneComposition(request, bookObjectId, fx.scene, fx.book);
+        tp.sceneCompositionObjectId = sceneComp.compositionObjectId;
+        expect(sceneComp.composition.settingText, 'the scene composition carries a setting to clone').toBeTruthy();
+        console.log('[p94-cover-4] scene 0 composition ' + tp.sceneCompositionObjectId + (tp.sceneCompositionSeeded ? ' (seeded by this test)' : ' (pre-existing)')
+            + ': ' + JSON.stringify(sceneComp.composition).slice(0, 500));
+        const missing = await getCover(request, bookObjectId, 'title_page');
+        expect(missing.status, 'GET /covers/title_page before creation: ' + missing.text.slice(0, 200)).toBe(404);
+        expect(missing.text).toMatch(/has no TITLE_PAGE composition/i);
+        const viewBefore = await getCovers(request, bookObjectId);
+        expect(viewBefore.covers && viewBefore.covers.COVER && viewBefore.covers.COVER.compositionObjectId, 'the COVER entry tests 1-3 left').toBe(fx.compositionObjectId);
+        expect(viewBefore.covers.TITLE_PAGE == null, 'no TITLE_PAGE entry yet').toBe(true);
+        const coverBefore = JSON.parse(JSON.stringify(viewBefore.covers.COVER));
+        console.log('[p94-cover-4] COVER entry before: ' + JSON.stringify(coverBefore));
+        await request.get(REST + '/logout');
+
+        // ── UI: the TITLE_PAGE tab → the empty state → Create dialog → From a scene → scene 0 → Create.
+        await loginAsSharedUser(page);
+        const posts = [];
+        page.on('request', req => { if (req.method() === 'POST' && /\/covers\/title[-_]page$/.test(req.url())) posts.push(JSON.parse(req.postData() || 'null')); });
+        await openCoverBoard(page, bookObjectId);
+        const tab = page.getByTestId('pb-cmp-purpose-title-page');
+        await expect(tab).toBeVisible();
+        await expect(tab).toHaveAttribute('data-active', 'false');
+        await expect(tab).toHaveAttribute('data-exists', 'false', { timeout: 30000 });
+        await tab.click();
+        await expect(page).toHaveURL(/\/picture-book\/[^/]+\/cover\/title-page$/);
+        await expect(tab).toHaveAttribute('data-active', 'true');
+        await expect(page.getByTestId('pb-cmp-purpose-cover')).toHaveAttribute('data-active', 'false');
+        await expect(page.getByTestId('pb-cmp-empty')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('pb-cmp-empty-message')).toContainText(/no title[_ ]page composition/i);
+        await expect(page.getByTestId('pb-cmp-cover')).toHaveCount(0);
+        await page.getByTestId('pb-cmp-create-cover-open').click();
+        const dialog = page.getByTestId('pb-cmp-create-cover');
+        await expect(dialog).toBeVisible();
+        await expect(page.getByTestId('pb-cmp-create-auto')).toBeChecked();
+        await expect(page.getByTestId('pb-cmp-create-from-scene')).toBeEnabled();
+        await page.getByTestId('pb-cmp-create-from-scene').check();
+        await expect(page.getByTestId('pb-cmp-create-from-scene')).toBeChecked();
+        const sceneSelect = page.getByTestId('pb-cmp-create-scene');
+        await expect(sceneSelect).toBeVisible();
+        await expect(sceneSelect.locator('option')).toHaveCount(1);
+        // sceneLabel(/pages DTO): '<sceneIndex> · <title>'.
+        await expect(sceneSelect.locator('option')).toHaveText('0 · Lanterns on the quay');
+        await sceneSelect.selectOption(fx.scene.objectId);
+        await expect(sceneSelect).toHaveValue(fx.scene.objectId);
+        await page.screenshot({ path: OUT_DIR + '/08-title-page-dialog.png', fullPage: true });
+        const t0 = Date.now();
+        await page.getByTestId('pb-cmp-create-submit').click();
+        // createCoverText: '<label> created from the scene' for mode FROM_SCENE; an error toast is reported by name.
+        const createToast = await waitForToast(page, /^Title page created from the scene/, 60000);
+        console.log('[p94-cover-4] From-scene create through the dialog in ' + (Date.now() - t0) + ' ms: ' + createToast);
+        await expect(dialog).toHaveCount(0);
+        expect(posts.length, 'exactly one POST /covers/title-page from the dialog').toBe(1);
+        expect(posts[0]).toEqual({ mode: 'from_scene', sceneObjectId: fx.scene.objectId });
+        const strip = page.getByTestId('pb-cmp-cover');
+        await expect(strip).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('pb-cmp-empty')).toHaveCount(0);
+        await expect(page.getByTestId('pb-cmp-cover-state')).toHaveText('Not rendered yet');
+        // A clone leaves titleSafeBand UNKNOWN (cloneFromScene), so the strip shows no band chip.
+        await expect(page.getByTestId('pb-cmp-cover-band')).toHaveCount(0);
+        await expect(page.getByTestId('pb-cmp-source')).toHaveText(/clone/i);
+        await expect(page.getByTestId('pb-cmp-purpose')).toHaveText(/title[_ ]?page/i);
+        await expect(page.getByTestId('pb-cmp-revision')).toHaveText('rev 0');
+        await expect(page.getByTestId('pb-cmp-setting')).toHaveValue(sceneComp.composition.settingText);
+        await expect(page.getByTestId('pb-cmp-action')).toHaveValue(sceneComp.composition.action || '');
+        await expect(page.getByTestId('pb-cmp-mood')).toHaveValue(sceneComp.composition.mood || '');
+        await expect(page.getByTestId('pb-cmp-camera-text')).toHaveValue(sceneComp.composition.cameraText || '');
+        await expect(tab).toHaveAttribute('data-exists', 'true', { timeout: 30000 });
+        await expect(page.getByTestId('pb-cmp-purpose-cover')).toHaveAttribute('data-exists', 'true');
+        await expect(page.getByTestId('pb-cmp-approve-cover')).toBeDisabled();
+        await expect(page.getByTestId('pb-cmp-render-cover')).toBeEnabled();
+        await page.screenshot({ path: OUT_DIR + '/09-title-page-created.png', fullPage: true });
+
+        // ── REST: a separate CLONE-source composition carrying the scene's text; the repeat POST is idempotent;
+        // the COVER entry and the scene's own composition are untouched; the plan compiles the cloned setting.
+        await login(request);
+        const board = await getCover(request, bookObjectId, 'title_page');
+        expect(board.status, 'GET /covers/title_page after creation: ' + board.text.slice(0, 300)).toBe(200);
+        console.log('[p94-cover-4] GET /covers/title_page: ' + JSON.stringify(board.body).slice(0, 700));
+        expect(upper(board.body.purpose)).toBe('TITLE_PAGE');
+        // PbCoverUtil.cloneFromScene → createCover(..., PbCompositionSourceEnumType.CLONE, 0, null, src): the From-scene
+        // source word is CLONE (PbCompositionSourceEnumType: UNKNOWN, LLM, USER, MIGRATED, CLONE).
+        expect(upper(board.body.composition.source)).toBe('CLONE');
+        expect(upper(board.body.cover.source)).toBe('CLONE');
+        expect(upper(board.body.composition.purpose)).toBe('TITLE_PAGE');
+        expect(board.body.composition.revision || 0, 'a clone starts at revision 0').toBe(0);
+        tp.compositionObjectId = board.body.compositionObjectId;
+        expect(tp.compositionObjectId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(board.body.composition.objectId).toBe(tp.compositionObjectId);
+        expect(tp.compositionObjectId, 'a separate composition from the COVER one').not.toBe(fx.compositionObjectId);
+        expect(tp.compositionObjectId, 'a separate composition from the scene\'s own').not.toBe(tp.sceneCompositionObjectId);
+        // CLONED_COMPOSITION_FIELDS: setting / action / mood / shot / viewpoint / camera / props come across.
+        expect(board.body.composition.settingText, 'cloned setting is non-empty').toBeTruthy();
+        expect(board.body.composition.settingText).toBe(sceneComp.composition.settingText);
+        expect(board.body.composition.action || null).toBe(sceneComp.composition.action || null);
+        expect(board.body.composition.mood || null).toBe(sceneComp.composition.mood || null);
+        expect(board.body.composition.cameraText || null).toBe(sceneComp.composition.cameraText || null);
+        expect(board.body.composition.props || null).toBe(sceneComp.composition.props || null);
+        expect(upper(board.body.composition.shotType)).toBe(upper(sceneComp.composition.shotType));
+        expect(upper(board.body.composition.viewpoint)).toBe(upper(sceneComp.composition.viewpoint));
+        expect(board.body.composition.titleSafeBand == null || upper(board.body.composition.titleSafeBand) === 'UNKNOWN', 'band left UNKNOWN: ' + board.body.composition.titleSafeBand).toBe(true);
+        expect(board.body.cover.nodeObjectId == null, 'no render node yet').toBe(true);
+        // Idempotent (ledger 237 d): a repeat From-scene POST returns the same composition, never a 409 or a second clone.
+        const again = await request.post(PB_ROOT + '/' + bookObjectId + '/covers/title_page', { data: { mode: 'from_scene', sceneObjectId: fx.scene.objectId } });
+        const againText = await again.text();
+        expect(again.ok(), 'second POST /covers/title_page: HTTP ' + again.status() + ' ' + againText.slice(0, 300)).toBe(true);
+        const againBody = JSON.parse(againText);
+        expect(againBody.existingReturned).toBe(true);
+        expect(againBody.created).toBe(false);
+        expect(againBody.compositionObjectId).toBe(tp.compositionObjectId);
+        expect(upper(againBody.purpose)).toBe('TITLE_PAGE');
+        const viewCreated = await getCovers(request, bookObjectId);
+        expect(viewCreated.covers.TITLE_PAGE && viewCreated.covers.TITLE_PAGE.compositionObjectId).toBe(tp.compositionObjectId);
+        expect(upper(viewCreated.covers.TITLE_PAGE.source)).toBe('CLONE');
+        expect(viewCreated.covers.TITLE_PAGE.nodeObjectId == null, 'no render node before Render').toBe(true);
+        expect(viewCreated.covers.COVER, 'creating the title page leaves the COVER entry as it was').toEqual(coverBefore);
+        const sceneAfterClone = await getSceneComposition(request, bookObjectId, fx.scene.objectId);
+        expect(sceneAfterClone.status, 'the scene still has its own composition: ' + sceneAfterClone.text.slice(0, 200)).toBe(200);
+        expect(sceneAfterClone.body.compositionObjectId).toBe(tp.sceneCompositionObjectId);
+        expect(upper(sceneAfterClone.body.composition.purpose)).toBe('SCENE');
+        // The plan compiles the cloned setting (not the COVER's lighthouse); an UNKNOWN band reserves nothing
+        // (PbLayoutUtil.titleSafeBand → null) and is no render blocker.
+        const plan = await planCover(request, bookObjectId, 'title_page', {});
+        console.log('[p94-cover-4] title_page plan: purpose=' + plan.purpose + ' reserved=' + JSON.stringify(plan.reserved) + ' canvas=' + JSON.stringify(plan.canvas)
+            + ' estimate=' + JSON.stringify(plan.estimate) + ' degradations=' + JSON.stringify(plan.degradations)
+            + ' BASE=' + JSON.stringify(plan.compiled && plan.compiled.BASE && plan.compiled.BASE.prompt));
+        expect(upper(plan.purpose)).toBe('TITLE_PAGE');
+        expect(plan.compositionObjectId).toBe(tp.compositionObjectId);
+        expect(plan.reserved == null, 'an UNKNOWN band reserves nothing').toBe(true);
+        expect(plan.compiled && plan.compiled.BASE && plan.compiled.BASE.prompt, 'the title-page plan carries a compiled BASE prompt').toBeTruthy();
+        expect(plan.compiled.BASE.prompt).toMatch(/harbour|lantern|quay/i);
+        expect(plan.compiled.BASE.prompt).not.toContain('lighthouse');
+        expect(JSON.stringify(plan)).not.toMatch(/https?:\/\//);
+        expect(plan.estimate && plan.estimate.variants, 'the plan estimate states the variant count').toBeGreaterThan(0);
+        tp.planVariants = plan.estimate.variants;
+        await request.get(REST + '/logout');
+
+        // ── UI: Render → the job to terminal → Approve latest, test 3's path on the title-page tab.
+        await expect(page).toHaveURL(/\/cover\/title-page$/);
+        await expect(tab).toHaveAttribute('data-active', 'true');
+        const t1 = Date.now();
+        await page.getByTestId('pb-cmp-render-cover').click();
+        await waitForToast(page, /^Title page render started/, 60000);
+        const run = page.getByTestId('pb-cmp-render-run');
+        await expect(run).toBeVisible({ timeout: 30000 });
+        await expect(run).toContainText('Render title page');
+        await expect(page.getByTestId('pb-cmp-render-cover')).toBeDisabled();
+        // A real SD render on the LAN GPU; ample time, never a threshold.
+        await expect(run).toHaveAttribute('data-run-terminal', 'true', { timeout: 1800000 });
+        const counter = await page.getByTestId('pb-cmp-render-counter').textContent();
+        console.log('[p94-cover-4] title-page render job terminal in ' + (Date.now() - t1) + ' ms: ' + counter);
+        expect(counter, 'the job finished without an error').toBe('Rendered');
+        await expect(page.locator('.toast-text', { hasText: 'Title page: Rendered' })).toBeVisible({ timeout: 30000 });
+        // watchRender re-reads the board after the toast; wait for the strip to leave 'Not rendered yet'.
+        await expect(page.getByTestId('pb-cmp-cover-state')).not.toHaveText('Not rendered yet', { timeout: 60000 });
+        await expect(page.getByTestId('pb-cmp-cover-error')).toHaveCount(0);
+        await expect(page.getByTestId('pb-cmp-cover-band')).toHaveCount(0);
+        console.log('[p94-cover-4] strip after render: node-status=' + (await strip.getAttribute('data-node-status')) + ' state=' + (await page.getByTestId('pb-cmp-cover-state').textContent()));
+
+        const latest = page.getByTestId('pb-cmp-cover-latest');
+        const approvedTile = page.getByTestId('pb-cmp-cover-approved');
+        let approvedOid = null;
+        // renderAndApprove's shape (pictureBookV3Usability step 15): Approve when a Latest tile is offered; when the
+        // strip already shows the render as approved (no Latest tile), accept the auto-approval and say so.
+        if (await latest.count()) {
+            // A RENDER_PLAN node closes DONE_UNVERIFIED (verification is the review step) — test 3's observed state.
+            await expect(strip).toHaveAttribute('data-node-status', 'DONE_UNVERIFIED');
+            await expect.poll(async () => latest.getAttribute('data-artifact'), { timeout: 60000 }).toMatch(/^[0-9a-f-]{36}$/);
+            tp.latestArtifactOid = await latest.getAttribute('data-artifact');
+            await expect(latest).toContainText('rev ' + tp.planVariants);
+            await expect(latest.locator('img')).toHaveCount(1);
+            await expect.poll(() => latest.locator('img').evaluate(img => img.complete && img.naturalWidth), { timeout: 60000 }).toBeGreaterThan(0);
+            // The strip ends in the selected artifact's reviewStatus (coverStateText): `generated` when QA has not
+            // run yet, `in_review` once it has — run 1 (scratch/p9-9/pw-cover-run1.log) saw `in_review`.
+            await expect(page.getByTestId('pb-cmp-cover-state')).toHaveText(new RegExp('^DONE_UNVERIFIED · ' + tp.planVariants + ' render' + (tp.planVariants === 1 ? '' : 's') + ' · (generated|in_review)$'));
+            await expect(approvedTile).toContainText('none');
+            await expect(page.getByTestId('pb-cmp-approve-cover')).toBeEnabled();
+            await expect(page.getByTestId('pb-cmp-render-cover')).toHaveText(/Re-render/);
+            await page.screenshot({ path: OUT_DIR + '/10-title-page-rendered.png', fullPage: true });
+
+            await login(request);
+            const beforeApprove = await getCovers(request, bookObjectId);
+            const tpBefore = beforeApprove.covers.TITLE_PAGE;
+            expect(tpBefore && tpBefore.latest && tpBefore.latest.artifactObjectId).toBe(tp.latestArtifactOid);
+            expect(tpBefore.latest.revision, 'latest = the highest variant revision').toBe(tp.planVariants);
+            expect(tpBefore.chainLength, 'one BASE artifact per planned variant').toBe(tp.planVariants);
+            expect(tpBefore.approved == null, 'nothing approved before the click').toBe(true);
+            expect(tpBefore.nodeObjectId, 'the render created the title-page node').toBeTruthy();
+            expect(beforeApprove.covers.COVER, 'rendering the title page leaves the COVER entry as it was').toEqual(coverBefore);
+            await request.get(REST + '/logout');
+
+            await page.getByTestId('pb-cmp-approve-cover').click();
+            await waitForToast(page, /^Title page approved/, 60000);
+            tp.autoApproved = false;
+            approvedOid = tp.latestArtifactOid;
+        } else {
+            tp.autoApproved = true;
+            await expect.poll(async () => approvedTile.getAttribute('data-artifact'), { timeout: 60000 }).toMatch(/^[0-9a-f-]{36}$/);
+            approvedOid = await approvedTile.getAttribute('data-artifact');
+            tp.latestArtifactOid = approvedOid;
+            console.log('[p94-cover-4] no Latest tile after the render — the stack approved the render itself (' + approvedOid + '); accepted as renderAndApprove does');
+        }
+
+        await expect(approvedTile).toHaveAttribute('data-artifact', approvedOid, { timeout: 60000 });
+        await expect(approvedTile).toContainText('approved');
+        await expect(approvedTile.locator('img')).toHaveCount(1);
+        await expect.poll(() => approvedTile.locator('img').evaluate(img => img.complete && img.naturalWidth), { timeout: 60000 }).toBeGreaterThan(0);
+        await expect(page.getByTestId('pb-cmp-cover-latest')).toHaveCount(0);
+        await expect(page.getByTestId('pb-cmp-approve-cover')).toBeDisabled();
+        await expect(page.getByTestId('pb-cmp-cover-state')).toContainText('approved');
+        await page.screenshot({ path: OUT_DIR + '/11-title-page-approved.png', fullPage: true });
+
+        // ── REST after: TITLE_PAGE approved == selected and APPROVED; COVER is byte-for-byte what it was; the PNG.
+        await login(request);
+        const after = await getCovers(request, bookObjectId);
+        const tpEntry = after.covers.TITLE_PAGE;
+        console.log('[p94-cover-4] GET /covers after approve: TITLE_PAGE=' + JSON.stringify(tpEntry) + ' COVER=' + JSON.stringify(after.covers.COVER));
+        expect(tpEntry && tpEntry.compositionObjectId).toBe(tp.compositionObjectId);
+        expect(upper(tpEntry.purpose)).toBe('TITLE_PAGE');
+        expect(upper(tpEntry.source)).toBe('CLONE');
+        expect(tpEntry.nodeObjectId, 'the render created the title-page node').toBeTruthy();
+        expect(tpEntry.approved && tpEntry.approved.artifactObjectId).toBe(approvedOid);
+        expect(tpEntry.selectedArtifactObjectId, 'approved == selected').toBe(approvedOid);
+        expect(upper(tpEntry.reviewStatus)).toBe('APPROVED');
+        expect(upper(tpEntry.approved.reviewStatus)).toBe('APPROVED');
+        expect(tpEntry.approved.imageName, 'the approved ref carries the media name').toBeTruthy();
+        expect(tpEntry.chainLength, 'one BASE artifact per planned variant').toBe(tp.planVariants);
+        expect(after.workflowObjectId, 'the book has its workflow').toBeTruthy();
+        // COVER untouched: the entry tests 1-3 left, test 3's approved artifact (when it ran), never the title-page artifact or node.
+        expect(after.covers.COVER, 'the COVER entry is unchanged by the title-page create / render / approve').toEqual(coverBefore);
+        if (fx.latestArtifactOid) {
+            expect(after.covers.COVER.approved && after.covers.COVER.approved.artifactObjectId, 'test 3\'s approved cover is still the approved cover').toBe(fx.latestArtifactOid);
+        }
+        expect(after.covers.COVER.approved == null || after.covers.COVER.approved.artifactObjectId !== approvedOid, 'the title-page artifact is not the cover\'s').toBe(true);
+        expect(after.covers.COVER.selectedArtifactObjectId == null || after.covers.COVER.selectedArtifactObjectId !== approvedOid).toBe(true);
+        expect(after.covers.COVER.nodeObjectId == null || after.covers.COVER.nodeObjectId !== tpEntry.nodeObjectId, 'each purpose has its own render node').toBe(true);
+        const sceneAfter = await getSceneComposition(request, bookObjectId, fx.scene.objectId);
+        expect(sceneAfter.status).toBe(200);
+        expect(sceneAfter.body.compositionObjectId, 'the scene\'s own composition is still its own').toBe(tp.sceneCompositionObjectId);
+        const png = await savePng(request, PB_ROOT + '/' + bookObjectId, approvedOid, 'title-page-latest.png');
+        tp.pngPath = png.pngPath;
+        expect(upper(png.art.reviewStatus)).toBe('APPROVED');
+        await request.get(REST + '/logout');
+
+        // The reader's cover is the COVER purpose: approving a TITLE_PAGE must not change what the reader shows.
+        if (fx.latestArtifactOid) {
+            await openReader(page, bookObjectId);
+            const coverRoot = page.locator('[data-pb2-cover-source]');
+            await expect(coverRoot).toHaveAttribute('data-pb2-cover-source', 'cover');
+            const img = page.locator('[data-pb2-cover-image]');
+            await expect(img).toHaveCount(1);
+            const src = await img.getAttribute('src');
+            expect(src).toContain(after.covers.COVER.approved.imageGroupPath + '/' + after.covers.COVER.approved.imageName);
+            expect(src).not.toContain(tpEntry.approved.imageName);
+            await page.screenshot({ path: OUT_DIR + '/12-reader-still-cover.png', fullPage: true });
+            console.log('[p94-cover-4] reader still shows the COVER artifact, not the title page: ' + src);
+        }
     });
 });

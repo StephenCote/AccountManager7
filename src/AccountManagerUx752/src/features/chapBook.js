@@ -11,7 +11,7 @@ import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
-import { bookPages, unpinNode, listLocations, setSceneLocation, getCovers, coverImageRefFor } from '../workflows/pictureBookWorkflow.js';
+import { bookPages, unpinNode, listLocations, setSceneLocation, getCovers, coverImageRefFor, coverPageLayout, registerBookChatConfigProvider } from '../workflows/pictureBookWorkflow.js';
 import { resolveImageUrl, pollJob, cancelJob, listJobs } from '../workflows/sceneExtractor.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
@@ -1259,15 +1259,40 @@ function ensureConfigChatConfigDefault() {
     }).catch(function () { _configChatConfigResolving = false; });
 }
 
-// The chat-config NAME to send with per-page Analyze / Regenerate-prompt requests. Prefer the panel's
-// explicit/resolved default, then any render-dialog or create-dialog pick, else null (backend then
-// applies its own deterministic default). Exported for unit tests. Pure.
-function effectiveChatConfigName() {
-    return (configChatConfigRef && configChatConfigRef.name)
-        || (renderChatConfigRef && renderChatConfigRef.name)
-        || (createChatConfigRef && createChatConfigRef.name)
+// The chat config the ChapBook screens carry: the panel's explicit/resolved default, then any render-dialog
+// or create-dialog pick, else null. {name, objectId} (objectId may be null). Pure.
+function effectiveChatConfigRef() {
+    let ref = (configChatConfigRef && configChatConfigRef.name && configChatConfigRef)
+        || (renderChatConfigRef && renderChatConfigRef.name && renderChatConfigRef)
+        || (createChatConfigRef && createChatConfigRef.name && createChatConfigRef)
         || null;
+    return ref ? { name: ref.name, objectId: ref.objectId != null ? ref.objectId : null } : null;
 }
+
+// The chat-config NAME to send with per-page Analyze / Regenerate-prompt requests (effectiveChatConfigRef's
+// name), else null (backend then applies its own deterministic default). Exported for unit tests. Pure.
+function effectiveChatConfigName() {
+    let ref = effectiveChatConfigRef();
+    return ref ? ref.name : null;
+}
+
+// P9-8 (240 d): is this book a ChapBook this session knows — the one open in the reader or the review, or one
+// of My ChapBooks? (olio.pb.book carries no chatConfig field and the covers board is a PictureBook route, so
+// the board cannot tell a ChapBook from a PictureBook by itself.)
+function isSessionChapBook(bookObjectId) {
+    if (!bookObjectId) return false;
+    if (bookObjectId === readerBookObjectId || bookObjectId === reviewBookObjectId) return true;
+    return myBooks.some(function (b) { return b && b.objectId === bookObjectId; });
+}
+
+// P9-8 (240 d): the chat config the compose board's cover mode should open with for a ChapBook — the config the
+// ChapBook's own panel / render / create flows carry (effectiveChatConfigRef) — or null for any other book, so the
+// board falls back to its library default. Registered with the shared workflow layer at load (the ChapBook
+// feature is gated and lazily loaded, so the board never imports this file).
+function chapBookCarriedChatConfig(bookObjectId) {
+    return isSessionChapBook(bookObjectId) ? effectiveChatConfigRef() : null;
+}
+registerBookChatConfigProvider(chapBookCarriedChatConfig);
 
 // Issue 8: open the pre-render SD config dialog; callback is invoked on confirm.
 function openRenderConfigDialog(bookObjectId, callback) {
@@ -2689,36 +2714,40 @@ function readerCoverImageUrl() {
 }
 
 // ReaderShell cover slot (page 0) — mirrors PictureBook's cover but with ChapBook poem-book styling. With an
-// approved cover render (P9-4, V3 §40) the art is shown undimmed and the title block sits in the title-safe band.
+// approved cover render (P9-4, V3 §40) the art is shown undimmed, whole, in a fixed-aspect frame, and the slim
+// title block sits in the title-safe band (P9-8, 238 d; coverPageLayout).
 function renderReaderCover(nav) {
     let ref = readerCoverRef();
     let coverImg = readerCoverImageUrl();
     let band = ref ? readerCoverBand() : null;
     let justify = band === 'TOP' ? 'justify-start' : (band === 'BOTTOM' ? 'justify-end' : 'justify-center');
+    let lay = coverPageLayout(!!ref);
     return m('div', {
         'data-cb-cover-source': ref ? 'cover' : (coverImg ? 'page' : 'none'),
         'data-cb-cover-band': band || '',
-        class: 'flex flex-col items-center ' + justify + ' min-h-[60vh] relative overflow-hidden rounded-lg',
+        class: 'flex flex-col items-center ' + justify + ' ' + lay.frame + ' relative overflow-hidden rounded-lg',
         style: 'background: linear-gradient(135deg, #2a1a3e 0%, #1e163e 50%, #34104a 100%);'
     }, [
         coverImg ? m('img', {
             'data-cb-cover-image': true,
             src: coverImg,
-            class: 'absolute inset-0 w-full h-full object-cover ' + (ref ? 'opacity-100' : 'opacity-50')
+            class: 'absolute inset-0 w-full h-full ' + lay.image + ' ' + (ref ? 'opacity-100' : 'opacity-50')
         }) : null,
-        m('div', { class: 'relative z-10 text-center p-8' + (ref ? ' bg-black/40 backdrop-blur-sm rounded-lg m-4' : '') }, [
+        m('div', { class: 'relative z-10 text-center ' + lay.block }, [
             m('h1', {
-                class: 'text-4xl font-bold text-white mb-3',
+                class: lay.title,
                 style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;'
             }, readerTitle()),
-            m('p', { class: 'text-lg text-gray-300 opacity-70' },
-                readerPages.length + ' Page' + (readerPages.length !== 1 ? 's' : '')),
-            m('button', {
-                class: 'mt-8 px-6 py-2 bg-white/20 hover:bg-white/30 text-white rounded-full backdrop-blur-sm transition-colors',
-                onclick: function () { nav.goToPage(1); }
-            }, [
-                m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
-                'Begin'
+            m('div', { class: lay.meta }, [
+                m('p', { class: lay.count },
+                    readerPages.length + ' Page' + (readerPages.length !== 1 ? 's' : '')),
+                m('button', {
+                    class: lay.button + ' bg-white/20 hover:bg-white/30 text-white rounded-full backdrop-blur-sm transition-colors',
+                    onclick: function () { nav.goToPage(1); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
+                    'Begin'
+                ])
             ])
         ])
     ]);
@@ -2932,10 +2961,21 @@ let reviewError = null;
 let reviewRendering = false;
 let reviewGroupId = null;
 let reviewExporting = false;   // toolbar Export-as-HTML in-flight flag
+// P9-8 (238 k): the review's cover-art view (GET /{book}/covers, read with the pages); null when unread or
+// the read failed. Only the export reads it.
+let reviewCovers = null;
+
+// The review export's cover image: the approved COVER render when the book has one (the same source as the
+// reader's cover page, P9-8 238 k), else page 1's already-resolved preview as before; null with neither.
+function reviewCoverImageUrl() {
+    let ref = coverImageRefFor(reviewCovers, 'COVER', false);
+    if (ref) return chapImageUrl(ref);
+    return reviewScenes.length ? (reviewSceneImageUrls[reviewScenes[0].objectId] || null) : null;
+}
 
 // Deferred Stage-1 item: export the reviewed book as a self-contained HTML file (same engine the
 // reader uses). Images come from the already-resolved review previews (reviewSceneImageUrls), so the
-// export reflects exactly what the reviewer sees.
+// export reflects exactly what the reviewer sees; the cover is the approved COVER render when there is one.
 async function exportReviewBook() {
     if (reviewExporting || !reviewScenes.length) return;
     reviewExporting = true;
@@ -2945,9 +2985,7 @@ async function exportReviewBook() {
             pages: reviewScenes,
             title: (reviewBook && (reviewBook.name || reviewBook.slug)) || 'ChapBook',
             imageUrlFor: function (s) { return reviewSceneImageUrls[s.objectId] || null; },
-            coverImageUrl: function () {
-                return reviewScenes.length ? (reviewSceneImageUrls[reviewScenes[0].objectId] || null) : null;
-            },
+            coverImageUrl: reviewCoverImageUrl,
             // Thread the review book's fixPageHeight clamp into the shared export engine.
             buildPageHtml: function (p, i, imgB64, total) {
                 return chapExportPageHtml(p, i, imgB64, total, !!(reviewBook && reviewBook.fixPageHeight));
@@ -3280,6 +3318,7 @@ async function loadReviewBook(bookObjectId) {
     sceneOverrideExpanded = {};
     // Landscape-prompt review: drop any prior book's resolved preview URLs.
     reviewSceneImageUrls = {};
+    reviewCovers = null;
     m.redraw();
     try {
         try {
@@ -3302,7 +3341,14 @@ async function loadReviewBook(bookObjectId) {
             reviewBook = null;
         }
         // bookPages returns ordered scenes with poemStanza + title already populated (6D verified).
-        let pages = await bookPages(bookObjectId);
+        // The cover-art view rides along for the export's cover (P9-8, 238 k; find-only on the server, as the
+        // reader reads it); its failure never blocks the pages.
+        let loaded = await Promise.all([
+            bookPages(bookObjectId),
+            getCovers(bookObjectId).catch(function () { return null; })
+        ]);
+        let pages = loaded[0];
+        reviewCovers = loaded[1] || null;
         reviewScenes = (Array.isArray(pages) ? pages : []).map(function (pg) {
             return {
                 objectId: pg.objectId,
@@ -4441,6 +4487,7 @@ const ChapBookReview = {
         bookSdExpanded = false;
         // Landscape-prompt review: reset per-scene preview URLs so a re-entered review starts fresh
         reviewSceneImageUrls = {};
+        reviewCovers = null;
         // Issue 8: reset render dialog state so the SD config modal starts fresh
         showRenderDialog = false;
         pendingRenderBookId = null;
@@ -4682,7 +4729,24 @@ export function __setReviewStateForTest(patch) {
     if ('reviewGroupId' in patch) reviewGroupId = patch.reviewGroupId;
     if ('reviewScenes' in patch) reviewScenes = patch.reviewScenes;
     if ('roleWarning' in patch) roleWarning = patch.roleWarning;
+    // P9-8: the review export's inputs.
+    if ('reviewBook' in patch) reviewBook = patch.reviewBook;
+    if ('reviewCovers' in patch) reviewCovers = patch.reviewCovers || null;
+    if ('reviewSceneImageUrls' in patch) reviewSceneImageUrls = patch.reviewSceneImageUrls || {};
+    if ('reviewExporting' in patch) reviewExporting = !!patch.reviewExporting;
 }
+// Exported for Vitest (P9-8, 240 d): seed the session's chat-config refs and the books it knows, so
+// chapBookCarriedChatConfig can be exercised without mounting any route.
+export function __setChatConfigStateForTest(patch) {
+    patch = patch || {};
+    if ('configChatConfigRef' in patch) configChatConfigRef = patch.configChatConfigRef;
+    if ('renderChatConfigRef' in patch) renderChatConfigRef = patch.renderChatConfigRef;
+    if ('createChatConfigRef' in patch) createChatConfigRef = patch.createChatConfigRef;
+    if ('readerBookObjectId' in patch) readerBookObjectId = patch.readerBookObjectId;
+    if ('reviewBookObjectId' in patch) reviewBookObjectId = patch.reviewBookObjectId;
+    if ('myBooks' in patch) myBooks = Array.isArray(patch.myBooks) ? patch.myBooks : [];
+}
+export { chapBookCarriedChatConfig, effectiveChatConfigRef, exportReviewBook as __exportReviewBookForTest, reviewCoverImageUrl as __reviewCoverImageUrlForTest };
 // Exported for Vitest (P9-4): seed the reader's module state and render its cover slot without mounting the route.
 export function __setReaderStateForTest(patch) {
     patch = patch || {};

@@ -10,7 +10,8 @@
  * Every compose (empty-state compose, Re-compose, Compose book…) sends the header's "Chat Config" pick by NAME
  * as chatConfigName, as the ChapBook render dialog and the PictureBook wizard do: a compose without one falls
  * to the organization's generalChat, which on the Docker stack has no LLM key. The default is resolved
- * library-only (contentAnalysis, then generalChat) and a user pick always wins; the pick is per book.
+ * library-only (contentAnalysis, then generalChat) and a user pick always wins; the pick is per book. A
+ * ChapBook opens with the config its own screens carry (carriedBookChatConfig, P9-8 240 d) before that default.
  *
  * Cover mode (V3 §40, P9-4): the same board over a cover-type composition keyed by purpose instead of scene
  * (COVER, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART). Every renderer below is composition-keyed, so the only
@@ -44,7 +45,7 @@ import {
     composeBook, composeScene, normalizeComposeJobResult, isComposeJobRefusal,
     bookPages, planScene, normalizePlan, degradationSummary,
     COVER_PURPOSES, coverPurposeOf, coverPurposeLabel, coverPathWord, getCovers, getCover, createCover,
-    renderCover, patchCover, planCover, approveArtifact, isPinnedNodeRefusal
+    renderCover, patchCover, planCover, approveArtifact, isPinnedNodeRefusal, carriedBookChatConfig
 } from '../workflows/pictureBookWorkflow.js';
 
 // ── Module state ───────────────────────────────────────────────────────
@@ -1629,7 +1630,9 @@ async function init(vnode) {
         sceneObjectId = sid;
         coverPurpose = cp;
         resetState();
-        chatConfigRef = null;
+        // P9-8 (240 d): a ChapBook opens with the chat config its own screens carry (registered by the ChapBook
+        // feature; null for a PictureBook or an unknown book), else the library default resolves below.
+        chatConfigRef = carriedBookChatConfig(bid);
         chatConfigResolving = false;
         loadSeq++;
         ensureChatConfigDefault();

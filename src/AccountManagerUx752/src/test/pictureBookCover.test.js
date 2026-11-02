@@ -886,7 +886,62 @@ describe('PictureBook reader cover page', () => {
         expect(v.attrs['data-pb2-cover-source']).toBe('cover');
         expect(findAll(v, n => n.attrs['data-pb2-cover-image'])[0].attrs.src).toBe(MEDIA + '/Pb/covers/cover-r1.png');
     });
+    it('238 d: with a real cover the frame is a fixed-aspect square showing the whole render and the title block is slim, in the band (TOP / BOTTOM / none); the page-1 fallback keeps the wide dimmed backdrop', () => {
+        ['top', 'bottom', 'none'].forEach(band => {
+            pbf.__setPbHealthStateForTest({ pb2Covers: wf.normalizeCoverView(coverViewWire({ covers: { COVER: renderedEntryWire({ titleSafeBand: band }) } })) });
+            let v = pbf.__renderPb2CoverForTest();
+            expect(v.attrs['data-pb2-cover-source']).toBe('cover');
+            expect(v.attrs['data-pb2-cover-band']).toBe(band === 'none' ? '' : band.toUpperCase());
+            expect(v.attrs.className).toContain(band === 'top' ? 'justify-start' : (band === 'bottom' ? 'justify-end' : 'justify-center'));
+            assertCoverFrame(v, 'data-pb2-cover-image', 'data-pb2-cover-count');
+            expect(textOf(v)).toContain('Harlot\'s Eight');
+        });
+        pbf.__setPbHealthStateForTest({ pb2Covers: null });
+        let v = pbf.__renderPb2CoverForTest();
+        expect(v.attrs['data-pb2-cover-source']).toBe('page');
+        assertFallbackFrame(v, 'data-pb2-cover-image', 'data-pb2-cover-count');
+    });
 });
+
+// 238 d (P9-8): the real-cover frame is a square sized to the viewport height (never min-h-[60vh]), the image is
+// shown whole (object-contain, never object-cover) and undimmed, and the one scrimmed title block is the slim
+// one (no p-8, no text-4xl; the count and Begin on one row).
+function assertCoverFrame(v, imgAttr, countAttr) {
+    let root = v.attrs.className;
+    expect(root).toContain('aspect-square');
+    expect(root).toContain('max-w-[75vh]');
+    expect(root).not.toContain('min-h-[60vh]');
+    let img = findAll(v, n => n.attrs[imgAttr])[0];
+    expect(img.attrs.className).toContain('object-contain');
+    expect(img.attrs.className).not.toContain('object-cover');
+    expect(img.attrs.className).toContain('opacity-100');
+    let blocks = findAll(v, n => /bg-black\/40/.test(n.attrs.className || ''));
+    expect(blocks.length).toBe(1);
+    expect(blocks[0].attrs.className).toContain('py-3');
+    expect(blocks[0].attrs.className).not.toContain('p-8');
+    let h1 = findAll(v, n => n.tag === 'h1')[0];
+    expect(h1.attrs.className).toContain('text-2xl');
+    expect(h1.attrs.className).not.toContain('text-4xl');
+    let count = findAll(v, n => n.attrs[countAttr] || (n.tag === 'p' && /Page/.test(textOf(n))))[0];
+    expect(count.attrs.className).toContain('text-sm');
+    let button = findAll(v, n => n.tag === 'button')[0];
+    expect(button.attrs.className).toContain('py-1');
+    expect(button.attrs.className).not.toContain('mt-8');
+    expect(textOf(button)).toContain('Begin');
+}
+function assertFallbackFrame(v, imgAttr, countAttr) {
+    let root = v.attrs.className;
+    expect(root).toContain('min-h-[60vh]');
+    expect(root).not.toContain('aspect-square');
+    let img = findAll(v, n => n.attrs[imgAttr])[0];
+    expect(img.attrs.className).toContain('object-cover');
+    expect(findAll(v, n => /bg-black\/40/.test(n.attrs.className || '')).length).toBe(0);
+    expect(findAll(v, n => /\bp-8\b/.test(n.attrs.className || '')).length).toBe(1);
+    expect(findAll(v, n => n.tag === 'h1')[0].attrs.className).toContain('text-4xl');
+    let count = findAll(v, n => n.attrs[countAttr] || (n.tag === 'p' && /Page/.test(textOf(n))))[0];
+    expect(count.attrs.className).toContain('text-lg');
+    expect(findAll(v, n => n.tag === 'button')[0].attrs.className).toContain('mt-8');
+}
 
 describe('ChapBook reader cover page', () => {
     let cb;
@@ -929,5 +984,118 @@ describe('ChapBook reader cover page', () => {
         expect(v.attrs['data-cb-cover-source']).toBe('none');
         expect(findAll(v, n => n.attrs['data-cb-cover-image']).length).toBe(0);
         expect(cb.__readerCoverImageUrlForTest()).toBeNull();
+    });
+    it('238 d: with a real cover the frame is a fixed-aspect square showing the whole render and the title block is slim, in the band (TOP / BOTTOM / none); the page-1 fallback keeps the wide dimmed backdrop', () => {
+        ['top', 'bottom', 'none'].forEach(band => {
+            cb.__setReaderStateForTest({ readerCovers: wf.normalizeCoverView(coverViewWire({ covers: { COVER: renderedEntryWire({ titleSafeBand: band }) } })) });
+            let nav = { goToPage: vi.fn() };
+            let v = cb.__renderReaderCoverForTest(nav);
+            expect(v.attrs['data-cb-cover-source']).toBe('cover');
+            expect(v.attrs['data-cb-cover-band']).toBe(band === 'none' ? '' : band.toUpperCase());
+            expect(v.attrs.className).toContain(band === 'top' ? 'justify-start' : (band === 'bottom' ? 'justify-end' : 'justify-center'));
+            assertCoverFrame(v, 'data-cb-cover-image', 'data-cb-cover-count');
+            expect(textOf(v)).toContain('Tidewater');
+            expect(textOf(v)).toContain('1 Page');
+            findAll(v, n => n.tag === 'button')[0].attrs.onclick();
+            expect(nav.goToPage).toHaveBeenCalledWith(1);
+        });
+        cb.__setReaderStateForTest({ readerCovers: null });
+        let v = cb.__renderReaderCoverForTest({ goToPage: vi.fn() });
+        expect(v.attrs['data-cb-cover-source']).toBe('page');
+        assertFallbackFrame(v, 'data-cb-cover-image', 'data-cb-cover-count');
+    });
+    it('coverPageLayout is the one source of both readers\' frame / block classes', () => {
+        let withCover = wf.coverPageLayout(true);
+        let without = wf.coverPageLayout(false);
+        expect(withCover.frame).toBe('w-full max-w-[75vh] aspect-square mx-auto');
+        expect(withCover.image).toBe('object-contain');
+        expect(without.frame).toBe('min-h-[60vh]');
+        expect(without.image).toBe('object-cover');
+        ['frame', 'image', 'block', 'kicker', 'title', 'meta', 'count', 'button'].forEach(k => {
+            expect(typeof withCover[k]).toBe('string');
+            expect(typeof without[k]).toBe('string');
+        });
+    });
+});
+
+// ─────────────────────────────── cover board: the ChapBook's carried chat config (240 d) ───────────────────────────────
+
+describe('cover board chat config for a ChapBook (240 d)', () => {
+    let cb;
+    const CARRIED = { name: 'e2e-chapbook-llm', objectId: 'cc-e2e' };
+    beforeEach(async () => {
+        cb = await import('../features/chapBook.js');
+        cb.__setChatConfigStateForTest({ configChatConfigRef: null, renderChatConfigRef: null, createChatConfigRef: null, readerBookObjectId: null, reviewBookObjectId: null, myBooks: [] });
+    });
+    afterEach(() => {
+        cb.__setChatConfigStateForTest({ configChatConfigRef: null, renderChatConfigRef: null, createChatConfigRef: null, readerBookObjectId: null, reviewBookObjectId: null, myBooks: [] });
+    });
+
+    it('a ChapBook the session knows opens the cover board on the config its own panel carries — no library resolution', async () => {
+        cb.__setChatConfigStateForTest({ configChatConfigRef: CARRIED, readerBookObjectId: BOOK });
+        LLMConnector.resolveConfig.mockResolvedValue({ name: 'contentAnalysis', objectId: 'cc-ca' });
+        let calls = wire();
+        initCover('cover');
+        await waitFor(() => st().board && st().plan && st().covers && !st().planLoading && !st().chatConfigResolving);
+        expect(st().chatConfigRef).toEqual(CARRIED);
+        expect(LLMConnector.resolveConfig).not.toHaveBeenCalled();
+        expect(textOf(one(view(), 'pb-cmp-chatconfig'))).toContain('e2e-chapbook-llm');
+        expect(seqOf(calls)).toEqual(['GET ' + PB + '/pages', BOARD_READ, OUTFITS_READ, COVERS_READ, PLAN_READ]);
+    });
+    it('a ChapBook that carries nothing, or a book the ChapBook feature does not know, falls back to the library default as before', async () => {
+        // Known ChapBook (in My ChapBooks), but no config picked or resolved on its screens yet.
+        cb.__setChatConfigStateForTest({ myBooks: [{ objectId: BOOK, name: 'Tidewater' }] });
+        LLMConnector.resolveConfig.mockImplementation(async name => name === 'contentAnalysis' ? { name: 'contentAnalysis', objectId: 'cc-ca' } : null);
+        wire();
+        initCover('cover');
+        await waitFor(() => st().board && !st().chatConfigResolving && st().chatConfigRef);
+        expect(LLMConnector.resolveConfig.mock.calls.map(c => c[0])).toEqual(['contentAnalysis']);
+        expect(st().chatConfigRef).toEqual({ name: 'contentAnalysis', objectId: 'cc-ca' });
+
+        // A different book carrying a pick on the ChapBook screens, but this book is not one the feature knows.
+        cmp.__setComposeStateForTest({ bookObjectId: null, coverPurpose: null, board: null, chatConfigRef: null, chatConfigResolving: false });
+        cb.__setChatConfigStateForTest({ configChatConfigRef: CARRIED, readerBookObjectId: 'some-other-chapbook', myBooks: [] });
+        LLMConnector.resolveConfig.mockClear();
+        wire();
+        initCover('cover');
+        await waitFor(() => st().board && !st().chatConfigResolving && st().chatConfigRef);
+        expect(LLMConnector.resolveConfig.mock.calls.map(c => c[0])).toEqual(['contentAnalysis']);
+        expect(st().chatConfigRef).toEqual({ name: 'contentAnalysis', objectId: 'cc-ca' });
+    });
+    it('chapBookCarriedChatConfig: reader / review / My ChapBooks identify the book; panel → render → create precedence (unchanged from effectiveChatConfigName); an empty name is nothing', () => {
+        expect(cb.chapBookCarriedChatConfig(BOOK)).toBeNull();
+        cb.__setChatConfigStateForTest({ createChatConfigRef: { name: 'fromCreate', objectId: 'c1' }, renderChatConfigRef: { name: 'fromRender', objectId: 'r1' } });
+        expect(cb.chapBookCarriedChatConfig(BOOK)).toBeNull();
+        cb.__setChatConfigStateForTest({ reviewBookObjectId: BOOK });
+        expect(cb.chapBookCarriedChatConfig(BOOK)).toEqual({ name: 'fromRender', objectId: 'r1' });
+        cb.__setChatConfigStateForTest({ reviewBookObjectId: null, myBooks: [{ objectId: 'cb-9' }, { objectId: BOOK }] });
+        expect(cb.chapBookCarriedChatConfig(BOOK)).toEqual({ name: 'fromRender', objectId: 'r1' });
+        expect(cb.chapBookCarriedChatConfig('cb-unknown')).toBeNull();
+        cb.__setChatConfigStateForTest({ configChatConfigRef: { name: 'fromPanel' } });
+        expect(cb.chapBookCarriedChatConfig(BOOK)).toEqual({ name: 'fromPanel', objectId: null });
+        expect(cb.effectiveChatConfigName()).toBe('fromPanel');
+        // An empty name is skipped exactly as the pre-existing name precedence skipped it (a whitespace-only name
+        // is left to the shared registry's trim in carriedBookChatConfig, tested below).
+        cb.__setChatConfigStateForTest({ configChatConfigRef: { name: '' }, renderChatConfigRef: null });
+        expect(cb.chapBookCarriedChatConfig(BOOK)).toEqual({ name: 'fromCreate', objectId: 'c1' });
+        cb.__setChatConfigStateForTest({ createChatConfigRef: null });
+        expect(cb.chapBookCarriedChatConfig(BOOK)).toBeNull();
+        expect(cb.effectiveChatConfigName()).toBeNull();
+    });
+    it('carriedBookChatConfig asks the registered providers in order, skips throwing / blank ones, and the registration is undoable', () => {
+        let unregA = wf.registerBookChatConfigProvider(id => { throw new Error('boom'); });
+        let unregB = wf.registerBookChatConfigProvider(id => id === 'b' ? { name: '  spaced  ', objectId: 'x' } : { name: '' });
+        let unregC = wf.registerBookChatConfigProvider(id => ({ name: 'third', objectId: null }));
+        try {
+            expect(wf.carriedBookChatConfig('b')).toEqual({ name: 'spaced', objectId: 'x' });
+            expect(wf.carriedBookChatConfig('z')).toEqual({ name: 'third', objectId: null });
+            expect(wf.carriedBookChatConfig(null)).toBeNull();
+            unregC();
+            expect(wf.carriedBookChatConfig('z')).toBeNull();
+            expect(typeof wf.registerBookChatConfigProvider(null)).toBe('function');
+        } finally {
+            unregA(); unregB(); unregC();
+        }
+        expect(wf.carriedBookChatConfig('b')).toBeNull();
     });
 });

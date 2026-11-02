@@ -2164,6 +2164,37 @@ export function coverImageRefFor(view, purpose, allowLatest) {
     return allowLatest ? entry.latest : null;
 }
 
+/**
+ * Pure (P9-8, 238 d): the readers' cover-page layout classes, shared by pictureBook.js renderPb2Cover and
+ * chapBook.js renderReaderCover so the two never drift. With a real (approved) cover the frame is a fixed-aspect
+ * square sized to the viewport height so the WHOLE render shows (object-contain - the old min-h-[60vh] +
+ * object-cover frame cropped the square), and the title block is slim enough to sit inside the composition's
+ * title-safe band (a quarter of the frame) instead of spilling over the art. Without a cover the readers keep
+ * the wide, dimmed page-1 backdrop exactly as before. The readers add their own colours / data hooks.
+ * → {frame, image, block, kicker, title, meta, count, button}
+ */
+export function coverPageLayout(hasCover) {
+    return hasCover ? {
+        frame: 'w-full max-w-[75vh] aspect-square mx-auto',
+        image: 'object-contain',
+        block: 'px-5 py-3 m-4 max-w-[90%] bg-black/40 backdrop-blur-sm rounded-lg',
+        kicker: 'text-xs mb-1',
+        title: 'text-2xl font-bold text-white mb-1',
+        meta: 'flex items-center justify-center gap-3 mt-1',
+        count: 'text-sm text-gray-300 opacity-80',
+        button: 'px-4 py-1 text-sm'
+    } : {
+        frame: 'min-h-[60vh]',
+        image: 'object-cover',
+        block: 'p-8',
+        kicker: 'text-sm mb-2',
+        title: 'text-4xl font-bold text-white mb-3',
+        meta: '',
+        count: 'text-lg text-gray-300 opacity-70',
+        button: 'mt-8 px-6 py-2'
+    };
+}
+
 /** GET /{book}/covers → normalizeCoverView. Read-only on the server. 404 book. */
 export async function getCovers(pb2BookObjectId) {
     return normalizeCoverView(await wfFetch('/' + pb2BookObjectId + '/covers', { method: 'GET' }, 'getCovers failed'));
@@ -2259,4 +2290,35 @@ export async function patchCover(pb2BookObjectId, purpose, delta) {
 /** POST /{book}/covers/{purpose}/plan {preset?, promptOverride?, raw?, model?} → the cover's illustration plan (not persisted; 400 when the composition has nothing to render from yet). */
 export function planCover(pb2BookObjectId, purpose, body) {
     return wfFetch('/' + pb2BookObjectId + '/covers/' + coverPathWord(purpose) + '/plan', { method: 'POST', body: body || {} }, 'Could not plan the cover');
+}
+
+// ── Carried chat config (P9-8, 240 d) ────────────────────────────────────────
+// The compose board defaults its chat-config picker to the client library default (contentAnalysis → generalChat),
+// which is right for a PictureBook but wrong for a ChapBook whose own screens already carry a chat config:
+// olio.pb.book has no chatConfig field, so a ChapBook's config lives only in chapBook.js's session state and
+// goes out by NAME on create / render / analyze. The ChapBook feature is gated and lazily loaded separately
+// from the board, so rather than a static import the feature registers a provider here when it loads; the
+// board asks the providers for the book it is opening and seeds its picker with the first {name, objectId}
+// that answers, falling back to the library default only when none does.
+let bookChatConfigProviders = [];
+
+/** Register `fn(bookObjectId) → {name, objectId} | null`; returns the unregister function. */
+export function registerBookChatConfigProvider(fn) {
+    if (typeof fn === 'function' && bookChatConfigProviders.indexOf(fn) < 0) bookChatConfigProviders.push(fn);
+    return function () {
+        let i = bookChatConfigProviders.indexOf(fn);
+        if (i >= 0) bookChatConfigProviders.splice(i, 1);
+    };
+}
+
+/** Pure over the registry: the first provider's {name, objectId} with a non-blank name for this book, else null. */
+export function carriedBookChatConfig(bookObjectId) {
+    if (!bookObjectId) return null;
+    for (let i = 0; i < bookChatConfigProviders.length; i++) {
+        let ref = null;
+        try { ref = bookChatConfigProviders[i](bookObjectId); } catch (_) { ref = null; }
+        let name = ref && ref.name != null ? String(ref.name).trim() : '';
+        if (name) return { name: name, objectId: ref.objectId != null ? ref.objectId : null };
+    }
+    return null;
 }
