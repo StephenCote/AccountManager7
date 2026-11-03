@@ -24,6 +24,8 @@ import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
+import org.cote.accountmanager.olio.illustration.RendererCapabilities;
+import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StrategySelector;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -33,6 +35,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
@@ -323,6 +326,72 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		assertEquals(1, countPrefix(out, ConfigNotApplied.SKIP_LANDSCAPE));
 		assertEquals(1, countPrefix(out, ConfigNotApplied.SCENE_CREATIVITY));
 		assertEquals(0, countPrefix(out, ConfigNotApplied.STYLE_CLAUSE));
+	}
+
+	/// P10-A 5 (V3 ledger 6.C 239 c): the chat BASE request is family-mapped where it is built. The same
+	/// saved config (SDXL knobs cfg 7 / dpmpp_2m / karras plus flux2Cfg / flux2Sampler / flux2Scheduler)
+	/// is sent with the FLUX.2 knobs on a resolved FLUX.2 pick and untouched on an SDXL pick; an out-of-range
+	/// flux2Cfg is clamped into capabilities.json's flux2* range and reported once as CFG_CLAMPED, alongside
+	/// whatever the list already carried. No renderer: the pick is handed in, not resolved.
+	@Test
+	public void baseRequestTakesTheFamilyKnobsOfThePick() throws Exception {
+		BaseRecord cfg = sparseConfig(map("style", "custom", "customPrompt", CUSTOM_STYLE,
+			"cfg", 7, "sampler", "dpmpp_2m", "scheduler", "karras",
+			"flux2Cfg", 2.5, "flux2Sampler", "res_multistep", "flux2Scheduler", "beta"));
+		Chat.ScenePromptResult scene = scene(null, null, CHAR_NEGATIVE);
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null);
+		CompiledPrompt compiled = plan.getCompiled().get(RenderPlan.STAGE_BASE);
+		assertNotNull(compiled);
+		assertEquals(7, plan.getConfig().get("cfg"));
+		assertEquals(2.5, ((Number) plan.getConfig().get("flux2Cfg")).doubleValue(), 0.0);
+
+		RenderPlan.ModelPick flux2 = new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, "flux2Klein_9b", "flux2*", "TEST", ModelResolver.Reason.OK.name(), false, null);
+		RenderPlan.ModelPick sdxl = new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, "OfficialStableDiffusion/sd_xl_base_1.0.safetensors", "*xl*", "TEST", ModelResolver.Reason.OK.name(), false, null);
+		assertTrue(flux2.isResolved());
+		assertTrue(sdxl.isResolved());
+
+		List<String> na = new ArrayList<>();
+		StageRequest f = ChatSceneRenderUtil.baseRequest(plan, flux2, compiled, na);
+		assertEquals(RenderPlan.STAGE_BASE, f.getStage());
+		assertEquals("flux2Klein_9b", f.getModel());
+		assertEquals(2.5, f.getCfg(), 0.0);
+		assertEquals("res_multistep", f.getSampler());
+		assertEquals("beta", f.getScheduler());
+		assertEquals(plan.getPreset().getSteps(), f.getSteps());
+		assertEquals(plan.getCanvas().getWidth(), f.getWidth());
+		assertEquals(plan.getCanvas().getHeight(), f.getHeight());
+		assertEquals(1, f.getImages());
+		assertFalse(f.isHires());
+		assertEquals(StageRequest.SEED_RANDOM, f.getSeed());
+		assertTrue("in-range flux2Cfg reports nothing: " + na, na.isEmpty());
+
+		StageRequest s = ChatSceneRenderUtil.baseRequest(plan, sdxl, compiled, na);
+		assertEquals("OfficialStableDiffusion/sd_xl_base_1.0.safetensors", s.getModel());
+		assertEquals(7.0, s.getCfg(), 0.0);
+		assertEquals("dpmpp_2m", s.getSampler());
+		assertEquals("karras", s.getScheduler());
+		assertEquals(plan.getPreset().getSteps(), s.getSteps());
+		assertTrue("SDXL cfg 7 is inside *xl*'s range: " + na, na.isEmpty());
+
+		BaseRecord hot = sparseConfig(map("style", "custom", "customPrompt", CUSTOM_STYLE,
+			"cfg", 7, "sampler", "dpmpp_2m", "scheduler", "karras", "flux2Cfg", 7.0));
+		RenderPlan hotPlan = ChatSceneRenderUtil.buildPlan(hot, scene, SYS_OID, USR_OID, null, null, null);
+		CompiledPrompt hotCompiled = hotPlan.getCompiled().get(RenderPlan.STAGE_BASE);
+		List<String> carried = new ArrayList<>();
+		carried.add(ConfigNotApplied.HIRES + ": carried in by the caller");
+		StageRequest h = ChatSceneRenderUtil.baseRequest(hotPlan, flux2, hotCompiled, carried);
+		RendererCapabilities caps = RendererCapabilities.forModel("flux2Klein_9b");
+		assertNotNull(caps);
+		assertEquals(RendererCapabilities.PATTERN_FLUX2, caps.getPattern());
+		assertEquals(caps.getCfgMax(), h.getCfg(), 0.0);
+		assertEquals("euler", h.getSampler());
+		assertEquals("simple", h.getScheduler());
+		logger.info("configNotApplied: " + carried);
+		assertEquals(carried.toString(), 2, carried.size());
+		assertEquals(1, countPrefix(carried, ConfigNotApplied.HIRES));
+		assertEquals(1, countPrefix(carried, ConfigNotApplied.CFG_CLAMPED));
+		String clamp = carried.get(1);
+		assertTrue(clamp, clamp.contains("BASE cfg 7 is outside the flux2* family's range [1, 3.50]; sent 3.50"));
 	}
 
 	// ─────────────────────────────── (c) RenderFailure statuses ───────────────────────────────

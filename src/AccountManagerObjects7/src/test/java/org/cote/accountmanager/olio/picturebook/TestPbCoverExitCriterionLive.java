@@ -32,14 +32,18 @@ import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.illustration.ComfyGraph;
 import org.cote.accountmanager.olio.illustration.ImageDims;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
+import org.cote.accountmanager.olio.illustration.RendererCapabilities;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
+import org.cote.accountmanager.olio.illustration.WorkflowCompiler;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.CastTier;
 import org.cote.accountmanager.olio.picturebook.PbCoverUtil.CoverResult;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.Flux2Defaults;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -326,7 +330,9 @@ public class TestPbCoverExitCriterionLive extends BaseTest {
 			assertNotNull("variant " + i + " generator request", req);
 			assertTrue("variant " + i + " generator request is sanitized", PbArtifactUtil.isSanitized(req));
 			log("variant " + i + " references=" + PbArtifactUtil.referenceArtifactIdsOf(finals.get(i)));
+			assertFlux2FamilyKnobs(i, req);
 		}
+		log("configNotApplied=" + out.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED));
 
 		/// Approval. Auto-approve is a QA verdict on a real image - a model result - so only its invariant is
 		/// asserted; whatever it did, the book must end with exactly one APPROVED cover artifact.
@@ -585,6 +591,34 @@ public class TestPbCoverExitCriterionLive extends BaseTest {
 		BaseRecord created = ioContext.getAccessPoint().create(u, image);
 		assertNotNull("data " + name, created);
 		return created;
+	}
+
+	/// P10-A 5 (239 c): every task is pinned to the FLUX.2 checkpoint, so the request each final keeps must carry the
+	/// FLUX.2 family knobs - cfg inside capabilities.json's flux2* range and the resource's sampler / scheduler (the
+	/// fixture config carries no flux2Sampler / flux2Scheduler) - never the SDXL-tuned cfg 7 / dpmpp_2m / karras that
+	/// 239 c measured. Both request records carry the knobs under the Swarm key names: the T2I record as sent, the
+	/// graph record (graphHash present) as the graph was compiled from, with the negative inside its `inputs` as the
+	/// `negative` text tag. The knobs are logged so the hand-back can quote them.
+	private void assertFlux2FamilyKnobs(int i, String requestJson) {
+		Map<?, ?> sent = JSONUtil.importObject(requestJson, Map.class);
+		assertNotNull("variant " + i + " generator request parses", sent);
+		boolean graph = (sent.get("graphHash") != null);
+		Object negative = sent.get("negativeprompt");
+		if(graph && sent.get("inputs") instanceof Map) {
+			negative = ((Map<?, ?>) sent.get("inputs")).get(ComfyGraph.inputKey(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_NEGATIVE));
+		}
+		log("variant " + i + " request knobs (" + (graph ? "graph " + sent.get("graphHash") : "t2i") + "): model=" + sent.get("model")
+			+ " cfgscale=" + sent.get("cfgscale") + " steps=" + sent.get("steps") + " sampler=" + sent.get("sampler")
+			+ " scheduler=" + sent.get("scheduler") + " negative=" + negative);
+		RendererCapabilities caps = RendererCapabilities.forModel(flux2Model);
+		assertNotNull("capabilities for " + flux2Model, caps);
+		assertEquals("the pinned checkpoint is a FLUX.2 family model", RendererCapabilities.PATTERN_FLUX2, caps.getPattern());
+		assertTrue("variant " + i + " cfgscale is a number: " + sent.get("cfgscale"), sent.get("cfgscale") instanceof Number);
+		double cfgSent = ((Number) sent.get("cfgscale")).doubleValue();
+		assertTrue("variant " + i + " cfg " + cfgSent + " inside " + caps.getPattern() + "'s range [" + caps.getCfgMin() + ", " + caps.getCfgMax() + "]",
+			cfgSent >= caps.getCfgMin() && cfgSent <= caps.getCfgMax());
+		assertEquals("variant " + i + " sampler is the FLUX.2 resource's", Flux2Defaults.sampler(), sent.get("sampler"));
+		assertEquals("variant " + i + " scheduler is the FLUX.2 resource's", Flux2Defaults.scheduler(), sent.get("scheduler"));
 	}
 
 	private BaseRecord pinBookStyle(BaseRecord u, BaseRecord bk, String tag, String model) throws Exception {

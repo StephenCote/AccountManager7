@@ -221,12 +221,24 @@ public final class SwarmRendererAdapter implements RendererAdapter {
 	}
 
 	/// The stage's request record: what was sent minus the graph body and the images (both are
-	/// artifacts of their own), so it is safe to persist as is.
+	/// artifacts of their own), so it is safe to persist as is. The sampler knobs the graph was compiled
+	/// from (WorkflowCompiler.compile reads them off this request; the executor aligns `steps` to the
+	/// compiled sampler's literal before it executes) are recorded under the T2I record's Swarm key
+	/// names, so one reader covers both paths and a family mismatch (ledger §6.C 239 c; P10-A 5) is
+	/// auditable from a graph-path artifact too. The negative is already in the inputs (`negative` tag).
 	static String graphRequestJson(StageRequest request, String graphHash) {
 		Map<String, Object> m = new LinkedHashMap<>();
 		m.put("stage", request.getStage());
 		m.put("model", request.getModel());
 		m.put("images", Integer.valueOf(request.getImages()));
+		m.put("steps", Integer.valueOf(request.getSteps()));
+		m.put("cfgscale", Double.valueOf(request.getCfg()));
+		if(request.getSampler() != null) {
+			m.put("sampler", request.getSampler());
+		}
+		if(request.getScheduler() != null) {
+			m.put("scheduler", request.getScheduler());
+		}
 		m.put("graphHash", graphHash);
 		m.put("inputs", request.getInputs().redacted());
 		m.put("referenceArtifactIds", request.getInputs().getReferenceArtifactIds());

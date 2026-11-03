@@ -2886,7 +2886,9 @@ const ChapBookReader = {
         if (readerBookObjectId) loadReaderBook(readerBookObjectId);
     },
     view: function () {
-        return m('div', [
+        // flex-1: [role=main] is a flex row (router.js pageLayout), so without it this wrapper sizes to
+        // the shell's max-w-3xl content and sits left-pinned instead of filling main (ledger §6.C 244 c).
+        return m('div', { class: 'flex-1' }, [
             // Issue 9: role warning banner (rendered above the shared reader; the shell's fullscreen
             // overlay covers it when active).
             roleWarning ? m('div', { class: 'px-4 pt-4 max-w-3xl mx-auto' },
@@ -2898,13 +2900,15 @@ const ChapBookReader = {
             // Shared collapsible config panel (same one shown on create/review) — hosts the single
             // fixPageHeight toggle, design defaults, the poem queue, and the primary actions including
             // Render. Bound to readerBook so its fixPageHeight clamp gives immediate visual feedback.
-            m(ChapBookConfig, {
+            // px-4 pt-4: the panel has no gutter of its own; with the wrapper now filling main it would
+            // run edge-to-edge (the role warning above and the shell use the same p-4 gutter).
+            m('div', { class: 'px-4 pt-4' }, m(ChapBookConfig, {
                 mode: 'read',
                 book: readerBook,
                 bookObjectId: readerBookObjectId,
                 onRender: renderReaderBook,
                 rendering: readerRendering
-            }),
+            })),
 
             // Shared page-flip reader (same component PictureBook uses).
             m(ReaderShell, {

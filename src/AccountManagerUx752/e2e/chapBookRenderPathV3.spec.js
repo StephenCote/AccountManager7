@@ -191,9 +191,10 @@ test.describe('ChapBook on the v3 render path — LIVE SD over REST', () => {
         // P2-6 (design §24 as-built): the page compiled through the plan path, and what the v1 page path applied
         // that the plan does not (sd.config style clause, hires, the default negative) is reported per render as
         // "CODE: text" entries, never dropped silently. These are not degradations (logged, not asserted empty).
+        // CFG_CLAMPED (P10-A 5): the config's cfg was outside the picked family's capabilities.json range.
         expect(Array.isArray(jobNode.configNotApplied), 'P2-6: the node outcome reports configNotApplied').toBe(true);
         for (const entry of jobNode.configNotApplied) {
-            expect(entry, 'configNotApplied entry shape').toMatch(/^(HIRES|STYLE_CLAUSE|DEFAULT_NEGATIVE): \S/);
+            expect(entry, 'configNotApplied entry shape').toMatch(/^(HIRES|STYLE_CLAUSE|DEFAULT_NEGATIVE|CFG_CLAMPED): \S/);
         }
         console.log('[v3 job] configNotApplied=' + JSON.stringify(jobNode.configNotApplied) + ' degradations=' + JSON.stringify(jobNode.degradations || []));
 

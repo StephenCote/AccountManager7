@@ -573,6 +573,45 @@ public class TestFlux2Compiler {
 		assertEquals(RendererCapabilities.PATTERN_FLUX2, compiler.family());
 	}
 
+	/// P10-A 5 (ledger §6.C 239 c family): a blank negative on a resolved FLUX.2 pick compiles to the family's
+	/// flux2Defaults.json negativePrompt; anything authored (style exclusions, config negativePrompt) wins; an
+	/// unresolved pick or a non-FLUX.2 family gets no family default.
+	@Test
+	public void blankNegativeOnAResolvedFlux2PickTakesTheFamilyDefault() {
+		String fam = org.cote.accountmanager.olio.sd.Flux2Defaults.negativePrompt();
+		assertFalse("precondition: the resource names a negative", fam == null || fam.isBlank());
+		Map<String, Object> noNeg = config(null);
+		noNeg.remove("negativePrompt");
+
+		RenderPlan blank = base(PbStrategyEnumType.TEXT_ONLY).config(noNeg).style(null).build();
+		assertEquals(fam, compiler.compile(blank, RenderPlan.STAGE_BASE, null).getNegative());
+		RenderPlan blankStyle = base(PbStrategyEnumType.TEXT_ONLY).config(noNeg).style(style(STYLE, "   ")).build();
+		assertEquals("blank exclusions are blank", fam, compiler.compile(blankStyle, RenderPlan.STAGE_BASE, null).getNegative());
+
+		/// authored negatives win, in the existing order (style exclusions, then the config's)
+		assertEquals("blurry", compiler.compile(base(PbStrategyEnumType.TEXT_ONLY).style(null).build(), RenderPlan.STAGE_BASE, null).getNegative());
+		assertEquals("text, watermark", compiler.compile(base(PbStrategyEnumType.TEXT_ONLY).config(noNeg).build(), RenderPlan.STAGE_BASE, null).getNegative());
+		assertEquals("text, watermark, blurry", compiler.compile(base(PbStrategyEnumType.TEXT_ONLY).build(), RenderPlan.STAGE_BASE, null).getNegative());
+
+		/// the gate is the stage's pick: an unresolved FLUX.2 pick (reason not OK) and an SDXL location pick get nothing
+		RenderPlan unresolved = base(PbStrategyEnumType.TEXT_ONLY).config(noNeg).style(null)
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, FLUX, "flux2*", "DEPLOYMENT_DEFAULT", ModelResolver.Reason.NOT_INSTALLED.name(), true, null))
+			.build();
+		assertEquals("", compiler.compile(unresolved, RenderPlan.STAGE_BASE, null).getNegative());
+		RenderPlan xlPick = base(PbStrategyEnumType.TEXT_ONLY).config(noNeg).style(null)
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, XL, "*xl*", "DEPLOYMENT_DEFAULT", "OK", false, null))
+			.build();
+		assertEquals("", compiler.compile(xlPick, RenderPlan.STAGE_BASE, null).getNegative());
+		/// and DIRECT_REFERENCE reads the SCENE_DIRECT pick, which base() leaves on FLUX.2
+		RenderPlan direct = base(PbStrategyEnumType.DIRECT_REFERENCE).config(noNeg).style(null)
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, XL, "*xl*", "DEPLOYMENT_DEFAULT", "OK", false, null))
+			.actor(actor("a1", "Jideon", RenderPlan.ROLE_HERO, "a tall man", true, 1))
+			.build();
+		assertEquals(fam, compiler.compile(direct, RenderPlan.STAGE_BASE, null).getNegative());
+
+		assertFalse("the SDXL compiler is untouched", new SdxlCompiler().compile(blank, RenderPlan.STAGE_BASE, null).getNegative().contains(fam));
+	}
+
 	@Test
 	public void forPickIsFamilyFirstThenLegacyModelMatch() {
 		assertTrue(PromptCompilers.forPick(new RenderPlan.ModelPick(PbModelTaskEnumType.SCENE_DIRECT, FLUX, "flux2*", "DEPLOYMENT_DEFAULT", "OK", false, null)) instanceof Flux2Compiler);

@@ -136,6 +136,39 @@ public class TestInpaintRegionCompiler {
 		assertEquals("", compiler.compile(p, null, null).getPrompt());
 	}
 
+	/// P10-A 5: a blank negative takes flux2Defaults.json's negativePrompt only when the ACTOR_REGION pick (the
+	/// INPAINT pick, else the BASE-family pick) is a resolved FLUX.2 checkpoint; an SDXL INPAINT pick is left blank.
+	@Test
+	public void blankNegativeFollowsTheActorRegionPick() {
+		String fam = org.cote.accountmanager.olio.sd.Flux2Defaults.negativePrompt();
+		assertFalse("precondition: the resource names a negative", fam == null || fam.isBlank());
+		Map<String, Object> noNeg = config(null);
+		noNeg.remove("negativePrompt");
+		Actor bare = region("a3", "Tam", "a wiry young man").build();
+
+		assertEquals(fam, compiler.compile(base().config(noNeg).style(null).actor(bare).build(), bare, null).getNegative());
+		assertEquals("the config's negative wins", "blurry", compiler.compile(base().style(null).actor(bare).build(), bare, null).getNegative());
+		assertEquals("the style's exclusions win", "text, watermark", compiler.compile(base().config(noNeg).actor(bare).build(), bare, null).getNegative());
+
+		RenderPlan xlInpaint = base().config(noNeg).style(null)
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.INPAINT, "OfficialStableDiffusion/sd_xl_base_1.0.safetensors", "*xl*", "DEPLOYMENT_DEFAULT", "OK", false, null))
+			.actor(bare).build();
+		assertEquals("an SDXL INPAINT pick gets no FLUX.2 default", "", compiler.compile(xlInpaint, bare, null).getNegative());
+
+		/// an unresolved INPAINT pick is not the ACTOR_REGION pick: pickForStage falls through to the BASE
+		/// (SCENE_DIRECT) pick, which base() resolves on FLUX.2, so the family default applies again
+		RenderPlan unresolved = base().config(noNeg).style(null)
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.INPAINT, FLUX, "flux2*", "DEPLOYMENT_DEFAULT", ModelResolver.Reason.NOT_INSTALLED.name(), true, null))
+			.actor(bare).build();
+		assertEquals("the fall-through BASE pick decides", fam, compiler.compile(unresolved, bare, null).getNegative());
+		/// and when that BASE pick is SDXL too, nothing
+		RenderPlan xlBase = base().config(noNeg).style(null)
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.INPAINT, FLUX, "flux2*", "DEPLOYMENT_DEFAULT", ModelResolver.Reason.NOT_INSTALLED.name(), true, null))
+			.model(new RenderPlan.ModelPick(PbModelTaskEnumType.SCENE_DIRECT, "OfficialStableDiffusion/sd_xl_base_1.0.safetensors", "*xl*", "DEPLOYMENT_DEFAULT", "OK", false, null))
+			.actor(bare).build();
+		assertEquals("", compiler.compile(xlBase, bare, null).getNegative());
+	}
+
 	@Test
 	public void lorasOutsideTheBudgetAndRawIntentIgnored() {
 		Actor bare = region("a3", "Tam", "a wiry young man").build();

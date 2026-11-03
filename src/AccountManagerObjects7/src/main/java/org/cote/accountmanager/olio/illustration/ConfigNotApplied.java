@@ -26,6 +26,10 @@ public final class ConfigNotApplied {
 	/// The config's sceneCreativity; the plan path has no second denoise pass to apply it to.
 	public static final String SCENE_CREATIVITY = "SCENE_CREATIVITY";
 
+	/// The effective cfg was outside the picked model family's {@code cfgRange} (capabilities.json) and
+	/// was clamped to it before the request was sent (P10-A 5). Reported once per render, not per pass.
+	public static final String CFG_CLAMPED = "CFG_CLAMPED";
+
 	private ConfigNotApplied() {
 	}
 }

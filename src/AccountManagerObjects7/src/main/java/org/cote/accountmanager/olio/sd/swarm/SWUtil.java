@@ -212,19 +212,24 @@ public class SWUtil {
 		Integer cfgWidth = null;
 		Integer cfgHeight = null;
 		Double cfgCfgScale = null;
+		String cfgSampler = null;
+		String cfgScheduler = null;
 		if (sdConfig != null) {
 			try { cfgSteps = sdConfig.get("flux2Steps"); } catch (Exception e) { /* field may not exist */ }
 			try { cfgWidth = sdConfig.get("flux2Width"); } catch (Exception e) { /* field may not exist */ }
 			try { cfgHeight = sdConfig.get("flux2Height"); } catch (Exception e) { /* field may not exist */ }
 			try { cfgCfgScale = sdConfig.get("flux2Cfg"); } catch (Exception e) { /* field may not exist */ }
+			try { cfgSampler = sdConfig.get("flux2Sampler"); } catch (Exception e) { /* field may not exist */ }
+			try { cfgScheduler = sdConfig.get("flux2Scheduler"); } catch (Exception e) { /* field may not exist */ }
 		}
 		/// Per-book config override, else the editable resource. Two levels only - no Java constants.
 		s2i.setSteps(cfgSteps != null && cfgSteps > 0 ? cfgSteps : org.cote.accountmanager.olio.sd.Flux2Defaults.steps());
 		s2i.setCfgScale(cfgCfgScale != null && cfgCfgScale > 0 ? cfgCfgScale : org.cote.accountmanager.olio.sd.Flux2Defaults.cfgScale());
 		s2i.setWidth(cfgWidth != null && cfgWidth > 0 ? cfgWidth : org.cote.accountmanager.olio.sd.Flux2Defaults.width());
 		s2i.setHeight(cfgHeight != null && cfgHeight > 0 ? cfgHeight : org.cote.accountmanager.olio.sd.Flux2Defaults.height());
-		s2i.setSampler(org.cote.accountmanager.olio.sd.Flux2Defaults.sampler());
-		s2i.setScheduler(org.cote.accountmanager.olio.sd.Flux2Defaults.scheduler());
+		/// flux2Sampler / flux2Scheduler (P10-A 5) follow the same precedence as the four above.
+		s2i.setSampler(org.cote.accountmanager.olio.NarrativeUtil.isMeaningful(cfgSampler) ? cfgSampler.trim() : org.cote.accountmanager.olio.sd.Flux2Defaults.sampler());
+		s2i.setScheduler(org.cote.accountmanager.olio.NarrativeUtil.isMeaningful(cfgScheduler) ? cfgScheduler.trim() : org.cote.accountmanager.olio.sd.Flux2Defaults.scheduler());
 		s2i.setSeed(Math.abs(rand.nextInt()));
 		s2i.setImages(1);
 		/// No refiner: the SDXL refiner block the Kontext requests carried (refinercfgscale 7,

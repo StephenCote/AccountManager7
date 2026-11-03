@@ -17,6 +17,7 @@ import org.cote.accountmanager.olio.illustration.CanvasResolver;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
 import org.cote.accountmanager.olio.illustration.ConfigSnapshot;
+import org.cote.accountmanager.olio.illustration.FamilyRequest;
 import org.cote.accountmanager.olio.illustration.IllustrationModelPolicy;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.QualityPresets;
@@ -53,7 +54,10 @@ import org.cote.accountmanager.util.ByteModelUtil;
  * The style comes from the chat's saved SD config: its style clause is the plan's style, so
  * {@link ConfigNotApplied#STYLE_CLAUSE} cannot fire here; what the plan path does not apply are the v1
  * composite knobs ({@code hires}, {@code compositeMode}, {@code skipLandscape}, {@code sceneCreativity})
- * and the v1 hard-coded default negative, each reported under {@link ConfigNotApplied#KEY}.
+ * and the v1 hard-coded default negative, each reported under {@link ConfigNotApplied#KEY}. The request
+ * is built by {@link #baseRequest}: the pick's family maps the config's knobs (a FLUX.2 pick takes the
+ * FLUX.2 cfg / sampler / scheduler, and a blank negative compiles to the family's resource default) and
+ * clamps cfg into the family's range, reported as {@link ConfigNotApplied#CFG_CLAMPED} (P10-A 5).
  */
 public final class ChatSceneRenderUtil {
 
@@ -258,7 +262,32 @@ public final class ChatSceneRenderUtil {
 		}
 		Map<String, Object> cfg = plan.getConfig();
 		List<String> configNotApplied = configNotApplied(cfg, compiled, plan.getStrategy().getName().name());
+		StageRequest req = baseRequest(plan, pick, compiled, configNotApplied);
 
+		RendererAdapter adapter = new SwarmRendererAdapter(sdu);
+		StageResult result = adapter.execute(req, CancelToken.NONE);
+		if(!result.isOk()) {
+			String error = (result.getError() != null ? result.getError() : RendererAdapter.ERROR_NO_IMAGES);
+			int status = (RendererAdapter.ERROR_UNREACHABLE.equals(error) ? 503 : 500);
+			throw new RenderFailure(status, "Render of " + label + " failed: " + error);
+		}
+		StageImage img = result.getImages().get(0);
+		byte[] bytes = img.getBytes();
+		if(bytes == null || bytes.length == 0) {
+			throw new RenderFailure(500, "Rendered image for " + label + " decoded to empty bytes");
+		}
+		Long seed = (img.isSeedReported() ? Long.valueOf(img.getSeed()) : null);
+		BaseRecord data = persist(user, label, bytes, seed, sysCharOid, usrCharOid, plan, result.getRequestJson());
+		return new ChatSceneRender(plan, compiled, pick, data, seed, result.getRequestJson(), result.getDurationMs(),
+			degradations, configNotApplied);
+	}
+
+	/// The BASE request for a resolved pick: the config's cfg / sampler / scheduler (SDXL knobs), then the
+	/// pick's family mapping and cfg clamp applied once where the request is built ({@code FamilyRequest},
+	/// P10-A 5) - the same mapping the PictureBook executor applies, so a chat scene on a FLUX.2 pick is
+	/// sent with the FLUX.2 knobs and a clamp is reported as CFG_CLAMPED. Package-private for the unit test.
+	static StageRequest baseRequest(RenderPlan plan, RenderPlan.ModelPick pick, CompiledPrompt compiled, List<String> configNotApplied) {
+		Map<String, Object> cfg = plan.getConfig();
 		Object cfgVal = cfg.get("cfg");
 		double cfgScale = (cfgVal instanceof Number ? ((Number) cfgVal).doubleValue() : 7.0);
 		StageRequest req = StageRequest.builder()
@@ -277,23 +306,7 @@ public final class ChatSceneRenderUtil {
 			.hires(false)
 			.config(cfg)
 			.build();
-
-		RendererAdapter adapter = new SwarmRendererAdapter(sdu);
-		StageResult result = adapter.execute(req, CancelToken.NONE);
-		if(!result.isOk()) {
-			String error = (result.getError() != null ? result.getError() : RendererAdapter.ERROR_NO_IMAGES);
-			int status = (RendererAdapter.ERROR_UNREACHABLE.equals(error) ? 503 : 500);
-			throw new RenderFailure(status, "Render of " + label + " failed: " + error);
-		}
-		StageImage img = result.getImages().get(0);
-		byte[] bytes = img.getBytes();
-		if(bytes == null || bytes.length == 0) {
-			throw new RenderFailure(500, "Rendered image for " + label + " decoded to empty bytes");
-		}
-		Long seed = (img.isSeedReported() ? Long.valueOf(img.getSeed()) : null);
-		BaseRecord data = persist(user, label, bytes, seed, sysCharOid, usrCharOid, plan, result.getRequestJson());
-		return new ChatSceneRender(plan, compiled, pick, data, seed, result.getRequestJson(), result.getDurationMs(),
-			degradations, configNotApplied);
+		return FamilyRequest.apply(req, pick, cfg, configNotApplied);
 	}
 
 	/// The saved config's v1 composite knobs, each reported once; the style clause is applied here, so never STYLE_CLAUSE.

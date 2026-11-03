@@ -4,6 +4,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.awt.Color;
@@ -20,6 +22,8 @@ import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.illustration.CancelToken;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
+import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
+import org.cote.accountmanager.olio.illustration.FamilyRequest;
 import org.cote.accountmanager.olio.illustration.FixtureGraphClient;
 import org.cote.accountmanager.olio.illustration.MaskImage;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
@@ -70,8 +74,25 @@ import org.junit.Test;
  *     {@code flux2Defaults.json}'s cfg, sampler and scheduler.</li>
  * <li>{@link #sdxlPickIsUnchanged}: SDXL pick ({@code juggernautXL_ragnarokBy}), the same config -> the
  *     request still carries cfg 7.0 / dpmpp_2m / karras and the SDXL family's recommended steps.</li>
- * <li>{@link #helperChangesOnlyTheThreeKnobs}: the helper itself, no backend - steps, prompt, model, canvas,
- *     seed, images, hires and config survive; a null or zeroed config means the resource cfg.</li>
+ * <li>{@link #helperChangesOnlyTheThreeKnobs}: the helper itself ({@code FamilyRequest.apply}, P10-A 5), no
+ *     backend - steps, prompt, model, canvas, seed, images, hires and config survive; a null or zeroed config
+ *     means the resource cfg; null capabilities leave the request as it is.</li>
+ * </ol>
+ * P10-A 5 (§6.C 239 c family, 245 d): the mapping is {@code FamilyRequest.apply}, applied per stage from the
+ * stage's own pick, and every family's cfg is clamped into its capabilities.json {@code cfgRange}:
+ * <ol start="7">
+ * <li>{@link #helperTakesTheConfiguredFlux2SamplerAndScheduler}: the config's {@code flux2Sampler} /
+ *     {@code flux2Scheduler} win over the resource; unset, blank or the literal "null" mean the resource; an
+ *     SDXL pick never reads them.</li>
+ * <li>{@link #helperClampsCfgIntoTheFamilyRangeOnce}: {@code flux2Cfg 7} on a FLUX.2 pick goes out at the
+ *     family's cfgMax with one CFG_CLAMPED entry naming the stage, the value, the range and what was sent;
+ *     a second application changes nothing and reports nothing new.</li>
+ * <li>{@link #helperClampsTheSdxlCfgToo}: {@code cfg 12} on an SDXL pick goes out at the SDXL cfgMax.</li>
+ * <li>{@link #helperLeavesADegenerateRangeAlone}: a family whose range is {@code [x, x]} (*kontext*) clamps
+ *     nothing.</li>
+ * <li>{@link #outOfRangeCfgIsClampedOncePerRenderAcrossVariants}: two variants through
+ *     {@code renderPlanned} both go out clamped and the attempt reports CFG_CLAMPED once.</li>
+ * <li>{@link #sdxlPickOutOfRangeCfgIsClampedOnThePlanPath}: the SDXL clamp on the plan path itself.</li>
  * </ol>
  * The graph path sends the same three knobs (§6.C 245 g): {@code WorkflowCompiler.compile} puts the request's
  * sampler, scheduler and cfg into the generator params Swarm builds the graph from, so a referenced BASE and an
@@ -101,6 +122,11 @@ public class TestPbFlux2TextOnlyOffline extends BaseTest {
 	private static final double BOOK_FLUX2_CFG = 2.5;
 	/// a config-tier step count that the plan path must not send (steps are preset-governed, D6)
 	private static final int BOOK_FLUX2_STEPS = 6;
+	/// config-tier FLUX.2 sampler / scheduler (olio.sd.config flux2Sampler / flux2Scheduler, P10-A 5)
+	private static final String BOOK_FLUX2_SAMPLER = "res_multistep";
+	private static final String BOOK_FLUX2_SCHEDULER = "beta";
+	/// the disabled *kontext* family: cfgRange [1, 1], the degenerate case the clamp must leave alone
+	private static final String KONTEXT_MODEL = "flux1Kontext_dev";
 	private static final double EPS = 0.0001;
 	private static final String NO_QA_NOTE = "offline test: no QA provider";
 	/// the graph-path cases: two fixture actors with solid-colour portraits, as in TestPbRenderStagesOffline
@@ -209,15 +235,11 @@ public class TestPbFlux2TextOnlyOffline extends BaseTest {
 		Map<String, Object> cfg = sdxlConfig();
 		cfg.put("flux2Cfg", BOOK_FLUX2_CFG);
 		cfg.put("flux2Steps", BOOK_FLUX2_STEPS);
-		CompiledPrompt prompt = new CompiledPrompt(PROMPT, NEGATIVE, 0);
 		int presetSteps = familySteps(FLUX2_MODEL);
-		StageRequest req = StageRequest.builder()
-			.stage(RenderPlan.STAGE_BASE).prompt(prompt).model(FLUX2_MODEL)
-			.width(W).height(H).steps(presetSteps).cfg(SDXL_CFG)
-			.sampler(SDXL_SAMPLER).scheduler(SDXL_SCHEDULER)
-			.seed(777).images(2).hires(false).config(cfg).build();
+		StageRequest req = sdxlRequest(cfg, presetSteps);
+		List<String> notApplied = new ArrayList<>();
 
-		StageRequest out = PbNodeExecutor.flux2Request(req, cfg);
+		StageRequest out = FamilyRequest.apply(req, flux2Caps(), cfg, notApplied);
 		assertEquals("cfg", BOOK_FLUX2_CFG, out.getCfg(), EPS);
 		assertEquals("sampler", Flux2Defaults.sampler(), out.getSampler());
 		assertEquals("scheduler", Flux2Defaults.scheduler(), out.getScheduler());
@@ -232,15 +254,197 @@ public class TestPbFlux2TextOnlyOffline extends BaseTest {
 		assertFalse("hires", out.isHires());
 		assertEquals("config travels unchanged (the builder copies it)", cfg, out.getConfig());
 		assertFalse("no graph", out.isGraph());
+		assertTrue("2.5 is inside the FLUX.2 range: nothing reported", notApplied.isEmpty());
 
-		StageRequest defaults = PbNodeExecutor.flux2Request(req, null);
+		StageRequest defaults = FamilyRequest.apply(req, flux2Caps(), null, notApplied);
 		assertEquals("null config: resource cfg", Flux2Defaults.cfgScale(), defaults.getCfg(), EPS);
+		assertEquals("null config: resource sampler", Flux2Defaults.sampler(), defaults.getSampler());
 		assertEquals("null config: steps untouched", presetSteps, defaults.getSteps());
 
 		Map<String, Object> zeroed = sdxlConfig();
 		zeroed.put("flux2Cfg", 0.0);
-		StageRequest z = PbNodeExecutor.flux2Request(req, zeroed);
+		StageRequest z = FamilyRequest.apply(req, flux2Caps(), zeroed, notApplied);
 		assertEquals("zero flux2Cfg is unset: resource cfg", Flux2Defaults.cfgScale(), z.getCfg(), EPS);
+		assertTrue("nothing reported", notApplied.isEmpty());
+
+		assertSame("null capabilities (no family matched) leave the request as it is", req, FamilyRequest.apply(req, (RendererCapabilities) null, cfg, notApplied));
+		assertNull("a null request stays null", FamilyRequest.apply(null, flux2Caps(), cfg, notApplied));
+	}
+
+	@Test
+	public void helperTakesTheConfiguredFlux2SamplerAndScheduler() {
+		Map<String, Object> cfg = sdxlConfig();
+		cfg.put("flux2Cfg", BOOK_FLUX2_CFG);
+		cfg.put("flux2Sampler", BOOK_FLUX2_SAMPLER);
+		cfg.put("flux2Scheduler", BOOK_FLUX2_SCHEDULER);
+		StageRequest req = sdxlRequest(cfg, familySteps(FLUX2_MODEL));
+		StageRequest out = FamilyRequest.apply(req, flux2Caps(), cfg, new ArrayList<>());
+		assertEquals("the config's flux2Sampler wins over the resource", BOOK_FLUX2_SAMPLER, out.getSampler());
+		assertEquals("the config's flux2Scheduler wins over the resource", BOOK_FLUX2_SCHEDULER, out.getScheduler());
+		assertEquals("cfg", BOOK_FLUX2_CFG, out.getCfg(), EPS);
+		assertNotEquals("precondition: the configured sampler is not the resource's", Flux2Defaults.sampler(), BOOK_FLUX2_SAMPLER);
+		assertNotEquals("precondition: the configured scheduler is not the resource's", Flux2Defaults.scheduler(), BOOK_FLUX2_SCHEDULER);
+
+		/// an unset, blank or LLM-literal value means the resource governs (nullable column: every pre-existing row is null)
+		for(Object unset : new Object[] {null, "", "   ", "null"}) {
+			Map<String, Object> c2 = sdxlConfig();
+			c2.put("flux2Sampler", unset);
+			c2.put("flux2Scheduler", unset);
+			StageRequest o2 = FamilyRequest.apply(req, flux2Caps(), c2, new ArrayList<>());
+			assertEquals("sampler for '" + unset + "' is the resource's", Flux2Defaults.sampler(), o2.getSampler());
+			assertEquals("scheduler for '" + unset + "' is the resource's", Flux2Defaults.scheduler(), o2.getScheduler());
+		}
+
+		/// the SDXL pick never reads them
+		StageRequest sdxl = FamilyRequest.apply(req, sdxlCaps(), cfg, new ArrayList<>());
+		assertEquals("SDXL sampler stays", SDXL_SAMPLER, sdxl.getSampler());
+		assertEquals("SDXL scheduler stays", SDXL_SCHEDULER, sdxl.getScheduler());
+		assertEquals("SDXL cfg stays", SDXL_CFG, sdxl.getCfg(), EPS);
+		assertSame("nothing to change on an SDXL pick inside its range: the same request", req, sdxl);
+	}
+
+	@Test
+	public void helperClampsCfgIntoTheFamilyRangeOnce() {
+		RendererCapabilities flux2 = flux2Caps();
+		assertTrue("precondition: the FLUX.2 range is non-degenerate", flux2.getCfgMin() < flux2.getCfgMax());
+		Map<String, Object> cfg = sdxlConfig();
+		cfg.put("flux2Cfg", SDXL_CFG);
+		StageRequest req = sdxlRequest(cfg, familySteps(FLUX2_MODEL));
+		List<String> notApplied = new ArrayList<>();
+
+		StageRequest out = FamilyRequest.apply(req, flux2, cfg, notApplied);
+		assertEquals("a FLUX.2 flux2Cfg of 7 is clamped to the family's cfgMax", flux2.getCfgMax(), out.getCfg(), EPS);
+		assertEquals("sampler", Flux2Defaults.sampler(), out.getSampler());
+		assertEquals("one entry", 1, notApplied.size());
+		String entry = notApplied.get(0);
+		assertTrue("the entry is CFG_CLAMPED: " + entry, entry.startsWith(ConfigNotApplied.CFG_CLAMPED + ": "));
+		assertTrue("it names the stage: " + entry, entry.contains(RenderPlan.STAGE_BASE + " cfg 7 "));
+		assertTrue("it names the family and the range: " + entry, entry.contains(flux2.getPattern() + " family's range [1, 3.50]"));
+		assertTrue("it says what was sent: " + entry, entry.endsWith("; sent 3.50"));
+
+		/// idempotent: applying it to the mapped request changes nothing and reports nothing new
+		StageRequest again = FamilyRequest.apply(out, flux2, cfg, notApplied);
+		assertSame("nothing to change the second time: the same request", out, again);
+		assertEquals("still one entry", 1, notApplied.size());
+		/// and a list that already carries the code (another pass, another variant) takes no second entry
+		FamilyRequest.apply(req, flux2, cfg, notApplied);
+		assertEquals("deduplicated by code", 1, notApplied.size());
+		assertEquals("a null list is tolerated", flux2.getCfgMax(), FamilyRequest.apply(req, flux2, cfg, null).getCfg(), EPS);
+
+		/// below the range clamps up
+		Map<String, Object> low = sdxlConfig();
+		low.put("flux2Cfg", 0.5);
+		List<String> lowNa = new ArrayList<>();
+		assertEquals("0.5 is clamped to cfgMin", flux2.getCfgMin(), FamilyRequest.apply(req, flux2, low, lowNa).getCfg(), EPS);
+		assertEquals("reported", 1, lowNa.size());
+		assertTrue(lowNa.get(0), lowNa.get(0).contains(" cfg 0.50 is outside "));
+	}
+
+	@Test
+	public void helperClampsTheSdxlCfgToo() {
+		RendererCapabilities sdxl = sdxlCaps();
+		assertTrue("precondition: the SDXL range is non-degenerate", sdxl.getCfgMin() < sdxl.getCfgMax());
+		Map<String, Object> cfg = sdxlConfig();
+		cfg.put("cfg", 12.0);
+		StageRequest req = sdxlRequest(cfg, familySteps(SDXL_MODEL)).toBuilder().model(SDXL_MODEL).cfg(12.0).build();
+		List<String> notApplied = new ArrayList<>();
+		StageRequest out = FamilyRequest.apply(req, sdxl, cfg, notApplied);
+		assertEquals("an SDXL cfg of 12 is clamped to the family's cfgMax", sdxl.getCfgMax(), out.getCfg(), EPS);
+		assertEquals("sampler stays the config's", SDXL_SAMPLER, out.getSampler());
+		assertEquals("scheduler stays the config's", SDXL_SCHEDULER, out.getScheduler());
+		assertEquals("one entry", 1, notApplied.size());
+		assertTrue(notApplied.get(0), notApplied.get(0).startsWith(ConfigNotApplied.CFG_CLAMPED + ": " + RenderPlan.STAGE_BASE + " cfg 12 is outside the " + sdxl.getPattern()));
+	}
+
+	@Test
+	public void helperLeavesADegenerateRangeAlone() {
+		RendererCapabilities kontext = RendererCapabilities.forModel(KONTEXT_MODEL);
+		assertNotNull("capabilities of " + KONTEXT_MODEL, kontext);
+		assertEquals("precondition: the Kontext range is degenerate", kontext.getCfgMin(), kontext.getCfgMax(), EPS);
+		assertNotEquals("precondition: not the FLUX.2 pattern", RendererCapabilities.PATTERN_FLUX2, kontext.getPattern());
+		Map<String, Object> cfg = sdxlConfig();
+		StageRequest req = sdxlRequest(cfg, 28).toBuilder().model(KONTEXT_MODEL).build();
+		List<String> notApplied = new ArrayList<>();
+		StageRequest out = FamilyRequest.apply(req, kontext, cfg, notApplied);
+		assertSame("a degenerate range clamps nothing: the same request", req, out);
+		assertEquals("cfg 7 is not pulled to 1", SDXL_CFG, out.getCfg(), EPS);
+		assertTrue("nothing reported", notApplied.isEmpty());
+	}
+
+	@Test
+	public void outOfRangeCfgIsClampedOncePerRenderAcrossVariants() throws Exception {
+		Fixture f = null;
+		try {
+			f = fixture("p97clamp");
+			Map<String, Object> cfg = sdxlConfig();
+			cfg.put("flux2Cfg", SDXL_CFG);
+			RenderPlan plan = plan(FLUX2_MODEL, cfg);
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(f.png, 4246, 10L), ok(f.png, 4247, 10L));
+			f.graph.setRenderBackend(backend(adapter));
+			PlannedRender out = PbNodeExecutor.renderPlanned(f.graph, f.node, plan, "scene 0 of " + f.slug, f.sdu, "p97_" + f.slug, "Scene has no text to render", 2);
+			assertNotNull("render result", out);
+			assertEquals("two variants rendered", 2, out.variants.size());
+			assertEquals("two requests", 2, adapter.requests.size());
+			double max = flux2Caps().getCfgMax();
+			for(StageRequest sent : adapter.requests) {
+				assertEquals("every variant goes out at the clamped cfg", max, sent.getCfg(), EPS);
+				assertEquals("sampler", Flux2Defaults.sampler(), sent.getSampler());
+			}
+			List<String> clamped = out.configNotApplied.stream().filter(s -> s.startsWith(ConfigNotApplied.CFG_CLAMPED + ":")).toList();
+			assertEquals("CFG_CLAMPED is reported once for the render, not once per variant: " + out.configNotApplied, 1, clamped.size());
+			assertTrue("the plan's authored negative compiled, so DEFAULT_NEGATIVE is not reported: " + out.configNotApplied,
+				out.configNotApplied.stream().noneMatch(s -> s.startsWith(PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE + ":")));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	@Test
+	public void sdxlPickOutOfRangeCfgIsClampedOnThePlanPath() throws Exception {
+		Fixture f = null;
+		try {
+			f = fixture("p97sdxlc");
+			Map<String, Object> cfg = sdxlConfig();
+			cfg.put("cfg", 12.0);
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(f.png, 4248, 10L));
+			PlannedRender out = render(f, plan(SDXL_MODEL, cfg), backend(adapter));
+			assertEquals("one request", 1, adapter.requests.size());
+			StageRequest sent = adapter.requests.get(0);
+			assertEquals("model", SDXL_MODEL, sent.getModel());
+			assertEquals("cfg 12 is clamped to the SDXL family's cfgMax", sdxlCaps().getCfgMax(), sent.getCfg(), EPS);
+			assertEquals("sampler stays", SDXL_SAMPLER, sent.getSampler());
+			assertEquals("scheduler stays", SDXL_SCHEDULER, sent.getScheduler());
+			List<String> clamped = out.configNotApplied.stream().filter(s -> s.startsWith(ConfigNotApplied.CFG_CLAMPED + ":")).toList();
+			assertEquals("reported once: " + out.configNotApplied, 1, clamped.size());
+			assertTrue(clamped.get(0), clamped.get(0).contains(RenderPlan.STAGE_BASE + " cfg 12 is outside the " + sdxlCaps().getPattern()));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// The shared request renderPlanned builds: the config snapshot's SDXL knobs on a FLUX.2 model.
+	private static StageRequest sdxlRequest(Map<String, Object> cfg, int presetSteps) {
+		return StageRequest.builder()
+			.stage(RenderPlan.STAGE_BASE).prompt(new CompiledPrompt(PROMPT, NEGATIVE, 0)).model(FLUX2_MODEL)
+			.width(W).height(H).steps(presetSteps).cfg(SDXL_CFG)
+			.sampler(SDXL_SAMPLER).scheduler(SDXL_SCHEDULER)
+			.seed(777).images(2).hires(false).config(cfg).build();
+	}
+
+	private static RendererCapabilities flux2Caps() {
+		RendererCapabilities caps = RendererCapabilities.forModel(FLUX2_MODEL);
+		assertNotNull("capabilities of " + FLUX2_MODEL, caps);
+		assertEquals("the FLUX.2 family", RendererCapabilities.PATTERN_FLUX2, caps.getPattern());
+		return caps;
+	}
+
+	private static RendererCapabilities sdxlCaps() {
+		RendererCapabilities caps = RendererCapabilities.forModel(SDXL_MODEL);
+		assertNotNull("capabilities of " + SDXL_MODEL, caps);
+		assertNotEquals("not the FLUX.2 family", RendererCapabilities.PATTERN_FLUX2, caps.getPattern());
+		return caps;
 	}
 
 	@Test

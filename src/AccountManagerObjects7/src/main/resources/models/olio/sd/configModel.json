@@ -335,6 +335,16 @@
 			"description": "CFG scale for the FLUX.2 composite. Edit/reference models want a low value (1.0-3.5); do NOT reuse the SDXL cfg (5-7). NO SCHEMA DEFAULT ON PURPOSE: a default here is never null, so it always beat olio/sd/flux2Defaults.json and made that file's cfgScale dead - editing the resource silently did nothing (confirmed live 2026-08-08: resource said 3, the request carried the 2.5 default). Unset must mean unset so the resource can govern."
 		},
 		{
+			"name": "flux2Sampler",
+			"type": "string",
+			"description": "Sampler for a FLUX.2 render (plan path and composite). Separate from the shared 'sampler' field, which is SDXL-tuned (dpmpp_2m); FLUX.2 wants a plain one (euler). NO SCHEMA DEFAULT ON PURPOSE - see flux2Cfg: unset means olio/sd/flux2Defaults.json's sampler governs. Added P10-A 5 (V3 ledger section 6.C 239 c): nullable column, no DDL default, every pre-existing row reads null and takes the resource."
+		},
+		{
+			"name": "flux2Scheduler",
+			"type": "string",
+			"description": "Scheduler for a FLUX.2 render (plan path and composite). Separate from the shared 'scheduler' field, which is SDXL-tuned (karras); FLUX.2 wants 'simple'. NO SCHEMA DEFAULT ON PURPOSE - see flux2Cfg: unset means olio/sd/flux2Defaults.json's scheduler governs. Added P10-A 5 alongside flux2Sampler."
+		},
+		{
 			"name": "flux2ReferenceSize",
 			"type": "int",
 			"minValue": 256,

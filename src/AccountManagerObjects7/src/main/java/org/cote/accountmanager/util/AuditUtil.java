@@ -10,8 +10,11 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.ResponseEnumType;
@@ -171,6 +174,31 @@ public class AuditUtil {
 		}
 		closeAudit(audit, ret, msg);
 	}
+	/// 239 f (P10-A 6): cut a string to its field's schema maxLength before the audit is queued.
+	/// system.audit's description is common.description2K (maxLength 2048, varchar(2048) in the DB) and
+	/// message is maxLength 2048, but a query-keyed audit's description carries the whole query key — a
+	/// wide projection (olio.llm.chatConfig, olio.pb.book) runs to tens of KB — so RecordValidator rejected
+	/// the record on the BatchQueue thread (WriterException: Record failed validation in IO DATABASE), and
+	/// because DBWriter.write validates every record of a batch before it inserts any, every audit queued
+	/// in the same window was lost with it. The decision itself had already been made and logged. The full
+	/// key stays in `query` (unbounded text) and the console line (print → getAuditString) is not cut; only
+	/// the persisted summary is, to exactly maxLength, ending in a marker that gives the original length.
+	/// getAuditHash covers neither field, so the hash and signature are unaffected. No-op for a field
+	/// without a maxLength or a value within it.
+	public static String bounded(ModelSchema schema, String fieldName, String value) {
+		if(value == null || schema == null) {
+			return value;
+		}
+		FieldSchema fs = schema.getFieldSchema(fieldName);
+		int max = (fs == null ? 0 : fs.getMaxLength());
+		if(max <= 0 || value.length() <= max) {
+			return value;
+		}
+		String marker = " ...[" + value.length() + " chars]";
+		int keep = Math.max(0, max - marker.length());
+		return value.substring(0, keep) + marker;
+	}
+
 	public static void closeAudit(BaseRecord audit, ResponseEnumType ret, String msg) {
 		if(audit == null) {
 			logger.error("Null audit (" + ret + "): " + msg);
@@ -179,8 +207,9 @@ public class AuditUtil {
 		lastAudit.set(audit);
 		try {
 			audit.set(FieldNames.FIELD_RESPONSE, ret);
-			audit.set(FieldNames.FIELD_DESCRIPTION, getAuditString(audit));
-			audit.set(FieldNames.FIELD_MESSAGE, msg);
+			ModelSchema schema = RecordFactory.getSchema(audit.getSchema());
+			audit.set(FieldNames.FIELD_DESCRIPTION, bounded(schema, FieldNames.FIELD_DESCRIPTION, getAuditString(audit)));
+			audit.set(FieldNames.FIELD_MESSAGE, bounded(schema, FieldNames.FIELD_MESSAGE, msg));
 			String orgPath = audit.get(FieldNames.FIELD_ORGANIZATION_PATH);
 			if(orgPath != null) {
 				OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(orgPath, null);

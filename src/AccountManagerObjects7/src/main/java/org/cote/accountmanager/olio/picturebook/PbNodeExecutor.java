@@ -23,6 +23,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.illustration.ComfyGraph;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
+import org.cote.accountmanager.olio.illustration.FamilyRequest;
 import org.cote.accountmanager.olio.illustration.Flux2Compiler;
 import org.cote.accountmanager.olio.illustration.GraphCompileException;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
@@ -1579,6 +1580,9 @@ public class PbNodeExecutor {
 			.hires(false)
 			.config(cfg)
 			.build();
+		/// The shared request carries the config's cfg/sampler/scheduler (SDXL knobs) as-is: renderStages maps
+		/// them per stage through the stage's own pick (FamilyRequest.apply, P10-A 5) and reports CFG_CLAMPED
+		/// through the sequence, merged by code below so a multi-variant render still reports each code once.
 
 		/// ─── render every variant before persisting any (§2.4 step 5, extended to the attempt) ───
 		List<StageSequence> sequences = new ArrayList<>();
@@ -1631,6 +1635,13 @@ public class PbNodeExecutor {
 			sequences.add(seq);
 			sequenceVariants.add(Integer.valueOf(v));
 			added.addAll(seq.added);
+			/// a pass's configNotApplied entries (CFG_CLAMPED on an ACTOR_REGION pick) merge by code: each code once
+			for(String na : seq.configNotApplied) {
+				String code = na.substring(0, na.indexOf(':') + 1);
+				if(configNotApplied.stream().noneMatch(e -> e.startsWith(code))) {
+					configNotApplied.add(na);
+				}
+			}
 			for(Map<String, Object> se : seq.stageErrors) {
 				if(v == 0) {
 					stageErrors.add(se);
@@ -1767,6 +1778,8 @@ public class PbNodeExecutor {
 		final List<StageOutput> outputs = new ArrayList<>();
 		final List<Map<String, Object>> stageErrors = new ArrayList<>();
 		final List<RenderPlan.Degradation> added = new ArrayList<>();
+		/// configNotApplied entries a pass raised (CFG_CLAMPED on the ACTOR_REGION pick); merged by code by the caller.
+		final List<String> configNotApplied = new ArrayList<>();
 		boolean graphPath;
 		boolean calibrationPersisted;
 		/// The renderer version the graph client reported (null when it reported none); stamped on every
@@ -1834,9 +1847,11 @@ public class PbNodeExecutor {
 
 		/// The shared request carries the SDXL-tuned cfg / sampler / scheduler from the config snapshot, and both
 		/// branches below send them: the plain T2I request as-is, the graph path through the generator params
-		/// (WorkflowCompiler.compile). A FLUX.2 pick renders with the FLUX.2 knobs the snapshot also carries, so
-		/// the mapping is applied once, here, before the request is compiled or sent (ledger §6.C 239 c, 245 g).
-		StageRequest baseReq = (baseCaps != null && RendererCapabilities.PATTERN_FLUX2.equals(baseCaps.getPattern()) ? flux2Request(req, plan.getConfig()) : req);
+		/// (WorkflowCompiler.compile). The BASE pick's family maps them here, once, before the request is compiled
+		/// or sent (ledger §6.C 239 c, 245 g; P10-A 5): FLUX.2 takes the config's flux2Cfg / flux2Sampler /
+		/// flux2Scheduler else flux2Defaults.json, every family clamps cfg into its cfgRange (CFG_CLAMPED, reported
+		/// through the sequence). Steps stay the preset's (§6.C 245 b).
+		StageRequest baseReq = FamilyRequest.apply(req, baseCaps, plan.getConfig(), seq.configNotApplied);
 		WorkflowCompiler.CompiledGraph baseGraph = null;
 		List<String> baseRefIds = new ArrayList<>();
 		if(!baseActors.isEmpty() || locationRef != null) {
@@ -1937,11 +1952,10 @@ public class PbNodeExecutor {
 				WorkflowCompiler.CompiledGraph cg;
 				try {
 					WorkflowCompiler.ActorTarget target = new WorkflowCompiler.ActorTarget(a, lastGood.bytes, List.of(a.getBox()));
+					/// the pass has its own pick (INPAINT, or BASE's as a fallback): built from the shared request's config
+					/// knobs, not from baseReq, so its family mapping follows that pick and not BASE's
 					StageRequest reqA = req.toBuilder().stage(RenderPlan.STAGE_ACTOR_REGION).prompt(cp).model(regionPick.getModel()).build();
-					/// the pass has its own pick (INPAINT, or BASE's as a fallback): the FLUX.2 knobs follow that pick, not BASE's
-					if(RendererCapabilities.PATTERN_FLUX2.equals(caps.getPattern())) {
-						reqA = flux2Request(reqA, plan.getConfig());
-					}
+					reqA = FamilyRequest.apply(reqA, caps, plan.getConfig(), seq.configNotApplied);
 					cg = compiler.compileActorRegion(reqA, passRefs, target, inpaint, client);
 					reqA = reqA.toBuilder().graph(cg.getGraph()).inputs(cg.getInputs()).seed((int) cg.getSeed()).steps(cg.getSteps()).build();
 					StageResult res = adapter.execute(reqA, g::isCancelRequested);
@@ -2022,36 +2036,13 @@ public class PbNodeExecutor {
 		logger.warn("{}: {}", label, coded);
 	}
 
-	/**
-	 * A stage request on a FLUX.2 pick (ledger §6.C 239 c; the graph path too, 245 g).
-	 * <p>
-	 * The shared request is built from the config snapshot's {@code cfg} / {@code sampler} /
-	 * {@code scheduler}, which are the SDXL-tuned values ({@code 7.0 / dpmpp_2m / karras}), and every
-	 * branch sends them: a zero-reference BASE as the plain T2I request, a referenced BASE and the
-	 * ACTOR_REGION passes through the generator params {@code WorkflowCompiler.compile} builds from the
-	 * request. The same snapshot carries {@code flux2Cfg} ({@link PbConfigUtil#applyFlux2Defaults} fills
-	 * it from {@code flux2Defaults.json}), and the resource carries the FLUX.2 sampler and scheduler - the
-	 * same precedence {@code SWUtil.newFlux2SceneTxt2Img} applies for the composite. Only those three knobs
-	 * change. Steps are left alone: on the plan path they are preset-governed (D6), and for a
-	 * zero-reference BASE the preset's count already comes from this pick's family
-	 * ({@code PbRenderPlanUtil.scaffold} takes {@code recommendedSteps} from the LOCATION pick, which is the
-	 * BASE pick of a TEXT_ONLY / ACTOR_TEXT_ONLY plan); an ACTOR_REGION pass takes its steps from the
-	 * family's inpaint parameters in the compiler. So {@code flux2Steps} is not read here.
-	 * Package-private for the offline test.
-	 *
-	 * @param req the stage request as built from the shared one
-	 * @param cfg the plan's config snapshot (may be null or empty - then the resource cfg applies)
-	 */
-	static StageRequest flux2Request(StageRequest req, Map<String, Object> cfg) {
-		double cfgScale = Flux2Defaults.cfgScale();
-		if(cfg != null) {
-			Object c = cfg.get("flux2Cfg");
-			if(c instanceof Number && ((Number) c).doubleValue() > 0d) {
-				cfgScale = ((Number) c).doubleValue();
-			}
-		}
-		return req.toBuilder().cfg(cfgScale).sampler(Flux2Defaults.sampler()).scheduler(Flux2Defaults.scheduler()).build();
-	}
+	/// The family knob mapping that used to live here as {@code flux2Request} (§6.C 239 c / 245 g) is
+	/// {@link FamilyRequest#apply} since P10-A 5: one helper for every send path, capability-driven, with
+	/// the cfg clamp. Steps are still never touched there - on the plan path they are preset-governed (D6):
+	/// a zero-reference BASE takes the preset's count, which already comes from this pick's family
+	/// ({@code PbRenderPlanUtil.scaffold} takes {@code recommendedSteps} from the LOCATION pick), and an
+	/// ACTOR_REGION pass takes its steps from the family's inpaint parameters in the compiler. So
+	/// {@code flux2Steps} is not read on the plan path.
 
 	/// The PNG bytes of a reference artifact, read as the user; null when the artifact or its data cannot be
 	/// read (the readability probe of the plan only ran at plan time, so the executor checks again).
@@ -2113,6 +2104,7 @@ public class PbNodeExecutor {
 	public static final String NOT_APPLIED_HIRES = ConfigNotApplied.HIRES;
 	public static final String NOT_APPLIED_STYLE_CLAUSE = ConfigNotApplied.STYLE_CLAUSE;
 	public static final String NOT_APPLIED_DEFAULT_NEGATIVE = ConfigNotApplied.DEFAULT_NEGATIVE;
+	public static final String NOT_APPLIED_CFG_CLAMPED = ConfigNotApplied.CFG_CLAMPED;
 
 	/// 503 when the refusal is the renderer's (its inventory could not be read), 409 when it is the plan's
 	/// (nothing installed matches the request); both are "reported before rendering" (§12).

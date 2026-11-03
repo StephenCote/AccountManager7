@@ -482,8 +482,10 @@ test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover route
         await expect(latest.locator('img')).toHaveCount(1);
         await expect.poll(() => latest.locator('img').evaluate(img => img.complete && img.naturalWidth), { timeout: 60000 }).toBeGreaterThan(0);
         // A RENDER_PLAN node closes DONE_UNVERIFIED (verification is the review step); the selected artifact is
-        // the latest, still GENERATED.
-        await expect(page.getByTestId('pb-cmp-cover-state')).toHaveText('DONE_UNVERIFIED · ' + variants + ' render' + (variants === 1 ? '' : 's') + ' · generated');
+        // the latest, not yet approved. The strip ends in its reviewStatus: `generated` when the stack's QA has not
+        // run yet, `in_review` once it has — the same "rendered, not approved" moment either way (test 4's shape,
+        // ledger §6.C 243 b).
+        await expect(page.getByTestId('pb-cmp-cover-state')).toHaveText(new RegExp('^DONE_UNVERIFIED · ' + variants + ' render' + (variants === 1 ? '' : 's') + ' · (generated|in_review)$'));
         await expect(strip).toHaveAttribute('data-node-status', 'DONE_UNVERIFIED');
         await expect(page.getByTestId('pb-cmp-cover-approved')).toContainText('none');
         await expect(page.getByTestId('pb-cmp-approve-cover')).toBeEnabled();
@@ -494,7 +496,7 @@ test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover route
         await login(request);
         const png = await savePng(request, PB_ROOT + '/' + bookObjectId, fx.latestArtifactOid, 'cover-latest.png');
         fx.pngPath = png.pngPath;
-        expect(upper(png.art.reviewStatus)).toBe('GENERATED');
+        expect(upper(png.art.reviewStatus), 'rendered, not approved: GENERATED before QA, IN_REVIEW after').toMatch(/^(GENERATED|IN_REVIEW)$/);
         const beforeApprove = await getCovers(request, bookObjectId);
         expect(beforeApprove.covers.COVER.latest && beforeApprove.covers.COVER.latest.artifactObjectId).toBe(fx.latestArtifactOid);
         expect(beforeApprove.covers.COVER.latest.revision, 'latest = the highest variant revision').toBe(fx.planVariants);

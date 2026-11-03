@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.sd.Flux2Defaults;
 import org.cote.accountmanager.util.DocumentUtil;
 
 /// Text helpers shared by the prompt compilers. DB-free by design (V3 §14): nothing here touches
@@ -75,6 +76,22 @@ final class CompilerSupport {
 	/// The negative for a plan: its style exclusions and its config negativePrompt.
 	static String negative(RenderPlan.Style style, Map<String, Object> config) {
 		return negative(style == null ? null : style.getExclusions(), configString(config, "negativePrompt"));
+	}
+
+	/// The negative for a plan's stage: {@link #negative(RenderPlan.Style, Map)}, or when that is blank
+	/// and the stage's pick is a resolved FLUX.2 checkpoint, the family's resource default
+	/// ({@code flux2Defaults.json} negativePrompt) - P10-A 5. An authored negative (style exclusion or
+	/// config negativePrompt) always wins; no pick, or any other family, leaves the blank blank, so the
+	/// plan artifact's compiled negative stays what is sent.
+	static String negative(RenderPlan.Style style, Map<String, Object> config, RenderPlan.ModelPick pick) {
+		String negative = negative(style, config);
+		if((negative == null || negative.isBlank()) && FamilyRequest.isFlux2(pick)) {
+			String fam = clean(Flux2Defaults.negativePrompt());
+			if(fam != null) {
+				return fam;
+			}
+		}
+		return negative;
 	}
 
 	/**

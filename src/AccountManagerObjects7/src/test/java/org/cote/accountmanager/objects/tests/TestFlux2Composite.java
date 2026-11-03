@@ -299,6 +299,9 @@ public class TestFlux2Composite {
 		cfg.set("steps", 40);
 		cfg.set("width", 1024);
 		cfg.set("height", 1024);
+		// The shared SDXL sampler / scheduler (P10-A 5): the composite reads flux2Sampler / flux2Scheduler only.
+		cfg.set("sampler", "dpmpp_2m");
+		cfg.set("scheduler", "karras");
 
 		SWTxt2Img req = SWUtil.newFlux2SceneTxt2Img(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, cfg, 3);
 
@@ -307,12 +310,16 @@ public class TestFlux2Composite {
 		assertNotEquals("the SDXL step count (40) must not reach the composite", 40, req.getSteps());
 		assertFalse("an SDXL square size must not force the composite square",
 			req.getWidth() == 1024 && req.getHeight() == 1024);
+		assertNotEquals("the SDXL sampler must not reach the composite", "dpmpp_2m", req.getSampler());
+		assertNotEquals("the SDXL scheduler must not reach the composite", "karras", req.getScheduler());
 
 		/// ...and the resource's values must, whatever they currently are.
 		assertEquals("cfg must come from flux2Defaults.json", Flux2Defaults.cfgScale(), req.getCfgScale(), 0.001);
 		assertEquals("steps must come from flux2Defaults.json", Flux2Defaults.steps(), req.getSteps());
 		assertEquals("width must come from flux2Defaults.json", Flux2Defaults.width(), req.getWidth());
 		assertEquals("height must come from flux2Defaults.json", Flux2Defaults.height(), req.getHeight());
+		assertEquals("sampler must come from flux2Defaults.json", Flux2Defaults.sampler(), req.getSampler());
+		assertEquals("scheduler must come from flux2Defaults.json", Flux2Defaults.scheduler(), req.getScheduler());
 	}
 
 	/// compositeMode must actually exist on olio.sd.config and round-trip.
@@ -343,6 +350,8 @@ public class TestFlux2Composite {
 		cfg.set("flux2Steps", 28);
 		cfg.set("flux2Width", 1280);
 		cfg.set("flux2Height", 800);
+		cfg.set("flux2Sampler", " res_multistep ");
+		cfg.set("flux2Scheduler", "beta");
 
 		SWTxt2Img req = SWUtil.newFlux2SceneTxt2Img(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, cfg, 3);
 		assertEquals("someOtherFlux2", req.getModel());
@@ -350,6 +359,15 @@ public class TestFlux2Composite {
 		assertEquals(28, req.getSteps());
 		assertEquals(1280, req.getWidth());
 		assertEquals(800, req.getHeight());
+		assertEquals("flux2Sampler wins over the resource, trimmed", "res_multistep", req.getSampler());
+		assertEquals("flux2Scheduler wins over the resource", "beta", req.getScheduler());
+
+		// Blank or the LLM-literal "null" is unset: the resource governs (NarrativeUtil.isMeaningful).
+		cfg.set("flux2Sampler", "   ");
+		cfg.set("flux2Scheduler", "null");
+		SWTxt2Img blank = SWUtil.newFlux2SceneTxt2Img(LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, cfg, 3);
+		assertEquals(Flux2Defaults.sampler(), blank.getSampler());
+		assertEquals(Flux2Defaults.scheduler(), blank.getScheduler());
 	}
 
 	/// References must be letterboxed, never center-cropped. This is the concrete regression guard on

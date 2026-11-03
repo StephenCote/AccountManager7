@@ -26,13 +26,16 @@ import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.illustration.ComfyGraph;
+import org.cote.accountmanager.olio.illustration.FamilyRequest;
 import org.cote.accountmanager.olio.illustration.GraphInputs;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
+import org.cote.accountmanager.olio.illustration.RendererCapabilities;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.illustration.WorkflowCompiler;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.Flux2Defaults;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -100,9 +103,10 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 	/// P2-6: a node override that sets every knob §24 says the plan path does not apply.
 	private static final String OVERRIDE_STYLE = "photograph";
 	private static final String OVERRIDE_NEGATIVE = "blurry, low quality, text";
-	/// Each configNotApplied entry is "CODE: text" for one of the three published codes.
+	/// Each configNotApplied entry is "CODE: text" for one of the four published codes (CFG_CLAMPED since P10-A 5).
 	private static final Pattern NOT_APPLIED_SHAPE = Pattern.compile("^(" + PbNodeExecutor.NOT_APPLIED_HIRES + "|"
-		+ PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE + "|" + PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE + "): \\S");
+		+ PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE + "|" + PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE + "|"
+		+ PbNodeExecutor.NOT_APPLIED_CFG_CLAMPED + "): \\S");
 
 	private String server;
 
@@ -265,8 +269,25 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 		return (nodes instanceof List ? ((List<?>) nodes).size() : 0);
 	}
 
+	/// How many finals the attempt wrote (V3 §23, P6-2): the facade executes the node on a run, so a STANDARD
+	/// preset renders N = 2 base revisions per attempt (variant 0 selected), and attempt 2's selection is
+	/// revision N + 1. Read from the DTO, never assumed; a short attempt (a variant failed) fails here.
+	private int variantsRendered(Map<String, Object> out) {
+		Object planned = out.get(PbNodeExecutor.KEY_VARIANTS_PLANNED);
+		Object rendered = out.get(PbNodeExecutor.KEY_VARIANTS_RENDERED);
+		assertTrue("variantsRendered on the DTO: " + rendered, rendered instanceof Number && ((Number) rendered).intValue() >= 1);
+		assertEquals("the attempt rendered every variant it planned", planned, rendered);
+		List<?> variants = (List<?>) out.get(PbNodeExecutor.KEY_VARIANTS);
+		assertNotNull("variants on the DTO", variants);
+		assertEquals(((Number) rendered).intValue(), variants.size());
+		Map<?, ?> v0 = (Map<?, ?>) variants.get(0);
+		assertEquals("variant 0 is the selected base", Boolean.TRUE, v0.get("selected"));
+		assertEquals("the DTO's artifactRevision is variant 0's", out.get("artifactRevision"), v0.get("artifactRevision"));
+		return ((Number) rendered).intValue();
+	}
+
 	/// Everything a successful render-plan execution must have left behind, checked against the DB, not
-	/// the DTO alone.
+	/// the DTO alone. {@code expectedRevision} is the selected base's (variant 0's) revision.
 	private BaseRecord assertRendered(Fixture f, Map<String, Object> out, String installed, int expectedRevision, String pngTag) throws Exception {
 		logger.info("P2-5 DTO: " + JSONUtil.exportObject(out));
 		assertEquals(Boolean.TRUE, out.get("executed"));
@@ -416,7 +437,9 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 	}
 
 	/// The §24 contract computed from the persisted plan itself: HIRES iff the plan's config asks for hires,
-	/// STYLE_CLAUSE iff it carries a non-blank style, DEFAULT_NEGATIVE iff the compiled BASE negative is blank.
+	/// STYLE_CLAUSE iff it carries a non-blank style, DEFAULT_NEGATIVE iff the compiled BASE negative is blank,
+	/// and (P10-A 5) CFG_CLAMPED iff the cfg the BASE pick's family reads (flux2Cfg, else the resource, on a
+	/// FLUX.2 pick; the config's cfg otherwise) lies outside that family's capabilities.json cfgRange.
 	private static Set<String> expectedCodesOf(RenderPlan plan) {
 		Set<String> expected = new HashSet<>();
 		Map<String, Object> cfg = plan.getConfig();
@@ -430,6 +453,16 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 		String negative = plan.getCompiled().get(RenderPlan.STAGE_BASE).getNegative();
 		if(negative == null || negative.isBlank()) {
 			expected.add(PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE);
+		}
+		RendererCapabilities caps = FamilyRequest.capabilitiesFor(plan.pickForStage(RenderPlan.STAGE_BASE));
+		if(caps != null && caps.getCfgMin() < caps.getCfgMax()) {
+			boolean flux2 = RendererCapabilities.PATTERN_FLUX2.equals(caps.getPattern());
+			Object raw = cfg.get(flux2 ? "flux2Cfg" : "cfg");
+			double cfgVal = (raw instanceof Number && ((Number) raw).doubleValue() > 0 ? ((Number) raw).doubleValue()
+				: (flux2 ? Flux2Defaults.cfgScale() : 7.0));
+			if(cfgVal < caps.getCfgMin() || cfgVal > caps.getCfgMax()) {
+				expected.add(PbNodeExecutor.NOT_APPLIED_CFG_CLAMPED);
+			}
 		}
 		return expected;
 	}
@@ -486,9 +519,11 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 				degradations.get(0).startsWith(RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": "));
 			String firstPlanOid = (String) first.get("planArtifactObjectId");
 			String firstArtifactOid = (String) first.get("artifactObjectId");
+			int n = variantsRendered(first);
 
 			/// Second call: the node now carries an installed override at 12 steps. Same node (deterministic
-			/// handle), the pick is the OVERRIDE, the base artifact is superseded.
+			/// handle), the pick is the OVERRIDE, the base artifact is superseded. Attempt 1 wrote revisions
+			/// 1..N, so attempt 2's selected base is revision N + 1 (236 e / P6-2).
 			BaseRecord patch = PbGraphUtil.patchOf(node, OlioModelNames.MODEL_PB_NODE, OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE);
 			patch.set(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE, modelOverride(installed));
 			assertNotNull("override patch must be written", IOSystem.getActiveContext().getAccessPoint().update(f.owner, patch));
@@ -496,7 +531,7 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 			Map<String, Object> second = PbServiceFacade.requestRenderPlanScene(f.owner, f.bookOid, f.sceneOid, sdu);
 			assertNotNull(second);
 			assertEquals("the second call re-uses the node", first.get("nodeObjectId"), second.get("nodeObjectId"));
-			BaseRecord node2 = assertRendered(f, second, installed, 2, "second");
+			BaseRecord node2 = assertRendered(f, second, installed, n + 1, "second");
 			assertEquals("still exactly one node", 1, nodeCount(f));
 			assertTrue("an installed override is never degraded: " + second.get("degradations"), strings(second, "degradations").isEmpty());
 			assertNotEquals("a new plan artifact per call", firstPlanOid, second.get("planArtifactObjectId"));
@@ -508,7 +543,7 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 			assertFalse(pick2.isDegraded());
 
 			List<BaseRecord> baseChain = PbArtifactUtil.listChain(f.owner, node2, PbPipelineUtil.ROLE_BASE);
-			assertEquals("two base revisions", 2, baseChain.size());
+			assertEquals("two attempts of N base revisions each", 2 * n, baseChain.size());
 			BaseRecord older = PbArtifactUtil.readArtifact(f.owner, firstArtifactOid, orgOf(f.owner));
 			assertEquals("revision 1 is no longer selected", Boolean.FALSE, older.get(OlioFieldNames.FIELD_PB_SELECTED));
 			List<BaseRecord> planChain = PbArtifactUtil.listChain(f.owner, node2, PbPipelineUtil.ROLE_RENDER_PLAN);
@@ -739,6 +774,7 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 			String nodeOid = (String) first.get("nodeObjectId");
 			String planOid1 = (String) first.get("planArtifactObjectId");
 			String baseOid1 = (String) first.get("artifactObjectId");
+			int n = variantsRendered(first);
 			List<String> degradations1 = strings(first, "degradations");
 			assertEquals("a never-composed scene is composed by its first render, out of story order (P4-4 lazy fallback); nothing else is degraded - configNotApplied is not a degradation: " + degradations1,
 				1, degradations1.size());
@@ -764,11 +800,12 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 				neg1 == null || String.valueOf(neg1).isBlank());
 			logger.info("MEASURED: P2-6 render 1 configNotApplied=" + notApplied1);
 
-			/// The review queue: the base artifact is listed, the plan artifact is not; nodeView still has the plan.
+			/// The review queue: the attempt's N base artifacts are listed (every variant is reviewable, P6-2), the
+			/// plan artifact is not; nodeView still has the plan.
 			Set<String> queued = queuedArtifactOids(f, nodeOid);
 			assertTrue("the base artifact is queued for review: " + queued, queued.contains(baseOid1));
 			assertFalse("the plan artifact is not queued for review: " + queued, queued.contains(planOid1));
-			assertEquals(1, queued.size());
+			assertEquals("the queue lists the attempt's N base artifacts and nothing else: " + queued, n, queued.size());
 			Map<String, Object> view = PbServiceFacade.nodeView(f.owner, f.bookOid, nodeOid);
 			Map<?, ?> chains = (Map<?, ?>) view.get("artifacts");
 			assertNotNull("nodeView exposes artifacts by role", chains);
@@ -796,7 +833,7 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 			Map<String, Object> second = PbServiceFacade.requestRenderPlanScene(f.owner, f.bookOid, f.sceneOid, sdu);
 			assertNotNull(second);
 			assertEquals("the second call re-uses the node", nodeOid, second.get("nodeObjectId"));
-			assertRendered(f, second, installed, 2, "p26-override");
+			assertRendered(f, second, installed, n + 1, "p26-override");
 			assertTrue("an installed override is not a degradation: " + second.get("degradations"), strings(second, "degradations").isEmpty());
 			List<String> notApplied2 = strings(second, PbNodeExecutor.KEY_CONFIG_NOT_APPLIED);
 			Set<String> codes2 = notAppliedCodes(notApplied2);

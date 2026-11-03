@@ -2472,7 +2472,9 @@ var pb2PageReaderView = {
     },
     view: function () {
         let emptyStale = pb2SceneTotal > 0 && summarizeHealth(pb2Health).hasStaleGraph;
-        return m('div', { class: 'p-4 flex flex-col h-full' }, [
+        // flex-1: [role=main] is a flex row (router.js pageLayout), so without it this root sizes to its
+        // max-w-3xl content and sits left-pinned instead of filling main (ledger §6.C 244 c).
+        return m('div', { class: 'flex-1 p-4 flex flex-col h-full' }, [
             renderPb2Header(),
             pb2PageLoading ? null : renderPb2HealthBanner(),
             pb2PageLoading ? null : renderPb2ResumeBanner(),

@@ -84,9 +84,10 @@ public class TestChapBookV3Render extends BaseTest {
 	/// P2-6 §24: a scene override that sets every knob the plan path reports under configNotApplied.
 	private static final String OVERRIDE_STYLE = "photograph";
 	private static final String OVERRIDE_NEGATIVE = "blurry, low quality, text";
-	/// Each configNotApplied entry is "CODE: text" for one of the three published codes.
+	/// Each configNotApplied entry is "CODE: text" for one of the four published codes (CFG_CLAMPED since P10-A 5).
 	private static final Pattern NOT_APPLIED_SHAPE = Pattern.compile("^(" + PbNodeExecutor.NOT_APPLIED_HIRES + "|"
-		+ PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE + "|" + PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE + "): \\S");
+		+ PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE + "|" + PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE + "|"
+		+ PbNodeExecutor.NOT_APPLIED_CFG_CLAMPED + "): \\S");
 
 	private static final String POEM_TEXT =
 		"Outside, all is pristine,\n" +

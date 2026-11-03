@@ -35,7 +35,8 @@ public final class InpaintRegionCompiler {
 			return new CompiledPrompt("", "", 0);
 		}
 		List<String> loras = CompilerSupport.loras(plan.getConfig());
-		String negative = CompilerSupport.negative(plan.getStyle(), plan.getConfig());
+		/// Family-agnostic compiler, so the FLUX.2 default negative is gated on the ACTOR_REGION pick (P10-A 5).
+		String negative = CompilerSupport.negative(plan.getStyle(), plan.getConfig(), plan.pickForStage(RenderPlan.STAGE_ACTOR_REGION));
 
 		String name = clean(actor.getName());
 		String identity = clean(actor.getIdentity() == null ? null : actor.getIdentity().getText());

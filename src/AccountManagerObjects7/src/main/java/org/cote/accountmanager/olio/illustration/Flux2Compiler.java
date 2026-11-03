@@ -80,7 +80,8 @@ public final class Flux2Compiler implements PromptCompiler {
 		boolean raw = intent != null && intent.isRaw();
 		String override = clean(intent == null ? null : intent.getPromptOverride());
 		List<String> loras = CompilerSupport.loras(plan.getConfig());
-		String negative = CompilerSupport.negative(plan.getStyle(), plan.getConfig());
+		/// A blank negative on a resolved FLUX.2 pick falls back to the family's resource default (P10-A 5).
+		String negative = CompilerSupport.negative(plan.getStyle(), plan.getConfig(), plan.pickForStage(stg));
 
 		if(raw && override != null) {
 			return new CompiledPrompt(SDUtil.appendLoraTags(override, loras), negative, PromptBudget.estimateTokens(override));

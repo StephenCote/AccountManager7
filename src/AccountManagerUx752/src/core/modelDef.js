@@ -10337,6 +10337,16 @@
 			"description": "CFG scale for the FLUX.2 composite. NO SCHEMA DEFAULT ON PURPOSE - unset lets olio/sd/flux2Defaults.json govern."
 		},
 		{
+			"name": "flux2Sampler",
+			"type": "string",
+			"description": "Sampler for a FLUX.2 render. Separate from the SDXL-tuned 'sampler'. NO SCHEMA DEFAULT ON PURPOSE - unset lets olio/sd/flux2Defaults.json govern (euler)."
+		},
+		{
+			"name": "flux2Scheduler",
+			"type": "string",
+			"description": "Scheduler for a FLUX.2 render. Separate from the SDXL-tuned 'scheduler'. NO SCHEMA DEFAULT ON PURPOSE - unset lets olio/sd/flux2Defaults.json govern (simple)."
+		},
+		{
 			"name": "flux2ReferenceSize",
 			"type": "int",
 			"minValue": 256,

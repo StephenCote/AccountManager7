@@ -14,21 +14,30 @@
  *      DONE_UNVERIFIED, a `base` artifact revision 1 whose PNG is fetched and byte-checked, a `renderPlan`
  *      artifact whose JSON names the resolved checkpoint and the compiled prompt built from the scene text;
  *      the workflow now exists (GET /workflow 404 → 200) with exactly one RENDER_PLAN node for the scene;
- *      the page's sceneNodeObjectId stays null.
+ *      scene.sceneNode (read from the scene row) stays null, while the page view (P10-A 2, ledger §6.C 251)
+ *      names the RENDER_PLAN node, its selected base and the base's data ref; and the PB2 reader's cover
+ *      reads "1 rendered of N scenes" (251 f — the one browser step in this spec).
  *   2. unknown scene → 404 "Scene … not found in this book"; unknown book → 404 "Book not found"; a
  *      scene with NO text → 409 "has no text to render" (the plan is still persisted: the 409 names the plan
  *      artifact) and the node is left FAILED. All refusals happen before any render.
  *   3. a second render-plan on the same scene re-executes the SAME node (still one RENDER_PLAN node) and
- *      records `base` revision 2 superseding revision 1.
+ *      records the next attempt's `base` superseding revision 1. One BASE artifact per planned variant
+ *      (V3 §23, P6-2; ledger §6.C 236 e): an attempt writes N = `variantsRendered` revisions, variant 0 takes
+ *      the selection and every variant supersedes the pre-attempt selection, so attempt 2's selected base is
+ *      revision N+1 (3 on the stack: the STANDARD preset plans 2 variants). N is read from the DTO, never
+ *      assumed. The two renderPlan artifacts carry the same plan, degradations aside: attempt 1 may record
+ *      COMPOSED_OUT_OF_ORDER (P4-4: it composed the scene), attempt 2 never does; planContentHash covers the
+ *      whole plan JSON, so it is equal exactly when the degradations are.
  *   4. the durable record of both renders (no SD): GET /run/{runObjectId} for each run is COMPLETED with
  *      executedNodeCount 1 / failedNodeCount 0 and names exactly the RENDER_PLAN node; the node view's
- *      `base` and `renderPlan` chains are the two ascending revisions; the base artifact's bytes
- *      (data.data) live in the book's own Artifacts group, owned by the rendering user - not the
- *      caller's home or another book (PbPipelineUtil.nodeGraph: node executions write bytes there).
+ *      `base` chain is the 2N ascending revisions (attempt 1 then attempt 2, only revision N+1 selected)
+ *      and its `renderPlan` chain the two plans; the base artifact's bytes (data.data) live in the book's
+ *      own Artifacts group, owned by the rendering user - not the caller's home or another book
+ *      (PbPipelineUtil.nodeGraph: node executions write bytes there).
  *   5. a stranger (ensureIso42001TestUser, a real second non-admin principal with no grant on the book)
  *      gets 404 "Book not found" from render-plan and from GET /workflow — not 403 (which would confirm
  *      the book exists) and not 200 — and, checked as the owner, no node/artifact/revision was created.
- *   6. approving `base` revision 2 (PUT /artifact/{id}/approve) pins the node; render-plan on a pinned
+ *   6. approving attempt 2's `base` (PUT /artifact/{id}/approve) pins the node; render-plan on a pinned
  *      node is refused 409 "Node render_plan@… is pinned. Unpin it first - …" BEFORE any render: the
  *      chains, the approved selection and the node's status are unchanged; unpin restores pinned:false.
  *
@@ -98,6 +107,36 @@ async function loginAs(ctx, who, label) {
 
 async function login(request) {
     await loginAs(request, shared, 'shared');
+}
+
+/** Browser login as the shared user for the one reader check (251 f); the WebSocket is stubbed because the
+ *  Docker nginx proxy drops the session cookie on the WS upgrade and pageClient would force a re-login. */
+async function loginAsSharedUser(page) {
+    const resp = await page.request.post(REST + '/login', { data: credentialFor(shared, 'shared') });
+    if (!resp.ok() && resp.status() !== 204) throw new Error('API login as ' + shared.testUserName + ' failed: HTTP ' + resp.status());
+    await page.addInitScript(() => {
+        window.WebSocket = class StubWS {
+            constructor(url) {
+                this.url = url; this.readyState = 0;
+                this.onopen = null; this.onclose = null; this.onmessage = null; this.onerror = null;
+                this.bufferedAmount = 0; this.extensions = ''; this.protocol = '';
+                setTimeout(() => { this.readyState = 1; if (this.onopen) this.onopen({ type: 'open', target: this }); }, 50);
+            }
+            send() {}
+            close() { this.readyState = 3; }
+            addEventListener() {} removeEventListener() {} dispatchEvent() { return true; }
+        };
+        window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1; window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
+    });
+    await page.goto('/', { timeout: 30000 });
+    await page.waitForFunction(() => window.location.hash.includes('/main') && document.querySelector('[role="main"]'), { timeout: 30000 });
+}
+
+/** The scene row's own sceneNode FK (a targeted projection — /full on olio.pb.scene hits the plan depth limit). */
+async function sceneNodeFk(request, sceneOid) {
+    const row = await search(request, 'olio.pb.scene', [{ name: 'objectId', comparator: 'equals', value: sceneOid }], ['id', 'objectId', 'sceneNode']);
+    expect(row && row.objectId, 'scene row ' + sceneOid).toBeTruthy();
+    return row.sceneNode || null;
 }
 
 async function search(request, type, fields, requestFields) {
@@ -199,7 +238,7 @@ async function seedScene(request, book, bookRef, slug, index, extra) {
 let bookObjectId = null;
 let slug = null;
 const fx = { book: null, scene: null, emptyScene: null, handle: null };
-const r1 = { nodeObjectId: null, artifactObjectId: null, planArtifactObjectId: null, planContentHash: null, runObjectId: null };
+const r1 = { nodeObjectId: null, artifactObjectId: null, planArtifactObjectId: null, planContentHash: null, runObjectId: null, variants: 0 };
 const r2 = { artifactObjectId: null, planArtifactObjectId: null, runObjectId: null };
 
 test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
@@ -259,7 +298,7 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         console.log('[p25-cleanup] left in place (nodes + artifacts reference them): ' + JSON.stringify({ book: bookObjectId, slug, ...fx, r1, r2 }));
     });
 
-    test('[SD] render-plan 1: a fresh STORY scene renders BASE through TEXT_ONLY; the workflow and its RENDER_PLAN node are created on first use; base + renderPlan artifacts recorded', async ({ request }) => {
+    test('[SD] render-plan 1: a fresh STORY scene renders BASE through TEXT_ONLY; the workflow and its RENDER_PLAN node are created on first use; base + renderPlan artifacts recorded; the page view and the reader cover count it', async ({ page, request }) => {
         test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — skips the live SD renders');
         expect(bookObjectId, 'STORY book seeded in beforeAll').toBeTruthy();
         const PB = PB_ROOT + '/' + bookObjectId;
@@ -294,6 +333,16 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(dto.executedNodeCount).toBe(1);
         expect(dto.failedNodeCount).toBe(0);
         expect(dto.runObjectId, 'the sync route still records a run').toBeTruthy();
+        // V3 §23: one base artifact per planned variant; the DTO's artifact is variant 0 (the selection).
+        // N is the product's number, read here and used by tests 3, 4 and 6 to place attempt 2 in the chain.
+        expect(dto.variantsPlanned, 'variantsPlanned: ' + JSON.stringify(dto.variantsPlanned)).toBeGreaterThan(0);
+        expect(dto.variantsRendered, 'every planned variant rendered').toBe(dto.variantsPlanned);
+        expect(Array.isArray(dto.variants) && dto.variants.length === dto.variantsRendered, 'variants list: ' + JSON.stringify(dto.variants)).toBe(true);
+        expect(dto.variants[0].artifactObjectId, 'variant 0 is the DTO artifact').toBe(dto.artifactObjectId);
+        expect(dto.variants[0].artifactRevision).toBe(1);
+        expect(dto.variants.map(v => !!v.selected), 'only variant 0 is selected').toEqual(dto.variants.map((v, i) => i === 0));
+        console.log('[p25-r1-variants] N=' + dto.variantsRendered + ' ' + JSON.stringify(dto.variants.map(v => ({ i: v.variantIndex, rev: v.artifactRevision, selected: v.selected, seed: v.seed }))));
+        r1.variants = dto.variantsRendered;
         r1.nodeObjectId = dto.nodeObjectId;
         r1.artifactObjectId = dto.artifactObjectId;
         r1.planArtifactObjectId = dto.planArtifactObjectId;
@@ -314,10 +363,20 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(!!nodes[0].pinned).toBe(false);
 
         // Durable state 2: scene.sceneNode is NOT touched by the render-plan route (that is the landscape /
-        // composite path's pointer); the page therefore still carries no sceneNode.
+        // composite path's pointer) - read from the scene row itself. The page view no longer mirrors that
+        // FK: since P10-A 2 (ledger §6.C 213 e / 251) it reports the scene's RENDER_PLAN node and the node's
+        // selected base, so the page now carries the node, the base artifact, its data ref and the
+        // node / review state.
+        expect(await sceneNodeFk(request, fx.scene.objectId), 'scene.sceneNode untouched by /render-plan').toBeNull();
         const pg = (await (await request.get(PB + '/pages')).json()).find(p => p.objectId === fx.scene.objectId);
         console.log('[p25-r1-page] ' + JSON.stringify(pg));
-        expect(pg.sceneNodeObjectId == null, 'sceneNode untouched: ' + JSON.stringify(pg)).toBe(true);
+        expect(pg.sceneNodeObjectId, 'page view names the RENDER_PLAN node').toBe(dto.nodeObjectId);
+        expect(pg.artifactObjectId, 'page view names the selected base').toBe(dto.artifactObjectId);
+        expect(pg.dataObjectId, 'page view carries the base data ref: ' + JSON.stringify(pg)).toBeTruthy();
+        expect(upper(pg.nodeStatus)).toBe('DONE_UNVERIFIED');
+        expect(!!pg.pinned).toBe(false);
+        expect(upper(pg.reviewStatus), 'rendered, not approved: GENERATED before QA, IN_REVIEW after').toMatch(/^(GENERATED|IN_REVIEW)$/);
+        expect(pg.imageGroupPath && pg.imageName, 'page view image ref (232 f 4): ' + JSON.stringify(pg)).toBeTruthy();
 
         // Durable state 3: the renderPlan artifact carries the plan that was rendered from.
         const planResp = await request.get(PB + '/artifact/' + dto.planArtifactObjectId);
@@ -349,6 +408,18 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect([base.art.imageWidth, base.art.imageHeight], 'artifact image size is the plan canvas').toEqual([plan.canvas.width, plan.canvas.height]);
         expect(base.dims, 'PNG dimensions are the plan canvas').toEqual([plan.canvas.width, plan.canvas.height]);
         await request.get(REST + '/logout');
+
+        // Durable state 5 (251 f): the PB2 reader's cover counts this render. pb2CoverCountLabel counts the
+        // pages whose view carries a dataObjectId (the P10-A 2 page view above) against the /scenes total;
+        // before P10-A 2 a render-plan render was invisible here ("0 rendered of N"). The one browser step
+        // in this otherwise request-only spec; the screenshot is written to be looked at.
+        await loginAsSharedUser(page);
+        await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
+        await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible({ timeout: 30000 });
+        const coverCount = page.locator('[data-pb2-cover-count]');
+        await expect(coverCount, 'reader cover count after render-plan 1').toHaveText(/^1 rendered of \d+ scenes?$/);
+        console.log('[p25-r1-reader] cover count: ' + await coverCount.textContent());
+        await page.screenshot({ path: OUT_DIR + '/r1-reader-cover.png' });
     });
 
     test('refusals before any render: unknown scene 404, unknown book 404, scene without text 409 naming the persisted plan artifact (node FAILED)', async ({ request }) => {
@@ -371,8 +442,11 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(noBook.status, 'unknown book: ' + noBook.text).toBe(404);
         expect(errorText(noBook.text)).toBe('Book not found');
 
-        // Scene 1 carries no text at all; the plan is still built and persisted, then the empty compiled
-        // prompt is refused 409 (the route names the plan artifact it persisted).
+        // Scene 1 carries no text at all; the plan is still built and persisted, then the subject-less plan
+        // is refused 409 (the route names the plan artifact it persisted). The gate judges the PLAN, not the
+        // compiled string (PbNodeExecutor.hasSubject, P4-10 2026-10-23): the compiler folds the camera default
+        // ("medium, eye level") and style boilerplate into the BASE prompt even with nothing to depict, so the
+        // compiled prompt is not blank - this spec asserted blank until 2026-11-02 and had not run since P4-10.
         const emptyRow = await search(request, 'olio.pb.scene', [{ name: 'objectId', comparator: 'equals', value: fx.emptyScene.objectId }],
             ['id', 'objectId', 'title', 'setting', 'action', 'mood', 'sdPrompt', 'summary']);
         console.log('[p25-409-row] ' + JSON.stringify(emptyRow));
@@ -390,7 +464,15 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(upper(planArt.role)).toBe('RENDERPLAN');
         const plan = JSON.parse(planArt.artifactText);
         expect(plan.compiled && plan.compiled.BASE, 'BASE stage compiled: ' + JSON.stringify(plan.compiled)).toBeTruthy();
-        expect((plan.compiled.BASE.prompt || '').trim(), 'the compiled prompt is empty').toBe('');
+        const meaningful = v => typeof v === 'string' && v.trim() !== '' && !/^(null|none|n\/a|unknown|unspecified)$/i.test(v.trim());
+        console.log('[p25-409-plan] ' + JSON.stringify({ intent: plan.intent, location: plan.location, actors: plan.actors, elements: plan.elements, compiledBase: plan.compiled.BASE.prompt }));
+        expect(meaningful(plan.intent && plan.intent.promptOverride), 'no intent: ' + JSON.stringify(plan.intent)).toBe(false);
+        expect(meaningful(plan.location && plan.location.description), 'no location text: ' + JSON.stringify(plan.location)).toBe(false);
+        expect((plan.actors || []).some(a => meaningful(a.name) || meaningful(a.description)), 'no named/described actor: ' + JSON.stringify(plan.actors)).toBe(false);
+        expect((plan.elements || []).some(e => meaningful(e.name) || meaningful(e.description)), 'no named/described element: ' + JSON.stringify(plan.elements)).toBe(false);
+        // The compiled string carries only what the compiler adds on its own (camera default, style) - none of
+        // scene 0's text leaked in, and nothing a scene would have said.
+        expect(plan.compiled.BASE.prompt || '', 'no scene text compiled').not.toMatch(/lighthouse|lamp has just been lit|windswept/);
 
         // The refusal left scene 1's RENDER_PLAN node FAILED (created on first use, nothing rendered); scene 0's
         // node is untouched.
@@ -408,9 +490,11 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         await request.get(REST + '/logout');
     });
 
-    test('[SD] render-plan 2: the same scene again re-executes the SAME node (still one RENDER_PLAN node) and records base revision 2 superseding revision 1', async ({ request }) => {
+    test('[SD] render-plan 2: the same scene again re-executes the SAME node (still one RENDER_PLAN node) and records the next attempt\'s base (revision N+1, N = variants per attempt) superseding revision 1', async ({ request }) => {
         test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — needs the render from test 1');
         expect(r1.artifactObjectId, 'render-plan 1 produced an artifact').toBeTruthy();
+        expect(r1.variants, 'test 1 read the variant count').toBeGreaterThan(0);
+        const N = r1.variants;
         const PB = PB_ROOT + '/' + bookObjectId;
         await login(request);
 
@@ -425,9 +509,27 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(dto.strategy).toBe('TEXT_ONLY');
         expect(dto.stagesRendered).toEqual(['BASE']);
         expect(dto.artifactObjectId, 'a new base artifact').not.toBe(r1.artifactObjectId);
-        expect(dto.artifactRevision, 'second revision').toBe(2);
+        // Attempt 1 wrote revisions 1..N; this attempt's variant 0 is the next one (§23, 236 e).
+        expect(dto.variantsRendered, 'the same variant count as attempt 1').toBe(N);
+        expect(dto.artifactRevision, 'attempt 2 variant 0 = revision N+1').toBe(N + 1);
         expect(dto.planArtifactObjectId, 'a new renderPlan artifact for this attempt').not.toBe(r1.planArtifactObjectId);
-        expect(dto.planContentHash, 'same inputs, same plan hash').toBe(r1.planContentHash);
+        // Same inputs ⇒ the same plan, except for P4-4 (2026-10-19): the first render of an un-composed scene
+        // composes it and records COMPOSED_OUT_OF_ORDER in the plan's `degradations`; this attempt finds the
+        // composition in place and carries no such entry. RenderPlan.contentHash() hashes the whole plan JSON,
+        // degradations included (it is reported, never used for reuse), so the hashes are equal exactly when
+        // attempt 1 recorded no degradation. Compare the plans themselves, degradations aside (measured 2026-11-02).
+        const plan1 = JSON.parse((await (await request.get(PB + '/artifact/' + r1.planArtifactObjectId)).json()).artifactText);
+        const plan2 = JSON.parse((await (await request.get(PB + '/artifact/' + dto.planArtifactObjectId)).json()).artifactText);
+        const sansDegradations = p => { const c = Object.assign({}, p); delete c.degradations; return c; };
+        const codes = p => (p.degradations || []).map(d => d.code);
+        console.log('[p25-r2-plan] hash1=' + r1.planContentHash + ' hash2=' + dto.planContentHash + ' degradations1=' + JSON.stringify(codes(plan1)) + ' degradations2=' + JSON.stringify(codes(plan2)));
+        expect(sansDegradations(plan2), 'same inputs, same plan (degradations aside)').toEqual(sansDegradations(plan1));
+        expect(codes(plan2), 'the composition already exists: no COMPOSED_OUT_OF_ORDER on attempt 2').not.toContain('COMPOSED_OUT_OF_ORDER');
+        if (JSON.stringify(plan1.degradations || []) === JSON.stringify(plan2.degradations || [])) {
+            expect(dto.planContentHash, 'same degradations on both attempts: same plan hash').toBe(r1.planContentHash);
+        } else {
+            expect(dto.planContentHash, 'the degradations differ, so the hashes differ').not.toBe(r1.planContentHash);
+        }
         expect(dto.runObjectId, 'the second execution records its own run').toBeTruthy();
         expect(dto.runObjectId, 'a new run, not the first one re-used').not.toBe(r1.runObjectId);
         r2.artifactObjectId = dto.artifactObjectId;
@@ -442,13 +544,14 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
 
         const second = await savePng(request, PB, dto.artifactObjectId, 'r2-base.png');
         expect(upper(second.art.role)).toBe('BASE');
-        expect(second.art.revision, 'revision 2').toBe(2);
+        expect(second.art.revision, 'revision N+1').toBe(N + 1);
         expect(second.art.selected).toBe(true);
         const prior = await (await request.get(PB + '/artifact/' + r1.artifactObjectId)).json();
         console.log('[p25-r2-revision] prior=' + prior.revision + ' selected=' + prior.selected + ' reviewStatus=' + prior.reviewStatus
             + ' -> second=' + second.art.revision + ' selected=' + second.art.selected + ' supersedes=' + second.art.supersedesObjectId);
         expect(prior.objectId, 'revision 1 is kept in the history').toBe(r1.artifactObjectId);
-        expect(second.art.supersedesObjectId, 'revision 2 supersedes revision 1').toBe(r1.artifactObjectId);
+        // Every variant of an attempt supersedes the selection that stood BEFORE the attempt (revision 1).
+        expect(second.art.supersedesObjectId, 'revision N+1 supersedes revision 1').toBe(r1.artifactObjectId);
         expect(prior.selected, 'revision 1 is kept but no longer selected').toBe(false);
         await request.get(REST + '/logout');
     });
@@ -485,7 +588,9 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(notHere.status, 'unknown run: ' + notHere.text).toBe(404);
         expect(errorText(notHere.text)).toBe('Run ' + NIL_UUID + ' not found in this book');
 
-        // The node view: both chains, ascending, revision 2 selected, revision 1 kept.
+        // The node view: the base chain is attempt 1's N variants then attempt 2's N (ascending revisions
+        // 1..2N), only attempt 2's variant 0 (revision N+1) selected, revision 1 kept; one plan per attempt.
+        const N = r1.variants;
         const nv = await nodeView(request, PB, r1.nodeObjectId);
         console.log('[p25-node-view] ' + JSON.stringify({ storedStatus: nv.storedStatus, status: nv.status, pinned: nv.pinned, lastError: nv.lastError,
             inputHash: nv.inputHash, roles: Object.keys(nv.artifacts || {}), base: nv.artifacts && nv.artifacts.base, renderPlan: nv.artifacts && nv.artifacts.renderPlan }));
@@ -494,16 +599,18 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(upper(nv.storedStatus)).toBe('DONE_UNVERIFIED');
         expect(!!nv.pinned, 'not pinned yet (test 6 pins it)').toBe(false);
         expect(nv.inputHash, 'the executor stamped the node inputHash').toBeTruthy();
-        expect(chainIds(nv, 'base'), 'base chain = [rev1, rev2]').toEqual([r1.artifactObjectId, r2.artifactObjectId]);
+        const baseChain = chainIds(nv, 'base');
+        expect(baseChain.length, 'base chain = N variants x 2 attempts: ' + JSON.stringify(baseChain)).toBe(2 * N);
+        expect(baseChain[0], 'attempt 1 variant 0 heads the chain').toBe(r1.artifactObjectId);
+        expect(baseChain[N], 'attempt 2 variant 0 sits at index N').toBe(r2.artifactObjectId);
         expect(chainIds(nv, 'renderPlan'), 'renderPlan chain = [plan1, plan2]').toEqual([r1.planArtifactObjectId, r2.planArtifactObjectId]);
-        expect(nv.artifacts.base.map(a => a.revision)).toEqual([1, 2]);
-        expect(nv.artifacts.base.map(a => a.selected)).toEqual([false, true]);
-        expect(nv.artifacts.base[1].supersedesObjectId).toBe(r1.artifactObjectId);
+        expect(nv.artifacts.base.map(a => a.revision)).toEqual(nv.artifacts.base.map((a, i) => i + 1));
+        expect(nv.artifacts.base.map(a => !!a.selected), 'only revision N+1 selected').toEqual(nv.artifacts.base.map((a, i) => i === N));
+        expect(nv.artifacts.base[N].supersedesObjectId).toBe(r1.artifactObjectId);
         // autoApprove is off on a fresh book (bookModel.json: boolean, no schema default), so nothing
         // approved or pinned itself - the state test 6 starts from.
-        expect(upper(nv.artifacts.base[1].reviewStatus), 'a fresh render is GENERATED, not auto-approved').toBe('GENERATED');
-        expect(upper(nv.artifacts.base[0].reviewStatus)).toBe('GENERATED');
-        expect(nv.artifacts.base[1].approvedBy, 'approvedBy is only emitted once APPROVED').toBeUndefined();
+        expect(nv.artifacts.base.map(a => upper(a.reviewStatus)), 'fresh renders are GENERATED, not auto-approved').toEqual(nv.artifacts.base.map(() => 'GENERATED'));
+        expect(nv.artifacts.base[N].approvedBy, 'approvedBy is only emitted once APPROVED').toBeUndefined();
         expect(nv.artifacts.renderPlan.map(a => a.revision)).toEqual([1, 2]);
         // lastError: the refusals test touched scene 1's node, never this one; logged only - the product
         // never clears it on success (implementation items 50/57), so it is not a pass/fail here.
@@ -579,14 +686,16 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         await request.get(REST + '/logout');
     });
 
-    test('pinned: approving base revision 2 pins the node; render-plan on the pinned node is refused 409 before any render, leaving chains/selection/status untouched; unpin restores pinned:false', async ({ request }) => {
+    test('pinned: approving attempt 2\'s base pins the node; render-plan on the pinned node is refused 409 before any render, leaving chains/selection/status untouched; unpin restores pinned:false', async ({ request }) => {
         test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — needs the renders from tests 1 and 3');
-        expect(r2.artifactObjectId, 'render-plan 2 produced revision 2').toBeTruthy();
+        expect(r2.artifactObjectId, 'render-plan 2 produced its base').toBeTruthy();
         expect(shared.user && shared.user.objectId, 'ensureSharedTestUser returned the user record: ' + JSON.stringify(shared.user)).toBeTruthy();
+        const N = r1.variants;
         const PB = PB_ROOT + '/' + bookObjectId;
         await login(request);
 
-        // Approve revision 2 (V3 §10 rule 2): selected, APPROVED, approvedBy = the caller, node pinned.
+        // Approve attempt 2's base, revision N+1 (V3 §10 rule 2): selected, APPROVED, approvedBy = the
+        // caller, node pinned.
         const apResp = await request.put(PB + '/artifact/' + r2.artifactObjectId + '/approve', { data: {} });
         const apText = await apResp.text();
         console.log('[p25-approve] HTTP ' + apResp.status() + ' ' + apText.slice(0, 500));
@@ -603,7 +712,7 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(upper(pinnedView.storedStatus)).toBe('DONE_UNVERIFIED');
         const baseBefore = pinnedView.artifacts.base;
         const planBefore = chainIds(pinnedView, 'renderPlan');
-        expect(baseBefore.length, 'two base revisions going in').toBe(2);
+        expect(baseBefore.length, '2N base revisions going in').toBe(2 * N);
         expect(planBefore.length, 'two plan revisions going in').toBe(2);
 
         // The refusal: 409 with the exact pinned message, before the plan is rebuilt or anything is sent.
@@ -612,26 +721,34 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(refused.status, 'render-plan on a pinned node: ' + refused.text.slice(0, 300)).toBe(409);
         expect(errorText(refused.text)).toBe('Node ' + fx.handle + ' is pinned. Unpin it first - pinning means do not replace this artifact.');
 
-        // Nothing moved: same two base revisions, same two plans (the pinned gate sits BEFORE the plan is
-        // persisted, unlike the no-text 409 which persists its plan first), revision 2 still the approved
+        // Nothing moved: same 2N base revisions, same two plans (the pinned gate sits BEFORE the plan is
+        // persisted, unlike the no-text 409 which persists its plan first), revision N+1 still the approved
         // selection, node status and inputHash unchanged, still pinned, workflow node count unchanged.
         const after = await nodeView(request, PB, r1.nodeObjectId);
         console.log('[p25-pinned-after] ' + JSON.stringify({ pinned: after.pinned, storedStatus: after.storedStatus, base: after.artifacts.base, renderPlan: chainIds(after, 'renderPlan') }));
         expect(after.pinned).toBe(true);
         expect(upper(after.storedStatus), 'the refusal did not FAIL or RUN the node').toBe('DONE_UNVERIFIED');
         expect(after.inputHash).toBe(pinnedView.inputHash);
-        expect(chainIds(after, 'base'), 'no base revision 3').toEqual([r1.artifactObjectId, r2.artifactObjectId]);
+        expect(chainIds(after, 'base'), 'no base revision ' + (2 * N + 1)).toEqual(baseBefore.map(a => a.objectId));
+        expect(chainIds(after, 'base')[N], 'attempt 2 variant 0 still at index N').toBe(r2.artifactObjectId);
         expect(chainIds(after, 'renderPlan'), 'no third renderPlan artifact').toEqual(planBefore);
-        expect(after.artifacts.base[1].selected).toBe(true);
-        expect(upper(after.artifacts.base[1].reviewStatus)).toBe('APPROVED');
-        expect(after.artifacts.base[1].approvedBy).toBe(shared.user.objectId);
-        expect(after.artifacts.base[0].selected).toBe(false);
+        expect(after.artifacts.base[N].selected).toBe(true);
+        expect(upper(after.artifacts.base[N].reviewStatus)).toBe('APPROVED');
+        expect(after.artifacts.base[N].approvedBy).toBe(shared.user.objectId);
+        expect(after.artifacts.base.map(a => !!a.selected), 'only the approved base is selected').toEqual(after.artifacts.base.map((a, i) => i === N));
         const wf = await workflow(request, PB);
         expect(wf.status).toBe(200);
         expect((wf.view.nodes || []).length, 'scene 0 + scene 1 nodes only').toBe(2);
+        expect(await sceneNodeFk(request, fx.scene.objectId), 'scene.sceneNode still untouched').toBeNull();
+        // The page view (P10-A 2) follows the pinned, approved selection: revision N+1, pinned, APPROVED.
         const pages = await (await request.get(PB + '/pages')).json();
         const pg = pages.find(p => p.objectId === fx.scene.objectId);
-        expect(pg.sceneNodeObjectId == null, 'sceneNode still untouched: ' + JSON.stringify(pg)).toBe(true);
+        console.log('[p25-pinned-page] ' + JSON.stringify(pg));
+        expect(pg.sceneNodeObjectId, 'page view still names the RENDER_PLAN node').toBe(r1.nodeObjectId);
+        expect(pg.artifactObjectId, 'page view follows the approved selection').toBe(r2.artifactObjectId);
+        expect(pg.pinned).toBe(true);
+        expect(upper(pg.reviewStatus)).toBe('APPROVED');
+        expect(upper(pg.nodeStatus)).toBe('DONE_UNVERIFIED');
 
         // Unpin (the only way past the gate): pinned:false, approval untouched.
         const unpinResp = await request.post(PB + '/node/' + r1.nodeObjectId + '/pin', { data: { pinned: false } });
@@ -644,8 +761,8 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         expect(unpin.pinned).toBe(false);
         const unpinned = await nodeView(request, PB, r1.nodeObjectId);
         expect(unpinned.pinned, 'node view agrees').toBe(false);
-        expect(upper(unpinned.artifacts.base[1].reviewStatus), 'unpin does not revoke the approval').toBe('APPROVED');
-        expect(unpinned.artifacts.base[1].selected).toBe(true);
+        expect(upper(unpinned.artifacts.base[N].reviewStatus), 'unpin does not revoke the approval').toBe('APPROVED');
+        expect(unpinned.artifacts.base[N].selected).toBe(true);
         await request.get(REST + '/logout');
     });
 });

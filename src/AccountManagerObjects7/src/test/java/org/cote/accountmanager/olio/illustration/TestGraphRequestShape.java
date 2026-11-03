@@ -136,8 +136,8 @@ public class TestGraphRequestShape {
 		assertFalse(String.valueOf(c.getInputs()).contains("base64,"));
 
 		/// The stage's request record, as the adapter persists it.
-		StageRequest req = StageRequest.builder().stage(c.getStage()).model(TestWorkflowCompiler.FLUX2)
-			.graph(c.getGraph()).inputs(c.getInputs()).seed((int) c.getSeed()).build();
+		StageRequest req = TestWorkflowCompiler.flux2Request().toBuilder().stage(c.getStage())
+			.graph(c.getGraph()).inputs(c.getInputs()).seed((int) c.getSeed()).steps(c.getSteps()).build();
 		String record = SwarmRendererAdapter.graphRequestJson(req, c.getGraph().graphHash());
 		assertFalse(record.contains("data:image"));
 		assertFalse(record.contains("base64,"));
@@ -148,6 +148,12 @@ public class TestGraphRequestShape {
 		assertEquals(c.getGraph().graphHash(), rec.get("graphHash"));
 		assertEquals(List.of("art-actorA", "art-actorB", "art-actorC"), rec.get("referenceArtifactIds"));
 		assertTrue(rec.get("inputs") instanceof Map);
+		/// P10-A 5: the knobs the graph was compiled from, under the T2I record's key names, so a reader
+		/// of either path's artifact can see which family's cfg / sampler / scheduler was sent.
+		assertEquals(4, ((Number) rec.get("steps")).intValue());
+		assertEquals(2.0, ((Number) rec.get("cfgscale")).doubleValue(), 0.0001);
+		assertEquals("euler", rec.get("sampler"));
+		assertEquals("simple", rec.get("scheduler"));
 		/// Bytes-free is not the same as structurally clean: the redacted inputs keep the image TAG KEYS
 		/// (`comfyrawworkflowinputimage<name>` -> "<N bytes png>"), and the structural check is on key
 		/// names. The pipeline's `recordImage` runs every request record through the sanitiser before it
@@ -162,6 +168,10 @@ public class TestGraphRequestShape {
 		assertEquals(RenderPlan.STAGE_BASE, pm.get("stage"));
 		assertEquals(List.of("art-actorA", "art-actorB", "art-actorC"), pm.get("referenceArtifactIds"));
 		assertEquals(List.of("art-actorA", "art-actorB", "art-actorC"), pm.get(PbArtifactUtil.REFERENCE_ARTIFACTS_KEY));
+		assertEquals("the knobs survive the sanitiser", 2.0, ((Number) pm.get("cfgscale")).doubleValue(), 0.0001);
+		assertEquals("euler", pm.get("sampler"));
+		assertEquals("simple", pm.get("scheduler"));
+		assertEquals(4, ((Number) pm.get("steps")).intValue());
 		@SuppressWarnings("unchecked")
 		Map<String, Object> pin = (Map<String, Object>) pm.get("inputs");
 		assertEquals(TestWorkflowCompiler.SCENE, pin.get(ComfyGraph.inputKey(ComfyGraph.TYPE_TEXT, WorkflowCompiler.TAG_SCENE)));
