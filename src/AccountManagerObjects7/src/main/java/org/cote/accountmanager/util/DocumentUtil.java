@@ -19,6 +19,9 @@ import org.apache.poi.hwpf.HWPFDocument;
 import org.apache.poi.hwpf.extractor.WordExtractor;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.Parser;
+import org.apache.tika.parser.wordperfect.WordPerfectParser;
 import org.apache.tika.sax.BodyContentHandler;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -57,8 +60,8 @@ public class DocumentUtil {
 	private static final byte[] ZIP_MAGIC = { 0x50, 0x4B, 0x03, 0x04 };
 	/**
 	 * WordPerfect document prefix (0xFF "WPC"). Byte 8 is the product type (0x01 = WordPerfect),
-	 * byte 9 the file type (0x0A = document), byte 10 the major version (0x02 = WP6.0+, which is
-	 * what Tika's WPDParser supports; 0x00 = WP5.x and earlier, which it does not).
+	 * byte 9 the file type (0x0A = document), byte 10 the major version (0x02 = WP6.x, 0x00 = WP5.x;
+	 * Tika's WordPerfectParser reads both), byte 11 the minor version.
 	 */
 	private static final byte[] WPC_MAGIC = { (byte) 0xFF, 0x57, 0x50, 0x43 };
 	/** Offset of the major-version byte in a WordPerfect header. */
@@ -81,10 +84,9 @@ public class DocumentUtil {
 	 * as {@code null} under the declared {@code application/msword} and **10,861 characters** once
 	 * the type was corrected to {@code application/wordperfect}.
 	 * <p>
-	 * WP5.x (major version {@code 0x00}) is reported as {@code application/x-wordperfect}, which is
-	 * in {@link #OFFICE_CONTENT_TYPES} but which Tika's {@code WPDParser} does not handle — such a
-	 * file should fail with a clear "could not extract" message rather than silently yield binary
-	 * garbage.
+	 * WP5.x (major version {@code 0x00}) is reported as {@code application/x-wordperfect}. Both
+	 * WordPerfect types are extracted by {@link #readDocument(byte[], int, String)} through Tika's
+	 * {@code WordPerfectParser} directly (see the note there on why not {@code AutoDetectParser}).
 	 *
 	 * @param data raw document bytes
 	 * @return {@code application/msword} for an OLE2 compound file, the OOXML wordprocessing type
@@ -403,8 +405,8 @@ public class DocumentUtil {
      * Routes {@code application/msword} (.doc) to {@link #readDocFile(byte[])} (Apache POI
      * HWPF) to avoid the OLE2-stream-dump fallback that Tika's {@code AutoDetectParser}
      * may produce when the HWPF-specific parser is not preferred by detection alone.
-     * WordPerfect MIME types ({@code application/wordperfect},
-     * {@code application/x-wordperfect}, {@code application/vnd.wordperfect}) and all other
+     * WordPerfect bytes (0xFF "WPC" magic, whatever the declared type) go to Tika's
+     * {@code WordPerfectParser} directly. All other
      * content types go through {@code AutoDetectParser} with the hint set in
      * {@link Metadata} so Tika can select the correct parser without relying solely on
      * magic-byte detection.
@@ -425,13 +427,20 @@ public class DocumentUtil {
     	String out = null;
     	try {
 	    	ByteArrayInputStream bais = new ByteArrayInputStream(data);
-	    	AutoDetectParser parser = new AutoDetectParser();
+	    	/// WordPerfect goes straight to WordPerfectParser, never AutoDetectParser. Tika's mime magic
+	    	/// (tika-mimetypes.xml, 3.1.0) only resolves "version=6.x" for header bytes 0x0201 at offset
+	    	/// 10 — WP 6.1. A WP 6.0 file (0x0200) detects as bare application/vnd.wordperfect, which no
+	    	/// parser claims, so AutoDetectParser falls to EmptyParser and returns "" with no error.
+	    	/// WordPerfectParser itself dispatches on the major version (WP5 or WP6) from the prefix
+	    	/// area and reads 6.0 fine. Measured 2026-11-04: NAKEDANG.DOC (6.0) extracted 0 characters
+	    	/// via AutoDetectParser, 5NIGHTS.DOC (6.1) 10,861.
+	    	Parser parser = startsWith(data, WPC_MAGIC) ? new WordPerfectParser() : new AutoDetectParser();
 	    	Metadata metadata = new Metadata();
 	    	if (contentType != null && !contentType.isEmpty()) {
 	    		metadata.set("Content-Type", contentType);
 	    	}
 	    	BodyContentHandler handler = new BodyContentHandler(maxChars);
-	    	parser.parse(bais, handler, metadata);
+	    	parser.parse(bais, handler, metadata, new ParseContext());
 			out = replaceSmartQuotes(handler.toString());
 
     	}
@@ -441,7 +450,7 @@ public class DocumentUtil {
     	}
     	return out;
     }
-	
+
 	/// Normalizes Word/Tika-introduced "smart" typography to plain ASCII so downstream consumers that
 	/// treat extracted text as a literal source-of-truth (PageIndexUtil's LLM-TOC verbatim startMarker
 	/// location via String.indexOf, in particular) aren't defeated by punctuation an LLM naturally
