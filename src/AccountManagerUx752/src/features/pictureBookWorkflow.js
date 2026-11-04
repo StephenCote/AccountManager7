@@ -22,12 +22,12 @@ import {
     listSeriesBooks, listPb2Books, loadNodePlan,
     normalizeArtifact, isArchivedArtifact, groupArtifactsByAttempt, formatBytes,
     scanRetention, applyRetention, retentionActionable,
-    qaBadge, qaFindings, qaReportsForNewestAttempt
+    qaBadge, qaFindings, qaReportsForNewestAttempt, buildGraph
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { loadPictureBook } from '../workflows/sceneExtractor.js';
-import { pictureBookFromId } from '../workflows/pictureBook.js';
+import { pictureBookFromId, pictureBookRenderPath } from '../workflows/pictureBook.js';
 import { ObjectPicker } from '../components/picker.js';
 import { Dialog } from '../components/dialogCore.js';
 
@@ -104,12 +104,16 @@ let positions = {};       // nodeObjectId → {x, y}
 let loading = false;
 let error = null;
 // Informational empty state (NOT an error). One of the honest "no graph to draw" cases —
-// see loadGraph. Shape: {icon, title, body, scenes?}. Rendered neutrally (grey), distinct from
-// `error` (red). When `scenes` is a non-empty array the panel lists them and offers ONE way to
-// render: open the book in the wizard (the graph is created at first render, and the wizard is the
-// single render entry point — it owns the SD config resolution, see workflows/pictureBook.js
-// ensureSdConfig / persistBookSettings).
+// see loadGraph. Shape: {icon, title, body, scenes?, actions?}. Rendered neutrally (grey), distinct
+// from `error` (red). When `scenes` is a non-empty array the panel lists them. When `actions` is set
+// the panel offers the two ways forward on a never-rendered V3 book: open the reader (where Render /
+// Render all create the graph on first use — P10-B, PbServiceFacade.ensureWorkflow + sceneTerminal) and,
+// when the PB2 book id is known, "Build graph" (POST /{book}/graph/build) to see the nodes first.
 let emptyState = null;
+// P7-3 / P10-B: where "open to render" goes. 'v3' = the V3 reader (/picture-book/v2/{oid}); 'v1' = the
+// PB1 wizard (pictureBookFromId). Read once per canvas load, only on the empty-state branches.
+let renderPath = 'v3';
+let building = false;
 
 let selectedNodeId = null;
 let nodeDetails = null;
@@ -258,10 +262,11 @@ function canvasSize() {
 // ── Data loading ──────────────────────────────────────────────────────
 
 /**
- * Empty state for a book that exists but has no workflow graph yet. The graph row is written by the
- * server at the FIRST scene render (PbServiceFacade.requireWorkflow: "generate a scene first"), so
- * the honest message is "nothing rendered yet — N extracted", listing the extracted scenes, with a
- * single button that opens the book in the wizard (the only render entry point). `scenes` is the
+ * Empty state for a book that exists but has no workflow graph yet. Since P10-B the server creates the
+ * graph on first use — the reader's Render / Render all (PbServiceFacade.requestSceneRender /
+ * requestRenderAll → ensureWorkflow + sceneTerminal) or an explicit POST /{book}/graph/build — so the
+ * honest message is "nothing rendered yet — N extracted", listing the extracted scenes, with the two
+ * ways forward: open the reader to render, or build the graph now to look at it first. `scenes` is the
  * GET /{id}/scenes DTO list ([{objectId, title, description, characters, userEdited}], ordered).
  */
 function noWorkflowYetState(scenes) {
@@ -270,9 +275,40 @@ function noWorkflowYetState(scenes) {
         icon: 'draft',
         title: 'No workflow graph yet',
         body: 'No scenes have been rendered yet — ' + list.length + ' extracted. '
-            + 'The workflow graph is created at first render.',
-        scenes: list
+            + 'The workflow graph is created the first time you render (Render on a page, or Render all, in the reader). '
+            + 'You can also build it now to see the scene nodes before rendering anything.',
+        scenes: list,
+        actions: true
     };
+}
+
+/**
+ * P10-B 1: "Build graph" on the empty canvas → POST /{book}/graph/build → reload. The server answers
+ * {sceneCount, nodesMaterialized}; a book with no extracted scenes materializes nothing and stays on
+ * the empty state, which the toast says. Errors toast the server's message (403 no update grant, 409
+ * not a V3 book) and leave the empty state as it was.
+ */
+async function buildGraphNow() {
+    if (building || !pb2BookObjectId) return;
+    building = true;
+    m.redraw();
+    try {
+        let r = await buildGraph(pb2BookObjectId);
+        if (r.nodesMaterialized > 0) {
+            page.toast('success', 'Workflow graph built: ' + r.nodesMaterialized + ' scene node' + (r.nodesMaterialized === 1 ? '' : 's') + ' for ' + r.sceneCount + ' scene' + (r.sceneCount === 1 ? '' : 's'));
+        } else if (r.sceneCount > 0) {
+            page.toast('info', 'Workflow graph already has nodes for all ' + r.sceneCount + ' scenes');
+        } else {
+            page.toast('warn', 'No extracted scenes — nothing to build. Extract a scene list first.');
+        }
+        building = false;
+        await loadGraph(bookGroupObjectId);
+        return;
+    } catch (e) {
+        page.toast('error', 'Build graph failed: ' + (e.message || ''));
+    }
+    building = false;
+    m.redraw();
 }
 
 async function loadGraph(groupOid) {
@@ -310,6 +346,7 @@ async function loadGraph(groupOid) {
                 let hit = (books || []).find(function (b) { return b.objectId === groupOid; });
                 if (hit) bookName = hit.name || hit.slug || '';
             } catch (_) { /* name is cosmetic; the header falls back to the id */ }
+            renderPath = await pictureBookRenderPath();
             emptyState = noWorkflowYetState(scenes);
             loading = false;
             m.redraw();
@@ -326,8 +363,10 @@ async function loadGraph(groupOid) {
                 // getBookInfo 404 — the book meta carries no pb2BookObjectId. Two honest cases:
                 let scenes = await loadPictureBook(groupOid);
                 if (scenes && scenes.length) {
-                    // The PB1 book has extracted scenes but no PB2 record/graph — the first render (in
-                    // the wizard) creates the graph, so show the same "nothing rendered yet" state.
+                    // The PB1 book has extracted scenes but no PB2 record/graph — the first render
+                    // creates the graph, so show the same "nothing rendered yet" state. No PB2 id is
+                    // known here, so "Build graph" is not offered (renderEmptyState checks pb2BookObjectId).
+                    renderPath = await pictureBookRenderPath();
                     emptyState = noWorkflowYetState(scenes);
                 } else {
                     // State (a): genuinely legacy — no PB2 record AND no scenes. Nothing to record.
@@ -347,8 +386,9 @@ async function loadGraph(groupOid) {
             gd = await workflowView(pb2BookObjectId);
             if (gd === null || gd.noWorkflow) {
                 // The book resolves to a PB2 book, but no olio.pb.workflow row exists for it yet.
-                // The graph is created at first render (in the wizard), so list the scenes.
+                // The graph is created at first render, so list the scenes.
                 let scenes = await loadPictureBook(pb2BookObjectId);
+                renderPath = await pictureBookRenderPath();
                 emptyState = noWorkflowYetState(scenes);
                 loading = false;
                 m.redraw();
@@ -359,12 +399,15 @@ async function loadGraph(groupOid) {
         positions = computePositions((gd && gd.nodes) || []);
         if (!graphData.nodes || graphData.nodes.length === 0) {
             // State (c): a workflow row exists but holds zero nodes — this book genuinely has
-            // never been rendered. (Toolbar still shows the book name / "0 nodes".)
+            // never been rendered. (Toolbar still shows the book name / "0 nodes".) Same two ways
+            // forward as the no-workflow state: render in the reader, or build the scene nodes now.
+            renderPath = await pictureBookRenderPath();
             emptyState = {
                 icon: 'draft',
                 title: 'Nothing rendered yet',
                 body: 'This book has a workflow but no scenes have been rendered yet. Render a '
-                    + 'scene to populate the graph.'
+                    + 'scene in the reader to populate the graph, or build the scene nodes now.',
+                actions: true
             };
         }
     } catch (e) {
@@ -389,12 +432,17 @@ function renderEmptyState() {
         m('div', { style: 'font-size:16px;font-weight:600;color:#334155;margin-bottom:8px;' }, emptyState.title),
         m('div', { style: 'font-size:13px;max-width:440px;line-height:1.6;' }, emptyState.body),
         scenes.length ? renderEmptyStateScenes(scenes) : null,
-        scenes.length ? renderOpenInWizardButton() : null,
+        emptyState.actions ? m('div', { class: 'pb-wf-empty-actions', style: 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;' }, [
+            renderOpenToRenderButton(),
+            // "Build graph" needs the PB2 book id (POST /{pb2Book}/graph/build); the PB1-only bridge
+            // case (getBookInfo 404) has none, so it offers the reader/wizard handoff alone.
+            pb2BookObjectId ? renderBuildGraphButton() : null
+        ]) : null,
     ]);
 }
 
 // Scene list for the "no workflow yet" state: index + title only. Rendering is NOT offered per scene
-// here — the wizard is the single render entry point (renderOpenInWizardButton below).
+// here — the reader's Render / Render all are the render entry points (renderOpenToRenderButton below).
 function renderEmptyStateScenes(scenes) {
     return m('div', { class: 'pb-wf-empty-scenes', style: 'margin-top:20px;width:100%;max-width:560px;text-align:left;' }, [
         m('div', { style: 'font-size:12px;font-weight:600;color:#475569;margin-bottom:6px;' },
@@ -415,21 +463,45 @@ function renderEmptyStateScenes(scenes) {
     ]);
 }
 
-// The one render action on the empty canvas: reopen the book in the wizard, exactly as the book
-// list's Edit pencil does (features/pictureBook.js renderPb2EditButton). The wizard resumes on its
-// scene step and its Generate path resolves the SD config (ensureSdConfig → persistBookSettings) —
-// rendering from here would bypass that and use whatever /settings happens to hold. The route id is
-// what the wizard resumes with: the PB2 book id on a direct hit, the PB1 group id via the bridge;
-// both are accepted (resolveBookGroupEither).
-function renderOpenInWizardButton() {
+// The render action on the empty canvas. Under the V3 render path (the default) this is the V3 reader
+// (/picture-book/v2/{pb2 book}), whose per-page Render / Render all create the graph on first use
+// (P10-B) — the same place the book list's Edit pencil lands (features/pictureBook.js
+// renderPb2EditButton → pictureBookFromId → tryResumeExistingBook handoff). Under v1 it is the PB1
+// wizard, which resumes on its scene step and resolves the SD config itself (ensureSdConfig →
+// persistBookSettings). The label says where it goes; the earlier "Open in wizard to render" label
+// sent V3 users to the reader while promising a wizard. The route id is what the handoff resumes
+// with: the PB2 book id on a direct hit, the PB1 group id via the bridge (resolveBookGroupEither).
+function renderOpenToRenderButton() {
+    let v3 = renderPath !== 'v1';
     return m('button', {
         'data-wf-open-wizard': bookGroupObjectId,
+        'data-wf-open-target': v3 ? 'reader' : 'wizard',
         class: 'mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm flex items-center gap-1',
-        title: 'Open this book in the Picture Book wizard to render its scenes',
-        onclick: function () { pictureBookFromId(bookGroupObjectId, bookName || ''); }
+        title: v3 ? 'Open this book in the reader — Render on a page or Render all creates the graph'
+            : 'Open this book in the Picture Book wizard to render its scenes',
+        onclick: function () {
+            if (v3 && pb2BookObjectId) m.route.set('/picture-book/v2/' + pb2BookObjectId);
+            else pictureBookFromId(bookGroupObjectId, bookName || '');
+        }
     }, [
-        m('span', { class: 'material-symbols-outlined text-sm' }, 'edit'),
-        'Open in wizard to render'
+        m('span', { class: 'material-symbols-outlined text-sm' }, v3 ? 'auto_stories' : 'edit'),
+        v3 ? 'Open in reader to render' : 'Open in wizard to render'
+    ]);
+}
+
+// P10-B 1: build the scene graph without rendering (POST /{book}/graph/build), so the canvas shows
+// one RENDER_PLAN node per extracted scene before anything is sent to the SD server.
+function renderBuildGraphButton() {
+    return m('button', {
+        'data-wf-build-graph': pb2BookObjectId,
+        disabled: building,
+        class: 'mt-4 px-4 py-2 border border-slate-300 hover:bg-slate-50 text-slate-700 rounded text-sm flex items-center gap-1'
+            + (building ? ' opacity-60 cursor-wait' : ''),
+        title: 'Create the workflow graph now (one node per extracted scene) without rendering',
+        onclick: buildGraphNow
+    }, [
+        m('span', { class: 'material-symbols-outlined text-sm' }, building ? 'hourglass_top' : 'account_tree'),
+        building ? 'Building…' : 'Build graph'
     ]);
 }
 

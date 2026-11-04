@@ -422,6 +422,21 @@ export async function renderAll(pb2BookObjectId) {
         { method: 'POST' }, 'renderAll failed'));
 }
 
+/**
+ * P10-B 1: POST /{book}/graph/build → 200 {bookObjectId, workflowObjectId, sceneCount, nodesMaterialized}.
+ * Creates the book's workflow and one RENDER_PLAN terminal per scene without rendering anything, so a book
+ * straight out of the wizard (scenes + characters extracted, nothing rendered) gets a graph the canvas can
+ * show. Idempotent: a second call answers nodesMaterialized 0. Render / Render all do the same on first use,
+ * so this is only the "show me the graph before I render" path. 404 book, 403 no update grant, 409 not V3.
+ */
+export async function buildGraph(pb2BookObjectId) {
+    let r = await wfFetch('/' + pb2BookObjectId + '/graph/build', { method: 'POST' }, 'buildGraph failed') || {};
+    return Object.assign({}, r, {
+        sceneCount: r.sceneCount != null ? r.sceneCount : 0,
+        nodesMaterialized: r.nodesMaterialized != null ? r.nodesMaterialized : 0
+    });
+}
+
 /** GET /{book}/run/{run} → runDto (runStatus, resumable, jobId when the job is still retained, nodes[]) */
 export async function getRun(pb2BookObjectId, runObjectId) {
     return normalizeRun(await wfFetch('/' + pb2BookObjectId + '/run/' + runObjectId, {}, 'getRun failed'));

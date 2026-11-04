@@ -219,6 +219,88 @@ public class TestChapBookRestContract extends BaseTest {
 		assertEquals("s", explicit.get("slug"));
 	}
 
+	/// Drives the REAL ChapBookService.parseParamsExcept (the schema pass with the caller's raw-read keys
+	/// withheld), the same way parseBody drives parseParams.
+	private BaseRecord parseBodyExcept(String json, String... rawKeys) {
+		OlioModelNames.use();
+		try {
+			Method pp = ChapBookService.class.getDeclaredMethod("parseParamsExcept", String.class, String[].class);
+			pp.setAccessible(true);
+			return (BaseRecord) pp.invoke(new ChapBookService(), json, rawKeys);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException("ChapBookService.parseParamsExcept(String, String...) is not reachable", e);
+		}
+	}
+
+	@Test
+	public void TestRawReadKeysDoNotLogInvalidFieldErrors() {
+		/// Stephen, UAT 2026-11-04: "I see log error - invalid field olio.pictureBookRequest.sources". The
+		/// line is RecordDeserializer's ERROR for a key the request model does not declare; POST /poems
+		/// reads sources (and bookObjectId) with Jackson AFTER the schema pass, so the import worked and the
+		/// ERROR was pure noise - but noise that reads like a failed request. Same on POST
+		/// /scene/{id}/generate with sdPrompt (3 such lines on am7test from the 2026-11-02 chapbook run).
+		/// The schema pass must still parse (the endpoint's 400 "Request body is required" guard depends on
+		/// a non-null record) and the declared fields must still arrive; the withheld keys must not reach the
+		/// deserializer. Captured on RecordDeserializer's own logger, so the assertion is on what an operator
+		/// would actually see in the log.
+		org.apache.logging.log4j.core.Logger deser = (org.apache.logging.log4j.core.Logger) LogManager
+			.getLogger(org.cote.accountmanager.record.RecordDeserializer.class);
+		List<String> errors = new java.util.concurrent.CopyOnWriteArrayList<>();
+		org.apache.logging.log4j.core.appender.AbstractAppender cap = new org.apache.logging.log4j.core.appender.AbstractAppender(
+				"pbrequest-invalid-field-capture", null, null, true, org.apache.logging.log4j.core.config.Property.EMPTY_ARRAY) {
+			@Override
+			public void append(org.apache.logging.log4j.core.LogEvent event) {
+				if(event.getLevel().isMoreSpecificThan(org.apache.logging.log4j.Level.ERROR)) {
+					errors.add(event.getMessage().getFormattedMessage());
+				}
+			}
+		};
+		cap.start();
+		deser.addAppender(cap);
+		try {
+			String poems = "{\"sources\": [{\"type\": \"data.note\", \"objectId\": \"n1\", \"title\": \"t\"}], \"bookObjectId\": \"b1\"}";
+
+			/// Baseline: the plain schema pass DOES log the ERROR for both keys - this is the line Stephen saw.
+			errors.clear();
+			assertNotNull(parseBody(poems));
+			assertTrue("baseline parseParams must log the Invalid field ERROR for sources (else this test proves nothing): " + errors,
+				errors.stream().anyMatch(e -> e.contains("Invalid field: " + REQUEST_MODEL + ".sources")));
+
+			/// POST /poems shape: sources + bookObjectId withheld -> parses, nothing logged.
+			errors.clear();
+			BaseRecord r = parseBodyExcept(poems, "sources", "bookObjectId");
+			assertNotNull("the schema pass must still produce a record (the 400 body guard depends on it)", r);
+			assertEquals(REQUEST_MODEL, r.getSchema());
+			assertTrue("withholding the raw-read keys must leave RecordDeserializer silent: " + errors, errors.isEmpty());
+
+			/// POST /scene/{id}/generate shape: sdPrompt withheld, chatConfig + nested sdConfig still arrive.
+			errors.clear();
+			BaseRecord gen = parseBodyExcept(
+				"{\"chatConfig\": \"contentAnalysis\", \"sdConfig\": {\"schema\": \"olio.sd.config\", \"steps\": 12}, \"sdPrompt\": \"a lighthouse\"}",
+				"sdPrompt");
+			assertNotNull(gen);
+			assertEquals("contentAnalysis", gen.get("chatConfig"));
+			assertEquals(12, ((Number) ((BaseRecord) gen.get("sdConfig")).get("steps")).intValue());
+			assertTrue("sdPrompt withheld must leave RecordDeserializer silent: " + errors, errors.isEmpty());
+
+			/// Per-site, not blanket: a key the caller did NOT name is still reported, so a real KI-24 defect
+			/// (an endpoint reading a property the model never declared) keeps its tell.
+			errors.clear();
+			assertNotNull(parseBodyExcept("{\"sources\": [], \"notDeclaredAnywhere\": 1}", "sources"));
+			assertTrue("an un-named undeclared key must still log: " + errors,
+				errors.stream().anyMatch(e -> e.contains("Invalid field: " + REQUEST_MODEL + ".notDeclaredAnywhere")));
+			assertFalse("...while the named one stays silent: " + errors,
+				errors.stream().anyMatch(e -> e.contains("Invalid field: " + REQUEST_MODEL + ".sources")));
+
+			/// Blank / non-object bodies take parseParams' own path unchanged.
+			assertNull(parseBodyExcept("   ", "sources"));
+			assertNull(parseBodyExcept(null, "sources"));
+		} finally {
+			deser.removeAppender(cap);
+			cap.stop();
+		}
+	}
+
 	@Test
 	public void TestSettingsBodyRoundTripsSparseSdConfig() {
 		/// PUT /{bookObjectId}/settings — the body the Ux752 book panel sends: a sparse olio.sd.config.

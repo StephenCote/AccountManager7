@@ -784,14 +784,20 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
         expect(submitResp.status(), 'POST /render-all: ' + submitText.slice(0, 400)).toBe(202);
         const dto = JSON.parse(submitText);
         expect(dto.jobId && dto.runObjectId).toBeTruthy();
-        expect(dto.planned.sort(), 'scenes 2 and 4 (stale) planned; scene 1 pinned').toEqual([fx.nodes[2].handle, fx.nodes[4].handle].sort());
+        // P10-B (2026-11-04): requestRenderAll gives EVERY scene a terminal — scenes 3, 7, 12 (no node, no
+        // composition in the fixture) get a RENDER_PLAN node materialized now (handle = ensureRenderPlanNode's)
+        // and are planned alongside the stale 2 and 4; scene 1 stays pinned. scenesWithoutNode is always empty.
+        const newHandles = [3, 7, 12].map(i => 'render_plan@' + shortRef(fx.scenes[i].objectId));
+        expect(dto.nodesMaterialized, 'scenes 3, 7, 12 got a node at Render all').toBe(3);
+        expect(dto.sceneCount).toBe(6);
+        expect(dto.scenesWithoutNode || [], 'no scene is left without a node').toEqual([]);
+        expect([...dto.planned].sort(), 'scenes 2 and 4 (stale) + 3, 7, 12 (new) planned; scene 1 pinned').toEqual([fx.nodes[2].handle, fx.nodes[4].handle].concat(newHandles).sort());
         expect(dto.pinnedNodeCount, 'scene 1 (and P(Alice)) pinned, not replaced').toBeGreaterThanOrEqual(1);
-        expect((dto.scenesWithoutNode || []).length, 'scenes 3, 7, 12 have no node').toBe(3);
-        await expect.poll(() => capturedToasts(page), { timeout: 30000, message: 'no-node warning toast' }).toContain('3 scenes have no graph node yet and will not render');
+        expect(await capturedToasts(page), 'no "no graph node yet" warning any more').not.toContain('3 scenes have no graph node yet and will not render');
         const progress = page.getByTestId('pb2-run-progress');
         await expect(progress).toBeVisible();
         await expect(progress).toHaveAttribute('data-run-terminal', '0');
-        await expect(page.getByTestId('pb2-run-stage')).toHaveCount(2);
+        await expect(page.getByTestId('pb2-run-stage')).toHaveCount(5);
         mkdirSync(OUT_DIR, { recursive: true });
         await page.screenshot({ path: OUT_DIR + '/g-running.png', fullPage: true });
 
@@ -818,25 +824,34 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
             console.log(TAG + ' G the run finished before the return (' + (Date.now() - submittedAt) + 'ms)');
         }
         const job = await pollJob(request, dto.jobId, 'G render-all');
-        expect(job.result.executedNodeCount).toBe(2);
+        expect(job.result.executedNodeCount, 'scenes 2, 4 + the three materialized: ' + JSON.stringify(job.result.nodes).slice(0, 600)).toBe(5);
         const o2 = job.result.nodes.find(n => n.nodeObjectId === fx.nodes[2].objectId);
         const o4 = job.result.nodes.find(n => n.nodeObjectId === fx.nodes[4].objectId);
         expect(o2 && o2.artifactObjectId && o4 && o4.artifactObjectId, 'outcomes: ' + JSON.stringify(job.result.nodes)).toBeTruthy();
         expect(upper(o2.status)).toBe('DONE_UNVERIFIED');
         expect(upper(o4.status)).toBe('DONE_UNVERIFIED');
+        // The three nodes materialized at Render all (no user composition — the executor composes from the
+        // scene's own text) rendered too; resolve them by handle from the run outcomes.
+        const materialized = job.result.nodes.filter(n => newHandles.includes(n.handle));
+        expect(materialized.length, 'outcomes for the materialized nodes: ' + JSON.stringify(job.result.nodes.map(n => n.handle))).toBe(3);
+        for (const o of materialized) {
+            expect(o.artifactObjectId, 'materialized node ' + o.handle + ' produced an artifact: ' + JSON.stringify(o)).toBeTruthy();
+            expect(upper(o.status), 'materialized node ' + o.handle).toBe('DONE_UNVERIFIED');
+        }
         if (!onReturn.terminal) {
             await expect(progress).toHaveAttribute('data-run-terminal', '1', { timeout: 120000 });
             console.log(TAG + ' G terminal panel: ' + await page.getByTestId('pb2-run-counter').textContent());
-            await expect(page.locator('[data-testid="pb2-run-stage"][data-stage-state="done"]')).toHaveCount(2);
+            await expect(page.locator('[data-testid="pb2-run-stage"][data-stage-state="done"]')).toHaveCount(5);
             await page.screenshot({ path: OUT_DIR + '/g-terminal.png', fullPage: true });
         }
         const runDto = await okJson(await request.get(PB + '/run/' + dto.runObjectId), 'GET /run');
         expect(upper(runDto.runStatus)).toBe('COMPLETED');
 
-        // 4. Inspect: the review page lists the nodes; the pictures.
+        // 4. Inspect: the review page lists the nodes (the three materialized ones included); the pictures.
         await page.goto('/#!/picture-book/' + bookObjectId + '/review', { timeout: 30000 });
         await expect(page.getByTestId('pb2-review')).toBeVisible({ timeout: 30000 });
         for (const idx of [1, 2, 4]) await expect(page.locator('[data-testid="pb2-review-node"][data-node-id="' + fx.nodes[idx].objectId + '"]')).toBeVisible({ timeout: 30000 });
+        for (const o of materialized) await expect(page.locator('[data-testid="pb2-review-node"][data-node-id="' + o.nodeObjectId + '"]')).toBeVisible({ timeout: 30000 });
         await page.screenshot({ path: OUT_DIR + '/g-review.png', fullPage: true });
         await savePng(request, PB, o2.artifactObjectId, 'g-scene2-v2.png');
         await savePng(request, PB, o4.artifactObjectId, 'g-scene4-v4.png');

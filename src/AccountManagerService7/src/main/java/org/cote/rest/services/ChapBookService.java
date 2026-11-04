@@ -114,6 +114,30 @@ public class ChapBookService {
         }
     }
 
+    /**
+     * {@link #parseParams} for a body whose named keys the CALLER reads raw (Jackson) because
+     * {@code olio.pictureBookRequest} does not declare them — {@code sources}/{@code bookObjectId} on
+     * POST /poems, {@code sdPrompt} on POST /scene/{id}/generate. The schema pass would otherwise log an
+     * ERROR-level {@code RecordDeserializer - Invalid field: olio.pictureBookRequest.<key>} for every such
+     * request (what Stephen saw in UAT, 2026-11-04) and drop the key anyway. Removing those keys from the
+     * copy handed to the deserializer is deliberate and PER SITE: it is not a blanket "ignore unknown
+     * keys", which would hide real KI-24 defects. The caller still reads them from the original json.
+     */
+    private BaseRecord parseParamsExcept(String json, String... rawKeys) {
+        if (json == null || json.trim().isEmpty()) return null;
+        String trimmed = json.trim();
+        if (!trimmed.startsWith("{")) return parseParams(json);
+        try {
+            JsonNode root = SCHEMA_MAPPER.readTree(trimmed);
+            if (!root.isObject()) return parseParams(json);
+            ObjectNode obj = (ObjectNode) root;
+            for (String k : rawKeys) obj.remove(k);
+            return parseParams(obj.toString());
+        } catch (Exception e) {
+            return parseParams(json);
+        }
+    }
+
     private Response errorResponse(int status, String message) {
         return Response.status(status).entity("{\"error\":" + escapeJson(message) + "}").build();
     }
@@ -469,7 +493,7 @@ public class ChapBookService {
 
         BaseRecord chatConfig = null;
         BaseRecord sdConfig = null;
-        BaseRecord params = parseParams(json);
+        BaseRecord params = parseParamsExcept(json, "sdPrompt");
         if (params != null) {
             String chatConfigName = params.get("chatConfig");
             if (chatConfigName != null && !chatConfigName.isBlank()) {
@@ -903,13 +927,14 @@ public class ChapBookService {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
         if (user == null) return errorResponse(401, "Unauthorized");
 
-        BaseRecord params = parseParams(json);
+        BaseRecord params = parseParamsExcept(json, "sources", "bookObjectId");
         if (params == null) return errorResponse(400, "Request body is required");
 
         long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
 
         // Parse sources directly from the raw JSON — the "sources" field is not defined in the
-        // olio.pictureBookRequest schema, so schema-driven deserialization drops it. Use Jackson.
+        // olio.pictureBookRequest schema, so schema-driven deserialization drops it (and logs an ERROR
+        // unless the key is withheld from it — hence parseParamsExcept above). Use Jackson.
         // The optional "bookObjectId" scopes imported poems to a chapbook (parsed the same way).
         List<String> srcTypes = new ArrayList<>();
         List<String> srcObjectIds = new ArrayList<>();

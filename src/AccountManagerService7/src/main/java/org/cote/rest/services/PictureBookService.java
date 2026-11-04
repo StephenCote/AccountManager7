@@ -1416,9 +1416,12 @@ public class PictureBookService {
      * only the nodes that are PENDING/READY/STALE/FAILED and unpinned are executed. Opens an olio.pb.run
      * (PENDING, pointed to by workflow.lastRun) and queues a {@code pb.render} job on the shared
      * AsyncJobRegistry; returns 202 {jobId, runObjectId, planned...} immediately. Poll
-     * {@code GET /rest/job/{jobId}} for stage progress, or read the run. 404 book/scene, 403 no update
-     * grant, 409 scene has no graph node / nothing to render / a planned node is RUNNING, 429 the
-     * principal's concurrent-job cap, 500 no SD backend. Cancel through
+     * {@code GET /rest/job/{jobId}} for stage progress, or read the run. The scene's terminal is its
+     * RENDER_PLAN node, created on first use together with the workflow (P10-B 1) - a book straight out of
+     * the wizard renders without any prior Plan step; the body also carries {@code nodeObjectId} and
+     * {@code nodeMaterialized}. 404 book/scene, 403 no update grant, 409 node pinned / nothing to
+     * render / a planned node is RUNNING, 429 the principal's concurrent-job cap, 500 no SD backend.
+     * Cancel through
      * {@code POST /{book}/run/{runObjectId}/cancel} or {@code POST /rest/job/{jobId}/cancel}.
      * <p>
      * {@code ?force=true}: re-roll the scene's node even when it is current (an explicit per-scene
@@ -1513,10 +1516,34 @@ public class PictureBookService {
     }
 
     /**
+     * POST /{bookObjectId}/graph/build
+     * Build the book's graph without rendering: the workflow and one RENDER_PLAN node per scene (a scene
+     * that already links a node keeps it). Idempotent. 404 book, 409 unless the book is on the V3 path,
+     * 403 without an update grant. {@code 200 {bookObjectId, workflowObjectId, sceneCount, nodesMaterialized}}.
+     * The import builds the graph itself and the render routes create any missing node on first use;
+     * this is the canvas's action for a book imported before either did.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/graph/build")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response buildGraph(@PathParam("bookObjectId") String bookObjectId, @Context HttpServletRequest request) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        try {
+            return Response.status(200)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestBuildGraph(user, bookObjectId)))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
      * POST /{bookObjectId}/render-all
-     * Asynchronous render of every scene of the book that has a graph node, as one run and one
-     * {@code pb.renderAll} job (shared upstream nodes are rendered once). Same semantics and status
-     * codes as /scene/{id}/render; scenes without a node are listed in {@code scenesWithoutNode}.
+     * Asynchronous render of every scene of the book, as one run and one {@code pb.renderAll} job
+     * (shared upstream nodes are rendered once). Same semantics and status codes as /scene/{id}/render;
+     * a scene without a graph node gets its RENDER_PLAN node created on first use ({@code nodesMaterialized}),
+     * so {@code scenesWithoutNode} is always empty and 409 "no graph node" is gone.
      */
     @RolesAllowed({"admin", "user"})
     @POST

@@ -453,15 +453,19 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             fx.composeJob = cj && cj.jobId ? { jobId: cj.jobId, status: cj.jobStatus, scenes: cj.scenesToCompose } : null;
             const composeNote = fx.composeJob ? 'compose job ' + fx.composeJob.jobId + ' ' + fx.composeJob.status + ' (' + fx.composeJob.scenes + ' scenes)'
                 : 'compose job ' + (cfs ? (cfs.composeJobSkipped ? 'skipped: ' + cfs.composeJobSkipped : cfs.composeJobError ? 'error: ' + JSON.stringify(cfs.composeJobError) : 'absent from the response') : 'response not captured');
-            const wf = await pbGet(request, '/' + bookOid + '/workflow');
-            // Current behaviour, recorded once: a fresh wizard book has no workflow until a scene is generated.
-            expect([200, 404], 'GET /workflow on a fresh book is 200 or the documented 404').toContain(wf.status);
-            fx.book.workflowAtCreate = wf.status + (wf.status === 404 ? ' (' + String((wf.body && (wf.body.error || wf.body.message)) || JSON.stringify(wf.body)).slice(0, 80) + ')' : ' nodes=' + ((wf.body && wf.body.nodes) || []).length);
             const pages = await pbGet(request, '/' + bookOid + '/pages');
             expect(pages.status, 'GET /pages').toBe(200);
             fx.scenes = (Array.isArray(pages.body) ? pages.body : []).map(p => ({ objectId: p.objectId, title: p.title, sceneIndex: p.sceneIndex, setting: p.setting }));
             fx.scene0 = fx.scenes[0] || null;
             expect(fx.scenes.length, 'pages read back = scenes extracted').toBe(sceneCount);
+            // P10-B (2026-11-04): create-from-scenes builds the scene graph, so a fresh wizard book has its
+            // workflow — one node per scene — before anything is rendered. The earlier "200 or the documented
+            // 404" tolerance here hid the UAT blocker ("(404) This book has no workflow yet" on Render).
+            const wf = await pbGet(request, '/' + bookOid + '/workflow');
+            expect(wf.status, 'GET /workflow on a fresh wizard book (graph built at create): ' + JSON.stringify(wf.body).slice(0, 160)).toBe(200);
+            const wfNodes = (wf.body && wf.body.nodes) || [];
+            expect(wfNodes.length, 'one workflow node per extracted scene at create').toBe(sceneCount);
+            fx.book.workflowAtCreate = wf.status + ' nodes=' + wfNodes.length;
             const chars = await pbGet(request, '/' + bookOid + '/characters');
             expect(chars.status, 'GET /characters').toBe(200);
             const cast = Array.isArray(chars.body) ? chars.body : [];
@@ -500,12 +504,12 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             if (fx.scenes.length > 1) await expect(page.getByText(/^Page 2 of \d+$/).first()).toBeVisible({ timeout: T.ui });
             await page.locator('button:has(span:text-is("chevron_left"))').first().click();
             await expect(page.getByText(/^Page 1 of \d+$/).first()).toBeVisible({ timeout: T.ui });
-            // Still pre-generation: /workflow is the documented 404 until step 7/8 generate a scene (step 8 asserts 200).
+            // Still pre-generation, but the graph exists since create (P10-B): /workflow is 200 with the scene nodes.
             const wf = await pbGet(request, '/' + fx.book.objectId + '/workflow');
-            expect([200, 404], 'GET /workflow before any generation').toContain(wf.status);
-            const wfNodes = (wf.status === 200 && wf.body && wf.body.nodes) || [];
+            expect(wf.status, 'GET /workflow before any generation (graph built at create)').toBe(200);
+            const wfNodes = (wf.body && wf.body.nodes) || [];
             return 'header "' + headerName.trim() + '" (slug ' + fx.book.slug + '); cover "' + coverText.trim() + '"; chapter select count ' + chapterSelect + '; page 1 scene chip=' + chip + ' pb2-scene-image count ' + imgCount
-                + ' (213 e: RENDER_PLAN base is never the page image today); GET /workflow ' + wf.status + (wf.status === 200 ? ' nodes ' + wfNodes.length + ' types ' + JSON.stringify([...new Set(wfNodes.map(n => upper(n.nodeType)))]) : ' (no workflow until the first generation)');
+                + ' (213 e: RENDER_PLAN base is never the page image today); GET /workflow ' + wf.status + ' nodes ' + wfNodes.length + ' types ' + JSON.stringify([...new Set(wfNodes.map(n => upper(n.nodeType)))]);
         });
 
         // ── 4. Style ─────────────────────────────────────────────────────────────────────────────────
@@ -808,6 +812,8 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const rr = await renderResp;
             const rrBody = await jsonOf(rr);
             let renderNote = 'pb2-scene-render → HTTP ' + rr.status() + ' ' + JSON.stringify(rrBody).slice(0, 200);
+            // P10-B: Render on a wizard-made book is accepted (202) — never the "no workflow yet" 404 (UAT 2026-11-03).
+            expect(rr.status(), 'POST /scene/{id}/render on the wizard book: ' + renderNote).toBe(202);
             if (rr.status() === 202 || rr.status() === 200) {
                 const progress = page.getByTestId('pb2-run-progress');
                 await expect(progress).toBeVisible({ timeout: 60000 });
@@ -842,6 +848,8 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const ra = await raResp;
             const raBody = await jsonOf(ra);
             let raNote = 'Render all → HTTP ' + ra.status() + ' ' + JSON.stringify(raBody).slice(0, 220);
+            // P10-B: Render all on a wizard-made book is accepted (202) and reuses the nodes built at create.
+            expect(ra.status(), 'POST /render-all on the wizard book: ' + raNote).toBe(202);
             if (ra.status() === 202 || ra.status() === 200) {
                 await expect(page.getByTestId('pb2-run-progress')).toBeVisible({ timeout: 60000 });
                 const stages = await page.getByTestId('pb2-run-stage').count();

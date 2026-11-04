@@ -276,11 +276,15 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         await expect(cdlg).toHaveCount(0, { timeout: 10000 });
     });
 
-    // 4/5. Canvas on an unrendered book: honest "no workflow yet" state + read-only scene list + ONE
-    //      "Open in wizard to render" button (the wizard owns SD config via ensureSdConfig /
-    //      persistBookSettings — there are no per-scene Render buttons on the canvas), then "← Book"
-    //      lands on the PB2 reader with the book's name.
-    test('canvas on an unrendered book lists scenes, offers only the wizard to render, and "← Book" opens the PB2 reader by name', async ({ page }) => {
+    // 4/5. Canvas on an unrendered book: honest "no workflow yet" state + read-only scene list + TWO
+    //      actions (P10-B, 2026-11-04): "Open in reader to render" under v3 ("Open in wizard to render"
+    //      under v1 — the wizard owns SD config via ensureSdConfig / persistBookSettings) and "Build graph"
+    //      (POST /{book}/graph/build, one node per extracted scene, nothing rendered). There are no
+    //      per-scene Render buttons on the canvas. Then "← Book" lands on the PB2 reader with the book's
+    //      name. "Build graph" is NOT clicked here: it would turn this fixture into a graph-bearing book
+    //      and the next run would find no unrendered one (pictureBookNewBookRender.spec.js exercises it
+    //      on a book it creates itself).
+    test('canvas on an unrendered book lists scenes, offers the reader and Build graph, and "← Book" opens the PB2 reader by name', async ({ page }) => {
         test.skip(!unrendered, 'no PB2 book with scenes but no workflow available to the shared user');
         await loginAsSharedUser(page);
         await gotoHash(page, '!/picture-book/' + unrendered.objectId + '/workflow');
@@ -294,12 +298,17 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         await expect(items.first()).toBeVisible({ timeout: 30000 });
         expect(await items.count()).toBe(unrenderedSceneTotal);
         await expect(items.first()).toContainText('1.');
-        // No per-scene Render buttons on the canvas — rendering goes through the wizard only.
-        expect(await empty.locator('button').count()).toBe(1);
+        // No per-scene Render buttons on the canvas — rendering goes through the reader (v3) / wizard (v1).
+        expect(await empty.locator('button').count()).toBe(2);
         expect(await empty.locator('.pb-wf-render-scene').count()).toBe(0);
         const openWizard = empty.locator('[data-wf-open-wizard="' + unrendered.objectId + '"]');
         await expect(openWizard).toHaveCount(1);
-        await expect(openWizard).toHaveText(/Open in wizard to render/);
+        await expect(openWizard).toHaveText(v3 ? /Open in reader to render/ : /Open in wizard to render/);
+        await expect(openWizard).toHaveAttribute('data-wf-open-target', v3 ? 'reader' : 'wizard');
+        const buildGraph = empty.locator('[data-wf-build-graph="' + unrendered.objectId + '"]');
+        await expect(buildGraph).toHaveCount(1);
+        await expect(buildGraph).toHaveText(/Build graph/);
+        await expect(buildGraph).toBeEnabled();
         // Toolbar title resolves the book name even though there is no graph DTO to read it from.
         await expect(page.locator('[data-wf-title]')).toHaveText(displayName(unrendered) + ' — Workflow', { timeout: 30000 });
 

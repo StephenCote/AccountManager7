@@ -747,13 +747,14 @@ public class PbServiceFacade {
 	 * its upstream closure the plan, and the request returns as soon as the run is opened and the job
 	 * queued. See {@link PbRenderJobUtil#submit} for what is planned, executed, reused and refused.
 	 * <p>
-	 * Gate order: 404 book / workflow / scene (a scene of another book is a 404, not a 403 - the book in the
-	 * path is the only compartment the caller addressed), 403 unless the caller may update the book, then
-	 * 409 when the scene has no graph node yet (it was extracted but never built into the workflow - run
-	 * the graph build first), then the planner's own 409 / 429 / 500.
+	 * Gate order: 404 book / scene (a scene of another book is a 404, not a 403 - the book in the path is
+	 * the only compartment the caller addressed), 403 unless the caller may update the book, then the
+	 * workflow and the scene's terminal node are created on first use (P10-B 1; until then a wizard-made
+	 * book answered 409 "has no graph node yet" from the reader's Render with nothing in the UI able to
+	 * build one), 409 when that node is pinned, then the planner's own 409 / 429 / 500.
 	 *
-	 * @return {@code jobId}, {@code runObjectId} and the plan summary; poll {@code GET /rest/job/{jobId}}
-	 *         or read the run
+	 * @return {@code jobId}, {@code runObjectId} and the plan summary, plus {@code nodeObjectId} /
+	 *         {@code nodeMaterialized}; poll {@code GET /rest/job/{jobId}} or read the run
 	 */
 	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String sdApiType, String sdServer) {
@@ -778,59 +779,136 @@ public class PbServiceFacade {
 		BaseRecord book = requireBook(user, bookObjectId);
 		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "render a scene");
-		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
-		BaseRecord sceneNode = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
-		Long nodeId = (sceneNode != null ? sceneNode.get(FieldNames.FIELD_ID) : null);
-		if(nodeId == null || nodeId.longValue() <= 0L) {
-			throw new PictureBookException(409, "Scene " + scene.get(FieldNames.FIELD_NAME)
-				+ " has no graph node yet; build the book's graph before rendering it");
-		}
-		/// scene.sceneNode is an id-only FK; read the node for its pin flag before anything is planned.
-		BaseRecord node = PbGraphUtil.readNodeById(user, nodeId.longValue(), (long) workflow.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Boolean pinned = (node != null ? node.get(OlioFieldNames.FIELD_PB_PINNED) : null);
+		/// After the gates: the workflow and the scene's terminal are created on first use (P10-B 1), as the
+		/// book's updater - the same pattern executePlanScene has always followed for Plan & generate.
+		BaseRecord workflow = ensureWorkflow(user, book);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+		BaseRecord node = sceneTerminal(user, book, workflow, scene, out);
+		Boolean pinned = node.get(OlioFieldNames.FIELD_PB_PINNED);
 		if(pinned != null && pinned.booleanValue()) {
 			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
 				+ " is pinned. Unpin it first - pinning means do not replace this artifact.");
 		}
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
-		out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+		Long nodeId = node.get(FieldNames.FIELD_ID);
 		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of(nodeId), sdApiType, sdServer,
 			PbRenderJobUtil.KIND_RENDER, force));
 		return out;
 	}
 
 	/**
-	 * Submit one asynchronous render run for every scene of the book that has a graph node (V3 §21,
-	 * P1-6). The terminals are the scenes' nodes; the upstream closure (portraits, prompts, strips) is
-	 * planned once and shared, so a character rendered for scene 1 is reused by scene 7 within the same
-	 * run. Scenes without a node are reported in {@code scenesWithoutNode} and skipped; a book where no
-	 * scene has a node is a 409.
+	 * The node a render of {@code scene} targets (P10-B 1): the scene's linked {@code sceneNode} when the
+	 * PB1 pipeline or the ChapBook page path set one (a COMPOSITE / LANDSCAPE node, read for its pin flag),
+	 * else the scene's RENDER_PLAN node, created on first use by {@link #ensureRenderPlanNode} - exactly the
+	 * node Plan & generate executes, so a book made by the wizard renders from the reader without any
+	 * separate "build the graph" step. {@code scene.sceneNode} is never written here: its readers
+	 * ({@code PbBookUtil}, {@code PbComposeUtil}, {@code PbHealthUtil}, {@code PbLocationUtil}) assume the
+	 * PB1 / LANDSCAPE shape, and the reader's page view already resolves the RENDER_PLAN node by handle.
+	 * {@code out} receives {@code nodeObjectId} and {@code nodeMaterialized}; a linked node that cannot be
+	 * read is a 404 naming it rather than a null that the planner would silently drop.
+	 */
+	private static BaseRecord sceneTerminal(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord scene,
+			Map<String, Object> out) {
+		BaseRecord sceneNode = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
+		Long linkedId = (sceneNode != null ? sceneNode.get(FieldNames.FIELD_ID) : null);
+		BaseRecord node = null;
+		boolean materialized = false;
+		if(linkedId != null && linkedId.longValue() > 0L) {
+			/// scene.sceneNode is an id-only FK; read the node for its pin flag before anything is planned.
+			node = PbGraphUtil.readNodeById(user, linkedId.longValue(), (long) workflow.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if(node == null) {
+				throw new PictureBookException(404, "Scene " + scene.get(FieldNames.FIELD_NAME) + " links graph node "
+					+ linkedId + " which could not be read");
+			}
+		}
+		else {
+			Map<String, Object> ensured = new LinkedHashMap<>();
+			node = ensureRenderPlanNode(user, book, workflow, scene, ensured);
+			materialized = Boolean.TRUE.equals(ensured.get("nodeMaterialized"));
+		}
+		if(out != null) {
+			out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+			out.put("nodeMaterialized", Boolean.valueOf(materialized));
+		}
+		return node;
+	}
+
+	/**
+	 * Build the book's graph without rendering anything (P10-B 1): the workflow and every scene's terminal
+	 * node through {@link #sceneTerminal}, so the canvas and the reader see one node per scene as soon as the
+	 * scenes exist. Idempotent - every node is found by its deterministic handle - and a no-op on a PB1-built
+	 * book whose scenes already link a node. Gates: 404 book, 409 unless V3, 403 unless the caller may update
+	 * the book; the workflow and nodes are then created as that updater. This is what the workflow canvas
+	 * offers a book that was imported before the graph was built at import.
+	 *
+	 * @return {@code bookObjectId}, {@code workflowObjectId}, {@code sceneCount} and {@code nodesMaterialized}
+	 *         (the nodes created now)
+	 */
+	public static Map<String, Object> requestBuildGraph(BaseRecord user, String bookObjectId) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		PbRenderPath.requireV3(book);
+		requireBookUpdate(user, book, "build the book's graph");
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
+		out.putAll(buildSceneGraph(user, book));
+		return out;
+	}
+
+	/** The body of {@link #requestBuildGraph} after the gates; also run by {@link #createFromScenesAndCompose}. */
+	static Map<String, Object> buildSceneGraph(BaseRecord user, BaseRecord book) {
+		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+		BaseRecord workflow = ensureWorkflow(user, book);
+		int materialized = 0;
+		for(BaseRecord scene : scenes) {
+			Map<String, Object> one = new LinkedHashMap<>();
+			sceneTerminal(user, book, workflow, scene, one);
+			if(Boolean.TRUE.equals(one.get("nodeMaterialized"))) {
+				materialized++;
+			}
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("workflowObjectId", workflow.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneCount", Integer.valueOf(scenes.size()));
+		out.put("nodesMaterialized", Integer.valueOf(materialized));
+		return out;
+	}
+
+	/**
+	 * Submit one asynchronous render run for every scene of the book (V3 §21, P1-6; P10-B 1). The terminals
+	 * are the scenes' nodes - a scene's linked {@code sceneNode} where the PB1 pipeline or the ChapBook page
+	 * path set one, else its RENDER_PLAN node, created on first use ({@link #sceneTerminal}) - so a book made
+	 * by the wizard renders every scene without a separate graph build. The upstream closure (portraits,
+	 * prompts, locations) is planned once and shared, so a character rendered for scene 1 is reused by scene 7
+	 * within the same run. {@code scenesWithoutNode} is kept on the result for the reader (always empty now:
+	 * every scene gets a node here); {@code nodesMaterialized} counts the RENDER_PLAN nodes this call created.
+	 * A book with no scenes at all is a 409.
 	 */
 	public static Map<String, Object> requestRenderAll(BaseRecord user, String bookObjectId, String sdApiType,
 			String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "render the book");
-		BaseRecord workflow = requireWorkflow(user, book);
-		List<Long> terminals = new ArrayList<>();
-		List<String> withoutNode = new ArrayList<>();
-		for(BaseRecord scene : PbBookUtil.listScenes(user, book)) {
-			BaseRecord sceneNode = scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
-			Long nodeId = (sceneNode != null ? sceneNode.get(FieldNames.FIELD_ID) : null);
-			if(nodeId == null || nodeId.longValue() <= 0L) {
-				withoutNode.add(scene.get(FieldNames.FIELD_OBJECT_ID));
-				continue;
-			}
-			terminals.add(nodeId);
+		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+		if(scenes.isEmpty()) {
+			throw new PictureBookException(409, "This book has no scenes yet; extract or add scenes before rendering it");
 		}
-		if(terminals.isEmpty()) {
-			throw new PictureBookException(409, "No scene of this book has a graph node yet; build the book's graph before rendering it");
+		BaseRecord workflow = ensureWorkflow(user, book);
+		List<Long> terminals = new ArrayList<>();
+		int materialized = 0;
+		for(BaseRecord scene : scenes) {
+			Map<String, Object> one = new LinkedHashMap<>();
+			BaseRecord node = sceneTerminal(user, book, workflow, scene, one);
+			if(Boolean.TRUE.equals(one.get("nodeMaterialized"))) {
+				materialized++;
+			}
+			terminals.add(node.get(FieldNames.FIELD_ID));
 		}
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("sceneCount", Integer.valueOf(terminals.size()));
-		out.put("scenesWithoutNode", withoutNode);
+		out.put("scenesWithoutNode", new ArrayList<String>());
+		out.put("nodesMaterialized", Integer.valueOf(materialized));
 		out.putAll(PbRenderJobUtil.submit(user, book, workflow, terminals, sdApiType, sdServer,
 			PbRenderJobUtil.KIND_RENDER_ALL));
 		return out;
@@ -1081,13 +1159,28 @@ public class PbServiceFacade {
 	 * {@code scene.sceneNode} is left alone: the executor reads the scene and the plan is the record.
 	 */
 	private static BaseRecord ensureRenderPlanNode(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord scene) {
+		return ensureRenderPlanNode(user, book, workflow, scene, null);
+	}
+
+	/**
+	 * {@link #ensureRenderPlanNode(BaseRecord, BaseRecord, BaseRecord, BaseRecord)}; {@code out}, when given,
+	 * receives {@code nodeObjectId} and {@code nodeMaterialized} (whether this call created the node), the
+	 * shape {@link #ensureCompositionPlanNode} reports.
+	 */
+	private static BaseRecord ensureRenderPlanNode(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord scene,
+			Map<String, Object> out) {
 		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
 		Integer sceneIndex = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
 		int idx = (sceneIndex != null ? sceneIndex.intValue() : 0);
 		String handle = PbPipelineUtil.renderPlanHandle(sceneOid);
-		BaseRecord node = ensurePlanNode(user, book, workflow, PbNodeTypeEnumType.RENDER_PLAN, PbPipelineUtil.SCOPE_SCENE, sceneOid, handle, idx, "render-plan").node();
-		BaseRecord fresh = PbGraphUtil.readNode(user, node.get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(node));
-		return (fresh != null ? fresh : node);
+		Ensured e = ensurePlanNode(user, book, workflow, PbNodeTypeEnumType.RENDER_PLAN, PbPipelineUtil.SCOPE_SCENE, sceneOid, handle, idx, "render-plan");
+		BaseRecord fresh = PbGraphUtil.readNode(user, e.node().get(FieldNames.FIELD_OBJECT_ID), PbGraphUtil.orgId(e.node()));
+		BaseRecord node = (fresh != null ? fresh : e.node());
+		if(out != null) {
+			out.put("nodeObjectId", node.get(FieldNames.FIELD_OBJECT_ID));
+			out.put("nodeMaterialized", Boolean.valueOf(e.created()));
+		}
+		return node;
 	}
 
 	/**
@@ -3832,6 +3925,13 @@ public class PbServiceFacade {
 	 * or the book is not on the V3 path) or {@code composeJobError} ({@code status}, {@code message}) added.
 	 * A compose that cannot be queued never fails the import - the scenes are saved; the client can submit
 	 * the compose again from the book.
+	 * <p>
+	 * The book's graph is built here too (P10-B 1): the workflow and one RENDER_PLAN node per imported scene,
+	 * created as the book's updater after the same gates, so the reader and the workflow canvas show a graph
+	 * the moment the wizard hands off instead of a "no workflow yet" state that nothing in the UI could leave.
+	 * Reported as {@code graph} ({@code workflowObjectId}, {@code sceneCount}, {@code nodesMaterialized}) or
+	 * {@code graphError}; a graph that could not be built never fails the import either - the render routes
+	 * create the same nodes on first use.
 	 */
 	public static Map<String, Object> createFromScenesAndCompose(BaseRecord user, String workObjectId, String chatConfigName,
 			String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataList,
@@ -3856,6 +3956,23 @@ public class PbServiceFacade {
 				return out;
 			}
 			requireBookUpdate(user, book, "compose scenes");
+			try {
+				out.put("graph", buildSceneGraph(user, book));
+			}
+			catch(PictureBookException e) {
+				Map<String, Object> err = new LinkedHashMap<>();
+				err.put("status", Integer.valueOf(e.getStatus()));
+				err.put("message", e.getMessage());
+				out.put("graphError", err);
+				logger.warn("createFromScenes: scenes imported but the graph was not built: " + e.getStatus() + " " + e.getMessage());
+			}
+			catch(RuntimeException e) {
+				Map<String, Object> err = new LinkedHashMap<>();
+				err.put("status", Integer.valueOf(500));
+				err.put("message", curatedMessage(e));
+				out.put("graphError", err);
+				logger.error("createFromScenes: scenes imported but the graph was not built", e);
+			}
 			out.put("composeJob", PbComposeJobUtil.submitCompose(user, book, false, false, chatConfigName, null, null, dataPath));
 		}
 		catch(PictureBookException e) {
