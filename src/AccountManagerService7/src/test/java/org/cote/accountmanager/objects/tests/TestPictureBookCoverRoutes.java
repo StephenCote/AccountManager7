@@ -6,13 +6,18 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Proxy;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.UUID;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
@@ -27,8 +32,10 @@ import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
 import org.cote.accountmanager.olio.picturebook.PbCoverUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
+import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PbRenderJobUtil;
 import org.cote.accountmanager.olio.picturebook.PbRenderPath;
+import org.cote.accountmanager.olio.picturebook.PbSeriesUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -93,11 +100,43 @@ import jakarta.ws.rs.core.Response;
 /// null entry (a purpose with no composition), an empty `covers` map, a null `nodeObjectId` / `workflowObjectId` and
 /// empty `actors` / `elements` lists are ABSENT from a body rather than present as null / {} / []; booleans
 /// (`created`, `existingReturned`, `pinned`) and ints (`chainLength`, `plannedNodeCount`) ARE present.
+///
+/// P10-A 7 (§6.C 256 / 237 j): SERIES_ART on a REAL chapter. The series fixture is not hand-built - it goes through
+/// the two routes this class had never exercised, POST /series and POST /chapter, as the owner, which is the first H2
+/// contract of both (the {seriesObjectId, worldObjectId} body, the chapter's series / world / ordinal linkage).
+/// POST /series initializes the series' one shared world through OlioContext, so the H2 fixture needs the Olio
+/// corpus root: `test.datagen.path` in this module's test resource.properties (the same key Objects7 reads), passed
+/// to the routes as the `datagen.path` init-param. The first series in a fresh fixture loads the base corpus (dict,
+/// names, surnames, occupations, traits, colours, patterns) into H2 once; later ones pass WorldUtil.fastDataCheck.
+/// A missing corpus FAILS the case (never skips).
+///
+/// WHAT THE SERIES CASES PROVE. One SERIES_ART row per series, created from the host chapter A, listed by GET covers
+/// of BOTH chapters with the same compositionObjectId and the series' objectId; board / patch / plan 200 on it from
+/// A. Visibility follows the HOST chapter's grants (237 j): a reader granted on both chapters sees it from both; a
+/// SIBLING writer with CRUD on chapter B's three groups and nothing on A gets a 200 GET covers with no SERIES_ART and
+/// the 404 "has no SERIES_ART composition" from the board, patch, plan AND the manual create on B - never the row,
+/// never a second row in B's group; a stranger with no grants is the book's 404 on both chapters. The row is then
+/// still series_art.<seriesOid>, book = chapter A, in A's group. The rendered series art on `.39` is the Playwright
+/// spec (e2e/pictureBookV3SeriesArt.spec.js); the Objects7 half of 237 j is TestPbCoverUtil (am7db).
+///
+/// THE RENDER PIPELINE IS THE HOST'S (§6.C 257). The one row has one render node, in the host chapter A's workflow:
+/// a render addressed from sibling chapter B is the 409 "is rendered from its host chapter", after the 403 and the
+/// 404 (a reader's render from B is the 403; a sibling's is the 404), and writes nothing in B - no workflow, no
+/// node. Every entry of GET covers / the board carries `hostBookObjectId` (the book itself for a book-level cover)
+/// and a SERIES_ART entry read from B resolves A's node, status, chain length and approvals through the host, so
+/// both chapters see the same render while B has no workflow of its own. The node's visibility follows A's Workflow
+/// group: a reader with Read on both Book groups sees the row from both chapters and the node from neither.
 public class TestPictureBookCoverRoutes extends BaseTest {
 
 	private static final String OWNER_NAME = "pbcovrtowner";
 	private static final String READER_NAME = "pbcovrtreader";
 	private static final String STRANGER_NAME = "pbcovrtstranger";
+	/// P10-A 7: a writer of chapter B only (CRUD on B's three groups, Read on the shared world and the series row,
+	/// nothing on chapter A) - the 237 j case at the REST layer.
+	private static final String SIBLING_NAME = "pbcovrtsibling";
+	private static final String NO_SERIES_ART = "has no SERIES_ART composition";
+	/// P10-A 7 (§6.C 257): the render of a SERIES_ART row addressed from a chapter that is not its host.
+	private static final String RENDERED_FROM_HOST = "is rendered from its host chapter";
 	private static final String NIL_UUID = "00000000-0000-0000-0000-000000000000";
 	private static final String[] DATA_AND_GROUP = new String[] { PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString() };
 	private static final String[] CRUD = new String[] { "Read", "Update", "Create", "Delete" };
@@ -120,6 +159,14 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 
 	private static final ServletContext SD_CONTEXT = initParams(Map.of("sd.server.apiType", "SWARM", "sd.server", UNREACHABLE_SD));
 
+	/// P10-A 7: this module's test resource.properties, read the way TestISO42001Service reads it (BaseTest loads no
+	/// Properties). The one key used here is `test.datagen.path`, the Olio corpus root POST /series needs.
+	private static final Properties TEST_PROPS = loadTestProperties();
+	/// The series routes' ServletContext: the corpus root as `datagen.path` plus the loopback SD params. Built from a
+	/// HashMap, not Map.of, so a missing property is the fixture's named assertion rather than a static-init NPE that
+	/// fails every case in the class.
+	private static final ServletContext DATA_CONTEXT = initParams(dataParams());
+
 	private final PictureBookService service = new PictureBookService();
 	private final OlioContextConfiguration olioCfg = new OlioContextConfiguration();
 
@@ -128,6 +175,7 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	private BaseRecord owner;
 	private BaseRecord reader;
 	private BaseRecord stranger;
+	private BaseRecord sibling;
 	private long orgId;
 	private String pb0;
 	private String cb0;
@@ -137,6 +185,21 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 		BaseRecord world;
 		BaseRecord book;
 		String bookOid;
+	}
+
+	/// P10-A 7: a series made through POST /series with two chapters made through POST /chapter, all as the owner.
+	private static final class SeriesFixture {
+		String seriesSlug;
+		String seriesOid;
+		String worldOid;
+		/// The series row and its one shared world, read as the olio principal (grant targets).
+		BaseRecord series;
+		BaseRecord world;
+		/// The series world's container group, {Worlds}/{seriesSlug}: the world tree a reader needs Read on.
+		BaseRecord container;
+		/// Chapters 1 and 2. A hosts the SERIES_ART row; B is the sibling.
+		Fixture a;
+		Fixture b;
 	}
 
 	@Override
@@ -152,9 +215,11 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 		owner = getCreateUser(OWNER_NAME);
 		reader = getCreateUser(READER_NAME);
 		stranger = getCreateUser(STRANGER_NAME);
+		sibling = getCreateUser(SIBLING_NAME);
 		assertNotNull("Owner is null", owner);
 		assertNotNull("Reader is null", reader);
 		assertNotNull("Stranger is null", stranger);
+		assertNotNull("Sibling is null", sibling);
 		olioUser = ioContext.getFactory().getCreateUser(admin, OlioContext.OLIO_USER_NAME, orgId);
 		assertNotNull("Olio principal is null", olioUser);
 		bootstrapOlioRoot();
@@ -284,6 +349,186 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 		catch(Exception e) {
 			logger.error("Cleanup: world " + f.slug + ": " + e.getMessage());
 		}
+	}
+
+	// ─────────────────────────────── P10-A 7 series fixture (POST /series + POST /chapter, as the owner) ───────────────────────────────
+
+	private static Properties loadTestProperties() {
+		Properties p = new Properties();
+		try (InputStream is = ClassLoader.getSystemResourceAsStream("./resource.properties")) {
+			if(is == null) {
+				logger.error("resource.properties is not on the test classpath; test.datagen.path is unset");
+			}
+			else {
+				p.load(is);
+			}
+		}
+		catch(IOException e) {
+			logger.error("Failed to load resource.properties: " + e.getMessage());
+		}
+		return p;
+	}
+
+	private static String dataPath() {
+		String s = TEST_PROPS.getProperty("test.datagen.path");
+		return (s != null && !s.trim().isEmpty() ? s.trim() : null);
+	}
+
+	private static Map<String, String> dataParams() {
+		Map<String, String> m = new HashMap<>();
+		m.put("datagen.path", dataPath());
+		m.put("sd.server.apiType", "SWARM");
+		m.put("sd.server", UNREACHABLE_SD);
+		return m;
+	}
+
+	/// The route contract of POST /series and POST /chapter on H2, asserted on the way: the series body names the
+	/// series row and the one shared world; each chapter body names the book, echoes the series, slug and ordinal;
+	/// and the chapter rows read back (as the owner) with world = the series' world, series = the series, chapter =
+	/// the ordinal sent. The corpus root is a precondition that FAILS, never skips.
+	private SeriesFixture createSeriesWithTwoChapters() {
+		String dataPath = dataPath();
+		assertNotNull("test.datagen.path must be set in this module's test resource.properties: POST /series initializes the"
+			+ " series world through OlioContext, which loads the Olio corpus from it", dataPath);
+		assertTrue("The Olio corpus is not at " + dataPath + " (WorldUtil.REQUIRED_CORPUS_FILES); POST /series cannot"
+			+ " initialize a series world without it", WorldUtil.isOlioDataPresent(dataPath));
+		SeriesFixture s = new SeriesFixture();
+		String tag = UUID.randomUUID().toString().substring(0, 8);
+		s.seriesSlug = "p107s-" + tag;
+
+		long t0 = System.currentTimeMillis();
+		Map<String, Object> created = ok(service.createSeries(json("seriesSlug", s.seriesSlug, "title", "P10-A 7 series " + tag),
+			requestAs(owner), DATA_CONTEXT), "POST /series " + s.seriesSlug);
+		logger.info("POST /series " + s.seriesSlug + ": " + (System.currentTimeMillis() - t0)
+			+ " ms (the first series in a fresh fixture loads the corpus from " + dataPath + ")");
+		s.seriesOid = str(created, "seriesObjectId");
+		s.worldOid = str(created, "worldObjectId");
+		assertNotNull("POST /series reports seriesObjectId: " + created, s.seriesOid);
+		assertNotNull("POST /series reports worldObjectId: " + created, s.worldOid);
+
+		s.series = PbSeriesUtil.readSeries(olioUser, s.seriesOid, orgId);
+		assertNotNull("the series row reads back as the olio principal", s.series);
+		assertEquals("the series row is named for its slug", PbSeriesUtil.seriesName(s.seriesSlug), s.series.get(FieldNames.FIELD_NAME));
+		assertEquals("the series row references the world the route reported", s.worldOid, fkOid(s.series, OlioFieldNames.FIELD_PB_UNIVERSE));
+		assertNotNull("the owner (series Writer) reads the series back", PbSeriesUtil.readSeries(owner, s.seriesOid, orgId));
+		s.world = WorldUtil.findWorld(olioUser, booksWorldsPath(), s.seriesSlug);
+		assertNotNull("the series world sits under the Books universe's Worlds as " + s.seriesSlug, s.world);
+		assertEquals("the series world is the one the route reported", s.worldOid, oid(s.world));
+		s.container = groupOf(booksWorldsPath() + "/" + s.seriesSlug);
+
+		s.a = createChapter(s, "p107a-" + tag, 1);
+		s.b = createChapter(s, "p107b-" + tag, 2);
+		assertNotEquals("two chapters are two books", s.a.bookOid, s.b.bookOid);
+		ServiceUtil.clearCache();
+		return s;
+	}
+
+	private Fixture createChapter(SeriesFixture s, String slug, int ordinal) {
+		long t0 = System.currentTimeMillis();
+		Map<String, Object> c = ok(service.createChapter(
+			json("seriesObjectId", s.seriesOid, "slug", slug, "title", "Chapter " + ordinal + " of " + s.seriesSlug, "chapter", ordinal),
+			requestAs(owner), DATA_CONTEXT), "POST /chapter " + slug);
+		logger.info("POST /chapter " + slug + ": " + (System.currentTimeMillis() - t0) + " ms");
+		Fixture f = new Fixture();
+		f.slug = slug;
+		f.bookOid = str(c, "bookObjectId");
+		assertNotNull("POST /chapter reports bookObjectId: " + c, f.bookOid);
+		assertEquals("POST /chapter echoes the series", s.seriesOid, str(c, "seriesObjectId"));
+		assertEquals("POST /chapter echoes the slug", slug, str(c, "slug"));
+		assertEquals("POST /chapter echoes the ordinal", ordinal, num(c, "chapter"));
+		f.book = PbBookUtil.readBook(owner, f.bookOid, orgId);
+		assertNotNull("chapter " + slug + " reads back as the owner", f.book);
+		assertEquals("the chapter's slug", slug, f.book.get(OlioFieldNames.FIELD_PB_SLUG));
+		assertEquals("the chapter's world is the series' one shared world", s.worldOid, fkOid(f.book, OlioFieldNames.FIELD_PB_WORLD));
+		assertEquals("the chapter references its series", s.seriesOid, fkOid(f.book, OlioFieldNames.FIELD_PB_SERIES));
+		assertEquals("the chapter's ordinal", ordinal, ((Number) f.book.get(OlioFieldNames.FIELD_PB_CHAPTER)).intValue());
+		f.world = s.world;
+		return f;
+	}
+
+	/// A foreign field's objectId as the read projected it, null when the field is unset.
+	private static String fkOid(BaseRecord rec, String field) {
+		Object v = (rec != null && rec.hasField(field) ? rec.get(field) : null);
+		if(!(v instanceof BaseRecord)) {
+			return null;
+		}
+		BaseRecord ref = (BaseRecord) v;
+		Object oid = (ref.hasField(FieldNames.FIELD_OBJECT_ID) ? ref.get(FieldNames.FIELD_OBJECT_ID) : null);
+		return (oid != null ? oid.toString() : null);
+	}
+
+	private BaseRecord groupOf(String path) {
+		BaseRecord g = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_GROUP, path, "DATA", orgId);
+		assertNotNull("group " + path + " must exist", g);
+		return g;
+	}
+
+	/// A reader of the whole series: Read on both chapters' Book groups plus the shared reads.
+	private void grantSeriesReader(SeriesFixture s, BaseRecord u) {
+		for(Fixture f : new Fixture[] { s.a, s.b }) {
+			ioContext.getAuthorizationUtil().setEntitlement(admin, u, new BaseRecord[] { groupOf(PbBookUtil.bookGroupPath(f.slug)) }, READ, DATA_AND_GROUP);
+		}
+		grantSharedReads(s, u);
+	}
+
+	/// A writer of ONE chapter: CRUD on its Book / Workflow / Artifacts groups (what createBook grants the series
+	/// Writer role on every chapter) plus the shared reads - and nothing on any other chapter (237 j).
+	private void grantChapterWriter(SeriesFixture s, Fixture f, BaseRecord u) {
+		for(String path : new String[] { PbBookUtil.bookGroupPath(f.slug), PbBookUtil.workflowGroupPath(f.slug), PbBookUtil.artifactGroupPath(f.slug) }) {
+			ioContext.getAuthorizationUtil().setEntitlement(admin, u, new BaseRecord[] { groupOf(path) }, CRUD, DATA_AND_GROUP);
+		}
+		grantSharedReads(s, u);
+	}
+
+	/// What every reader of a chapter needs besides its group: the series world tree, the world row and the series
+	/// row (PolicyUtil.getSchemaRules follows the chapter's world / series FKs). Direct user entitlements, as the
+	/// Objects7 half (TestPbCoverUtil) grants them.
+	private void grantSharedReads(SeriesFixture s, BaseRecord u) {
+		assertTrue("the series world tree carries child groups", grantNestedGroups(u, s.container, READ) > 0);
+		ioContext.getAuthorizationUtil().setEntitlement(admin, u, s.world, READ, PermissionEnumType.DATA.toString());
+		ioContext.getAuthorizationUtil().setEntitlement(admin, u, s.series, READ, PermissionEnumType.DATA.toString());
+		ServiceUtil.clearCache();
+		CacheUtil.clearCache();
+	}
+
+	/// Test-only inspection, outside PBAC: how many SERIES_ART rows a chapter's Book group holds. listCovers cannot
+	/// count (lowestOfPurpose resolves the lowest id only), and the refusal's whole point is that B's group gains
+	/// no second series_art.<seriesOid> row.
+	private int seriesArtRowsIn(BaseRecord group) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_COMPOSITION, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID), orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, OlioFieldNames.FIELD_PB_PURPOSE });
+		q.setCache(false);
+		BaseRecord[] rows = ioContext.getSearch().findRecords(q);
+		int n = 0;
+		if(rows != null) {
+			for(BaseRecord r : rows) {
+				if(PbCompositionPurposeEnumType.SERIES_ART.toString().equalsIgnoreCase(enumWord(r, OlioFieldNames.FIELD_PB_PURPOSE))) {
+					n++;
+				}
+			}
+		}
+		return n;
+	}
+
+	/// The series, its two chapters, the shared world and the series roles, through PbSeriesUtil.deleteSeries as the
+	/// owner (series Writer); on a failure the chapters are torn down one by one so a red run leaves as little as
+	/// possible behind. Never asserted: cleanup is not the case.
+	private void cleanupSeries(SeriesFixture s) {
+		if(s == null) {
+			return;
+		}
+		if(s.seriesOid != null) {
+			try {
+				int torn = PbSeriesUtil.deleteSeries(owner, s.seriesOid);
+				logger.info("Cleanup: series " + s.seriesSlug + " deleted, " + torn + " chapter(s) torn down");
+				return;
+			}
+			catch(Exception e) {
+				logger.error("Cleanup: series " + s.seriesSlug + ": " + e.getMessage());
+			}
+		}
+		cleanup(s.a);
+		cleanup(s.b);
 	}
 
 	private BaseRecord bookAsOwner(Fixture f) {
@@ -632,6 +877,8 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 			Map<String, Object> v = ok(view(owner, f.bookOid), "v1 GET covers");
 			assertEquals("the view names the book", f.bookOid, str(v, "bookObjectId"));
 			assertNull("no workflow on a book that never rendered", str(v, "workflowObjectId"));
+			/// P10-A 7: a standalone book's view carries no series (NON_EMPTY export drops the null, so absent == null).
+			assertNull("a standalone book's view has no seriesObjectId: " + v, str(v, "seriesObjectId"));
 			assertTrue("no cover entries on a fresh book: " + v, coversOf(v).isEmpty());
 			refused(board(owner, f.bookOid, "cover"), 404, NO_COVER, "v1 GET cover board is the read's 404, not the path's 409");
 			refused(plan(owner, f.bookOid, "cover", "{}"), 404, NO_COVER, "v1 plan is the read's 404, not the path's 409");
@@ -910,6 +1157,267 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 		}
 		finally {
 			cleanup(f);
+		}
+	}
+
+	/// P10-A 7: the first H2 contract of POST /series and POST /chapter, which is the series fixture itself (every
+	/// assertion is in createSeriesWithTwoChapters / createChapter). Then the route's own refusals: a chapter slug
+	/// that already exists is the 409, an unknown series is the 404, a missing slug is the 400 - none of which
+	/// changes the series' chapter count.
+	@Test
+	public void TestSeriesAndChapterRoutesCreateLinkedChapters() throws Exception {
+		v3();
+		SeriesFixture s = createSeriesWithTwoChapters();
+		try {
+			refused(service.createChapter(json("seriesObjectId", s.seriesOid, "slug", s.a.slug, "title", "again", "chapter", 3), requestAs(owner), DATA_CONTEXT),
+				409, "already exists", "POST /chapter with a slug that exists");
+			refused(service.createChapter(json("seriesObjectId", NIL_UUID, "slug", "p107x-" + s.seriesSlug, "chapter", 3), requestAs(owner), DATA_CONTEXT),
+				404, "Series not found", "POST /chapter of an unknown series");
+			refused(service.createChapter(json("seriesObjectId", s.seriesOid, "title", "no slug"), requestAs(owner), DATA_CONTEXT),
+				400, "slug is required", "POST /chapter without a slug");
+			BaseRecord series = PbSeriesUtil.readSeries(owner, s.seriesOid, orgId);
+			assertNotNull("the series still reads", series);
+			assertEquals("two chapters were counted, the refusals added none", 2, ((Number) series.get(OlioFieldNames.FIELD_PB_BOOK_COUNT)).intValue());
+			/// POST /series on an existing slug as its Writer is the get branch: the same series and world back.
+			Map<String, Object> again = ok(service.createSeries(json("seriesSlug", s.seriesSlug, "title", "again"), requestAs(owner), DATA_CONTEXT), "POST /series again");
+			assertEquals("the same series", s.seriesOid, str(again, "seriesObjectId"));
+			assertEquals("the same world", s.worldOid, str(again, "worldObjectId"));
+		}
+		finally {
+			cleanupSeries(s);
+		}
+	}
+
+	/// P10-A 7 (§6.C 256, 237 j): SERIES_ART on a real chapter is one row per series that every chapter of the series
+	/// lists, and whose visibility follows the HOST chapter's grants. The owner creates it from chapter A (manual):
+	/// the row is series_art.<seriesOid>, book = A, in A's Book group; A's and B's GET covers list it with the same
+	/// compositionObjectId and the series' objectId; board / patch / plan 200 from A; a second create from A and the
+	/// create from B both return the existing row (never a second one). The reader, granted on both chapters, sees it
+	/// from both. The sibling, a writer of B with nothing on A, can read and update chapter B (preconditions) but
+	/// GET covers lists no SERIES_ART and the board, patch, plan and the manual create are all the 404 "has no
+	/// SERIES_ART composition" - never the row, nothing written, no second row in B's group. The stranger is the
+	/// book's 404 on both chapters.
+	@Test
+	public void TestSeriesArtOnAChapterIsSharedAndFollowsHostGrants() throws Exception {
+		v3();
+		SeriesFixture s = createSeriesWithTwoChapters();
+		try {
+			BaseRecord groupA = groupOf(PbBookUtil.bookGroupPath(s.a.slug));
+			BaseRecord groupB = groupOf(PbBookUtil.bookGroupPath(s.b.slug));
+			assertEquals("precondition: no SERIES_ART row in A's group yet", 0, seriesArtRowsIn(groupA));
+			assertEquals("precondition: no SERIES_ART row in B's group yet", 0, seriesArtRowsIn(groupB));
+			refused(board(owner, s.a.bookOid, "series-art"), 404, NO_SERIES_ART, "board before the series has art");
+			Map<String, Object> vA0 = ok(view(owner, s.a.bookOid), "GET covers of A before");
+			assertNull("no SERIES_ART entry before one is created", coversOf(vA0).get("SERIES_ART"));
+			/// P10-A 7: the view says the book is a chapter (the board shows the Series art tab from this, not from the entry).
+			assertEquals("A's view names its series before any art exists", s.seriesOid, str(vA0, "seriesObjectId"));
+			assertEquals("B's view names the same series", s.seriesOid, str(ok(view(owner, s.b.bookOid), "GET covers of B before"), "seriesObjectId"));
+
+			/// The owner, from the host chapter A.
+			Map<String, Object> c = ok(create(owner, s.a.bookOid, "series-art", manual()), "manual SERIES_ART create on A");
+			assertFlag(c, "created", true);
+			assertFlag(c, "existingReturned", false);
+			assertEquals("purpose", "SERIES_ART", str(c, "purpose"));
+			assertEquals("source", "USER", str(c, "source"));
+			String artOid = str(c, "compositionObjectId");
+			assertNotNull("the created composition's objectId: " + c, artOid);
+			BaseRecord stored = PbComposeUtil.readComposition(owner, artOid, orgId);
+			assertNotNull("the SERIES_ART row reads back as the owner", stored);
+			assertEquals("the row is named for the series", PbCoverUtil.SERIES_ART_NAME_PREFIX + s.seriesOid, stored.get(FieldNames.FIELD_NAME));
+			assertEquals("the row is hosted in chapter A's group", ((Number) groupA.get(FieldNames.FIELD_ID)).longValue(), ((Number) stored.get(FieldNames.FIELD_GROUP_ID)).longValue());
+			assertEquals("the row's book is chapter A", s.a.bookOid, fkOid(stored, OlioFieldNames.FIELD_PB_BOOK));
+			assertEquals("the row's series", s.seriesOid, fkOid(stored, OlioFieldNames.FIELD_PB_SERIES));
+			assertEquals("persisted purpose", "SERIES_ART", enumWord(stored, OlioFieldNames.FIELD_PB_PURPOSE));
+			assertEquals("one SERIES_ART row in A's group", 1, seriesArtRowsIn(groupA));
+			assertEquals("none in B's group", 0, seriesArtRowsIn(groupB));
+
+			Map<String, Object> entryA = map(coversOf(ok(view(owner, s.a.bookOid), "GET covers of A")), "SERIES_ART");
+			assertEquals("A's view lists the row", artOid, str(entryA, "compositionObjectId"));
+			assertEquals("A's entry names the purpose", "SERIES_ART", str(entryA, "purpose"));
+			assertEquals("A's entry names the series", s.seriesOid, str(entryA, "seriesObjectId"));
+			Map<String, Object> entryB = map(coversOf(ok(view(owner, s.b.bookOid), "GET covers of B")), "SERIES_ART");
+			assertEquals("B's view lists the SAME row", artOid, str(entryB, "compositionObjectId"));
+			assertEquals("B's entry names the series", s.seriesOid, str(entryB, "seriesObjectId"));
+
+			Map<String, Object> b = ok(board(owner, s.a.bookOid, "series-art"), "board from A");
+			assertEquals("the board names the composition", artOid, str(b, "compositionObjectId"));
+			assertEquals("the board names the purpose", "SERIES_ART", str(b, "purpose"));
+			assertEquals("the board from B is the same row", artOid, str(ok(board(owner, s.b.bookOid, "series-art"), "board from B"), "compositionObjectId"));
+			Map<String, Object> p = ok(patch(owner, s.a.bookOid, "series-art", settingAndBand("top")), "patch from A");
+			assertEquals("the patch names the composition", artOid, str(p, "compositionObjectId"));
+			assertFlag(p, "updated", true);
+			Map<String, Object> plan = ok(plan(owner, s.a.bookOid, "series-art", "{}"), "plan from A");
+			assertEquals("the plan names the composition", artOid, str(plan, "compositionObjectId"));
+			assertEquals("the plan names the purpose", "SERIES_ART", str(plan, "purpose"));
+			assertTrue("the BASE prompt carries the series art's own setting", basePrompt(plan).contains(COVER_SETTING));
+
+			Map<String, Object> againA = ok(create(owner, s.a.bookOid, "series-art", manual()), "create again from A");
+			assertFlag(againA, "existingReturned", true);
+			assertEquals("A returns the existing row", artOid, str(againA, "compositionObjectId"));
+			Map<String, Object> fromB = ok(create(owner, s.b.bookOid, "series_art", manual()), "create from B");
+			assertFlag(fromB, "created", false);
+			assertFlag(fromB, "existingReturned", true);
+			assertEquals("B returns the existing row, never a second one", artOid, str(fromB, "compositionObjectId"));
+			assertEquals("still one SERIES_ART row in A's group", 1, seriesArtRowsIn(groupA));
+			assertEquals("still none in B's group", 0, seriesArtRowsIn(groupB));
+
+			/// The reader, granted on both chapters.
+			grantSeriesReader(s, reader);
+			assertNotNull("precondition: the reader reads chapter A", PbBookUtil.readBook(reader, s.a.bookOid, orgId));
+			assertNotNull("precondition: the reader reads chapter B", PbBookUtil.readBook(reader, s.b.bookOid, orgId));
+			assertEquals("the reader sees the row from A", artOid, str(map(coversOf(ok(view(reader, s.a.bookOid), "reader GET covers of A")), "SERIES_ART"), "compositionObjectId"));
+			assertEquals("the reader sees the row from B", artOid, str(map(coversOf(ok(view(reader, s.b.bookOid), "reader GET covers of B")), "SERIES_ART"), "compositionObjectId"));
+			assertEquals("the reader's board from B", artOid, str(ok(board(reader, s.b.bookOid, "series-art"), "reader board from B"), "compositionObjectId"));
+			refused(patch(reader, s.b.bookOid, "series-art", settingAndBand("bottom")), 403, REFUSED_EDIT, "reader patch from B");
+
+			/// The sibling: a writer of B with nothing on A (237 j).
+			grantChapterWriter(s, s.b, sibling);
+			BaseRecord bAsSibling = PbBookUtil.readBook(sibling, s.b.bookOid, orgId);
+			assertNotNull("precondition: the sibling reads chapter B", bAsSibling);
+			assertNotNull("precondition: the sibling may update chapter B (a 403 here would be the wrong refusal)",
+				PbBookUtil.requireBookUpdate(sibling, bAsSibling, "test"));
+			assertNull("precondition: the sibling cannot read chapter A", PbBookUtil.readBook(sibling, s.a.bookOid, orgId));
+			assertNull("precondition: the sibling cannot read the row directly", PbComposeUtil.readComposition(sibling, artOid, orgId));
+			Map<String, Object> vb = ok(view(sibling, s.b.bookOid), "sibling GET covers of B");
+			assertEquals("the sibling's view names the book", s.b.bookOid, str(vb, "bookObjectId"));
+			assertNull("the sibling's view lists no SERIES_ART: " + vb, coversOf(vb).get("SERIES_ART"));
+			refused(board(sibling, s.b.bookOid, "series-art"), 404, NO_SERIES_ART, "sibling board from B");
+			refused(patch(sibling, s.b.bookOid, "series-art", settingAndBand("bottom")), 404, NO_SERIES_ART, "sibling patch from B");
+			refused(plan(sibling, s.b.bookOid, "series-art", "{}"), 404, NO_SERIES_ART, "sibling plan from B");
+			refused(create(sibling, s.b.bookOid, "series-art", manual()), 404, NO_SERIES_ART, "sibling manual create from B");
+			refused(create(sibling, s.b.bookOid, "series-art", null), 404, NO_SERIES_ART, "sibling AUTO create from B");
+			refused(render(sibling, s.b.bookOid, "series-art"), 404, NO_SERIES_ART, "sibling render from B");
+			assertNothingWritten(s.b, "after the sibling's refusals");
+			assertEquals("the sibling's refusals wrote no SERIES_ART row in B's group", 0, seriesArtRowsIn(groupB));
+			assertEquals("A's group still holds the one row", 1, seriesArtRowsIn(groupA));
+			BaseRecord after = PbComposeUtil.readComposition(owner, artOid, orgId);
+			assertNotNull("the row is still there", after);
+			assertEquals("the row's name is unchanged", PbCoverUtil.SERIES_ART_NAME_PREFIX + s.seriesOid, after.get(FieldNames.FIELD_NAME));
+			assertEquals("the row's group is unchanged", ((Number) groupA.get(FieldNames.FIELD_ID)).longValue(), ((Number) after.get(FieldNames.FIELD_GROUP_ID)).longValue());
+			assertEquals("the row's book is still chapter A", s.a.bookOid, fkOid(after, OlioFieldNames.FIELD_PB_BOOK));
+			assertEquals("the sibling's patch did not land", "TOP", enumWord(after, OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND));
+
+			/// The stranger: no grants, the book's 404 on both chapters.
+			assertNull("precondition: the stranger cannot read chapter A", PbBookUtil.readBook(stranger, s.a.bookOid, orgId));
+			assertNull("precondition: the stranger cannot read chapter B", PbBookUtil.readBook(stranger, s.b.bookOid, orgId));
+			for(Fixture f : new Fixture[] { s.a, s.b }) {
+				refused(view(stranger, f.bookOid), 404, NOT_FOUND, "stranger GET covers of " + f.slug);
+				refused(board(stranger, f.bookOid, "series-art"), 404, NOT_FOUND, "stranger board of " + f.slug);
+				refused(create(stranger, f.bookOid, "series-art", manual()), 404, NOT_FOUND, "stranger create on " + f.slug);
+			}
+			assertEquals("the stranger wrote nothing in A's group", 1, seriesArtRowsIn(groupA));
+			assertEquals("the stranger wrote nothing in B's group", 0, seriesArtRowsIn(groupB));
+		}
+		finally {
+			cleanupSeries(s);
+		}
+	}
+
+	/// P10-A 7 (§6.C 257): the SERIES_ART render pipeline belongs to the HOST chapter. Every entry carries
+	/// hostBookObjectId (a book-level cover's is the book itself; the series art's is A from either chapter). A render
+	/// addressed from sibling chapter B - plain or forced - is the 409 that names the host and writes nothing: no
+	/// workflow in B, none in A either. The render from A is the 202 that materializes the node in A's workflow; both
+	/// chapters' GET covers and B's board then resolve that one node (same nodeObjectId / nodeStatus / chainLength /
+	/// pinned) while B's view still names no workflow. A second render from B after the node exists is still the 409,
+	/// B still has no workflow and A's workflow still holds one node for the handle. The reader (Read on both Book
+	/// groups, nothing on A's Workflow group) sees the row from both chapters and the node from neither, and the
+	/// reader's render from either chapter is the 403 - which is before the 409. The job's outcome against the loopback
+	/// SD is logged, not asserted.
+	@Test
+	public void TestSeriesArtRenderIsTheHostsSeenFromEveryChapter() throws Exception {
+		v3();
+		SeriesFixture s = createSeriesWithTwoChapters();
+		String jobId = null;
+		AsyncJob job = null;
+		try {
+			String artOid = str(ok(create(owner, s.a.bookOid, "series-art", manual()), "manual SERIES_ART create on A"), "compositionObjectId");
+			assertNotNull("the created composition's objectId", artOid);
+			Map<String, Object> entryA0 = map(coversOf(ok(view(owner, s.a.bookOid), "GET covers of A before any render")), "SERIES_ART");
+			assertEquals("A's entry names itself as the host", s.a.bookOid, str(entryA0, "hostBookObjectId"));
+			assertNull("no node before any render: " + entryA0, str(entryA0, "nodeObjectId"));
+			Map<String, Object> entryB0 = map(coversOf(ok(view(owner, s.b.bookOid), "GET covers of B before any render")), "SERIES_ART");
+			assertEquals("B lists the row", artOid, str(entryB0, "compositionObjectId"));
+			assertEquals("B's entry names chapter A as the host", s.a.bookOid, str(entryB0, "hostBookObjectId"));
+			assertNull("no node before any render, from B either: " + entryB0, str(entryB0, "nodeObjectId"));
+			String coverOid = str(ok(create(owner, s.b.bookOid, "cover", manual()), "manual COVER create on B"), "compositionObjectId");
+			Map<String, Object> coverB = map(coversOf(ok(view(owner, s.b.bookOid), "GET covers of B with its own cover")), "COVER");
+			assertEquals("B's own COVER", coverOid, str(coverB, "compositionObjectId"));
+			assertEquals("a book-level cover is hosted by its own book", s.b.bookOid, str(coverB, "hostBookObjectId"));
+
+			/// From the sibling chapter: the 409 that names the host, nothing written anywhere.
+			refused(render(owner, s.b.bookOid, "series-art"), 409, RENDERED_FROM_HOST, "render of the series art from B");
+			refused(service.renderCover(s.b.bookOid, "series-art", true, requestAs(owner), SD_CONTEXT), 409, RENDERED_FROM_HOST, "forced render of the series art from B");
+			assertNull("the refused render materialized no workflow in B", PbGraphUtil.findWorkflow(owner, bookAsOwner(s.b)));
+			assertNull("the refused render materialized no workflow in A either", PbGraphUtil.findWorkflow(owner, bookAsOwner(s.a)));
+			assertNull("B's view names no workflow", str(ok(view(owner, s.b.bookOid), "GET covers of B after the 409"), "workflowObjectId"));
+
+			/// From the host chapter: the 202 that materializes the node in A's workflow.
+			Map<String, Object> r = accepted(render(owner, s.a.bookOid, "series-art"), "render of the series art from A");
+			assertEquals("the render names chapter A", s.a.bookOid, str(r, "bookObjectId"));
+			assertEquals("the render names the purpose", "SERIES_ART", str(r, "purpose"));
+			assertEquals("the render names the composition", artOid, str(r, "compositionObjectId"));
+			String nodeOid = str(r, "nodeObjectId");
+			assertNotNull("the RENDER_PLAN node is materialized: " + r, nodeOid);
+			assertFlag(r, "nodeMaterialized", true);
+			jobId = str(r, "jobId");
+			job = awaitRenderJob(r, "series art render job");
+
+			BaseRecord workflowA = PbGraphUtil.findWorkflow(owner, bookAsOwner(s.a));
+			assertNotNull("A's workflow now exists", workflowA);
+			assertNull("B still has no workflow", PbGraphUtil.findWorkflow(owner, bookAsOwner(s.b)));
+			String handle = PbPipelineUtil.compositionPlanHandle(artOid);
+			assertEquals("A's workflow holds the node under the composition's handle", nodeOid, oid(PbPipelineUtil.findNodeByHandle(owner, workflowA, handle)));
+
+			Map<String, Object> vA = ok(view(owner, s.a.bookOid), "GET covers of A after the render");
+			assertEquals("A's view names its workflow", oid(workflowA), str(vA, "workflowObjectId"));
+			Map<String, Object> entryA = map(coversOf(vA), "SERIES_ART");
+			assertEquals("A's entry shows the node", nodeOid, str(entryA, "nodeObjectId"));
+			assertEquals("A's entry still names itself as the host", s.a.bookOid, str(entryA, "hostBookObjectId"));
+			assertNotNull("A's entry shows the node status: " + entryA, str(entryA, "nodeStatus"));
+			Map<String, Object> vB = ok(view(owner, s.b.bookOid), "GET covers of B after A's render");
+			assertNull("B's view still names no workflow: " + vB, str(vB, "workflowObjectId"));
+			Map<String, Object> entryB = map(coversOf(vB), "SERIES_ART");
+			assertEquals("B's entry is the same row", artOid, str(entryB, "compositionObjectId"));
+			assertEquals("B's entry resolves A's node", nodeOid, str(entryB, "nodeObjectId"));
+			assertEquals("B's entry names chapter A as the host", s.a.bookOid, str(entryB, "hostBookObjectId"));
+			assertEquals("the same node status from either chapter", str(entryA, "nodeStatus"), str(entryB, "nodeStatus"));
+			assertEquals("the same chain length from either chapter", num(entryA, "chainLength"), num(entryB, "chainLength"));
+			assertEquals("the same pinned flag from either chapter", entryA.get("pinned"), entryB.get("pinned"));
+			logger.info("series art entry from A: " + entryA);
+			logger.info("series art entry from B: " + entryB);
+			Map<String, Object> boardB = map(ok(board(owner, s.b.bookOid, "series-art"), "board from B after A's render"), "cover");
+			assertEquals("B's board resolves A's node", nodeOid, str(boardB, "nodeObjectId"));
+			assertEquals("B's board names chapter A as the host", s.a.bookOid, str(boardB, "hostBookObjectId"));
+
+			/// From B again, now that the node exists: still the 409, still one node, still no workflow in B.
+			refused(render(owner, s.b.bookOid, "series-art"), 409, RENDERED_FROM_HOST, "second render of the series art from B");
+			assertNull("B still has no workflow after the second 409", PbGraphUtil.findWorkflow(owner, bookAsOwner(s.b)));
+			int forHandle = 0;
+			for(BaseRecord n : PbGraphUtil.listNodes(owner, workflowA)) {
+				if(handle.equals(n.get(OlioFieldNames.FIELD_PB_HANDLE))) {
+					forHandle++;
+				}
+			}
+			assertEquals("A's workflow holds exactly one node for the composition", 1, forHandle);
+
+			/// The reader: Read on both Book groups, nothing on A's Workflow group.
+			grantSeriesReader(s, reader);
+			Map<String, Object> rA = map(coversOf(ok(view(reader, s.a.bookOid), "reader GET covers of A")), "SERIES_ART");
+			Map<String, Object> rB = map(coversOf(ok(view(reader, s.b.bookOid), "reader GET covers of B")), "SERIES_ART");
+			assertEquals("the reader sees the row from A", artOid, str(rA, "compositionObjectId"));
+			assertEquals("the reader sees the row from B", artOid, str(rB, "compositionObjectId"));
+			assertEquals("the reader's entry from A names the host", s.a.bookOid, str(rA, "hostBookObjectId"));
+			assertEquals("the reader's entry from B names the host", s.a.bookOid, str(rB, "hostBookObjectId"));
+			assertNull("the node follows A's Workflow group, which the reader has no Read on - from A: " + rA, str(rA, "nodeObjectId"));
+			assertNull("...and the same from B: " + rB, str(rB, "nodeObjectId"));
+			refused(render(reader, s.a.bookOid, "series-art"), 403, REFUSED_RENDER, "reader render from A");
+			refused(render(reader, s.b.bookOid, "series-art"), 403, REFUSED_RENDER, "reader render from B (the 403 is before the 409)");
+		}
+		finally {
+			if(jobId != null && job == null) {
+				PbRenderJobUtil.awaitTerminal(owner, jobId, JOB_CEILING_MS);
+			}
+			cleanupSeries(s);
 		}
 	}
 

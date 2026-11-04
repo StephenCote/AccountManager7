@@ -2124,6 +2124,9 @@ export function normalizeCoverEntry(e) {
         source: e.source != null ? String(e.source).toUpperCase() : null,
         titleSafeBand: e.titleSafeBand != null ? String(e.titleSafeBand).toUpperCase() : null,
         seriesObjectId: e.seriesObjectId != null ? e.seriesObjectId : null,
+        // The book whose workflow renders this cover (P10-A 7, §6.C 257): the book itself for a book-level cover,
+        // the host chapter for a SERIES_ART row read from a sibling chapter. Null on an older server that omits it.
+        hostBookObjectId: e.hostBookObjectId != null ? e.hostBookObjectId : null,
         nodeObjectId: e.nodeObjectId != null ? e.nodeObjectId : null,
         nodeStatus: e.nodeStatus != null ? String(e.nodeStatus).toUpperCase() : null,
         pinned: !!e.pinned,
@@ -2136,7 +2139,12 @@ export function normalizeCoverEntry(e) {
     });
 }
 
-/** Pure: GET /{book}/covers body → {bookObjectId, workflowObjectId, covers: {COVER, TITLE_PAGE, CHAPTER_OPENER, SERIES_ART}} with every purpose present (null = no composition). */
+/**
+ * Pure: GET /{book}/covers body → {bookObjectId, workflowObjectId, seriesObjectId, covers: {COVER, TITLE_PAGE,
+ * CHAPTER_OPENER, SERIES_ART}} with every purpose present (null = no composition). seriesObjectId is the book's own
+ * series FK (P10-A 7) - null for a standalone book, which has no SERIES_ART purpose to offer; the NON_EMPTY export
+ * omits the key for a standalone, so absent reads as null here.
+ */
 export function normalizeCoverView(r) {
     r = r || {};
     let src = r.covers && typeof r.covers === 'object' ? r.covers : {};
@@ -2148,8 +2156,19 @@ export function normalizeCoverView(r) {
     return Object.assign({}, r, {
         bookObjectId: r.bookObjectId != null ? r.bookObjectId : null,
         workflowObjectId: r.workflowObjectId != null ? r.workflowObjectId : null,
+        seriesObjectId: r.seriesObjectId != null ? r.seriesObjectId : null,
         covers: covers
     });
+}
+
+/**
+ * Pure: the cover purposes a book's compose board offers. SERIES_ART only when the covers view says the book is a
+ * chapter of a series (its seriesObjectId; PbCoverUtil.getCreate refuses SERIES_ART on a standalone with a 409) -
+ * so a standalone, and a book whose covers view has not been read, never show the tab (P10-A 7).
+ */
+export function coverPurposesFor(view) {
+    let chapter = !!(view && typeof view === 'object' && view.seriesObjectId);
+    return chapter ? COVER_PURPOSES.slice() : COVER_PURPOSES.filter(function (p) { return p !== 'SERIES_ART'; });
 }
 
 /**
@@ -2162,6 +2181,37 @@ export function coverImageRefFor(view, purpose, allowLatest) {
     if (!entry) return null;
     if (entry.approved) return entry.approved;
     return allowLatest ? entry.latest : null;
+}
+
+/** Pure: a purpose's title-safe band from a normalizeCoverView result → 'TOP' | 'BOTTOM' | null (no entry / no band). */
+export function coverBandFor(view, purpose) {
+    let p = coverPurposeOf(purpose);
+    let entry = view && view.covers && p ? view.covers[p] : null;
+    let b = entry && entry.titleSafeBand ? String(entry.titleSafeBand).toUpperCase() : null;
+    return b === 'TOP' || b === 'BOTTOM' ? b : null;
+}
+
+/**
+ * Pure (P10-A 7): the pages a reader shows BEFORE the scene pages, from a normalizeCoverView result (or null).
+ * Shared by pictureBook.js (PB2 reader) and chapBook.js (ReaderShell frontPages) so the two never drift. Always
+ * ends with the cover page:
+ *  - approved SERIES_ART and approved COVER → the series art is its own page before the cover page
+ *    ([{page:'SERIES_ART', source:'series_art'}, {page:'COVER', source:'cover'}]);
+ *  - approved SERIES_ART, no approved COVER → the series art IS the cover page ({page:'COVER', source:'series_art'});
+ *  - no approved SERIES_ART → the cover page alone, with the approved COVER (source 'cover') or no art at all
+ *    (source null: the reader falls back to its page-1 backdrop as before).
+ * Approved only, as the cover page always was: a sibling chapter never sees the series' unapproved latest render.
+ * → [{page: 'SERIES_ART' | 'COVER', source: 'series_art' | 'cover' | null, ref, band}]
+ */
+export function readerFrontPages(view) {
+    let series = coverImageRefFor(view, 'SERIES_ART', false);
+    let cover = coverImageRefFor(view, 'COVER', false);
+    let out = [];
+    if (series && cover) out.push({ page: 'SERIES_ART', source: 'series_art', ref: series, band: coverBandFor(view, 'SERIES_ART') });
+    if (cover) out.push({ page: 'COVER', source: 'cover', ref: cover, band: coverBandFor(view, 'COVER') });
+    else if (series) out.push({ page: 'COVER', source: 'series_art', ref: series, band: coverBandFor(view, 'SERIES_ART') });
+    else out.push({ page: 'COVER', source: null, ref: null, band: null });
+    return out;
 }
 
 /**

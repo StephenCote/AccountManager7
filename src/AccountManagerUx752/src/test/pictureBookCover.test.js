@@ -70,9 +70,12 @@ function toasts() { return page.toast.mock.calls.map(c => [c[0], c[1]]); }
 function imageRefWire(n, extra) {
     return Object.assign({ artifactObjectId: 'art-' + n, revision: n, reviewStatus: 'generated', dataObjectId: 'd-' + n, imageGroupPath: '/Pb/covers', imageName: 'cover-r' + n + '.png', imageContentType: 'image/png' }, extra || {});
 }
-/** A COVER entry that has never rendered (no workflow / node yet - the find-only read's shape for a fresh book). */
+/**
+ * A COVER entry that has never rendered (no workflow / node yet - the find-only read's shape for a fresh book).
+ * hostBookObjectId is on every entry (P10-A 7, §6.C 257): the book itself for a book-level cover.
+ */
 function coverEntryWire(extra) {
-    return Object.assign({ compositionObjectId: 'comp-1', purpose: 'cover', source: 'user', titleSafeBand: 'unknown', chainLength: 0, pinned: false }, extra || {});
+    return Object.assign({ compositionObjectId: 'comp-1', purpose: 'cover', source: 'user', titleSafeBand: 'unknown', hostBookObjectId: BOOK, chainLength: 0, pinned: false }, extra || {});
 }
 /** A COVER entry rendered twice: revision 1 approved and selected, revision 2 the latest. */
 function renderedEntryWire(extra) {
@@ -81,8 +84,22 @@ function renderedEntryWire(extra) {
         approved: imageRefWire(1, { reviewStatus: 'approved' }), latest: imageRefWire(2)
     }), extra || {});
 }
+/**
+ * P10-A 7: the series' SERIES_ART entry as a chapter's covers list carries it (seriesObjectId = the series the row
+ * lives on; its approved render is revision 5, band TOP). The same row is listed on every chapter of the series.
+ */
+function seriesArtEntryWire(extra) {
+    return Object.assign(renderedEntryWire({
+        compositionObjectId: 'comp-ser', purpose: 'series_art', seriesObjectId: 'ser-1', titleSafeBand: 'top', nodeObjectId: 'n-series', chainLength: 1, selectedArtifactObjectId: 'art-5',
+        approved: imageRefWire(5, { reviewStatus: 'approved', imageName: 'series-r5.png' }), latest: imageRefWire(5, { reviewStatus: 'approved', imageName: 'series-r5.png' })
+    }), extra || {});
+}
 function coverViewWire(extra) {
     return Object.assign({ bookObjectId: BOOK, workflowObjectId: 'wf-1', covers: { COVER: coverEntryWire() } }, extra || {});
+}
+/** A chapter's covers view: the book's series FK plus (by default) the approved series art and an approved COVER. */
+function chapterViewWire(extra) {
+    return coverViewWire(Object.assign({ seriesObjectId: 'ser-1', covers: { COVER: renderedEntryWire(), SERIES_ART: seriesArtEntryWire() } }, extra || {}));
 }
 function compositionWire(extra) {
     return Object.assign({
@@ -116,16 +133,18 @@ let wf;
 function st() { return cmp.__composeStateForTest(); }
 function view() { return cmp.composeView.view(); }
 
-/** Seed the board in cover mode (COVER) from a cover-board wire; no fetch is issued. */
+/** Seed the board in cover mode (COVER unless o.coverPurpose says otherwise) from a cover-board wire; no fetch is issued. */
 function seedCover(opts) {
     let o = opts || {};
     let b = wf.normalizeBoard(o.board || coverBoardWire());
     let entryWire = o.board && 'cover' in o.board ? o.board.cover : coverEntryWire();
-    b.purpose = 'COVER';
+    b.purpose = o.coverPurpose || 'COVER';
     b.cover = wf.normalizeCoverEntry(entryWire);
     cmp.__setComposeStateForTest({
         bookObjectId: BOOK, sceneObjectId: null, coverPurpose: o.coverPurpose || 'COVER', pages: o.pages || PAGES, loading: false, error: null, noComposition: false, noCompositionMessage: null,
         board: b, cover: b.cover, covers: o.covers !== undefined ? o.covers : wf.normalizeCoverView(coverViewWire()).covers,
+        // P10-A 7: the covers view's seriesObjectId (a chapter) decides whether the Series art tab is offered.
+        coverSeriesObjectId: o.coverSeriesObjectId !== undefined ? o.coverSeriesObjectId : null,
         outfits: { a1: wf.normalizeResolvedOutfit(outfitsWire().actors[0]) },
         plan: o.plan !== undefined ? o.plan : wf.normalizePlan(planWire()),
         planError: null, planLoading: false, busy: {}, edits: { composition: null, actors: {}, elements: {} }, lastEdit: null,
@@ -137,7 +156,7 @@ beforeEach(async () => {
     origFetch = global.fetch;
     cmp = await import('../features/pictureBookCompose.js');
     wf = await import('../workflows/pictureBookWorkflow.js');
-    cmp.__setComposeStateForTest({ bookObjectId: null, sceneObjectId: null, coverPurpose: null, cover: null, covers: null, renderRun: null, pages: [], board: null, loading: false, error: null, noComposition: false, noCompositionMessage: null, loadSeq: 0, outfits: {}, plan: null, planError: null, planLoading: false, busy: {}, edits: null, lastEdit: null, characters: [], composeRun: null, drag: null, overrideInst: null, overrideExpanded: false, sdModels: [], sdLoras: [], pollIntervalMs: 1, chatConfigRef: null, chatConfigResolving: false });
+    cmp.__setComposeStateForTest({ bookObjectId: null, sceneObjectId: null, coverPurpose: null, cover: null, covers: null, coverSeriesObjectId: null, renderRun: null, pages: [], board: null, loading: false, error: null, noComposition: false, noCompositionMessage: null, loadSeq: 0, outfits: {}, plan: null, planError: null, planLoading: false, busy: {}, edits: null, lastEdit: null, characters: [], composeRun: null, drag: null, overrideInst: null, overrideExpanded: false, sdModels: [], sdLoras: [], pollIntervalMs: 1, chatConfigRef: null, chatConfigResolving: false });
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
     vi.spyOn(am7client, 'dotPath').mockReturnValue('Public');
     vi.spyOn(page, 'toast').mockImplementation(() => {});
@@ -147,7 +166,7 @@ beforeEach(async () => {
 
 afterEach(() => {
     cmp.composeView.onremove();
-    cmp.__setComposeStateForTest({ bookObjectId: null, sceneObjectId: null, coverPurpose: null, cover: null, covers: null, renderRun: null, pages: [], board: null, composeRun: null, busy: {}, edits: null, lastEdit: null, chatConfigRef: null, chatConfigResolving: false });
+    cmp.__setComposeStateForTest({ bookObjectId: null, sceneObjectId: null, coverPurpose: null, cover: null, covers: null, coverSeriesObjectId: null, renderRun: null, pages: [], board: null, composeRun: null, busy: {}, edits: null, lastEdit: null, chatConfigRef: null, chatConfigResolving: false });
     Dialog._reset();
     global.fetch = origFetch;
     vi.restoreAllMocks();
@@ -218,8 +237,10 @@ describe('cover workflow helpers', () => {
         expect(e.approved).toEqual({ artifactObjectId: 'art-1', revision: 1, reviewStatus: 'APPROVED', dataObjectId: 'd-1', imageGroupPath: '/Pb/covers', imageName: 'cover-r1.png', imageContentType: 'image/png' });
         expect(e.latest.reviewStatus).toBe('GENERATED');
         let fresh = wf.normalizeCoverEntry(coverEntryWire());
-        expect(fresh).toMatchObject({ nodeObjectId: null, nodeStatus: null, pinned: false, chainLength: 0, reviewStatus: null, approved: null, latest: null, seriesObjectId: null });
-        expect(wf.normalizeCoverEntry({ pinned: 'true', chainLength: null })).toMatchObject({ pinned: true, chainLength: 0 });
+        expect(fresh).toMatchObject({ nodeObjectId: null, nodeStatus: null, pinned: false, chainLength: 0, reviewStatus: null, approved: null, latest: null, seriesObjectId: null, hostBookObjectId: BOOK });
+        // P10-A 7 (§6.C 257): the host rides on every entry; an older server that omits it reads as null.
+        expect(wf.normalizeCoverEntry(seriesArtEntryWire({ hostBookObjectId: 'book-a' })).hostBookObjectId).toBe('book-a');
+        expect(wf.normalizeCoverEntry({ pinned: 'true', chainLength: null })).toMatchObject({ pinned: true, chainLength: 0, hostBookObjectId: null });
         expect(wf.normalizeCoverEntry(null)).toBeNull();
         expect(wf.normalizeCoverEntry('x')).toBeNull();
         expect(wf.normalizeCoverImageRef(null)).toBeNull();
@@ -238,6 +259,56 @@ describe('cover workflow helpers', () => {
         expect(empty.workflowObjectId).toBeNull();
         expect(empty.covers).toEqual({ COVER: null, TITLE_PAGE: null, CHAPTER_OPENER: null, SERIES_ART: null });
         expect(wf.normalizeCoverView(null).covers.COVER).toBeNull();
+        // P10-A 7: the book's own series FK rides on the view. A standalone's wire omits the key (NON_EMPTY) → null.
+        expect(v.seriesObjectId).toBeNull();
+        expect(empty.seriesObjectId).toBeNull();
+        expect(wf.normalizeCoverView(null).seriesObjectId).toBeNull();
+        expect(wf.normalizeCoverView(chapterViewWire()).seriesObjectId).toBe('ser-1');
+        expect(wf.normalizeCoverView(chapterViewWire()).covers.SERIES_ART).toMatchObject({ purpose: 'SERIES_ART', seriesObjectId: 'ser-1', titleSafeBand: 'TOP' });
+    });
+    it('coverPurposesFor (P10-A 7): Series art is offered only on a chapter (the view carries seriesObjectId); a standalone, a null or an unread view never offer it', () => {
+        expect(wf.coverPurposesFor(wf.normalizeCoverView(chapterViewWire()))).toEqual(['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER', 'SERIES_ART']);
+        expect(wf.coverPurposesFor({ seriesObjectId: 'ser-1' })).toEqual(['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER', 'SERIES_ART']);
+        expect(wf.coverPurposesFor(wf.normalizeCoverView(coverViewWire()))).toEqual(['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER']);
+        expect(wf.coverPurposesFor({ seriesObjectId: null })).toEqual(['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER']);
+        expect(wf.coverPurposesFor(null)).toEqual(['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER']);
+        expect(wf.coverPurposesFor(undefined)).toEqual(['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER']);
+        // A chapter whose series has no SERIES_ART row yet still offers the tab (that is where it gets created).
+        expect(wf.coverPurposesFor(wf.normalizeCoverView(chapterViewWire({ covers: { COVER: coverEntryWire() } })))).toContain('SERIES_ART');
+        // Never mutates the shared list.
+        expect(wf.COVER_PURPOSES).toEqual(['COVER', 'TITLE_PAGE', 'CHAPTER_OPENER', 'SERIES_ART']);
+    });
+    it('coverBandFor: TOP / BOTTOM from the entry, null for none / unknown / no entry / no view', () => {
+        let v = wf.normalizeCoverView(chapterViewWire());
+        expect(wf.coverBandFor(v, 'SERIES_ART')).toBe('TOP');
+        expect(wf.coverBandFor(v, 'cover')).toBe('BOTTOM');
+        expect(wf.coverBandFor(v, 'TITLE_PAGE')).toBeNull();
+        expect(wf.coverBandFor(wf.normalizeCoverView(coverViewWire()), 'COVER')).toBeNull();
+        expect(wf.coverBandFor(wf.normalizeCoverView(coverViewWire({ covers: { COVER: renderedEntryWire({ titleSafeBand: 'none' }) } })), 'COVER')).toBeNull();
+        expect(wf.coverBandFor(null, 'COVER')).toBeNull();
+        expect(wf.coverBandFor(v, 'scene')).toBeNull();
+    });
+    it('readerFrontPages (P10-A 7): series art + cover → two pages; series art alone IS the cover page; cover alone / nothing → one page; an unapproved latest never counts', () => {
+        let both = wf.readerFrontPages(wf.normalizeCoverView(chapterViewWire()));
+        expect(both.map(p => [p.page, p.source, p.ref && p.ref.imageName, p.band])).toEqual([['SERIES_ART', 'series_art', 'series-r5.png', 'TOP'], ['COVER', 'cover', 'cover-r1.png', 'BOTTOM']]);
+
+        let seriesOnly = wf.readerFrontPages(wf.normalizeCoverView(chapterViewWire({ covers: { SERIES_ART: seriesArtEntryWire() } })));
+        expect(seriesOnly.map(p => [p.page, p.source, p.ref && p.ref.imageName, p.band])).toEqual([['COVER', 'series_art', 'series-r5.png', 'TOP']]);
+        // ... also when the chapter's own cover exists but has no approved render yet.
+        let seriesAndUnrendered = wf.readerFrontPages(wf.normalizeCoverView(chapterViewWire({ covers: { COVER: coverEntryWire(), SERIES_ART: seriesArtEntryWire() } })));
+        expect(seriesAndUnrendered.map(p => [p.page, p.source])).toEqual([['COVER', 'series_art']]);
+
+        let coverOnly = wf.readerFrontPages(wf.normalizeCoverView(coverViewWire({ covers: { COVER: renderedEntryWire() } })));
+        expect(coverOnly.map(p => [p.page, p.source, p.ref && p.ref.imageName, p.band])).toEqual([['COVER', 'cover', 'cover-r1.png', 'BOTTOM']]);
+
+        expect(wf.readerFrontPages(wf.normalizeCoverView(coverViewWire()))).toEqual([{ page: 'COVER', source: null, ref: null, band: null }]);
+        expect(wf.readerFrontPages(null)).toEqual([{ page: 'COVER', source: null, ref: null, band: null }]);
+
+        // Approved only: a merely-latest series render (a sibling chapter's unapproved re-render) is not a front page.
+        let latestSeries = wf.readerFrontPages(wf.normalizeCoverView(chapterViewWire({ covers: { COVER: renderedEntryWire(), SERIES_ART: seriesArtEntryWire({ approved: null, reviewStatus: 'generated' }) } })));
+        expect(latestSeries.map(p => [p.page, p.source])).toEqual([['COVER', 'cover']]);
+        let latestBoth = wf.readerFrontPages(wf.normalizeCoverView(chapterViewWire({ covers: { COVER: renderedEntryWire({ approved: null, reviewStatus: 'generated' }), SERIES_ART: seriesArtEntryWire({ approved: null, reviewStatus: 'generated' }) } })));
+        expect(latestBoth).toEqual([{ page: 'COVER', source: null, ref: null, band: null }]);
     });
     it('coverImageRefFor: the APPROVED render first; the latest only when allowed; null for no cover, no render or a non-cover purpose', () => {
         let rendered = wf.normalizeCoverView(coverViewWire({ covers: { COVER: renderedEntryWire() } }));
@@ -409,6 +480,112 @@ describe('cover mode init', () => {
         expect(textOf(one(v, 'pb-cmp-create-cover-open'))).toContain('Create cover…');
         expect(textOf(one(v, 'pb-cmp-plan-error'))).toContain('has no COVER composition');
         expect(one(v, 'pb-cmp-purpose-cover').attrs['data-exists']).toBe('false');
+        none(v, 'pb-cmp-empty-series-note');
+        none(v, 'pb-cmp-purpose-series-art');
+    });
+    it('P10-A 7, series-art on a chapter whose series has no SERIES_ART yet: the 404 is the Create empty state with the shared-row note, the Series art tab is offered (active, no dot) from the view\'s seriesObjectId', async () => {
+        wire({ route: (method, url) => {
+            if (method === 'GET' && url === PB + '/covers/series-art') return jsonResponse(404, { error: 'Book harlots-eight-ch1 has no SERIES_ART composition - create it first' });
+            if (method === 'POST' && url === PB + '/covers/series-art/plan') return jsonResponse(404, { error: 'Book harlots-eight-ch1 has no SERIES_ART composition - create it first' });
+            return null;
+        }, covers: () => chapterViewWire({ covers: { COVER: coverEntryWire() } }) });
+        initCover('series-art');
+        await waitFor(() => st().noComposition && st().planError && st().covers);
+        let s = st();
+        expect(s.coverPurpose).toBe('SERIES_ART');
+        expect(s.error).toBeNull();
+        expect(s.board).toBeNull();
+        expect(s.coverSeriesObjectId).toBe('ser-1');
+        expect(s.covers.SERIES_ART).toBeNull();
+        expect(s.noCompositionMessage).toBe('(404) Book harlots-eight-ch1 has no SERIES_ART composition - create it first');
+        let v = view();
+        none(v, 'pb-cmp-error');
+        one(v, 'pb-cmp-empty');
+        expect(textOf(one(v, 'pb-cmp-empty-message'))).toContain('has no SERIES_ART composition');
+        expect(textOf(one(v, 'pb-cmp-empty-series-note'))).toContain('shared by every chapter');
+        expect(textOf(one(v, 'pb-cmp-create-cover-open'))).toContain('Create series art…');
+        let tabs = one(v, 'pb-cmp-purpose-tabs');
+        expect(tabs.children.map(t => t.attrs['data-testid'])).toEqual(['pb-cmp-purpose-cover', 'pb-cmp-purpose-title-page', 'pb-cmp-purpose-chapter-opener', 'pb-cmp-purpose-series-art']);
+        expect(one(v, 'pb-cmp-purpose-series-art').attrs['data-active']).toBe('true');
+        expect(one(v, 'pb-cmp-purpose-series-art').attrs['data-exists']).toBe('false');
+        expect(one(v, 'pb-cmp-purpose-cover').attrs['data-exists']).toBe('true');
+    });
+    it('P10-A 7, series-art on a chapter whose series has the row: the board loads keyed by purpose, the entry carries the series, the tab has its dot', async () => {
+        let calls = wire({ route: (method, url) => {
+            if (method === 'GET' && url === PB + '/covers/series-art') return jsonResponse(200, coverBoardWire({ purpose: 'series_art', compositionObjectId: 'comp-ser', composition: compositionWire({ objectId: 'comp-ser', purpose: 'series_art', settingText: 'the eight harlots on the quay' }), cover: seriesArtEntryWire() }));
+            if (method === 'GET' && url === PB + '/composition/comp-ser/outfits') return jsonResponse(200, { compositionObjectId: 'comp-ser', actors: [] });
+            if (method === 'POST' && url === PB + '/covers/series-art/plan') return jsonResponse(200, planWire());
+            return null;
+        }, covers: () => chapterViewWire() });
+        initCover('series-art');
+        await waitFor(() => st().board && st().plan && st().covers && !st().planLoading);
+        let s = st();
+        expect(s.coverPurpose).toBe('SERIES_ART');
+        expect(s.board.purpose).toBe('SERIES_ART');
+        expect(s.board.compositionObjectId).toBe('comp-ser');
+        expect(s.cover).toMatchObject({ purpose: 'SERIES_ART', seriesObjectId: 'ser-1', compositionObjectId: 'comp-ser', reviewStatus: 'APPROVED' });
+        expect(s.coverSeriesObjectId).toBe('ser-1');
+        expect(s.covers.SERIES_ART.compositionObjectId).toBe('comp-ser');
+        expect(seqOf(calls)).toEqual(['GET ' + PB + '/pages', 'GET ' + PB + '/covers/series-art', 'GET ' + PB + '/composition/comp-ser/outfits', COVERS_READ, 'POST ' + PB + '/covers/series-art/plan']);
+        let v = view();
+        one(v, 'pb-cmp-cover');
+        expect(one(v, 'pb-cmp-purpose-series-art').attrs['data-active']).toBe('true');
+        expect(one(v, 'pb-cmp-purpose-series-art').attrs['data-exists']).toBe('true');
+        expect(textOf(one(v, 'pb-cmp-purpose'))).toBe('series_art');
+    });
+    it('P10-A 7, series-art deep-linked on a standalone: the board GET is the read path\'s 404 (never a 409 - only the create says why), the empty state says "not a chapter" and offers no Create, and the Series art tab is never offered', async () => {
+        // Run 1 of this case wired a 409 on the GET - a response the server never sends (PbServiceFacade.requireCover
+        // is find-only: a non-chapter is the same 404 as "none yet"; TestPictureBookCoverRoutes asserts it). My
+        // error, corrected 2026-11-03 (§6.C 257): the covers view (no seriesObjectId) is what tells them apart.
+        wire({ route: (method, url) => {
+            if (method === 'GET' && url === PB + '/covers/series-art') return jsonResponse(404, { error: 'Book harlots-eight has no SERIES_ART composition - create it first' });
+            if (method === 'POST' && url === PB + '/covers/series-art/plan') return jsonResponse(404, { error: 'Book harlots-eight has no SERIES_ART composition - create it first' });
+            return null;
+        } });
+        initCover('series-art');
+        await waitFor(() => st().noComposition && st().covers && st().planError);
+        let s = st();
+        expect(s.coverPurpose).toBe('SERIES_ART');
+        expect(s.error).toBeNull();
+        expect(s.board).toBeNull();
+        expect(s.noCompositionMessage).toBe('(404) Book harlots-eight has no SERIES_ART composition - create it first');
+        expect(s.coverSeriesObjectId).toBeNull();
+        expect(s.covers.SERIES_ART).toBeNull();
+        let v = view();
+        none(v, 'pb-cmp-error');
+        one(v, 'pb-cmp-empty');
+        expect(textOf(one(v, 'pb-cmp-empty-message'))).toContain('has no SERIES_ART composition');
+        expect(textOf(one(v, 'pb-cmp-empty-not-chapter'))).toContain('not a chapter of a series');
+        none(v, 'pb-cmp-empty-series-note');
+        none(v, 'pb-cmp-create-cover-open');
+        let tabs = one(v, 'pb-cmp-purpose-tabs');
+        expect(tabs.children.map(t => t.attrs['data-testid'])).toEqual(['pb-cmp-purpose-cover', 'pb-cmp-purpose-title-page', 'pb-cmp-purpose-chapter-opener']);
+        none(v, 'pb-cmp-purpose-series-art');
+    });
+    it('P10-A 7, series-art on a chapter, the same 404 before the covers view has answered: the Create button waits on the view (no "not a chapter" until the view says so)', async () => {
+        let release;
+        let gate = new Promise(r => { release = r; });
+        wire({ route: (method, url) => {
+            if (method === 'GET' && url === PB + '/covers/series-art') return jsonResponse(404, { error: 'Book harlots-eight-ch1 has no SERIES_ART composition - create it first' });
+            if (method === 'POST' && url === PB + '/covers/series-art/plan') return jsonResponse(404, { error: 'Book harlots-eight-ch1 has no SERIES_ART composition - create it first' });
+            // The covers view answers only once released (a promise is a truthy route result; the fetch mock resolves it).
+            if (method === 'GET' && url === PB + '/covers') return gate.then(() => jsonResponse(200, chapterViewWire({ covers: { COVER: coverEntryWire() } })));
+            return null;
+        } });
+        initCover('series-art');
+        await waitFor(() => st().noComposition && st().planError);
+        expect(st().covers).toBeNull();
+        let v = view();
+        one(v, 'pb-cmp-empty');
+        none(v, 'pb-cmp-empty-not-chapter');
+        one(v, 'pb-cmp-create-cover-open');
+        release();
+        await waitFor(() => st().covers);
+        expect(st().coverSeriesObjectId).toBe('ser-1');
+        v = view();
+        none(v, 'pb-cmp-empty-not-chapter');
+        expect(textOf(one(v, 'pb-cmp-empty-series-note'))).toContain('shared by every chapter');
+        expect(textOf(one(v, 'pb-cmp-create-cover-open'))).toContain('Create series art…');
     });
     it('a plan 400 ("nothing to render from" on an empty manual cover) is a plan error, the board still loads', async () => {
         wire({ route: (method, url) => method === 'POST' && url === PB + '/covers/cover/plan' ? jsonResponse(400, { error: 'Cover composition has no description to render from' }) : null });
@@ -432,16 +609,26 @@ describe('cover mode init', () => {
         expect(calls.length).toBe(before);
         expect(st().renderRun).not.toBeNull();
 
-        calls = wire({ route: (method, url) => method === 'GET' && url === PB + '/covers/series-art' ? jsonResponse(404, { error: 'Book harlots-eight has no SERIES_ART composition - create it first' }) : (method === 'POST' && url === PB + '/covers/series-art/plan' ? jsonResponse(404, { error: 'Book harlots-eight has no SERIES_ART composition - create it first' }) : null) });
+        // P10-A 7 correction: this step wired the default (standalone) covers view and asserted the "Create series art…"
+        // button on the series-art 404. The product now offers no Create for series art on a book whose covers view
+        // carries no seriesObjectId (the deep-link case has its own test below). The purpose-change semantics under
+        // test do not depend on chapter-ness, so the view is wired as a chapter (no series art yet) and the Create
+        // label is asserted once the re-read covers view has answered.
+        calls = wire({
+            route: (method, url) => method === 'GET' && url === PB + '/covers/series-art' ? jsonResponse(404, { error: 'Book harlots-eight has no SERIES_ART composition - create it first' }) : (method === 'POST' && url === PB + '/covers/series-art/plan' ? jsonResponse(404, { error: 'Book harlots-eight has no SERIES_ART composition - create it first' }) : null),
+            covers: () => chapterViewWire({ covers: { COVER: coverEntryWire() } })
+        });
         initCover('series-art');
-        await waitFor(() => st().noComposition && st().planError);
+        await waitFor(() => st().noComposition && st().planError && st().coverSeriesObjectId === 'ser-1');
         expect(st().coverPurpose).toBe('SERIES_ART');
         expect(st().renderRun).toBeNull();
         expect(st().board).toBeNull();
         expect(st().pages).toEqual(PAGES);
         expect(st().covers.COVER.compositionObjectId).toBe('comp-1');
         expect(seqOf(calls)).not.toContain('GET ' + PB + '/pages');
-        expect(textOf(one(view(), 'pb-cmp-create-cover-open'))).toContain('Create series art…');
+        let v = view();
+        none(v, 'pb-cmp-empty-not-chapter');
+        expect(textOf(one(v, 'pb-cmp-create-cover-open'))).toContain('Create series art…');
     });
     it('switching from scene mode to cover mode on the same book drops the scene key and reads the cover board', async () => {
         cmp.__setComposeStateForTest({ bookObjectId: BOOK, sceneObjectId: 's1', pages: PAGES, board: wf.normalizeBoard({ bookObjectId: BOOK, sceneObjectId: 's1', compositionObjectId: 'comp-s1', composition: compositionWire({ objectId: 'comp-s1', purpose: 'scene' }), actors: [], elements: [] }) });
@@ -458,8 +645,12 @@ describe('cover mode init', () => {
 // ─────────────────────────────── cover mode: header, tabs, strip ───────────────────────────────
 
 describe('cover mode rendering', () => {
-    it('header: "Cover art", purpose tabs with the existing dot, the Scenes link; no stepper, no Compose, no Re-compose, no Covers link', () => {
-        seedCover({ covers: wf.normalizeCoverView(coverViewWire({ covers: { COVER: coverEntryWire(), chapter_opener: coverEntryWire({ purpose: 'chapter_opener', compositionObjectId: 'comp-3' }) } })).covers });
+    // P10-A 7 correction: this test asserted that a covers view WITHOUT a seriesObjectId (a standalone book) lists the
+    // Series art tab. The product now offers that tab only on a chapter (coverPurposesFor: the covers view carries the
+    // book's series FK; a standalone cannot have SERIES_ART - the server answers 409). The four-tab assertion stays
+    // for a chapter (coverSeriesObjectId seeded); the standalone case is the next test.
+    it('header: "Cover art", purpose tabs (all four on a chapter) with the existing dot, the Scenes link; no stepper, no Compose, no Re-compose, no Covers link', () => {
+        seedCover({ coverSeriesObjectId: 'ser-1', covers: wf.normalizeCoverView(coverViewWire({ covers: { COVER: coverEntryWire(), chapter_opener: coverEntryWire({ purpose: 'chapter_opener', compositionObjectId: 'comp-3' }) } })).covers });
         let v = view();
         expect(textOf(one(v, 'pb-cmp-title'))).toBe('Cover art');
         let tabs = one(v, 'pb-cmp-purpose-tabs');
@@ -484,10 +675,36 @@ describe('cover mode rendering', () => {
         one(v, 'pb-cmp-purpose-cover').attrs.onclick();
         expect(m.route.set).not.toHaveBeenCalled();
     });
-    it('without a covers list the tabs show every purpose as not-yet-known (no dot)', () => {
+    it('P10-A 7: a standalone (covers view without a seriesObjectId) never offers the Series art tab; a chapter does, with the dot once the row exists', () => {
+        seedCover({ covers: wf.normalizeCoverView(coverViewWire({ covers: { COVER: coverEntryWire() } })).covers });
+        let tabs = one(view(), 'pb-cmp-purpose-tabs');
+        expect(tabs.children.map(t => t.attrs['data-testid'])).toEqual(['pb-cmp-purpose-cover', 'pb-cmp-purpose-title-page', 'pb-cmp-purpose-chapter-opener']);
+        none(view(), 'pb-cmp-purpose-series-art');
+        // Routing straight to /cover/series-art on a standalone still selects the purpose (the server's 409 is the
+        // error the init test covers) but adds no tab for it.
+        seedCover({ coverPurpose: 'SERIES_ART', covers: wf.normalizeCoverView(coverViewWire()).covers });
+        none(view(), 'pb-cmp-purpose-series-art');
+        expect(one(view(), 'pb-cmp-purpose-tabs').children.map(t => t.attrs['data-active'])).toEqual(['false', 'false', 'false']);
+
+        seedCover({ coverPurpose: 'SERIES_ART', coverSeriesObjectId: 'ser-1', covers: wf.normalizeCoverView(chapterViewWire()).covers });
+        tabs = one(view(), 'pb-cmp-purpose-tabs');
+        expect(tabs.children.map(t => t.attrs['data-testid'])).toEqual(['pb-cmp-purpose-cover', 'pb-cmp-purpose-title-page', 'pb-cmp-purpose-chapter-opener', 'pb-cmp-purpose-series-art']);
+        expect(tabs.children.map(t => t.attrs['data-active'])).toEqual(['false', 'false', 'false', 'true']);
+        expect(tabs.children.map(t => t.attrs['data-exists'])).toEqual(['true', 'false', 'false', 'true']);
+        expect(textOf(one(view(), 'pb-cmp-purpose-series-art'))).toContain('Series art');
+        one(view(), 'pb-cmp-purpose-series-art').attrs.onclick();
+        expect(m.route.set).not.toHaveBeenCalled();
+        one(view(), 'pb-cmp-purpose-cover').attrs.onclick();
+        expect(m.route.set).toHaveBeenLastCalledWith('/picture-book/' + BOOK + '/cover/cover');
+    });
+    // P10-A 7 correction: this test expected four not-yet-known tabs with no covers list. With the list unread the
+    // board does not know whether the book is a chapter, and a tab it cannot honour (409 on a standalone) is not
+    // offered - so it is the three book-level purposes until the covers view answers.
+    it('without a covers list the tabs show the three book-level purposes as not-yet-known (no dot); Series art waits for the view', () => {
         seedCover({ covers: null });
         let tabs = one(view(), 'pb-cmp-purpose-tabs');
-        expect(tabs.children.map(t => t.attrs['data-exists'])).toEqual(['false', 'false', 'false', 'false']);
+        expect(tabs.children.map(t => t.attrs['data-testid'])).toEqual(['pb-cmp-purpose-cover', 'pb-cmp-purpose-title-page', 'pb-cmp-purpose-chapter-opener']);
+        expect(tabs.children.map(t => t.attrs['data-exists'])).toEqual(['false', 'false', 'false']);
     });
     it('scene mode shows the Covers link to /picture-book/{book}/cover and no purpose tabs', () => {
         cmp.__setComposeStateForTest({ bookObjectId: BOOK, sceneObjectId: 's1', coverPurpose: null, pages: PAGES, board: wf.normalizeBoard({ bookObjectId: BOOK, sceneObjectId: 's1', compositionObjectId: 'comp-s1', composition: compositionWire({ objectId: 'comp-s1', purpose: 'scene' }), actors: [], elements: [] }), plan: null });
@@ -594,6 +811,7 @@ describe('cover mode writes', () => {
         one(view(), 'pb-cmp-create-cover-open').attrs.onclick();
         let container = document.createElement('div');
         m.render(container, Dialog.loadDialogs());
+        expect(container.querySelector('.am7-dialog-title').textContent).toBe('Create cover art');
         expect(container.querySelector('[data-testid=pb-cmp-create-cover]')).not.toBeNull();
         expect(container.querySelector('[data-testid=pb-cmp-create-auto]').checked).toBe(true);
         expect(container.querySelector('[data-testid=pb-cmp-create-from-scene]').disabled).toBe(false);
@@ -610,7 +828,42 @@ describe('cover mode writes', () => {
         expect(reads(calls)).toEqual([BOARD_READ, OUTFITS_READ, COVERS_READ, PLAN_READ]);
         expect(st().noComposition).toBe(false);
         expect(st().board.compositionObjectId).toBe('comp-1');
-        one(view(), 'pb-cmp-cover');
+        let v = view();
+        one(v, 'pb-cmp-cover');
+        expect(textOf(one(v, 'pb-cmp-cover-heading'))).toBe('Cover art');
+    });
+    it('P10-A 7, Create dialog on a chapter, Manual series art: the title is "Create series art" (not "… art art"), POST /covers/series-art {mode:"manual"}, the toast, the strip heading "Series art"', async () => {
+        cmp.__setComposeStateForTest({ bookObjectId: BOOK, sceneObjectId: null, coverPurpose: 'SERIES_ART', pages: PAGES, board: null, noComposition: true, noCompositionMessage: '(404) Book harlots-eight has no SERIES_ART composition - create it first', busy: {}, coverSeriesObjectId: 'ser-1', covers: wf.normalizeCoverView(chapterViewWire({ covers: { COVER: coverEntryWire() } })).covers });
+        // the row as just created on this (host) chapter: no node, no renders, hosted here
+        let entry = coverEntryWire({ compositionObjectId: 'comp-ser', purpose: 'series_art', seriesObjectId: 'ser-1' });
+        let comp = compositionWire({ objectId: 'comp-ser', purpose: 'series_art', seriesObjectId: 'ser-1' });
+        let calls = wire({
+            route: (method, url) => {
+                if (method === 'POST' && url === PB + '/covers/series-art') return jsonResponse(200, createResultWire({ purpose: 'series_art', compositionObjectId: 'comp-ser', composition: comp }));
+                if (method === 'GET' && url === PB + '/covers/series-art') return jsonResponse(200, coverBoardWire({ purpose: 'series_art', compositionObjectId: 'comp-ser', composition: comp, cover: entry }));
+                if (method === 'GET' && url === PB + '/composition/comp-ser/outfits') return jsonResponse(200, { compositionObjectId: 'comp-ser', actors: [] });
+                if (method === 'POST' && url === PB + '/covers/series-art/plan') return jsonResponse(200, planWire());
+                return null;
+            },
+            covers: () => chapterViewWire({ covers: { COVER: coverEntryWire(), SERIES_ART: entry } })
+        });
+        one(view(), 'pb-cmp-create-cover-open').attrs.onclick();
+        let container = document.createElement('div');
+        m.render(container, Dialog.loadDialogs());
+        expect(container.querySelector('.am7-dialog-title').textContent).toBe('Create series art');
+        let manual = container.querySelector('[data-testid=pb-cmp-create-manual]');
+        manual.checked = true;
+        manual.dispatchEvent(new Event('change'));
+        container.querySelector('[data-testid=pb-cmp-create-submit]').click();
+        await waitFor(() => calls.some(c => c.method === 'POST' && c.url === PB + '/covers/series-art'));
+        expect(calls[0].body).toEqual({ mode: 'manual' });
+        await waitFor(() => Object.keys(st().busy).length === 0 && !st().loading && st().board && !st().planLoading);
+        m.render(container, null);
+        expect(toasts()).toEqual([['success', 'Series art created - fill in the setting and camera, then Render']]);
+        expect(st().board.compositionObjectId).toBe('comp-ser');
+        let v = view();
+        expect(textOf(one(v, 'pb-cmp-cover-heading'))).toBe('Series art');
+        none(v, 'pb-cmp-cover-host');
     });
     it('Create dialog, Auto with a picked chat config sends chatConfigName; From a scene sends the picked sceneObjectId', async () => {
         cmp.__setComposeStateForTest({ bookObjectId: BOOK, sceneObjectId: null, coverPurpose: 'COVER', pages: PAGES, board: null, noComposition: true, busy: {}, chatConfigRef: { name: 'e2e-chapbook-llm', objectId: 'cc-e2e' } });
@@ -830,6 +1083,145 @@ describe('cover render and approve', () => {
     });
 });
 
+// ─────────────────────────────── series art from a sibling chapter (P10-A 7, §6.C 257) ───────────────────────────────
+
+/**
+ * Why: a series' SERIES_ART row is hosted by one chapter (A) and listed by every chapter; its render node, run chain
+ * and approvals live in A's workflow, and the server 409s a render addressed from a sibling chapter B ("is rendered
+ * from its host chapter") and 404s an approve of A's artifact from B ("Artifact not found in this book"). The entry
+ * carries hostBookObjectId, so B's board renders, plans and approves against A while the board itself, its covers
+ * list and the row-level patch stay on B (same row from every chapter).
+ */
+describe('series art hosted by another chapter (P10-A 7)', () => {
+    const HOST = '/rest/olio/picture-book/book-a';
+    const SERIES_BOARD_READ = 'GET ' + PB + '/covers/series-art';
+    const SERIES_OUTFITS_READ = 'GET ' + PB + '/composition/comp-ser/outfits';
+    const HOST_PLAN_READ = 'POST ' + HOST + '/covers/series-art/plan';
+    /** B's board of the series art hosted by A: approved revision 5 is the latest too, so nothing is approvable until a new render. */
+    function siblingBoard(entryExtra) {
+        return coverBoardWire({ purpose: 'series_art', compositionObjectId: 'comp-ser', composition: compositionWire({ objectId: 'comp-ser', purpose: 'series_art', settingText: 'the eight harlots on the quay' }), cover: seriesArtEntryWire(Object.assign({ hostBookObjectId: 'book-a' }, entryExtra || {})) });
+    }
+    function seedSibling(entryExtra) {
+        seedCover({ coverPurpose: 'SERIES_ART', board: siblingBoard(entryExtra), covers: wf.normalizeCoverView(chapterViewWire()).covers, coverSeriesObjectId: 'ser-1' });
+    }
+    /**
+     * The sibling wire: B's own reads (board, outfits, covers list) answer on B with the entry hosted by A
+     * (o.boardExtra on the entry); the plan answers on the host; o.route and o.job as in wire().
+     */
+    function wireSibling(o) {
+        o = o || {};
+        return wire({
+            job: o.job,
+            route: (method, url, body, calls) => {
+                let r = o.route ? o.route(method, url, body, calls) : null;
+                if (r) return r;
+                if (method === 'GET' && url === PB + '/covers/series-art') return jsonResponse(200, siblingBoard(o.boardExtra));
+                if (method === 'GET' && url === PB + '/composition/comp-ser/outfits') return jsonResponse(200, { compositionObjectId: 'comp-ser', actors: [] });
+                if (method === 'GET' && url === PB + '/covers') return jsonResponse(200, chapterViewWire({ covers: { COVER: renderedEntryWire(), SERIES_ART: seriesArtEntryWire(Object.assign({ hostBookObjectId: 'book-a' }, o.boardExtra || {})) } }));
+                if (method === 'POST' && url === HOST + '/covers/series-art/plan') return jsonResponse(200, planWire());
+                return null;
+            }
+        });
+    }
+    /** After a write from B: the board, its outfits and the covers list re-read on B, the plan on the host. */
+    async function settledSibling(calls) {
+        await waitFor(() => Object.keys(st().busy).length === 0 && !st().loading && !st().planLoading && seqOf(calls).includes(HOST_PLAN_READ) && seqOf(calls).includes(COVERS_READ));
+    }
+    function siblingReads(calls) { return seqOf(calls).filter(s => s === SERIES_BOARD_READ || s === SERIES_OUTFITS_READ || s === COVERS_READ || s === HOST_PLAN_READ || s === 'POST ' + PB + '/covers/series-art/plan'); }
+    it('the board on B shows the host chip and data-host-book; Render POSTs to the HOST chapter, the job is followed, and the re-read (board, outfits, covers) stays on B while the plan goes to the host', async () => {
+        seedSibling({ nodeStatus: 'stale' });
+        let v = view();
+        expect(one(v, 'pb-cmp-cover').attrs['data-host-book']).toBe('book-a');
+        // P10-A 7 run 3 screenshot showed "Series art art": the strip heading adds " art" only when the label lacks it.
+        expect(textOf(one(v, 'pb-cmp-cover-heading'))).toBe('Series art');
+        expect(textOf(one(v, 'pb-cmp-cover-host'))).toBe('host chapter');
+        expect(textOf(one(v, 'pb-cmp-render-cover'))).toContain('Render');
+        expect(textOf(one(v, 'pb-cmp-render-cover'))).not.toContain('Re-render');
+        let calls = wireSibling({
+            route: (method, url) => method === 'POST' && url === HOST + '/covers/series-art/render' ? jsonResponse(202, { bookObjectId: 'book-a', purpose: 'series_art', compositionObjectId: 'comp-ser', nodeObjectId: 'n-series', nodeMaterialized: false, jobId: 'j-ser', runObjectId: 'run-ser' }) : null,
+            job: id => jsonResponse(200, { jobId: id, terminal: true, current: 3, total: 3 }),
+            boardExtra: { nodeStatus: 'done_unverified', chainLength: 2, latest: imageRefWire(6, { imageName: 'series-r6.png' }) }
+        });
+        one(v, 'pb-cmp-render-cover').attrs.onclick();
+        await waitFor(() => st().renderRun && st().renderRun.job && st().renderRun.job.terminal);
+        await settledSibling(calls);
+        expect(seqOf(calls)[0]).toBe('POST ' + HOST + '/covers/series-art/render');
+        expect(calls[0].rawBody).toBeUndefined();
+        expect(seqOf(calls)).not.toContain('POST ' + PB + '/covers/series-art/render');
+        expect(toasts()).toEqual([['info', 'Series art render started'], ['success', 'Series art: Rendered']]);
+        expect(st().renderRun).toMatchObject({ jobId: 'j-ser', purpose: 'SERIES_ART', nodeObjectId: 'n-series', runObjectId: 'run-ser' });
+        expect(siblingReads(calls)).toEqual([SERIES_BOARD_READ, SERIES_OUTFITS_READ, COVERS_READ, HOST_PLAN_READ]);
+        v = view();
+        expect(one(v, 'pb-cmp-cover').attrs['data-host-book']).toBe('book-a');
+        expect(one(v, 'pb-cmp-cover').attrs['data-node-status']).toBe('DONE_UNVERIFIED');
+        expect(textOf(one(v, 'pb-cmp-cover-host'))).toBe('host chapter');
+        expect(one(v, 'pb-cmp-cover-latest').attrs['data-artifact']).toBe('art-6');
+        expect(one(v, 'pb-cmp-approve-cover').attrs.disabled).toBe(false);
+    });
+    it('Approve latest PUTs the artifact approve on the HOST chapter and re-reads B', async () => {
+        seedSibling({ latest: imageRefWire(6, { imageName: 'series-r6.png' }), chainLength: 2 });
+        expect(one(view(), 'pb-cmp-approve-cover').attrs.disabled).toBe(false);
+        let calls = wireSibling({
+            route: (method, url) => method === 'PUT' && url === HOST + '/artifact/art-6/approve' ? jsonResponse(200, { objectId: 'art-6', reviewStatus: 'approved', revision: 6 }) : null,
+            boardExtra: { approved: imageRefWire(6, { reviewStatus: 'approved', imageName: 'series-r6.png' }), latest: imageRefWire(6, { reviewStatus: 'approved', imageName: 'series-r6.png' }), selectedArtifactObjectId: 'art-6', chainLength: 2 }
+        });
+        one(view(), 'pb-cmp-approve-cover').attrs.onclick();
+        await settledSibling(calls);
+        expect(seqOf(calls)[0]).toBe('PUT ' + HOST + '/artifact/art-6/approve');
+        expect(seqOf(calls)).not.toContain('PUT ' + PB + '/artifact/art-6/approve');
+        expect(toasts()).toEqual([['success', 'Series art approved']]);
+        expect(siblingReads(calls)).toEqual([SERIES_BOARD_READ, SERIES_OUTFITS_READ, COVERS_READ, HOST_PLAN_READ]);
+        let v = view();
+        expect(one(v, 'pb-cmp-cover-approved').attrs['data-artifact']).toBe('art-6');
+        none(v, 'pb-cmp-cover-latest');
+        expect(one(v, 'pb-cmp-approve-cover').attrs.disabled).toBe(true);
+    });
+    it('the row-level patch stays on B (same row from every chapter); a 409 from the host render is the warn toast', async () => {
+        seedSibling();
+        let calls = wireSibling({
+            route: (method, url) => method === 'PATCH' && url === PB + '/covers/series-art' ? jsonResponse(200, { compositionObjectId: 'comp-ser', purpose: 'series_art', revision: 2, nodeStale: true, nodeStatus: 'stale', updated: true }) : null,
+            boardExtra: { nodeStatus: 'stale' }
+        });
+        let v = view();
+        one(v, 'pb-cmp-mood').attrs.oninput({ target: { value: 'stormy' } });
+        one(v, 'pb-cmp-save-camera').attrs.onclick();
+        await settledSibling(calls);
+        expect(seqOf(calls)[0]).toBe('PATCH ' + PB + '/covers/series-art');
+        expect(seqOf(calls)).not.toContain('PATCH ' + HOST + '/covers/series-art');
+        expect(calls[0].body).toEqual({ mood: 'stormy' });
+        expect(toasts()).toEqual([['success', 'Composition saved']]);
+        expect(siblingReads(calls)).toEqual([SERIES_BOARD_READ, SERIES_OUTFITS_READ, COVERS_READ, HOST_PLAN_READ]);
+        expect(one(view(), 'pb-cmp-cover').attrs['data-node-status']).toBe('STALE');
+
+        calls = wireSibling({ route: (method, url) => method === 'POST' && url === HOST + '/covers/series-art/render' ? jsonResponse(409, { error: 'Node n-series is being rendered by run 7' }) : null, boardExtra: { nodeStatus: 'stale' } });
+        one(view(), 'pb-cmp-render-cover').attrs.onclick();
+        await waitFor(() => Object.keys(st().busy).length === 0 && calls.length === 1);
+        await new Promise(r => setTimeout(r, 10));
+        expect(toasts()[1]).toEqual(['warn', '(409) Node n-series is being rendered by run 7']);
+        expect(st().renderRun).toBeNull();
+    });
+    it('series art on its HOST chapter (hostBookObjectId = the book) and an entry from an older server (no host) both render on the book itself, with no host chip', async () => {
+        seedCover({ coverPurpose: 'SERIES_ART', board: siblingBoard({ hostBookObjectId: BOOK, nodeStatus: 'stale' }), covers: wf.normalizeCoverView(chapterViewWire()).covers, coverSeriesObjectId: 'ser-1' });
+        let v = view();
+        expect(one(v, 'pb-cmp-cover').attrs['data-host-book']).toBe(BOOK);
+        none(v, 'pb-cmp-cover-host');
+        let calls = wire({ route: (method, url) => method === 'POST' && url === PB + '/covers/series-art/render' ? jsonResponse(409, { error: 'Node n-series is pinned; unpin it from the review queue first' }) : null });
+        one(v, 'pb-cmp-render-cover').attrs.onclick();
+        await waitFor(() => Object.keys(st().busy).length === 0 && calls.length === 1);
+        expect(seqOf(calls)).toEqual(['POST ' + PB + '/covers/series-art/render']);
+
+        seedCover({ coverPurpose: 'SERIES_ART', board: siblingBoard({ hostBookObjectId: undefined, nodeStatus: 'stale' }), covers: wf.normalizeCoverView(chapterViewWire()).covers, coverSeriesObjectId: 'ser-1' });
+        expect(st().cover.hostBookObjectId).toBeNull();
+        v = view();
+        expect(one(v, 'pb-cmp-cover').attrs['data-host-book']).toBe(BOOK);
+        none(v, 'pb-cmp-cover-host');
+        calls = wire({ route: (method, url) => method === 'POST' && url === PB + '/covers/series-art/render' ? jsonResponse(409, { error: 'Node n-series is pinned; unpin it from the review queue first' }) : null });
+        one(v, 'pb-cmp-render-cover').attrs.onclick();
+        await waitFor(() => Object.keys(st().busy).length === 0 && calls.length === 1);
+        expect(seqOf(calls)).toEqual(['POST ' + PB + '/covers/series-art/render']);
+    });
+});
+
 // ─────────────────────────────── readers: the cover page ───────────────────────────────
 
 describe('PictureBook reader cover page', () => {
@@ -837,9 +1229,9 @@ describe('PictureBook reader cover page', () => {
     const PAGE_VIEW = [{ objectId: 's1', sceneIndex: 1, title: 'Quay', dataObjectId: 'd-p1', imageGroupPath: '/Pb/pages', imageName: 'p1.png' }];
     beforeEach(async () => {
         pbf = await import('../features/pictureBook.js');
-        pbf.__setPbHealthStateForTest({ pb2BookObjectId: 'B1', pb2BookName: 'Harlot\'s Eight', pb2Pages: PAGE_VIEW, pb2Covers: null });
+        pbf.__setPbHealthStateForTest({ pb2BookObjectId: 'B1', pb2BookName: 'Harlot\'s Eight', pb2SeriesName: null, pb2Pages: PAGE_VIEW, pb2Covers: null, pb2CurrentPage: 0 });
     });
-    afterEach(() => { pbf.__setPbHealthStateForTest({ pb2Pages: [], pb2Covers: null }); });
+    afterEach(() => { pbf.__setPbHealthStateForTest({ pb2Pages: [], pb2Covers: null, pb2SeriesName: null, pb2CurrentPage: 0 }); });
 
     it('without a covers view the first page is the dimmed backdrop (source=page), title centered', () => {
         let v = pbf.__renderPb2CoverForTest();
@@ -900,6 +1292,76 @@ describe('PictureBook reader cover page', () => {
         let v = pbf.__renderPb2CoverForTest();
         expect(v.attrs['data-pb2-cover-source']).toBe('page');
         assertFallbackFrame(v, 'data-pb2-cover-image', 'data-pb2-cover-count');
+    });
+
+    // ── P10-A 7: the series-art page ──
+    it('P10-A 7: a chapter with approved SERIES_ART and an approved COVER opens on the series-art page (the series name in its band), then the cover, then scene 1; the header / dot labels follow', () => {
+        pbf.__setPbHealthStateForTest({ pb2SeriesName: 'The Harlot Cycle', pb2Covers: wf.normalizeCoverView(chapterViewWire()), pb2CurrentPage: 0 });
+        let v = pbf.__renderPb2CurrentPageForTest();
+        expect(v.attrs['data-pb2-series-art']).toBe(true);
+        expect(v.attrs['data-pb2-series-art-band']).toBe('TOP');
+        expect(v.attrs.className).toContain('justify-start');
+        let img = findAll(v, n => n.attrs['data-pb2-series-art-image'])[0];
+        expect(img.attrs.src).toBe(MEDIA + '/Pb/covers/series-r5.png');
+        expect(img.attrs.className).toContain('object-contain');
+        expect(img.attrs.className).toContain('opacity-100');
+        expect(v.attrs.className).toContain('aspect-square');
+        expect(textOf(findAll(v, n => n.attrs['data-pb2-series-art-title'])[0])).toBe('The Harlot Cycle');
+        expect(textOf(findAll(v, n => n.attrs['data-pb2-series-art-chapter'])[0])).toBe('Harlot\'s Eight');
+        expect(findAll(v, n => n.attrs['data-pb2-cover-source'] !== undefined).length).toBe(0);
+        expect(textOf(pbf.renderPb2Header())).toContain('Series art');
+        // Its button goes on to the cover page.
+        findAll(v, n => n.tag === 'button')[0].attrs.onclick();
+        expect(pbf.__pb2V3StateForTest().pb2CurrentPage).toBe(1);
+        v = pbf.__renderPb2CurrentPageForTest();
+        expect(v.attrs['data-pb2-cover-source']).toBe('cover');
+        expect(v.attrs['data-pb2-cover-band']).toBe('BOTTOM');
+        expect(findAll(v, n => n.attrs['data-pb2-cover-image'])[0].attrs.src).toBe(MEDIA + '/Pb/covers/cover-r1.png');
+        expect(textOf(pbf.renderPb2Header())).toContain('Cover');
+        expect(textOf(pbf.renderPb2Header())).not.toContain('Page 1 of');
+        // Begin lands on scene 1 (page index 2 = the front-page count), labelled 'Page 1 of 1'.
+        findAll(v, n => n.tag === 'button' && /Begin/.test(textOf(n)))[0].attrs.onclick();
+        expect(pbf.__pb2V3StateForTest().pb2CurrentPage).toBe(2);
+        v = pbf.__renderPb2CurrentPageForTest();
+        expect(findAll(v, n => n.attrs['data-testid'] === 'pb2-scene-image')[0].attrs.src).toBe(MEDIA + '/Pb/pages/p1.png');
+        expect(textOf(v)).toContain('Page 1 of 1');
+        expect(textOf(pbf.renderPb2Header())).toContain('Page 1 of 1');
+        // Without a series name the page titles with the book name (never a blank h1).
+        pbf.__setPbHealthStateForTest({ pb2SeriesName: null, pb2CurrentPage: 0 });
+        expect(textOf(findAll(pbf.__renderPb2CurrentPageForTest(), n => n.attrs['data-pb2-series-art-title'])[0])).toBe('Harlot\'s Eight');
+    });
+    it('P10-A 7: a chapter with approved SERIES_ART but no approved COVER opens on ONE front page - the series art as its cover page (source=series_art, the series\' band); scene 1 is page index 1', () => {
+        pbf.__setPbHealthStateForTest({ pb2Covers: wf.normalizeCoverView(chapterViewWire({ covers: { COVER: coverEntryWire(), SERIES_ART: seriesArtEntryWire() } })), pb2CurrentPage: 0 });
+        let v = pbf.__renderPb2CurrentPageForTest();
+        expect(v.attrs['data-pb2-series-art']).toBeUndefined();
+        expect(v.attrs['data-pb2-cover-source']).toBe('series_art');
+        expect(v.attrs['data-pb2-cover-band']).toBe('TOP');
+        expect(v.attrs.className).toContain('justify-start');
+        let img = findAll(v, n => n.attrs['data-pb2-cover-image'])[0];
+        expect(img.attrs.src).toBe(MEDIA + '/Pb/covers/series-r5.png');
+        expect(img.attrs.className).toContain('opacity-100');
+        assertCoverFrame(v, 'data-pb2-cover-image', 'data-pb2-cover-count');
+        expect(textOf(v)).toContain('Harlot\'s Eight');
+        expect(textOf(pbf.renderPb2Header())).toContain('Cover');
+        findAll(v, n => n.tag === 'button' && /Begin/.test(textOf(n)))[0].attrs.onclick();
+        expect(pbf.__pb2V3StateForTest().pb2CurrentPage).toBe(1);
+        expect(textOf(pbf.renderPb2Header())).toContain('Page 1 of 1');
+        expect(findAll(pbf.__renderPb2CurrentPageForTest(), n => n.attrs['data-testid'] === 'pb2-scene-image').length).toBe(1);
+    });
+    it('P10-A 7: an unapproved (latest-only) series render is never a front page - the chapter reads exactly as before; a standalone has no series-art page', () => {
+        pbf.__setPbHealthStateForTest({ pb2Covers: wf.normalizeCoverView(chapterViewWire({ covers: { COVER: renderedEntryWire(), SERIES_ART: seriesArtEntryWire({ approved: null, reviewStatus: 'generated' }) } })), pb2CurrentPage: 0 });
+        let v = pbf.__renderPb2CurrentPageForTest();
+        expect(v.attrs['data-pb2-cover-source']).toBe('cover');
+        expect(findAll(v, n => n.attrs['data-pb2-cover-image'])[0].attrs.src).toBe(MEDIA + '/Pb/covers/cover-r1.png');
+        pbf.__setPbHealthStateForTest({ pb2CurrentPage: 1 });
+        expect(findAll(pbf.__renderPb2CurrentPageForTest(), n => n.attrs['data-testid'] === 'pb2-scene-image').length).toBe(1);
+        expect(textOf(pbf.renderPb2Header())).toContain('Page 1 of 1');
+
+        pbf.__setPbHealthStateForTest({ pb2Covers: wf.normalizeCoverView(coverViewWire({ covers: { COVER: renderedEntryWire() } })), pb2CurrentPage: 0 });
+        v = pbf.__renderPb2CurrentPageForTest();
+        expect(v.attrs['data-pb2-cover-source']).toBe('cover');
+        pbf.__setPbHealthStateForTest({ pb2Covers: null, pb2CurrentPage: 0 });
+        expect(pbf.__renderPb2CurrentPageForTest().attrs['data-pb2-cover-source']).toBe('page');
     });
 });
 
@@ -1015,6 +1477,142 @@ describe('ChapBook reader cover page', () => {
             expect(typeof withCover[k]).toBe('string');
             expect(typeof without[k]).toBe('string');
         });
+    });
+
+    // ── P10-A 7: the series-art page ──
+    it('P10-A 7: approved SERIES_ART + approved COVER → one front page before the cover: the series art (its band, the book title under a Series kicker), whose button goes to the cover page; the export cover stays the COVER', () => {
+        cb.__setReaderStateForTest({ readerCovers: wf.normalizeCoverView(chapterViewWire()) });
+        let front = cb.__readerFrontForTest();
+        expect(front.map(p => [p.page, p.source])).toEqual([['SERIES_ART', 'series_art'], ['COVER', 'cover']]);
+        let nav = { coverPage: 1, goToPage: vi.fn() };
+        let v = cb.__renderReaderSeriesArtForTest(0, nav);
+        expect(v.attrs['data-cb-series-art']).toBe(true);
+        expect(v.attrs['data-cb-series-art-band']).toBe('TOP');
+        expect(v.attrs.className).toContain('justify-start');
+        expect(v.attrs.className).toContain('aspect-square');
+        let img = findAll(v, n => n.attrs['data-cb-series-art-image'])[0];
+        expect(img.attrs.src).toBe(MEDIA + '/Pb/covers/series-r5.png');
+        expect(img.attrs.className).toContain('object-contain');
+        expect(img.attrs.className).toContain('opacity-100');
+        expect(textOf(findAll(v, n => n.attrs['data-cb-series-art-title'])[0])).toBe('Tidewater');
+        expect(textOf(v)).toContain('Series');
+        findAll(v, n => n.tag === 'button')[0].attrs.onclick();
+        expect(nav.goToPage).toHaveBeenCalledWith(1);
+        // The cover page is the chapter's own cover; Begin goes past it to page coverPage + 1.
+        let c = cb.__renderReaderCoverForTest(nav);
+        expect(c.attrs['data-cb-cover-source']).toBe('cover');
+        expect(c.attrs['data-cb-cover-band']).toBe('BOTTOM');
+        expect(findAll(c, n => n.attrs['data-cb-cover-image'])[0].attrs.src).toBe(MEDIA + '/Pb/covers/cover-r1.png');
+        findAll(c, n => n.tag === 'button')[0].attrs.onclick();
+        expect(nav.goToPage).toHaveBeenLastCalledWith(2);
+        expect(cb.__readerCoverImageUrlForTest()).toBe(MEDIA + '/Pb/covers/cover-r1.png');
+    });
+    it('P10-A 7: approved SERIES_ART with no approved COVER → no extra page; the series art IS the cover page (source=series_art, its band) and the export cover', () => {
+        cb.__setReaderStateForTest({ readerCovers: wf.normalizeCoverView(chapterViewWire({ covers: { COVER: coverEntryWire(), SERIES_ART: seriesArtEntryWire() } })) });
+        expect(cb.__readerFrontForTest().map(p => [p.page, p.source])).toEqual([['COVER', 'series_art']]);
+        let nav = { coverPage: 0, goToPage: vi.fn() };
+        let v = cb.__renderReaderCoverForTest(nav);
+        expect(v.attrs['data-cb-cover-source']).toBe('series_art');
+        expect(v.attrs['data-cb-cover-band']).toBe('TOP');
+        expect(v.attrs.className).toContain('justify-start');
+        let img = findAll(v, n => n.attrs['data-cb-cover-image'])[0];
+        expect(img.attrs.src).toBe(MEDIA + '/Pb/covers/series-r5.png');
+        expect(img.attrs.className).toContain('opacity-100');
+        assertCoverFrame(v, 'data-cb-cover-image', 'data-cb-cover-count');
+        expect(textOf(v)).toContain('Tidewater');
+        findAll(v, n => n.tag === 'button')[0].attrs.onclick();
+        expect(nav.goToPage).toHaveBeenCalledWith(1);
+        expect(cb.__readerCoverImageUrlForTest()).toBe(MEDIA + '/Pb/covers/series-r5.png');
+        // A latest-only series render is not approved art: back to page 1's backdrop.
+        cb.__setReaderStateForTest({ readerCovers: wf.normalizeCoverView(chapterViewWire({ covers: { SERIES_ART: seriesArtEntryWire({ approved: null, reviewStatus: 'generated' }) } })) });
+        expect(cb.__readerFrontForTest().map(p => [p.page, p.source])).toEqual([['COVER', null]]);
+        expect(cb.__renderReaderCoverForTest({ goToPage: vi.fn() }).attrs['data-cb-cover-source']).toBe('page');
+        expect(cb.__readerCoverImageUrlForTest()).toBe(MEDIA + '/Cb/pages/c1.png');
+    });
+});
+
+// ─────────────────────────────── ReaderShell: front pages (P10-A 7) ───────────────────────────────
+
+describe('ReaderShell frontPages (P10-A 7)', () => {
+    let ReaderShell;
+    const P = [{ objectId: 'p1' }, { objectId: 'p2' }];
+    function shell(state, extra) {
+        let a = Object.assign({
+            state: state, pages: P, title: 'Tidewater', frontPages: 1,
+            renderFrontPage: vi.fn((i, nav) => m('div', { 'data-testid': 'front-' + i })),
+            frontPageLabel: vi.fn(i => 'Series art'),
+            renderCover: vi.fn(nav => m('div', { 'data-testid': 'cover' })),
+            renderPage: vi.fn((p, n, nav) => m('div', { 'data-testid': 'page-' + n }))
+        }, extra || {});
+        return { attrs: a, view: ReaderShell().view({ attrs: a }) };
+    }
+    function headerLabel(v) { return textOf(findAll(v, n => /text-gray-400 text-xs ml-2/.test(n.attrs.className || ''))[0]); }
+    function dotTitles(v) { return findAll(v, n => /rounded-full transition-colors/.test(n.attrs.className || '') && n.attrs.title).map(n => n.attrs.title); }
+    beforeEach(async () => { ReaderShell = (await import('../components/readerShell.js')).ReaderShell; });
+
+    it('with one front page the cover moves to index 1, page N to index N+1; the header and dot labels follow; nav carries front / coverPage / total', () => {
+        let st0 = { currentPage: 0, fullscreen: false };
+        let s = shell(st0);
+        one(s.view, 'front-0');
+        none(s.view, 'cover');
+        expect(s.attrs.renderFrontPage).toHaveBeenCalledTimes(1);
+        let nav = s.attrs.renderFrontPage.mock.calls[0][1];
+        expect(s.attrs.renderFrontPage.mock.calls[0][0]).toBe(0);
+        expect(nav).toMatchObject({ front: 1, coverPage: 1, total: 4, currentPage: 0 });
+        expect(headerLabel(s.view)).toBe('Series art');
+        expect(dotTitles(s.view)).toEqual(['Series art', 'Cover', 'Page 1', 'Page 2']);
+        // Prev disabled on the first page; Next enabled.
+        let chevrons = findAll(s.view, n => n.tag === 'button' && /chevron_/.test(textOf(n)));
+        expect(chevrons[0].attrs.disabled).toBe(true);
+        expect(chevrons[1].attrs.disabled).toBe(false);
+
+        s = shell({ currentPage: 1, fullscreen: false });
+        one(s.view, 'cover');
+        none(s.view, 'front-0');
+        expect(s.attrs.renderCover.mock.calls[0][0]).toMatchObject({ coverPage: 1, currentPage: 1 });
+        expect(headerLabel(s.view)).toBe('Cover');
+
+        s = shell({ currentPage: 2, fullscreen: false });
+        one(s.view, 'page-1');
+        expect(s.attrs.renderPage.mock.calls[0][0]).toBe(P[0]);
+        expect(s.attrs.renderPage.mock.calls[0][1]).toBe(1);
+        expect(headerLabel(s.view)).toBe('Page 1 of 2');
+
+        s = shell({ currentPage: 3, fullscreen: false });
+        one(s.view, 'page-2');
+        expect(s.attrs.renderPage.mock.calls[0][0]).toBe(P[1]);
+        expect(headerLabel(s.view)).toBe('Page 2 of 2');
+        chevrons = findAll(s.view, n => n.tag === 'button' && /chevron_/.test(textOf(n)));
+        expect(chevrons[1].attrs.disabled).toBe(true);
+
+        // goToPage clamps to the new total (front + cover + pages).
+        let st9 = { currentPage: 0, fullscreen: false };
+        shell(st9).attrs.renderFrontPage.mock.calls[0][1].goToPage(99);
+        expect(st9.currentPage).toBe(3);
+        shell(st9).attrs.renderPage.mock.calls[0][2].goToPage(-4);
+        expect(st9.currentPage).toBe(0);
+    });
+    it('without frontPages (0, absent, negative, non-numeric) nothing moves: the cover is index 0 and page 1 is index 1 - PictureBook\'s shell use is unchanged', () => {
+        [{ frontPages: 0 }, { frontPages: undefined }, { frontPages: -2 }, { frontPages: 'x' }].forEach(extra => {
+            let s = shell({ currentPage: 0, fullscreen: false }, extra);
+            one(s.view, 'cover');
+            expect(s.attrs.renderFrontPage).not.toHaveBeenCalled();
+            expect(s.attrs.renderCover.mock.calls[0][0]).toMatchObject({ front: 0, coverPage: 0, total: 3 });
+            expect(headerLabel(s.view)).toBe('Cover');
+            expect(dotTitles(s.view)).toEqual(['Cover', 'Page 1', 'Page 2']);
+            s = shell({ currentPage: 1, fullscreen: false }, extra);
+            one(s.view, 'page-1');
+            expect(headerLabel(s.view)).toBe('Page 1 of 2');
+        });
+    });
+    it('a front page without a renderFrontPage / frontPageLabel renders empty and is labelled "Front N"; the custom coverLabel and pageNoun still apply after the front pages', () => {
+        let s = shell({ currentPage: 0, fullscreen: false }, { frontPages: 2, renderFrontPage: undefined, frontPageLabel: undefined, coverLabel: 'Title', pageNoun: 'Scene' });
+        none(s.view, 'cover');
+        expect(headerLabel(s.view)).toBe('Front 1');
+        expect(dotTitles(s.view)).toEqual(['Front 1', 'Front 2', 'Title', 'Scene 1', 'Scene 2']);
+        s = shell({ currentPage: 3, fullscreen: false }, { frontPages: 2, coverLabel: 'Title', pageNoun: 'Scene' });
+        one(s.view, 'page-1');
+        expect(headerLabel(s.view)).toBe('Scene 1 of 2');
     });
 });
 

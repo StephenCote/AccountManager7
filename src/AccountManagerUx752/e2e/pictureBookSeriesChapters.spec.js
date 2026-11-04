@@ -138,13 +138,15 @@ test.describe('PictureBook Series/Chapters (N3 + N4)', () => {
         // Seed a ChapBook (real PB2 book with a workflow graph) via one text poem source.
         // NOTE (N4 e2e scope): a ChapBook is a STANDALONE olio.pb.book — it has no olio.pb.series. The
         // whole-series view keys on workflowView.seriesObjectId (the chapter's series FK), so for this
-        // book the Series tab shows the honest "not part of a series" standalone state. Seeding a real
-        // ≥2-chapter series over REST is not possible: series creation (PbSeriesUtil.getCreateSeries,
-        // which builds the ONE shared Olio world) is NOT exposed by any REST endpoint, and POST /chapter
-        // requires a pre-existing seriesObjectId. The multi-chapter whole-series listing (entitled
-        // non-owner sees both chapters in chapter order, each with series/world linkage) is proven
-        // end-to-end against the live DB by the JUnit TestPbListSeriesBooks, which also asserts
-        // workflowView surfaces seriesObjectId + chapter.
+        // book the Series tab shows the honest "not part of a series" standalone state. This spec
+        // deliberately stays on the standalone case. A real ≥2-chapter series IS seedable over REST —
+        // POST /rest/olio/picture-book/series (PbSeriesUtil.getCreateSeries, one shared Olio world) then
+        // POST /chapter with its seriesObjectId (helpers in pictureBookSeriesDelete.spec.js) — and the
+        // multi-chapter cases are proven elsewhere: the whole-series listing (entitled non-owner sees both
+        // chapters in chapter order, each with series/world linkage) by the JUnit TestPbListSeriesBooks
+        // against the live DB, the series/chapter route contract by the Service7 TestPictureBookCoverRoutes
+        // (H2), and the shared SERIES_ART across two chapters in the browser by e2e/pictureBookV3SeriesArt.spec.js
+        // (P10-A 7, 2026-11-03).
         const poemsDir = await request.get(
             REST + '/path/make/auth.group/data/B64-' + b64('~/Poems').replace(/=/g, '%3D')
         );

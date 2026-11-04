@@ -44,7 +44,7 @@ import {
     pinActorApparel, getCompositionOutfits, outfitChipText, getWardrobe, isNoCompositionYet,
     composeBook, composeScene, normalizeComposeJobResult, isComposeJobRefusal,
     bookPages, planScene, normalizePlan, degradationSummary,
-    COVER_PURPOSES, coverPurposeOf, coverPurposeLabel, coverPathWord, getCovers, getCover, createCover,
+    coverPurposesFor, coverPurposeOf, coverPurposeLabel, coverPathWord, getCovers, getCover, createCover,
     renderCover, patchCover, planCover, approveArtifact, isPinnedNodeRefusal, carriedBookChatConfig
 } from '../workflows/pictureBookWorkflow.js';
 
@@ -84,6 +84,10 @@ let coverPurpose = null;
 let cover = null;
 // getCovers(book).covers — which purposes exist, for the purpose tabs; null until loaded.
 let covers = null;
+// getCovers(book).seriesObjectId — the book's series when it is a chapter; null for a standalone book or until
+// loaded. The Series art tab is offered only while this is set (P10-A 7): the server refuses SERIES_ART on a
+// standalone (409), and a tab that can only 409 is not a tab.
+let coverSeriesObjectId = null;
 // The cover render job being watched: {jobId, purpose, status, progress, message, done, error, result}.
 let renderRun = null;
 let renderAbort = null;
@@ -418,9 +422,27 @@ function isCoverMode() {
     return coverPurpose != null;
 }
 
+/** "Cover art" / "Title page art" / "Series art" - the purpose label with " art" unless it already ends in it (P10-A 7). */
+function coverArtLabel(purpose) {
+    let label = coverPurposeLabel(purpose);
+    return /\bart$/i.test(label) ? label : label + ' art';
+}
+
 /** The board's key: the purpose in cover mode, the scene otherwise; null when there is nothing to load yet. */
 function boardKey() {
     return isCoverMode() ? coverPurpose : sceneObjectId;
+}
+
+/**
+ * The book whose workflow renders the current cover (P10-A 7, §6.C 257): a SERIES_ART row is hosted by one chapter
+ * of the series and the server 409s a render addressed from a sibling chapter, and 404s an approve of an artifact
+ * that is not in "this book", so those calls go to `cover.hostBookObjectId` - which is the book itself for a
+ * book-level cover. Plan is not host-gated by the server (it answers from any chapter with that chapter's context);
+ * it goes to the host too so the plan shown is the one the render will use. The row-level edit (patch) stays on the
+ * current book: same row from every chapter.
+ */
+function coverPipelineBookId() {
+    return (cover && cover.hostBookObjectId) ? cover.hostBookObjectId : bookObjectId;
 }
 
 async function loadPlan() {
@@ -430,7 +452,7 @@ async function loadPlan() {
     planError = null;
     m.redraw();
     try {
-        let p = await (isCoverMode() ? planCover(bookObjectId, coverPurpose, {}) : planScene(bookObjectId, sceneObjectId, {}));
+        let p = await (isCoverMode() ? planCover(coverPipelineBookId(), coverPurpose, {}) : planScene(bookObjectId, sceneObjectId, {}));
         if (seq !== loadSeq) return;
         plan = normalizePlan(p);
     } catch (e) {
@@ -442,7 +464,11 @@ async function loadPlan() {
     m.redraw();
 }
 
-/** Cover mode: the covers list for the purpose tabs (find-only on the server). A failure leaves the tabs showing every purpose. */
+/**
+ * Cover mode: the covers list for the purpose tabs (find-only on the server). A failure leaves the tabs showing
+ * the book-level purposes with no composition dots; the Series art tab needs the view's seriesObjectId, so it is
+ * not shown until the view has been read.
+ */
 async function loadCovers() {
     if (!bookObjectId) return;
     let seq = loadSeq;
@@ -450,9 +476,11 @@ async function loadCovers() {
         let v = await getCovers(bookObjectId);
         if (seq !== loadSeq) return;
         covers = v.covers;
+        coverSeriesObjectId = v.seriesObjectId || null;
     } catch (e) {
         if (seq !== loadSeq) return;
         covers = null;
+        coverSeriesObjectId = null;
     }
 }
 
@@ -783,7 +811,7 @@ function openCreateCoverDialog() {
     let st = { mode: 'auto', sceneObjectId: pages.length ? pages[0].objectId : null, error: null };
     let label = coverPurposeLabel(coverPurpose);
     Dialog.open({
-        title: 'Create ' + label.toLowerCase() + ' art',
+        title: 'Create ' + coverArtLabel(coverPurpose).toLowerCase(),
         size: 'md',
         content: {
             view: function () {
@@ -861,14 +889,15 @@ async function watchRender(submit) {
 /**
  * Render (or re-render) the current cover. `force` re-renders a current node; the server 409s a current node
  * without it, a pinned node always (isPinnedNodeRefusal - unpin from the review queue first), and a node already
- * being rendered. The SD backend is the server's; the client sends no URL.
+ * being rendered. The SD backend is the server's; the client sends no URL. Addressed to the cover's host book
+ * (coverPipelineBookId): series art renders in its host chapter's workflow from every chapter of the series.
  */
 async function renderCurrentCover(force) {
     if (!bookObjectId || !coverPurpose || busy.render || !board) return;
     busy.render = true;
     m.redraw();
     try {
-        let submit = await renderCover(bookObjectId, coverPurpose, !!force);
+        let submit = await renderCover(coverPipelineBookId(), coverPurpose, !!force);
         page.toast('info', coverPurposeLabel(coverPurpose) + ' render started' + (submit.nodeMaterialized ? ' (render node created)' : ''));
         watchRender(submit);
     } catch (e) {
@@ -878,11 +907,16 @@ async function renderCurrentCover(force) {
     m.redraw();
 }
 
-/** Approve the latest render as the cover (PUT /{book}/artifact/{oid}/approve) - the readers show the APPROVED one first. */
+/**
+ * Approve the latest render as the cover (PUT /{book}/artifact/{oid}/approve) - the readers show the APPROVED one
+ * first. Addressed to the host book: the artifact is "in" the host chapter's workflow, and the server 404s it from
+ * any other book.
+ */
 async function approveLatestCover() {
     if (!board || !cover || !cover.latest || !cover.latest.artifactObjectId) return;
     let oid = cover.latest.artifactObjectId;
-    await act('approve', function () { return approveArtifact(bookObjectId, oid); }, coverPurposeLabel(coverPurpose) + ' approved');
+    let hostId = coverPipelineBookId();
+    await act('approve', function () { return approveArtifact(hostId, oid); }, coverPurposeLabel(coverPurpose) + ' approved');
 }
 
 function dismissRenderRun() {
@@ -1165,9 +1199,12 @@ function goCover(purpose) {
     m.route.set('/picture-book/' + bookObjectId + '/cover/' + coverPathWord(p));
 }
 
-/** Cover mode: one tab per cover purpose; a dot marks the purposes that have a composition (from getCovers). */
+/**
+ * Cover mode: one tab per cover purpose the book can have (coverPurposesFor - Series art only on a chapter); a dot
+ * marks the purposes that have a composition (from getCovers).
+ */
 function renderPurposeTabs() {
-    return m('div', { 'data-testid': 'pb-cmp-purpose-tabs', class: 'flex items-center gap-1 ml-2' }, COVER_PURPOSES.map(function (p) {
+    return m('div', { 'data-testid': 'pb-cmp-purpose-tabs', class: 'flex items-center gap-1 ml-2' }, coverPurposesFor({ seriesObjectId: coverSeriesObjectId }).map(function (p) {
         let active = p === coverPurpose;
         let exists = !!(covers && covers[p]);
         return m('button', {
@@ -1245,11 +1282,14 @@ function renderCoverStrip() {
                 : m('div', { class: 'h-24 w-36 rounded border border-dashed dark:border-gray-700 flex items-center justify-center text-gray-400' }, ref ? 'image unavailable' : 'none')
         ]);
     }
-    return m('section', { 'data-testid': 'pb-cmp-cover', 'data-node-status': e && e.nodeStatus ? e.nodeStatus : '', 'data-pinned': e && e.pinned ? 'true' : 'false', class: 'border rounded dark:border-gray-700 p-2 mb-3' }, [
+    let hostId = coverPipelineBookId();
+    let hostedElsewhere = !!(hostId && bookObjectId && hostId !== bookObjectId);
+    return m('section', { 'data-testid': 'pb-cmp-cover', 'data-node-status': e && e.nodeStatus ? e.nodeStatus : '', 'data-pinned': e && e.pinned ? 'true' : 'false', 'data-host-book': hostId || '', class: 'border rounded dark:border-gray-700 p-2 mb-3' }, [
         m('div', { class: 'flex flex-wrap items-center gap-2 mb-2' }, [
-            m('h3', { class: 'text-sm font-semibold' }, coverPurposeLabel(coverPurpose) + ' art'),
+            m('h3', { 'data-testid': 'pb-cmp-cover-heading', class: 'text-sm font-semibold' }, coverArtLabel(coverPurpose)),
             m('span', { 'data-testid': 'pb-cmp-cover-state', class: e && e.pinned ? WARN_CHIP : CHIP }, coverStateText(e)),
             e && e.titleSafeBand && e.titleSafeBand !== 'UNKNOWN' ? m('span', { 'data-testid': 'pb-cmp-cover-band', class: CHIP, title: 'Title-safe band' }, 'band ' + e.titleSafeBand.toLowerCase()) : null,
+            hostedElsewhere ? m('span', { 'data-testid': 'pb-cmp-cover-host', class: CHIP, title: 'Shared by every chapter of the series; rendered and approved in its host chapter' }, 'host chapter') : null,
             m('div', { class: 'flex-1' }),
             m('button', { 'data-testid': 'pb-cmp-render-cover', class: PRIMARY, disabled: !!busy.render || rendering || !!(e && e.pinned), title: e && e.pinned ? 'Unpin the node from the review queue first' : (current ? 'The last render is current; re-render anyway' : 'Render this cover'), onclick: function () { renderCurrentCover(current); } },
                 [icon('brush', 'text-sm align-middle mr-1'), busy.render ? 'Submitting…' : (rendering ? 'Rendering…' : (current ? 'Re-render' : 'Render'))]),
@@ -1298,9 +1338,16 @@ function renderComposeRun() {
 
 function renderEmpty() {
     if (isCoverMode()) {
+        // P10-A 7: the board GET is find-only, so series art on a book that is not a chapter is the same 404 as
+        // "none yet" — the covers view (no seriesObjectId) is what tells them apart. The tab is not offered on such
+        // a book; a deep link to it says why (the create's 409 wording) instead of offering a create that can only 409.
+        let notChapter = coverPurpose === 'SERIES_ART' && covers !== null && !coverSeriesObjectId;
         return m('div', { 'data-testid': 'pb-cmp-empty', class: 'border rounded dark:border-gray-700 p-4 text-sm' }, [
             m('p', { 'data-testid': 'pb-cmp-empty-message', class: 'text-gray-600 dark:text-gray-300 mb-2' }, noCompositionMessage || ('This book has no ' + coverPurposeLabel(coverPurpose).toLowerCase() + ' composition yet')),
-            m('button', { 'data-testid': 'pb-cmp-create-cover-open', class: PRIMARY, disabled: !!busy.create, onclick: openCreateCoverDialog }, [icon('add_photo_alternate', 'text-sm align-middle mr-1'), busy.create ? 'Creating…' : 'Create ' + coverPurposeLabel(coverPurpose).toLowerCase() + '…'])
+            notChapter ? m('p', { 'data-testid': 'pb-cmp-empty-not-chapter', class: 'text-xs text-amber-700 mb-2' }, 'This book is not a chapter of a series; series art needs one.') : null,
+            // P10-A 7: series art is one row shared by every chapter; say so before the first chapter creates it.
+            coverPurpose === 'SERIES_ART' && !notChapter ? m('p', { 'data-testid': 'pb-cmp-empty-series-note', class: 'text-xs text-gray-500 mb-2' }, 'Series art is shared by every chapter of the series. Create it from this chapter first; every other chapter then shows the same art.') : null,
+            notChapter ? null : m('button', { 'data-testid': 'pb-cmp-create-cover-open', class: PRIMARY, disabled: !!busy.create, onclick: openCreateCoverDialog }, [icon('add_photo_alternate', 'text-sm align-middle mr-1'), busy.create ? 'Creating…' : 'Create ' + coverPurposeLabel(coverPurpose).toLowerCase() + '…'])
         ]);
     }
     return m('div', { 'data-testid': 'pb-cmp-empty', class: 'border rounded dark:border-gray-700 p-4 text-sm' }, [
@@ -1627,6 +1674,7 @@ async function init(vnode) {
         pages = [];
         characters = [];
         covers = null;
+        coverSeriesObjectId = null;
         sceneObjectId = sid;
         coverPurpose = cp;
         resetState();
@@ -1662,7 +1710,7 @@ const composeView = {
 // ── Test seams ─────────────────────────────────────────────────────────
 
 export function __composeStateForTest() {
-    return { bookObjectId, sceneObjectId, pages, board, noComposition, noCompositionMessage, loading, error, loadSeq, outfits, outfitsError, plan, planError, planLoading, busy, edits, lastEdit, characters, composeRun, composeAbort, drag, overrideInst, overrideExpanded, sdModels, sdLoras, pollIntervalMs, chatConfigRef, chatConfigResolving, coverPurpose, cover, covers, renderRun, renderAbort };
+    return { bookObjectId, sceneObjectId, pages, board, noComposition, noCompositionMessage, loading, error, loadSeq, outfits, outfitsError, plan, planError, planLoading, busy, edits, lastEdit, characters, composeRun, composeAbort, drag, overrideInst, overrideExpanded, sdModels, sdLoras, pollIntervalMs, chatConfigRef, chatConfigResolving, coverPurpose, cover, covers, coverSeriesObjectId, renderRun, renderAbort };
 }
 
 export function __setComposeStateForTest(s) {
@@ -1672,6 +1720,7 @@ export function __setComposeStateForTest(s) {
     if ('coverPurpose' in s) coverPurpose = s.coverPurpose || null;
     if ('cover' in s) cover = s.cover || null;
     if ('covers' in s) covers = s.covers || null;
+    if ('coverSeriesObjectId' in s) coverSeriesObjectId = s.coverSeriesObjectId || null;
     if ('renderRun' in s) renderRun = s.renderRun || null;
     if ('pages' in s) pages = s.pages || [];
     if ('board' in s) board = s.board || null;

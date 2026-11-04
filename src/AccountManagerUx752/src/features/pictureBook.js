@@ -43,7 +43,7 @@ import {
     planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS,
     deriveStageList, runSummaryText, resolvePb2BookObjectId,
     migrateV1Book, normalizeMigration,
-    getCovers, coverImageRefFor, coverPageLayout
+    getCovers, coverPageLayout, readerFrontPages
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -1291,17 +1291,20 @@ let pb2SceneDegradations = {};
 // the read failed. The reader's cover page shows the APPROVED COVER render when there is one, else page 1's image.
 let pb2Covers = null;
 
-function pb2TotalPages() { return pb2Pages.length + 1; } // cover + scenes
+// P10-A 7: the pages before the scenes (readerFrontPages) - the cover page, preceded by a series-art page when the
+// chapter's series has approved SERIES_ART and the chapter its own approved COVER. Page numbers: 0 … front-1 are the
+// front pages, scene N (1-based) is page front-1+N.
+function pb2FrontPages() { return readerFrontPages(pb2Covers); }
+function pb2FrontCount() { return pb2FrontPages().length; }
+function pb2TotalPages() { return pb2Pages.length + pb2FrontCount(); } // front pages + scenes
+/** The 1-based scene number of the current page; 0 or less on a front page. */
+function pb2SceneNumber() { return pb2CurrentPage - pb2FrontCount() + 1; }
 
-/** The approved COVER image ref (page-view shape: imageGroupPath + imageName) or null; never the unapproved latest. */
-function pb2CoverRef() { return coverImageRefFor(pb2Covers, 'COVER', false); }
+/** The cover page's front entry ({source: 'cover' | 'series_art' | null, ref, band}) - always the last front page. */
+function pb2CoverEntry() { let f = pb2FrontPages(); return f[f.length - 1]; }
 
-/** The COVER composition's title-safe band ('TOP' | 'BOTTOM' | null) - where the reader puts the title block. */
-function pb2CoverBand() {
-    let e = pb2Covers && pb2Covers.covers ? pb2Covers.covers.COVER : null;
-    let b = e && e.titleSafeBand ? String(e.titleSafeBand).toUpperCase() : null;
-    return b === 'TOP' || b === 'BOTTOM' ? b : null;
-}
+/** The cover page's approved image ref (the COVER, else the series art standing in for it) or null; never the unapproved latest. */
+function pb2CoverRef() { return pb2CoverEntry().ref; }
 
 /** Read (once per refresh) the degradation summary of the open scene's last compiled plan; nothing to read without a node. */
 async function pb2EnsureSceneDegradations(scene) {
@@ -1725,7 +1728,7 @@ const pb2PlanDialogActions = {
 
 function pb2OpenPlanDialog(scene) {
     if (!pb2BookObjectId || !scene || !scene.objectId) return;
-    pb2Plan = { bookId: pb2BookObjectId, sceneOid: scene.objectId, sceneTitle: scene.title || ('Scene ' + pb2CurrentPage), preset: '', loading: false, plan: null, error: null, inspect: false, rendering: false, open: true, seq: pb2Plan.seq };
+    pb2Plan = { bookId: pb2BookObjectId, sceneOid: scene.objectId, sceneTitle: scene.title || ('Scene ' + pb2SceneNumber()), preset: '', loading: false, plan: null, error: null, inspect: false, rendering: false, open: true, seq: pb2Plan.seq };
     Dialog.open({
         title: 'Plan & generate',
         size: 'md',
@@ -1880,7 +1883,7 @@ async function loadPb2Chapters(pb2ObjId, bookFull) {
         pb2Chapters = [];
     }
 }
-function pb2CurrentScene() { return pb2CurrentPage > 0 ? pb2Pages[pb2CurrentPage - 1] : null; }
+function pb2CurrentScene() { let n = pb2SceneNumber(); return n > 0 ? pb2Pages[n - 1] : null; }
 
 function pb2GoToPage(n) {
     let max = pb2TotalPages() - 1;
@@ -2032,19 +2035,50 @@ function pb2CoverCountLabel() {
     return rendered + ' rendered of ' + total + ' scene' + (total !== 1 ? 's' : '');
 }
 
-// The cover page: the APPROVED COVER render (P9-4, V3 §40) when the book has one, else page 1's image dimmed
-// behind the title as before. With a real cover (P9-8, 238 d) the frame is a fixed-aspect square showing the
-// whole render and the slim title block sits inside the composition's title-safe band (TOP / BOTTOM quarter)
-// over a scrim — see coverPageLayout; without a band it stays centered.
+// The series-art page (P10-A 7): the series' APPROVED SERIES_ART render, shown before the cover page when the
+// chapter also has its own approved COVER (readerFrontPages). Same coverPageLayout frame as a real cover, with the
+// series name in the title block, placed in the art's title-safe band; Next goes on to the chapter's cover page.
+function renderPb2SeriesArtPage(entry) {
+    let imgUrl = pb2ImageUrl(entry.ref);
+    let band = entry.band;
+    let justify = band === 'TOP' ? 'justify-start' : (band === 'BOTTOM' ? 'justify-end' : 'justify-center');
+    let lay = coverPageLayout(true);
+    return m('div', {
+        'data-pb2-series-art': true,
+        'data-pb2-series-art-band': band || '',
+        class: 'flex flex-col items-center ' + justify + ' ' + lay.frame + ' relative overflow-hidden rounded-lg',
+        style: 'background: linear-gradient(135deg, #1b3a69 0%, #1a1a4e 50%, #0f0f3d 100%);'
+    }, [
+        imgUrl ? m('img', { 'data-pb2-series-art-image': true, src: imgUrl, class: 'absolute inset-0 w-full h-full ' + lay.image + ' opacity-100' }) : null,
+        m('div', { class: 'relative z-10 text-center ' + lay.block }, [
+            m('div', { class: 'text-blue-200 uppercase tracking-widest ' + lay.kicker }, 'PB2 · Series'),
+            m('h1', { 'data-pb2-series-art-title': true, class: lay.title, style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;' }, pb2SeriesName || pb2BookName || 'Series'),
+            m('div', { class: lay.meta }, [
+                m('p', { 'data-pb2-series-art-chapter': true, class: lay.count }, pb2BookName || 'Untitled'),
+                m('button', {
+                    class: lay.button + ' bg-blue-500/30 hover:bg-blue-500/50 text-white rounded-full backdrop-blur-sm transition-colors',
+                    onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
+                }, [m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'), 'Cover'])
+            ])
+        ])
+    ]);
+}
+
+// The cover page: the APPROVED COVER render (P9-4, V3 §40) when the book has one, else (P10-A 7) the series'
+// approved SERIES_ART standing in for it, else page 1's image dimmed behind the title as before. With real art
+// (P9-8, 238 d) the frame is a fixed-aspect square showing the whole render and the slim title block sits inside
+// the composition's title-safe band (TOP / BOTTOM quarter) over a scrim — see coverPageLayout; without a band it
+// stays centered.
 function renderPb2Cover() {
     let firstPage = pb2Pages.length > 0 ? pb2Pages[0] : null;
-    let coverRef = pb2CoverRef();
+    let entry = pb2CoverEntry();
+    let coverRef = entry.ref;
     let coverImgUrl = coverRef ? pb2ImageUrl(coverRef) : (firstPage ? pb2ImageUrl(firstPage) : null);
-    let band = coverRef ? pb2CoverBand() : null;
+    let band = coverRef ? entry.band : null;
     let justify = band === 'TOP' ? 'justify-start' : (band === 'BOTTOM' ? 'justify-end' : 'justify-center');
     let lay = coverPageLayout(!!coverRef);
     return m('div', {
-        'data-pb2-cover-source': coverRef ? 'cover' : (coverImgUrl ? 'page' : 'none'),
+        'data-pb2-cover-source': coverRef ? entry.source : (coverImgUrl ? 'page' : 'none'),
         'data-pb2-cover-band': band || '',
         class: 'flex flex-col items-center ' + justify + ' ' + lay.frame + ' relative overflow-hidden rounded-lg',
         style: 'background: linear-gradient(135deg, #2d1b69 0%, #1a1a4e 50%, #0f0f3d 100%);'
@@ -2064,7 +2098,7 @@ function renderPb2Cover() {
                 m('p', { 'data-pb2-cover-count': true, class: lay.count }, pb2CoverCountLabel()),
                 pb2Pages.length > 0 ? m('button', {
                     class: lay.button + ' bg-purple-500/30 hover:bg-purple-500/50 text-white rounded-full backdrop-blur-sm transition-colors',
-                    onclick: function () { pb2GoToPage(1); }
+                    onclick: function () { pb2GoToPage(pb2FrontCount()); }
                 }, [
                     m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
                     'Begin'
@@ -2184,7 +2218,7 @@ export function renderPb2ScenePage() {
             m('h2', {
                 class: 'text-2xl font-semibold text-center',
                 style: 'font-family: Georgia, serif;'
-            }, scene.title || 'Scene ' + (pb2CurrentPage)),
+            }, scene.title || 'Scene ' + pb2SceneNumber()),
             renderPb2SceneChip(scene),
             renderPb2LocationChip(scene),
             v3 ? renderPb2DegradationChip(scene) : null,
@@ -2220,15 +2254,22 @@ export function renderPb2ScenePage() {
         ),
 
         m('div', { class: 'mt-6 text-xs text-gray-400 text-center' },
-            'Page ' + pb2CurrentPage + ' of ' + pb2Pages.length)
+            'Page ' + pb2SceneNumber() + ' of ' + pb2Pages.length)
     ]);
+}
+
+/** The header / dot label of a page index: a front page's name, else 'Page N' (N = the 1-based scene number). */
+function pb2PageLabel(i) {
+    let front = pb2FrontPages();
+    if (i < front.length) return front[i].page === 'SERIES_ART' ? 'Series art' : 'Cover';
+    return 'Page ' + (i - front.length + 1);
 }
 
 export function renderPb2Header() {
     let total = pb2TotalPages();
-    let pageLabel = pb2CurrentPage === 0
-        ? 'Cover'
-        : 'Page ' + pb2CurrentPage + ' of ' + pb2Pages.length;
+    let pageLabel = pb2SceneNumber() <= 0
+        ? pb2PageLabel(pb2CurrentPage)
+        : 'Page ' + pb2SceneNumber() + ' of ' + pb2Pages.length;
     let v3 = pb2RenderPath === 'v3' && !!pb2BookObjectId;
     let watching = !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error);
     return m('div', { class: 'flex items-center gap-3 mb-4' }, [
@@ -2435,8 +2476,18 @@ export function __setPbHealthStateForTest(patch) {
     if ('pb2Pages' in patch) pb2Pages = Array.isArray(patch.pb2Pages) ? patch.pb2Pages : [];
     if ('pb2Covers' in patch) pb2Covers = patch.pb2Covers || null;
     if ('pb2BookName' in patch) pb2BookName = patch.pb2BookName;
+    if ('pb2SeriesName' in patch) pb2SeriesName = patch.pb2SeriesName || null;
+    if ('pb2CurrentPage' in patch) pb2CurrentPage = patch.pb2CurrentPage | 0;
 }
-export { renderPb2Cover as __renderPb2CoverForTest };
+export { renderPb2Cover as __renderPb2CoverForTest, renderPb2CurrentPage as __renderPb2CurrentPageForTest };
+
+/** The page at pb2CurrentPage: a front page (series art / cover) or the scene page it maps to. */
+function renderPb2CurrentPage() {
+    let front = pb2FrontPages();
+    if (pb2CurrentPage < front.length - 1) return renderPb2SeriesArtPage(front[pb2CurrentPage]);
+    if (pb2CurrentPage === front.length - 1) return renderPb2Cover();
+    return renderPb2ScenePage();
+}
 
 function renderPb2PageDots() {
     let total = pb2TotalPages();
@@ -2448,7 +2499,7 @@ function renderPb2PageDots() {
                 key: i,
                 class: 'w-2.5 h-2.5 rounded-full transition-colors ' +
                     (active ? 'bg-purple-500' : 'bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'),
-                title: i === 0 ? 'Cover' : 'Page ' + i,
+                title: pb2PageLabel(i),
                 onclick: function () { pb2GoToPage(i); }
             });
         })
@@ -2505,7 +2556,7 @@ var pb2PageReaderView = {
                             ]) : null
                         ])
                         : m('div', { class: 'flex-1 overflow-y-auto max-w-3xl mx-auto w-full' }, [
-                            pb2CurrentPage === 0 ? renderPb2Cover() : renderPb2ScenePage(),
+                            renderPb2CurrentPage(),
                             renderPb2PageDots()
                         ])
         ]);

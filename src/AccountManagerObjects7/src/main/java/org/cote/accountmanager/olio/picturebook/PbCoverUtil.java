@@ -183,8 +183,9 @@ public class PbCoverUtil {
 	 * The book's composition of a cover {@code purpose} as {@code user} reads it, or null. Read-only, uncached.
 	 * COVER / TITLE_PAGE / CHAPTER_OPENER are keyed by name in the book's group; SERIES_ART is keyed by the
 	 * book's {@code series} FK across the organization (the row lives in whichever chapter's group it was first
-	 * made in, and every chapter must see the same one), null when the book is not a chapter. Duplicates resolve
-	 * to the lowest id with a warning.
+	 * made in, and every chapter sees that same one - as far as the caller may read it, which follows the host
+	 * chapter's grants, §6.C 237 j), null when the book is not a chapter. Duplicates resolve to the lowest id
+	 * with a warning.
 	 *
 	 * @throws PictureBookException 400 for a non-cover purpose, 409 when the book record carries no group
 	 */
@@ -209,15 +210,48 @@ public class PbCoverUtil {
 		return lowestOfPurpose(user, q, purpose, name);
 	}
 
-	/// SERIES_ART by the series FK + organizationId, no group: AccessPoint.list is not a per-record boundary
-	/// (model-api.md), which here is the point - a sibling chapter reads the row hosted in another chapter's group.
+	/// The series' SERIES_ART row as {@code user} may read it: null when there is none, and null when there is one
+	/// the user is not entitled to (§6.C 237 j) - a read path never tells the two apart.
 	static BaseRecord findSeriesArt(BaseRecord user, BaseRecord seriesRef, long orgId) {
+		SeriesArtLookup look = lookupSeriesArt(user, seriesRef, orgId);
+		return (look.denied ? null : look.row);
+	}
+
+	/** Outcome of {@link #lookupSeriesArt}: the row the series has, and whether the caller may read it. */
+	static final class SeriesArtLookup {
+		/** The row as the caller reads it; null when the series has none or the caller is not entitled. */
+		BaseRecord row;
+		/** True when a row exists that the caller cannot read. */
+		boolean denied;
+	}
+
+	/// SERIES_ART by the series FK + organizationId, no group: AccessPoint.list is not a per-record boundary
+	/// (model-api.md), which is how a sibling chapter finds the row hosted in another chapter's group - and also
+	/// why the list alone leaked it to any member of the sibling (§6.C 237 j). The hit is therefore re-read as
+	/// the caller through AccessPoint.find, whose per-record canRead decides: visibility of the shared row follows
+	/// the grants on the host chapter's group, never the calling chapter's.
+	static SeriesArtLookup lookupSeriesArt(BaseRecord user, BaseRecord seriesRef, long orgId) {
+		SeriesArtLookup look = new SeriesArtLookup();
 		if(user == null || seriesRef == null) {
-			return null;
+			return look;
 		}
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_COMPOSITION, OlioFieldNames.FIELD_PB_SERIES, seriesRef);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		return lowestOfPurpose(user, q, PbCompositionPurposeEnumType.SERIES_ART, "series art of series " + PbHealthUtil.idOf(seriesRef));
+		String label = "series art of series " + PbHealthUtil.idOf(seriesRef);
+		BaseRecord hit = lowestOfPurpose(user, q, PbCompositionPurposeEnumType.SERIES_ART, label);
+		if(hit == null) {
+			return look;
+		}
+		String oid = PbComposeUtil.str(hit.get(FieldNames.FIELD_OBJECT_ID));
+		BaseRecord asUser = PbComposeUtil.readComposition(user, oid, orgId);
+		if(asUser == null) {
+			look.denied = true;
+			logger.warn(label + ": row " + hit.get(FieldNames.FIELD_ID) + " (group " + hit.get(FieldNames.FIELD_GROUP_ID)
+				+ ") is not readable by user " + user.get(FieldNames.FIELD_ID) + "; treated as absent");
+			return look;
+		}
+		look.row = asUser;
+		return look;
 	}
 
 	private static BaseRecord lowestOfPurpose(BaseRecord user, Query q, PbCompositionPurposeEnumType purpose, String label) {
@@ -322,8 +356,9 @@ public class PbCoverUtil {
 	 * @param chatConfig    AUTO only: the chat config for the LLM call; null = the organization's {@code generalChat}
 	 * @param dataPath      the deployment's {@code datagen.path} when the caller has one (wardrobe alternates)
 	 * @throws PictureBookException 400 non-cover purpose / bad scene; 403 from {@link PbBookUtil#requireBookUpdate};
-	 *                              404 scene or its composition missing; 409 SERIES_ART on a book that is not a chapter;
-	 *                              500 when the row cannot be written
+	 *                              404 scene or its composition missing, or a SERIES_ART row exists that the caller
+	 *                              may not read (worded as "has no SERIES_ART composition", §6.C 237 j);
+	 *                              409 SERIES_ART on a book that is not a chapter; 500 when the row cannot be written
 	 */
 	public static CoverResult getCreate(BaseRecord user, BaseRecord book, PbCompositionPurposeEnumType purpose, Mode mode,
 			String sceneObjectId, BaseRecord chatConfig, String dataPath) {
@@ -336,7 +371,7 @@ public class PbCoverUtil {
 		ctx.chatConfig = chatConfig;
 		ctx.dataPath = dataPath;
 		BaseRecord series = (purpose == PbCompositionPurposeEnumType.SERIES_ART ? requireSeries(user, ctx) : null);
-		BaseRecord existing = (series != null ? findSeriesArt(user, series, ctx.orgId) : findCover(user, ctx.book, purpose));
+		BaseRecord existing = (series != null ? requireReadableSeriesArt(user, ctx, series) : findCover(user, ctx.book, purpose));
 		if(existing != null) {
 			return existing(user, existing, r, t0);
 		}
@@ -378,6 +413,18 @@ public class PbCoverUtil {
 		r.elements = PbComposeUtil.listElements(user, existing);
 		r.elapsedMs = System.currentTimeMillis() - t0;
 		return r;
+	}
+
+	/// The series' existing SERIES_ART row for get-or-create, or null when the series has none yet. A row the caller
+	/// cannot read is a 404 worded exactly like the "no row" 404 of the read routes (§6.C 237 j): the row is never
+	/// returned, and the create branch is never reached - the (name, groupId) index is per group, so creating would
+	/// write a second series_art.<seriesOid> in this chapter's group rather than fail.
+	private static BaseRecord requireReadableSeriesArt(BaseRecord user, Context ctx, BaseRecord series) {
+		SeriesArtLookup look = lookupSeriesArt(user, series, ctx.orgId);
+		if(look.denied) {
+			throw new PictureBookException(404, "Book " + ctx.slug + " has no SERIES_ART composition");
+		}
+		return look.row;
 	}
 
 	/// The series a SERIES_ART composition is for: the chapter's {@code series} FK read as the caller.

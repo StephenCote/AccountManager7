@@ -5013,10 +5013,18 @@ public class PbServiceFacade {
 	 * the highest-revision artifact that is not ARCHIVED; each is {@code { artifactObjectId, dataObjectId,
 	 * imageGroupPath, imageName, imageContentType }} (the page-view image ref, 232 f 4) or null. {@code reviewStatus}
 	 * is the selected artifact's, null when the node has none. A null entry means the purpose has no composition.
+	 * <p>
+	 * {@code seriesObjectId} is the book's own {@code series} FK (null for a standalone book) - P10-A 7: the compose
+	 * board offers the SERIES_ART purpose only to a chapter, and {@link PbCoverUtil#getCreate} refuses it (409) on a
+	 * standalone, so the view says up front which kind of book this is. The SERIES_ART entry, when present, is the
+	 * series' one shared row as seen from this chapter (237 f / 237 j: the row lives in the host chapter's group and
+	 * is listed here only when the caller can read it), and its render state is the HOST chapter's: every entry
+	 * carries {@code hostBookObjectId}, the book whose workflow holds the composition's node (the queried book itself
+	 * for a book-level cover), and a sibling chapter's entry resolves the node, {@code approved} and {@code latest}
+	 * through that host (§6.C 257) - so chapter B reports the render made from chapter A.
 	 */
 	public static Map<String, Object> coverView(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		long orgId = PbGraphUtil.orgId(book);
 		Map<PbCompositionPurposeEnumType, BaseRecord> covers = PbCoverUtil.listCovers(user, book);
 		BaseRecord workflow = PbGraphUtil.findWorkflow(user, book);
 		Map<String, Object> entries = new LinkedHashMap<>();
@@ -5025,25 +5033,38 @@ public class PbServiceFacade {
 				continue;
 			}
 			BaseRecord comp = covers.get(p);
-			entries.put(p.name(), (comp != null ? coverEntryDto(user, workflow, comp, orgId) : null));
+			entries.put(p.name(), (comp != null ? coverEntryDto(user, book, workflow, comp) : null));
 		}
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
 		out.put("workflowObjectId", (workflow != null ? workflow.get(FieldNames.FIELD_OBJECT_ID) : null));
+		out.put("seriesObjectId", fkObjectId(book, OlioFieldNames.FIELD_PB_SERIES, null));
 		out.put("covers", entries);
 		return out;
 	}
 
-	/// One cover-view entry; the node lookup is find-only and tolerates a book with no workflow.
-	private static Map<String, Object> coverEntryDto(BaseRecord user, BaseRecord workflow, BaseRecord comp, long orgId) {
+	/// One cover-view entry as seen from {@code book}; the node lookup is find-only and tolerates a book with no
+	/// workflow. A SERIES_ART row is hosted by the chapter it was first made in (237 f), and its render pipeline - the
+	/// composition_plan@ node, the run, the artifacts - lives in THAT chapter's workflow: when the row's book is not
+	/// the queried one, the node is resolved through the host (PbBookUtil.findCompositionNode, as far as the caller may
+	/// read the host and its workflow), so every chapter reports the same node, approved and latest render.
+	private static Map<String, Object> coverEntryDto(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord comp) {
+		long orgId = PbGraphUtil.orgId(book);
 		String compOid = comp.get(FieldNames.FIELD_OBJECT_ID);
-		BaseRecord node = (workflow != null ? PbPipelineUtil.findNodeByHandle(user, workflow, PbPipelineUtil.compositionPlanHandle(compOid)) : null);
+		BaseRecord node;
+		if(isHostedElsewhere(book, comp)) {
+			node = PbBookUtil.findCompositionNode(user, comp);
+		}
+		else {
+			node = (workflow != null ? PbPipelineUtil.findNodeByHandle(user, workflow, PbPipelineUtil.compositionPlanHandle(compOid)) : null);
+		}
 		Map<String, Object> m = new LinkedHashMap<>();
 		m.put("compositionObjectId", compOid);
 		m.put("purpose", enumString(comp, OlioFieldNames.FIELD_PB_PURPOSE));
 		m.put("source", enumString(comp, OlioFieldNames.FIELD_PB_SOURCE));
 		m.put("titleSafeBand", (comp.hasField(OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND) ? enumString(comp, OlioFieldNames.FIELD_PB_TITLE_SAFE_BAND) : null));
 		m.put("seriesObjectId", (comp.hasField(OlioFieldNames.FIELD_PB_SERIES) ? fkObjectId(comp, OlioFieldNames.FIELD_PB_SERIES, null) : null));
+		m.put("hostBookObjectId", hostBookObjectId(book, comp));
 		m.put("nodeObjectId", (node != null ? node.get(FieldNames.FIELD_OBJECT_ID) : null));
 		m.put("nodeStatus", (node != null ? enumString(node, OlioFieldNames.FIELD_PB_NODE_STATUS) : null));
 		m.put("pinned", Boolean.valueOf(node != null && Boolean.TRUE.equals(node.get(OlioFieldNames.FIELD_PB_PINNED, null))));
@@ -5174,7 +5195,8 @@ public class PbServiceFacade {
 	 * {@link #requestLocationRender} shape over the composition's RENDER_PLAN node. Gate order: {@link #requireBook}
 	 * 404 → {@link PbRenderPath#requireV3} 409 → {@link #requireBookUpdate} 403 → purpose word 400 → the composition
 	 * must already exist (404 naming the purpose: the render path never creates one - make it through
-	 * {@link #createCover} first) → {@link #ensureWorkflow} → {@link #ensureCompositionPlanNode} (the one write a
+	 * {@link #createCover} first) → {@link #requireCoverHost} 409 (a SERIES_ART row addressed from a sibling chapter
+	 * renders from its host, §6.C 257) → {@link #ensureWorkflow} → {@link #ensureCompositionPlanNode} (the one write a
 	 * render may make, an authorized one by the book's updater) → {@link #requireNotPinned} 409 →
 	 * {@link PbRenderJobUtil#submit} (409 when the node is current and {@code force} is false, 429 at the
 	 * per-principal job cap, 500 when no SD server is configured).
@@ -5189,6 +5211,7 @@ public class PbServiceFacade {
 		requireBookUpdate(user, book, WHAT_RENDER_COVER);
 		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
 		BaseRecord comp = requireCover(user, book, purpose);
+		requireCoverHost(book, comp, purpose);
 		BaseRecord workflow = ensureWorkflow(user, book);
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
@@ -5214,6 +5237,7 @@ public class PbServiceFacade {
 		requireBookUpdate(user, book, WHAT_RENDER_COVER);
 		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
 		BaseRecord comp = requireCover(user, book, purpose);
+		requireCoverHost(book, comp, purpose);
 		BaseRecord workflow = ensureWorkflow(user, book);
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
@@ -5266,7 +5290,7 @@ public class PbServiceFacade {
 			elements.add(elementDto(e));
 		}
 		out.put("elements", elements);
-		out.put("cover", coverEntryDto(user, PbGraphUtil.findWorkflow(user, book), comp, PbGraphUtil.orgId(book)));
+		out.put("cover", coverEntryDto(user, book, PbGraphUtil.findWorkflow(user, book), comp));
 		return out;
 	}
 
@@ -5331,6 +5355,40 @@ public class PbServiceFacade {
 				+ " composition - create it first");
 		}
 		return comp;
+	}
+
+	/// True when the composition's own {@code book} is a different book than {@code book}: a SERIES_ART row addressed
+	/// from a sibling chapter (237 f - the row is never relocated). A row carrying no book stub is treated as the
+	/// queried book's own.
+	private static boolean isHostedElsewhere(BaseRecord book, BaseRecord comp) {
+		long compBookId = PbHealthUtil.fkId(comp, OlioFieldNames.FIELD_PB_BOOK);
+		Long bookId = book.get(FieldNames.FIELD_ID);
+		return compBookId > 0L && bookId != null && compBookId != bookId.longValue();
+	}
+
+	/// The objectId of the book whose workflow holds the composition's render node: the composition's own book, or the
+	/// queried book when the row carries no book stub.
+	private static String hostBookObjectId(BaseRecord book, BaseRecord comp) {
+		String hostOid = (comp.hasField(OlioFieldNames.FIELD_PB_BOOK) ? fkObjectId(comp, OlioFieldNames.FIELD_PB_BOOK, null) : null);
+		return (hostOid != null ? hostOid : book.get(FieldNames.FIELD_OBJECT_ID));
+	}
+
+	/**
+	 * The render pipeline of a SERIES_ART composition belongs to its host chapter (§6.C 257): a render addressed
+	 * from a sibling chapter is the 409 that names the host, so no second {@code composition_plan@} node is ever
+	 * materialized in the sibling's workflow and the one node, run chain and approvals stay where every chapter's
+	 * view resolves them ({@link #coverEntryDto}). After {@link #requireCover}: the caller already reads the row,
+	 * so the host it names is nothing new to them.
+	 */
+	private static void requireCoverHost(BaseRecord book, BaseRecord comp, PbCompositionPurposeEnumType purpose) {
+		if(!isHostedElsewhere(book, comp)) {
+			return;
+		}
+		/// the book stub carries the query fields only (name = "Book <slug>", never slug)
+		String hostName = fkName(comp, OlioFieldNames.FIELD_PB_BOOK);
+		String hostOid = hostBookObjectId(book, comp);
+		throw new PictureBookException(409, purpose.name() + " of book " + book.get(OlioFieldNames.FIELD_PB_SLUG)
+			+ " is rendered from its host chapter " + (hostName != null ? hostName : hostOid) + " (" + hostOid + ")");
 	}
 
 	// ─────────────────────────────── health check + self-heal ───────────────────────────────

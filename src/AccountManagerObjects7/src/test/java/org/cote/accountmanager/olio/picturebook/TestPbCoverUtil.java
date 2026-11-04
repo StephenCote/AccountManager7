@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
@@ -51,14 +52,16 @@ import org.junit.Test;
  * composition's fields, actor and element rows and focal pointer as a CLONE row with {@code scene} null; AUTO
  * stages the cover with the real LLM from the book's description and the HERO rows of its scene compositions
  * ({@code source LLM}, {@code titleSafeBand} written, rows exist); SERIES_ART is one row per series that every
- * chapter finds and is 409 on a standalone book; SCENE is 400; the row editor patches {@code titleSafeBand} and
- * refuses {@code series}; a read-only collaborator is 403 with nothing written.
+ * chapter finds and is 409 on a standalone book, and (§6.C 237 j) is seen from a sibling only by a user entitled
+ * on the host chapter's group; SCENE is 400; the row editor patches {@code titleSafeBand} and refuses
+ * {@code series}; a read-only collaborator is 403 with nothing written.
  */
 public class TestPbCoverUtil extends BaseTest {
 
 	private static final String ORG_A = "/Development/World Building";
 	private static final String TEST_USER = "testUser1";
 	private static final String SECOND_USER = "testUser2";
+	private static final String THIRD_USER = "testUser3";
 	private static final String CFG_NAME = "P9-1 cover compose";
 
 	private static final String BOOK_DESCRIPTION = "Mara Quayle, a harbour thief with a stolen tide-chart, is hunted through the"
@@ -490,6 +493,120 @@ public class TestPbCoverUtil extends BaseTest {
 		}
 		finally {
 			deleteBook(u, lone);
+			deleteBook(u, chA);
+			try {
+				int chapters = PbSeriesUtil.deleteSeries(u, oidOf(series));
+				log("deleteSeries removed " + chapters + " chapter(s)");
+			}
+			catch(Exception e) {
+				logger.error("deleteSeries: " + e.getMessage());
+				deleteBook(u, chB);
+			}
+		}
+	}
+
+	/// §6.C 237 j: the series' one SERIES_ART row (hosted in chapter A's group) is seen from sibling chapter B only
+	/// by a user entitled on the HOST chapter's group - the series-FK list finds it for any member of the organization,
+	/// the per-record re-read as the caller decides. The owner sees it from both chapters; testUser2 with Read on
+	/// both chapters' book groups (plus the world and the series row) finds the same row from B; testUser3 with CRUD
+	/// on chapter B's three groups only (a writer of B, nothing on A) gets null from findCover, no SERIES_ART from
+	/// listCovers, 404 "has no SERIES_ART composition" from getCreate in MANUAL and AUTO (never the row, never a
+	/// second row in B's group), and the row is untouched: still series_art.<seriesOid>, book = chapter A, in A's group.
+	@Test
+	public void seriesArtVisibilityFollowsHostChapterGrants() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		OrganizationContext org = getTestOrganization(ORG_A);
+		assertNotNull(org);
+		BaseRecord readerAB = ioContext.getFactory().getCreateUser(org.getAdminUser(), SECOND_USER, org.getOrganizationId());
+		BaseRecord writerB = ioContext.getFactory().getCreateUser(org.getAdminUser(), THIRD_USER, org.getOrganizationId());
+		assertNotNull("reader " + SECOND_USER, readerAB);
+		assertNotNull("writer " + THIRD_USER, writerB);
+		assertNotEquals(idOf(u), idOf(readerAB));
+		assertNotEquals(idOf(u), idOf(writerB));
+		assertNotEquals(idOf(readerAB), idOf(writerB));
+		String tag = shortId();
+		BaseRecord series = PbSeriesUtil.getCreateSeries(u, dataPath(), "p107s" + tag, "P10-A 7 series " + tag);
+		assertNotNull("series", series);
+		BaseRecord chA = null;
+		BaseRecord chB = null;
+		try {
+			chA = PbBookUtil.createBook(u, dataPath(), "p107a" + tag, "P10-A 7 chapter A " + tag, series, Integer.valueOf(0));
+			chB = PbBookUtil.createBook(u, dataPath(), "p107b" + tag, "P10-A 7 chapter B " + tag, series, Integer.valueOf(1));
+			assertNotNull(chA);
+			assertNotNull(chB);
+			String slugA = chA.get(OlioFieldNames.FIELD_PB_SLUG);
+			String slugB = chB.get(OlioFieldNames.FIELD_PB_SLUG);
+
+			CoverResult r = PbCoverUtil.getCreate(u, chA, PbCompositionPurposeEnumType.SERIES_ART, Mode.MANUAL, null);
+			log("SERIES_ART from chapter A: " + describe(r));
+			assertTrue("SERIES_ART written: " + r.failureReason, r.isWritten());
+			String artOid = oidOf(r.composition);
+			String artName = PbCoverUtil.SERIES_ART_NAME_PREFIX + oidOf(series);
+			assertEquals("owner sees it from chapter A", artOid, oidOf(PbCoverUtil.findCover(u, chA, PbCompositionPurposeEnumType.SERIES_ART)));
+			assertEquals("owner sees it from chapter B", artOid, oidOf(PbCoverUtil.findCover(u, chB, PbCompositionPurposeEnumType.SERIES_ART)));
+
+			BaseRecord olio = olioUser(orgId);
+			BaseRecord groupA = ioContext.getPathUtil().findPath(olio, ModelNames.MODEL_GROUP, PbBookUtil.bookGroupPath(slugA), GroupEnumType.DATA.toString(), orgId);
+			BaseRecord groupB = ioContext.getPathUtil().findPath(olio, ModelNames.MODEL_GROUP, PbBookUtil.bookGroupPath(slugB), GroupEnumType.DATA.toString(), orgId);
+			BaseRecord workflowB = ioContext.getPathUtil().findPath(olio, ModelNames.MODEL_GROUP, PbBookUtil.workflowGroupPath(slugB), GroupEnumType.DATA.toString(), orgId);
+			BaseRecord artifactsB = ioContext.getPathUtil().findPath(olio, ModelNames.MODEL_GROUP, PbBookUtil.artifactGroupPath(slugB), GroupEnumType.DATA.toString(), orgId);
+			assertNotNull("chapter A book group", groupA);
+			assertNotNull("chapter B book group", groupB);
+			assertNotNull("chapter B workflow group", workflowB);
+			assertNotNull("chapter B artifacts group", artifactsB);
+			BaseRecord world = bookContext(u, chA).getWorld();
+			assertNotNull("the series' shared world", world);
+			assertEquals("hosted in chapter A's group", (Object) groupA.get(FieldNames.FIELD_ID), (Object) r.composition.get(FieldNames.FIELD_GROUP_ID));
+
+			/// Reader with Read on BOTH chapters' book groups (so both chapters read), the world and the series row.
+			String[] read = new String[] { "Read" };
+			String[] dataGroup = new String[] { PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString() };
+			String[] data = new String[] { PermissionEnumType.DATA.toString() };
+			ioContext.getAuthorizationUtil().setEntitlement(org.getAdminUser(), readerAB, new BaseRecord[] { groupA, groupB }, read, dataGroup);
+			ioContext.getAuthorizationUtil().setEntitlement(org.getAdminUser(), readerAB, new BaseRecord[] { world, series }, read, data);
+			/// Writer of chapter B only: CRUD on B's three groups, Read on the world and the series row, nothing on A.
+			ioContext.getAuthorizationUtil().setEntitlement(org.getAdminUser(), writerB, new BaseRecord[] { groupB, workflowB, artifactsB },
+				new String[] { "Read", "Update", "Create", "Delete" }, dataGroup);
+			ioContext.getAuthorizationUtil().setEntitlement(org.getAdminUser(), writerB, new BaseRecord[] { world, series }, read, data);
+			CacheUtil.clearCache();
+
+			BaseRecord chAAsReader = PbBookUtil.readBook(readerAB, oidOf(chA), orgId);
+			BaseRecord chBAsReader = PbBookUtil.readBook(readerAB, oidOf(chB), orgId);
+			assertNotNull("precondition: the reader can READ chapter A", chAAsReader);
+			assertNotNull("precondition: the reader can READ chapter B", chBAsReader);
+			assertEquals("host-granted reader sees it from chapter A", artOid, oidOf(PbCoverUtil.findCover(readerAB, chAAsReader, PbCompositionPurposeEnumType.SERIES_ART)));
+			assertEquals("host-granted reader sees it from chapter B", artOid, oidOf(PbCoverUtil.findCover(readerAB, chBAsReader, PbCompositionPurposeEnumType.SERIES_ART)));
+			assertEquals("...and lists it from chapter B", artOid, oidOf(PbCoverUtil.listCovers(readerAB, chBAsReader).get(PbCompositionPurposeEnumType.SERIES_ART)));
+
+			BaseRecord chBAsWriter = PbBookUtil.readBook(writerB, oidOf(chB), orgId);
+			assertNotNull("precondition: the B-only writer can READ chapter B", chBAsWriter);
+			PolicyResponseType canUpd = ioContext.getAuthorizationUtil().canUpdate(writerB, writerB, chBAsWriter);
+			assertTrue("precondition: the B-only writer may UPDATE chapter B (else the refusal would be the 403, not the 404 under test)",
+				canUpd != null && canUpd.getType() == PolicyResponseEnumType.PERMIT);
+			assertNull("precondition: the B-only writer cannot read chapter A", PbBookUtil.readBook(writerB, oidOf(chA), orgId));
+			assertNull("precondition: the B-only writer cannot read the row directly", PbComposeUtil.readComposition(writerB, artOid, orgId));
+
+			assertNull("B-only writer's findCover is null", PbCoverUtil.findCover(writerB, chBAsWriter, PbCompositionPurposeEnumType.SERIES_ART));
+			assertNull("B-only writer's listCovers has no SERIES_ART", PbCoverUtil.listCovers(writerB, chBAsWriter).get(PbCompositionPurposeEnumType.SERIES_ART));
+			final BaseRecord bAsWriter = chBAsWriter;
+			refused("B-only writer MANUAL", 404, "has no SERIES_ART composition",
+				() -> PbCoverUtil.getCreate(writerB, bAsWriter, PbCompositionPurposeEnumType.SERIES_ART, Mode.MANUAL, null));
+			refused("B-only writer AUTO (the 404 precedes any compose)", 404, "has no SERIES_ART composition",
+				() -> PbCoverUtil.getCreate(writerB, bAsWriter, PbCompositionPurposeEnumType.SERIES_ART, Mode.AUTO, null));
+
+			/// Nothing written, nothing moved.
+			assertEquals("still one SERIES_ART row in chapter A's group", 1, countCompositions(u, chA, "SERIES_ART"));
+			assertEquals("none in chapter B's group", 0, countCompositions(u, chB, "SERIES_ART"));
+			BaseRecord art = PbComposeUtil.readComposition(u, artOid, orgId);
+			assertNotNull(art);
+			assertEquals("name unchanged", artName, art.get(FieldNames.FIELD_NAME));
+			assertEquals("book FK = the host chapter", idOf(chA), fkId(art, OlioFieldNames.FIELD_PB_BOOK));
+			assertEquals("still in chapter A's group", (Object) groupA.get(FieldNames.FIELD_ID), (Object) art.get(FieldNames.FIELD_GROUP_ID));
+			assertEquals("the owner's listCovers of chapter B still resolves the one row", artOid,
+				oidOf(PbCoverUtil.listCovers(u, chB).get(PbCompositionPurposeEnumType.SERIES_ART)));
+		}
+		finally {
 			deleteBook(u, chA);
 			try {
 				int chapters = PbSeriesUtil.deleteSeries(u, oidOf(series));

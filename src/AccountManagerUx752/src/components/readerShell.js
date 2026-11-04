@@ -2,7 +2,7 @@
  * Shared paginated reader shell — ChapBook Review Redesign §3.7 / decision D5.
  *
  * Extracted from PictureBook's `pictureBookView` so PictureBook and ChapBook share ONE page-flip
- * reader: an implicit cover (page 0) + one-page-at-a-time navigation, keyboard nav
+ * reader: an implicit cover (page 0, after any `frontPages`) + one-page-at-a-time navigation, keyboard nav
  * (Arrow/Home/End/Esc), on-screen chevrons, page dots, fullscreen, and whole-book self-contained
  * HTML export. Only the per-page renderer and the image-URL resolver differ between the two callers.
  *
@@ -15,6 +15,11 @@
  * Attrs:
  *   state            {currentPage, fullscreen}   caller-owned, mutated in place (REQUIRED)
  *   pages            array                        page records; cover is the implicit page 0 (REQUIRED)
+ *   frontPages       number=0                     pages BEFORE the cover (P10-A 7: a chapter's series-art page);
+ *                                                 they take indices 0 … frontPages-1, the cover moves to index
+ *                                                 frontPages, and <noun> N sits at index frontPages+N
+ *   renderFrontPage(i, nav) → vnode               front page i (0-based) body
+ *   frontPageLabel(i) → string                    header / dot label of front page i (default 'Front i+1')
  *   title            string                       book title (header + cover + export)
  *   pageNoun         string='Page'                used in the "<noun> X of N" label + dot titles
  *   coverLabel       string='Cover'
@@ -40,8 +45,9 @@
  *   Export params: exportTitleSuffix, exportNameFallback, exportNameSuffix, exportToast,
  *                  exportCountNoun, coverImageUrl(), exportCss(), exportPageHtml(page,i,imgB64,total)
  *
- * The `nav` object handed to slot fns exposes { pages, total, currentPage, fullscreen, goToPage,
- * setFullscreen, toggleFullscreen } so caller-provided cover/page/header content can drive navigation.
+ * The `nav` object handed to slot fns exposes { pages, total, front, coverPage, currentPage, fullscreen,
+ * goToPage, setFullscreen, toggleFullscreen } so caller-provided cover/page/header content can drive
+ * navigation (`coverPage` = the cover's index = `front`; the first page is `coverPage + 1`).
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -163,13 +169,30 @@ export async function exportBook(opts) {
 
 // ── Nav helper ─────────────────────────────────────────────────────────
 
+/** The number of pages before the cover: a non-negative integer, 0 unless the caller says otherwise. */
+function frontCount(a) {
+    let n = a.frontPages | 0;
+    return n > 0 ? n : 0;
+}
+
+/** Header / dot label of page index i: a front page's label, the cover label, or '<noun> N'. */
+function pageTitle(a, i) {
+    let front = frontCount(a);
+    if (i < front) return typeof a.frontPageLabel === 'function' ? a.frontPageLabel(i) : ('Front ' + (i + 1));
+    if (i === front) return a.coverLabel || 'Cover';
+    return (a.pageNoun || 'Page') + ' ' + (i - front);
+}
+
 function buildNav(a) {
     let pages = a.pages || [];
-    let total = pages.length + 1; // cover + pages
+    let front = frontCount(a);
+    let total = pages.length + 1 + front; // front pages + cover + pages
     let state = a.state;
     return {
         pages: pages,
         total: total,
+        front: front,
+        coverPage: front,
         currentPage: state.currentPage,
         fullscreen: !!state.fullscreen,
         goToPage: function (n) {
@@ -186,7 +209,7 @@ function renderHeader(a, nav, exporting, doExport) {
     let noun = a.pageNoun || 'Page';
     let cp = nav.currentPage;
     let fs = nav.fullscreen;
-    let pageLabel = cp === 0 ? (a.coverLabel || 'Cover') : (noun + ' ' + cp + ' of ' + pages.length);
+    let pageLabel = cp <= nav.coverPage ? pageTitle(a, cp) : (noun + ' ' + (cp - nav.front) + ' of ' + pages.length);
 
     return m('div', { class: a.headerClass || 'flex items-center gap-3 mb-4' }, [
         (a.onBack && !fs) ? m('button', {
@@ -234,7 +257,6 @@ function renderHeader(a, nav, exporting, doExport) {
 function renderDots(a, nav) {
     let total = nav.total;
     if (total <= 1) return null;
-    let noun = a.pageNoun || 'Page';
     let cp = nav.currentPage;
     return m('div', { class: 'flex justify-center gap-2 mt-4 py-2' },
         Array.from({ length: total }, function (_, i) {
@@ -245,7 +267,7 @@ function renderDots(a, nav) {
                     (active
                         ? 'bg-blue-500'
                         : 'bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'),
-                title: i === 0 ? (a.coverLabel || 'Cover') : (noun + ' ' + i),
+                title: pageTitle(a, i),
                 onclick: function () { nav.goToPage(i); }
             });
         })
@@ -326,10 +348,12 @@ export const ReaderShell = function () {
             else if (pages.length === 0) body = a.renderEmpty ? a.renderEmpty() : null;
             else {
                 let cp = nav.currentPage;
+                let current;
+                if (cp < nav.coverPage) current = a.renderFrontPage ? a.renderFrontPage(cp, nav) : null;
+                else if (cp === nav.coverPage) current = a.renderCover ? a.renderCover(nav) : null;
+                else current = a.renderPage ? a.renderPage(pages[cp - nav.front - 1], cp - nav.front, nav) : null;
                 body = m('div', { class: a.bodyClass || 'flex-1 overflow-y-auto max-w-3xl mx-auto w-full' }, [
-                    cp === 0
-                        ? (a.renderCover ? a.renderCover(nav) : null)
-                        : (a.renderPage ? a.renderPage(pages[cp - 1], cp, nav) : null),
+                    current,
                     renderDots(a, nav)
                 ]);
             }

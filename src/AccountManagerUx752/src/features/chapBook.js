@@ -11,7 +11,7 @@ import { applicationPath } from '../core/config.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
 import { ObjectPicker } from '../components/picker.js';
-import { bookPages, unpinNode, listLocations, setSceneLocation, getCovers, coverImageRefFor, coverPageLayout, registerBookChatConfigProvider } from '../workflows/pictureBookWorkflow.js';
+import { bookPages, unpinNode, listLocations, setSceneLocation, getCovers, coverImageRefFor, coverPageLayout, readerFrontPages, registerBookChatConfigProvider } from '../workflows/pictureBookWorkflow.js';
 import { resolveImageUrl, pollJob, cancelJob, listJobs } from '../workflows/sceneExtractor.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
@@ -2695,35 +2695,73 @@ function readerTitle() {
     return (readerBook && (readerBook.name || readerBook.slug)) || 'ChapBook';
 }
 
-// The approved COVER render's page-view ref (imageGroupPath + imageName, which chapImageUrl resolves) or null.
+// P10-A 7: the reader's front pages (readerFrontPages, shared with the PB2 reader) - the cover page, preceded by
+// a series-art page when the chapter's series has approved SERIES_ART and the chapter its own approved COVER.
+// ReaderShell takes the count of pages BEFORE the cover (frontPages) and renders them through renderReaderSeriesArt.
+function readerFront() { return readerFrontPages(readerCovers); }
+function readerCoverEntry() { let f = readerFront(); return f[f.length - 1]; }
+
+// The cover page's approved page-view ref (imageGroupPath + imageName, which chapImageUrl resolves): the COVER,
+// else the series art standing in for it (P10-A 7), else null; never the unapproved latest.
 function readerCoverRef() {
-    return coverImageRefFor(readerCovers, 'COVER', false);
+    return readerCoverEntry().ref;
 }
 
-// The COVER composition's title-safe band ('TOP' | 'BOTTOM' | null): where the cover page puts the title block.
+// The cover page's title-safe band ('TOP' | 'BOTTOM' | null): where the cover page puts the title block.
 function readerCoverBand() {
-    let e = readerCovers && readerCovers.covers ? readerCovers.covers.COVER : null;
-    let b = e && e.titleSafeBand ? String(e.titleSafeBand).toUpperCase() : null;
-    return b === 'TOP' || b === 'BOTTOM' ? b : null;
+    return readerCoverEntry().band;
 }
 
-// The reader's and the export's cover image: the approved COVER render when there is one, else page 1's image.
+// The reader's and the export's cover image: the approved COVER render when there is one (else the series art
+// standing in for it), else page 1's image.
 function readerCoverImageUrl() {
     let ref = readerCoverRef();
     return ref ? chapImageUrl(ref) : chapImageUrl(readerPages[0]);
 }
 
-// ReaderShell cover slot (page 0) — mirrors PictureBook's cover but with ChapBook poem-book styling. With an
-// approved cover render (P9-4, V3 §40) the art is shown undimmed, whole, in a fixed-aspect frame, and the slim
-// title block sits in the title-safe band (P9-8, 238 d; coverPageLayout).
+// ReaderShell front-page slot (P10-A 7): the series' approved SERIES_ART render as the page before the cover. Same
+// coverPageLayout frame as a real cover; the title block (a 'Series' kicker over the book title) sits in the art's
+// title-safe band, and its button goes on to the cover page. The export does not include this page (its cover is
+// readerCoverImageUrl).
+function renderReaderSeriesArt(i, nav) {
+    let entry = readerFront()[i];
+    let img = entry && entry.ref ? chapImageUrl(entry.ref) : null;
+    let band = entry ? entry.band : null;
+    let justify = band === 'TOP' ? 'justify-start' : (band === 'BOTTOM' ? 'justify-end' : 'justify-center');
+    let lay = coverPageLayout(true);
+    return m('div', {
+        'data-cb-series-art': true,
+        'data-cb-series-art-band': band || '',
+        class: 'flex flex-col items-center ' + justify + ' ' + lay.frame + ' relative overflow-hidden rounded-lg',
+        style: 'background: linear-gradient(135deg, #1a2a3e 0%, #1e163e 50%, #24104a 100%);'
+    }, [
+        img ? m('img', { 'data-cb-series-art-image': true, src: img, class: 'absolute inset-0 w-full h-full ' + lay.image + ' opacity-100' }) : null,
+        m('div', { class: 'relative z-10 text-center ' + lay.block }, [
+            m('div', { class: 'text-blue-200 uppercase tracking-widest ' + lay.kicker }, 'Series'),
+            m('h1', { 'data-cb-series-art-title': true, class: lay.title, style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;' }, readerTitle()),
+            m('div', { class: lay.meta }, [
+                m('button', {
+                    class: lay.button + ' bg-white/20 hover:bg-white/30 text-white rounded-full backdrop-blur-sm transition-colors',
+                    onclick: function () { nav.goToPage(nav.coverPage); }
+                }, [m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'), 'Cover'])
+            ])
+        ])
+    ]);
+}
+
+// ReaderShell cover slot (page 0, after any front page) — mirrors PictureBook's cover but with ChapBook poem-book
+// styling. With an approved cover render (P9-4, V3 §40) - or the series art standing in for it (P10-A 7) - the art
+// is shown undimmed, whole, in a fixed-aspect frame, and the slim title block sits in the title-safe band
+// (P9-8, 238 d; coverPageLayout).
 function renderReaderCover(nav) {
-    let ref = readerCoverRef();
+    let entry = readerCoverEntry();
+    let ref = entry.ref;
     let coverImg = readerCoverImageUrl();
-    let band = ref ? readerCoverBand() : null;
+    let band = ref ? entry.band : null;
     let justify = band === 'TOP' ? 'justify-start' : (band === 'BOTTOM' ? 'justify-end' : 'justify-center');
     let lay = coverPageLayout(!!ref);
     return m('div', {
-        'data-cb-cover-source': ref ? 'cover' : (coverImg ? 'page' : 'none'),
+        'data-cb-cover-source': ref ? entry.source : (coverImg ? 'page' : 'none'),
         'data-cb-cover-band': band || '',
         class: 'flex flex-col items-center ' + justify + ' ' + lay.frame + ' relative overflow-hidden rounded-lg',
         style: 'background: linear-gradient(135deg, #2a1a3e 0%, #1e163e 50%, #34104a 100%);'
@@ -2743,7 +2781,7 @@ function renderReaderCover(nav) {
                     readerPages.length + ' Page' + (readerPages.length !== 1 ? 's' : '')),
                 m('button', {
                     class: lay.button + ' bg-white/20 hover:bg-white/30 text-white rounded-full backdrop-blur-sm transition-colors',
-                    onclick: function () { nav.goToPage(1); }
+                    onclick: function () { nav.goToPage((nav.coverPage | 0) + 1); }
                 }, [
                     m('span', { class: 'material-symbols-outlined align-middle mr-1 text-base' }, 'arrow_forward'),
                     'Begin'
@@ -2921,6 +2959,10 @@ const ChapBookReader = {
                 renderLoading: renderReaderLoading,
                 renderError: renderReaderError,
                 renderEmpty: renderReaderEmpty,
+                // P10-A 7: the series-art page before the cover, when the chapter has one (readerFrontPages).
+                frontPages: readerFront().length - 1,
+                renderFrontPage: renderReaderSeriesArt,
+                frontPageLabel: function () { return 'Series art'; },
                 renderCover: renderReaderCover,
                 renderPage: renderReaderPage,
                 imageUrlFor: chapImageUrl,
@@ -4758,5 +4800,5 @@ export function __setReaderStateForTest(patch) {
     if ('readerPages' in patch) readerPages = Array.isArray(patch.readerPages) ? patch.readerPages : [];
     if ('readerCovers' in patch) readerCovers = patch.readerCovers || null;
 }
-export { renderReaderCover as __renderReaderCoverForTest, readerCoverImageUrl as __readerCoverImageUrlForTest };
+export { renderReaderCover as __renderReaderCoverForTest, readerCoverImageUrl as __readerCoverImageUrlForTest, renderReaderSeriesArt as __renderReaderSeriesArtForTest, readerFront as __readerFrontForTest };
 export default ChapBookFeature;
