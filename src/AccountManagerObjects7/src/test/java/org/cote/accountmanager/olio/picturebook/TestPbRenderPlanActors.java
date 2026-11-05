@@ -37,6 +37,7 @@ import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
+import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
 import org.cote.accountmanager.olio.illustration.StrategySelector;
@@ -66,6 +67,7 @@ import org.cote.accountmanager.schema.type.PbLocationKindEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
 import org.cote.accountmanager.schema.type.PbStyleScopeEnumType;
@@ -476,6 +478,92 @@ public class TestPbRenderPlanActors extends BaseTest {
 		}
 	}
 
+	/**
+	 * 2026-11-05: the preset's step count must follow the family of the pick that renders BASE. The scaffold takes it
+	 * from the LOCATION pick, which is right for TEXT_ONLY but wrong for DIRECT_REFERENCE, whose BASE renders with the
+	 * SCENE_DIRECT pick: a live cover of blodjade-doc (LOCATION = SDXL, SCENE_DIRECT = flux2Klein_9b, three referenced
+	 * actors) was sent with the SDXL 20 steps and hit the 20-minute read timeout (UNREACHABLE). Mixed-family style here:
+	 * SDXL for portrait / location / inpaint, FLUX.2 for sceneDirect, on one seeded inventory.
+	 */
+	@Test
+	public void case07_baseStepsFollowTheBasePickFamily() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = newBook(u, "g");
+		BaseRecord style = null;
+		String mixedServer = "http://p47g-mixed.invalid:1";
+		try {
+			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+			BookContext bctx = bookContext(u, bk);
+			BaseRecord popGroup = bctx.getGroup(OlioFieldNames.FIELD_POPULATION);
+			String popPath = bctx.getGroupPath(OlioFieldNames.FIELD_POPULATION);
+			BaseRecord refScene = addScene(u, bk, 0, "Referenced", SETTING, null, null);
+			BaseRecord textScene = addScene(u, bk, 1, "Text only", SETTING, null, null);
+			String[] refOids = new String[2];
+			for(int i = 0; i < 2; i++) {
+				refOids[i] = createCharPersonIn(u, popGroup, popPath, CAST[i] + " " + shortId());
+				BaseRecord cp = readChar(u, refOids[i]);
+				giveNarrative(u, cp, SUPP_PHYS, null);
+				enrol(u, refScene, cp);
+			}
+			String textOid = createCharPersonIn(u, popGroup, popPath, CAST[2] + " " + shortId());
+			BaseRecord textCp = readChar(u, textOid);
+			giveNarrative(u, textCp, HERO_PHYS, null);
+			enrol(u, textScene, textCp);
+
+			BaseRecord book = PbBookUtil.readBook(u, oidOf(bk), orgId);
+			for(int i = 0; i < 2; i++) {
+				approvedPortraitFor(u, book, slug, refOids[i], 0x405060 + i * 0x101010);
+			}
+			assertTrue("referenced scene composed", PbComposeUtil.composeMigrated(u, book, refScene, false).isWritten());
+			assertTrue("text scene composed", PbComposeUtil.composeMigrated(u, book, textScene, false).isWritten());
+
+			seedInventory(mixedServer, List.of(SDXL_MODEL, FLUX2_MODEL));
+			Map<String, String> pins = new LinkedHashMap<>();
+			pins.put(ModelTaskKeys.key(PbModelTaskEnumType.PORTRAIT), SDXL_MODEL);
+			pins.put(ModelTaskKeys.key(PbModelTaskEnumType.LOCATION), SDXL_MODEL);
+			pins.put(ModelTaskKeys.key(PbModelTaskEnumType.INPAINT), SDXL_MODEL);
+			pins.put(ModelTaskKeys.key(PbModelTaskEnumType.SCENE_DIRECT), FLUX2_MODEL);
+			style = pinBookStyle(u, bk, "mixed", pins);
+			book = PbBookUtil.readBook(u, oidOf(bk), orgId);
+
+			RenderPlan ref = PbRenderPlanUtil.buildScenePlan(u, book, PbBookUtil.readScene(u, oidOf(refScene), orgId), PlanOptions.NONE, SDAPIEnumType.SWARM, mixedServer);
+			RenderPlan txt = PbRenderPlanUtil.buildScenePlan(u, book, PbBookUtil.readScene(u, oidOf(textScene), orgId), PlanOptions.NONE, SDAPIEnumType.SWARM, mixedServer);
+			log("referenced: strategy=" + ref.getStrategy().getName() + " base=" + ref.pickForStage(RenderPlan.STAGE_BASE).getModel() + " preset=" + ref.getPreset().getPreset() + " steps=" + ref.getPreset().getSteps());
+			log("text-only:  strategy=" + txt.getStrategy().getName() + " base=" + txt.pickForStage(RenderPlan.STAGE_BASE).getModel() + " preset=" + txt.getPreset().getPreset() + " steps=" + txt.getPreset().getSteps());
+
+			String stepsMode = QualityPresets.resolve(PbQualityPresetEnumType.valueOf(ref.getPreset().getPreset())).getStepsMode();
+			int flux2Steps = RendererCapabilities.forModel(FLUX2_MODEL).recommendedSteps(stepsMode);
+			int sdxlSteps = RendererCapabilities.forModel(SDXL_MODEL).recommendedSteps(stepsMode);
+			assertTrue("precondition: the two families step differently at " + stepsMode + " (" + flux2Steps + " vs " + sdxlSteps + ")", flux2Steps != sdxlSteps);
+
+			assertEquals("referenced strategy", PbStrategyEnumType.DIRECT_REFERENCE, ref.getStrategy().getName());
+			assertEquals("referenced BASE renders with the SCENE_DIRECT pick", FLUX2_MODEL, ref.pickForStage(RenderPlan.STAGE_BASE).getModel());
+			assertEquals("LOCATION pick is still SDXL", SDXL_MODEL, ref.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.LOCATION)).getModel());
+			assertEquals("referenced BASE steps follow the FLUX.2 family", flux2Steps, ref.getPreset().getSteps());
+
+			assertEquals("text-only strategy", PbStrategyEnumType.TEXT_ONLY, txt.getStrategy().getName());
+			assertEquals("text-only BASE renders with the LOCATION pick", SDXL_MODEL, txt.pickForStage(RenderPlan.STAGE_BASE).getModel());
+			assertEquals("text-only BASE steps stay on the SDXL family", sdxlSteps, txt.getPreset().getSteps());
+			assertEquals("the preset itself is unchanged", txt.getPreset().getPreset(), ref.getPreset().getPreset());
+			assertEquals("variants unchanged", txt.getPreset().getVariants(), ref.getPreset().getVariants());
+
+			log("case07 done");
+		}
+		finally {
+			SwarmModelInventory.invalidate(mixedServer);
+			deleteBook(u, bk);
+			if(style != null) {
+				try {
+					log("cleanup style " + style.get(FieldNames.FIELD_NAME) + ": " + ioContext.getAccessPoint().delete(u, style));
+				}
+				catch(Exception e) {
+					logger.error("cleanup of style failed", e);
+				}
+			}
+		}
+	}
+
 	@Test
 	public void case03_noCompositionYieldsNoActorsAndNoActorDegradation() throws Exception {
 		BaseRecord u = user();
@@ -847,12 +935,18 @@ public class TestPbRenderPlanActors extends BaseTest {
 	 * family. Returns the style for cleanup.
 	 */
 	private BaseRecord pinBookStyle(BaseRecord u, BaseRecord bk, String tag, String model) throws Exception {
-		long orgId = orgOf(u);
 		Map<String, String> pins = new LinkedHashMap<>();
 		for(PbModelTaskEnumType t : new PbModelTaskEnumType[] { PbModelTaskEnumType.PORTRAIT, PbModelTaskEnumType.LOCATION,
 				PbModelTaskEnumType.SCENE_DIRECT, PbModelTaskEnumType.INPAINT }) {
 			pins.put(ModelTaskKeys.key(t), model);
 		}
+		return pinBookStyle(u, bk, tag, pins);
+	}
+
+	/// The same, with an explicit model per task key (ModelTaskKeys.key) - a mixed-family style.
+	private BaseRecord pinBookStyle(BaseRecord u, BaseRecord bk, String tag, Map<String, String> pins) throws Exception {
+		long orgId = orgOf(u);
+		String model = String.valueOf(pins);
 		BaseRecord style = RecordFactory.newInstance(OlioModelNames.MODEL_PB_STYLE);
 		ioContext.getRecordUtil().applyNameGroupOwnership(u, style, "p52-" + tag + "-" + shortId(), STYLE_PATH, orgId);
 		style.set(OlioFieldNames.FIELD_PB_SCOPE, PbStyleScopeEnumType.BOOK.toString());

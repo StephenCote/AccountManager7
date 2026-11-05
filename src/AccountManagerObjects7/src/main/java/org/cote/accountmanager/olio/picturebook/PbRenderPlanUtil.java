@@ -15,6 +15,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.illustration.CanvasResolver;
+import org.cote.accountmanager.olio.llm.ChatSceneRenderUtil;
 import org.cote.accountmanager.olio.illustration.ComfyGraph;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
@@ -385,10 +386,14 @@ public final class PbRenderPlanUtil {
 		final RenderPlan.Builder builder;
 		final RendererCapabilities caps;
 		final RenderPlan.ModelPick inpaintPick;
-		Scaffold(RenderPlan.Builder builder, RendererCapabilities caps, RenderPlan.ModelPick inpaintPick) {
+		/// The resolved quality preset, kept so finish() can re-take the step count from the family of the pick that
+		/// actually renders BASE once the strategy is known (see finish).
+		final QualityPresets.Preset preset;
+		Scaffold(RenderPlan.Builder builder, RendererCapabilities caps, RenderPlan.ModelPick inpaintPick, QualityPresets.Preset preset) {
 			this.builder = builder;
 			this.caps = caps;
 			this.inpaintPick = inpaintPick;
+			this.preset = preset;
 		}
 		boolean inpaintResolved() {
 			return inpaintPick != null && inpaintPick.isResolved();
@@ -461,7 +466,7 @@ public final class PbRenderPlanUtil {
 		for(RenderPlan.Degradation d : degradations) {
 			b.degradation(d);
 		}
-		return new Scaffold(b, strategyCaps, inpaintPick);
+		return new Scaffold(b, strategyCaps, inpaintPick, preset);
 	}
 
 	/// Strategy selection and per-stage compilation, identical for every purpose. The compiler is the
@@ -472,7 +477,12 @@ public final class PbRenderPlanUtil {
 		RenderPlan plan = s.builder.build();
 		List<RenderPlan.Degradation> out = new ArrayList<>();
 		RenderPlan.Strategy strategy = StrategySelector.select(plan, s.caps, false, out);
-		plan = plan.withStrategy(strategy, out);
+		/// The scaffold took the preset's step count from the LOCATION pick's family, which is right only while BASE
+		/// renders with that pick (TEXT_ONLY). DIRECT_REFERENCE / SEQUENTIAL_INPAINT render BASE with the SCENE_DIRECT
+		/// pick, so the count must follow that family: left at the SDXL 20, a FLUX.2 Klein BASE with three references
+		/// ran past the 20-minute read timeout and failed UNREACHABLE (2026-11-05, cover of blodjade-doc). The chat
+		/// path hit and fixed the same shape first (P10-C 3, §6.C 265 i); this is the PB half that entry left open.
+		plan = ChatSceneRenderUtil.withBaseSteps(plan.withStrategy(strategy, out), s.preset);
 
 		out = new ArrayList<>();
 		Map<String, CompiledPrompt> compiled = new LinkedHashMap<>();

@@ -2049,8 +2049,9 @@ public class PbNodeExecutor {
 	/// The family knob mapping that used to live here as {@code flux2Request} (§6.C 239 c / 245 g) is
 	/// {@link FamilyRequest#apply} since P10-A 5: one helper for every send path, capability-driven, with
 	/// the cfg clamp. Steps are still never touched there - on the plan path they are preset-governed (D6):
-	/// a zero-reference BASE takes the preset's count, which already comes from this pick's family
-	/// ({@code PbRenderPlanUtil.scaffold} takes {@code recommendedSteps} from the LOCATION pick), and an
+	/// BASE takes the preset's count, re-taken from the family of the pick that renders BASE once the strategy is
+	/// known ({@code PbRenderPlanUtil.finish} via {@code ChatSceneRenderUtil.withBaseSteps}: the LOCATION pick for
+	/// TEXT_ONLY, the SCENE_DIRECT pick for DIRECT_REFERENCE / SEQUENTIAL_INPAINT - 2026-11-05), and an
 	/// ACTOR_REGION pass takes its steps from the family's inpaint parameters in the compiler. So
 	/// {@code flux2Steps} is not read on the plan path.
 
