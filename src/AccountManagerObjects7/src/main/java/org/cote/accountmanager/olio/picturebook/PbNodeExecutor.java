@@ -832,6 +832,7 @@ public class PbNodeExecutor {
 		BaseRecord preBatch = PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_BASE);
 		String attempt = attemptOf(g);
 
+		PbCastPortraitUtil.importCastPortraits(user, book, g.getWorkflow(), composition);
 		RenderPlan plan = PbRenderPlanUtil.buildCompositionPlan(user, book, composition, node, g.getPlanOptions(),
 			sdu.getApiType(), sdu.getServer());
 		int variants = 1;
@@ -1431,6 +1432,10 @@ public class PbNodeExecutor {
 		if(!isChapBook(g.getBook())) {
 			ensured = PbComposeUtil.ensureComposition(g.getUser(), g.getBook(), scene, g.getCancelToken());
 		}
+		/// Design §5 / §28.2: the cast's existing profile portraits become the approved PORTRAIT revisions the
+		/// planner references. Without this a V3 book that never ran PB1 plans every actor text-only.
+		PbCastPortraitUtil.importSceneCastPortraits(g.getUser(), g.getBook(), g.getWorkflow(), scene,
+			isChapBook(g.getBook()) ? PbCompositionPurposeEnumType.CHAPBOOK_PAGE : PbCompositionPurposeEnumType.SCENE);
 		RenderPlan plan = PbRenderPlanUtil.buildScenePlan(g.getUser(), g.getBook(), scene, node, g.getPlanOptions(),
 			sdu.getApiType(), sdu.getServer());
 		if(ensured != null && ensured.composedNow) {

@@ -377,7 +377,8 @@ describe('renderStyleBody', () => {
         let text = JSON.stringify(body);
         expect(text).toContain('"data-testid":"pb2-style-sd-own"');
         expect(text).toContain('my-sd');
-        expect(text).toContain('"hideFields":["steps"]');
+        /// steps: the quality preset owns them; style: the V3 plan path never applies the config's style (2026-11-05).
+        expect(text).toContain('"hideFields":["steps","style"]');
         expect(findByTestId(body, 'pb2-style-sd-save').attrs.disabled).toBe(true);
         expect(findByTestId(body, 'pb2-style-sd-unlink').attrs.disabled).toBe(false);
         inst.changes = ['steps'];

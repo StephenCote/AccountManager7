@@ -197,6 +197,104 @@ export function taskAvailability(info) {
     return { text: text, unavailable: false, deploymentDefault: dd, models: Array.isArray(d.models) ? d.models : [] };
 }
 
+// ── Style presets ──────────────────────────────────────────────────────
+//
+// The V3 plan path compiles the look ONLY from this style's description / photoreal / exclusions
+// (SdxlCompiler / Flux2Compiler); the SD config's own `style` select is never applied there
+// (PbNodeExecutor NOT_APPLIED_STYLE_CLAUSE), so it is hidden on this page. A preset writes those three
+// fields as ordinary unsaved draft edits - the user sees and can edit them before Save. The vocabulary is
+// the olio.sd.config style list and am7sd.fillStyleDefaults' detail picks; the wording mirrors
+// SDUtil.getSDConfigPrompt without its SD weighting parentheses. The preset name itself is not stored.
+
+export const STYLE_PRESETS = [
+    { value: 'photograph', label: 'Photograph' },
+    { value: 'movie', label: 'Movie still' },
+    { value: 'portrait', label: 'Studio portrait' },
+    { value: 'fashion', label: 'Fashion photography' },
+    { value: 'vintage', label: 'Vintage photograph' },
+    { value: 'selfie', label: 'Selfie' },
+    { value: 'art', label: 'Fine art painting' },
+    { value: 'digitalArt', label: 'Digital art' },
+    { value: 'anime', label: 'Anime' },
+    { value: 'comic', label: 'Comic book' }
+];
+
+const PHOTO_PRESETS = ['photograph', 'movie', 'portrait', 'fashion', 'vintage', 'selfie'];
+export const PRESET_EXCLUSIONS_PHOTO = 'illustration, painting, drawing, cartoon, anime, 3d render, cgi';
+export const PRESET_EXCLUSIONS_ART = 'photograph, photorealistic, photo, realistic skin texture';
+
+/** The description clause for a preset from a detail-filled config ({style, stillCamera, ...}); null for an unknown style. */
+export function presetDescription(cfg) {
+    let c = cfg || {};
+    let v = function (k) { let x = c[k]; return (x == null || String(x).trim() === '' || String(x).toLowerCase() === 'null') ? null : String(x).trim(); };
+    let join = function (parts) { return parts.filter(function (p) { return p; }).join(' '); };
+    switch (c.style) {
+        case 'photograph': return join(['Photograph', v('stillCamera') && 'taken with a ' + v('stillCamera') + ' camera', v('lens') && 'and ' + v('lens') + ' lens',
+            v('film') && 'on ' + v('film') + ' film', v('colorProcess') && 'processed with ' + v('colorProcess'), v('photographer') && 'by ' + v('photographer')]);
+        case 'movie': return join(['Movie still', v('movieCamera') && 'shot on a ' + v('movieCamera'), v('movieFilm') && 'using ' + v('movieFilm') + ' film',
+            v('colorProcess') && 'processed with ' + v('colorProcess'), v('director') && 'by ' + v('director')]);
+        case 'portrait': return join(['Studio portrait', v('portraitLighting') && 'with ' + v('portraitLighting'), v('portraitBackdrop') && 'on a ' + v('portraitBackdrop') + ' backdrop',
+            v('photographer') && 'by ' + v('photographer')]);
+        case 'fashion': return join(['Fashion photography', v('fashionMagazine') && 'for ' + v('fashionMagazine'), v('fashionDecade') && 'in ' + v('fashionDecade') + ' style',
+            v('photographer') && 'by ' + v('photographer')]);
+        case 'vintage': return join(['Vintage photograph', v('vintageDecade') && 'from the ' + v('vintageDecade'), v('vintageProcessing') && 'using ' + v('vintageProcessing'),
+            v('vintageCamera') && 'with a ' + v('vintageCamera')]);
+        case 'selfie': return join(['Selfie', v('selfiePhone') && 'taken with a ' + v('selfiePhone'), v('selfieAngle') && 'at a ' + v('selfieAngle') + ' angle',
+            v('selfieLighting') && 'with ' + v('selfieLighting') + ' lighting']);
+        case 'art': return v('artStyle') || 'Fine art painting';
+        case 'digitalArt': return join([v('digitalMedium') || 'Digital art', v('digitalSoftware') && 'created with ' + v('digitalSoftware'), v('digitalArtist') && 'in the style of ' + v('digitalArtist')]);
+        case 'anime': return join(['Anime illustration', v('animeStudio') && 'in the style of ' + v('animeStudio'), v('animeEra') && 'with ' + v('animeEra') + ' aesthetics']);
+        case 'comic': return join(['Comic book panel', v('comicPublisher') && 'in ' + v('comicPublisher') + ' style', v('comicEra') && 'from the ' + v('comicEra'),
+            v('comicColoring') && 'with ' + v('comicColoring')]);
+        default: return null;
+    }
+}
+
+/** {description, photoreal, exclusions} for a preset from a detail-filled config; null for an unknown style. */
+export function presetFields(cfg) {
+    let description = presetDescription(cfg);
+    if (!description) return null;
+    let photo = PHOTO_PRESETS.indexOf(cfg.style) >= 0;
+    return { description: description, photoreal: photo, exclusions: photo ? PRESET_EXCLUSIONS_PHOTO : PRESET_EXCLUSIONS_ART };
+}
+
+let presetStyle = '';
+
+/** Apply a preset as draft edits: fresh detail picks every call, so re-applying the same preset re-rolls them. */
+export function applyPreset(styleValue, fill) {
+    let cfg = { style: styleValue };
+    let filler = fill || (am7sd && am7sd.fillStyleDefaults);
+    if (filler) filler(cfg);
+    let f = presetFields(cfg);
+    if (!f) return null;
+    presetStyle = styleValue;
+    touch('description', f.description);
+    touch('photoreal', f.photoreal);
+    touch('exclusions', f.exclusions);
+    return f;
+}
+
+function renderPresetField() {
+    let locked = isLocked();
+    return m('div', { class: 'mb-3' }, [
+        m('div', { class: 'flex items-center text-xs font-medium text-gray-600 dark:text-gray-300 mb-1' }, ['Style preset',
+            m('span', { class: 'ml-2 text-[11px] font-normal text-gray-400' }, 'fills Description, Photoreal and Exclusions — edit before saving')]),
+        m('div', { class: 'flex gap-2' }, [
+            m('select', { 'data-testid': 'pb2-style-preset', class: INPUT, disabled: locked, value: presetStyle,
+                onchange: function (e) { if (e.target.value) applyPreset(e.target.value); else presetStyle = ''; } },
+                [m('option', { value: '' }, 'Choose a style…')].concat(STYLE_PRESETS.map(function (p) { return m('option', { value: p.value, selected: p.value === presetStyle }, p.label); }))),
+            m('button', { 'data-testid': 'pb2-style-preset-reroll', class: BTN, disabled: locked || !presetStyle, title: 'Pick new camera / artist / era details for this preset',
+                onclick: function () { applyPreset(presetStyle); } }, 'Re-roll')
+        ])
+    ]);
+}
+
+/** Shown when nothing in the chain gives the book a look: every image's style is then unconstrained. */
+export function missingDescription(st, d) {
+    let v = draftValue(d, st, 'description');
+    return v == null || String(v).trim() === '';
+}
+
 // ── Data ───────────────────────────────────────────────────────────────
 
 export async function loadStyle() {
@@ -571,8 +669,9 @@ function renderSdSection() {
         body = [
             m('div', { 'data-testid': 'pb2-style-sd-own', class: 'text-xs text-gray-600 dark:text-gray-300 mb-2' }, ['This book\'s own: ', m('span', { class: 'font-medium' }, sd.name || sd.oid),
                 m('span', { class: 'text-gray-400 ml-2' }, 'Steps come from the quality preset above.')]),
+            m('div', { 'data-testid': 'pb2-style-sd-style-note', class: 'text-xs text-gray-500 mb-2' }, 'Style is set by the Book Style description above, not by these render settings.'),
             sd.inst ? m('fieldset', { 'data-testid': 'pb2-style-sd-fields', disabled: locked, class: locked ? 'opacity-60' : '' },
-                m(SdConfigPanel, { inst: sd.inst, models: sdModels, loras: sdLoras, hideFields: ['steps'], onChange: function () { m.redraw(); } })) : null,
+                m(SdConfigPanel, { inst: sd.inst, models: sdModels, loras: sdLoras, hideFields: ['steps', 'style'], onChange: function () { m.redraw(); } })) : null,
             m('div', { class: 'flex gap-2 mt-2' }, [
                 m('button', { 'data-testid': 'pb2-style-sd-save', class: BTN, disabled: sd.busy || locked || !sd.inst || !(sd.inst.changes && sd.inst.changes.length), onclick: saveSdConfig }, 'Save render settings'),
                 m('button', { 'data-testid': 'pb2-style-sd-unlink', class: BTN, disabled: sd.busy || locked, title: 'Clear sdConfig on this style (the parent value, if any, applies again)', onclick: unlinkSdConfig }, 'Unlink')
@@ -650,8 +749,11 @@ export function renderStyleBody() {
         locked ? m('div', { 'data-testid': 'pb2-style-locked-banner', class: 'mb-3 text-xs px-3 py-2 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200' },
             'This style is locked — unlock it before editing.') : null,
         renderChain(),
+        missingDescription(style, draft) ? m('div', { 'data-testid': 'pb2-style-no-description', class: 'mb-3 text-xs px-3 py-2 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200' },
+            'No style description: nothing tells the renderer what this book should look like, so every image picks its own look. Choose a style preset or write a description.') : null,
         m('div', { class: 'grid grid-cols-1 md:grid-cols-2 gap-x-6' }, [
             m('div', [
+                renderPresetField(),
                 textField('description', 'Description', 3),
                 textField('exclusions', 'Exclusions (negative)', 2),
                 textField('palette', 'Palette', 1),
@@ -680,6 +782,7 @@ const styleView = {
             style = null;
             error = null;
             draft = {};
+            presetStyle = '';
             book = null;
             taskInfo = {};
             sd = { mode: 'none', oid: null, name: null, fromName: null, inst: null, loading: false, error: null, busy: false };

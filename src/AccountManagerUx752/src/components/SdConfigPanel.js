@@ -240,7 +240,8 @@ function instConfig(inst) {
  *   loras   — optional array of LoRA names
  *   onChange — callback after any field changes
  *   hideFields — optional array of core field names to omit (e.g. ['steps'] where the V3 quality
- *             preset owns the step count and a visible slider would be a second, ignored source)
+ *             preset owns the step count and a visible slider would be a second, ignored source;
+ *             'style' hides the Style select with its per-style detail and custom-prompt fields)
  *   compact — kept for back-compat; layout is identical (single source of truth)
  */
 const SdConfigPanel = {
@@ -266,9 +267,12 @@ const SdConfigPanel = {
             field("Setting", textInput(config, "imageSetting", onChange))
         ]));
 
-        /// Style + Denoising (range with live value in label).
+        /// Style + Denoising (range with live value in label). hideFields 'style' drops the Style select, its
+        /// per-style detail fields and the custom style prompt: the PictureBook V3 plan path never applies the
+        /// config's style (PbNodeExecutor NOT_APPLIED_STYLE_CLAUSE) - the book style's description does.
+        let hideStyle = hidden.has("style");
         sections.push(m("div", { class: "grid grid-cols-2 gap-3" }, [
-            field("Style", selectInput(config, "style", [""].concat(STYLE_OPTIONS), function () {
+            hideStyle ? null : field("Style", selectInput(config, "style", [""].concat(STYLE_OPTIONS), function () {
                 /// Changing the style must repopulate that style's OWN detail fields. Without this the
                 /// entity keeps the previous style's details and has none for the new one, and
                 /// SDUtil.getSDConfigPrompt concatenates the missing values straight in as the literal
@@ -315,12 +319,12 @@ const SdConfigPanel = {
             styleField(config, 'Movie Camera', 'movieCamera', 'movie', onChange),
             styleField(config, 'Movie Film', 'movieFilm', 'movie', onChange)
         ].filter(Boolean);
-        if (styleFields.length) {
+        if (styleFields.length && !hideStyle) {
             sections.push(m("div", { class: "grid grid-cols-2 gap-3" }, styleFields));
         }
 
         /// Custom prompt — only when style=custom.
-        if (config.style === 'custom') {
+        if (config.style === 'custom' && !hideStyle) {
             sections.push(field("Custom Style Prompt", m("textarea", {
                 class: inputClass(),
                 rows: 3,

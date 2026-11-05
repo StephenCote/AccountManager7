@@ -59,10 +59,12 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PbActorRoleEnumType;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
+import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbElementTypeEnumType;
 import org.cote.accountmanager.schema.type.PbImportanceEnumType;
 import org.cote.accountmanager.schema.type.PbLocationKindEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
@@ -376,6 +378,98 @@ public class TestPbRenderPlanActors extends BaseTest {
 			long referenced = (a2.isReferenced() ? 1 : 0);
 			assertEquals("summary after", "1 characters: " + referenced + " referenced, " + (1 - referenced) + " text", planB.actorSummary());
 			log("case02 done (referenced=" + a2.isReferenced() + ")");
+		}
+		finally {
+			deleteBook(u, bk);
+		}
+	}
+
+	/**
+	 * Design §5 / §28.2 (2026-11-05): a V3 book whose characters already carry an {@code identity.profile.portrait}
+	 * but that never ran PB1 has NO {@code portrait@…} nodes, so the planner said "no approved portrait" for every
+	 * actor (measured live on blodjade-doc). {@link PbCastPortraitUtil#importSceneCastPortraits} imports the profile
+	 * portrait as the approved, selected revision 1 of a new PORTRAIT node pointing at the profile's own data.data,
+	 * node DONE_UNVERIFIED; a character with no portrait gets no node; a second call changes nothing.
+	 */
+	@Test
+	public void case06_profilePortraitImportedAsApprovedPortraitNode() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = newBook(u, "f");
+		try {
+			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
+			BookContext bctx = bookContext(u, bk);
+			BaseRecord popGroup = bctx.getGroup(OlioFieldNames.FIELD_POPULATION);
+			String popPath = bctx.getGroupPath(OlioFieldNames.FIELD_POPULATION);
+
+			String heroOid = createCharPersonIn(u, popGroup, popPath, "Jade Orrin " + shortId());
+			String suppOid = createCharPersonIn(u, popGroup, popPath, "Julia Venn " + shortId());
+			BaseRecord hero = readChar(u, heroOid);
+			BaseRecord supp = readChar(u, suppOid);
+			giveNarrative(u, hero, HERO_PHYS, null);
+			giveNarrative(u, supp, SUPP_PHYS, null);
+
+			/// The hero's existing portrait lives only on the profile - exactly the live book's state.
+			String groupPath = PbBookUtil.artifactGroupPath(slug);
+			BaseRecord image = RecordFactory.newInstance(ModelNames.MODEL_DATA);
+			ioContext.getRecordUtil().applyNameGroupOwnership(u, image, "p47f-profile-portrait-" + shortId() + ".png", groupPath, orgId);
+			image.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
+			ByteModelUtil.setValue(image, solidPng(48, 64, 0x884422));
+			BaseRecord portraitData = ioContext.getAccessPoint().create(u, image);
+			assertNotNull("profile portrait data", portraitData);
+			BaseRecord heroFull = readChar(u, heroOid);
+			assertTrue("profile portrait linked", PictureBookUtil.linkPortraitToProfile(u, heroFull, null, readData(u, oidOf(portraitData), orgId)));
+
+			BaseRecord scene = addScene(u, bk, 0, "Side by side", SETTING, null, null);
+			enrol(u, scene, hero);
+			enrol(u, scene, supp);
+			BaseRecord book = PbBookUtil.readBook(u, oidOf(bk), orgId);
+			ComposeResult cr = PbComposeUtil.composeMigrated(u, book, scene, false);
+			assertTrue("MIGRATED composition written: " + cr.failureReason, cr.isWritten());
+			BaseRecord wf = PbGraphUtil.getCreateWorkflow(u, book, PbBookUtil.workflowGroupPath(slug));
+			assertNotNull("workflow", wf);
+			assertNull("precondition: no portrait node for the hero", PbPipelineUtil.findNodeByHandle(u, wf, PbPipelineUtil.portraitHandle(heroOid)));
+
+			BaseRecord freshScene = PbBookUtil.readScene(u, oidOf(scene), orgId);
+			RenderPlan before = PbRenderPlanUtil.buildScenePlan(u, book, freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, DEAD_SERVER);
+			RenderPlan.Actor heroBefore = actorByCharacter(before.getActors(), heroOid);
+			expectOne(before, RenderPlan.Degradation.ACTOR_TEXT_ONLY, heroBefore.getActorId(), heroBefore.getName() + " rendered from description (no approved portrait)");
+			assertNull("before: no portrait reference", heroBefore.getIdentity().getPortraitArtifactId());
+
+			PbCastPortraitUtil.Result r = PbCastPortraitUtil.importSceneCastPortraits(u, book, wf, freshScene, PbCompositionPurposeEnumType.SCENE);
+			log("import: imported=" + r.getImported() + " existing=" + r.getExisting() + " noPortrait=" + r.getNoPortrait() + " failures=" + r.getFailures());
+			assertTrue("no failures: " + r.getFailures(), r.getFailures().isEmpty());
+			assertEquals("hero imported", Arrays.asList(heroOid), r.getImported());
+			assertEquals("supporting has no portrait", Arrays.asList(suppOid), r.getNoPortrait());
+			assertNull("no node for the portrait-less character", PbPipelineUtil.findNodeByHandle(u, wf, PbPipelineUtil.portraitHandle(suppOid)));
+
+			BaseRecord pNode = PbPipelineUtil.findNodeByHandle(u, wf, PbPipelineUtil.portraitHandle(heroOid));
+			assertNotNull("hero portrait node created", pNode);
+			assertEquals("node is PORTRAIT", PbNodeTypeEnumType.PORTRAIT, pNode.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE));
+			assertEquals("node scopeRef is the character", heroOid, pNode.get(OlioFieldNames.FIELD_PB_SCOPE_REF));
+			assertEquals("node DONE_UNVERIFIED", PbNodeStatusEnumType.DONE_UNVERIFIED, pNode.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS));
+			List<BaseRecord> chain = PbArtifactUtil.listChain(u, pNode, PbPipelineUtil.ROLE_PORTRAIT);
+			assertEquals("one portrait revision", 1, chain.size());
+			BaseRecord art = PbArtifactUtil.readArtifact(u, oidOf(chain.get(0)), orgId);
+			assertEquals("imported portrait APPROVED", PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(art));
+			assertEquals("imported portrait selected", Boolean.TRUE, art.get(OlioFieldNames.FIELD_PB_SELECTED));
+			assertEquals("artifact points at the profile's own data.data", oidOf(portraitData), oidOf(art.get(OlioFieldNames.FIELD_PB_DATA)));
+
+			RenderPlan after = PbRenderPlanUtil.buildScenePlan(u, book, freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, DEAD_SERVER);
+			log("after degradations: " + after.getDegradations() + " summary: " + after.actorSummary());
+			RenderPlan.Actor heroAfter = actorByCharacter(after.getActors(), heroOid);
+			assertEquals("hero's identity reference is the imported portrait", oidOf(art), heroAfter.getIdentity().getPortraitArtifactId());
+			assertTrue("hero no longer text-only for want of a portrait: " + after.getDegradations(),
+				after.getDegradations().stream().noneMatch(d -> heroAfter.getActorId().equals(d.getActorId())
+					&& d.getMessage() != null && d.getMessage().contains("no approved portrait")));
+			RenderPlan.Actor suppAfter = actorByCharacter(after.getActors(), suppOid);
+			expectOne(after, RenderPlan.Degradation.ACTOR_TEXT_ONLY, suppAfter.getActorId(), suppAfter.getName() + " rendered from description (no approved portrait)");
+
+			PbCastPortraitUtil.Result again = PbCastPortraitUtil.importSceneCastPortraits(u, book, wf, freshScene, PbCompositionPurposeEnumType.SCENE);
+			assertTrue("second call imports nothing", again.getImported().isEmpty());
+			assertEquals("second call sees the existing chain", Arrays.asList(heroOid), again.getExisting());
+			assertEquals("still one revision", 1, PbArtifactUtil.listChain(u, pNode, PbPipelineUtil.ROLE_PORTRAIT).size());
+			log("case06 done");
 		}
 		finally {
 			deleteBook(u, bk);

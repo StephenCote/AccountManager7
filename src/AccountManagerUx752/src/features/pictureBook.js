@@ -43,7 +43,8 @@ import {
     planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS,
     deriveStageList, runSummaryText, resolvePb2BookObjectId,
     migrateV1Book, normalizeMigration,
-    getCovers, coverPageLayout, readerFrontPages
+    getCovers, coverPageLayout, readerFrontPages,
+    getStyle, normalizeStyle
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
@@ -1586,10 +1587,38 @@ async function pb2ToggleAutoApprove(on) {
 
 // Render dialog on the showGenerationErrorDialog pattern (workflows/pictureBook.js): Dialog.open with a
 // live component body so the auto-approve toggle re-renders in place.
+// Whether the book's EFFECTIVE style carries a description (null = not known yet / could not be read). The V3
+// plan path takes the book's whole look from that text, so without it every scene picks its own style.
+let pb2StyleDescribed = null;
+
+/** True when a normalized style (normalizeStyle) gives the book a look: an effective, non-blank description. */
+export function styleHasDescription(st) {
+    let d = st && st.effective && st.effective.fields ? st.effective.fields.description : null;
+    return d != null && String(d).trim() !== '';
+}
+
+export function __setPb2StyleDescribedForTest(v) { pb2StyleDescribed = v; }
+
+async function pb2LoadStyleDescribed(bookId) {
+    pb2StyleDescribed = null;
+    try {
+        let st = normalizeStyle(await getStyle(bookId));
+        if (bookId !== pb2BookObjectId) return;
+        pb2StyleDescribed = styleHasDescription(st);
+    } catch (e) {
+        pb2StyleDescribed = null;
+    }
+    m.redraw();
+}
+
 const pb2RenderDialogBody = {
     view: function () {
         let n = pb2Pages.length;
         return m('div', { 'data-testid': 'pb2-render-dialog', class: 'space-y-3 text-sm' }, [
+            pb2StyleDescribed === false ? m('div', { 'data-testid': 'pb2-render-no-style', class: 'text-xs px-3 py-2 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200' }, [
+                'This book has no style description, so each image will pick its own look. ',
+                m('button', { 'data-testid': 'pb2-render-no-style-link', class: 'underline', onclick: function () { Dialog.close(); m.route.set('/picture-book/' + pb2BookObjectId + '/style'); } }, 'Set the book style')
+            ]) : null,
             m('p', 'Render every scene whose image is missing or stale. Current and pinned scenes are reused.'),
             m('p', { class: 'text-xs text-gray-500' }, n + ' page' + (n !== 1 ? 's' : '') + ' in this book.'),
             m('label', { class: 'flex items-center gap-2 cursor-pointer' }, [
@@ -1612,6 +1641,7 @@ const pb2RenderDialogBody = {
 
 function pb2OpenRenderDialog() {
     if (!pb2BookObjectId) return;
+    pb2LoadStyleDescribed(pb2BookObjectId);
     Dialog.open({
         title: 'Render Picture Book',
         size: 'sm',

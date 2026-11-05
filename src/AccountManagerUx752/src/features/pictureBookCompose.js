@@ -1409,7 +1409,8 @@ function renderConfigOverride() {
         ]),
         overrideExpanded ? m('div', { class: 'mt-2' }, [
             m('div', { class: 'text-[11px] text-gray-500 mb-1' }, 'Only the fields you change are sent, as a sparse olio.sd.config diff applied between the scene\'s and the node\'s overrides.'),
-            overrideInst ? m(SdConfigPanel, { inst: overrideInst, models: sdModels, loras: sdLoras, onChange: function () { m.redraw(); } }) : m('div', { class: 'text-xs text-gray-500' }, 'Loading…')
+            m('div', { 'data-testid': 'pb-cmp-config-style-note', class: 'text-[11px] text-gray-500 mb-1' }, 'Style is set by the Book Style description, not here.'),
+            overrideInst ? m(SdConfigPanel, { inst: overrideInst, models: sdModels, loras: sdLoras, hideFields: ['style'], onChange: function () { m.redraw(); } }) : m('div', { class: 'text-xs text-gray-500' }, 'Loading…')
         ]) : null
     ]);
 }
