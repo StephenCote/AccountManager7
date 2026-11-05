@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio.illustration;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,6 +42,9 @@ public class SwarmGraphClient {
 	public static final String KEY_SESSION = "session_id";
 	public static final String KEY_MODEL = "model";
 	public static final String KEY_IMAGES = "images";
+	/// Swarm's `Do Not Save` param: the output is not written to the server's output folder or history,
+	/// and the response carries it inline as a data URI instead of a path.
+	public static final String KEY_DO_NOT_SAVE = "donotsave";
 	/// Swarm's node-failure marker: "(Node 7: KSampler)"; the class may carry spaces.
 	static final Pattern NODE_FAILURE = Pattern.compile("\\(Node (\\d+): ([^)]+)\\)");
 
@@ -127,7 +131,15 @@ public class SwarmGraphClient {
 	/// URIs), `comfyworkflowraw` as the compact graph JSON, and `session_id`. Never throws for a backend
 	/// failure - see {@link RawResponse}.
 	public RawResponse generateRaw(ComfyGraph graph, GraphInputs inputs, String model, int images, CancelToken cancel) {
-		Map<String, Object> body = rawBody(graph, inputs, model, images);
+		return generateRaw(graph, inputs, model, images, cancel, false);
+	}
+
+	/// As {@link #generateRaw(ComfyGraph, GraphInputs, String, int, CancelToken)}; with `doNotSave` the
+	/// output is kept out of Swarm's output folder and history, and each entry of
+	/// {@link RawResponse#getImagePaths} is a data URI that {@link #fetchImage} decodes locally. For
+	/// working images nobody should see in the gallery - the visual-QA detection mask.
+	public RawResponse generateRaw(ComfyGraph graph, GraphInputs inputs, String model, int images, CancelToken cancel, boolean doNotSave) {
+		Map<String, Object> body = rawBody(graph, inputs, model, images, doNotSave);
 		long start = System.currentTimeMillis();
 		if(cancel != null && cancel.isCancelled()) {
 			return new RawResponse(null, RendererAdapter.ERROR_CANCELLED, 0L, false);
@@ -156,20 +168,51 @@ public class SwarmGraphClient {
 	/// The raw post body before `session_id`: `model`, `images` (at least 1), the inputs as request keys
 	/// with images as data URIs, and the compact graph under `comfyworkflowraw`.
 	static Map<String, Object> rawBody(ComfyGraph graph, GraphInputs inputs, String model, int images) {
+		return rawBody(graph, inputs, model, images, false);
+	}
+
+	/// The raw post body; `doNotSave` adds {@link #KEY_DO_NOT_SAVE}.
+	static Map<String, Object> rawBody(ComfyGraph graph, GraphInputs inputs, String model, int images, boolean doNotSave) {
 		if(graph == null || inputs == null) {
 			throw new IllegalArgumentException("Graph and inputs are required");
 		}
 		Map<String, Object> body = new LinkedHashMap<>();
 		body.put(KEY_MODEL, model);
 		body.put(KEY_IMAGES, Integer.valueOf(images < 1 ? 1 : images));
+		if(doNotSave) {
+			body.put(KEY_DO_NOT_SAVE, Boolean.TRUE);
+		}
 		body.putAll(inputs.toRequestMap());
 		body.put(ComfyGraph.PARAM_RAW, graph.toJson());
 		return body;
 	}
 
-	/// Bytes of an image the raw post named, by the relative path Swarm returned.
+	/// Bytes of an image the raw post named: the relative path Swarm returned, fetched from the server,
+	/// or - for a `donotsave` post, or a Swarm user with saving disabled - an inline data URI, decoded
+	/// here. Null when a data URI does not decode.
 	public byte[] fetchImage(String relativePath) {
+		if(relativePath != null && relativePath.startsWith("data:")) {
+			return decodeDataUri(relativePath);
+		}
 		return sdu.fetchImageBytes(relativePath);
+	}
+
+	/// The bytes of a base64 `data:` URI, or null when it is not one or does not decode.
+	static byte[] decodeDataUri(String uri) {
+		if(uri == null || !uri.startsWith("data:")) {
+			return null;
+		}
+		int comma = uri.indexOf(',');
+		if(comma < 0 || !uri.substring(0, comma).endsWith(";base64")) {
+			return null;
+		}
+		try {
+			return Base64.getDecoder().decode(uri.substring(comma + 1));
+		}
+		catch(IllegalArgumentException e) {
+			logger.error("Swarm data URI did not decode: " + e.getMessage());
+			return null;
+		}
 	}
 
 	// ─────────────────────────────── backend info ───────────────────────────────

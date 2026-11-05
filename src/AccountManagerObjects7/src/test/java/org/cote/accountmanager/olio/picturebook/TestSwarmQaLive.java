@@ -90,21 +90,24 @@ public class TestSwarmQaLive extends BaseTest {
 
 	@Test(timeout = TIMEOUT_MS)
 	public void t02_twoActorPagePasses() throws Exception {
-		/// Test-side instrumentation: run the same graph once more to keep the mask for inspection.
+		/// Test-side instrumentation: run the same graph once more to keep the mask for inspection. Posted
+		/// donotsave, as the provider does, so the mask never lands in Swarm's output folder or history.
 		GraphInputs inputs = new GraphInputs().image(SwarmQaProvider.INPUT_PAGE, page);
 		long t0 = System.currentTimeMillis();
-		SwarmGraphClient.RawResponse raw = client.generateRaw(SwarmQaProvider.qaGraph(), inputs, model, 1, null);
+		SwarmGraphClient.RawResponse raw = client.generateRaw(SwarmQaProvider.qaGraph(), inputs, model, 1, null, true);
 		long genMs = System.currentTimeMillis() - t0;
 		assertNotNull(raw);
 		assertNull("raw graph accepted: " + raw.getError(), raw.getError());
 		assertEquals(1, raw.getImagePaths().size());
+		assertTrue("a donotsave post is answered inline, not with a saved file's path: " + raw.getImagePaths().get(0).substring(0, Math.min(60, raw.getImagePaths().get(0).length())),
+			raw.getImagePaths().get(0).startsWith("data:image/"));
 		byte[] mask = client.fetchImage(raw.getImagePaths().get(0));
 		assertNotNull(mask);
 		File maskFile = new File(OUT, "t02-mask.png");
 		Files.write(maskFile.toPath(), mask);
 		List<SwarmQaProvider.Face> faces = SwarmQaProvider.faces(mask);
 		assertNotNull("mask decodes", faces);
-		logger.info("[p83] t02 raw graph on " + server + ": " + raw.getImagePaths().get(0) + " in " + genMs + " ms (renderer " + raw.getDurationMs()
+		logger.info("[p83] t02 raw graph on " + server + ": inline " + raw.getImagePaths().get(0).length() + "-char data URI in " + genMs + " ms (renderer " + raw.getDurationMs()
 			+ " ms); mask " + mask.length + " bytes -> " + maskFile + "; faces=" + faces + " (" + faces.size() + ")");
 
 		t0 = System.currentTimeMillis();

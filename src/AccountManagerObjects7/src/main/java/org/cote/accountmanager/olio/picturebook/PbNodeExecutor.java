@@ -978,7 +978,8 @@ public class PbNodeExecutor {
 	 *
 	 * @param artifacts the recorded finals in variant order, fully projected ({@code PbPipelineUtil.recordImage}
 	 *        returns them so); flagged entries are replaced in place
-	 * @return null when the mode is OFF, else what was done
+	 * @return null when the mode is OFF or the chosen provider does not apply to the plan
+	 *         ({@link QaProvider#appliesTo} - the face detector on a figure-less page), else what was done
 	 */
 	static AttemptQa qaAttempt(SceneGraph g, SDUtil sdu, PlannedRender r, List<BaseRecord> artifacts, String sceneLabel) {
 		String mode = PbQaUtil.qaModeOf(r.plan);
@@ -1004,8 +1005,12 @@ public class PbNodeExecutor {
 			logger.warn("Visual QA of " + sceneLabel + " (" + mode + ") skipped: " + why);
 			return qa;
 		}
+		if(!provider.appliesTo(r.plan)) {
+			logger.info("Visual QA of " + sceneLabel + " (" + mode + ") skipped: " + provider.name() + " has nothing to judge on this plan");
+			return null;
+		}
 		qa.provider = provider.name();
-		int count = (QualityPresets.QA_CANONICAL.equals(mode) ? 1 : artifacts.size());
+		int count =(QualityPresets.QA_CANONICAL.equals(mode) ? 1 : artifacts.size());
 		for(int i = 0; i < count && i < artifacts.size() && i < r.variants.size(); i++) {
 			BaseRecord a = artifacts.get(i);
 			PlannedRender.Variant v = r.variants.get(i);

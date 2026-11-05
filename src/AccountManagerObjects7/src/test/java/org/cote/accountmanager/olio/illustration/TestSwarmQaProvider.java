@@ -303,6 +303,20 @@ public class TestSwarmQaProvider {
 	/* ------------------------------------------------------------------------------------------------ */
 
 	@Test
+	public void appliesOnlyToPlansWithAForegroundFigure() {
+		Scripted be = new Scripted(YOLO_INFO, null, null);
+		SwarmQaProvider p = new SwarmQaProvider(be, "http://127.0.0.1:9", "m");
+		assertFalse("no plan", p.appliesTo(null));
+		assertFalse("a figure-less page (ChapBook landscape)", p.appliesTo(plan()));
+		assertFalse("background figures only", p.appliesTo(plan(
+			actor("b1", "Crowd", null, false, RenderPlan.ROLE_CROWD, null),
+			actor("b2", "Passer-by", null, false, RenderPlan.ROLE_BACKGROUND, null))));
+		assertTrue("one foreground figure", p.appliesTo(plan(
+			actor("b1", "Crowd", null, false, RenderPlan.ROLE_CROWD, null),
+			actor("a1", "Left", new RenderPlan.Box(0.05, 0.10, 0.45, 0.85), true, RenderPlan.ROLE_FOREGROUND, null))));
+	}
+
+	@Test
 	public void checkEndToEndOverAScriptedBackend() throws IOException {
 		byte[] page = MaskImage.solid(64, 64, java.awt.Color.GRAY);
 		Scripted be = new Scripted(YOLO_INFO, new SwarmGraphClient.RawResponse(List.of("View/local/raw/mask.png"), null, 1700L, false), realMask());

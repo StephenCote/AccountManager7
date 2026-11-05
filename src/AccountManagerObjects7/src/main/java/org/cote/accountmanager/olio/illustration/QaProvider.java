@@ -25,6 +25,14 @@ public interface QaProvider {
 		return null;
 	}
 
+	/// Whether this provider has anything to judge on {@code plan}. A provider whose checks are all about
+	/// something the plan does not contain (a face detector on a plan with no foreground figures) answers
+	/// false, and the hook then neither calls {@link #check} nor records a report or a degradation - a check
+	/// that cannot apply is not a check that was unavailable.
+	default boolean appliesTo(RenderPlan plan) {
+		return true;
+	}
+
 	/// Judge {@code imageBytes} (PNG) against {@code plan}. Must not throw for an ordinary backend failure -
 	/// return {@link QaReport#unavailable} with the reason instead. Anything it does throw is caught by the
 	/// hook and recorded as a {@code QA_UNAVAILABLE} degradation, never as a failed render (220 g).

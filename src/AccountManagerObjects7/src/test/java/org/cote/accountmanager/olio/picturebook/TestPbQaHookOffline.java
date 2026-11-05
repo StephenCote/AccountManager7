@@ -209,6 +209,9 @@ public class TestPbQaHookOffline extends BaseTest {
 		final List<RenderPlan> plans = new ArrayList<>();
 		RuntimeException boom;
 		int probes;
+		/// what appliesTo answers, and how often it was asked
+		boolean applies = true;
+		int appliesAsked;
 
 		ScriptedQa verdicts(QaReport... reports) {
 			for(QaReport r : reports) {
@@ -226,6 +229,12 @@ public class TestPbQaHookOffline extends BaseTest {
 		public boolean isAvailable() {
 			probes++;
 			return true;
+		}
+
+		@Override
+		public boolean appliesTo(RenderPlan plan) {
+			appliesAsked++;
+			return applies;
 		}
 
 		@Override
@@ -910,6 +919,41 @@ public class TestPbQaHookOffline extends BaseTest {
 			assertEquals(2, bases.size());
 			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(bases.get(0)));
 			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(bases.get(1)));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// The chosen provider has nothing to judge on the plan (the face detector on a figure-less ChapBook page):
+	/// no check, no report, no degradation - not QA_UNAVAILABLE, which would mark every landscape degraded.
+	@Test
+	public void providerThatDoesNotApplyIsNotRun() throws Exception {
+		logger.info("providerThatDoesNotApplyIsNotRun");
+		Fixture f = null;
+		try {
+			f = chapBookFixture("p84na");
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(solid(180, 200, 230), 8801, 800));
+			ScriptedQa qa = new ScriptedQa().verdicts(failReport());
+			qa.applies = false;
+			QaBackend backend = backend(adapter, qa);
+
+			Map<String, Object> out = run(f, backend, PbQualityPresetEnumType.STANDARD);
+			assertEquals(1, adapter.requests.size());
+			assertEquals("the provider is chosen once", 1, backend.selections);
+			assertEquals("and asked whether it applies", 1, qa.appliesAsked);
+			assertTrue("nothing judged", qa.judged.isEmpty());
+			assertNull("no qaMode: no QA ran", out.get(PbNodeExecutor.KEY_QA_MODE));
+			List<Map<String, Object>> vs = variants(out, 1);
+			assertNull("no qa on the page", vs.get(0).get(PbNodeExecutor.KEY_VARIANT_QA));
+			assertNoDegradation(out, RenderPlan.Degradation.QA_FAIL);
+			assertNoDegradation(out, RenderPlan.Degradation.QA_WARN);
+			assertNoDegradation(out, RenderPlan.Degradation.QA_UNAVAILABLE);
+			assertEquals("auto-approved: " + out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED), Boolean.TRUE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			assertTrue("no qa artifacts", qaArtifacts(f).isEmpty());
+			List<BaseRecord> pages = artifactsByVariant(f, PbPipelineUtil.ROLE_LANDSCAPE);
+			assertEquals(1, pages.size());
+			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(pages.get(0)));
 		}
 		finally {
 			cleanup(f);

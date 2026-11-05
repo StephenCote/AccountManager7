@@ -122,6 +122,24 @@ public class TestGraphRequestShape {
 	}
 
 	@Test
+	public void rawBodyCarriesDoNotSaveOnlyWhenAsked() {
+		WorkflowCompiler.CompiledGraph c = compiled();
+		assertEquals(false, SwarmGraphClient.rawBody(c.getGraph(), c.getInputs(), "m", 1).containsKey(SwarmGraphClient.KEY_DO_NOT_SAVE));
+		assertEquals(false, SwarmGraphClient.rawBody(c.getGraph(), c.getInputs(), "m", 1, false).containsKey(SwarmGraphClient.KEY_DO_NOT_SAVE));
+		assertEquals(Boolean.TRUE, SwarmGraphClient.rawBody(c.getGraph(), c.getInputs(), "m", 1, true).get(SwarmGraphClient.KEY_DO_NOT_SAVE));
+	}
+
+	@Test
+	public void dataUriImagesDecodeLocally() {
+		byte[] png = new byte[] { (byte) 0x89, 'P', 'N', 'G', 1, 2, 3 };
+		String uri = "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(png);
+		org.junit.Assert.assertArrayEquals(png, SwarmGraphClient.decodeDataUri(uri));
+		org.junit.Assert.assertNull("not base64", SwarmGraphClient.decodeDataUri("data:text/plain,hello"));
+		org.junit.Assert.assertNull("bad base64", SwarmGraphClient.decodeDataUri("data:image/png;base64,!!!"));
+		org.junit.Assert.assertNull("a path is not a data URI", SwarmGraphClient.decodeDataUri("View/local/raw/x.png"));
+	}
+
+	@Test
 	public void redactedInputsCarryNoBytes() {
 		WorkflowCompiler.CompiledGraph c = compiled();
 		Map<String, Object> red = c.getInputs().redacted();

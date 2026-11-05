@@ -193,6 +193,22 @@ public final class SwarmQaProvider implements QaProvider {
 		return out;
 	}
 
+	/// Only a plan with at least one foreground actor: every check this provider makes is about people, so
+	/// on a figure-less page (a ChapBook landscape, a LOCATION render) it would only post a detector graph to
+	/// confirm "0 of 0 faces".
+	@Override
+	public boolean appliesTo(RenderPlan plan) {
+		if(plan == null) {
+			return false;
+		}
+		for(RenderPlan.Actor a : plan.getActors()) {
+			if(a != null && a.isForeground()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	@Override
 	public QaReport check(RenderPlan plan, byte[] imageBytes) {
 		long start = System.currentTimeMillis();
@@ -397,7 +413,9 @@ public final class SwarmQaProvider implements QaProvider {
 
 		@Override
 		public SwarmGraphClient.RawResponse generateRaw(ComfyGraph graph, GraphInputs inputs, String model, int images) {
-			return client.generateRaw(graph, inputs, model, images, null);
+			/// donotsave: the mask is a working image, not output - without it every QA check left a
+			/// prompt-less (on a figure-less page, solid black) image in Swarm's output and history.
+			return client.generateRaw(graph, inputs, model, images, null, true);
 		}
 
 		@Override
