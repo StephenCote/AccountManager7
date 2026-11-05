@@ -30,9 +30,16 @@
  *         (c) P2-7 (2026-10-14): the block first reads GET /rest/config/render-path and branches on
  *             `chat`. (a)+(b) describe the v1 (inline composite) product; when the stack is pinned
  *             chat.renderPath=v3 the ONE render goes through the shared illustration service
- *             (ChatSceneRenderUtil): 200 + data.data + a `render` block (renderPath v3, TEXT_ONLY,
- *             compiled prompt naming both characters, model, canvas, planContentHash, degradations,
- *             configNotApplied), the log shows `Stage BASE rendered 1 image(s)` and NO `Scene composite [`.
+ *             (ChatSceneRenderUtil): 200 + data.data + a `render` block (renderPath v3, strategy,
+ *             strategyReason, compiled prompt naming both characters, model, references, canvas,
+ *             planContentHash, degradations, configNotApplied) and NO `Scene composite [` in the log.
+ *             P10-C 3 (2026-11-04): the strategy follows the fixtures' portraits, never assumed. A
+ *             portrait-bearing character is attached as a FLUX.2 reference (DIRECT_REFERENCE, one
+ *             `references` entry per portrait in system->user order, prompt "(the first reference
+ *             image) is Mira", `Stage BASE (graph …) rendered 1 image(s)`, NO ACTOR_TEXT_ONLY); with
+ *             no portraits at all the scene is TEXT_ONLY for "no referenced actors" with an empty
+ *             `references` list. Before this the plan never resolved a SCENE_DIRECT pick and both
+ *             actors rendered from text, which is how the system character came out twice.
  *             A missing `chat` key fails (Service7 predates P2-7). The only skip the v3 case takes is
  *             the honest SD outage: HTTP 503 whose body error contains "Renderer unreachable".
  *       Gated behind E2E_SD_LIVE=1 like item 15.
@@ -549,7 +556,9 @@ function isSdOutage(status, text, hostProbeFailed) {
 
 /// The v3 (shared illustration service, P2-7) contract: 200 + a data.data record + a `render` block
 /// describing the plan, and the BASE stage line in the log with NO composite line.
-async function generateSceneV3(ctx, session, sdConfig, tag, expectTextOnlyFor, hostProbeFailed) {
+/// expectReferenced lists the portrait-bearing fixture actors in plan order (system first) as
+/// {name, actorId, portraitObjectId}; it decides which strategy the render block must report (P10-C 3).
+async function generateSceneV3(ctx, session, sdConfig, tag, expectReferenced, hostProbeFailed) {
     const r = await postScene(ctx, session, sdConfig, tag);
     if (isSdOutage(r.status, r.text, hostProbeFailed)) {
         const outageLines = r.log.split('\n').filter(l => /Could not list models|Renderer unreachable|generateScene\(v3\)/.test(l)).map(l => l.trim());
@@ -570,7 +579,25 @@ async function generateSceneV3(ctx, session, sdConfig, tag, expectTextOnlyFor, h
     expect(render && typeof render === 'object', 'v3 response carries a render block: ' + r.text.slice(0, 300)).toBe(true);
     console.log('[item14-live] ' + tag + ' render=' + JSON.stringify(render));
     expect(render.renderPath).toBe('v3');
-    expect(render.strategy, 'Phase 2 chat scenes are TEXT_ONLY').toBe('TEXT_ONLY');
+    const referenced = expectReferenced.length > 0;
+    /// P10-C 3: a portrait-bearing actor is attached as a FLUX.2 reference, so the strategy is decided
+    /// by the fixtures' portraits. The pre-fix product reported TEXT_ONLY here for every scene (the
+    /// plan never resolved a SCENE_DIRECT pick), which drew both actors from text and produced the
+    /// "system character twice" composites.
+    expect(render.strategy, 'portrait-bearing actors ' + JSON.stringify(expectReferenced.map(a => a.name)) + ' decide the strategy')
+        .toBe(referenced ? 'DIRECT_REFERENCE' : 'TEXT_ONLY');
+    expect(typeof render.strategyReason === 'string' && render.strategyReason.length > 0, 'strategyReason is non-empty').toBe(true);
+    if (!referenced) expect(render.strategyReason).toBe('TEXT_ONLY: no referenced actors');
+    expect(Array.isArray(render.references), 'references is an array').toBe(true);
+    expect(render.references.length, 'one reference per portrait-bearing actor').toBe(expectReferenced.length);
+    expectReferenced.forEach((a, i) => {
+        const ref = render.references[i];
+        expect(ref.name, 'reference slot ' + i + ' is named by plan order').toBe('actor' + String.fromCharCode(97 + i));
+        expect(ref.actorId, 'reference slot ' + i + ' is ' + a.name).toBe(a.actorId);
+        expect(ref.portraitObjectId, 'reference slot ' + i + ' carries ' + a.name + "'s portrait").toBe(a.portraitObjectId);
+        expect(render.compiledPrompt, a.name + ' is tied to reference image ' + (i + 1) + ' in the prompt')
+            .toContain('(the ' + ['first', 'second'][i] + ' reference image) is ' + a.name);
+    });
     expect(typeof render.compiledPrompt === 'string' && render.compiledPrompt.length > 0, 'compiledPrompt is non-empty').toBe(true);
     expect(render.compiledPrompt, 'the system character is named in the compiled prompt').toContain('Mira');
     expect(render.compiledPrompt, 'the user character is named in the compiled prompt').toContain('Theo');
@@ -585,28 +612,35 @@ async function generateSceneV3(ctx, session, sdConfig, tag, expectTextOnlyFor, h
     expect(Array.isArray(render.degradations), 'degradations is an array').toBe(true);
     expect(Array.isArray(render.configNotApplied), 'configNotApplied is an array').toBe(true);
 
-    /// ACTOR_TEXT_ONLY is reported once per PORTRAIT-BEARING actor. expectTextOnlyFor is computed from
-    /// the fixture records (both SceneE2E persons carried a portrait on 2026-10-14), never assumed.
+    /// ACTOR_TEXT_ONLY is reported for a portrait-bearing actor that could NOT be attached as a
+    /// reference. Every portrait-bearing fixture is attached above, and an actor without a portrait
+    /// is never a degradation, so the entry must be absent on both branches (P2-7 expected one per
+    /// portrait here; P10-C 3 made that the defect, not the contract).
     const textOnly = render.degradations.filter(d => typeof d === 'string' && d.startsWith('ACTOR_TEXT_ONLY: '));
-    console.log('[item14-live] ' + tag + ' ACTOR_TEXT_ONLY entries=' + JSON.stringify(textOnly) + ' expected for=' + JSON.stringify(expectTextOnlyFor));
-    expect(textOnly.length, 'one ACTOR_TEXT_ONLY per portrait-bearing actor (' + JSON.stringify(expectTextOnlyFor) + ')').toBe(expectTextOnlyFor.length);
-    for (const nm of expectTextOnlyFor) {
-        expect(textOnly.some(d => d.includes(nm)), 'ACTOR_TEXT_ONLY names ' + nm).toBe(true);
-    }
+    console.log('[item14-live] ' + tag + ' ACTOR_TEXT_ONLY entries=' + JSON.stringify(textOnly) + ' degradations=' + JSON.stringify(render.degradations));
+    expect(textOnly, 'no actor falls back to text when its portrait is attached as a reference').toEqual([]);
 
     /// The posted config's v1 composite knobs are reported, never silently honoured or dropped; the style
-    /// clause IS applied on this path so STYLE_CLAUSE never appears.
+    /// clause IS applied on this path so STYLE_CLAUSE never appears. Only knobs the body CARRIES are
+    /// reported: the REST deserializer keeps the posted fields only (RecordDeserializer.java:378
+    /// setFields) and the serializer omits numerics equal to the schema default (RecordSerializer.java:193),
+    /// so the randomImageConfig template never carries sceneCreativity=0.65 and an absent knob is nothing
+    /// to report. P2-9 asserted SCENE_CREATIVITY as "materialised to the schema default" but never reached
+    /// this line live (every run skipped on the .39 outage); the caller posts the knob explicitly below.
     const codes = render.configNotApplied.map(s => String(s).split(':')[0]);
     expect(codes, 'skipLandscape=true posted -> SKIP_LANDSCAPE reported').toContain('SKIP_LANDSCAPE');
-    expect(codes, 'compositeMode materialised to the schema default -> COMPOSITE_MODE reported').toContain('COMPOSITE_MODE');
-    expect(codes, 'sceneCreativity materialised to the schema default -> SCENE_CREATIVITY reported').toContain('SCENE_CREATIVITY');
+    expect(codes, 'compositeMode=classic posted -> COMPOSITE_MODE reported').toContain('COMPOSITE_MODE');
+    expect(codes, 'sceneCreativity=0.55 posted -> SCENE_CREATIVITY reported').toContain('SCENE_CREATIVITY');
     expect(codes, 'hires=false posted -> no HIRES entry').not.toContain('HIRES');
     expect(codes, 'the style clause is applied on the plan path').not.toContain('STYLE_CLAUSE');
 
-    /// Server side: one BASE stage through the renderer adapter; no v1 composite.
-    const stageLine = r.log.split('\n').find(l => l.includes('Stage BASE rendered 1 image(s)'));
-    console.log('[item14-live] ' + tag + ' ' + (stageLine ? stageLine.trim() : 'NO "Stage BASE rendered 1 image(s)" line found'));
-    expect(stageLine, 'the illustration service rendered the BASE stage').toBeTruthy();
+    /// Server side: one BASE stage through the renderer adapter; no v1 composite. A reference render
+    /// goes through the compiled graph (SwarmRendererAdapter.executeGraph logs the graph hash), a
+    /// text-only one through the plain generate call.
+    const stagePattern = referenced ? /Stage BASE \(graph [^)]+\) rendered 1 image\(s\)/ : /Stage BASE rendered 1 image\(s\)/;
+    const stageLine = r.log.split('\n').find(l => stagePattern.test(l));
+    console.log('[item14-live] ' + tag + ' ' + (stageLine ? stageLine.trim() : 'NO ' + stagePattern + ' line found'));
+    expect(stageLine, 'the illustration service rendered the BASE stage' + (referenced ? ' through the compiled reference graph' : '')).toBeTruthy();
     expect(r.compositeLine, 'no v1 composite ran on the v3 path').toBeFalsy();
     expect(r.log, 'no v1 composite ran on the v3 path').not.toContain('Scene composite [');
     return { image, render, raw: png.raw, dims: png.dims, log: r.log, sceneDescLine: r.sceneDescLine, durationMs: r.durationMs };
@@ -625,9 +659,9 @@ async function readRenderPath(ctx) {
     return body;
 }
 
-/// Whether a charPerson carries a portrait (profile.portrait), which is what makes its plan actor
-/// `referenced` and earns an ACTOR_TEXT_ONLY degradation on the Phase 2 text-only path.
-async function hasPortrait(ctx, charRec, organizationId) {
+/// The objectId of a charPerson's portrait (profile.portrait), or null. A portrait is what makes the
+/// plan actor `referenced`, and since P10-C 3 what the chat scene attaches as a FLUX.2 reference image.
+async function portraitOf(ctx, charRec, organizationId) {
     const resp = await ctx.post(REST + '/model/search', {
         data: {
             schema: 'io.query', type: 'olio.charPerson',
@@ -643,9 +677,9 @@ async function hasPortrait(ctx, charRec, organizationId) {
     const found = (await resp.json()).results || [];
     const rec = found.length ? found[0] : null;
     const portrait = rec && rec.profile && rec.profile.portrait;
-    const has = !!(portrait && (portrait.id || portrait.objectId));
-    console.log('[item14-live] ' + charRec.name + ' portrait=' + (has ? (portrait.objectId || portrait.id) : 'none'));
-    return has;
+    const oid = portrait && portrait.objectId ? portrait.objectId : null;
+    console.log('[item14-live] ' + charRec.name + ' portrait=' + (oid || 'none'));
+    return oid;
 }
 
 /// The SD server the stack's /System `sd` connection points at (.39 on the test stack). The shared user
@@ -780,19 +814,28 @@ test.describe('generateScene live composite modes (item 14 live)', () => {
             template.height = 512;
             template.seed = -1;
             template.skipLandscape = true;
+            /// A v1 knob the body carries (the template omits it: equal to the schema default, see generateSceneV3);
+            /// v1 classic applies it as the merge creativity, v3 reports it as SCENE_CREATIVITY.
+            template.sceneCreativity = 0.55;
 
             if (chatPath === 'v3') {
                 /// (c) chat.renderPath=v3 (P2-7): the scene renders through the shared illustration service
-                /// as one text-only BASE stage; the v1 composite pipeline must not run. The posted
-                /// compositeMode is still validated (item 14) but only reported in configNotApplied here.
-                /// ACTOR_TEXT_ONLY is expected only for portrait-bearing actors - computed from the
-                /// fixture records, not assumed.
-                const expectTextOnlyFor = [];
-                if (await hasPortrait(ctx, sysChar, orgId)) expectTextOnlyFor.push('Mira');
-                if (await hasPortrait(ctx, usrChar, orgId)) expectTextOnlyFor.push('Theo');
-                console.log('[item14-live] v3: portrait-bearing fixtures=' + JSON.stringify(expectTextOnlyFor)
-                    + (expectTextOnlyFor.length ? '' : ' (none: the fixtures carry no portraits, so ACTOR_TEXT_ONLY must be absent)'));
-                const v3 = await generateSceneV3(ctx, session, Object.assign({}, template, { compositeMode: 'classic' }), 'v3', expectTextOnlyFor, swarmHostProbeFailed);
+                /// as one BASE stage; the v1 composite pipeline must not run. The posted compositeMode is
+                /// still validated (item 14) but only reported in configNotApplied here. P10-C 3: each
+                /// portrait-bearing actor is attached as a reference image (DIRECT_REFERENCE); the
+                /// expectation is computed from the fixture records (both SceneE2E persons carry a
+                /// distinct "Photo Op" portrait on am7test since 2026-10-14), never assumed.
+                const expectReferenced = [];
+                const miraPortrait = await portraitOf(ctx, sysChar, orgId);
+                if (miraPortrait) expectReferenced.push({ name: 'Mira', actorId: sysChar.objectId, portraitObjectId: miraPortrait });
+                const theoPortrait = await portraitOf(ctx, usrChar, orgId);
+                if (theoPortrait) expectReferenced.push({ name: 'Theo', actorId: usrChar.objectId, portraitObjectId: theoPortrait });
+                if (miraPortrait && theoPortrait) {
+                    expect(miraPortrait, 'the two fixtures carry DISTINCT portraits (the composite must show two people)').not.toBe(theoPortrait);
+                }
+                console.log('[item14-live] v3: portrait-bearing fixtures=' + JSON.stringify(expectReferenced)
+                    + (expectReferenced.length ? ' -> DIRECT_REFERENCE' : ' (none: TEXT_ONLY for no referenced actors)'));
+                const v3 = await generateSceneV3(ctx, session, Object.assign({}, template, { compositeMode: 'classic' }), 'v3', expectReferenced, swarmHostProbeFailed);
                 expect(v3.sceneDescLine, 'scene description was produced').toBeTruthy();
                 expect(v3.sceneDescLine, 'scene description came from the LLM, not the no-history fallback')
                     .not.toContain('two people facing each other');

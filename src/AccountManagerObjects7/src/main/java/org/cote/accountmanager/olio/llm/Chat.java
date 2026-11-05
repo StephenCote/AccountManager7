@@ -2272,9 +2272,12 @@ public class Chat {
 			}
 		}
 
-		/// Step 4b: Load portrait bytes for canvas compositing
-		byte[] sysPortraitBytes = getPortraitBytes(systemChar);
-		byte[] usrPortraitBytes = getPortraitBytes(userChar);
+		/// Step 4b: Load the portraits — the bytes feed the renderer as reference images and the
+		/// portrait record's objectId is the reference's provenance (RenderPlan.Identity.portraitArtifactId).
+		BaseRecord sysPortrait = getPortrait(systemChar);
+		BaseRecord usrPortrait = getPortrait(userChar);
+		byte[] sysPortraitBytes = getPortraitBytes(systemChar, sysPortrait);
+		byte[] usrPortraitBytes = getPortraitBytes(userChar, usrPortrait);
 
 		/// Step 5: Build negative prompt
 		String negPrompt = "text, watermark, signature, blurry, bad anatomy, extra limbs, deformed, disfigured, duplicate, error";
@@ -2286,6 +2289,8 @@ public class Chat {
 		result.negativePrompt = negPrompt;
 		result.sysPortraitBytes = sysPortraitBytes;
 		result.usrPortraitBytes = usrPortraitBytes;
+		result.sysPortraitObjectId = (sysPortraitBytes != null && sysPortrait != null ? sysPortrait.get(FieldNames.FIELD_OBJECT_ID) : null);
+		result.usrPortraitObjectId = (usrPortraitBytes != null && usrPortrait != null ? usrPortrait.get(FieldNames.FIELD_OBJECT_ID) : null);
 		result.label = systemChar.get("firstName") + " and " + userChar.get("firstName");
 		result.sysCharDesc = sysDesc;
 		result.usrCharDesc = usrDesc;
@@ -2371,10 +2376,9 @@ public class Chat {
 		return null;
 	}
 
-	/// Load portrait image bytes from a character's profile.portrait field.
-	/// The FULL_PLAN_FILTER excludes FIELD_BYTE_STORE, so portrait binary data
-	/// is never present after getFullRecord(). Explicitly populate each step.
-	private byte[] getPortraitBytes(BaseRecord character) {
+	/// Resolve a character's profile.portrait record (identity fields; the bytes are loaded separately).
+	/// getFullRecord() leaves nested foreign refs as stubs, so populate each step explicitly.
+	private BaseRecord getPortrait(BaseRecord character) {
 		try {
 			BaseRecord profile = character.get("profile");
 			if (profile == null) {
@@ -2388,13 +2392,23 @@ public class Chat {
 				IOSystem.getActiveContext().getReader().populate(profile, new String[] {"portrait"});
 				portrait = profile.get("portrait");
 			}
-			if (portrait == null) return null;
+			return portrait;
+		} catch (Exception e) {
+			logger.debug("Could not resolve portrait for " + character.get("firstName") + ": " + e.getMessage());
+		}
+		return null;
+	}
 
-			byte[] bytes = portrait.get(FieldNames.FIELD_BYTE_STORE);
-			if (bytes == null || bytes.length == 0) {
+	/// Load the portrait's image bytes. The FULL_PLAN_FILTER excludes FIELD_BYTE_STORE, so the
+	/// binary is never present after getFullRecord(): populate it, then read through ByteModelUtil
+	/// (byteStore may be compressed/encrypted at rest — a raw field read hands ciphertext to the renderer).
+	private byte[] getPortraitBytes(BaseRecord character, BaseRecord portrait) {
+		if (portrait == null) return null;
+		try {
+			if (!portrait.hasField(FieldNames.FIELD_BYTE_STORE) || portrait.get(FieldNames.FIELD_BYTE_STORE) == null) {
 				IOSystem.getActiveContext().getReader().populate(portrait, new String[] {FieldNames.FIELD_BYTE_STORE});
-				bytes = portrait.get(FieldNames.FIELD_BYTE_STORE);
 			}
+			byte[] bytes = ByteModelUtil.getValue(portrait);
 			if (bytes != null && bytes.length > 0) return bytes;
 		} catch (Exception e) {
 			logger.debug("Could not load portrait for " + character.get("firstName") + ": " + e.getMessage());
@@ -2408,6 +2422,10 @@ public class Chat {
 		public String negativePrompt;
 		public byte[] sysPortraitBytes;
 		public byte[] usrPortraitBytes;
+		/// objectId of the data.data portrait record each byte array came from (null when no portrait);
+		/// the v3 render path records it as the reference image's provenance.
+		public String sysPortraitObjectId;
+		public String usrPortraitObjectId;
 		public String label;
 		/// Individual components for Kontext pipeline (Option C stitch-and-prompt)
 		public String sysCharDesc;

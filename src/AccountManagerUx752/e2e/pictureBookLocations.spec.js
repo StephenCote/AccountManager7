@@ -878,6 +878,12 @@ test.describe('location library Ux (default tier)', () => {
         expect(lighthouse && lighthouseVariant && uiSceneObjectId, 'fixtures from the previous tests').toBeTruthy();
         await loginAsSharedUser(page);
         await page.goto('/#!/chap-book/review/' + bookObjectId, { timeout: 30000 });
+        // P10-C 4: the review is master/detail — select the seeded page (scene 201 sorts last when the
+        // gated tiers left their pages in the book) so its card, and the chip on it, is the one shown.
+        const pageItem = page.locator('[data-page-item="' + uiSceneObjectId + '"]');
+        await expect(pageItem).toBeVisible({ timeout: 30000 });
+        await pageItem.click();
+        await expect(pageItem).toHaveAttribute('data-page-selected', '1');
         const chip = page.locator('[data-testid="cb-page-location"][data-scene-oid="' + uiSceneObjectId + '"]');
         await expect(chip).toBeVisible({ timeout: 30000 });
         await expect(chip).toContainText('unlocated');

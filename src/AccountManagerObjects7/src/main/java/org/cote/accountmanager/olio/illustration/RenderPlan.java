@@ -256,6 +256,16 @@ public final class RenderPlan {
 		return b.build();
 	}
 
+	/// Copy with the preset replaced. Used after strategy selection when the pick that renders BASE
+	/// (pickForStage(STAGE_BASE)) belongs to a different family than the pick the preset's step count
+	/// was taken from — a FLUX.2 DIRECT_REFERENCE render stepped with an SDXL step count ran 20 steps
+	/// at ~63 s/step (P10-C 3, §6.C 265).
+	public RenderPlan withPreset(PresetValues preset) {
+		Builder b = toBuilder();
+		b.preset = preset;
+		return b.build();
+	}
+
 	/// Copy with degradations appended that arose outside strategy selection and compilation (P4-4: a
 	/// composition written lazily by the render itself, COMPOSED_OUT_OF_ORDER).
 	public RenderPlan withDegradations(List<Degradation> added) {

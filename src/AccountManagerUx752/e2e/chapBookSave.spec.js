@@ -90,22 +90,41 @@ test.describe('ChapBook Review — explicit Save', () => {
         await loginAsSharedUser(page);
         await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
 
+        // P10-C 4: the review is master/detail — one card at a time, picked from the page list. Before
+        // P10-C 4 this filled cards.nth(0) and cards.nth(1) side by side; now each page is selected in turn
+        // and its unsaved edit must survive switching away (the list flags it) until Save all commits both.
+        const items = page.locator('[data-page-item]');
+        await expect.poll(() => items.count(), { timeout: 20000 }).toBe(before.length);
         const cards = sceneCards(page);
-        await expect.poll(() => cards.count(), { timeout: 20000 }).toBe(before.length);
+        await expect(cards).toHaveCount(1);
+        const item0 = page.locator('[data-page-item="' + oid0 + '"]');
+        const item1 = page.locator('[data-page-item="' + oid1 + '"]');
+        await expect(item0).toHaveAttribute('data-page-selected', '1');
 
         const T0 = 'E2E All Card0 ' + Date.now();
         const T1 = 'E2E All Card1 ' + Date.now();
-        await cards.nth(0).locator('input[type="text"]').first().fill(T0);
-        await cards.nth(1).locator('input[type="text"]').first().fill(T1);
+        await cards.first().locator('input[type="text"]').first().fill(T0);
+        await expect(item0.locator('[data-page-badge="unsaved"]')).toBeVisible();
+        await item1.click();
+        await expect(item1).toHaveAttribute('data-page-selected', '1');
+        await expect(cards.first().locator('input[type="text"]').first()).not.toHaveValue(T0);
+        await cards.first().locator('input[type="text"]').first().fill(T1);
+        await expect(item1.locator('[data-page-badge="unsaved"]')).toBeVisible();
+        // Page 1's edit is still pending in the list after switching away.
+        await expect(item0.locator('[data-page-badge="unsaved"]')).toBeVisible();
 
-        // Two cards are now dirty. Click the book-level Save all.
+        // Two pages are now dirty. Click the book-level Save all.
         const saveAll = page.locator('button[title="Save every page that has unsaved changes"]');
         await expect(saveAll).toBeVisible({ timeout: 10000 });
         await saveAll.click();
 
-        // Both cards clean afterward.
-        await expect(cards.nth(0).locator('button[title="No unsaved changes"]')).toBeVisible({ timeout: 15000 });
-        await expect(cards.nth(1).locator('button[title="No unsaved changes"]')).toBeVisible({ timeout: 15000 });
+        // Both pages clean afterward: the list badges clear, and each card reads "No unsaved changes".
+        await expect(item0.locator('[data-page-badge="unsaved"]')).toHaveCount(0, { timeout: 15000 });
+        await expect(item1.locator('[data-page-badge="unsaved"]')).toHaveCount(0, { timeout: 15000 });
+        await expect(cards.first().locator('button[title="No unsaved changes"]')).toBeVisible({ timeout: 15000 });
+        await item0.click();
+        await expect(cards.first().locator('input[type="text"]').first()).toHaveValue(T0);
+        await expect(cards.first().locator('button[title="No unsaved changes"]')).toBeVisible({ timeout: 15000 });
 
         // Backend: both titles persisted.
         await expect.poll(async () => {

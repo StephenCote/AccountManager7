@@ -769,6 +769,12 @@ let _renderChatConfigResolving = false;
 // default so the queue and settings are immediately visible.
 let configPanelExpanded = true;
 let configSdExpanded = false;
+// P10-C 2: the poem queue inside the panel is its own collapsible sub-section, keyed by the view that
+// mounted the panel. It lists EVERY library poem (200+ rows for a working user), so expanded on the
+// review / read views it pushed the scene cards and the reader thousands of px below the fold right
+// after a create ("after analysis, the edit view is on the bottom"). Expanded only where picking
+// poems is the point (create); the user's toggle is remembered per view for the session.
+let configQueueExpandedByMode = { create: true, review: false, read: false };
 // The panel's DEFAULT chat config — seeds per-page Analyze / Regenerate-prompt and render. Distinct
 // from createChatConfigRef (create-dialog scoped) and renderChatConfigRef (render-dialog scoped).
 // { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
@@ -1941,8 +1947,9 @@ async function doDeleteSelected() {
 // all three views (create / review / read). It carries: (1) design-time settings — theme filter, max
 // lines per page, the SINGLE fixed-page-height toggle, default chat & SD config; (2) the poem queue —
 // full table + add/import/new/remove controls moved out of the library body; (3) the primary actions —
-// Create ChapBook / Render / Export. It also hosts the create / add-poem / note-order / render dialogs
-// (fixed overlays) so those triggers work from every view. Attrs:
+// Create ChapBook / Render / Export, on the panel's HEADER row (P10-C 2) so they stay reachable with the
+// panel collapsed and cost no vertical space below it. It also hosts the create / add-poem / note-order /
+// render dialogs (fixed overlays) so those triggers work from every view. Attrs:
 //   { mode, book, onRender, rendering, onExport, exporting, canExport }
 
 // (1) design-time settings. `book` is the current review/reader book (null on the create/landing view);
@@ -2025,15 +2032,31 @@ function renderConfigDesignSettings(book, bookObjectId) {
 
 // (2) the poem queue — toolbar (add/import/new/remove) + status + selectable, sortable table with
 // per-row Analyze. Moved verbatim out of the old PoemLibrary body; the theme filter now lives in the
-// design settings above and Create ChapBook now lives in the primary actions below.
-function renderConfigPoemQueue() {
+// design settings above and Create ChapBook now lives in the primary actions below. `mode` is the
+// mounting view's (create / review / read) and picks the sub-section's expanded default
+// (configQueueExpandedByMode); the table is a bounded scroll box either way.
+function renderConfigPoemQueue(mode) {
     let list = filteredPoems();
     let allSelected = list.length > 0 && list.every(function (p) { return selectedIds.has(p.objectId); });
+    let queueMode = (mode && Object.prototype.hasOwnProperty.call(configQueueExpandedByMode, mode)) ? mode : 'create';
+    let queueExpanded = configQueueExpandedByMode[queueMode];
     return m('div', { class: 'border-t border-gray-200 dark:border-gray-700 pt-3' }, [
-        m('div', { class: 'flex items-center gap-2 mb-2' }, [
+        // P10-C 2: the heading is the sub-section's toggle (data-testid cb-queue-toggle); the h4 stays
+        // rendered either way so the panel's "Poem queue" anchor is always present.
+        m('button', {
+            'data-testid': 'cb-queue-toggle',
+            'aria-expanded': queueExpanded ? 'true' : 'false',
+            class: 'flex items-center gap-2 mb-2 text-left hover:text-purple-600 dark:hover:text-purple-300',
+            onclick: function () { configQueueExpandedByMode[queueMode] = !queueExpanded; m.redraw(); }
+        }, [
+            m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, queueExpanded ? 'expand_more' : 'chevron_right'),
             m('span', { class: 'material-symbols-outlined text-purple-400', style: 'font-size:18px' }, 'format_list_bulleted'),
-            m('h4', { class: 'text-sm font-semibold dark:text-white' }, 'Poem queue')
+            m('h4', { class: 'text-sm font-semibold dark:text-white' }, 'Poem queue'),
+            m('span', { class: 'text-xs text-gray-500 dark:text-gray-400' },
+                loading ? 'loading…' : (list.length + (themeFilter ? ' of ' + poems.length : '') + ' poem(s)'
+                    + (selectedIds.size > 0 ? ', ' + selectedIds.size + ' selected' : '')))
         ]),
+        !queueExpanded ? null :
         m('div', { class: 'flex flex-wrap items-center gap-2 mb-3' }, [
             m('button', {
                 class: 'px-3 py-1 rounded bg-gray-100 dark:bg-gray-700 text-sm dark:text-white hover:bg-gray-200 dark:hover:bg-gray-600',
@@ -2072,12 +2095,16 @@ function renderConfigPoemQueue() {
                 ' Remove from Queue (' + selectedIds.size + ')'
             ]) : null
         ]),
+        !queueExpanded ? null :
         loading ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-4' }, 'Loading poems...') :
         loadError ? m('div', { class: 'text-sm text-red-500 py-4' }, 'Error: ' + loadError) :
         poems.length === 0 ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-4' }, 'No poems found.') :
-        m('div', { class: 'overflow-x-auto' },
+        // P10-C 2: the table scrolls inside a bounded box instead of growing with the library, so the
+        // content under the panel (My ChapBooks, the reader, the scene cards) stays within reach. The
+        // bound follows the viewport (never under 14rem): ~4.5 rows on a 720 px viewport, ~14 on 1080.
+        m('div', { class: 'overflow-x-auto max-h-[max(14rem,calc(100vh_-_32rem))] overflow-y-auto' },
             m('table', { class: 'w-full text-sm' }, [
-                m('thead', m('tr', { class: 'border-b border-gray-200 dark:border-gray-700' }, [
+                m('thead', { class: 'sticky top-0 bg-gray-50 dark:bg-gray-900' }, m('tr', { class: 'border-b border-gray-200 dark:border-gray-700' }, [
                     m('th', { class: 'px-3 py-2 w-8' },
                         m('input', {
                             type: 'checkbox',
@@ -2159,11 +2186,13 @@ function renderConfigPoemQueue() {
 
 // (3) primary actions — Create ChapBook (when a selection exists) / Render / Export. The Render button
 // keeps its bg-orange-600 class (an E2E hook) and moves off the per-view toolbars into the panel.
+// P10-C 2: rendered on the panel's header row (right of the cb-config-toggle button), not as a body row —
+// visible while the panel is collapsed, and the reader / scene cards below start ~60 px higher.
 function renderConfigActions(attrs) {
     let btns = [];
     if (selectedIds.size > 0) {
         btns.push(m('button', {
-            class: 'px-3 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1',
+            class: 'px-3 py-1 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1',
             disabled: roleWarning,
             onclick: openCreateDialog
         }, [
@@ -2173,7 +2202,7 @@ function renderConfigActions(attrs) {
     }
     if (attrs.onRender) {
         btns.push(m('button', {
-            class: 'px-3 py-1.5 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1',
+            class: 'px-3 py-1 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1',
             disabled: attrs.rendering || roleWarning,
             onclick: attrs.onRender
         }, [
@@ -2183,7 +2212,7 @@ function renderConfigActions(attrs) {
     }
     if (attrs.onExport) {
         btns.push(m('button', {
-            class: 'px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1',
+            class: 'px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 flex items-center gap-1',
             disabled: attrs.exporting || !attrs.canExport,
             onclick: attrs.onExport
         }, [
@@ -2192,7 +2221,7 @@ function renderConfigActions(attrs) {
         ]));
     }
     if (!btns.length) return null;
-    return m('div', { class: 'flex flex-wrap items-center gap-2 border-t border-gray-200 dark:border-gray-700 pt-3' }, btns);
+    return m('div', { class: 'flex flex-wrap items-center justify-end gap-2 shrink-0 py-1 pr-2' }, btns);
 }
 
 // Create ChapBook dialog (extracted so the panel can host it in every view). NON-dismissible by
@@ -2377,20 +2406,24 @@ const ChapBookConfig = {
             'data-testid': 'cb-config-panel',
             class: 'mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40'
         }, [
-            m('button', {
-                'data-testid': 'cb-config-toggle',
-                class: 'w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-semibold dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50 rounded-t-lg',
-                onclick: function () { configPanelExpanded = !configPanelExpanded; m.redraw(); }
-            }, [
-                m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, configPanelExpanded ? 'expand_more' : 'chevron_right'),
-                m('span', { class: 'material-symbols-outlined text-purple-500', style: 'font-size:18px' }, 'tune'),
-                'ChapBook configuration',
-                selectedIds.size > 0 ? m('span', { class: 'ml-2 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs' }, selectedIds.size + ' selected') : null
+            // Header row: the collapse toggle (flex-1) + the primary actions (P10-C 2) — a button cannot
+            // nest buttons, so they are siblings; the actions stay put whether the body is expanded or not.
+            m('div', { class: 'flex items-center gap-2' }, [
+                m('button', {
+                    'data-testid': 'cb-config-toggle',
+                    class: 'flex-1 min-w-0 flex items-center gap-2 px-3 py-2 text-left text-sm font-semibold dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50 rounded-tl-lg',
+                    onclick: function () { configPanelExpanded = !configPanelExpanded; m.redraw(); }
+                }, [
+                    m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, configPanelExpanded ? 'expand_more' : 'chevron_right'),
+                    m('span', { class: 'material-symbols-outlined text-purple-500', style: 'font-size:18px' }, 'tune'),
+                    'ChapBook configuration',
+                    selectedIds.size > 0 ? m('span', { class: 'ml-2 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs' }, selectedIds.size + ' selected') : null
+                ]),
+                renderConfigActions(attrs)
             ]),
             configPanelExpanded ? m('div', { class: 'p-3 space-y-4' }, [
                 renderConfigDesignSettings(book, bookObjectId),
-                renderConfigPoemQueue(),
-                renderConfigActions(attrs)
+                renderConfigPoemQueue(attrs.mode)
             ]) : null,
             // Dialogs (fixed overlays) — hosted here so their triggers work from every view.
             renderNoteOrderDialog(),
@@ -3002,6 +3035,10 @@ const FONT_OPTIONS = [
 let reviewBookObjectId = null;
 let reviewBook = null;
 let reviewScenes = [];
+// P10-C 4: the review is master/detail (the Characters tab's list ↔ detail layout) — one page card at a
+// time, chosen from the page list. The selection is the page's objectId, so it survives a reload; a
+// reload that no longer finds it (Remove) lands on the page that took its index (ensureReviewSelection).
+let reviewSelectedOid = null;
 let reviewLoading = false;
 let reviewError = null;
 let reviewRendering = false;
@@ -3010,6 +3047,32 @@ let reviewExporting = false;   // toolbar Export-as-HTML in-flight flag
 // P9-8 (238 k): the review's cover-art view (GET /{book}/covers, read with the pages); null when unread or
 // the read failed. Only the export reads it.
 let reviewCovers = null;
+
+// P10-C 4: index of the selected page in reviewScenes; -1 when nothing is selected or the page is gone.
+function selectedReviewIndex() {
+    if (!reviewSelectedOid) return -1;
+    for (let i = 0; i < reviewScenes.length; i++) {
+        if (reviewScenes[i].objectId === reviewSelectedOid) return i;
+    }
+    return -1;
+}
+
+// P10-C 4: keep the selection valid after a (re)load. The current page stays selected when it is still
+// present (split, merge-as-survivor, save); otherwise the page now at preferIdx (clamped — so Remove
+// lands on the page that moved up, and removing the last page lands on the new last page); else the
+// first page; null with no pages.
+function ensureReviewSelection(preferIdx) {
+    if (selectedReviewIndex() >= 0) return reviewSelectedOid;
+    if (!reviewScenes.length) { reviewSelectedOid = null; return null; }
+    let idx = (typeof preferIdx === 'number' && preferIdx >= 0) ? Math.min(preferIdx, reviewScenes.length - 1) : 0;
+    reviewSelectedOid = reviewScenes[idx].objectId || null;
+    return reviewSelectedOid;
+}
+
+function selectReviewPage(oid) {
+    reviewSelectedOid = oid || null;
+    m.redraw();
+}
 
 // The review export's cover image: the approved COVER render when the book has one (the same source as the
 // reader's cover page, P9-8 238 k), else page 1's already-resolved preview as before; null with neither.
@@ -3169,14 +3232,18 @@ async function mergeChapBookSceneUp(sceneObjectId) {
     return resp.json();
 }
 
-async function createSceneRecord(sceneData) {
-    let resp = await fetch(applicationPath + '/rest/model/olio.pb.scene', {
+// P10-C 4: split is server-side (ChapBookUtil.splitScene) like merge-up — the scene keeps the first half of
+// its stanza, a NEW scene directly after it takes the second half, and the book is reindexed. The server
+// creates the new page BEFORE truncating this one, so a failed split loses no text. Replaces the client-side
+// create (POST /rest/model/olio.pb.scene — a route that does not exist, so every split 404'd after the page
+// had already been truncated). Returns {split, sceneObjectId: <the NEW scene>}.
+async function splitChapBookScene(sceneObjectId) {
+    let resp = await fetch(cbBase() + '/scene/' + sceneObjectId + '/split', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(sceneData)
+        credentials: 'include'
     });
-    if (!resp.ok) throw new Error('Create scene failed: ' + resp.status);
+    if (!resp.ok) throw new Error('Split scene failed: ' + resp.status);
     return resp.json();
 }
 
@@ -3354,7 +3421,56 @@ async function refreshSceneImage(scene) {
     } catch (_) {}
 }
 
+// P10-C 1: after a re-render that sent NO prompt override, the server may have REPLACED the page's
+// stored prompt (a placeholder recovered through the LLM lands on the scene as the new, unlocked
+// mirror). The render result does not carry the prompt, so the card re-reads the scene's own
+// sdPrompt / promptLocked (fresh, uncached) — otherwise the textarea keeps showing the placeholder
+// under an image that is the poem. Never overwrites an unsaved edit (the 'sdPrompt' dirty mark).
+// Resolves true when the card changed. Exported for the unit test.
+async function refreshScenePrompt(scene) {
+    if (!scene || !scene.objectId) return false;
+    if (scene._dirty && scene._dirty.has('sdPrompt')) return false;
+    let orgId = page && page.user ? page.user.organizationId : null;
+    if (orgId == null) return false;
+    try {
+        let resp = await fetch(applicationPath + '/rest/model/search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                schema: 'io.query',
+                type: 'olio.pb.scene',
+                cache: false,
+                request: ['id', 'objectId', 'sdPrompt', 'promptLocked'],
+                fields: [
+                    { name: 'objectId', comparator: 'EQUALS', value: scene.objectId },
+                    { name: 'organizationId', comparator: 'EQUALS', value: Number(orgId) }
+                ],
+                recordCount: 1
+            })
+        });
+        if (!resp.ok) return false;
+        let body = await resp.json();
+        let rows = Array.isArray(body) ? body : (body && body.results) ? body.results : [];
+        let row = rows.find(function (r) { return r && r.objectId === scene.objectId; });
+        if (!row) return false;
+        let sdPrompt = row.sdPrompt || '';
+        let promptLocked = !!row.promptLocked;
+        let changed = (scene.sdPrompt || '') !== sdPrompt || !!scene.promptLocked !== promptLocked;
+        if (changed) {
+            scene.sdPrompt = sdPrompt;
+            scene.promptLocked = promptLocked;
+            m.redraw();
+        }
+        return changed;
+    } catch (_) {
+        return false;
+    }
+}
+
 async function loadReviewBook(bookObjectId) {
+    // P10-C 4: where the selected page sat before this reload — the fallback when it is gone (Remove).
+    let prevIdx = selectedReviewIndex();
     reviewLoading = true;
     reviewError = null;
     reviewScenes = [];
@@ -3429,6 +3545,8 @@ async function loadReviewBook(bookObjectId) {
                 _saving: false
             };
         });
+        // P10-C 4: keep (or re-seat) the page selection now that the list is known.
+        ensureReviewSelection(prevIdx);
         // Load first scene fully to get groupId (needed for split / new scene creation)
         // and to backfill fields that bookPages may not project (name + style + imageStale).
         if (reviewScenes.length > 0 && reviewScenes[0].objectId) {
@@ -3471,6 +3589,11 @@ async function loadReviewBook(bookObjectId) {
                         s.locationVariant = row.locationVariant;
                     }
                 });
+                // P10-C 1: pages still on the create-time placeholder (the LLM landscape prompt never landed)
+                // render as random landscapes with no per-page signal once they have an image, so say so once
+                // per load — only after the batch-read above, which is where promptLocked comes from.
+                let placeholder = placeholderPromptSummary(reviewScenes);
+                if (placeholder) page.toast('warn', placeholder.message);
             } catch (_) {}
         }
         // Initialise the toolbar's book-level style from the first scene so it reflects current state.
@@ -3833,35 +3956,25 @@ async function applyBookStyle(field, value) {
     m.redraw();
 }
 
-// NOTE: out of scope for this redesign — split still uses the client-side create path (no dedicated
-// endpoint yet) and carries a latent float-into-int sceneIndex bug (`scene.sceneIndex + 0.5` below).
-// Left as-is deliberately; do not "fix" here.
+// Split is one POST (splitChapBookScene) then a reload, like merge: the server splits the SAVED stanza at
+// its line midpoint, so an unsaved stanza edit on the page is saved first (the user is splitting what
+// they see). The page keeps its objectId and stays selected; the new page lands directly after it.
 async function doSplitScene(idx) {
     let scene = reviewScenes[idx];
     if (!scene) return;
-    let text = scene.poemStanza || '';
-    let lines = text.split('\n');
-    let mid = Math.ceil(lines.length / 2);
-    let firstHalf = lines.slice(0, mid).join('\n');
-    let secondHalf = lines.slice(mid).join('\n');
-    if (!secondHalf.trim()) {
+    let lines = (scene.poemStanza || '').split('\n');
+    if (lines.length < 2 || !lines.slice(Math.ceil(lines.length / 2)).join('\n').trim()) {
         page.toast('warn', 'Not enough text to split');
+        return;
+    }
+    if (sceneIsDirty(scene) && !(await saveSceneRecord(scene, true))) {
+        page.toast('error', 'Split cancelled: this page has unsaved changes that could not be saved');
         return;
     }
     scene._saving = true;
     m.redraw();
     try {
-        await patchScene(scene.objectId, { poemStanza: firstHalf });
-        scene.poemStanza = firstHalf;
-        let newScene = {
-            schema: 'olio.pb.scene',
-            name: 'scene-split-' + Date.now(),
-            sceneIndex: scene.sceneIndex + 0.5,
-            poemStanza: secondHalf,
-            title: (scene.title ? scene.title + ' (cont.)' : '')
-        };
-        if (reviewGroupId) newScene.groupId = reviewGroupId;
-        await createSceneRecord(newScene);
+        await splitChapBookScene(scene.objectId);
         page.toast('success', 'Scene split');
         await loadReviewBook(reviewBookObjectId);
     } catch (e) {
@@ -4040,6 +4153,33 @@ function isSceneUnprompted(scene) {
     return p.indexOf('landscape, ') === 0;
 }
 
+// P10-C 1: does this page still carry NO LLM landscape prompt — blank, or the stanza-free "landscape, "
+// placeholder createChapBook stores when the LLM fails — and no user lock? Unlike isSceneUnprompted this
+// does NOT look at the image: a placeholder page that was degrade-rendered HAS an image (a random
+// landscape, nothing from the poem), and that is exactly the page the user needs to be told about.
+// Pure — unit-tested.
+function isScenePlaceholderPrompt(scene) {
+    if (!scene) return false;
+    if (scene.promptLocked) return false;
+    let p = (scene.sdPrompt || '').trim();
+    if (!p) return true;
+    return p.indexOf('landscape, ') === 0;
+}
+
+// P10-C 1: the one-line book-level signal for the review load: null when every page has an LLM prompt
+// (or a user lock), else { count, total, message }. Pure — unit-tested.
+function placeholderPromptSummary(scenes) {
+    let list = Array.isArray(scenes) ? scenes : [];
+    let count = list.filter(isScenePlaceholderPrompt).length;
+    if (!count) return null;
+    return {
+        count: count,
+        total: list.length,
+        message: count + ' of ' + list.length + ' page' + (list.length === 1 ? '' : 's') + ' ' + (count === 1 ? 'has' : 'have')
+            + ' no LLM landscape prompt (the placeholder stored when the LLM could not be reached) — check the chat config, then Regenerate prompt on those pages'
+    };
+}
+
 // Regenerate a single un-prompted scene through the per-scene generate path (the same endpoint the
 // book-level render drives). A chatConfig is resolved first so the LLM can produce a real landscape
 // prompt — the whole point of regenerating a scene that was skipped for want of one. On success the
@@ -4147,12 +4287,26 @@ async function renderPageWithPinConfirm(scene, bookObjectId, runRender) {
 // Landscape-prompt save is folded into the per-card Save (saveSceneRecord PUTs .../scene/{oid}/prompt
 // when 'sdPrompt' is dirty, mirroring the blank-clears / edit-locks behavior). Re-render is separate.
 
-// Landscape prompt: re-render a SINGLE page using the prompt currently shown/edited in its textarea —
-// no need to re-render the whole book. A non-blank prompt is sent as the verbatim sdPrompt (persisted +
-// rendered, no LLM regeneration), so the edit is used for this render even if it was not separately
-// saved first. A blank prompt omits it, so the backend resolves a landscape prompt via the LLM exactly
-// as the book render does — hence a chat config is resolved only in that case. On success the card's
-// preview image is refreshed from the new imageObjectId.
+// P10-C 1: the prompt a per-page re-render sends as its override — the textarea text ONLY when the user
+// edited it on this card since the last save/render (the 'sdPrompt' dirty mark) and it is non-blank;
+// otherwise null, so the backend resolves from what the page already stores. Sending the unedited
+// textarea back used to be read by the server as a human edit: it was persisted as a USER-sourced,
+// LOCKED page prompt — including the stanza-free "landscape, <title>, …" placeholder written when the
+// LLM failed at create time — after which the lock protected the placeholder from recovery for good
+// (a permanently random landscape, with no signal). Pure; exported for the unit test.
+function rerenderPromptOverride(scene) {
+    if (!scene || !scene._dirty || !scene._dirty.has('sdPrompt')) return null;
+    let prompt = (scene.sdPrompt || '').trim();
+    return prompt ? scene.sdPrompt : null;
+}
+
+// Landscape prompt: re-render a SINGLE page — no need to re-render the whole book. An EDITED, non-blank
+// prompt (rerenderPromptOverride) is sent as the verbatim sdPrompt (persisted + rendered, no LLM
+// regeneration), so the edit is used for this render even if it was not separately saved first. An
+// unedited or blank prompt omits it, so the backend renders the stored prompt as it stands (a locked or
+// genuine prompt verbatim; a placeholder recovered via the LLM) exactly as the book render does — hence a
+// chat config is resolved only in that case. On success the card's preview image is refreshed from the
+// new imageObjectId.
 async function doRerenderScene(idx) {
     let scene = reviewScenes[idx];
     if (!scene || !scene.objectId) return;
@@ -4161,22 +4315,28 @@ async function doRerenderScene(idx) {
     scene._saving = true;
     m.redraw();
     try {
-        let prompt = (scene.sdPrompt || '').trim();
-        let chatConfigName = prompt ? null : (effectiveChatConfigName() || await fetchDefaultChatConfigName());
+        let override = rerenderPromptOverride(scene);
+        let chatConfigName = override != null ? null : (effectiveChatConfigName() || await fetchDefaultChatConfigName());
         // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
         let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
         let renderPath = await chapBookRenderPath();
         let result = await renderPageWithPinConfirm(scene, bookObjectId, function () {
-            return renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {}, scene.sdPrompt,
+            return renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {}, override,
                 { renderPath: renderPath, bookObjectId: bookObjectId, sceneConfigOverride: scene.configOverride });
         });
         if (result === null) {
             // Pinned and the user kept it pinned (or the node could not be resolved) — already toasted.
         } else {
             applyPageRenderResult(scene, result);
+            // The server persisted the edited prompt before rendering, so the card is no longer dirty for it.
+            // promptLocked is NOT set here: the server decides whether the text was an edit or an echo.
+            if (override != null && result && result.rendered && scene._dirty) scene._dirty.delete('sdPrompt');
             let signal = sceneLlmSignal(result);
             if (result && result.rendered) {
                 if (result.imageObjectId) await refreshSceneImage(scene);
+                // No override was sent, so the server resolved the prompt itself — and may have recovered a
+                // placeholder into a new stored prompt. Show the prompt the image was actually made from.
+                if (override == null) await refreshScenePrompt(scene);
                 // A degraded render (rendered on the stored prompt because the LLM step was down) still
                 // produced an image, but the user must know it did NOT use a fresh prompt — warn distinctly.
                 if (signal) page.toast(signal.level, signal.message);
@@ -4195,6 +4355,59 @@ async function doRerenderScene(idx) {
     }
     scene._saving = false;
     m.redraw();
+}
+
+// P10-C 4: the review's page list (master pane) — modelled on the Characters tab's list
+// (pictureBookCharacters.js renderCharacterListItem / renderMergeToolbar): one row per page, the
+// selected row highlighted, and the per-page state the user would otherwise have to scroll for
+// (unsaved edits, outdated image, missing prompt, image ready) as badges. Clicking a row makes it
+// the one page the detail pane shows; nothing else happens on click (no save, no load).
+function renderReviewPageListItem(scene, idx) {
+    let oid = scene.objectId;
+    let isSelected = !!oid && oid === reviewSelectedOid;
+    let badges = [];
+    if (scene._saving) badges.push(m('span', { class: 'text-xs text-blue-500' }, 'Saving…'));
+    if (sceneIsDirty(scene)) badges.push(m('span', { class: 'text-xs text-amber-600 dark:text-amber-400', 'data-page-badge': 'unsaved' }, 'unsaved'));
+    if (scene.imageStale && scene.imageObjectId) badges.push(m('span', { class: 'text-xs text-amber-600 dark:text-amber-400', 'data-page-badge': 'image-outdated' }, 'image outdated'));
+    if (isSceneUnprompted(scene)) badges.push(m('span', { class: 'text-xs text-amber-600 dark:text-amber-400', 'data-page-badge': 'needs-prompt' }, 'needs prompt'));
+    if (oid && reviewSceneImageUrls[oid]) badges.push(m('span', { class: 'text-xs text-green-600 dark:text-green-400', 'data-page-badge': 'image-ready' }, 'image ready'));
+    return m('div', {
+        key: oid || idx,
+        class: 'px-3 py-2 rounded cursor-pointer border ' + (isSelected
+            ? 'border-blue-500 bg-blue-50 dark:bg-blue-950'
+            : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'),
+        'data-page-item': oid || '',
+        'data-page-selected': isSelected ? '1' : '0',
+        title: scene.title || ('Page ' + (idx + 1)),
+        onclick: function () { selectReviewPage(oid); }
+    }, [
+        m('div', { class: 'font-medium text-sm' }, 'Page ' + (idx + 1)),
+        scene.title ? m('div', { class: 'text-xs text-gray-500 dark:text-gray-400 truncate' }, scene.title) : null,
+        badges.length ? m('div', { class: 'flex flex-wrap gap-2 mt-1' }, badges) : null
+    ]);
+}
+
+function renderReviewPageList() {
+    return m('div', { class: 'w-56 flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-gray-700 pr-2 overflow-y-auto', 'data-testid': 'cb-page-list' }, [
+        m('div', { class: 'flex items-center justify-between pb-2 mb-1 border-b border-gray-200 dark:border-gray-700' }, [
+            m('span', { class: 'text-xs text-gray-500 uppercase tracking-wide' }, 'Pages'),
+            m('span', { class: 'text-xs text-gray-400 dark:text-gray-500' }, String(reviewScenes.length))
+        ]),
+        m('div', { class: 'flex flex-col gap-1' }, reviewScenes.map(renderReviewPageListItem))
+    ]);
+}
+
+// P10-C 4: master/detail body — the page list on the left, the ONE selected page's card on the right
+// (the same renderSceneCard as before; every page card used to be stacked here). The selection is
+// re-seated on the first page if it points nowhere, so a non-empty book always shows a card.
+function renderReviewBody() {
+    let idx = selectedReviewIndex();
+    if (idx < 0) { ensureReviewSelection(0); idx = selectedReviewIndex(); }
+    return m('div', { class: 'flex gap-4', style: 'min-height: 400px;', 'data-testid': 'cb-review-body' }, [
+        renderReviewPageList(),
+        m('div', { class: 'flex-1 min-w-0 overflow-y-auto', 'data-testid': 'cb-page-detail' },
+            idx >= 0 ? renderSceneCard(reviewScenes[idx], idx) : null)
+    ]);
 }
 
 function renderSceneCard(scene, idx) {
@@ -4521,6 +4734,8 @@ const ChapBookReview = {
         reviewBookObjectId = vnode.attrs.bookObjectId || null;
         reviewBook = null;
         reviewScenes = [];
+        // P10-C 4: a re-entered review starts on page 1 (loadReviewBook seats the selection).
+        reviewSelectedOid = null;
         reviewLoading = false;
         reviewError = null;
         reviewRendering = false;
@@ -4553,7 +4768,8 @@ const ChapBookReview = {
     },
     view: function () {
         let title = (reviewBook && (reviewBook.name || reviewBook.slug)) || 'ChapBook';
-        return m('div', { class: 'p-4 max-w-3xl mx-auto' }, [
+        // P10-C 4: the page list sits beside the card, so the review is wider than the reader (max-w-3xl).
+        return m('div', { class: 'p-4 max-w-6xl mx-auto' }, [
             // Issue 9 / D6: role warning banner (mirrors PoemLibrary / ChapBookReader)
             roleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
                 m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
@@ -4592,9 +4808,9 @@ const ChapBookReview = {
                 canExport: reviewScenes.length > 0
             }),
             m('p', { class: 'text-xs text-gray-400 dark:text-gray-500 mb-4' },
-                'Edit a page, then Save it — or use Save all. Book-style controls below apply to every page. ' +
-                'Use Render to generate images. Merge folds the next page in and flags its image outdated. ' +
-                'Remove deletes a page permanently.'),
+                'Pick a page from the list to edit it, then Save it — or use Save all (unsaved pages are flagged in the list). ' +
+                'Book-style controls below apply to every page. Use Render to generate images. ' +
+                'Merge folds the next page in and flags its image outdated. Remove deletes a page permanently.'),
             // D1/D2: sticky book-level toolbar — shared style defaults (each control fans out to every
             // page and persists on change), a collapsible book-level SD config (same instance as the
             // pre-render dialog), and the book "Save all" action. Only shown when there are pages.
@@ -4729,11 +4945,7 @@ const ChapBookReview = {
                             m('div', { class: 'text-sm text-gray-500 dark:text-gray-400' },
                                 'No pages yet. Create a ChapBook from the Poem Library first.')
                           ])
-                        : m('div', { class: 'space-y-4' },
-                            reviewScenes.map(function (scene, idx) {
-                                return renderSceneCard(scene, idx);
-                            })
-                          )
+                        : renderReviewBody()
             // Issue 8: the pre-render SD config dialog is rendered by the ChapBookConfig panel above.
         ]);
     }
@@ -4774,6 +4986,8 @@ export function __setReviewStateForTest(patch) {
     if ('reviewBookObjectId' in patch) reviewBookObjectId = patch.reviewBookObjectId;
     if ('reviewGroupId' in patch) reviewGroupId = patch.reviewGroupId;
     if ('reviewScenes' in patch) reviewScenes = patch.reviewScenes;
+    // P10-C 4: the master/detail selection (null = let the view seat it on page 1).
+    if ('reviewSelectedOid' in patch) reviewSelectedOid = patch.reviewSelectedOid || null;
     if ('roleWarning' in patch) roleWarning = patch.roleWarning;
     // P9-8: the review export's inputs.
     if ('reviewBook' in patch) reviewBook = patch.reviewBook;
@@ -4793,6 +5007,10 @@ export function __setChatConfigStateForTest(patch) {
     if ('myBooks' in patch) myBooks = Array.isArray(patch.myBooks) ? patch.myBooks : [];
 }
 export { chapBookCarriedChatConfig, effectiveChatConfigRef, exportReviewBook as __exportReviewBookForTest, reviewCoverImageUrl as __reviewCoverImageUrlForTest };
+// Exported for Vitest (P10-C 1): the per-page re-render's override decision and the handler it drives.
+export { rerenderPromptOverride, doRerenderScene as __doRerenderSceneForTest, isScenePlaceholderPrompt, placeholderPromptSummary, refreshScenePrompt };
+// Exported for Vitest (P10-C 4): the review's master/detail selection.
+export { selectReviewPage, selectedReviewIndex, ensureReviewSelection, renderReviewPageList as __renderReviewPageListForTest, doSplitScene as __doSplitSceneForTest };
 // Exported for Vitest (P9-4): seed the reader's module state and render its cover slot without mounting the route.
 export function __setReaderStateForTest(patch) {
     patch = patch || {};

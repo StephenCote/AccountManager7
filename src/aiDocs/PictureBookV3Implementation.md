@@ -44,7 +44,7 @@ bar **two weeks + sign-off**; estimate source **(b) seeded by (a)**.
 | 7 — PictureBook goes V3 | Reported 2026-10-30 (archive P5-P8 §14.1–§14.5, §6.C 214–219): switch, Stage 2 refusals, wizard hand-off, Import, Scenarios A–G + verify checks 1–3; verifier PASS (219 j); open Yours 216 d / e, 217 d / g / h, 218 c–f, 219 d / e / g / h / j; nothing DONE | archive P5-P8 §14.1–§14.5 |
 | 8 — Visual QA | Reported 2026-10-30 (archive P5-P8 §15.1–§15.6, §6.C 220–227): P8-1 … P8-6 built; exit criterion live on `.42` + `.39` (`TestPbQaExitCriterionLive` 3 / 3 run 2, t02 re-run 1 / 1); verifier PASS, 8 follow-ups (227); open Yours 221 a, 222 b / d, 224 b / e, 225 e / g, 226 a / b, 227 f / g / h; nothing DONE | archive P5-P8 §15.1–§15.6 |
 | 9 — Cover & book art | **IN PROGRESS** — plan + start prompt §17 (architect review folded in, §6.C 232); **P9-0 built and run 2026-10-31**: the 212 p canvas fix (28/28) + the §16 usability gate, 14 runs, run 14 = 13/14 (step 7 red on a product defect, 233 d) — §16.1 / §18.1 / §6.C 233; **P9-x** the 233 d picker memo fix built and tested 2026-10-31 on Stephen's "yes, fix" (§18.2 / 234); **P9-1 built and tested 2026-10-31** on his "keep going" (234 d): 221 a + `olio.pb.composition` `series` / `titleSafeBand` + `PbCoverUtil` three modes, `TestPbCoverUtil` 6/6 with AUTO on the remote `.42` (§18.3 / 235); **P9-2 built and tested 2026-11-01**: `SCOPE_COMPOSITION` + `ensurePlanNode` + `buildCompositionPlan` + the executor branch, `TestPbCoverPlanOffline` 6/6, `TestPbCoverRenderLive` 1/1 on `.39` + `.42` VLM, images looked at — the band is not honoured by FLUX.2 (236 i, Yours) (§18.4 / 236); **P9-3 built and tested 2026-11-01**: `coverView` / `createCover` / `requestCoverRender` + the three `/covers` routes, `TestPictureBookCoverRoutes` 11/11 on H2 (§18.5 / 237); **P9-4 built and tested 2026-11-01**: cover mode of the compose board + `pb2-cover-link` + both readers' cover page, `getCover` / `patchCover` / `planCover` routes (14/14 on H2), Vitest 46/46 (full 1581), Playwright `pictureBookV3Cover` 3/3 on Docker with a real `.39` render approved through the UI; the reader's title block vs the band is 238 d (Yours) (§18.6 / 238); **P9-5 built and tested 2026-11-01**: `TestPbCoverExitCriterionLive` 2/2 on `.39` + the remote `.42` — a book cover (POPULATION tier, DIRECT_REFERENCE, explicit approve) and a ChapBook cover (NONE tier, TEXT_ONLY, QA auto-approve) each read back through `coverView`'s `approved` entry, six images looked at; TEXT_ONLY on a FLUX.2 pick renders with the SDXL cfg and the VLM passed the blown-out result (239 c, Yours) (§18.7 / 239); **P9-6 built and tested 2026-11-01**: §16 step 15 "Cover and Art" added (book Auto cover with the carried chat config, ChapBook Manual cover, both approved through the UI, both readers, the ChapBook export compared by bytes), the whole 15-step gate re-run — run 17 = 15/15 on Docker + `.39` + the remote `.42`, step 7 green after P9-x; two of my assertions corrected on the way (240 b / c) (§16.1 / §18.8 / 240); **verifier PASS over P9-5 / P9-6** (241, three LOW citation nits fixed); committed by Stephen as `f4482f2d P3 P9 Initial` (242; gate run 18 15/15 closed 240 e); **P9-9 built and tested 2026-11-01** on 242 b: `pictureBookV3Cover.spec.js` test 4, From-scene → TITLE_PAGE rendered and approved through the UI on `.39`, 4/4 (§18.11 / 243); **P9-8 built and tested 2026-11-01**: `coverPageLayout` (238 d), the carried chat config for ChapBook boards (240 d), the review export's cover (238 k), Vitest full 1595, cover spec 4/4 on the new dist (§18.10 / 244); **P9-7 built and tested 2026-11-01**: FLUX.2 cfg / sampler / scheduler on a zero-reference BASE **and** on the graph path (239 c, both branches of `PbNodeExecutor`), `lastError` host scrub at the node DTOs (237 l), 13 new offline cases green (6 + 6 + 1, §18.9), `TestPbCoverExitCriterionLive` run 4 2/2 on `.39` + the remote `.42` — the graph-path cover went from run 2's dark grainy halo to a clean interior with the three knobs the only change, which is the claim that archive 219 h was this defect and not `.39`'s settings (245 g, Yours) (§18.9 / 245); **verifier PASS-WITH-NITS over P9-7 / P9-8 / P9-9** (246: the DTO-test over-claim fixed by two more assertions, run 2 1/1; the stale §17 band sentence annotated; the scheme-less `scrubHosts` note left as Yours) and **gate run 19 15/15** on the P9-7 jar + the P9-8 dist (§16.1); P9-1 … P9-9 all built and tested, nothing DONE; open Yours 233 d-family, 236 i, 237 j / l, 238 d, 239 c / f, 240 b / d / f, 241 d, 243 b / d, 244 b / c, 245 b / e / g, 246 3 | §18.1–§18.11 |
-| 10 — Removal (PB1, old ChapBook path, Kontext Remove) | **IN PROGRESS** — §19 plan + start prompt drafted 2026-11-01 (§6.C 247); **P10-0 done as a doc pass 2026-11-02** (the grep-proven §19 inventory table + the architect review folded in, §6.C 248 / §20.0: chat key outside the phase with a test-stack / prod drift for Stephen, the node-type enum values outlive P10-1, chat's composite builders survive P10-3, my `chapBook.js:261` mis-rowing fixed); **Stephen's reply 2026-11-02** (249): no prod exists, a Docker build at chat v1 is an issue, delete the excluded PB1-era test classes, P10-1 default stands, "continue implementation"; **P10-A 0 built and tested 2026-11-02**: chat render-path default v3 on every surface with v1 the logged rollback — `TestPbRenderPath` 14/14 (`.42` direct), `TestChatSceneRenderPath` 4/4 (H2), Vitest 6/6, no deploy (§20.1 / 249); **P10-A 1 built and tested 2026-11-02**: `parseLlmJsonArray` no longer latches a bare scene object's nested `characters` array — `unwrapObjectReply` (wrapper → ok=true, bare element → one element + retry), `TestLlmJsonArraySalvage` 21/21, emulator 25/25, no deploy (§20.2 / 250); **P10-A 2 built and tested 2026-11-02**: `bookPageView` reads a scene's RENDER_PLAN `base` first (then `sceneNode`, then `imageObjectId`) so V3-rendered pages count as rendered — `TestPbPageViewRenderPlanBase` 3/3 + the two page-view regressions 15/15, jar installed, no deploy, the live cover-count Playwright waits on the next `am7test` deploy (§20.3 / 251); **P10-A 3 built and tested 2026-11-02**: cover spec test 3's `generated` literal → test 4's `(generated|in_review)` shape (a correction, not a weakening), spec 4/4 on `.39`, images looked at, no deploy (§20.4 / 252); **P10-A 4 built and tested 2026-11-02**: `flex-1` on both readers' roots (`[role=main]` is a flex row), measured filling main; the P10-A 0–2 jar + dist deployed to `am7test`; 251 f closed live; the RenderPlan spec's three stale assertions corrected; RenderPlan 6/6, Cover 4/4, Ux 4/4, PlainPb 4/4 on `.39`, 37 images looked at (§20.5 / 253); **P10-A 5 built and tested 2026-11-02**: `FamilyRequest.apply` is the one family knob mapping at all three request sites, `cfgRange` clamped as `CFG_CLAMPED`, the FLUX.2 default negative on both paths, `flux2Sampler` / `flux2Scheduler` on `olio.sd.config`, the graph-path request record carries the knobs; offline 51/51, live cover run 2 2/2 on `.39` + the remote `.42`, live regress run 2 8/8 after the 236 e / P6-2 stale assertion in `TestPbRenderPlanExecutor` was corrected, 13 images looked at (§20.6 / 254); **P10-A 6 built and tested 2026-11-02**: `AuditUtil.bounded` at `closeAudit` — a 73 KB by-name miss journals beside its neighbour, `TestAuditDescriptionBound` 3/3 (§20.7 / 255); jar deployed to `am7test`; **P10-A 3–6 committed by Stephen as `540f3e8e PB3 P10 Mark`** (256); **P10-A 7 re-scoped** (256 b: `POST /series` has existed since `442e9ad4` — my premise was wrong; the slice is the 237 j visibility rule + H2 / Ux / Playwright SERIES_ART-on-a-chapter coverage) with its start prompt in §19 for a new conversation; **P10-A 7 built and tested 2026-11-03** (§20.8 / §6.C 257–258: the 237 j re-read as the acting user, the first H2 `POST /series` + `/chapter` contract, SERIES_ART on a real chapter in Ux752 with a Playwright `.39` render as the shared user; `TestPbCoverUtil` unrun — `postgres3` down); **Stephen 2026-11-04 (§6.C 260): checks 4 and 5 do not hold, nothing removed; "all these items … BEFORE I do more UAT"; the new-book UAT blocker ("(404) This book has no workflow yet" on Render) → P10-B built and tested 2026-11-04** (§20.9 / 260: the workflow and each scene's RENDER_PLAN terminal created on first use after the gates, the graph built at import, `POST /{book}/graph/build` + the canvas's two actions, `parseParamsExcept` for the `sources` ERROR; Objects7 5/5 with a real `.39` image, H2 9/9, the Playwright user-walk as the shared user, `TestPbCoverUtil` on `postgres3` 6/7 + the ERROR'd method re-run 1/1 — §20.9); P10-1 … P10-6 gated on design §28.1 checks 4 (earliest 2026-11-12) and 5 (sign-off) | §19, §20.0–§20.9 |
+| 10 — Removal (PB1, old ChapBook path, Kontext Remove) | **IN PROGRESS** — §19 plan + start prompt drafted 2026-11-01 (§6.C 247); **P10-0 done as a doc pass 2026-11-02** (the grep-proven §19 inventory table + the architect review folded in, §6.C 248 / §20.0: chat key outside the phase with a test-stack / prod drift for Stephen, the node-type enum values outlive P10-1, chat's composite builders survive P10-3, my `chapBook.js:261` mis-rowing fixed); **Stephen's reply 2026-11-02** (249): no prod exists, a Docker build at chat v1 is an issue, delete the excluded PB1-era test classes, P10-1 default stands, "continue implementation"; **P10-A 0 built and tested 2026-11-02**: chat render-path default v3 on every surface with v1 the logged rollback — `TestPbRenderPath` 14/14 (`.42` direct), `TestChatSceneRenderPath` 4/4 (H2), Vitest 6/6, no deploy (§20.1 / 249); **P10-A 1 built and tested 2026-11-02**: `parseLlmJsonArray` no longer latches a bare scene object's nested `characters` array — `unwrapObjectReply` (wrapper → ok=true, bare element → one element + retry), `TestLlmJsonArraySalvage` 21/21, emulator 25/25, no deploy (§20.2 / 250); **P10-A 2 built and tested 2026-11-02**: `bookPageView` reads a scene's RENDER_PLAN `base` first (then `sceneNode`, then `imageObjectId`) so V3-rendered pages count as rendered — `TestPbPageViewRenderPlanBase` 3/3 + the two page-view regressions 15/15, jar installed, no deploy, the live cover-count Playwright waits on the next `am7test` deploy (§20.3 / 251); **P10-A 3 built and tested 2026-11-02**: cover spec test 3's `generated` literal → test 4's `(generated|in_review)` shape (a correction, not a weakening), spec 4/4 on `.39`, images looked at, no deploy (§20.4 / 252); **P10-A 4 built and tested 2026-11-02**: `flex-1` on both readers' roots (`[role=main]` is a flex row), measured filling main; the P10-A 0–2 jar + dist deployed to `am7test`; 251 f closed live; the RenderPlan spec's three stale assertions corrected; RenderPlan 6/6, Cover 4/4, Ux 4/4, PlainPb 4/4 on `.39`, 37 images looked at (§20.5 / 253); **P10-A 5 built and tested 2026-11-02**: `FamilyRequest.apply` is the one family knob mapping at all three request sites, `cfgRange` clamped as `CFG_CLAMPED`, the FLUX.2 default negative on both paths, `flux2Sampler` / `flux2Scheduler` on `olio.sd.config`, the graph-path request record carries the knobs; offline 51/51, live cover run 2 2/2 on `.39` + the remote `.42`, live regress run 2 8/8 after the 236 e / P6-2 stale assertion in `TestPbRenderPlanExecutor` was corrected, 13 images looked at (§20.6 / 254); **P10-A 6 built and tested 2026-11-02**: `AuditUtil.bounded` at `closeAudit` — a 73 KB by-name miss journals beside its neighbour, `TestAuditDescriptionBound` 3/3 (§20.7 / 255); jar deployed to `am7test`; **P10-A 3–6 committed by Stephen as `540f3e8e PB3 P10 Mark`** (256); **P10-A 7 re-scoped** (256 b: `POST /series` has existed since `442e9ad4` — my premise was wrong; the slice is the 237 j visibility rule + H2 / Ux / Playwright SERIES_ART-on-a-chapter coverage) with its start prompt in §19 for a new conversation; **P10-A 7 built and tested 2026-11-03** (§20.8 / §6.C 257–258: the 237 j re-read as the acting user, the first H2 `POST /series` + `/chapter` contract, SERIES_ART on a real chapter in Ux752 with a Playwright `.39` render as the shared user; `TestPbCoverUtil` unrun — `postgres3` down); **Stephen 2026-11-04 (§6.C 260): checks 4 and 5 do not hold, nothing removed; "all these items … BEFORE I do more UAT"; the new-book UAT blocker ("(404) This book has no workflow yet" on Render) → P10-B built and tested 2026-11-04** (§20.9 / 260: the workflow and each scene's RENDER_PLAN terminal created on first use after the gates, the graph built at import, `POST /{book}/graph/build` + the canvas's two actions, `parseParamsExcept` for the `sources` ERROR; Objects7 5/5 with a real `.39` image, H2 9/9, the Playwright user-walk as the shared user, `TestPbCoverUtil` on `postgres3` 6/7 + the ERROR'd method re-run 1/1 — §20.9); **Stephen 2026-11-04 15:20 "I missed something - you did nothing. What are you waiting for?" → P10-C 1 built and tested 2026-11-04** (§20.10 / 262: ChapBook "random landscapes" not a P10-B regression — the untouched Re-render echoed the create-time placeholder as a USER edit and locked it; the textarea now goes on the wire only when edited, the server drops an echo, the review warns about placeholder pages and the card re-reads the recovered prompt; `TestChapBookRerenderEcho` 4/4, Vitest 36/36 + 1640, Playwright 2/3 + 1/1 with the bare-REST DEFAULT branch left red on F3 — `resolveDefaultChatConfig` library-first, Yours; four real `.39` images are the stanza); P10-C 2–4 next; P10-1 … P10-6 gated on design §28.1 checks 4 (earliest 2026-11-12) and 5 (sign-off) | §19, §20.0–§20.10 |
 
 ---
 
@@ -965,6 +965,199 @@ the record — where this index and the entry disagree, the entry wins; each sta
      under the running surefire JVM by an Eclipse auto-build; my own `install` re-copied `target/classes/policies/` at 09:55:33, after the
      run ended at 09:51:25, so that was not it, and the mtimes show nothing earlier); not a P10-B code path.
      Open — Yours: whether to chase it; the leftover series world is on the ArtifactInventory seeds list.
+     (m) ⚠ Stephen, 14:40 (after the hand-back), verbatim: "chapbook pictures have gone back to random landscapes, nothing based on poem
+     text" — the fourth Open — Yours item. Read, not run: a page's prompt is made once at create (`ChapBookUtil.createChapBookScene`
+     `:947-972`: `generateLandscapePrompt` from stanza + mood + continuity, else the deliberately stanza-free no-LLM fallback
+     `"landscape, <title>, <mood> atmosphere, painterly, soft light, wide natural vista"` `:962-964`); a render recovers a fallback-shaped
+     prompt only when a chatConfig resolves (`resolveAndPersistScenePrompt` `:1983-2036`; `ChapBookService.renderChapBookScene` `:511-516`
+     falls back to `resolveDefaultChatConfig` or logs "no chatConfig supplied and no org default found — landscape prompt will use stored
+     sdPrompt"); the v3 page node then renders the CHAPBOOK_PAGE composition's `promptOverride`, else `scene.sdPrompt`, verbatim
+     (`PbNodeExecutor.executeChapBookPage` `:2215-2225`). So a book whose create-time LLM step fell back and whose render resolves no
+     chatConfig renders exactly that symptom — one candidate, not a diagnosis (260 i's `No chat config available` line is adjacent). Two
+     facts the repro must settle first: P10-B touched this endpoint (`parseParamsExcept(json, "sdPrompt")` `:496` withholds only `sdPrompt`;
+     `chatConfig` / `sdConfig` still parse) and the stack has run the P10-B classes since 10:28, so a P10-B regression is neither assumed
+     nor excluded; and **no green test covers the LLM prompt path as a user** — `chapBookRenderLive.spec.js:71` and
+     `chapBookRenderPathV3.spec.js:252` both render with an explicit `sdPrompt`, so the create → analyze → render walk with no override
+     is unproven. Default for the next slice: that walk as the shared user (`fixtures/winter_1.docx` or Stephen's poem `.docx`), then
+     read the scene's `sdPrompt`, the composition's `promptOverride`, the plan artifact's compiled prompt and the log lines
+     `generateLandscapePrompt: LLM landscape prompt:` / `LLM returned no usable landscape prompt` / `RECOVERED landscape prompt` /
+     `no chatConfig supplied`, before touching code.
+261. ✓ **2026-11-04 ~14:35 → 15:15 (the P10-C continuation prompt; no code, no tests, no deploy).** On Stephen's "create comprehensive
+     prompt to continue in new conversation. prompt me for any unanswered questions or unavailable services" (14:30) and his fourth
+     item (14:40, 260 m). (a) ✓ While this was written Stephen committed P10-B as **`c7cd4c31 PB3 P10.2 M`** (14:57 — the 15 files of
+     §20.9, this ledger included) over his own **`fa39a53b legacy WPD patch`** (10:50 — `DocumentUtil.readDocument` sends 0xFF"WPC"
+     bytes straight to Tika's `WordPerfectParser` because `AutoDetectParser` returned "" for WP 6.0; `TestWordPerfectExtraction`; two
+     WP fixtures) — so HEAD is no longer `87a089dd` and the working tree is this ledger + his own files (227 h). Whether the `am7test`
+     jar (built ~09:55 from my tree) carries `fa39a53b` is unknown → the prompt's first action rebuilds + redeploys from `c7cd4c31`
+     by default. His untracked `media/The Big Way Out.doc` / `Ourselves.doc` + that fix suggest his ChapBook test content may be a
+     WordPerfect `.doc` — a question in the prompt, not an assumption. (b) ⚠ The prompt (§19, "P10-C continuation prompt") names the
+     four 260 j / m items as **P10-C** with my default order: (1) ChapBook random landscapes, (2) the create-dialog CSS, (3) the
+     chat-scene composite, (4) the master / detail design hand-back — (1) first because it is a candidate P10-B regression and the
+     LLM prompt path has no user-walk proof; the order is a question with that default, not a ruling. (c) ⚠ Questions put to Stephen
+     with defaults (his answers go here when he replies, and the prompt's "Stephen's answers" line is updated): the order; which
+     stack (`am7test` or his Eclipse Tomcat), which document and which chat route (`render.renderPath`) his tests hit; chase 260 l /
+     clean `p91sd17045be` (default: no / at phase close); checks 4 and 5 (default: do not hold — earliest 2026-11-12); local Ollama
+     `:11435` / LiteLLM `:4000` (both refused when probed 2026-11-04 15:20; `.39` 302, `.42` 200, `am7test` 200, `postgres3` up —
+     the remote tier is what the new session will get; `resolveChatRoute()` / `LlmTestGate` decide, the line is quoted); the
+     master / detail layout is proposed before any implementation. **Stephen's reply 2026-11-04 ~15:20, verbatim: "I missed something -
+     you did nothing. What are you waiting for?"** — every default above taken (order 1 → 2 → 3 → 4, `am7test`, remote `.42`, checks
+     4 / 5 do not hold, nothing removed); P10-C 1 started on it (262). (d) ✓ Nothing DONE; `scratch/p10-b/` (class 1) is deleted by the
+     next session's first hand-back now that he has replied (the commit is the reply).
+
+262. ✓ **2026-11-04 ~15:20 → 17:45 (P10-C 1 — ChapBook pages "gone back to random landscapes, nothing based on poem text"; built and
+     tested; jar + dist deployed to `am7test`; §20.10).** (a) ✓ Not a P10-B regression: `parseParamsExcept` strips `sdPrompt` only at
+     `/generate`, where it was already read, and the same placeholder is stored by a create on the pre-P10-B path. Two causes, both
+     reproduced as `e2etest_shared` with no `sdPrompt`: **C1** — a create whose chat config cannot be reached stores the stanza-free
+     `landscape, <title>, <mood> atmosphere, …` placeholder silently (unlocked, no composition); in `am7test` a bare REST create with no
+     `chatConfig` goes `resolveDefaultChatConfig` library-first → library `contentAnalysis` → `http://litellm:4000` (down) → placeholder,
+     while the dialog sends the name `contentAnalysis` → the user's own config → `.42` → the stanza. **C2** (deterministic, the UI) —
+     "Re-render this page" with the textarea untouched sent the stored placeholder back as `sdPrompt` with no `chatConfig`; the server read
+     it as a human edit and persisted it as a USER-sourced, LOCKED composition: a permanently random landscape, no signal. (b) ⚠ F1 (my
+     default): `rerenderPromptOverride` — the textarea goes on the wire only when its `'sdPrompt'` dirty mark is set and it is non-blank;
+     otherwise the chat config name goes and the server resolves (a placeholder is RECOVERED through the LLM and stored as source=LLM,
+     unlocked). The dirty mark clears on a rendered result; `promptLocked` is never set client-side. (c) ⚠ F2 (default): server guard
+     `ChapBookUtil.isStoredScenePrompt` — an override equal to the scene mirror or the composition `promptOverride` is not an edit; dropped,
+     the stored prompt resolves (INFO `… equals the stored prompt - not an edit`). (d) ⚠ F4 (default, minimal): review load toasts
+     "N of M page(s) have no LLM landscape prompt (the placeholder stored when the LLM could not be reached) — check the chat config, then
+     Regenerate prompt on those pages" (`placeholderPromptSummary`; a user lock is the only exclusion). (e) ⚠ F5 (default): after a
+     re-render that sent no override the card re-reads the scene's `sdPrompt` / `promptLocked` (`refreshScenePrompt`, uncached, never
+     over an unsaved edit) — run 1's `dead-2-review-after.png` showed the placeholder text under the recovered image because the render
+     result carries no prompt. (f) ⚠ **F3 — Yours.** `resolveDefaultChatConfig` (`ChapBookUtil.java:426-451`) is library-first by
+     design, so a bare `POST /poems` / `/generate` with no `chatConfig` in a stack whose library `contentAnalysis` is dead degrades
+     honestly (`llmUnavailable:true, llmDegraded:true`) but never reaches the user's working config. Default: LEAVE. Alternatives:
+     user-first like `ChatUtil.resolveConfig`, or library → the same-named user config when the library one is unreachable. Playwright
+     test 1's DEFAULT branch is RED on exactly this and stays so — not weakened. (g) ✓ My JUnit assertion corrected:
+     `echoOfThePlaceholderIsNotAnEditAndDegradesHonestly` asserted `llmDegraded == true` on a FAILED (no-image) result; the contract is
+     "degraded = rendered on the stored prompt", so FAILED carries `llmDegraded=false` — asserted that (run 1 3/4, run 2 4/4). (h) ✓
+     Observation, Yours (chat config / template, not touched): on the UI create, page 2's LLM prompt repeats page 1's cobalt-sky forest
+     imagery instead of its own stanza (embers, cinders), where the REST NAMED create got "snow-dusted interior … amber embers and dark
+     smoldering cinders" for the same page. (i) ✓ `scratch/p10-b/` + `scratch/p10-report/` deleted (261 d). Nothing DONE.
+
+263. ✓ **2026-11-04 ~17:30 → 18:05 (Stephen's reply to 262 + the kruft cleanup).** **Stephen, verbatim: "cleanup your test kruft and
+     logs, and keep going - you seem to be stopping quickly while I have not seen that you've addressed issues, like I can't actually use
+     PB or chapbook Ux is unwieldy."** (a) ✓ Ruling recorded: the per-slice WAIT in §19 is replaced by **keep going through P10-C 2 → 3 → 4
+     without stopping for approval**, and the items are to be implemented, not proposed; the P10-1…P10-6 removal gate is untouched. His two
+     complaints — "I can't actually use PB" and "chapbook Ux is unwieldy" — are the acceptance bar for 2 / 4 and for a PB walk as the shared
+     user after the slices. (b) ✓ File kruft deleted, ≈1.28 GB per `scratch/cleanup/p10-c-kruft-2026-11-04.txt`: `scratch/p9-*`,
+     `p10-0`, `p10-a`, `verify-p9-789`, `p10-c` logs 1–18 (quoted in 262, replied), Ux752 `test-results/` (81 MB) + `e2e/results/`, Objects7
+     `target/TestPb*` + `p86/` + 62 loose PNGs (141 MB), Service7 rolled logs (246 MB, current `error.log` kept) and the Service7 `am7/` H2
+     fixture (813 MB; the next Service7 test run recreates it, first `POST /series` ≈105 s). (c) ✓ `am7test` fixtures deleted through the
+     app's own routes as the e2e users, never admin (`19`–`23-cleanup-*.log`): dry run 698 books + 93 series, KEEP 12 (every one a spec-stamped
+     fixture, regex widened); **176 worlds, 20 series and 249 ChapBooks deleted** (`DELETE /olio/world`, `/olio/picture-book/series`,
+     `/olio/chap-book` → 200). Two mistakes of mine on the way: pass 1 used the wrong paths (`/pictureBook/series/`, `/chapBook/` → Tomcat 404
+     for all 93 + 249), and the script's `seen` map marked a series handled on its first 403 so the Writer-role member (`e2etest_pbemu`,
+     46 series; `e2etest_pbdown`, 13) was never tried until pass 4. (d) ⚠ **Left behind, Yours: 73 series + their 265 chapter books**
+     (`harlotseight-emu*` / `-llmdown` / `-ux`, `e2e-keyed-series-*`, `pb2-pages-series-*`, `harlots-eight-ch1-2-*`; all Sept–Oct era).
+     No non-admin can delete them: 19 have no Writer member at all, and for the rest `PbSeriesUtil.deleteSeries` 500s because
+     `PbBookUtil.readBook(olioUser, …)` is denied on their chapters — `AUDIT DENY system.user olioUser to READ … olio.pb.book
+     (objectId = "cde7f644-…" && organizationId = 2)` on a book olioUser owns (row 89, group 1469 present) — the P10-A 7-era
+     `p10a7-series-*` with 2 chapters each deleted fine minutes earlier, so this is pre-fix data, not current code; the world route
+     correctly 409s ("backs a book series"). Default taken: leave them (they only pad the lists); the alternative is your stack-DB reset.
+     Not re-diagnosed further — scope. (e) ✓ `am7test-books.mjs`, `one-series-delete.mjs`, `e2e-users.txt` (class 3) deleted; logs
+     19–23 (class 1, 764 KB) stay until this hand-back is replied to. `ArtifactInventory.md` rows 17 / 26 / 27 + History updated. Nothing DONE.
+
+264. ✓ **2026-11-04 ~18:05 → 19:10 (P10-C 2 — "in chapbook create, after analysis, the edit view is on the bottom so looks like a css
+     issue"; built and tested; dist deployed to `am7test`; §20.11).** (a) ✓ Not CSS: the shared config panel's poem queue listed EVERY
+     library poem expanded on all three views — 228 rows for `e2etest_shared` — so the panel was 9,637–11,060 px tall and the reader the
+     create lands on sat at y=9,865, the review's first card at y=11,464, on a 720 px viewport (`24-pw-editpane-red.log`). (b) ✓ Fix,
+     `chapBook.js`: the queue is a collapsible sub-section (`cb-queue-toggle`) expanded by default only on create, remembered per view for
+     the session (`configQueueExpandedByMode`), and its table is a viewport-bounded scroll box (`max-h-[max(14rem,calc(100vh - 32rem))]`,
+     sticky thead). (c) ⚠ MY JUDGMENT, default taken: the panel's primary actions (Create ChapBook (N) / Render / Export) moved from a body
+     row onto the panel's HEADER row, right of the toggle — a sibling, since a button cannot nest buttons. Two reasons: the body row cost
+     ~60 px on every view (the review's first card still began at the fold without it), and Render / Export are now reachable with the panel
+     collapsed, which is the "unwieldy" complaint in miniature. The earlier-slice invariants hold (one `cb-config-panel`, one
+     `cb-config-toggle`, Poem queue heading inside the panel, Render keeps `bg-orange-600`); `chapBookConfigPanel.spec.js` locates nothing
+     by body position. If you want the actions back in the body, say so — it is one function's return. (d) ✓ The create view's "My
+     ChapBooks" heading was 717–741 after (b) + (c) (the queue box is the create view's content); the viewport-relative bound in (b)
+     replaced a fixed `max-h-64` so a 720 px viewport shows ~4.5 rows with the heading at 685–709 and a 1080 px one ~14 rows — not a
+     weakening of my own criterion, a bound that follows the viewport. (e) ✓ Test, `chapBookEditPaneAtTop.spec.js` (new): the REAL UI
+     create as the shared user (two seeded poems, dialog, live analysis on the remote `.42`, navigate to the reader), then bounding boxes at
+     scroll 0 on read / review / create. Red before the fix, green after (`31-pw-editpane-green.log`). Timings observations only. No
+     Objects7 / Service7 change, no jar. (f) ⚠ MY JUDGMENT, default taken — a test correction, not a weakening: the regression run's one
+     unexpected red, `chapBook.spec.js:1666` fixPageHeight (`33-pw-cb-render-regress.log:12`, alone `34-pw-fph-alone.log:4`, deterministic).
+     Its "fresh reader load" set the hash to `/main` and back inside one animation frame (trace: the three evaluates at +8571 / +8580 /
+     +8585 ms, frames every ~16 ms); Mithril's router runs `resolveRoute` per `hashchange` but redraws once per frame, so the `/main` view
+     never mounted (screencast frames show the reader throughout), the `ChapBookReader` instance was reused without `oninit`, and it sat on
+     page 1 with no Cover to Begin from. (b) made the read view light enough (queue collapsed) for that to happen every run; before, the
+     228-row queue made each evaluate slow enough to straddle a frame. Fix: the suite's own `page.reload()` idiom (`chapBookVerify.spec.js:374`),
+     a new JS VM — strictly stronger for what the step asserts (the clamp can only come from the persisted record). Product unchanged.
+     `35-pw-fph-reload.log:4 ok … (9.9s)`, `:7 EXIT=0`. Nothing DONE.
+
+265. ✓ **2026-11-04 ~19:15 → 20:00 (P10-C 3 — "chat scene generator … composites with the same character twice (system char in my
+     test), so user char isn't represented"; built and tested; jar + `ChatService` deployed to `am7test`; §20.12).** Stephen's 14:20 guess
+     ("the reference image is wrong for the user") was half right: NEITHER portrait reached `.39`. `ChatSceneRenderUtil.buildPlan` never
+     resolved a SCENE_DIRECT pick, so `StrategySelector` always chose TEXT_ONLY and FLUX.2 drew two people from one text description — the
+     same face twice. Second defect underneath: `Chat.getPortraitBytes` read `FIELD_BYTE_STORE` raw (the `objects7-reference.md` trap) and
+     would have handed compressed bytes to the renderer. (a) ⚠ MY JUDGMENT, default taken: the SCENE_DIRECT pick is resolved only when at
+     least one portrait is present (`sysRef || usrRef`); a scene with no portraits reports no second model. (b) ⚠ default: with portraits
+     and no resolvable FLUX.2 model the plan degrades to TEXT_ONLY + MODEL_SUBSTITUTED, never 4xx. (c) ⚠ default: `describe()` (the
+     `render` block) gained `strategyReason` and `references[{name, actorId, portraitObjectId}]`. (d) ⚠ default: reference slots are
+     `actora` / `actorb` by actor priority (system = 0 = left, user = 1 = right), the `Identity.portraitArtifactId` = the portrait record's
+     objectId (`Chat.ScenePromptResult.sysPortraitObjectId` / `usrPortraitObjectId`). (e) ⚠ default: `ChatService.generateScene` passes
+     `clientFlux2Model = IllustrationModelPolicy.currentModel(sdConfig, SCENE_DIRECT)` (the config's `flux2Model`), the same override the
+     v1 branch already used. (f) ⚠ default: the live JUnit reference case uses `media/flux/character1/2.png` (2048², kept as a committed
+     input). (g) superseded by (i). (h) ✓ Playwright item 14-live now asserts the portrait-driven contract: `strategy=DIRECT_REFERENCE`,
+     two references in actor order, one `Stage BASE (graph …) rendered 1 image(s)` line, no `Scene composite [`. (i) ⚠ default: BASE steps
+     follow the BASE pick's family (`RenderPlan.withPreset` + `ChatSceneRenderUtil.withBaseSteps`) — the chat preset took its step count
+     from the LOCATION pick's capabilities, so a FLUX.2 DIRECT_REFERENCE ran the SDXL 20 steps at ~63 s/step and timed out
+     (`37-o7-chatscene.log`); FLUX.2 = 4. The PB path has the same shape (`PbRenderPlanUtil.scaffold:432-437`, `PbNodeExecutor:1574`) —
+     NOT fixed, scope; Yours. (j) ⚠ MY JUDGMENT, default taken — a test correction, not a weakening: `chatChainSceneReimageRoutes.spec.js:628`
+     asserted `SCENE_CREATIVITY` in `configNotApplied` as "materialised to the schema default" and had never run live (every P2-9 v3 run
+     skipped on the `.39` outage, archive `:20017-20090`). `RecordSerializer.java:193` omits numerics equal to the schema default, so
+     `/olio/randomImageConfig` carries no `sceneCreativity`, and `RecordDeserializer.java:378` keeps posted fields only — an absent knob is
+     correctly nothing to report. The spec now posts `sceneCreativity=0.55` and asserts it reported (`42-pw-chatscene.log:35`). Product
+     unchanged. Note, not fixed (scope): the SceneE2E fixtures put literal `((null) (null hair)) and (null eyes)` into the compiled prompt
+     — the chat character-description builder lacks the `NarrativeUtil.isMeaningful` guard. Nothing DONE.
+
+266. ✓ **2026-11-04 ~20:00 → 20:35 (P10-C 4 — "characters-style master / detail" ChapBook review; built and tested; Split defect found by
+     the new spec and fixed server-side; jar + `ChapBookService` + dist deployed to `am7test`; §20.13).** The review stacked every page card
+     down one column ("chapbook Ux is unwieldy"); it is now the Characters tab's list ↔ detail layout — a page list on the left, ONE page card
+     on the right, the selection = the page's objectId so it survives a reload. (a) ⚠ MY JUDGMENT, default taken: list only, no prev / next
+     on the card — the list IS the navigation; root widened to `max-w-6xl`. (b) ⚠ default: the per-row badge set is `unsaved` / `image-outdated`
+     / `needs-prompt` / `image-ready` (`data-page-badge`), derived from the card's existing state, nothing new persisted. (c) ⚠ default: after
+     a reload the selection is kept by objectId; gone (Remove) ⇒ the page that took its index, clamped to the last; stale / none ⇒ page 1
+     (`ensureReviewSelection`). (d) ⚠ MY JUDGMENT, default taken — test corrections, not weakenings: `chapBookMerge` / `chapBookSave` /
+     `chapBook.spec` (SCENEDEL) / `chapBookPromptReview` asserted "N Remove / Re-render / Save-prompt buttons == N pages" and filled two cards
+     side by side; the product now shows one card, so page count = `[data-page-item]` rows, the per-page buttons are asserted on the selected
+     card for EVERY page by selecting each in turn, and Save-all's two edits are made one page at a time with the `unsaved` badge proving the
+     first survives switching away. (e) ✓ Split was broken before this slice and the new spec's step 4 found it (`43-pw-cb-masterdetail.log:25`
+     `toHaveCount(n + 1)` got `10`): the client PATCHed the first half onto the page and then POSTed the second half to
+     `/rest/model/olio.pb.scene` — no such route (create is `POST /rest/model`, `ModelService.java:259`), so the page lost half its stanza and
+     no page appeared (am7test page `664c88ff-…` was left that way by the pre-fix run). (f) ⚠ MY JUDGMENT, default taken: fixed server-side
+     as one call, `POST /olio/chap-book/scene/{oid}/split` → `ChapBookUtil.splitScene` mirroring `mergeSceneUp` — the NEW page is created
+     FIRST (a refused create changes nothing), its stanza / mood / fallback prompt patched, then the original truncated (`imageStale`,
+     `markSceneNodeStale`; sdPrompt / promptLocked preserved as merge does), then `reorderScenes` with the new oid at pos+1; a failed second
+     write deletes the new page. The old `doSplitScene` note ("do not fix here") was a prior session's scope note, not a ruling. (g) ⚠ default:
+     the new page's name is `sceneName(book, i)` at the first free i ≥ size (names are fixed at create), its prompt the no-LLM fallback shape so
+     the review flags it `needs-prompt`; a stanza with nothing after its line midpoint is 400 on the server and refused client-side first.
+     (h) ⚠ default: a dirty page is saved (one PATCH) before the split so the server splits what the user sees; a failed save cancels it.
+     (i) My defect, owned: `TestChapBookSceneSplit` run 1 red on my `assertEquals(book.get(..), created.get(..))` — two bare generic `get()`s
+     bound the `Object[]` overload (`46-junit-cb-split.log:280 ClassCastException`); typed locals, run 2 4/4. (j) Observation, not fixed
+     (P10-C 1 by design): the "N of N pages have no LLM landscape prompt" toast re-fires on every reload, so a split shows it twice. Nothing DONE.
+267. ✓ **2026-11-04 ~20:35 → 21:30 (P10-C PB walk as the shared user — gate runs 21 / 22 on the P10-C 1–4 deploy; the one product
+     blocker found, Locations "Propose from scenes" sending no chat config, built and tested, dist deployed; §20.14).** (a) ✓ The walk = the
+     §16 gate as `e2etest_shared`; run 21 13/15. (b) My defect, owned: steps 1 and 14 red on my spec, not the product — it asserted
+     `[data-pb2-book-list]` BEFORE anything existed; the product renders the list only with ≥ 1 story book (`pictureBook.js:741`), and my own
+     263 c cleanup had deleted every earlier book, so run 21 was the first fresh landing in 21 runs; 14 cascaded. Corrected, not weakened: the
+     list is asserted after the import, the pre-import shape recorded. (c) ✓ The real blocker, unfixed since run 13 (233 e): step 6's UI Propose
+     "The model returned no usable reply" in 5 s. Cause: `pictureBookLocations.js` `propose()` POSTed `{}`; a blank name makes
+     `PbLocationUtil.proposeLocations` resolve `generalChat` (`PictureBookUtil.java:5027`) → on this stack `/Library/ChatConfigs/generalChat`
+     (id 9) → connection 9 `http://litellm:4000` (down). Every other PB LLM button sends a name; this was the one that did not. (d) ⚠ MY
+     JUDGMENT, default taken: the board's chat-config helpers lifted into `components/pbChatConfig.js` (default names, `withChatConfig`,
+     `chatConfigName`, `chatConfigLabel`, `resolveDefaultChatConfig`, `openChatConfigPicker`, `renderChatConfigControl`); the board re-exports
+     its three pure helpers so its tests are untouched; the `chapBook.js:525` and `workflows/pictureBook.js:438` copies left (scope) — Yours,
+     a later consolidation. (e) ⚠ default: the Locations header gets the same control (`pb-loc-chatconfig`) — carried book config → library
+     `contentAnalysis` → `generalChat` → an explicit pick wins; `propose()` awaits an in-flight default so a quick click still carries the name;
+     nothing resolvable ⇒ sends nothing (server default), never a client-side failure. (f) ⚠ default: the gate's step 6 stays on the default
+     path (no pick) and records the header text + POST body. (g) Environment, Yours: the stack's library `contentAnalysis` 12 / `generalChat` 9
+     both point at connection 9 (`litellm:4000`); the shared user's own `contentAnalysis` 116 → connection 121 (`.42`) exists only because the
+     e2e helpers made it, so a user with no personal config (you, on `am7test`) still lands on the dead library config from any default —
+     re-point the two library configs at `.42` or bring LiteLLM up. (h) Run 22 15/15; step 1's "absent (fresh user)" was my `count()`
+     before the list loaded (`01a` shows run 21's book) — the spec now waits out "Loading PB2 books…"; not re-run (observation text only).
+     (i) Carried, unfixed, candidates: ~32 thumbnail 404s per walk (233 e); step 13's ChapBook-from-docx still a REST short-cut; two near-
+     duplicate "Hindu Temple" proposals when the wizard's own location pass and Propose both run; the character list's `no portrait` badge
+     not refreshed after a portrait is created (`05d`); the second actor's placement box labelled by raw id (`07a`); 3–5 stacked toasts
+     covering the reader toolbar (`04`, `12`); `/pages[0] imageObjectId=null` while the reader shows the approved base. Nothing DONE.
 
 > Moved 2026-10-28 to `archive/PictureBookV3Implementation-P0-P4.md` §6.G, §6.L, §6.H–§6.N (Slice C findings, the nude-fixture question, Phase 0–1 infrastructure items; §6.H / §6.I / §6.J / §6.K RESOLVED, §6.M FIXED) (section numbering unchanged there). Still open there and Stephen's: §6.G (Slice C transport findings 1–12), §6.L (the `generateScene` e2e fixtures render nude), §6.N (`.39` outage log 2026-10-11 → 2026-10-14).
 
@@ -1160,6 +1353,9 @@ inventory "13 installed · OK → flux2Klein_9b.safetensors", deployment default
 | **17** | **15/15** | **none — `ok 1 … one user journey, 15 steps (14.8m)` :87** | **`-run3.log` `1 passed (14.9m)` :91, `EXIT=0` :92** |
 | **18** (after the 240 e insert) | **15/15** | **none — `ok 1 … 15 steps (18.7m)` :92; `15g` now frames the ChapBook reader's cover (240 e closed, 242 a)** | **`scratch/p9-close/pw-usability-run18.log` `1 passed (18.8m)` :96, `EXIT=0` :97** |
 | **19** (P9-7 jar + P9-8 dist) | **15/15** | **none — `ok 1 … 15 steps (15.2m)` :87; step 15 is the live exercise of 238 d / 238 k / 240 d (244 d): `15d` the book cover's title block in the TOP band over the three cast figures in a temple courtyard, `15g` the ChapBook title card in the BOTTOM band under the balustrade terrace, export cover `1730802 bytes = approved media` (:27); step 6's UI Propose "no usable reply" in 5 s as on runs 13–18 (§18.1 step 6; the REST fallback accepted "Temple", `-run19.log:12`)** | **`scratch/p9-close/pw-usability-run19.log` `1 passed (15.3m)` :91, `EXIT=0` :92; `[e2e-llm] route=direct … 192.168.1.42` :4 — the remote `.42` box, direct Ollama; SD `.39` Swarm :5** |
+| **20** (P10-B jar + dist, 2026-11-04 11:00; recorded in §20.9, row added 267) | **15/15** | **none — step 2's `GET /workflow` at create → 200 (the P10-B `ensureWorkflow`); step 6's UI Propose still "no usable reply" (REST fallback)** | **`scratch/p10-b/usability-1.log` `1 passed`, `EXIT=0` (deleted at the P10-B hand-back; quoted in §20.9)** |
+| 21 (P10-C 1–4 jar + dist, after the 263 c data cleanup) | 13/15 | 1 — my assertion `[data-pb2-book-list]` visible BEFORE anything is created: the product renders the list section only when the user has ≥ 1 story book (`pictureBook.js` `workSelectorView`), and 263 c had deleted every earlier story book of `e2etest_shared` (runs 1–20 always found leftovers), so the landing page was Health + "Select a document" (`01-book-list-and-pb1-import.png`); the step threw before the PB1 import, so 14's `[data-pb2-book-name]` on the un-imported legacy group cascaded (267 b). Steps 2–13, 15 green; step 6's UI Propose "no usable reply" in 5 s (REST fallback) — the one real blocker, fixed as 267 c | `scratch/p10-c/60-pw-usability-run21.log` `1 failed` :139, `EXIT=1` :141; `[e2e-llm] route=direct … 192.168.1.42` :4 — the remote `.42`, direct Ollama; SD `.39` :5 |
+| **22** (267 dist: the Locations chat-config control + the step-1 spec correction) | **15/15** | **none — step 6's UI Propose succeeded for the first time since run 12: `UI Propose (header chat config "contentAnalysis", sent {"chatConfigName":"contentAnalysis"}) → POST 202 … → "Proposed 2 locations from 10 scenes" in 9 s`, accept → "created, 2 scenes repointed", variant rendered on `.39` in 63 s, approved, `pb2-page-location chips on 3 of the first 6 pages` (:12; run 21: 0 of 6 after the REST fallback). Step 1's note still says "absent (fresh user)" — my `count()` ran before the list loaded (`01a-book-list.png` shows run 21's wizard book listed); spec corrected after this run to wait out "Loading PB2 books…" (267 h). Steps 13 ChapBook-from-docx and 15's chat config remain the recorded short-cuts** | **`scratch/p10-c/63-pw-usability-run22.log` `1 passed (15.7m)` :80, `EXIT=0` :81; `[e2e-llm] route=direct server=http://192.168.1.42:11434` :4 — the remote `.42`, direct Ollama (LiteLLM `:4000` and the container Ollama `:11435` down); SD `.39` Swarm :5** |
 
 Timings (run 14, observations): extraction 64 s → 10 scenes; characters 71 s → 5; legacy portrait 70 s; wizard compose job 81 s; location
 variant render 64 s; board re-compose (LLM) 6 s; Plan & generate 82 s and 102 s (2 variants each); ChapBook page re-render 34 s; whole walk 11.1 min (log:80).
@@ -1945,8 +2141,14 @@ baseline is not measured here; P10-7 runs it and records the before / after coun
   `Invalid field olio.pictureBookRequest.sources` ERROR. Proof at three layers: Objects7 `TestPbNewBookRender` (a real `.39` render on a
   fresh book), Service7 H2 `TestPictureBookNewBookRoutes`, and the Playwright user-walk `pictureBookNewBookRender.spec.js` as the shared
   user on `am7test` (wizard → Render → Render all → canvas → Build graph), plus the nav / usability / Scenarios specs re-asserted.
-  **Yours (260 j):** the two ChapBook UX items Stephen raised during this slice — the create dialog's post-analysis edit pane at the
-  bottom (CSS), and a characters-style master / detail review instead of the one long list — sequenced after this slice by default.
+  **Yours (260 j / m), the four items Stephen raised during and after this slice:** the ChapBook create dialog's post-analysis edit
+  pane at the bottom (CSS); a characters-style master / detail ChapBook review instead of the one long list; the chat scene generator's
+  composite showing the system character twice (under the default chat v3 route no portrait reaches the renderer — 260 j); ChapBook
+  pages "gone back to random landscapes, nothing based on poem text" (260 m — no green test walks create → analyze → render without an
+  explicit `sdPrompt`). Taken up as **P10-C** (the 2026-11-04 14:50 continuation prompt below) on his 15:20 "What are you waiting for?":
+  **P10-C 1 built and tested 2026-11-04** (§20.10 / 262 — not a P10-B regression; the untouched Re-render echo + the silent create-time
+  placeholder; F3 `resolveDefaultChatConfig` library-first left as his call); P10-C 2 (the dialog CSS), 3 (the composite — proposal before
+  any change), 4 (the master / detail design hand-back) next, in that order.
 - **P10-1 — PB1 removal (gated).** Delete the three `@Deprecated` routes and their `PictureBookUtil` bodies, `executeReferenceStrip` /
   `executeComposite` / `warnLegacyNode` / `stitchSceneImages`, the Ux752 callers (`sceneExtractor.js` `:380` / `:413` / `:503` and the PB1
   branches of `workflows/pictureBook.js` — **not** `features/chapBook.js:261`, which is ChapBook V3; the Ux manifests' `renderPath` reading
@@ -2495,6 +2697,213 @@ slice's item one clause ("built and tested 2026-11-xx, §20.n / §6.C nnn"); kee
 in the shape of §6.C 252–258: what ran, where, `log:line`, what was seen, what is Yours. Nothing is DONE by you.
 ~~~
 
+**P10-C continuation prompt (drafted 2026-11-04 ~15:00 on Stephen's "create comprehensive prompt to continue in new conversation.
+prompt me for any unanswered questions or unavailable services", §6.C 261; supersedes the prompt above as the START prompt for the
+next conversation; copy into a new conversation; the ledger — §19, §20.9, §6.C 248–261 — wins over the prompt):**
+
+~~~
+You are continuing PictureBook V3 in AccountManager7 (git root `C:\Projects\GitHub\AccountManager7`; Maven aggregator and every
+module under `src/`) at **Phase 10 — Removal**, in its ungated half. State as of 2026-11-04 15:00: P10-0, P10-A 0 … 7 and **P10-B**
+(the new-book render path end to end — Stephen's UAT blocker) are built, tested and **committed by Stephen** — HEAD `c7cd4c31 PB3
+P10.2 M` (P10-B; ledger §20.9, §6.C 260), over `fa39a53b legacy WPD patch` (his own: `DocumentUtil` → Tika `WordPerfectParser`), over
+`87a089dd PB3 P10 M2` (P10-A 7). The removal slices **P10-1 … P10-6 are GATED** on design §28.1 checks 4 (earliest **2026-11-12**) and
+5 (Stephen signs off) — he said on 2026-11-04 they do not hold. **Nothing is deleted, no field dropped, no PB1 / Kontext / old-ChapBook
+code removed, until he says in THIS conversation that checks 4 and 5 hold.** His ruling (c) of 2026-11-04 stands: "all these items
+worked on / resolved / implemented BEFORE I do more UAT" — the items are the four he raised during and after P10-B, below, which
+this prompt names **P10-C**. Your first message is a report plus questions, not a slice; the first slice starts on his reply.
+
+Read before anything else, in this order:
+1. `CLAUDE.md`, `.claude/rules/llm-conduct.md`, `.claude/rules/architecture.md`, `.claude/rules/model-api.md`,
+   `.claude/rules/troubleshooting.md`, `.claude/rules/artifacts.md` (mandatory; the no-lying and testing rules override everything
+   below; `artifacts.md` says where scratch / logs / images go — its register is `src/aiDocs/ArtifactInventory.md`).
+2. `src/aiDocs/PictureBookV3Implementation.md` — the ledger; it wins over this prompt where they differ (say so when they do):
+   §1 row 10; §6.C intro + "Open — Yours" index; **§6.C 260 (P10-B — read j, m, i, l in full: the four items verbatim, the
+   read-not-run pointers, the observations, the policy-null NPE) and 261 (this prompt's questions and, once he has replied, his
+   answers — those win over the defaults below)**; §6.C 248–259 as the Phase 10 record; §16 + §16.1 (the usability gate; run 20 =
+   last green, 2026-11-04, on the P10-B jar); §17 + §18 (how a phase is planned, run and reported — the shape expected of you);
+   **§19 — the Phase 10 plan: the gating paragraph, the inventory table, the slices, the P10-B bullet, the earlier prompts**;
+   §20.9 (P10-B results, especially "Not done / Yours"). Closed phases: `src/aiDocs/archive/PictureBookV3Implementation-P5-P8.md`
+   and `…-P0-P4.md`; never edit the archives.
+3. `src/aiDocs/PictureBookV3Design.md` §24 (ChapBook on V3), §12 (plan / executor), §28.1 (removal stages + the five verify checks),
+   §30 row 10, §37 (Kontext). Grep for the headings — line numbers drift.
+4. The code per item, grep-verifying every number (all cited at `c7cd4c31`):
+   - **Item 1 (ChapBook prompts):** `ChapBookUtil.createChapBookScene` `:947-972` (the create-time LLM prompt; the stanza-free
+     no-LLM fallback `"landscape, <title>, <mood> atmosphere, painterly, soft light, wide natural vista"` `:962-964`),
+     `generateLandscapePrompt` `:1061-1084`, `resolveAndPersistScenePrompt` `:1983-2036` (recovery only when a chatConfig resolves),
+     `renderResolvedScene` `:1933-1955`; `ChapBookService.renderChapBookScene` `:482-540` (`parseParamsExcept(json, "sdPrompt")`
+     `:496` — P10-B's change; chatConfig fallback `:511-516`); `PbServiceFacade.requestChapBookPageRender` `:957-990`
+     (`effectivePagePrompt`); `PbNodeExecutor.executeChapBookPage` `:2194-2225` (composition `promptOverride` → `scene.sdPrompt`,
+     verbatim); the Ux `chapBook.js` `renderChapBookScene` `:237-266` (`POST /rest/chapBook/scene/{oid}/generate`, `chatConfig` +
+     optional `sdConfig` / `sdPrompt`); the specs `e2e/chapBookRenderLive.spec.js` (`:71` passes an explicit `sdPrompt`),
+     `e2e/chapBookRenderPathV3.spec.js` (`:252` the same), `e2e/chapBook.spec.js` (`fixtures/winter_1.docx`),
+     `e2e/chapBookLlmUnavailable.spec.js`; `DocumentUtil.readDocument` (the `fa39a53b` change) + `ChapBookUtil.extractPoemText`.
+   - **Item 2 (create-dialog CSS):** `chapBook.js` `renderCreateDialog` `:2200`, `renderConfigPoemQueue` `:2029`,
+     `renderAddPoemDialog` `:2305`; `e2e/chapBookCreateDialogPersist.spec.js` (the existing create-dialog spec to extend);
+     `components/dialogCore.js`; the §6.C 253 measurement idiom (bounding boxes, `x / w`, from P10-A 4).
+   - **Item 3 (chat scene composite):** `ChatService.java:1526-1527` (`PbRenderPath.isChatV3()` → `generateSceneV3` `:1665` — the
+     default since P10-A 0; the stack prints `[e2e-render-path] … "chat":"v3"`), the v1 rollback `:1576-1660`
+     (`SceneCompositeUtil.buildSceneRequest` `:1615`); `ChatSceneRenderUtil.buildPlan` `:170` (actors carry `hasPortrait` booleans),
+     `render` `:236-283` (`:261` "Phase 2 renders BASE only"), `baseRequest` `:289` (prompt-only `StageRequest`, no `graph` /
+     `inputs`); `SceneCompositeUtil.buildSceneRequest` `:223-284` (the v1 `[left=sys, right=usr, setting]` references; its log line
+     `Scene composite [flux2]: … person1=… person2=…` `:267-280`); `Chat.generateScenePrompt` `:2207-2299`, `getPortraitBytes`
+     `:2377-2403` (`:2393-2396` reads `byteStore` raw, the `objects7-reference.md` trap — v1 only); `PbNodeExecutor` `:1883` / `:1960`
+     (how the PB executor attaches references — the pattern a v3 fix would follow); the Ux `src/chat/SceneGenerator.js`;
+     `TestChatSceneRenderPath` (P10-A 0).
+   - **Item 4 (ChapBook master / detail):** `chapBook.js` `renderReviewBook` `:3923`, `renderSceneCard` `:4200`; the pattern to
+     model on, `workflows/pictureBookCharacters.js` `renderCharacterListItem` `:834`, `renderCharacterManagerContent` `:1131`;
+     the specs that pin the current review surface: `e2e/chapBookMerge.spec.js`, `chapBookPromptReview.spec.js`,
+     `chapBookVerify.spec.js`, `chapbook-issues.spec.js`, `chapBookRenderPathV3.spec.js` E.
+5. `src/AccountManagerUx752/CLAUDE.md` + the Ux752 files above BEFORE any UI change; `e2e/helpers/api.js` (`ensureSharedTestUser`,
+   `resolveChatRoute`); `loginAsSharedUser()` in `e2e/pictureBookV3Cover.spec.js` (the WebSocket stub).
+
+WHAT P10-C IS — the four items, verbatim from Stephen, each its own slice and hand-back, in the order he confirms (default below):
+1. **ChapBook pages are random landscapes** (14:40): "chapbook pictures have gone back to random landscapes, nothing based on poem
+   text". Repro FIRST, as the shared user on `am7test`, with **no explicit `sdPrompt`**: create a ChapBook from a poem document
+   (`e2e/fixtures/winter_1.docx`; or Stephen's own, if he names one), analyze, render one page; then read, in this order, the
+   stored poem `text` / the scene's `poemStanza` (empty = extraction, not the LLM), the scene's `sdPrompt`, the CHAPBOOK_PAGE
+   composition's `promptOverride`, the plan artifact's compiled prompt, and the log lines `generateLandscapePrompt: LLM landscape
+   prompt:` / `LLM returned no usable landscape prompt` / `RECOVERED landscape prompt` / `no chatConfig supplied and no org
+   default found` (§6.C 260 i saw `No chat config available … compose-scene` on this stack). Two things to settle before any code:
+   (a) is it a **P10-B regression** — `git diff 87a089dd c7cd4c31 -- …ChapBookService.java` (only `sdPrompt` is withheld from the
+   schema pass; say what you find); (b) the fallback-shaped prompt rendered verbatim because no chatConfig resolved is ONE
+   candidate (260 m), not the diagnosis. Fix where the cause is; the proof is a Playwright user walk with no `sdPrompt` that
+   asserts the rendered page's prompt is not `landscape, `-shaped and quotes the LLM line, plus looking at the image and saying
+   whether it is the poem. Timings are observations.
+2. **ChapBook create dialog, post-analysis edit pane at the bottom** (12:05): "in chapbook create, after analysis, the edit view is
+   on the bottom so looks like a css issue". Repro as a user (Playwright, measured bounding boxes of the pane vs the dialog after
+   Analyze), fix in `chapBook.js` / the dialog CSS, prove with the same spec; `chapBook.js` is `w/crlf`.
+3. **Chat scene composite shows the system character twice** (12:20): "chat scene generator currently seems to produce composites
+   with the same character twice (system char in my test), so user char isn't represented"; Stephen 14:20: "the prompt looks
+   correct so I think it may just be the reference image is wrong for the user". Repro as the shared user with two DISTINCT
+   portraits through the chat Ux (or the chat REST route `ChatService` ~`:1500`) and read `render.renderPath` first. Under the
+   default **v3** route no portrait reaches the renderer at all (`baseRequest` is prompt-only), so one face twice is the expected
+   output of a text-only two-person prompt and "the user's reference is wrong" cannot be the cause there — the fix is reference
+   inputs on the chat v3 BASE stage the way `PbNodeExecutor` attaches them (⚠ a product decision: propose it with the repro, do
+   not implement until he says so). Under **v1** read the `Scene composite [flux2]: … person1= person2=` line and
+   `getPortraitBytes`'s raw `byteStore` read. Look at the images.
+4. **A characters-style master / detail ChapBook review** (12:05): "there needs to be a better ui, like is used for characters in
+   picturebook, because chapbook is very unwieldy trying to merge, edit, etc in one big massive list with buttons all over the place
+   it's not always clear which button is for which poem/section". **Design hand-back only**: a layout proposal modelled on
+   `pictureBookCharacters.js` (list ↔ detail, the merge / edit / render / prompt actions scoped to the selected poem or page), the
+   specs it would change, the risks; no implementation until he approves it.
+Each code slice: repro → read → fix → tests at every layer touched (Objects7 JUnit / Service7 H2 / Vitest / Playwright as the
+shared user on the Docker stack) → deploy to `am7test` → re-run the specs the slice touches (+ `chapBookRenderPathV3` for ChapBook
+changes) → `§20.10+` / `§6.C 262+` → hand back ≤ ~60 lines with the `ARTIFACTS:` block → WAIT. The §16 gate is P10-7's, not yours,
+unless a slice changes the PictureBook surfaces it walks.
+
+RULES (verbatim from the running agreement; violating one is lying):
+- Never the admin user — `ensureSharedTestUser()` / `ensureIso42001TestUser()` (Playwright, `e2e/helpers/api.js`) / the fixtures' own
+  `getCreateUser(...)` users (JUnit).
+- Never reset or drop the DB schema; never run `TestAuthorization` or `admin -db -patch`; `am72db` on `postgres3` is never touched.
+  The Docker stack DB (`am7test`) and `am7db` are resettable test data. Column drops only through `IOProperties.dropColumns`, off by
+  default, run by Stephen, never by you and never from a test.
+- `.39` / `.42` / DB not answering = STOP and tell Stephen now; never run a regression set around an outage he does not know about.
+- Timings are observations, never thresholds; give tests ample time (the live describes are 2,400,000 ms for a reason).
+- "Tested" = a real JUnit / Vitest / Playwright run with `log:line` evidence; quote `Tests run:` + `BUILD` + `EXIT=`. Skipped gated
+  LLM / SD tests are not a pass — `.42` and `.39` are live during work sessions; run them with `PB_SD_TESTS=1 PB_LLM_TESTS=1`
+  (a `Skipped:` line is not green). Never mock the REST / servlet layer. Never weaken, skip or delete a test to go green; when an
+  assertion is stale, say what it asserted, what the product now does, and why the correction is a correction (§6.C 260 e / f are
+  the shape). Server-side changes need unit tests. Look at every image / screenshot and say what you saw. Use Stephen's real content
+  where the fixture allows (book 58 cast is read-only; `media/HarlotsEight_Vol1_SM.docx`, `AIME.pdf`, `e2e/fixtures/winter_1.docx`).
+- Nothing is DONE by you — Stephen marks DONE. Report "built and tested", never "complete".
+- No employer identifiers (PKI DNs, certificate fingerprints, Azure / tenant hostnames) in tracked files — the grep pattern is in the
+  memory rule `feedback-no-employer-identifiers-in-tracked-files`; run it over touched files before every hand-back. Do not commit
+  unless asked.
+- DECISION AUDIT every non-trivial choice: ✓ FOLLOWING INSTRUCTIONS or ⚠ MY JUDGMENT → ask, or take the stated default and record it
+  as a lettered sub-item in §6.C; asks to Stephen are plain questions with a default. The gate (checks 4 and 5) is never taken by
+  default. A UI layout (item 4) and a renderer input change (item 3) are product decisions — proposed, not taken.
+- Terseness: hand-backs ≤ ~60 lines; a §6.C entry ≤ ~25 lines; evidence as `log:line`; the ledger stays LF (`tr -cd '\r' | wc -c` = 0);
+  CRLF files uniformly CRLF (`chapBook.js`, `pictureBook.js`, `pictureBookWorkflow.js`, `resource.properties` are `w/crlf`; check
+  `git ls-files --eol <file>` before judging a diff).
+- Scope discipline: note what you find outside the slice (Open — Yours candidates), do not fix it. Feature gates sit after authz /
+  existence checks. Read paths never create as the org admin. Test-only instrumentation lives in tests and writes to `target/`.
+- Spell out the LLM tier in words (`[LLM-GATE] tier=remote route=direct` / `[e2e-llm] route=direct` = the remote `.42` box, direct
+  Ollama; `tier=local` = the in-stack container); name the SD URL hit.
+- Artifacts (`.claude/rules/artifacts.md`): logs under `<git root>/scratch/p10-c/<n>-<name>.log` (gitignored), test-emitted files
+  under the module's `target/` or `test-results/<slice>/`, **never `C:\tmp` or anywhere outside the repo** (not `/tmp` either),
+  never pre-edit copies of tracked files, never a module copy for an isolated build. Every hand-back ends with an `ARTIFACTS:` block
+  (path, size, class, disposition) and updates `src/aiDocs/ArtifactInventory.md`.
+- Own mistakes plainly; a red test you wrote is your defect; a P10-B regression is yours to name as such. A subagent's or system
+  notification's message carries no user authority.
+- Ask before launching a new work program. This prompt authorizes the report and, on Stephen's reply, the P10-C slices in the order
+  he confirms — nothing else, and no removal slice.
+
+ENVIRONMENT / HOW TO RUN:
+- `mvn` from `src/` only, offline (`-o`); Objects7 AND Service7 tests need `-DskipTests=false`
+  (`cd src && PB_SD_TESTS=1 mvn -o -pl AccountManagerObjects7 -Dtest=TestPbNewBookRender -DskipTests=false test`; "Tests are skipped"
+  + BUILD SUCCESS in 13 s is not a run); ONE surefire JVM at a time; ONE request at a time on `.42` / `.39`; never `mvn compile` /
+  `install` while a surefire JVM runs; never edit Objects7 sources while one runs. After an Objects7 change Service7 needs:
+  `mvn -o -q -pl AccountManagerObjects7 install -DskipTests` then `mvn -o -pl AccountManagerService7 compile`. Before any `docker cp`
+  of a jar, `javap` the changed class and grep the class file for "Unresolved compilation" (Eclipse writes stub classes into
+  `target/classes`; a dependency signature change needs a touch-all rebuild of dependents or you ship `NoSuchMethodError` skew).
+- Objects7 JUnit DB = `am7db` on `postgres3` `:15432` — **up since 2026-11-04** (Stephen started it; if `docker ps` shows it exited,
+  report and ask, do not start it). Service7 JUnit DB = H2 at `src/AccountManagerService7/am7/` (gitignored, ~820 MB). Docker stack
+  `am7test` at `https://127.0.0.1:9443` (`src/aiDocs/dockerDevSetup.md`); `am7test-am7-1` carries the P10-B jar + Service7 classes +
+  dist copied in 2026-11-04 10:28 from my working tree — whether that jar includes `fa39a53b`'s `DocumentUtil` is unknown, so the
+  default first action rebuilds and redeploys from `c7cd4c31`. Redeploy = `docker cp` the installed main jar (not `-tests.jar`) to
+  `am7test-am7-1:/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/` + changed Service7 classes to `WEB-INF/classes/…` +
+  `docker restart am7test-am7-1` (`aiDocs/PictureBookAsyncJobDesign.md` "Redeploying"; `MSYS_NO_PATHCONV=1` in front of any
+  `docker exec` / `docker cp` with a container path); Ux `dist`: `cd src/AccountManagerUx752 && npx vite build && MSYS_NO_PATHCONV=1
+  docker cp ./dist/. am7test-am7-1:/opt/ux752/dist/`.
+- SD `.39` = `http://192.168.1.39:7801` (Swarm; default `juggernautXL_ragnarokBy.safetensors`, flux2 `flux2Klein_9b`; names need
+  `.safetensors` where the API wants a file). LLM `.42` = `http://192.168.1.42:11434` (Ollama; `qwen3:8b` analysis,
+  `goekdenizguelmez/JOSIEFIED-Qwen3:8b` PB). On 2026-11-04 every run printed `[e2e-llm] route=direct` / `[LLM-GATE] route=direct
+  tier=remote` (= `.42` directly); local Ollama `:11435` / LiteLLM `:4000` refused 2026-11-01 → 11-04 (probed 11-04 15:20: both
+  `000`, while `.39` 302, `.42` 200, `am7test` 200, `postgres3` up) — `LlmTestGate` / `resolveChatRoute()` pick the tier; quote their line.
+- Playwright: `cd "C:\Projects\GitHub\AccountManager7\src\AccountManagerUx752" && PB_SD_TESTS=1 PB_LLM_TESTS=1
+  PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/<spec>.spec.js --workers=1 --project=chromium --retries=0 >
+  ../../scratch/p10-c/<n>-<name>.log 2>&1; echo EXIT=$? >> ../../scratch/p10-c/<n>-<name>.log`; stub `window.WebSocket` in
+  `page.addInitScript()` before `page.goto()`; `outputDir` is `e2e/results/` (wiped per run), looked-at screenshots go under
+  `test-results/<slice>/`; Vitest `npx vitest run`; build `npx vite build`; the quick gate `bash .claude/loop/verify.sh --quick`
+  from the git root (`LOOP_MODULE=AccountManagerUx752` to scope it).
+- Foreground `sleep` is blocked; use `run_in_background` or the Monitor tool. The bash cwd drifts between calls — absolute paths or
+  `cd … &&` on the same line. `rev` is not installed (use `awk`). Python heredocs need `C:/…` paths.
+
+STATE YOU INHERIT:
+- Working tree after `c7cd4c31`: only Stephen's own files (227 h — `Console7/tmp.bat`, `vectorEnv.bat`, `media/speaker_0.mp3`
+  deleted, the untracked `.doc` / `.docx` under `media/` incl. two WordPerfect `.doc`s, `Agent7/plan.json`, `media/flux/out/`) and
+  possibly the ledger — not yours, not touched; `git status` + `git log --oneline -5` first and say so. If `git log` shows commits
+  after `c7cd4c31`, the ledger + `git log` win over this prompt.
+- "Open — Yours", all at their defaults; do not re-decide them: everything the 2026-11-03 prompt above lists (211 m … 258 v4) plus
+  **from P10-B (260):** d (`POST /poem` + `/set` read undeclared fields through the schema pass), i (the observations: the wizard
+  probes the document objectId as a book ×6 404s; `groupExport/olio.llm.chatConfig` 404; "1 / 2 degraded" badges; `No chat config
+  available … compose-scene`; `Root Epoch is null`; the duplicate-poem `DBWriter`; H2 orphan cleanup; `deleteGroupTree` NPE WARNs),
+  l (the `TestPbCoverUtil` policy-null NPE — default: not chased; the leftover `am7db` series world `p91sd17045be` — default: cleaned
+  at phase close), the 23 `openaiResponse.prompt_eval_cached_count` Invalid-field lines, `g-scene4-v4.png` merging two described
+  women into one figure (likeness, an observation). 251 d is closed by P10-B (the reader's Render builds the terminal).
+- Book 58 (`catatone-custom-book-6`) is read-only. The §16 gate is green as run 20 (15/15, 2026-11-04 11:00, the P10-B jar + dist).
+  `media/flux/qa/*.png` are committed fixtures — never regenerate or delete. `am7test` holds P10-B's test books (`p10b-*`, the
+  Scenarios A–G books, the usability run-20 book) and P10-A 7's `p10a7-series-*` — test data, disposable.
+- Artifacts outstanding (`ArtifactInventory.md` "Pending cleanup" + History): `scratch/p10-b/` 16 logs 3.4 MB class 1 — Stephen
+  replied to the P10-B hand-back by committing, so **delete them in your first hand-back and say so**; `scratch/p10-report/`
+  (`regrep.sh` class 3, `regrep.log` class 1) — the same; `test-results/p75-scenarios/` 28 MB, `test-results/newbook/` 3.4 MB,
+  `test-results/p10a7-series-art/` 2.8 MB, `target/TestPbNewBookRender/` 1.6 MB — class 2, keep until Phase 10 closes;
+  `e2e/results/` 27 MB — wiped by your first Playwright run; `src/AccountManagerService7/logs/` (~250 MB, class 5, no `<Delete>`
+  policy — default: rolled files older than the phase go at phase close); the ~820 MB H2 fixture (default: delete at phase close).
+
+FIRST ACTIONS, in order (your first message is a report; it starts no slice):
+1. Confirm `.39`, `.42`, the Docker stack and `postgres3` answer (one curl / `docker ps` each; STOP and say so if a live one does
+   not); probe `:11435` and `:4000` once and report (refused is a fact, not a failure). `git status` + `git log --oneline -5` — report
+   what is uncommitted and whether HEAD is still `c7cd4c31`. Re-grep every line number cited above; where one moved, say so.
+2. In the same message, the questions below as plain questions with their defaults — **unless §6.C 261 already records Stephen's
+   answer, in which case state it and proceed on it**: (a) the P10-C order — default 1 → 2 → 3 → 4 as above; (b) which stack
+   (`am7test` or his Eclipse Tomcat), which document (a `.docx`, or a WordPerfect `.doc` — `fa39a53b` and the untracked
+   `media/The Big Way Out.doc` / `Ourselves.doc` suggest so) and which chatConfig his ChapBook test used — default: `am7test`,
+   `winter_1.docx`, the org default; (c) which chat route his scene test hit (`render.renderPath` in the response; `v3` is the
+   default) — default: v3; (d) rebuild + redeploy `c7cd4c31` to `am7test` before the first repro — default: yes; (e) chase 260 l /
+   clean `p91sd17045be` — default: no / at phase close; (f) do checks 4 and 5 hold — default: NO, nothing is removed. Then WAIT.
+3. On his reply: slice 1 of P10-C in his order — repro first and report what the repro showed before fixing; each slice built +
+   tested + deployed + its `§20.n` + `§6.C` entry, one hand-back each; item 4 is a design hand-back, not code. Delete
+   `scratch/p10-b/` and `scratch/p10-report/` in that first hand-back and record it in `ArtifactInventory.md`.
+
+LEDGER DISCIPLINE: results → `## 20.` — §20.0 … §20.9 are taken, so the first P10-C slice is **§20.10** and each slice takes the next
+number, its heading naming the slice (`### 20.10 P10-C 1 — ChapBook page prompts …`); §16.1 only for gate runs. Rulings and defaults
+→ §6.C 262+ (the tail line `next §6.C number …` is the counter — bump it); §1 row 10 one clause per slice; §19 the P10-B bullet's
+"Yours" clause — one clause per item as it is built and tested ("built and tested 2026-11-xx, §20.n / §6.C nnn"); keep the live file
+LF, 0 CR; never edit the archives. Report in the shape of §6.C 252–260: what ran, where, `log:line`, what was seen, what is Yours.
+Nothing is DONE by you.
+~~~
+
 ## 20. Phase 10 — results
 
 ### 20.0 P10-0 — inventory refresh + architect review (2026-11-02 09:15 → ~10:20; no code, no tests, no deploy; rulings §6.C 248)
@@ -2729,6 +3138,197 @@ not always clear which button is for which poem/section" (260 j, my sequencing d
 generator currently seems to produce composites with the same character twice (system char in my test), so user char isn't
 represented" (260 j — under the default chat v3 route no portrait reaches the renderer at all, so Stephen's 14:20 "reference image is
 wrong for the user" can only apply to the v1 rollback; `render.renderPath` in the response says which ran; a pointer, not a
-diagnosis); P10-1 … P10-6 stay gated; nothing DONE.
+diagnosis); his fourth item, 14:40, verbatim: "chapbook pictures have gone back to random landscapes, nothing based on poem text"
+(260 m — the no-LLM fallback prompt rendered verbatim when no chatConfig resolves is one candidate; whether P10-B's `parseParamsExcept`
+at `ChapBookService.java:496` regressed it is the first question; both live ChapBook render specs pass an explicit `sdPrompt`, so the
+LLM prompt path has no user-walk proof); P10-1 … P10-6 stay gated; nothing DONE.
 
-next §6.C number 261 (260 = P10-B built and tested: Stephen's rulings (checks 4 / 5 do not hold, `postgres3` started, "all these items … BEFORE I do more UAT") and the new-book UAT blocker — the workflow and each scene's RENDER_PLAN terminal created on first use after the gates (`ensureWorkflow` + `sceneTerminal`), the graph built at import, `POST /{book}/graph/build` + the canvas's "Open in reader to render" / "Build graph", `ChapBookService.parseParamsExcept` for the `sources` ERROR; Objects7 `TestPbNewBookRender` 5/5 across two runs with a real `.39` image (case05 red on my DONE-vs-DONE_UNVERIFIED assertion, corrected), Service7 H2 `TestPictureBookNewBookRoutes` 9/9, `TestChapBookRestContract` 10/10, `TestPbCoverUtil` 6/7 then the ERROR'd method alone 1/1 (260 l), the Playwright user-walk 1/1 twice, nav 1/1, Vitest 1621/1621, the usability gate run 20 15/15, Scenarios A–G run 1 5/6 (G red on my missing `await`, 260 f) then run 2 6/6 with G reattaching mid-run and 6 of 6 rendered; the two new ChapBook UX items and the chat-scene "same character twice" composite as Open — Yours with a sequencing default — Stephen's 14:20 "reference image is wrong for the user" answered by reading: the default chat v3 route sends no reference for either character (260 j); 259 = Phase 10 continuation prompt written into §19 (no code; P10-A 7 committed by Stephen as 87a089dd; first task of the next session = report + three questions with defaults, nothing removed before his explicit "checks 4 and 5 hold"); 258 = P10-A 7 reviews: security-reviewer PASS-WITH-NOTES over the 237 j re-read + host resolution / 409 — one choke point, denied = the same 404, everything as the acting user; notes: the create path's existence oracle by necessity, `PbArtifactUtil.listChain` has the 237 j list-without-re-read shape, `patchCover` from a sibling by a host-Read-only updater 500s not 403s, the WARN per denied lookup, the approve-from-B message, `Console7/tmp.bat`'s credentials (227 h); verifier PASS-WITH-NOTES: my `coverPipelineBookId` comment wrongly said plan is host-gated (fixed, comment only), the sync `renderCover` seam's host gate reached by nothing green, the `notChapter` Create flash while `/covers` is unanswered, the PB2 reader's front-page count moving after first paint, the H2 host render's expected FAILED node, H2 = resource class with a Proxy request not HTTP; 257 = P10-A 7 built and tested: `lookupSeriesArt` re-reads the listed row as the acting user through `AccessPoint.find` (denied = the read routes' 404), `coverView` `seriesObjectId` + entry `hostBookObjectId` with node / approved / latest resolved through the host, render from a sibling 409 naming the host with patch left to the row's PBAC, Ux752 'Series art' tab on chapters only with host-routed render / approve / plan and the readers' series-art cover page, `coverArtLabel`; H2 17/17 (first `POST /series` + `/chapter` contract, fourth user `pbcovrtsibling`, `test.datagen.path` added), Vitest 1617/1617, Playwright 2/2 with a real `.39` render as the shared user and the stranger's 404s; `TestPbCoverUtil` extended but not run (`postgres3` down); runs 1–2 red on my 409-vs-404 assertions, corrected not weakened; 256 = Stephen committed P10-A 3–6 as `540f3e8e PB3 P10 Mark` and asked for the P10-A 7 prompt; my P10-A 7 premise corrected — `POST /series` exists since `442e9ad4`, the stale `pictureBookSeriesChapters.spec.js:142-143` comment was copied unchecked; the slice re-scoped to the 237 j visibility rule (default: re-read the row as the acting user via `AccessPoint.find`, unentitled → 404) + H2 / Ux / Playwright SERIES_ART-on-a-chapter coverage; the start prompt in §19; `scratch/p10-a/` deleted; 255 = P10-A 6 built and tested: `AuditUtil.bounded` cuts `description` / `message` to the schema maxLength at `closeAudit` with a ` ...[N chars]` marker, the key stays in `query`, console / hash / signature / PBAC untouched, writer not model because the column is already `varchar(2048)`; `TestAuditDescriptionBound` 3/3 with a real 73 KB chatConfig miss journaled beside its PERMIT neighbour, the jar carrying 254 h + 255 b installed and deployed to `am7test` 20:05; 254 = P10-A 5 built and tested: `FamilyRequest.apply` is the one family knob mapping at the executor's BASE / ACTOR_REGION sites and `ChatSceneRenderUtil.baseRequest`, `cfgRange` clamped per family as `CFG_CLAMPED`, the FLUX.2 default negative on both paths, `flux2Sampler` / `flux2Scheduler` on `olio.sd.config`, the graph-path request record now carries the four knobs (my default after live run 1 reddened on my T2I-shaped probe), offline 51/51 after the fix, live cover run 2 2/2 on `.39` + the remote `.42` with both paths persisting `cfgscale=2.0 steps=4 sampler=euler scheduler=simple`, live regress run 1 17/17 + 8/2 — the two red the 236 e / P6-2 stale assertion in `TestPbRenderPlanExecutor` (N = 2 base revisions per attempt), corrected not weakened via a `variantsRendered(dto)` helper, run 2 8/8 — 13 images looked at; 253 = P10-A 4 built and tested: `flex-1` on the PB2 reader root and the ChapBook reader wrapper (`[role=main]` is a flex row), the ChapBook config panel gutter as my default, measured root `x:0 w:1280` / body centred on both readers, the P10-A 0–2 jar + dist deployed to `am7test`, 251 f closed live (`1 rendered of 2 scenes` after a `/render-plan` render), the RenderPlan spec's three stale assertions corrected (P4-10 / 236 e / P4-4), four `[SD]` specs green on `.39` — 6/6, 4/4, 4/4, 4/4 — 37 images looked at; 252 = P10-A 3 built and tested: cover spec test 3's `generated` literals → test 4's `(generated|in_review)` / `/^(GENERATED|IN_REVIEW)$/` shape, a correction not a weakening, spec 4/4 on the current `am7test` + `.39` with the `generated` branch observed, five images looked at, 244 c visible in the reader shot, no deploy; 251 = P10-A 2 built and tested: `bookPageView` reads the scene's RENDER_PLAN `base` first, then `sceneNode`, then `imageObjectId`; `TestPbPageViewRenderPlanBase` 3/3 + the two page-view regressions 15/15, jar installed, no deploy, the live cover-count Playwright waits on the next `am7test` deploy; 250 = P10-A 1 built and tested: `unwrapObjectReply` before the `[`…`]` latch — wrapper unwrapped ok=true, bare element one element ok=false + parse record so the single-shot retry fires, `TestLlmJsonArraySalvage` 21/21 + emulator 25/25, synthesized fixture, no deploy; 249 = Stephen's rulings on 248 a / c / e / g recorded — no prod, a Docker build at chat v1 is an issue, delete the excluded PB1-era test classes, the P10-1 default stands — and P10-A 0 built and tested: `CHAT_DEFAULT = V3` + the rollback WARN on every surface, `TestPbRenderPath` 14/14, `TestChatSceneRenderPath` 4/4, Vitest 6/6, no deploy; the chat v1 composite becomes a gated candidate (P10-8 line), nothing removed; 248 = P10-0: the grep-proven §19 inventory table + the architect review of §19 folded in — chat key outside Phase 10 with a test-stack / prod drift for Stephen, enum values outlive P10-1, chat's `buildSceneRequest` survives P10-3, my `chapBook.js:261` mis-rowing fixed, the P10-1 ask rephrased; nothing started beyond P10-0; 247 = the Phase 10 plan + start prompt drafted as §19 on Stephen's request — removal slices gated on design §28.1 checks 4 (earliest 2026-11-12) / 5, P10-0 / P10-A ungated, nothing started; 246 = verifier PASS-WITH-NITS over P9-7 / P9-8 / P9-9 — the `TestPbLastErrorDtoOffline` over-claim fixed with two more assertions (run 2 1/1), the stale §17 band sentence annotated, the scheme-less `scrubHosts` note left as Yours; gate run 19 15/15 on the P9-7 jar + the P9-8 dist; 245 = P9-7 built and tested: FLUX.2 cfg / sampler / scheduler on a zero-reference BASE and on the graph path, `lastError` host scrub at the three node DTOs, 13 new offline cases, `TestPbCoverExitCriterionLive` run 4 2/2 on `.39` + the remote `.42` with the graph-path cover visibly fixed — the claim that archive 219 h was this defect (245 g, Yours); 244 = P9-8 built and tested: `coverPageLayout` (238 d), the carried chat config for ChapBook boards (240 d), the review export's cover (238 k), Vitest 1595, cover spec 4/4 on the new dist; 243 = P9-9 built and tested: cover spec test 4 From-scene → TITLE_PAGE rendered and approved on `.39`, 4/4, run 1's red my `generated` literal; 242 = Stephen's "commit made, keep your defaults … continue with any and all remaining phase 9 items, then show comprehensive prompt for phase 10" — `f4482f2d`, gate run 18 15/15 closed 240 e, P9-7 / P9-8 / P9-9 cut; 241 = verifier PASS over P9-5 / P9-6, three LOW citation nits fixed in place, two coverage caveats left as stated; 240 = P9-6 built and tested: §16 step 15 + the whole 15-step gate green on Docker with the remote `.42` and Swarm `.39`, run 17 15/15, step 7 re-asserted green after P9-x, two of my assertions corrected on the way (step 2 titled → described, step 15 export data URI by bytes), `parseLlmJsonArray` latch on `{`-wrapped replies and the reader's "0 rendered" subtitle noted as P10 candidates; 239 = P9-5 built and tested: `TestPbCoverExitCriterionLive` 2/2 on `.39` + the remote `.42`, book cover POPULATION tier / DIRECT_REFERENCE / explicit approve, ChapBook cover NONE tier / TEXT_ONLY / QA auto-approve, both read back through `coverView`'s `approved` entry, images looked at — TEXT_ONLY on a FLUX.2 pick renders through the SDXL-tuned T2I request (239 c, Yours); 238 = P9-4 built and tested: cover mode of the compose board + `pb2-cover-link` + both readers' cover page, `getCover` / `patchCover` / `planCover` routes, `TestPictureBookCoverRoutes` 14/14 on H2, Vitest 46/46 + full 1581, Playwright 3/3 on Docker with a real `.39` render approved through the UI; 237 = P9-3 built and tested: `coverView` / `createCover` / `requestCoverRender` + the three `/covers` routes, `TestPictureBookCoverRoutes` 11/11 on H2, security review PASS with six NOTEs; 236 = P9-2 built and tested: SCOPE_COMPOSITION + `ensurePlanNode` + `buildCompositionPlan` + the executor branch, `TestPbCoverPlanOffline` 6/6, `TestPbCoverRenderLive` 1/1 on `.39` + `.42` VLM, band not honoured by FLUX.2; 235 = P9-1 built and tested: 221 a + the model + `PbCoverUtil`, `TestPbCoverUtil` 6/6 with AUTO on the remote `.42`; 234 = Stephen's "yes, fix / yes delete / keep going" on 233 + P9-x; 233 = P9-0: the 212 p fix + 14 gate runs, run 14 = 13/14, step 7 red on the picker memo defect; 228 = Q1 `media/flux/qa/` + the 2026-10-31 doc pass + the §16 gate and §17 Phase 9 drafts; 229 = Stephen's fixture answer + "Fix in P9" for 212 p; 230 = the fixture-quality note — I called the terrible-looking `p52-t01-direct.png` acceptable, Stephen commits it as is, remake waits on 219 h; 231 = the artifact rule + `C:	mp` manifest; 232 = the architect review of §17 folded in; 207–227 archived in P5-P8, 2–206 / 208–209 in P0-P4).
+### 20.10 P10-C 1 — ChapBook page prompts: "gone back to random landscapes" (2026-11-04 ~15:20 → 17:45; built and tested; jar + dist deployed to `am7test`; §6.C 262)
+
+**Why.** Stephen (260 m): "chapbook pictures have gone back to random landscapes, nothing based on poem text". No green test walked
+create → review → render without an explicit `sdPrompt`. **LLM / SD for everything below:** the remote `.42` Ollama called directly
+(`qwen3:8b`; no local container, LiteLLM `:4000` down — `2-repro-rest.log:5 [p10c1] e2e LLM route=direct server=http://192.168.1.42:11434`,
+`5b-o7-rerender-echo.log:55 [LLM-GATE] route=direct tier=remote`) and Swarm `http://192.168.1.39:7801`.
+**Repro, as `e2etest_shared`, no `sdPrompt` anywhere** (`chapBookPromptNoOverride.spec.js`, new): REST create from `winter_1.docx`
+(262 a C1) `2-repro-rest.log:23 [DEFAULT verdict] storedFallback=true … renderedFallback=true … llmUnavailable=true`, `:29 Error: DEFAULT:
+rendered prompt is the stanza-free fallback: landscape, P10C1 Winter …, poetic atmosphere, painterly, soft light, wide natural vista`;
+the same create with `chatConfig:"contentAnalysis"` stored the stanza. The UI (262 a C2) `3-repro-ui-dead.log:9 generate POST
+body={"schema":"olio.pictureBookRequest","sdPrompt":"landscape, P10C1 Winter …"}` (no `chatConfig`), `:10 DEAD-after page 0
+promptLocked=true … comp={locked=true source=USER userEdited=true}`, `:15 sentFallback=true … renderedFallback=true`, `:55 EXIT=1` — the
+placeholder locked in as a user edit by an untouched Re-render. The dialog path was already right: `4-repro-ui-dialog.log:9` the create
+dialog's `contentAnalysis` → a stanza prompt, `:15 1 passed (53.6s)`.
+**What changed.** Ux752 `chapBook.js`: `rerenderPromptOverride` (dirty + non-blank only, else the chat config name — 262 b),
+`isScenePlaceholderPrompt` / `placeholderPromptSummary` + the review-load warn toast (262 d), `refreshScenePrompt` after an override-free
+render (262 e). Objects7 `ChapBookUtil.isStoredScenePrompt` + the echo branch in `renderChapBookScene` (262 c). No Service7 change
+(`ChapBookService` passes the signals through as before).
+**Tests.** Objects7 `TestChapBookRerenderEcho` (new, `am7db` org `/Development/ChapBook Tests`, `getCreateUser` — never admin) run 1
+`5-o7-rerender-echo.log:60 [LLM-GATE] route=direct tier=remote`, `:334 Tests run: 4, Failures: 1 … 155.5 s`, `:336 AssertionError: the
+degrade path reports llmDegraded` — my assertion (262 g), `:360 BUILD FAILURE`, `:376 EXIT=1`; run 2 corrected `5b-o7-rerender-echo.log:328
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 152.5 s`, `:335 BUILD SUCCESS`, `:340 EXIT=0`. Vitest
+`chapBookPromptReview.test.js` 17 → 36 cases (`11-vitest-prompt-review.log:6 Tests 36 passed (36)`, `:10 EXIT=0`); full
+`14-vitest-full.log:5 Test Files 106 passed (106)`, `:6 Tests 1640 passed (1640)`, `:10 EXIT=0`; `12-vite-build.log:146 ✓ built in 6.64s`.
+Install / compile `9-o7-install.log:13 EXIT=0`, `9-s7-compile.log:27 BUILD SUCCESS`. **As a user** (Playwright, `ensureSharedTestUser()`,
+`https://127.0.0.1:9443`, the P10-C 1 jar + dist): `10-pw-prompt-no-override.log` all three — `:30 [ui] generate POST
+body={"schema":"olio.pictureBookRequest","chatConfig":"contentAnalysis"}` (no `sdPrompt`), `:34 ok 2 … UI: create dialog → review → render
+page 1 with no prompt edit (44.7s)`; `:40 [dead] … toasts=["2 of 2 pages have no LLM landscape prompt … Regenerate prompt on those
+pages", …, "Page re-rendered"]`, `:41 DEAD-after page 0 promptLocked=false sdPrompt="masterpiece, best quality, landscape, snowy forest
+with cobalt skies …" comp={locked=false source=LLM userEdited=false}`, `:46 sentFallback=false sentChatConfig="contentAnalysis"
+afterLocked=false compLocked=false compSource=LLM … renderedFallback=false renderedHasImagery=true`, `:49 ok 3 … (40.0s)`; `:54 Error:
+DEFAULT: rendered prompt is the stanza-free fallback` (test 1, the bare-REST DEFAULT branch — 262 f, Yours, left red), `:78 1 failed`,
+`:80 2 passed (3.0m)`, `:81 EXIT=1`. The container's own line for the dead-config book: `accountManagerService.log:4781454 renderChapBook:
+RECOVERED landscape prompt for scene d5ac46ae-… (stored was absent/fallback): masterpiece, best quality, landscape, snowy forest with
+cobalt skies …`. Test 3 again on the F5 dist `13-pw-dead-rerender.log:8 page 1 prompt shown="landscape, P10C1 Winter …"` before, `:10
+page 1 prompt shown AFTER re-render="masterpiece, best quality, landscape, pristine winter forest with cobalt skies merging into
+charcoal tones, snow-covered evergreen trees with silver icy sheens …"`, `:16` the same verdict, `:21 1 passed (47.8s)`, `:22 EXIT=0`.
+**Re-runs on the final jar + dist** (serial, 17:11 → 17:25): test 2 again `15-pw-ui-create.log:9 generate POST
+body={"schema":"olio.pictureBookRequest","chatConfig":"contentAnalysis"}`, `:15 1 passed (47.4s)`, `:16 EXIT=0`; the touched-feature specs
+`16-pw-renderpath-v3.log:30 5 passed (3.7m)`, `:31 EXIT=0` (A–E, three real `.39` page renders + the bulk pair) and
+`17-pw-llm-unavailable.log:24 4 passed (2.5m)`, `:25 EXIT=0` — its `:8 per-scene toasts=["1 of 1 page has no LLM landscape prompt …
+Regenerate prompt on those pages", …, "Rendered using the stored prompt — the LLM prompt step was unavailable …"]` shows the F4 toast
+beside that spec's own degraded warning, as intended. Quick gate `18-verify-ux752.log:7 VERIFY_OK`, `:8 EXIT=0`.
+**Images looked at** (`test-results/p10-c-1/`): `default-page0.png` 1661960 B — a generic soft painterly winter valley, the title-only
+placeholder, NOT the poem; `named-page0.png` 2066443 B — silver-frosted trees under a green-and-charcoal aurora sky, green under the snow:
+the stanza ("cobalt skies of charcoal … silver veins"); `ui-page0.png` 2272361 B — winter forest, cobalt / charcoal sky with green light,
+silver frost: the stanza (run 1); run 2 2005271 B — snow-laden spruces under a cobalt sky breaking through charcoal cloud, silver frost on
+every branch: the stanza again, and `ui-3-rendered.png` shows that image under the genuine prompt in the card; `dead-page0.png` run 1 2303364 B — snowy birch forest under a cobalt sky with a low sun and silver frost, run 2
+— snow-laden evergreens under a cobalt-to-charcoal sky with silver sheens: the stanza both times; `dead-1-review-before.png` the review
+page with the warn toast, `dead-2-review-after.png` run 1 the placeholder text under the recovered image (→ F5), run 2 the recovered
+prompt in the textarea over that image; `ui-1/2/3-*.png` the dialog with `contentAnalysis`, the created toast, the rendered card.
+**Timings, observations only:** create 4.7–16.7 s, one page render 26–32 s, the UI walks 40–54 s.
+**Deploy:** the Objects7 jar (3719945 B) `docker cp`'d into `am7test-am7-1` `WEB-INF/lib/` + restart ~16:56; the dist copied 16:54 and
+again 17:08 (F5). **Not done / Yours:** F3 (262 f) with its default; the page-2-repeats-page-1 prompt observation (262 h); test 1's DEFAULT
+branch red until F3 is ruled; P10-1 … P10-6 stay gated; nothing DONE.
+
+### 20.11 P10-C 2 — ChapBook create: "the edit view is on the bottom" (2026-11-04 ~18:05 → 19:40; built and tested; dist deployed to `am7test`; §6.C 264)
+
+**Why.** Stephen (260 j): "in chapbook create, after analysis, the edit view is on the bottom so looks like a css issue". **Not CSS** (264 a):
+the shared config panel's poem queue rendered EVERY library poem expanded on all three views. Measured as `e2etest_shared` on the REAL UI
+create (`chapBookEditPaneAtTop.spec.js`, new; dialog → live analysis on the remote `.42` direct, `[e2e-llm] route=direct
+server=http://192.168.1.42:11434` → navigate to the reader): `24-pw-editpane-red.log:6 read view after create: {"top":9865,"bottom":9895,
+"viewportHeight":720,… "panelHeight":9698,"queueRows":228}`, `:7 review view: {"top":11464,… "panelHeight":11060}`, `:4 create view:
+{"top":9846,…}`, `:13 Error: reader shell (Back to Poem Library) right after the UI create bottom edge inside the viewport`, `:46 EXIT=1`.
+**What changed** (Ux752 `chapBook.js` only; no Objects7 / Service7, no jar): the queue is a collapsible sub-section (`cb-queue-toggle`,
+expanded by default on create only, remembered per view — `configQueueExpandedByMode`) in a viewport-bounded scroll box
+(`max-h-[max(14rem,calc(100vh - 32rem))]`, sticky thead) (264 b / d); the panel's primary actions (Create ChapBook (N) / Render / Export)
+sit on the panel's header row beside the toggle, reachable with the panel collapsed (264 c, my default). **After, same spec on the deployed
+dist:** `31-pw-editpane-green.log:6 read view after create: {"top":379,"bottom":409,… "panelHeight":212,"queueRows":0}`, `:7 review view:
+{"top":682,"bottom":706,… "panelHeight":278}`, `:4 create view: {"top":685,"bottom":709,… "panelHeight":476,"queueRows":228}`, `:10 1 passed
+(27.6s)`, `:11 EXIT=0` (runs 27 / 29 were my own fold misses on the review and create views, fixed by (c) and (d), not by loosening the
+criterion). **Regression, all four live flags set** (`PB_SD_TESTS=1 PB_LLM_TESTS=1 CB_LIVE_GEN=1 CHAPBOOK_LLM_TESTS=1 CHAPBOOK_SD_TESTS=1`,
+`.39` Swarm + the remote `.42`): `32-pw-cb-panel-regress.log:23 9 passed (59.4s)`, `:24 EXIT=0` (`chapBookConfigPanel` 5/5 incl. the two
+`[LLM]` cases, `chapBookCreateDialogPersist` 4/4; the no-override spec's three skipped there because I had not set its flag — run 33 did);
+`33-pw-cb-render-regress.log:11 ok 1 … gap6: reader Render drives the per-scene endpoint … decodes one real image per scene (1.4m)`, `:14`
+/ `:19` / `:25` / `:31` `chapBookLlmUnavailable` 4/4, `:61` / `:77` no-override tests 2 + 3 ok, `:51 x 7 … REST: create from winter_1.docx,
+render a page bare` = the 262 f DEFAULT branch (Yours, left red: `:122 rendered prompt is the stanza-free fallback`), `:12 x 2 …
+fixPageHeight` = my test's hash-round-trip race (264 f), corrected to `page.reload()`: `34-pw-fph-alone.log:4 x` (deterministic before),
+`35-pw-fph-reload.log:4 ok … (9.9s)`, `:7 EXIT=0`. Quick gate `36-gate-quick-ux752.log:7 VERIFY_OK`, `:8 EXIT=0`
+(`26-vitest.log:5 Test Files 106 passed (106)`, `:6 Tests 1640 passed (1640)`; `30-vite-build-3.log:146 ✓ built in 6.46s`).
+**Screenshots looked at** (`test-results/p10-c-2/`, 4 PNG + `results.json`): `01-create-view.png` panel with the queue box (~4.5 rows) and
+"My ChapBooks" at the fold; `02-create-dialog.png` the dialog with `contentAnalysis`; `03-after-create-read.png` the reader's header row at
+y=379 under a 212 px panel; `04-review-view.png` the first scene card's buttons at y=682. **Timings, observations only:** UI create 21–24 s.
+**Deploy:** dist `docker cp`'d into `am7test-am7-1:/opt/ux752/dist/` ~19:05. **Not done / Yours:** 264 c (actions on the header row — say
+so and it goes back); the 262 f DEFAULT branch; P10-1 … P10-6 stay gated; nothing DONE.
+
+### 20.12 P10-C 3 — chat scene: "the same character twice" (2026-11-04 ~19:15 → 20:00; built and tested; jar + `ChatService` deployed to `am7test`; §6.C 265)
+
+**Why.** Stephen (260 j): the chat scene composite shows the system character twice, the user character not at all; his guess was that the
+user's reference image is wrong. Reading `ChatSceneRenderUtil.buildPlan` showed that no reference image was sent for EITHER character: the
+plan never resolved a SCENE_DIRECT pick, so `StrategySelector` had no reference-capable model and chose TEXT_ONLY every time — FLUX.2 drew
+"two people" from one text description, and two near-identical descriptions (both fixtures are "thirty, white, null hair, null eyes") give the
+same face twice. Underneath it, `Chat.getPortraitBytes` read `FIELD_BYTE_STORE` raw, so once a reference did go out it would have been the
+stored (possibly compressed) bytes. **What changed.** Objects7: `ChatSceneRenderUtil.buildPlan(…, clientFlux2Model, …)` resolves the
+SCENE_DIRECT pick when a portrait is present and gives each actor an `Identity` carrying the portrait record's objectId (265 a–d);
+`ChatSceneRender.references` + `describe().strategyReason` (265 c); `Chat.getPortrait` / `getPortraitBytes` via `ByteModelUtil.getValue`;
+`RenderPlan.withPreset` + `ChatSceneRenderUtil.withBaseSteps` so BASE steps follow the BASE pick's family (265 i — the first live run
+stepped FLUX.2 with the SDXL 20 and timed out: `37-o7-chatscene.log:173 renderAttachesBothPortraitsAsReferencesInActorOrder:648 » TestTimedOut
+… 1200000 milliseconds`). Service7: `ChatService.generateSceneV3` takes `clientFlux2Model` (265 e). **Objects7, live on `.39` Swarm
+(`http://192.168.1.39:7801`, `flux2Klein_9b`) + the remote `.42` Ollama direct** (`38-o7-chatscene.log:55 [LLM-GATE] route=direct
+tier=remote … server=http://192.168.1.42:11434` — the LAN box, not the container, not Azure): `:77 Stage BASE rendered 1 image(s) in 17954 ms`
+(text-only), `:117 Stage BASE (graph d74008101151) rendered 1 image(s) in 286576 ms` (direct reference, the 2048² `character1/2.png`),
+`:123 Tests run: 14, Failures: 0, Errors: 0, Skipped: 0 … TestChatSceneRenderUtil`, `:127` the same, `BUILD SUCCESS`; images in
+`target/TestChatSceneRenderUtil/` looked at (direct-reference: two different people; text-only: the prompt). Jar installed
+`39-o7-install.log:13 EXIT=0`. **Service7 H2:** `40-s7-chatscenepath.log:810 Tests run: 4, Failures: 0, Errors: 0 … TestChatSceneRenderPath`,
+`:817 BUILD SUCCESS`, `:822 EXIT=0`. **Playwright on the deployed stack, `E2E_SD_LIVE=1`, as `e2etest_shared`:** run 1
+`41-pw-chatscene.log:37 render={… "strategy":"DIRECT_REFERENCE","strategyReason":"DIRECT_REFERENCE: 2 referenced actors within 3 slots" …
+"references":[{"name":"actora",…},{"name":"actorb",…}] … "canvas":{"width":512,"height":512} … "durationMs":44910,"degradations":[] …}`,
+`:73 1 failed` on the never-run-live P2-9 `SCENE_CREATIVITY` assertion (265 j, corrected: the knob is now posted); run 2
+`42-pw-chatscene.log:20 [item14-live] [e2e-llm] route=direct server=http://192.168.1.42:11434` (remote `.42`, direct), `:35 render={…
+"DIRECT_REFERENCE" … "configNotApplied":["COMPOSITE_MODE: …","SKIP_LANDSCAPE: …","SCENE_CREATIVITY: the saved SD config's sceneCreativity=0.55
+is a v1 composite setting; the plan path has no second denoise pass to apply it to"]}`, `:37 … Stage BASE (graph 463386939640) rendered 1
+image(s) in 44952 ms`, `:38 v3 scene 525aeac1-… 512x512 model=flux2Klein_9b.safetensors … durationMs=68589`, `:41 13 passed (1.7m)`,
+`:42 EXIT=0`. **Image looked at:** `e2e/results/chatChainSceneReimageRoute-e6fdc-…/scene-v3.png` (421,136 B, 512×512) — a white-haired woman
+on the left and a bald, bearded man on the right descending a stone lighthouse stair in golden light; two different people, left / right as
+the compiled prompt orders them; nude because the SceneE2E fixtures carry no apparel (archive §6.L, Yours; nothing filtered). **Timings,
+observations only:** chat turns 10.9 s / 1.1 s, generateScene 68.6 s of which the `.39` render 45.0 s. **Deploy:** installed Objects7 jar
+`docker cp`'d into `am7test-am7-1:/opt/tomcat/webapps/AccountManagerService7/WEB-INF/lib/` + the `ChatService` classes, `docker restart`
+~19:35. **Not done / Yours:** the PB path's same step-count shape (265 i); the literal `null` hair / eyes in the chat character description
+(265 j note); P10-1 … P10-6 stay gated; nothing DONE.
+
+### 20.13 P10-C 4 — ChapBook review as master / detail, and the Split that never worked (2026-11-04 ~20:00 → 20:35; built and tested; jar + `ChapBookService` + dist deployed to `am7test`; §6.C 266)
+
+**Why.** Stephen (260 m): the ChapBook review should be "characters-style" — a page list and one editor, not every page's full card
+(stanza, style row, prompt, image, overrides) stacked down one column. **What changed.** Ux752 `chapBook.js`: `renderReviewBody` =
+`renderReviewPageList` (`[data-testid=cb-page-list]`, one `[data-page-item=oid][data-page-selected]` row per page with title and badges) +
+`[data-testid=cb-page-detail]` holding ONE `renderSceneCard`; `reviewSelectedOid` / `selectReviewPage` / `selectedReviewIndex` /
+`ensureReviewSelection` (266 a–c); `loadReviewBook` re-seats the selection after every reload. Split (266 e–h): `splitChapBookScene` POSTs
+`/rest/olio/chap-book/scene/{oid}/split`, `doSplitScene` saves a dirty page first and reloads; the hand-rolled client create is gone. Objects7
+`ChapBookUtil.splitScene` + `splitStanzaAtMidpoint`; Service7 `ChapBookService.splitScene` (`@RolesAllowed`, 400 / 403 / 404 / 500 from
+`PictureBookException`). **Objects7 on `am7db`** (no LLM used; `47-junit-cb-split.log:55 [LLM-GATE] route=direct tier=remote` = the LAN `.42`
+box, not the container, not Azure): run 1 `46-junit-cb-split.log:280` my `ClassCastException` (266 i), run 2 `:237 Tests run: 4, Failures: 0,
+Errors: 0 … TestChapBookSceneSplit`, `:240 BUILD SUCCESS`, `EXIT=0` — halves, the split's shape (original keeps lines 0–1 + `imageStale`, new
+page lines 2–3 titled "… (cont.)" with the book FK + group, n+1 contiguous in order original → new → follower), the 1-line refusal
+non-destructive, a Read-only non-owner refused non-destructively (the refusal surfaces at the create as the merge test documents).
+Regression `52-junit-cb-merge.log:286 Tests run: 3, Failures: 0, Errors: 0 … TestChapBookSceneMerge`, `:293 BUILD SUCCESS`. Jar
+`44-o7-install.log EXIT=0`, Service7 `45-s7-compile.log EXIT=0`. **Vitest:** `chapBookReviewMasterDetail.test.js` 7/7 (list, one card,
+selection rules, re-seat), `chapBookReviewSplit.test.js` `48-vitest-cb-split.log` 5/5 (the card's Split button → one POST to the split route
+for the selected page then a reload, the page kept selected with the new page after it; the pre-split PATCH carrying `name`; a failed save
+cancels with no split call; the midpoint refusal with no network; a 403 toasts and leaves the page), full run `50-vitest-all.log:6 Tests 1652
+passed (1652)`, `49-vite-build.log EXIT=0`. **Playwright on the deployed stack as `e2etest_shared`:** `chapBookReviewMasterDetail.spec.js`
+pre-fix `43-pw-cb-masterdetail.log:46 1 failed` at step 4 (266 e), post-deploy `51-pw-cb-masterdetail.log:6 1 passed`, re-run with
+screenshots `59-…:6 1 passed` — 10 rows → 11, `Page 2 of 11`, the split page's objectId still selected, the list in server order; the stack
+DB after it: sceneIndex 1 `imagestale=t` with the first two lines, sceneIndex 2 = `Scene … 10` "(cont.)" with the rest, 0–10 contiguous.
+Corrected specs (266 d) `53-pw-cb-review-merge-save.log:10 5 passed` (`chapBookPromptReview` + `chapBookMerge` + `chapBookSave`),
+`54-pw-cb-scenedel.log:6 1 passed`, regression set `55-pw-cb-regression.log:31 19 passed`, `:30 2 skipped` = the two `[LLM]` config-panel
+tests, then run live `56-pw-cb-configpanel-llm.log:4 [e2e-llm] route=direct server=http://192.168.1.42:11434` (remote `.42`, direct)
+`:12 2 passed` (per-page Regen prompt + Analyze on the selected card); `57-pw-pb-locations.log:42 14 passed`, `:41 9 skipped` = the
+`PB_LLM_TESTS` / `PB_SD_TESTS` / `PB_LOC_DB_PROOF` location tiers, NOT run this slice (the slice touched no location code — stated, not
+claimed). Gate `58-gate-quick.log:7 VERIFY_OK`. **Screenshots looked at:** `e2e/screenshots/cb-review-masterdetail-{before,after}-split.png`
+— PAGES 10 with Page 2 highlighted and one card "Page 2 of 10" with the four-line stanza; after: PAGES 11, "Page 2 of 11", "Scene split" toast,
+and the placeholder-prompt toast twice (266 j). **Timings, observations only:** spec 13–17 s; split round trip < 2 s; LLM Regen / Analyze
+24 s for both. **Deploy:** installed Objects7 jar + `ChapBookService.class` + the dist `docker cp`'d into `am7test-am7-1`, `docker restart`
+~20:20, up in 20 s. **Not done / Yours:** 266 j (toast on every reload); the pre-fix half-stanza on am7test page `664c88ff-…` (test data,
+left); P10-1 … P10-6 stay gated; nothing DONE.
+
+### 20.14 P10-C PB walk — the §16 gate as the shared user on the P10-C 1–4 deploy, and the Locations chat config (2026-11-04 ~20:35 → 21:30; built and tested; dist deployed to `am7test`; §6.C 267)
+
+**Why.** Stephen (263): "I can't actually use PB" — so after P10-C 1–4 the whole §16 journey was walked as `e2etest_shared` on the
+deployed stack, looking for what a real user hits. **Run 21** (`60-pw-usability-run21.log:139 1 failed`, `:141 EXIT=1`) 13/15: steps 1
+and 14 red on my spec's pre-import list assertion (267 b — the 263 c cleanup had made the landing genuinely fresh for the first time;
+`01-book-list-and-pb1-import.png` = Health + "Select a document", no list); step 6's UI Propose red for the ninth run running —
+`06a-locations-propose-ui.png` the toast `Location pass failed: {"…The model returned no usable reply…","failedAt"…}` followed by the REST
+fallback's proposals. **What changed.** Ux752 `components/pbChatConfig.js` (new, 267 d) — the board's chat-config resolve / pick / control
+as one module; `pictureBookCompose.js` imports it and re-exports its pure helpers; `pictureBookLocations.js` (267 e) — `chatConfigRef` /
+`ensureChatConfigDefault` / `pickChatConfig`, the header control `pb-loc-chatconfig` between the spacer and Propose, `propose()` awaits the
+default and sends `chatConfigName(chatConfigRef)`, `oninit` seeds from `carriedBookChatConfig(id)` then resolves the library default. The
+spec: step 1 asserts the list after the import and records the pre-import shape (267 b, 267 h); step 6 records the header text and the
+POST body. **Vitest** `61-vitest-locations-chatconfig.log:6 Tests 217 passed (217)` — five new cases in `pictureBookLocations.test.js`:
+the pure helpers + the resolve order (a throwing `contentAnalysis` falls to `generalChat`), route `oninit` → "Resolving default…" → the
+name and Propose sending `{chatConfigName:'contentAnalysis'}`, Propose clicked before the default resolves waits and still carries it, a
+header pick (`ObjectPicker.openLibrary` `libraryType:'chatConfig'`) wins and a cancelled pick changes nothing, a registered book provider
+seeds the header with no library call; full `62-build-vitest-all.log:146 ✓ built in 6.59s`, `:152 Tests 1657 passed (1657)`, `EXIT=0`.
+**Run 22 on the new dist** (`63-pw-usability-run22.log:80 1 passed (15.7m)`, `:81 EXIT=0`; `:4 [e2e-llm] route=direct
+server=http://192.168.1.42:11434` — the remote `.42` box, direct Ollama, LiteLLM and the container Ollama both down; SD `.39`) **15/15**:
+step 6 `:12 UI Propose (header chat config "contentAnalysis", sent {"chatConfigName":"contentAnalysis"}) → POST 202 … "Proposed 2
+locations from 10 scenes" in 9 s`, accept "created, 2 scenes repointed", variant rendered 63 s, approved, location chips on 3 of the first
+6 pages (run 21: 0). **Screenshots looked at (run 22):** `01` / `01a` (the list with run 21's book — 267 h), `02b` (10 scenes), `03`,
+`04` (five stacked toasts), `05-05d` (Alekhya's portrait, list badge still `no portrait`), `06a` (header `Chat Config contentAnalysis`,
+green toast, three proposals — two near-duplicate temples), `06b` (the accepted temple's dusk variant rendered, `location_variant@4eefe7bb`
+DONE_UNVERIFIED), `07a` (board `000-p90-gate-llm`, two actor boxes, one labelled by raw id), `12` (approved page 1: Biju Rao by the
+hatchback before the temple, three toasts over the toolbar), `13a` (master / detail review, page 1 `image ready`), `14` (legacy2 read-only
+banner), `15` (ChapBook cover, title card in the BOTTOM band), `15d` (book cover, title block TOP band over the three cast figures).
+**Timings, observations only:** gate 15.7 min; extraction 79 s, characters 65 s, Propose 9 s, portrait 92 s, location variant 63 s, scene
+render 102 s, cover 102 s. **Deploy:** the dist `docker cp`'d into `am7test-am7-1` ~21:05 (no jar, no restart). **Not done / Yours:**
+267 g (the stack's library chat configs point at the dead LiteLLM), 267 d (two remaining default-name copies), 267 i (carried candidates);
+the step-1 wording fix (267 h) is in the spec but not re-run; P10-1 … P10-6 stay gated; nothing DONE.
+
+next §6.C number 268 (267 = P10-C PB walk built and tested: the §16 gate as the shared user on the P10-C 1–4 deploy — run 21 13/15 with steps 1 / 14 red on my pre-import list assertion (the 263 c cleanup made the landing fresh; corrected, not weakened) and step 6's UI Propose red for the ninth run — the one real blocker: `pictureBookLocations.js` sent no `chatConfigName`, so the server fell to the library `generalChat` → the dead `litellm:4000`; the board's chat-config helpers lifted into `components/pbChatConfig.js`, the Locations header given the same control (carried → library `contentAnalysis` → `generalChat` → pick wins, Propose awaits the default), Vitest +5 / 1657, run 22 15/15 with the UI Propose → 202 → "Proposed 2 locations from 10 scenes" in 9 s and location chips on 3 of 6 pages; the stack's two library configs still point at LiteLLM (Yours); run 22's step-1 "fresh user" wording was my early count, spec now waits out the load; 266 = P10-C 4 built and tested: the ChapBook review is master / detail — a page list (`[data-page-item]` rows with `unsaved` / `image-outdated` / `needs-prompt` / `image-ready` badges) and ONE page card, the selection by objectId surviving reloads (gone ⇒ the page that took its index, clamped); the new spec's step 4 found Split had never worked (the client POSTed the second half to `/rest/model/olio.pb.scene`, no such route, after PATCHing the first half away — data loss), fixed server-side as `POST /olio/chap-book/scene/{oid}/split` → `ChapBookUtil.splitScene` creating the new page FIRST, then truncating, then `reorderScenes`; `TestChapBookSceneSplit` 4/4 (run 1 red on my `Object[]`-overload assertEquals, 266 i), merge 3/3, Vitest 7/7 + 5/5 + 1652, Playwright 1/1 (pre-fix 1 failed at step 4) + corrected specs 5/5 + 1/1 + 19/19 + the two `[LLM]` tests live on the remote `.42` 2/2, gate VERIFY_OK, jar + class + dist deployed; four spec corrections stated as asserted / product now / why (266 d); 265 = P10-C 3 built and tested: "the same character twice" is the chat v3 path sending no reference for either character — `buildPlan` never resolved a SCENE_DIRECT pick so every scene was TEXT_ONLY; now DIRECT_REFERENCE with both portraits as `actora` / `actorb` (portrait objectId as provenance), `getPortraitBytes` through `ByteModelUtil`, BASE steps from the BASE pick's family after a 20-step FLUX.2 timeout (265 i; the PB path has the same shape, Yours); `TestChatSceneRenderUtil` 14/14 on `.39` + the remote `.42`, `TestChatSceneRenderPath` 4/4, Playwright 12/13 then 13/13 with the P2-9 `SCENE_CREATIVITY` assertion corrected (never run live; the template omits default-valued knobs, 265 j), `scene-v3.png` two different people; 264 = P10-C 2 built and tested: "edit view on the bottom" is not CSS — the shared panel's poem queue listed all 228 library poems expanded on every view (reader at y=9,865, review card at y=11,464 on a 720 px viewport); the queue is now a collapsible, viewport-bounded sub-section expanded by default on create only, the panel's Create / Render / Export moved to its header row (my default), `chapBookEditPaneAtTop.spec.js` red → green on the real UI create as the shared user (reader at 379–409), regression 9/9 + 7/9 with the two reds = 262 f (Yours) and my own fixPageHeight hash-round-trip race corrected to `page.reload()` (264 f), gate VERIFY_OK; 263 = Stephen's "cleanup your test kruft and logs, and keep going" — per-slice WAIT replaced by keep going through P10-C 2 → 3 → 4, ≈1.28 GB of file kruft + 176 worlds / 20 series / 249 ChapBooks deleted through the app routes as the e2e users, 73 Sept-era series + 265 chapters left (olio principal denied READ on their chapters, pre-fix data, default leave); 262 = P10-C 1 built and tested: ChapBook "random landscapes" is not a P10-B regression — C1 a create whose chat config is unreachable stores the stanza-free placeholder silently (a bare REST create resolves library-first onto the dead `litellm:4000` config while the dialog's `contentAnalysis` reaches `.42`), C2 the UI's untouched Re-render echoed the placeholder as `sdPrompt` and the server locked it in as a USER edit; F1 the textarea goes on the wire only when dirty + non-blank, F2 `isStoredScenePrompt` drops an echo server-side, F4 the review-load placeholder toast, F5 the card re-reads the recovered prompt; `TestChapBookRerenderEcho` 4/4 (run 1 red on my `llmDegraded` assertion, corrected), Vitest 36/36 + 1640, Playwright 2/3 then test 3 1/1 on the F5 dist with test 1's DEFAULT branch left red on F3 — `resolveDefaultChatConfig` library-first, Yours, default LEAVE; five real `.39` images looked at, four are the stanza; 261 = the P10-C continuation prompt (§19) on Stephen's "create comprehensive prompt to continue in new conversation. prompt me for any unanswered questions or unavailable services": Stephen committed P10-B as `c7cd4c31 PB3 P10.2 M` over his own `fa39a53b legacy WPD patch` (`DocumentUtil` → Tika `WordPerfectParser`); the four P10-B-era items (260 j / m: ChapBook random landscapes, create-dialog CSS, chat-scene composite, characters-style master / detail) become P10-C with a default order 1 → 2 → 3 → 4, the questions with defaults in 261 c, `am7test` to be rebuilt from `c7cd4c31` first; no code, no tests, no deploy; 260 = P10-B built and tested: Stephen's rulings (checks 4 / 5 do not hold, `postgres3` started, "all these items … BEFORE I do more UAT") and the new-book UAT blocker — the workflow and each scene's RENDER_PLAN terminal created on first use after the gates (`ensureWorkflow` + `sceneTerminal`), the graph built at import, `POST /{book}/graph/build` + the canvas's "Open in reader to render" / "Build graph", `ChapBookService.parseParamsExcept` for the `sources` ERROR; Objects7 `TestPbNewBookRender` 5/5 across two runs with a real `.39` image (case05 red on my DONE-vs-DONE_UNVERIFIED assertion, corrected), Service7 H2 `TestPictureBookNewBookRoutes` 9/9, `TestChapBookRestContract` 10/10, `TestPbCoverUtil` 6/7 then the ERROR'd method alone 1/1 (260 l), the Playwright user-walk 1/1 twice, nav 1/1, Vitest 1621/1621, the usability gate run 20 15/15, Scenarios A–G run 1 5/6 (G red on my missing `await`, 260 f) then run 2 6/6 with G reattaching mid-run and 6 of 6 rendered; the two new ChapBook UX items and the chat-scene "same character twice" composite as Open — Yours with a sequencing default — Stephen's 14:20 "reference image is wrong for the user" answered by reading: the default chat v3 route sends no reference for either character (260 j); 259 = Phase 10 continuation prompt written into §19 (no code; P10-A 7 committed by Stephen as 87a089dd; first task of the next session = report + three questions with defaults, nothing removed before his explicit "checks 4 and 5 hold"); 258 = P10-A 7 reviews: security-reviewer PASS-WITH-NOTES over the 237 j re-read + host resolution / 409 — one choke point, denied = the same 404, everything as the acting user; notes: the create path's existence oracle by necessity, `PbArtifactUtil.listChain` has the 237 j list-without-re-read shape, `patchCover` from a sibling by a host-Read-only updater 500s not 403s, the WARN per denied lookup, the approve-from-B message, `Console7/tmp.bat`'s credentials (227 h); verifier PASS-WITH-NOTES: my `coverPipelineBookId` comment wrongly said plan is host-gated (fixed, comment only), the sync `renderCover` seam's host gate reached by nothing green, the `notChapter` Create flash while `/covers` is unanswered, the PB2 reader's front-page count moving after first paint, the H2 host render's expected FAILED node, H2 = resource class with a Proxy request not HTTP; 257 = P10-A 7 built and tested: `lookupSeriesArt` re-reads the listed row as the acting user through `AccessPoint.find` (denied = the read routes' 404), `coverView` `seriesObjectId` + entry `hostBookObjectId` with node / approved / latest resolved through the host, render from a sibling 409 naming the host with patch left to the row's PBAC, Ux752 'Series art' tab on chapters only with host-routed render / approve / plan and the readers' series-art cover page, `coverArtLabel`; H2 17/17 (first `POST /series` + `/chapter` contract, fourth user `pbcovrtsibling`, `test.datagen.path` added), Vitest 1617/1617, Playwright 2/2 with a real `.39` render as the shared user and the stranger's 404s; `TestPbCoverUtil` extended but not run (`postgres3` down); runs 1–2 red on my 409-vs-404 assertions, corrected not weakened; 256 = Stephen committed P10-A 3–6 as `540f3e8e PB3 P10 Mark` and asked for the P10-A 7 prompt; my P10-A 7 premise corrected — `POST /series` exists since `442e9ad4`, the stale `pictureBookSeriesChapters.spec.js:142-143` comment was copied unchecked; the slice re-scoped to the 237 j visibility rule (default: re-read the row as the acting user via `AccessPoint.find`, unentitled → 404) + H2 / Ux / Playwright SERIES_ART-on-a-chapter coverage; the start prompt in §19; `scratch/p10-a/` deleted; 255 = P10-A 6 built and tested: `AuditUtil.bounded` cuts `description` / `message` to the schema maxLength at `closeAudit` with a ` ...[N chars]` marker, the key stays in `query`, console / hash / signature / PBAC untouched, writer not model because the column is already `varchar(2048)`; `TestAuditDescriptionBound` 3/3 with a real 73 KB chatConfig miss journaled beside its PERMIT neighbour, the jar carrying 254 h + 255 b installed and deployed to `am7test` 20:05; 254 = P10-A 5 built and tested: `FamilyRequest.apply` is the one family knob mapping at the executor's BASE / ACTOR_REGION sites and `ChatSceneRenderUtil.baseRequest`, `cfgRange` clamped per family as `CFG_CLAMPED`, the FLUX.2 default negative on both paths, `flux2Sampler` / `flux2Scheduler` on `olio.sd.config`, the graph-path request record now carries the four knobs (my default after live run 1 reddened on my T2I-shaped probe), offline 51/51 after the fix, live cover run 2 2/2 on `.39` + the remote `.42` with both paths persisting `cfgscale=2.0 steps=4 sampler=euler scheduler=simple`, live regress run 1 17/17 + 8/2 — the two red the 236 e / P6-2 stale assertion in `TestPbRenderPlanExecutor` (N = 2 base revisions per attempt), corrected not weakened via a `variantsRendered(dto)` helper, run 2 8/8 — 13 images looked at; 253 = P10-A 4 built and tested: `flex-1` on the PB2 reader root and the ChapBook reader wrapper (`[role=main]` is a flex row), the ChapBook config panel gutter as my default, measured root `x:0 w:1280` / body centred on both readers, the P10-A 0–2 jar + dist deployed to `am7test`, 251 f closed live (`1 rendered of 2 scenes` after a `/render-plan` render), the RenderPlan spec's three stale assertions corrected (P4-10 / 236 e / P4-4), four `[SD]` specs green on `.39` — 6/6, 4/4, 4/4, 4/4 — 37 images looked at; 252 = P10-A 3 built and tested: cover spec test 3's `generated` literals → test 4's `(generated|in_review)` / `/^(GENERATED|IN_REVIEW)$/` shape, a correction not a weakening, spec 4/4 on the current `am7test` + `.39` with the `generated` branch observed, five images looked at, 244 c visible in the reader shot, no deploy; 251 = P10-A 2 built and tested: `bookPageView` reads the scene's RENDER_PLAN `base` first, then `sceneNode`, then `imageObjectId`; `TestPbPageViewRenderPlanBase` 3/3 + the two page-view regressions 15/15, jar installed, no deploy, the live cover-count Playwright waits on the next `am7test` deploy; 250 = P10-A 1 built and tested: `unwrapObjectReply` before the `[`…`]` latch — wrapper unwrapped ok=true, bare element one element ok=false + parse record so the single-shot retry fires, `TestLlmJsonArraySalvage` 21/21 + emulator 25/25, synthesized fixture, no deploy; 249 = Stephen's rulings on 248 a / c / e / g recorded — no prod, a Docker build at chat v1 is an issue, delete the excluded PB1-era test classes, the P10-1 default stands — and P10-A 0 built and tested: `CHAT_DEFAULT = V3` + the rollback WARN on every surface, `TestPbRenderPath` 14/14, `TestChatSceneRenderPath` 4/4, Vitest 6/6, no deploy; the chat v1 composite becomes a gated candidate (P10-8 line), nothing removed; 248 = P10-0: the grep-proven §19 inventory table + the architect review of §19 folded in — chat key outside Phase 10 with a test-stack / prod drift for Stephen, enum values outlive P10-1, chat's `buildSceneRequest` survives P10-3, my `chapBook.js:261` mis-rowing fixed, the P10-1 ask rephrased; nothing started beyond P10-0; 247 = the Phase 10 plan + start prompt drafted as §19 on Stephen's request — removal slices gated on design §28.1 checks 4 (earliest 2026-11-12) / 5, P10-0 / P10-A ungated, nothing started; 246 = verifier PASS-WITH-NITS over P9-7 / P9-8 / P9-9 — the `TestPbLastErrorDtoOffline` over-claim fixed with two more assertions (run 2 1/1), the stale §17 band sentence annotated, the scheme-less `scrubHosts` note left as Yours; gate run 19 15/15 on the P9-7 jar + the P9-8 dist; 245 = P9-7 built and tested: FLUX.2 cfg / sampler / scheduler on a zero-reference BASE and on the graph path, `lastError` host scrub at the three node DTOs, 13 new offline cases, `TestPbCoverExitCriterionLive` run 4 2/2 on `.39` + the remote `.42` with the graph-path cover visibly fixed — the claim that archive 219 h was this defect (245 g, Yours); 244 = P9-8 built and tested: `coverPageLayout` (238 d), the carried chat config for ChapBook boards (240 d), the review export's cover (238 k), Vitest 1595, cover spec 4/4 on the new dist; 243 = P9-9 built and tested: cover spec test 4 From-scene → TITLE_PAGE rendered and approved on `.39`, 4/4, run 1's red my `generated` literal; 242 = Stephen's "commit made, keep your defaults … continue with any and all remaining phase 9 items, then show comprehensive prompt for phase 10" — `f4482f2d`, gate run 18 15/15 closed 240 e, P9-7 / P9-8 / P9-9 cut; 241 = verifier PASS over P9-5 / P9-6, three LOW citation nits fixed in place, two coverage caveats left as stated; 240 = P9-6 built and tested: §16 step 15 + the whole 15-step gate green on Docker with the remote `.42` and Swarm `.39`, run 17 15/15, step 7 re-asserted green after P9-x, two of my assertions corrected on the way (step 2 titled → described, step 15 export data URI by bytes), `parseLlmJsonArray` latch on `{`-wrapped replies and the reader's "0 rendered" subtitle noted as P10 candidates; 239 = P9-5 built and tested: `TestPbCoverExitCriterionLive` 2/2 on `.39` + the remote `.42`, book cover POPULATION tier / DIRECT_REFERENCE / explicit approve, ChapBook cover NONE tier / TEXT_ONLY / QA auto-approve, both read back through `coverView`'s `approved` entry, images looked at — TEXT_ONLY on a FLUX.2 pick renders through the SDXL-tuned T2I request (239 c, Yours); 238 = P9-4 built and tested: cover mode of the compose board + `pb2-cover-link` + both readers' cover page, `getCover` / `patchCover` / `planCover` routes, `TestPictureBookCoverRoutes` 14/14 on H2, Vitest 46/46 + full 1581, Playwright 3/3 on Docker with a real `.39` render approved through the UI; 237 = P9-3 built and tested: `coverView` / `createCover` / `requestCoverRender` + the three `/covers` routes, `TestPictureBookCoverRoutes` 11/11 on H2, security review PASS with six NOTEs; 236 = P9-2 built and tested: SCOPE_COMPOSITION + `ensurePlanNode` + `buildCompositionPlan` + the executor branch, `TestPbCoverPlanOffline` 6/6, `TestPbCoverRenderLive` 1/1 on `.39` + `.42` VLM, band not honoured by FLUX.2; 235 = P9-1 built and tested: 221 a + the model + `PbCoverUtil`, `TestPbCoverUtil` 6/6 with AUTO on the remote `.42`; 234 = Stephen's "yes, fix / yes delete / keep going" on 233 + P9-x; 233 = P9-0: the 212 p fix + 14 gate runs, run 14 = 13/14, step 7 red on the picker memo defect; 228 = Q1 `media/flux/qa/` + the 2026-10-31 doc pass + the §16 gate and §17 Phase 9 drafts; 229 = Stephen's fixture answer + "Fix in P9" for 212 p; 230 = the fixture-quality note — I called the terrible-looking `p52-t01-direct.png` acceptable, Stephen commits it as is, remake waits on 219 h; 231 = the artifact rule + `C:	mp` manifest; 232 = the architect review of §17 folded in; 207–227 archived in P5-P8, 2–206 / 208–209 in P0-P4).

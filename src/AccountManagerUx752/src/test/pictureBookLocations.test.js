@@ -27,6 +27,8 @@ import * as pbf from '../features/pictureBook.js';
 import * as lib from '../features/pictureBookLocations.js';
 import * as wf from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
+import { LLMConnector } from '../chat/LLMConnector.js';
+import * as pbcc from '../components/pbChatConfig.js';
 
 const BOOK = 'book-oid-1';
 const PB = '/rest/olio/picture-book/' + BOOK;
@@ -137,7 +139,7 @@ function freshState(extra) {
     return Object.assign({
         bookObjectId: BOOK, locations: [], worldObjectId: null, loading: false, error: null, proposals: [], proposalFilter: 'PROPOSED',
         proposalsLoading: false, proposalsError: null, proposing: false, proposeJob: null, busy: {}, edits: {}, runs: {}, pinnedRefusals: {}, overwrite: {},
-        imageUrls: {}, pollIntervalMs: 1, loadSeq: 0
+        imageUrls: {}, pollIntervalMs: 1, loadSeq: 0, chatConfigRef: null, chatConfigResolving: false, chatConfigPending: null
     }, extra || {});
 }
 
@@ -174,6 +176,8 @@ beforeEach(() => {
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
     vi.spyOn(am7client, 'dotPath').mockReturnValue('Public');
     vi.spyOn(am7client, 'get').mockImplementation((type, id, cb) => { cb(null); });
+    // The library default lookup (GET /rest/chat/library/chat/{name} via m.request): no library config unless a test says so.
+    vi.spyOn(LLMConnector, 'resolveConfig').mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -918,6 +922,7 @@ describe('proposals', () => {
         expect(c.querySelector('.am7-dialog-title').textContent).toBe('Merge Anchor Inn into…');
         expect(c.querySelector('[data-testid="pb-loc-merge-survivor"]').value).toBe('L1');
     });
+    // {} here because no library config resolves (resolveConfig → null in beforeEach): with nothing to send the server default applies.
     it('Propose from scenes → POST …/locations/propose {} (202) → poll /rest/job/pj-1 with the phase on the button → the summary toast; a hardFailure result is an error; a 409 submit is toasted and never polled', async () => {
         let submit = { bookObjectId: BOOK, kind: 'pb.proposeLocations', submitted: true, reused: false, jobId: 'pj-1', jobStatus: 'queued' };
         let release;
@@ -977,6 +982,85 @@ describe('proposals', () => {
         await lib.propose();
         expect(page.toast).toHaveBeenCalledWith('error', 'The location pass was accepted but no job id was returned');
         expect(only(calls, /GET \/rest\/job/)).toEqual([]);
+    });
+
+    // ── chat config on the location pass (§6.C 267): the one PB LLM button that sent no name ──
+    // Without a chatConfigName the server falls to generalChat, which on the Docker stack is a /Library config
+    // on a connection the user cannot reach; every other PB LLM surface sends contentAnalysis-first by name.
+    const submitOk = () => jsonResponse(202, { bookObjectId: BOOK, kind: 'pb.proposeLocations', submitted: true, reused: false, jobId: 'pj-1', jobStatus: 'queued' });
+    const doneEmpty = () => jsonResponse(200, { jobId: 'pj-1', kind: 'pb.proposeLocations', status: 'completed', terminal: true, cancelled: false, result: { proposed: 0, scenesConsidered: 0, proposals: [] } });
+
+    it('pbChatConfig: chatConfigName is the trimmed pick or undefined; resolveDefaultChatConfig tries contentAnalysis then generalChat and never throws', async () => {
+        expect(pbcc.chatConfigName({ name: ' contentAnalysis ', objectId: 'cc' })).toBe('contentAnalysis');
+        expect(pbcc.chatConfigName(null)).toBeUndefined();
+        expect(pbcc.chatConfigName({ name: '  ' })).toBeUndefined();
+        expect(pbcc.DEFAULT_CHAT_CONFIG_NAMES).toEqual(['contentAnalysis', 'generalChat']);
+        LLMConnector.resolveConfig.mockImplementation(async name => { if (name === 'contentAnalysis') throw new Error('boom'); return name === 'generalChat' ? { name: 'generalChat', objectId: 'cc-gen', extra: 1 } : null; });
+        expect(await pbcc.resolveDefaultChatConfig()).toEqual({ name: 'generalChat', objectId: 'cc-gen' });
+        expect(LLMConnector.resolveConfig.mock.calls.map(c => c[0])).toEqual(['contentAnalysis', 'generalChat']);
+        LLMConnector.resolveConfig.mockResolvedValue(null);
+        expect(await pbcc.resolveDefaultChatConfig()).toBeNull();
+    });
+    it('the route oninit resolves the library default (contentAnalysis first) and the header shows it; Propose sends it as chatConfigName', async () => {
+        LLMConnector.resolveConfig.mockImplementation(async name => name === 'contentAnalysis' ? { name: 'contentAnalysis', objectId: 'cc-ca' } : null);
+        let calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? submitOk() : null, job: doneEmpty });
+        lib.__setLocationsStateForTest({ bookObjectId: null });
+        lib.routes['/picture-book/:bookObjectId/locations'].oninit({ attrs: { bookObjectId: BOOK } });
+        expect(lib.__locationsStateForTest().chatConfigResolving).toBe(true);
+        expect(textOf(findByTestId(lib.renderLocationsHeader(), 'pb-loc-chatconfig'))).toContain('Resolving default…');
+        await waitFor(() => !lib.__locationsStateForTest().chatConfigResolving);
+        expect(LLMConnector.resolveConfig.mock.calls.map(c => c[0])).toEqual(['contentAnalysis']);
+        expect(lib.__locationsStateForTest().chatConfigRef).toEqual({ name: 'contentAnalysis', objectId: 'cc-ca' });
+        expect(textOf(findByTestId(lib.renderLocationsHeader(), 'pb-loc-chatconfig'))).toContain('contentAnalysis');
+        await waitFor(() => only(calls, /GET .*\/proposed/).length === 1);
+        calls.length = 0;
+        findByTestId(lib.renderLocationsHeader(), 'pb-loc-propose').attrs.onclick();
+        await waitFor(() => only(calls, /GET .*\/proposed/).length === 1);
+        expect(calls[0]).toMatchObject({ method: 'POST', url: PB + '/locations/propose', body: { chatConfigName: 'contentAnalysis' } });
+    });
+    it('a Propose clicked before the default has resolved waits for it and still carries the name', async () => {
+        let release;
+        LLMConnector.resolveConfig.mockImplementation(() => new Promise(r => { release = () => r({ name: 'contentAnalysis', objectId: 'cc-ca' }); }));
+        let calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? submitOk() : null, job: doneEmpty });
+        lib.ensureChatConfigDefault();
+        let done = lib.propose();
+        await flushPromises();
+        expect(only(calls, /POST .*\/propose/)).toEqual([]);
+        expect(lib.__locationsStateForTest().proposing).toBe(true);
+        release();
+        await done;
+        expect(calls[0]).toMatchObject({ method: 'POST', url: PB + '/locations/propose', body: { chatConfigName: 'contentAnalysis' } });
+    });
+    it('the header pick (library picker, chatConfig) wins over the default and rides on Propose; a cancelled pick changes nothing', async () => {
+        LLMConnector.resolveConfig.mockResolvedValue({ name: 'contentAnalysis', objectId: 'cc-ca' });
+        let { ObjectPicker } = await import('../components/picker.js');
+        vi.spyOn(ObjectPicker, 'openLibrary').mockImplementation(async opts => { opts.onSelect({ name: 'e2e-chapbook-llm', objectId: 'cc-e2e' }); });
+        await lib.ensureChatConfigDefault();
+        expect(lib.__locationsStateForTest().chatConfigRef).toEqual({ name: 'contentAnalysis', objectId: 'cc-ca' });
+        findByTestId(lib.renderLocationsHeader(), 'pb-loc-chatconfig').attrs.onclick();
+        await waitFor(() => lib.__locationsStateForTest().chatConfigRef.name === 'e2e-chapbook-llm');
+        expect(ObjectPicker.openLibrary.mock.calls[0][0]).toMatchObject({ libraryType: 'chatConfig', title: 'Select Chat Config' });
+        expect(textOf(findByTestId(lib.renderLocationsHeader(), 'pb-loc-chatconfig'))).toContain('e2e-chapbook-llm');
+        ObjectPicker.openLibrary.mockImplementation(async opts => { opts.onSelect(null); });
+        findByTestId(lib.renderLocationsHeader(), 'pb-loc-chatconfig').attrs.onclick();
+        await flushPromises();
+        expect(lib.__locationsStateForTest().chatConfigRef).toEqual({ name: 'e2e-chapbook-llm', objectId: 'cc-e2e' });
+        let calls = wire({ route: (mth, url) => mth === 'POST' && url === PB + '/locations/propose' ? submitOk() : null, job: doneEmpty });
+        await lib.propose();
+        expect(calls[0]).toMatchObject({ method: 'POST', url: PB + '/locations/propose', body: { chatConfigName: 'e2e-chapbook-llm' } });
+        expect(LLMConnector.resolveConfig.mock.calls.length, 'a pick is never re-resolved').toBe(1);
+    });
+    it('oninit seeds the pick from the book\'s carried chat config (registered provider) and skips the library lookup', async () => {
+        let unregister = wf.registerBookChatConfigProvider(oid => oid === BOOK ? { name: 'cb-carried', objectId: 'cc-cb' } : null);
+        try {
+            wire();
+            lib.__setLocationsStateForTest({ bookObjectId: null });
+            lib.routes['/picture-book/:bookObjectId/locations'].oninit({ attrs: { bookObjectId: BOOK } });
+            await flushPromises();
+            expect(lib.__locationsStateForTest()).toMatchObject({ chatConfigRef: { name: 'cb-carried', objectId: 'cc-cb' }, chatConfigResolving: false });
+            expect(LLMConnector.resolveConfig).not.toHaveBeenCalled();
+            expect(textOf(findByTestId(lib.renderLocationsHeader(), 'pb-loc-chatconfig'))).toContain('cb-carried');
+        } finally { unregister(); }
     });
     it('the status filter reloads GET …/proposed?status=<lower>', async () => {
         let calls = wire({ proposals: () => [] });

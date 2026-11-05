@@ -1571,16 +1571,22 @@ test.describe('ChapBook — delete regressions', () => {
         await loginAsSharedUser(page);
         await page.evaluate((oid) => { window.location.hash = '!/chap-book/review/' + oid; }, bookOid);
 
+        // P10-C 4: the review is master/detail — the page list has one row per page and "Remove this
+        // page" is on the ONE selected card (before P10-C 4 every card was stacked and this counted
+        // Remove buttons == pages; that count is now always 1, so the page count is the list's).
+        const pageItems = page.locator('[data-page-item]');
         const removeButtons = page.locator('button[title="Remove this page"]');
-        await expect(removeButtons.first(), 'no Remove-page buttons rendered').toBeVisible({ timeout: 20000 });
-        await expect(removeButtons).toHaveCount(initialCount, { timeout: 10000 });
+        await expect(removeButtons.first(), 'no Remove-page button rendered').toBeVisible({ timeout: 20000 });
+        await expect(pageItems).toHaveCount(initialCount, { timeout: 10000 });
+        await expect(removeButtons).toHaveCount(1);
 
-        // Remove the first page.
+        // Remove the first (selected) page.
         await removeButtons.first().click();
         await clickDialogConfirm(page);
 
-        // UI: one fewer scene card (doDeleteScene splices reviewScenes after the DELETE succeeds).
-        await expect(removeButtons, 'scene count did not decrease in UI').toHaveCount(initialCount - 1, { timeout: 15000 });
+        // UI: one fewer page in the list (doDeleteScene reloads reviewScenes after the DELETE succeeds).
+        await expect(pageItems, 'page count did not decrease in UI').toHaveCount(initialCount - 1, { timeout: 15000 });
+        await expect(removeButtons, 'the next page took the selection, so a Remove button is still there').toHaveCount(1);
 
         // Backend: a fresh /pages re-fetch confirms the scene is really gone and stays gone.
         await restLogin(request);
@@ -1724,9 +1730,14 @@ test.describe('ChapBook — fixed page height clamp (workstream C)', () => {
         await request.get(REST + '/logout');
 
         // 6. Fresh reader load must render the persisted clamp (proves it drives render, not just memory).
-        await page.evaluate(() => { window.location.hash = '!/main'; });
-        await page.waitForFunction(() => window.location.hash.includes('/main'), null, { timeout: 15000 });
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookObjectId);
+        // FULL PAGE RELOAD (the suite's idiom, chapBookVerify.spec.js): a new JS VM, so readerBook and every
+        // other module-level value is gone and the clamp can only come from the persisted record. The earlier
+        // hash round-trip (/main and back) was coalesced by Mithril into ONE redraw whenever the three
+        // evaluate calls landed inside a single animation frame — the /main view never mounted, the reader
+        // instance was reused without oninit, and it stayed on page 1 with no Cover to Begin from. P10-C 2
+        // made the read view light enough (queue collapsed) for that to happen every run.
+        await page.reload({ timeout: 30000 });
+        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), null, { timeout: 30000 });
         // oninit resets the reader to the Cover on every open — Begin again to reach page 1.
         await beginReader(page);
         await expect(page.locator('p').filter({ hasText: stanzaRe }).first(),

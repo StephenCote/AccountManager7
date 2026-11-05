@@ -4,7 +4,9 @@
  * Exercises the real ChapBookReview UI end-to-end against the live backend, with NO LLM/SD:
  *   - a scene's stored landscape prompt (persisted via the real PUT .../scene/{oid}/prompt contract)
  *     pre-fills that scene card's editable `.cb-scene-prompt` textarea on the review screen;
- *   - the ungated "Re-render this page" button (`.cb-rerender-page`) is present on EVERY scene card;
+ *   - the review is master/detail (P10-C 4): the page list has one row per scene and the ungated
+ *     "Re-render this page" button (`.cb-rerender-page`) is on the ONE selected card — for every page
+ *     once it is selected (it used to be stacked on every card at once);
  *   - editing a card's textarea then clicking Re-render drives the per-scene generate call with the
  *     EDITED text as a verbatim `sdPrompt` in the POST body. We intercept
  *     `**​/scene/*​/generate` with page.route and fulfil a stub (no real SD/LLM — the Docker stack has
@@ -198,11 +200,27 @@ test.describe('ChapBook — per-scene landscape-prompt review', () => {
         await expect(firstTextarea, 'textarea did not pre-fill with the stored landscape prompt')
             .toHaveValue(storedPrompt, { timeout: 15000 });
 
-        // 6. "Re-render this page" is present on EVERY scene card.
+        // 6. P10-C 4 (master/detail): the page list has one row per scene; the selected card — and only
+        //    it — carries "Re-render this page" + "Save prompt". Before P10-C 4 every card was stacked on
+        //    the page and this asserted sceneCount buttons; the product now shows one card at a time.
+        //    Selecting each page in turn proves the buttons are reachable for EVERY scene.
+        await expect(page.locator('[data-page-item]'), 'page list has one row per scene').toHaveCount(sceneCount, { timeout: 10000 });
         const rerenderBtns = page.locator('button.cb-rerender-page');
-        await expect(rerenderBtns, 'Re-render button not on every card').toHaveCount(sceneCount, { timeout: 10000 });
         const savePromptBtns = page.locator('button.cb-save-prompt');
-        await expect(savePromptBtns, 'Save-prompt button not on every card').toHaveCount(sceneCount);
+        await expect(rerenderBtns, 'Re-render button not on the selected card (exactly one)').toHaveCount(1, { timeout: 10000 });
+        await expect(savePromptBtns, 'Save-prompt button not on the selected card (exactly one)').toHaveCount(1);
+        const pageOids = await page.locator('[data-page-item]').evaluateAll(els => els.map(e => e.getAttribute('data-page-item')));
+        expect(pageOids[0], 'the first page is selected by default').toBe(firstOid);
+        for (const oid of pageOids) {
+            await page.locator('[data-page-item="' + oid + '"]').click();
+            await expect(page.locator('[data-page-item="' + oid + '"]')).toHaveAttribute('data-page-selected', '1');
+            await expect(page.locator('button.cb-rerender-page[data-scene-oid="' + oid + '"]'), 'Re-render button for page ' + oid).toHaveCount(1);
+            await expect(page.locator('button.cb-save-prompt[data-scene-oid="' + oid + '"]'), 'Save-prompt button for page ' + oid).toHaveCount(1);
+            await expect(rerenderBtns).toHaveCount(1);
+        }
+        // Back on the first page for the edit below.
+        await page.locator('[data-page-item="' + firstOid + '"]').click();
+        await expect(firstTextarea).toHaveValue(storedPrompt, { timeout: 15000 });
 
         // 7. Intercept the per-scene generate call and stub it (no real SD/LLM). Capture the body.
         let capturedBody = null;

@@ -18,6 +18,8 @@ import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
 import org.cote.accountmanager.olio.illustration.ConfigSnapshot;
 import org.cote.accountmanager.olio.illustration.FamilyRequest;
+import org.cote.accountmanager.olio.illustration.Flux2Compiler;
+import org.cote.accountmanager.olio.illustration.GraphCompileException;
 import org.cote.accountmanager.olio.illustration.IllustrationModelPolicy;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.QualityPresets;
@@ -29,7 +31,9 @@ import org.cote.accountmanager.olio.illustration.StageImage;
 import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StageResult;
 import org.cote.accountmanager.olio.illustration.StrategySelector;
+import org.cote.accountmanager.olio.illustration.SwarmGraphClient;
 import org.cote.accountmanager.olio.illustration.SwarmRendererAdapter;
+import org.cote.accountmanager.olio.illustration.WorkflowCompiler;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -48,9 +52,15 @@ import org.cote.accountmanager.util.ByteModelUtil;
  * {@code ~/Gallery/Scenes/<label>} exactly where the v1 composite puts them. Chat is a consumer of the
  * illustration service, not of the PictureBook domain: nothing here imports {@code olio.picturebook}.
  * <p>
- * Phase 2 scope: strategy is TEXT_ONLY (the portraits are not attached as references - each actor with
- * a portrait is reported as an {@code ACTOR_TEXT_ONLY} degradation, never silently dropped), there is
- * no landscape stage, one image regardless of the preset, no fallback to the v1 composite on failure.
+ * The two portraits are the reference images (P10-C 3): each actor with portrait bytes is a BASE-referenced
+ * actor whose identity carries the portrait record's objectId, a SCENE_DIRECT pick is resolved with references
+ * requested (the config's {@code flux2Model} / the client's override / the deployment FLUX.2 default, through
+ * the same {@link IllustrationModelPolicy} walk as the LOCATION pick), and {@link StrategySelector} decides:
+ * DIRECT_REFERENCE when that pick resolves to a family that takes references, in which case {@link #render}
+ * compiles the BASE request as a reference graph ({@link WorkflowCompiler#compileBase}, the PictureBook
+ * executor's path) with the portraits attached in actor-priority order (system character first); otherwise
+ * TEXT_ONLY with one {@code ACTOR_TEXT_ONLY} degradation per portrait-bearing actor, never silently dropped.
+ * Still: no landscape stage, one image regardless of the preset, no fallback to the v1 composite on failure.
  * The style comes from the chat's saved SD config: its style clause is the plan's style, so
  * {@link ConfigNotApplied#STYLE_CLAUSE} cannot fire here; what the plan path does not apply are the v1
  * composite knobs ({@code hires}, {@code compositeMode}, {@code skipLandscape}, {@code sceneCreativity})
@@ -106,9 +116,11 @@ public final class ChatSceneRenderUtil {
 		private final long durationMs;
 		private final List<String> degradations;
 		private final List<String> configNotApplied;
+		private final List<Map<String, Object>> references;
 
 		ChatSceneRender(RenderPlan plan, CompiledPrompt compiled, RenderPlan.ModelPick pick, BaseRecord data, Long seed,
-				String requestJson, long durationMs, List<String> degradations, List<String> configNotApplied) {
+				String requestJson, long durationMs, List<String> degradations, List<String> configNotApplied,
+				List<Map<String, Object>> references) {
 			this.plan = plan;
 			this.compiled = compiled;
 			this.pick = pick;
@@ -118,6 +130,7 @@ public final class ChatSceneRenderUtil {
 			this.durationMs = durationMs;
 			this.degradations = degradations;
 			this.configNotApplied = configNotApplied;
+			this.references = (references != null ? references : Collections.emptyList());
 		}
 
 		public RenderPlan getPlan() { return plan; }
@@ -131,15 +144,19 @@ public final class ChatSceneRenderUtil {
 		/// Each "CODE: message", the PictureBook vocabulary.
 		public List<String> getDegradations() { return degradations; }
 		public List<String> getConfigNotApplied() { return configNotApplied; }
+		/// The reference images attached to the BASE graph, in slot order: {name, actorId, portraitObjectId}; empty on TEXT_ONLY.
+		public List<Map<String, Object>> getReferences() { return references; }
 
 		/// The {@link #RENDER_KEY} value: one vocabulary with the PictureBook plan-driven nodes.
 		public Map<String, Object> describe() {
 			Map<String, Object> out = new LinkedHashMap<>();
 			out.put("renderPath", RENDER_PATH_V3);
 			out.put("strategy", plan.getStrategy().getName().name());
+			out.put("strategyReason", plan.getStrategy().getReason());
 			out.put("compiledPrompt", compiled.getPrompt());
 			out.put("compiledNegative", compiled.getNegative());
 			out.put("model", pick.getModel());
+			out.put("references", references);
 			Map<String, Object> canvas = new LinkedHashMap<>();
 			canvas.put("width", plan.getCanvas().getWidth());
 			canvas.put("height", plan.getCanvas().getHeight());
@@ -166,23 +183,42 @@ public final class ChatSceneRenderUtil {
 	 * The scene description is the intent and the setting rides with it in the main text (the compiler
 	 * takes the intent instead of the location text, and trims the main text from the right under budget,
 	 * so the setting is the first thing to go); the {@link RenderPlan.Location} records the setting on its own.
+	 * <p>
+	 * {@code clientModel} / {@code clientFlux2Model} are the client's per-request overrides for the LOCATION and
+	 * SCENE_DIRECT picks (null = the config's). The SCENE_DIRECT pick is only resolved when at least one portrait
+	 * is present: with no portrait there is nothing to reference, the plan is TEXT_ONLY on the LOCATION pick and no
+	 * second model is reported. With a portrait, an unresolved SCENE_DIRECT pick is reported as MODEL_SUBSTITUTED
+	 * (its reason) and the strategy degrades to TEXT_ONLY with ACTOR_TEXT_ONLY per portrait, never a refusal.
 	 */
 	public static RenderPlan buildPlan(BaseRecord sdConfig, Chat.ScenePromptResult scene, String sysCharOid, String usrCharOid,
-			String clientModel, SDAPIEnumType apiType, String sdServer) {
+			String clientModel, String clientFlux2Model, SDAPIEnumType apiType, String sdServer) {
 		if(scene == null) {
 			throw new RenderFailure(500, "No scene prompt was produced for the chat");
 		}
 		BaseRecord cfgCopy = (sdConfig != null ? sdConfig.copyRecord() : null);
 		Map<String, Object> snapshot = ConfigSnapshot.of(cfgCopy);
+		boolean sysRef = (scene.sysPortraitBytes != null && scene.sysPortraitBytes.length > 0);
+		boolean usrRef = (scene.usrPortraitBytes != null && scene.usrPortraitBytes.length > 0);
 
 		List<RenderPlan.Degradation> degradations = new ArrayList<>();
 		ModelResolver.Resolution locRes = IllustrationModelPolicy.apply(PbModelTaskEnumType.LOCATION, cfgCopy, clientModel,
 			null, null, null, apiType, sdServer, false);
 		RenderPlan.ModelPick locPick = ModelResolver.pickOf(locRes);
 		ModelResolver.addDegradation(locRes, degradations);
+		/// Reference strategies render BASE with the SCENE_DIRECT pick, so its family decides the slots (PbRenderPlanUtil.scaffold)
+		ModelResolver.Resolution directRes = null;
+		RenderPlan.ModelPick directPick = null;
+		if(sysRef || usrRef) {
+			directRes = IllustrationModelPolicy.apply(PbModelTaskEnumType.SCENE_DIRECT, cfgCopy, clientFlux2Model,
+				null, null, null, apiType, sdServer, true);
+			directPick = ModelResolver.pickOf(directRes);
+			ModelResolver.addDegradation(directRes, degradations);
+		}
 
 		QualityPresets.Preset preset = QualityPresets.resolve(PbQualityPresetEnumType.STANDARD);
 		RendererCapabilities caps = (locRes.getCapabilities() != null ? locRes.getCapabilities() : RendererCapabilities.forModel(locRes.getModel()));
+		RendererCapabilities strategyCaps = (directRes != null && directRes.isResolved() && directRes.getCapabilities() != null
+			? directRes.getCapabilities() : caps);
 		int steps = (caps != null ? caps.recommendedSteps(preset.getStepsMode()) : intOf(snapshot.get("steps"), 20));
 		RenderPlan.PresetValues presetValues = new RenderPlan.PresetValues(preset.getName().name(), steps, preset.getVariants(),
 			preset.isUpscale(), preset.getQa());
@@ -206,19 +242,20 @@ public final class ChatSceneRenderUtil {
 			.location(new RenderPlan.Location(null, settingDesc))
 			.intent(new RenderPlan.Intent(main, false))
 			.element(new RenderPlan.Element(TWO_PEOPLE_CUE, RenderPlan.PRIORITY_HIGH, null))
-			.actor(new RenderPlan.Actor(sysCharOid, name(scene.sysFirstName), RenderPlan.ROLE_FOREGROUND,
-				positioned(scene.sysCharDesc, "on the left"), scene.sysPortraitBytes != null && scene.sysPortraitBytes.length > 0))
-			.actor(new RenderPlan.Actor(usrCharOid, name(scene.usrFirstName), RenderPlan.ROLE_FOREGROUND,
-				positioned(scene.usrCharDesc, "on the right"), scene.usrPortraitBytes != null && scene.usrPortraitBytes.length > 0))
+			.actor(actor(sysCharOid, scene.sysFirstName, scene.sysCharDesc, "on the left", 0, sysRef, scene.sysPortraitObjectId))
+			.actor(actor(usrCharOid, scene.usrFirstName, scene.usrCharDesc, "on the right", 1, usrRef, scene.usrPortraitObjectId))
 			.model(locPick);
+		if(directPick != null) {
+			b.model(directPick);
+		}
 		for(RenderPlan.Degradation d : degradations) {
 			b.degradation(d);
 		}
 		RenderPlan plan = b.build();
 
 		List<RenderPlan.Degradation> out = new ArrayList<>();
-		RenderPlan.Strategy strategy = StrategySelector.select(plan, caps, false, out);
-		plan = plan.withStrategy(strategy, out);
+		RenderPlan.Strategy strategy = StrategySelector.select(plan, strategyCaps, false, out);
+		plan = withBaseSteps(plan.withStrategy(strategy, out), preset);
 
 		out = new ArrayList<>();
 		Map<String, CompiledPrompt> compiled = new LinkedHashMap<>();
@@ -229,19 +266,45 @@ public final class ChatSceneRenderUtil {
 	}
 
 	/**
+	 * The plan with its step count taken from the pick that renders BASE ({@link RenderPlan#pickForStage}),
+	 * which is only known once the strategy is: a DIRECT_REFERENCE render uses the SCENE_DIRECT pick
+	 * (FLUX.2, 4 steps), not the LOCATION pick (SDXL, 20 steps) the preset was scaffolded from, while
+	 * TEXT_ONLY keeps the LOCATION count. Left at the LOCATION count, FLUX.2 Klein ran 20 steps at ~63 s/step
+	 * with two references (P10-C 3, log 37) - past the HTTP read timeout, a scene no one can wait for. The
+	 * plan is returned as-is when the BASE pick has no known family or the count already matches.
+	 */
+	public static RenderPlan withBaseSteps(RenderPlan plan, QualityPresets.Preset preset) {
+		if(plan == null || preset == null || plan.getPreset() == null) {
+			return plan;
+		}
+		RendererCapabilities baseCaps = FamilyRequest.capabilitiesFor(plan.pickForStage(RenderPlan.STAGE_BASE));
+		if(baseCaps == null) {
+			return plan;
+		}
+		RenderPlan.PresetValues current = plan.getPreset();
+		int baseSteps = baseCaps.recommendedSteps(preset.getStepsMode());
+		if(baseSteps == current.getSteps()) {
+			return plan;
+		}
+		return plan.withPreset(new RenderPlan.PresetValues(current.getPreset(), baseSteps, current.getVariants(),
+			current.isUpscale(), current.getQa()));
+	}
+
+	/**
 	 * Plan, refuse-or-render the BASE stage through {@code sdu}'s renderer, and persist the bytes as
 	 * {@code user}. 409/503 when the BASE stage has no resolved model (the resolver's reason), 503 when the
-	 * renderer is unreachable, 500 on any other renderer or persistence failure; never a fallback.
+	 * renderer is unreachable, 500 on any other renderer or persistence failure (a reference graph that does
+	 * not compile is {@link RendererAdapter#ERROR_GRAPH_INVALID}); never a fallback.
 	 */
 	public static ChatSceneRender render(BaseRecord user, SDUtil sdu, BaseRecord sdConfig, Chat.ScenePromptResult scene,
-			String sysCharOid, String usrCharOid, String clientModel) {
+			String sysCharOid, String usrCharOid, String clientModel, String clientFlux2Model) {
 		if(user == null) {
 			throw new RenderFailure(401, "No authenticated principal");
 		}
 		if(sdu == null) {
 			throw new RenderFailure(500, "No renderer transport");
 		}
-		RenderPlan plan = buildPlan(sdConfig, scene, sysCharOid, usrCharOid, clientModel, sdu.getApiType(), sdu.getServer());
+		RenderPlan plan = buildPlan(sdConfig, scene, sysCharOid, usrCharOid, clientModel, clientFlux2Model, sdu.getApiType(), sdu.getServer());
 		String label = (NarrativeUtil.isMeaningful(scene.label) ? scene.label.trim() : "chat scene");
 
 		RenderPlan.ModelPick pick = plan.pickForStage(RenderPlan.STAGE_BASE);
@@ -264,6 +327,41 @@ public final class ChatSceneRenderUtil {
 		List<String> configNotApplied = configNotApplied(cfg, compiled, plan.getStrategy().getName().name());
 		StageRequest req = baseRequest(plan, pick, compiled, configNotApplied);
 
+		/// A reference strategy renders BASE as a graph with the portraits attached (the PictureBook executor's
+		/// BASE block): slots in actor-priority order, named as the prompt speaks of them (Flux2Compiler).
+		List<Map<String, Object>> references = new ArrayList<>();
+		WorkflowCompiler.CompiledGraph graph = null;
+		if(Flux2Compiler.usesReferences(plan.getStrategy())) {
+			List<RenderPlan.Actor> baseActors = new ArrayList<>();
+			for(RenderPlan.Actor a : plan.getActors()) {
+				if(a.isReferenced() && RenderPlan.STAGE_BASE.equals(a.getReferenceStage())) {
+					baseActors.add(a);
+				}
+			}
+			baseActors.sort((a, b) -> Integer.compare(a.getPriority(), b.getPriority()));
+			try {
+				List<WorkflowCompiler.Reference> refs = new ArrayList<>();
+				int k = 0;
+				for(RenderPlan.Actor a : baseActors) {
+					byte[] png = portraitBytes(scene, a.getActorId(), sysCharOid, usrCharOid);
+					String portraitOid = (a.getIdentity() != null ? a.getIdentity().getPortraitArtifactId() : null);
+					String refName = "actor" + (char) ('a' + k++);
+					refs.add(new WorkflowCompiler.Reference(refName, portraitOid, png));
+					Map<String, Object> ref = new LinkedHashMap<>();
+					ref.put("name", refName);
+					ref.put("actorId", a.getActorId());
+					ref.put("portraitObjectId", portraitOid);
+					references.add(ref);
+				}
+				graph = new WorkflowCompiler().compileBase(req, refs, new SwarmGraphClient(sdu));
+			}
+			catch(GraphCompileException | IllegalArgumentException e) {
+				throw new RenderFailure(500, "Render of " + label + " failed: " + RendererAdapter.ERROR_GRAPH_INVALID + ": " + e.getMessage());
+			}
+			req = req.toBuilder().graph(graph.getGraph()).inputs(graph.getInputs()).seed((int) graph.getSeed())
+				.steps(graph.getSteps()).build();
+		}
+
 		RendererAdapter adapter = new SwarmRendererAdapter(sdu);
 		StageResult result = adapter.execute(req, CancelToken.NONE);
 		if(!result.isOk()) {
@@ -276,10 +374,21 @@ public final class ChatSceneRenderUtil {
 		if(bytes == null || bytes.length == 0) {
 			throw new RenderFailure(500, "Rendered image for " + label + " decoded to empty bytes");
 		}
-		Long seed = (img.isSeedReported() ? Long.valueOf(img.getSeed()) : null);
+		Long seed = (img.isSeedReported() ? Long.valueOf(img.getSeed()) : (graph != null ? Long.valueOf(graph.getSeed()) : null));
 		BaseRecord data = persist(user, label, bytes, seed, sysCharOid, usrCharOid, plan, result.getRequestJson());
 		return new ChatSceneRender(plan, compiled, pick, data, seed, result.getRequestJson(), result.getDurationMs(),
-			degradations, configNotApplied);
+			degradations, configNotApplied, references);
+	}
+
+	/// The portrait bytes the scene prompt loaded for one actor (the actor ids are the two character objectIds).
+	private static byte[] portraitBytes(Chat.ScenePromptResult scene, String actorId, String sysCharOid, String usrCharOid) {
+		if(actorId != null && actorId.equals(sysCharOid)) {
+			return scene.sysPortraitBytes;
+		}
+		if(actorId != null && actorId.equals(usrCharOid)) {
+			return scene.usrPortraitBytes;
+		}
+		return null;
 	}
 
 	/// The BASE request for a resolved pick: the config's cfg / sampler / scheduler (SDXL knobs), then the
@@ -370,6 +479,20 @@ public final class ChatSceneRenderUtil {
 			logger.error("Persisting the chat scene " + dname + " failed", e);
 			throw new RenderFailure(500, "Could not persist the rendered scene for " + label);
 		}
+	}
+
+	/// One FOREGROUND actor: identity text is the SD description positioned left/right; with portrait bytes the
+	/// actor is BASE-referenced and its identity carries the portrait record's objectId as the reference provenance.
+	private static RenderPlan.Actor actor(String actorId, String firstName, String desc, String position, int priority,
+			boolean referenced, String portraitObjectId) {
+		return new RenderPlan.Actor.Builder(actorId)
+			.name(name(firstName))
+			.role(RenderPlan.ROLE_FOREGROUND)
+			.priority(priority)
+			.identity(new RenderPlan.Identity(referenced ? portraitObjectId : null, null, positioned(desc, position)))
+			.referenced(referenced)
+			.referenceStage(referenced ? RenderPlan.STAGE_BASE : null)
+			.build();
 	}
 
 	private static String positioned(String desc, String position) {

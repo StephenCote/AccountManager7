@@ -1484,6 +1484,141 @@ public class ChapBookUtil {
 	}
 
 	/**
+	 * Split scene {@code sceneObjectId}'s stanza at its line midpoint into two pages: the scene keeps the
+	 * first half, a NEW scene directly after it takes the second half, and the book is reindexed to a clean
+	 * {@code 0..n}. The server-side counterpart of {@link #mergeSceneUp} (P10-C 4, ledger §6.C 266): until
+	 * then the review did this client-side with a {@code POST /rest/model/olio.pb.scene} that 404s, after it
+	 * had already truncated the page — so a split lost the second half of the stanza.
+	 * <p>
+	 * Order of writes is chosen so a failure never loses text: the new scene is CREATED (with the second
+	 * half, the title suffixed {@code " (cont.)"}, the mood copied and the no-LLM landscape fallback prompt —
+	 * the same shape {@link #createChapBookScene} stores when no LLM answers, which the review flags as
+	 * "needs prompt") <i>before</i> the original is truncated. A refused create changes nothing; a refused
+	 * truncation leaves the original intact and removes the new scene again. The original's {@code sdPrompt}
+	 * / {@code promptLocked} are PRESERVED as a merge preserves them; only {@code poemStanza} and
+	 * {@code imageStale} change (the rendered image no longer matches the shorter text). All writes are AS
+	 * THE ACTING USER through {@code AccessPoint}, every result asserted.
+	 * <p>
+	 * The new row's {@code name} is {@link PbBookUtil#sceneName} at the first index whose name is not already
+	 * taken in the book — names are fixed at create and reindexes only move {@code sceneIndex}, so after a
+	 * delete or merge the names no longer track the indices.
+	 *
+	 * @param user          the acting user (must be able to create and update scenes in the book's group)
+	 * @param sceneObjectId objectId of the scene to split
+	 * @return the objectId of the NEW scene holding the second half
+	 * @throws PictureBookException 400 for missing args or a stanza with fewer than two non-blank lines; 403
+	 *         when the parent book is not a CHAPBOOK; 404 when the scene or its book is not readable; 500 when
+	 *         the create, a patch or the reindex fails
+	 */
+	public static String splitScene(BaseRecord user, String sceneObjectId) {
+		if (user == null || sceneObjectId == null || sceneObjectId.isBlank()) {
+			throw new PictureBookException(400, "user and sceneObjectId are required");
+		}
+		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+
+		BaseRecord scene = PbBookUtil.readScene(user, sceneObjectId, orgId);
+		if (scene == null) {
+			throw new PictureBookException(404, "Scene not found: " + sceneObjectId);
+		}
+		BaseRecord book = resolveSceneBook(user, scene, orgId);
+		requireChapBook(book);
+
+		String stanza = scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA);
+		String[] halves = splitStanzaAtMidpoint(stanza);
+		if (halves == null) {
+			throw new PictureBookException(400, "Not enough text to split scene " + sceneObjectId
+				+ ": the stanza needs at least two non-blank lines");
+		}
+
+		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
+		int pos = -1;
+		List<String> takenNames = new ArrayList<>(scenes.size());
+		for (int i = 0; i < scenes.size(); i++) {
+			takenNames.add(scenes.get(i).get(FieldNames.FIELD_NAME));
+			if (sceneObjectId.equals(scenes.get(i).get(FieldNames.FIELD_OBJECT_ID))) {
+				pos = i;
+			}
+		}
+		if (pos < 0) {
+			throw new PictureBookException(404, "Scene not found in its book: " + sceneObjectId);
+		}
+		int newIndex = scenes.size();
+		while (takenNames.contains(PbBookUtil.sceneName(book, newIndex))) {
+			newIndex++;
+		}
+
+		String title = scene.get(OlioFieldNames.FIELD_PB_TITLE);
+		String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
+		String newTitle = (title != null && !title.isBlank() ? title + " (cont.)" : null);
+		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
+
+		// 1. The new scene first: a refused create leaves the original untouched.
+		BaseRecord created = PbBookUtil.createScene(user, book, newIndex, newTitle, PbBookUtil.bookGroupPath(slug));
+		String newOid = created.get(FieldNames.FIELD_OBJECT_ID);
+		BaseRecord newPatch = PbGraphUtil.patchOf(created, OlioModelNames.MODEL_PB_SCENE,
+			OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_MOOD, OlioFieldNames.FIELD_CB_SD_PROMPT);
+		try {
+			newPatch.set(OlioFieldNames.FIELD_CB_POEM_STANZA, halves[1]);
+			if (mood != null) newPatch.set(OlioFieldNames.FIELD_PB_MOOD, mood);
+			newPatch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, "landscape, "
+				+ (newTitle != null ? newTitle + ", " : "")
+				+ (mood != null ? mood : "poetic") + " atmosphere, painterly, soft light, wide natural vista");
+		}
+		catch (FieldException | ValueException | ModelNotFoundException e) {
+			throw new PictureBookException(500, "Failed to assemble the split scene patch: " + e.getMessage());
+		}
+		if (IOSystem.getActiveContext().getAccessPoint().update(user, newPatch) == null) {
+			IOSystem.getActiveContext().getAccessPoint().delete(user, created);
+			throw new PictureBookException(500, "Failed to persist the second half on the new scene " + newOid);
+		}
+
+		// 2. Truncate the original; on refusal take the new scene back out so nothing is duplicated or lost.
+		BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE,
+			OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_PB_IMAGE_STALE);
+		try {
+			patch.set(OlioFieldNames.FIELD_CB_POEM_STANZA, halves[0]);
+			patch.set(OlioFieldNames.FIELD_PB_IMAGE_STALE, Boolean.TRUE);
+		}
+		catch (FieldException | ValueException | ModelNotFoundException e) {
+			IOSystem.getActiveContext().getAccessPoint().delete(user, created);
+			throw new PictureBookException(500, "Failed to assemble a split patch: " + e.getMessage());
+		}
+		if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+			IOSystem.getActiveContext().getAccessPoint().delete(user, created);
+			throw new PictureBookException(500, "Failed to persist the first half on scene " + sceneObjectId);
+		}
+		PbBookUtil.markSceneNodeStale(user, scene);
+
+		// 3. Seat the new scene directly after the original and reindex 0..n.
+		List<String> orderedIds = new ArrayList<>(scenes.size() + 1);
+		for (BaseRecord s : scenes) {
+			orderedIds.add(s.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		orderedIds.add(pos + 1, newOid);
+		PbBookUtil.reorderScenes(user, book, orderedIds);
+		return newOid;
+	}
+
+	/**
+	 * The two halves of a stanza split at its line midpoint ({@code ceil(lines/2)} lines stay on the first
+	 * page, as the review always did), or null when the second half would be blank — fewer than two
+	 * non-blank lines, so there is nothing to split.
+	 */
+	public static String[] splitStanzaAtMidpoint(String stanza) {
+		if (stanza == null) {
+			return null;
+		}
+		String[] lines = stanza.split("\\r?\\n");
+		int mid = (lines.length + 1) / 2;
+		String first = String.join("\n", Arrays.copyOfRange(lines, 0, mid));
+		String second = String.join("\n", Arrays.copyOfRange(lines, mid, lines.length));
+		if (second.isBlank() || first.isBlank()) {
+			return null;
+		}
+		return new String[] { first, second };
+	}
+
+	/**
 	 * Re-list a book's scenes (uncached, ascending by {@code sceneIndex}) and reassign {@code sceneIndex}
 	 * to a gap-free {@code 0..n-1} via {@link PbBookUtil#reorderScenes}. Called after a scene delete/merge.
 	 */
@@ -1807,6 +1942,20 @@ public class ChapBookUtil {
 		// then mirror it onto the in-memory scene so the render funnel and any forward-threading see the
 		// same value, and hand it to renderResolvedScene as the EXPLICIT verbatim override.
 		String effectiveOverride = (promptOverride != null && !promptOverride.isBlank()) ? promptOverride.trim() : null;
+		// P10-C 1: an override that merely ECHOES what the page already stores is not an edit. The review
+		// card used to send its textarea back on every re-render, and taking that echo for a human edit
+		// promoted it to a USER-sourced, locked composition prompt — including the stanza-free
+		// "landscape, <title>, …" placeholder written when the LLM failed at create time, which the lock
+		// then protected from recovery for good (a permanently random landscape, with no signal). So an
+		// echo is dropped here and the stored prompt goes through the normal pre-step: a locked or genuine
+		// prompt still renders verbatim, a placeholder is recovered through the LLM when a chatConfig is
+		// given, and without one the degrade path reports llmDegraded honestly. This is an EQUALITY test
+		// against the stored text, never a shape test — promptLocked, not the "landscape, " shape, says
+		// what a human wrote, so an edit shaped like the fallback is still honoured as an edit.
+		if (effectiveOverride != null && isStoredScenePrompt(user, book, scene, effectiveOverride)) {
+			logger.info("renderChapBookScene: the prompt override for scene {} equals the stored prompt - not an edit; resolving from the stored prompt", sceneObjectId);
+			effectiveOverride = null;
+		}
 		if (effectiveOverride != null) {
 			setSceneLandscapePrompt(user, sceneObjectId, effectiveOverride);
 			try {
@@ -2164,6 +2313,33 @@ public class ChapBookUtil {
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.warn("renderChapBook: could not overlay the page composition prompt onto scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
 		}
+	}
+
+	/**
+	 * P10-C 1: does {@code candidate} merely repeat what the page already stores? True when it equals
+	 * (trimmed) the page composition's {@code promptOverride} - the authority - or the scene's own
+	 * {@code sdPrompt} mirror (either copy: the review card shows the mirror, and a stale mirror echoed
+	 * back is still an echo, not a new human edit). A blank candidate or a page with nothing stored is
+	 * never an echo. Read-only; the composition lookup never throws and never creates.
+	 */
+	static boolean isStoredScenePrompt(BaseRecord user, BaseRecord book, BaseRecord scene, String candidate) {
+		if (candidate == null || candidate.isBlank() || scene == null) {
+			return false;
+		}
+		String c = candidate.trim();
+		String mirror = (scene.hasField(OlioFieldNames.FIELD_CB_SD_PROMPT) ? scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT) : null);
+		if (mirror != null && c.equals(mirror.trim())) {
+			return true;
+		}
+		if (book == null || !PbNodeExecutor.isChapBook(book)) {
+			return false;
+		}
+		BaseRecord comp = PbBookUtil.findSceneComposition(user, scene, book);
+		if (comp == null) {
+			return false;
+		}
+		String compPrompt = (comp.hasField(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) ? comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE) : null);
+		return compPrompt != null && c.equals(compPrompt.trim());
 	}
 
 	/**

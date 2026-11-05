@@ -12,22 +12,31 @@
  * (POST /locations/propose → 202 {jobId}, the pass result collected from the terminal job with
  * locationPassFromJob); a pinned node is a 409 the server words itself ("Node … is pinned. Unpin it
  * first …") and is answered with an Unpin button. Every server error is toasted verbatim.
+ *
+ * The location pass sends a chat config NAME like every other PB LLM surface (§6.C 267): the book's
+ * carried config, else the library default (contentAnalysis, then generalChat) resolved through
+ * components/pbChatConfig.js, and a "Chat Config" pick in the header wins over both. Without a name the
+ * server falls to its generalChat default, which is not necessarily a config the user can reach.
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
+import { chatConfigName, resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
 import { pollJob, resolveImageUrl } from '../workflows/sceneExtractor.js';
 import { orderNewestFirst, reviewStatusOf, isAutoApproved, artifactActions } from './pictureBookReview.js';
 import {
     listLocations, createLocation, updateLocation, deleteLocation, createLocationVariant, lockLocation,
     mergeLocations, renderLocation, isPinnedNodeRefusal, proposeLocations, locationPassFromJob, listLocationProposals,
     acceptLocationProposal, rejectLocationProposal, selectArtifact, approveArtifact, rejectArtifact, unpinNode,
-    deriveStageList, runSummaryText
+    deriveStageList, runSummaryText, carriedBookChatConfig
 } from '../workflows/pictureBookWorkflow.js';
 
 let bookObjectId = null;
+let chatConfigRef = null;       // {name, objectId} the location pass sends as chatConfigName; a pick wins
+let chatConfigResolving = false;
+let chatConfigPending = null;   // the in-flight default resolution, awaited by propose() so a quick click still carries a name
 let locations = [];
 let worldObjectId = null;
 let loading = false;
@@ -366,13 +375,36 @@ export function openMergeDialog(duplicate, preselectName) {
     });
 }
 
+// Library-only resolution (no LLM call), as the board does; never overwrites a pick. Returns the in-flight
+// promise so propose() can wait for it.
+export function ensureChatConfigDefault() {
+    if (chatConfigRef) return Promise.resolve(chatConfigRef);
+    if (chatConfigPending) return chatConfigPending;
+    chatConfigResolving = true;
+    let bookId = bookObjectId;
+    chatConfigPending = resolveDefaultChatConfig().then(function (found) {
+        chatConfigResolving = false;
+        chatConfigPending = null;
+        if (found && !chatConfigRef && bookId === bookObjectId) chatConfigRef = found;
+        m.redraw();
+        return chatConfigRef;
+    });
+    return chatConfigPending;
+}
+
+export function pickChatConfig(ref) {
+    chatConfigRef = ref;
+    m.redraw();
+}
+
 export async function propose() {
     if (proposing) return;
     proposing = true;
     proposeJob = null;
     m.redraw();
     try {
-        let r = await proposeLocations(bookObjectId);
+        await ensureChatConfigDefault();
+        let r = await proposeLocations(bookObjectId, chatConfigName(chatConfigRef));
         if (!r.jobId) {
             page.toast('error', 'The location pass was accepted but no job id was returned');
         } else {
@@ -842,9 +874,14 @@ export function renderLocationsHeader() {
         m('span', { class: 'font-semibold text-sm' }, 'Locations'),
         m('span', { 'data-testid': 'pb-loc-count', class: 'text-xs text-gray-500' }, locations.length + ' location' + (locations.length === 1 ? '' : 's')),
         m('span', { class: 'flex-1' }),
+        renderChatConfigControl({
+            testid: 'pb-loc-chatconfig', ref: chatConfigRef, resolving: chatConfigResolving,
+            title: 'The chat config "Propose from scenes" sends to the LLM',
+            onPick: pickChatConfig
+        }),
         m('button', {
             'data-testid': 'pb-loc-propose', class: BTN, disabled: proposing || loading,
-            title: 'Cluster every scene\'s setting into location proposals (one LLM call per 40 scenes; runs as a background job)',
+            title: 'Cluster every scene\'s setting into location proposals with the chat config shown (one LLM call per 40 scenes; runs as a background job)',
             onclick: propose
         }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' + (proposing ? ' animate-spin' : '') }, proposing ? 'progress_activity' : 'auto_awesome'),
             proposing ? 'Proposing…' + (proposeJob && proposeJob.phase ? ' ' + proposeJob.phase : '') : 'Propose from scenes']),
@@ -889,8 +926,16 @@ const locationsView = {
             runs = {};
             pinnedRefusals = {};
             overwrite = {};
+            // The book's carried config (a ChapBook's own screens register one; null for a PictureBook),
+            // else the library default resolves below — the board's order (P9-8 240 d).
+            chatConfigRef = carriedBookChatConfig(id);
+            chatConfigResolving = false;
+            chatConfigPending = null;
         }
-        if (bookObjectId) loadLocations();
+        if (bookObjectId) {
+            loadLocations();
+            ensureChatConfigDefault();
+        }
     },
     onremove: function () { stopWatching(); },
     view: function () {
@@ -904,12 +949,15 @@ const locationsView = {
 // ── Test seams ─────────────────────────────────────────────────────────
 
 export function __locationsStateForTest() {
-    return { bookObjectId, locations, worldObjectId, loading, error, proposals, proposalFilter, proposalsLoading, proposalsError, proposing, proposeJob, busy, edits, runs, runAborts, pinnedRefusals, overwrite, imageUrls, pollIntervalMs };
+    return { bookObjectId, locations, worldObjectId, loading, error, proposals, proposalFilter, proposalsLoading, proposalsError, proposing, proposeJob, busy, edits, runs, runAborts, pinnedRefusals, overwrite, imageUrls, pollIntervalMs, chatConfigRef, chatConfigResolving };
 }
 
 export function __setLocationsStateForTest(s) {
     s = s || {};
     if ('bookObjectId' in s) bookObjectId = s.bookObjectId;
+    if ('chatConfigRef' in s) chatConfigRef = s.chatConfigRef || null;
+    if ('chatConfigResolving' in s) chatConfigResolving = !!s.chatConfigResolving;
+    if ('chatConfigPending' in s) chatConfigPending = s.chatConfigPending || null;
     if ('locations' in s) locations = s.locations || [];
     if ('worldObjectId' in s) worldObjectId = s.worldObjectId;
     if ('loading' in s) loading = s.loading;

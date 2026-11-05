@@ -290,10 +290,16 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const pre = await request.get(PB_REST + '/' + legacyGroup.objectId + '/pb2');
             expect(pre.status(), 'no V3 book for the legacy group before import').toBe(404);
 
-            // The list page.
+            // The list page. A user with no story book yet has no list section (pictureBook.js renders
+            // [data-pb2-book-list] only when pb2Books.length > 0): the landing page is Health + "Select a
+            // document". Runs 1–20 always found leftovers from earlier runs; the 263 c cleanup removed them,
+            // so the fresh-user shape is the one to expect — the list is asserted after the import below.
             await page.goto('/#!/picture-book', { timeout: T.ui });
-            const list = page.locator('[data-pb2-book-list]');
-            await expect(list).toBeVisible({ timeout: T.ui });
+            await expect(page.locator('[data-pb-health-check]')).toBeVisible({ timeout: T.ui });
+            // The list loads after the page paints ("Loading PB2 books..." while pb2Loading); count only
+            // once that is gone, or a leftover book from the previous run is reported as "absent" (run 22).
+            await expect(page.getByText('Loading PB2 books...')).toHaveCount(0, { timeout: T.ui });
+            const listBefore = await page.locator('[data-pb2-book-list]').count();
             const rowsBefore = await page.locator('[data-pb2-book]').count();
             await page.locator('[data-pb-health-check]').click();
             await expect(page.locator('[data-pb-health-clean], [data-pb-health-findings]').first()).toBeVisible({ timeout: 120000 });
@@ -327,9 +333,10 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const health = await pbGet(request, '/' + fx.importedBook + '/health');
             expect(health.status, 'GET /{imported}/health').toBe(200);
             await page.goto('/#!/picture-book', { timeout: T.ui });
+            await expect(page.locator('[data-pb2-book-list]')).toBeVisible({ timeout: T.ui });
             await expect(page.locator('[data-pb2-book="' + fx.importedBook + '"]')).toBeVisible({ timeout: T.ui });
             const rowsAfter = await page.locator('[data-pb2-book]').count();
-            return 'rows before/after import ' + rowsBefore + '/' + rowsAfter + '; org health ' + (healthClean ? 'clean' : 'findings ' + JSON.stringify(findingCodes)) + '; imported ' + fx.importedBook + ' slug=' + migrateBody.slug
+            return 'list section before import ' + (listBefore ? 'shown' : 'absent (no story book yet)') + '; rows before/after import ' + rowsBefore + '/' + rowsAfter + '; org health ' + (healthClean ? 'clean' : 'findings ' + JSON.stringify(findingCodes)) + '; imported ' + fx.importedBook + ' slug=' + migrateBody.slug
                 + ' scenesImported=' + migrateBody.scenesImported + ' landscapes=' + migrateBody.landscapesImported + ' warnings=' + (migrateBody.warnings || []).length
                 + '; reader health banner count ' + bannerCount + '; GET /health errors=' + (health.body.errors != null ? health.body.errors : JSON.stringify(health.body).slice(0, 120));
         });
@@ -665,14 +672,21 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await page.getByTestId('pb2-locations-link').click();
             await expect(page.getByTestId('pb-loc-count')).toBeVisible({ timeout: T.ui });
             const countBefore = ((await page.getByTestId('pb-loc-count').textContent()) || '').trim();
-            // The real button first: it sends no chatConfigName, so it rides the stack's library default.
-            // Outcome = the POST status + whichever toast propose() emitted (success / failed / cancelled / thrown message).
+            // The real button first, with whatever the header's "Chat Config" resolved to on its own (267: the
+            // library default, contentAnalysis first, sent by NAME — the server resolves the name per user). Until
+            // 267 the button sent no name and rode the server's generalChat, which on this stack is unreachable.
+            // Outcome = the POST body + status + whichever toast propose() emitted (success / failed / cancelled / thrown).
+            const cfgCtl = page.getByTestId('pb-loc-chatconfig');
+            await expect(cfgCtl).toBeVisible({ timeout: T.ui });
+            await expect(cfgCtl).not.toContainText('Resolving default', { timeout: T.ui });
+            const cfgShown = ((await cfgCtl.textContent()) || '').replace(/\s*search\s*$/, '').trim();
             const t0 = Date.now();
             const proposeBtn = page.getByTestId('pb-loc-propose');
             const proposeResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/locations\/propose$/.test(r.url()), { timeout: 120000 });
             await proposeBtn.click();
             const pr = await proposeResp;
             const prBody = await jsonOf(pr);
+            const prSent = pr.request().postData() || '{}';
             // The button carries an icon ligature + label ("auto_awesome Propose from scenes" / "progress_activity Proposing…"):
             // exact toHaveText never matches (run 6 burned its 900 s ceiling on that) — wait for the busy label to clear.
             await expect(proposeBtn).not.toContainText('Proposing', { timeout: T.propose });
@@ -680,10 +694,11 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const toastText = (await page.locator('.toast-text').allTextContents()).join(' || ') || '(toast already dismissed)';
             const uiProposeMs = Date.now() - t0;
             await shot(page, '06a-locations-propose-ui');
-            let note = 'UI Propose (server-default chat config) → POST ' + pr.status() + ' ' + JSON.stringify(prBody).slice(0, 120) + ' → "' + toastText.trim().slice(0, 240) + '" in ' + Math.round(uiProposeMs / 1000) + ' s';
+            let note = 'UI Propose (header chat config "' + cfgShown + '", sent ' + prSent.slice(0, 80) + ') → POST ' + pr.status() + ' ' + JSON.stringify(prBody).slice(0, 120) + ' → "' + toastText.trim().slice(0, 240) + '" in ' + Math.round(uiProposeMs / 1000) + ' s';
             let proposals = await page.getByTestId('pb-loc-proposal').count();
             if (!proposals) {
                 // Fallback (recorded as a partial short-cut): the same route with the gate's chat config on the live tier.
+                note += '; UI Propose produced no proposal — REST short-cut taken';
                 const r = await request.post(PB_REST + '/' + fx.book.objectId + '/locations/propose', { data: { chatConfigName: CONFIG_NAME } });
                 const sub = await jsonOf(r);
                 expect(r.status(), 'POST /locations/propose {chatConfigName}: ' + JSON.stringify(sub).slice(0, 300)).toBe(202);

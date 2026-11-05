@@ -32,10 +32,9 @@ import am7model from '../core/model.js';
 import am7sd from '../components/sdConfig.js';
 import { layout, pageLayout } from '../router.js';
 import { Dialog } from '../components/dialogCore.js';
-import { ObjectPicker } from '../components/picker.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
-import { LLMConnector } from '../chat/LLMConnector.js';
+import { DEFAULT_CHAT_CONFIG_NAMES, withChatConfig, chatConfigLabel, resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
 import { applicationPath } from '../core/config.js';
 import { pollJob, listCharacters } from '../workflows/sceneExtractor.js';
 import {
@@ -94,21 +93,9 @@ let renderAbort = null;
 
 // ── Pure helpers (exported for Vitest) ─────────────────────────────────
 
-/** Library names tried, in order, for the board's default chat config (the ChapBook editor's order). */
-export const DEFAULT_CHAT_CONFIG_NAMES = ['contentAnalysis', 'generalChat'];
-
-/** Pure: compose request options with the picked chat config NAME added; nothing is added without a pick. */
-export function withChatConfig(opts, ref) {
-    let o = Object.assign({}, opts || {});
-    if (ref && typeof ref.name === 'string' && ref.name.trim()) o.chatConfigName = ref.name.trim();
-    return o;
-}
-
-/** Pure: the "Chat Config" control's label. */
-export function chatConfigLabel(ref, resolving) {
-    if (ref && ref.name) return ref.name;
-    return resolving ? 'Resolving default…' : '(click to select)';
-}
+// The chat-config default/pick lives in components/pbChatConfig.js (shared with the Locations panel,
+// §6.C 267); re-exported so the board's callers and tests keep their names.
+export { DEFAULT_CHAT_CONFIG_NAMES, withChatConfig, chatConfigLabel };
 
 export const COMPOSITION_KEYS = ['settingText', 'action', 'mood', 'shotType', 'viewpoint', 'cameraText', 'props', 'focalActorObjectId'];
 /** Cover mode saves the camera keys plus the title-safe band (PATCH /{book}/covers/{purpose} accepts it; the scene PATCH 400s it). */
@@ -730,45 +717,19 @@ function ensureChatConfigDefault() {
     chatConfigResolving = true;
     let bookId = bookObjectId;
     (async function () {
-        let found = null;
-        for (let i = 0; i < DEFAULT_CHAT_CONFIG_NAMES.length && !found; i++) {
-            try {
-                let rec = await LLMConnector.resolveConfig(DEFAULT_CHAT_CONFIG_NAMES[i]);
-                if (rec && rec.name) found = { name: rec.name, objectId: rec.objectId };
-            } catch (e) { /* try the next name */ }
-        }
+        let found = await resolveDefaultChatConfig();
         chatConfigResolving = false;
         if (found && !chatConfigRef && bookId === bookObjectId) chatConfigRef = found;
         m.redraw();
     })();
 }
 
-function openChatConfigPicker() {
-    ObjectPicker.openLibrary({
-        libraryType: 'chatConfig',
-        title: 'Select Chat Config',
-        onSelect: function (item) {
-            if (item && item.name) {
-                chatConfigRef = { name: item.name, objectId: item.objectId };
-                m.redraw();
-            }
-        }
+function renderBoardChatConfigControl() {
+    return renderChatConfigControl({
+        testid: 'pb-cmp-chatconfig', ref: chatConfigRef, resolving: chatConfigResolving,
+        title: 'The chat config every compose on this board sends to the LLM',
+        onPick: function (ref) { chatConfigRef = ref; m.redraw(); }
     });
-}
-
-function renderChatConfigControl() {
-    return m('div', { class: 'flex items-center gap-1' }, [
-        m('label', { class: 'field-label text-xs whitespace-nowrap mb-0' }, 'Chat Config'),
-        m('div', {
-            'data-testid': 'pb-cmp-chatconfig',
-            class: 'text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 cursor-pointer flex items-center gap-1 max-w-xs',
-            title: 'The chat config every compose on this board sends to the LLM',
-            onclick: openChatConfigPicker
-        }, [
-            m('span', { class: 'truncate' + (chatConfigRef ? '' : ' text-gray-400') }, chatConfigLabel(chatConfigRef, chatConfigResolving)),
-            icon('search', 'text-sm text-gray-400')
-        ])
-    ]);
 }
 
 async function recomposeScene() {
@@ -1233,7 +1194,7 @@ function renderHeader() {
             m('button', { 'data-testid': 'pb-cmp-scene-next', class: BTN, disabled: !next, onclick: function () { goScene(next); } }, icon('chevron_right'))
         ]),
         m('div', { class: 'flex-1' }),
-        renderChatConfigControl(),
+        renderBoardChatConfigControl(),
         coverMode
             ? m('button', { 'data-testid': 'pb-cmp-scenes-link', class: BTN, title: 'The scene composition board', onclick: function () { m.route.set('/picture-book/' + bookObjectId + '/compose'); } }, [icon('view_in_ar', 'text-sm align-middle mr-1'), 'Scenes'])
             : m('button', { 'data-testid': 'pb-cmp-compose-book', class: PRIMARY, disabled: !!busy.composeBook || !!(composeRun && composeRun.job && !composeRun.job.terminal), onclick: openComposeDialog }, [icon('auto_awesome', 'text-sm align-middle mr-1'), 'Compose book…']),

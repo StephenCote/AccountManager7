@@ -27,9 +27,10 @@ import {
 // prompt on every scene (ChapBookUtil.createChapBookScene), so the survivor has a real prompt to
 // preserve across a merge — the whole point of the preserve-prompt fix.
 
-// Count of scene cards in the review UI == number of "Remove this page" buttons (every card has one).
+// Count of pages in the review UI == rows in the page list (P10-C 4: the review is master/detail — one
+// page card at a time, so counting "Remove this page" buttons, as this did before, would always be 1).
 async function cardCount(page) {
-    return await page.locator('button[title="Remove this page"]').count();
+    return await page.locator('[data-page-item]').count();
 }
 
 // Seed a fresh chapbook as the shared user; returns its bookObjectId. Logs the request fixture in too.
@@ -78,6 +79,10 @@ test.describe('ChapBook Review — merge & delete', () => {
 
         // UI reflects N-1 cards after the server merge + reload
         await expect.poll(() => cardCount(page), { timeout: 20000 }).toBe(before.length - 1);
+        // P10-C 4: the absorbing page stays the selected one across the reload; its card is the one shown.
+        await expect(page.locator('[data-page-item="' + survivorOid + '"]')).toHaveAttribute('data-page-selected', '1');
+        await expect(page.locator('[data-page-item="' + foldedOid + '"]')).toHaveCount(0);
+        await expect(page.locator('button[title="Remove this page"]')).toHaveCount(1);
 
         // --- backend state AFTER the UI merge ---
         const survivor = await sceneByObjectId(request, survivorOid);
@@ -122,6 +127,10 @@ test.describe('ChapBook Review — merge & delete', () => {
         await confirmBtn.click();
 
         await expect.poll(() => cardCount(page), { timeout: 20000 }).toBe(n - 1);
+        // P10-C 4: Remove on page 1 lands on the page that moved up into its place (was page 2).
+        await expect(page.locator('[data-page-item="' + removedOid + '"]')).toHaveCount(0);
+        await expect(page.locator('[data-page-item="' + before[1].objectId + '"]')).toHaveAttribute('data-page-selected', '1');
+        await expect(page.locator('[data-page-item="' + before[1].objectId + '"]')).toContainText('Page 1');
 
         // Removed scene is gone
         const removed = await sceneByObjectId(request, removedOid);

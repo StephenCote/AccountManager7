@@ -8,6 +8,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -23,6 +24,8 @@ import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
+import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
+import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererCapabilities;
 import org.cote.accountmanager.olio.illustration.StageRequest;
@@ -36,6 +39,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
+import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
@@ -87,7 +91,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 			"steps", 12, "negativePrompt", "blurry, watermark"));
 		Chat.ScenePromptResult scene = scene(null, null, CHAR_NEGATIVE);
 
-		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null);
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null, null);
 		assertNotNull(plan);
 		assertEquals(RenderPlan.PURPOSE_SCENE, plan.getPurpose());
 
@@ -185,11 +189,31 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		byte[] portrait = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
 		Chat.ScenePromptResult scene = scene(portrait, new byte[0], CHAR_NEGATIVE);
 
-		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null);
-		assertTrue("sys portrait bytes supplied -> referenced", plan.getActors().get(0).isReferenced());
-		assertFalse("empty usr portrait bytes -> not referenced", plan.getActors().get(1).isReferenced());
+		scene.sysPortraitObjectId = "portrait-oid-mira";
 
-		/// Phase 2: referenced actors are still TEXT_ONLY, reported per actor, never silently dropped
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null, null);
+		RenderPlan.Actor sys = plan.getActors().get(0);
+		RenderPlan.Actor usr = plan.getActors().get(1);
+		assertTrue("sys portrait bytes supplied -> referenced", sys.isReferenced());
+		assertFalse("empty usr portrait bytes -> not referenced", usr.isReferenced());
+
+		/// P10-C 3: a referenced actor is a BASE reference whose identity carries the portrait record (provenance);
+		/// an unreferenced actor carries neither
+		assertEquals(RenderPlan.STAGE_BASE, sys.getReferenceStage());
+		assertNotNull(sys.getIdentity());
+		assertEquals("portrait-oid-mira", sys.getIdentity().getPortraitArtifactId());
+		assertNull(usr.getReferenceStage());
+		assertNull("no portrait -> no provenance", usr.getIdentity().getPortraitArtifactId());
+
+		/// P10-C 3: a portrait makes the plan resolve the SCENE_DIRECT pick (references requested); offline it is
+		/// unresolved for INVENTORY_UNAVAILABLE and reported, next to the LOCATION pick's own report
+		RenderPlan.ModelPick direct = plan.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.SCENE_DIRECT));
+		assertNotNull("a portrait resolves the SCENE_DIRECT pick", direct);
+		assertFalse(direct.isResolved());
+		assertEquals(ModelResolver.Reason.INVENTORY_UNAVAILABLE.name(), direct.getReason());
+		assertEquals(2, countCode(plan, RenderPlan.Degradation.MODEL_SUBSTITUTED));
+
+		/// no renderer family offline: the referenced actor degrades to text, reported per actor, never silently dropped
 		assertEquals(PbStrategyEnumType.TEXT_ONLY, plan.getStrategy().getName());
 		assertEquals(StrategySelector.REASON_UNKNOWN_FAMILY, plan.getStrategy().getReason());
 		assertEquals(Arrays.asList(RenderPlan.STAGE_BASE), plan.getStrategy().getStages());
@@ -198,6 +222,17 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		assertEquals(SYS_OID, textOnly.get(0).getActorId());
 		assertEquals(RenderPlan.STAGE_BASE, textOnly.get(0).getStage());
 		assertTrue(textOnly.get(0).getMessage(), textOnly.get(0).getMessage().contains("Mira"));
+	}
+
+	/// P10-C 3: no portrait, no SCENE_DIRECT pick - the plan carries the LOCATION pick alone and reports once.
+	@Test
+	public void buildPlanResolvesNoSceneDirectPickWithoutPortraits() throws Exception {
+		BaseRecord cfg = sparseConfig(map("style", "custom", "customPrompt", CUSTOM_STYLE));
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene(null, null, CHAR_NEGATIVE), SYS_OID, USR_OID, null, null, null, null);
+		assertEquals(1, plan.getModels().size());
+		assertNotNull(plan.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.LOCATION)));
+		assertNull(plan.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.SCENE_DIRECT)));
+		assertEquals(1, countCode(plan, RenderPlan.Degradation.MODEL_SUBSTITUTED));
 	}
 
 	@Test
@@ -209,7 +244,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		scene.sysFirstName = null;
 		scene.usrCharDesc = null;
 
-		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null);
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null, null);
 		assertEquals("two people facing each other", plan.getIntent().getPromptOverride());
 		assertNull("blank setting -> no location text", plan.getLocation().getDescription());
 		assertNull("blank first name -> no actor name", plan.getActors().get(0).getName());
@@ -222,7 +257,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 	@Test
 	public void buildPlanWithNoConfigUsesTheProfessionalPhotographClauseAndDefaultCanvas() throws Exception {
 		Chat.ScenePromptResult scene = scene(null, null, null);
-		RenderPlan plan = ChatSceneRenderUtil.buildPlan(null, scene, SYS_OID, USR_OID, null, null, null);
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(null, scene, SYS_OID, USR_OID, null, null, null, null);
 		assertEquals("(professional photograph).", plan.getStyle().getDescription());
 		assertTrue(plan.getConfig().isEmpty());
 		assertEquals(1024, plan.getCanvas().getWidth());
@@ -310,7 +345,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		assertEquals("flux2", cfg.get("compositeMode"));
 		Chat.ScenePromptResult scene = scene(null, null, null);
 
-		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null);
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null, null);
 		CompiledPrompt base = plan.getCompiled().get(RenderPlan.STAGE_BASE);
 		String clause = plan.getStyle().getDescription();
 		assertTrue(clause, clause.startsWith("((Photograph) taken with a ("));
@@ -339,7 +374,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 			"cfg", 7, "sampler", "dpmpp_2m", "scheduler", "karras",
 			"flux2Cfg", 2.5, "flux2Sampler", "res_multistep", "flux2Scheduler", "beta"));
 		Chat.ScenePromptResult scene = scene(null, null, CHAR_NEGATIVE);
-		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null);
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null, null);
 		CompiledPrompt compiled = plan.getCompiled().get(RenderPlan.STAGE_BASE);
 		assertNotNull(compiled);
 		assertEquals(7, plan.getConfig().get("cfg"));
@@ -375,7 +410,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 
 		BaseRecord hot = sparseConfig(map("style", "custom", "customPrompt", CUSTOM_STYLE,
 			"cfg", 7, "sampler", "dpmpp_2m", "scheduler", "karras", "flux2Cfg", 7.0));
-		RenderPlan hotPlan = ChatSceneRenderUtil.buildPlan(hot, scene, SYS_OID, USR_OID, null, null, null);
+		RenderPlan hotPlan = ChatSceneRenderUtil.buildPlan(hot, scene, SYS_OID, USR_OID, null, null, null, null);
 		CompiledPrompt hotCompiled = hotPlan.getCompiled().get(RenderPlan.STAGE_BASE);
 		List<String> carried = new ArrayList<>();
 		carried.add(ConfigNotApplied.HIRES + ": carried in by the caller");
@@ -394,6 +429,68 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		assertTrue(clamp, clamp.contains("BASE cfg 7 is outside the flux2* family's range [1, 3.50]; sent 3.50"));
 	}
 
+	/// P10-C 3 (log 37): the step count follows the pick that renders BASE, known only once the strategy is.
+	/// Scaffolded from the SDXL LOCATION pick the preset says 20; a DIRECT_REFERENCE plan renders BASE on the
+	/// FLUX.2 SCENE_DIRECT pick, whose STANDARD count is 4 - left at 20, Klein took ~63 s/step with two
+	/// references and outran the HTTP read timeout. TEXT_ONLY keeps the LOCATION count; an unknown family or
+	/// a matching count returns the same plan; nothing but the preset's steps changes. No renderer: picks are
+	/// hand-built, the way the resolver would have written them.
+	@Test
+	public void baseStepsFollowThePickThatRendersBase() throws Exception {
+		QualityPresets.Preset standard = QualityPresets.resolve(PbQualityPresetEnumType.STANDARD);
+		RendererCapabilities xl = RendererCapabilities.forModel("OfficialStableDiffusion/sd_xl_base_1.0.safetensors");
+		RendererCapabilities flux2 = RendererCapabilities.forModel("flux2Klein_9b");
+		assertNotNull(xl);
+		assertNotNull(flux2);
+		int xlSteps = xl.recommendedSteps(standard.getStepsMode());
+		int flux2Steps = flux2.recommendedSteps(standard.getStepsMode());
+		assertTrue("the two families disagree on steps (" + xlSteps + " vs " + flux2Steps + "), or there is nothing to test", xlSteps != flux2Steps);
+
+		RenderPlan.ModelPick loc = new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, "OfficialStableDiffusion/sd_xl_base_1.0.safetensors", "*xl*", "TEST", ModelResolver.Reason.OK.name(), false, null);
+		RenderPlan.ModelPick direct = new RenderPlan.ModelPick(PbModelTaskEnumType.SCENE_DIRECT, "flux2Klein_9b", "flux2*", "TEST", ModelResolver.Reason.OK.name(), false, null);
+		RenderPlan.PresetValues scaffolded = new RenderPlan.PresetValues(standard.getName().name(), xlSteps, standard.getVariants(), standard.isUpscale(), standard.getQa());
+		RenderPlan.Canvas canvas = new RenderPlan.Canvas(768, 512);
+		RenderPlan.Style style = new RenderPlan.Style(null, null, CUSTOM_STYLE_CLAUSE, CHAR_NEGATIVE, null, false, java.util.Collections.emptyList());
+		RenderPlan.Builder b = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE).canvas(canvas).preset(scaffolded).style(style)
+			.config(new LinkedHashMap<>()).intent(new RenderPlan.Intent(SCENE_DESC, false)).model(loc).model(direct);
+		RenderPlan plan = b.build();
+		assertEquals(xlSteps, plan.getPreset().getSteps());
+
+		/// DIRECT_REFERENCE: BASE is the SCENE_DIRECT pick, so the FLUX.2 count
+		RenderPlan dr = plan.withStrategy(new RenderPlan.Strategy(PbStrategyEnumType.DIRECT_REFERENCE, Arrays.asList(RenderPlan.STAGE_BASE), "test"), null);
+		assertEquals("flux2Klein_9b", dr.pickForStage(RenderPlan.STAGE_BASE).getModel());
+		RenderPlan fixed = ChatSceneRenderUtil.withBaseSteps(dr, standard);
+		assertEquals(flux2Steps, fixed.getPreset().getSteps());
+		assertEquals(scaffolded.getPreset(), fixed.getPreset().getPreset());
+		assertEquals(scaffolded.getVariants(), fixed.getPreset().getVariants());
+		assertEquals(scaffolded.isUpscale(), fixed.getPreset().isUpscale());
+		assertEquals(scaffolded.getQa(), fixed.getPreset().getQa());
+		assertEquals(dr.getStrategy().getName(), fixed.getStrategy().getName());
+		assertEquals(dr.getModels().keySet(), fixed.getModels().keySet());
+		assertEquals(dr.getDegradations(), fixed.getDegradations());
+		assertTrue("the fixed plan's count is the same object a second application returns", fixed == ChatSceneRenderUtil.withBaseSteps(fixed, standard));
+
+		/// TEXT_ONLY: BASE is the LOCATION pick, the scaffolded count stands and the plan is returned as-is
+		RenderPlan to = plan.withStrategy(new RenderPlan.Strategy(PbStrategyEnumType.TEXT_ONLY, Arrays.asList(RenderPlan.STAGE_BASE), "test"), null);
+		assertEquals("OfficialStableDiffusion/sd_xl_base_1.0.safetensors", to.pickForStage(RenderPlan.STAGE_BASE).getModel());
+		assertTrue(to == ChatSceneRenderUtil.withBaseSteps(to, standard));
+		assertEquals(xlSteps, to.getPreset().getSteps());
+
+		/// an unknown family on the BASE pick leaves the plan alone
+		RenderPlan.ModelPick odd = new RenderPlan.ModelPick(PbModelTaskEnumType.SCENE_DIRECT, "someUnknownCheckpoint", null, "TEST", ModelResolver.Reason.OK.name(), false, null);
+		RenderPlan oddPlan = RenderPlan.builder().purpose(RenderPlan.PURPOSE_SCENE).canvas(canvas).preset(scaffolded).style(style)
+			.config(new LinkedHashMap<>()).intent(new RenderPlan.Intent(SCENE_DESC, false)).model(loc).model(odd).build()
+			.withStrategy(new RenderPlan.Strategy(PbStrategyEnumType.DIRECT_REFERENCE, Arrays.asList(RenderPlan.STAGE_BASE), "test"), null);
+		assertNull(org.cote.accountmanager.olio.illustration.FamilyRequest.capabilitiesFor(oddPlan.pickForStage(RenderPlan.STAGE_BASE)));
+		assertTrue(oddPlan == ChatSceneRenderUtil.withBaseSteps(oddPlan, standard));
+
+		/// and the real buildPlan path with no portraits is TEXT_ONLY on the LOCATION count (no renderer)
+		BaseRecord cfg = sparseConfig(map("style", "custom", "customPrompt", CUSTOM_STYLE));
+		RenderPlan built = ChatSceneRenderUtil.buildPlan(cfg, scene(null, null, CHAR_NEGATIVE), SYS_OID, USR_OID, null, null, null, null);
+		assertEquals(PbStrategyEnumType.TEXT_ONLY, built.getStrategy().getName());
+		assertEquals(built.pickForStage(RenderPlan.STAGE_BASE).getModel(), built.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.LOCATION)).getModel());
+	}
+
 	// ─────────────────────────────── (c) RenderFailure statuses ───────────────────────────────
 
 	@Test
@@ -402,19 +499,19 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		Chat.ScenePromptResult scene = scene(null, null, CHAR_NEGATIVE);
 		SDUtil offline = new SDUtil(SDAPIEnumType.SWARM, null);
 
-		ChatSceneRenderUtil.RenderFailure f = expectFailure(() -> ChatSceneRenderUtil.render(null, offline, cfg, scene, SYS_OID, USR_OID, null));
+		ChatSceneRenderUtil.RenderFailure f = expectFailure(() -> ChatSceneRenderUtil.render(null, offline, cfg, scene, SYS_OID, USR_OID, null, null));
 		assertEquals(401, f.getStatus());
 		assertEquals("No authenticated principal", f.getMessage());
 
-		f = expectFailure(() -> ChatSceneRenderUtil.render(testUser, null, cfg, scene, SYS_OID, USR_OID, null));
+		f = expectFailure(() -> ChatSceneRenderUtil.render(testUser, null, cfg, scene, SYS_OID, USR_OID, null, null));
 		assertEquals(500, f.getStatus());
 		assertEquals("No renderer transport", f.getMessage());
 
-		f = expectFailure(() -> ChatSceneRenderUtil.render(testUser, offline, cfg, null, SYS_OID, USR_OID, null));
+		f = expectFailure(() -> ChatSceneRenderUtil.render(testUser, offline, cfg, null, SYS_OID, USR_OID, null, null));
 		assertEquals(500, f.getStatus());
 		assertEquals("No scene prompt was produced for the chat", f.getMessage());
 
-		f = expectFailure(() -> ChatSceneRenderUtil.buildPlan(cfg, null, SYS_OID, USR_OID, null, null, null));
+		f = expectFailure(() -> ChatSceneRenderUtil.buildPlan(cfg, null, SYS_OID, USR_OID, null, null, null, null));
 		assertEquals(500, f.getStatus());
 	}
 
@@ -426,7 +523,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		Chat.ScenePromptResult scene = scene(null, null, CHAR_NEGATIVE);
 		SDUtil offline = new SDUtil(SDAPIEnumType.SWARM, null);
 
-		ChatSceneRenderUtil.RenderFailure f = expectFailure(() -> ChatSceneRenderUtil.render(testUser, offline, cfg, scene, SYS_OID, USR_OID, null));
+		ChatSceneRenderUtil.RenderFailure f = expectFailure(() -> ChatSceneRenderUtil.render(testUser, offline, cfg, scene, SYS_OID, USR_OID, null, null));
 		assertEquals(503, f.getStatus());
 		assertTrue(f.getMessage(), f.getMessage().startsWith("Renderer inventory unavailable; cannot verify a model for " + LABEL + " before rendering"));
 		assertTrue("the MODEL_SUBSTITUTED degradation rides on the message: " + f.getMessage(),
@@ -434,7 +531,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 
 		/// a blank label falls back to "chat scene"
 		scene.label = "  ";
-		f = expectFailure(() -> ChatSceneRenderUtil.render(testUser, offline, cfg, scene, SYS_OID, USR_OID, null));
+		f = expectFailure(() -> ChatSceneRenderUtil.render(testUser, offline, cfg, scene, SYS_OID, USR_OID, null, null));
 		assertEquals(503, f.getStatus());
 		assertTrue(f.getMessage(), f.getMessage().contains("cannot verify a model for chat scene before rendering"));
 	}
@@ -449,7 +546,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		assertFalse("fixture: the photograph detail fields start unset", cfg.hasField("stillCamera"));
 
 		Chat.ScenePromptResult scene = scene(null, null, CHAR_NEGATIVE);
-		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null);
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, null, null, null, null);
 
 		/// the copy got the per-style defaults and the deployment-default model; the original got nothing
 		assertTrue(plan.getStyle().getDescription(), plan.getStyle().getDescription().startsWith("((Photograph) taken with a ("));
@@ -485,7 +582,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		sdu.setImageAccessUser(testUser);
 
 		long start = System.currentTimeMillis();
-		ChatSceneRenderUtil.ChatSceneRender render = ChatSceneRenderUtil.render(testUser, sdu, cfg, scene, SYS_OID, USR_OID, null);
+		ChatSceneRenderUtil.ChatSceneRender render = ChatSceneRenderUtil.render(testUser, sdu, cfg, scene, SYS_OID, USR_OID, null, null);
 		logger.info("chat scene v3 live render took " + (System.currentTimeMillis() - start) + " ms (recorded, not asserted)");
 		assertNotNull(render);
 		assertNotNull(render.getData());
@@ -493,12 +590,11 @@ public class TestChatSceneRenderUtil extends BaseTest {
 
 		/// describe() carries every key the transport returns
 		Map<String, Object> d = render.describe();
-		for(String k : new String[] { "renderPath", "strategy", "compiledPrompt", "compiledNegative", "model", "canvas", "planContentHash",
-				"seed", "durationMs", "degradations", ConfigNotApplied.KEY }) {
-			assertTrue("describe() must carry " + k + ": " + d.keySet(), d.containsKey(k));
-		}
+		assertDescribeKeys(d);
 		assertEquals(ChatSceneRenderUtil.RENDER_PATH_V3, d.get("renderPath"));
 		assertEquals("TEXT_ONLY", d.get("strategy"));
+		assertEquals(StrategySelector.REASON_NO_REFERENCED_ACTORS, d.get("strategyReason"));
+		assertEquals("no portraits -> no references", 0, ((List<?>) d.get("references")).size());
 		assertEquals(render.getPick().getModel(), d.get("model"));
 		assertEquals(render.getPlan().contentHash(), d.get("planContentHash"));
 
@@ -552,9 +648,125 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		for(int i = 0; i < PNG_MAGIC.length; i++) {
 			assertEquals("PNG magic byte " + i, PNG_MAGIC[i], bytes[i]);
 		}
-		File out = new File(System.getProperty("java.io.tmpdir"), "p27-chat-scene-v3-" + oid + ".png");
-		FileUtil.emitFile(out.getAbsolutePath(), bytes);
-		logger.info("chat scene v3 image written for inspection: " + out.getAbsolutePath());
+		emit("text-only-" + oid + ".png", bytes);
+	}
+
+	// ─────────────────────────────── (f) LIVE two-portrait DIRECT_REFERENCE render (SD-gated) ───────────────────────────────
+
+	/**
+	 * P10-C 3 (the "same character twice" defect): with two DISTINCT portraits the plan resolves a SCENE_DIRECT
+	 * pick with references requested, the strategy is DIRECT_REFERENCE, and BASE is rendered as a reference graph
+	 * with both portraits attached in actor-priority order - system character first - so the user character's
+	 * face reaches the renderer at all. Fixtures: {@code media/flux/character2.png} (young woman, strawberry-blonde)
+	 * as Mira and {@code media/flux/character1.png} (grey-haired bearded man) as Theo. Gated on
+	 * {@code test.swarm.server} answering and the FLUX.2 checkpoint being installed; a SKIP is NOT a pass. The
+	 * image lands under {@code target/TestChatSceneRenderUtil/} and is to be looked at: two different people.
+	 */
+	@Test(timeout = RENDER_TIMEOUT_MS)
+	public void renderAttachesBothPortraitsAsReferencesInActorOrder() throws Exception {
+		String server = swarmServer();
+		BaseRecord cfg = SdTestGate.requireRenderConfig(testProperties, server, "chat scene v3 DIRECT_REFERENCE render");
+		String flux2Model = testProperties.getProperty("test.swarm.flux2Model", "flux2Klein_9b");
+		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, server);
+		sdu.setImageAccessUser(testUser);
+		SdTestGate.requireModelInstalled(sdu, server, flux2Model, "the chat scene DIRECT_REFERENCE render");
+		String sdxlModel = cfg.get("model");
+		cfg.setValue("style", "custom");
+		cfg.setValue("customPrompt", CUSTOM_STYLE);
+		cfg.setValue("width", 768);
+		cfg.setValue("height", 512);
+		cfg.setValue("hires", false);
+		cfg.setValue("flux2Model", flux2Model);
+
+		byte[] sysPng = fixture("character2.png");
+		byte[] usrPng = fixture("character1.png");
+		assertFalse("fixture: the two portraits must be distinct", Arrays.equals(sysPng, usrPng));
+		Chat.ScenePromptResult scene = scene(sysPng, usrPng, CHAR_NEGATIVE);
+		scene.sysPortraitObjectId = "portrait-oid-mira";
+		scene.usrPortraitObjectId = "portrait-oid-theo";
+
+		/// the plan alone first, the way ChatService hands the config's picks in: LOCATION on the SDXL checkpoint,
+		/// SCENE_DIRECT on the FLUX.2 one with references requested, so the strategy is DIRECT_REFERENCE on BASE
+		RenderPlan plan = ChatSceneRenderUtil.buildPlan(cfg, scene, SYS_OID, USR_OID, sdxlModel, flux2Model, SDAPIEnumType.SWARM, server);
+		logger.info("DIRECT_REFERENCE plan strategy: " + plan.getStrategy().getName() + " (" + plan.getStrategy().getReason() + "); degradations: " + plan.getDegradations());
+		assertEquals(plan.getStrategy().getReason(), PbStrategyEnumType.DIRECT_REFERENCE, plan.getStrategy().getName());
+		assertEquals(Arrays.asList(RenderPlan.STAGE_BASE), plan.getStrategy().getStages());
+		RenderPlan.ModelPick direct = plan.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.SCENE_DIRECT));
+		assertNotNull(direct);
+		assertTrue("the SCENE_DIRECT pick resolves on " + server + ": " + direct.getReason(), direct.isResolved());
+		assertEquals("BASE renders on the SCENE_DIRECT pick", direct.getModel(), plan.pickForStage(RenderPlan.STAGE_BASE).getModel());
+		/// P10-C 3 (log 37): the step count is the FLUX.2 family's for the STANDARD preset (4), not the SDXL LOCATION
+		/// pick's 20 - at ~63 s/step with two references, 20 steps outran the HTTP read timeout
+		RendererCapabilities flux2Caps = RendererCapabilities.forModel(flux2Model);
+		assertNotNull("capabilities.json knows " + flux2Model, flux2Caps);
+		assertEquals(RendererCapabilities.PATTERN_FLUX2, flux2Caps.getPattern());
+		int flux2Steps = flux2Caps.recommendedSteps(QualityPresets.resolve(PbQualityPresetEnumType.STANDARD).getStepsMode());
+		assertEquals("BASE steps follow the FLUX.2 pick that renders it", flux2Steps, plan.getPreset().getSteps());
+		assertTrue("the FLUX.2 default is a short schedule: " + flux2Steps, flux2Steps < 10);
+		assertEquals("both portraits are references, none degraded to text", 0, countCode(plan, RenderPlan.Degradation.ACTOR_TEXT_ONLY));
+		for(RenderPlan.Actor a : plan.getActors()) {
+			assertTrue(a.getActorId() + " is referenced", a.isReferenced());
+			assertEquals(RenderPlan.STAGE_BASE, a.getReferenceStage());
+		}
+		assertEquals("portrait-oid-mira", plan.getActors().get(0).getIdentity().getPortraitArtifactId());
+		assertEquals("portrait-oid-theo", plan.getActors().get(1).getIdentity().getPortraitArtifactId());
+		String prompt = plan.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt();
+		logger.info("DIRECT_REFERENCE compiled BASE prompt: " + prompt);
+		assertTrue("the prompt binds Mira to the first reference image: " + prompt, prompt.contains("(the first reference image) is Mira"));
+		assertTrue("the prompt binds Theo to the second reference image: " + prompt, prompt.contains("(the second reference image) is Theo"));
+
+		/// the render: the graph path, both portraits attached, the response naming them in order
+		long start = System.currentTimeMillis();
+		ChatSceneRenderUtil.ChatSceneRender render = ChatSceneRenderUtil.render(testUser, sdu, cfg, scene, SYS_OID, USR_OID, sdxlModel, flux2Model);
+		logger.info("chat scene v3 DIRECT_REFERENCE live render took " + (System.currentTimeMillis() - start) + " ms on " + server
+			+ " model " + render.getPick().getModel() + " (recorded, not asserted)");
+		assertNotNull(render.getData());
+		assertEquals(direct.getModel(), render.getPick().getModel());
+		Map<String, Object> d = render.describe();
+		assertDescribeKeys(d);
+		assertEquals("DIRECT_REFERENCE", d.get("strategy"));
+		List<Map<String, Object>> refs = render.getReferences();
+		assertEquals("two references: " + refs, 2, refs.size());
+		assertEquals("actora", refs.get(0).get("name"));
+		assertEquals(SYS_OID, refs.get(0).get("actorId"));
+		assertEquals("portrait-oid-mira", refs.get(0).get("portraitObjectId"));
+		assertEquals("actorb", refs.get(1).get("name"));
+		assertEquals(USR_OID, refs.get(1).get("actorId"));
+		assertEquals("portrait-oid-theo", refs.get(1).get("portraitObjectId"));
+		assertEquals(refs, d.get("references"));
+		String requestJson = render.getRequestJson();
+		assertNotNull("the graph path records its request", requestJson);
+		assertTrue("the request is the graph path's: " + requestJson, requestJson.contains("\"graphHash\""));
+		assertTrue("the graph was posted with the FLUX.2 step count: " + requestJson,
+			java.util.regex.Pattern.compile("\"steps\"\\s*:\\s*" + flux2Steps + "\\b").matcher(requestJson).find());
+		assertTrue("both portrait records ride as reference provenance: " + requestJson,
+			requestJson.contains("portrait-oid-mira") && requestJson.contains("portrait-oid-theo"));
+		assertNotNull("the seed is the one the graph was compiled with", render.getSeed());
+
+		/// the record: the stageRequest attribute carries the same provenance, and the bytes are a PNG to look at
+		String oid = render.getData().get(FieldNames.FIELD_OBJECT_ID);
+		long orgId = testUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, oid);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] {
+			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ATTRIBUTES,
+			FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_DATA_HASH, FieldNames.FIELD_SIZE,
+			FieldNames.FIELD_COMPRESSION_TYPE, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_ENCIPHERED,
+			FieldNames.FIELD_VAULTED, FieldNames.FIELD_KEY_ID, FieldNames.FIELD_VAULT_ID
+		});
+		q.setCache(false);
+		BaseRecord full = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
+		assertNotNull("the user must be able to read the scene record back", full);
+		String stageRequest = AttributeUtil.getAttributeValue(full, "stageRequest", (String) null);
+		assertNotNull("stageRequest attribute", stageRequest);
+		assertTrue(stageRequest, stageRequest.contains("portrait-oid-theo"));
+		byte[] bytes = ByteModelUtil.getValue(full);
+		assertNotNull(bytes);
+		for(int i = 0; i < PNG_MAGIC.length; i++) {
+			assertEquals("PNG magic byte " + i, PNG_MAGIC[i], bytes[i]);
+		}
+		emit("direct-reference-" + oid + ".png", bytes);
 	}
 
 	// ─────────────────────────────── helpers ───────────────────────────────
@@ -563,6 +775,28 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		String s = testProperties.getProperty(SdTestGate.PROP_SWARM_SERVER);
 		assertNotNull(SdTestGate.PROP_SWARM_SERVER + " must be set", s);
 		return s;
+	}
+
+	private static void assertDescribeKeys(Map<String, Object> d) {
+		for(String k : new String[] { "renderPath", "strategy", "strategyReason", "compiledPrompt", "compiledNegative", "model", "references",
+				"canvas", "planContentHash", "seed", "durationMs", "degradations", ConfigNotApplied.KEY }) {
+			assertTrue("describe() must carry " + k + ": " + d.keySet(), d.containsKey(k));
+		}
+	}
+
+	/// A committed portrait fixture (the TestFlux2Composite pair), read from the module's media directory.
+	private static byte[] fixture(String name) throws Exception {
+		File f = new File("./media/flux/" + name);
+		assertTrue("Missing committed fixture " + f.getAbsolutePath(), f.exists());
+		return Files.readAllBytes(f.toPath());
+	}
+
+	/// Rendered images go under target/ (artifacts rule), never the temp dir or the source tree.
+	private static void emit(String name, byte[] bytes) {
+		File out = new File("target/TestChatSceneRenderUtil", name);
+		out.getParentFile().mkdirs();
+		FileUtil.emitFile(out.getAbsolutePath(), bytes);
+		logger.info("chat scene v3 image written for inspection: " + out.getAbsolutePath());
 	}
 
 	private static Chat.ScenePromptResult scene(byte[] sysPortrait, byte[] usrPortrait, String charNegative) {

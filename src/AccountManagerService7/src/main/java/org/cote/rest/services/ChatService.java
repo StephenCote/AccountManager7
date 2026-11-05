@@ -1524,7 +1524,7 @@ public class ChatService {
 		/// switch is read here, at the top of the route, and nowhere below it. v3 is the default since
 		/// P10-A 0; the v1 composite below stays live as the rollback (chat.renderPath=v1) and is untouched.
 		if (PbRenderPath.isChatV3()) {
-			return generateSceneV3(user, chat, req, sdu, sdConfig, systemChar, userChar, clientModel, objectId);
+			return generateSceneV3(user, chat, req, sdu, sdConfig, systemChar, userChar, clientModel, clientFlux2Model, objectId);
 		}
 
 		/// Parse scene config flags from sdConfig
@@ -1660,10 +1660,11 @@ public class ChatService {
 	/// shared illustration service. Every failure is a RenderFailure carrying its own HTTP status
 	/// (401/409/500/503) and the bgActivity chirp is always cleared. The response is the persisted
 	/// data record plus a `render` block (renderPath, strategy, compiledPrompt, model, canvas,
-	/// degradations, configNotApplied, ...) so the client can show what the plan path did and did not
-	/// honour from the saved SD config.
+	/// references, degradations, configNotApplied, ...) so the client can show what the plan path did
+	/// and did not honour from the saved SD config. The two portraits ride as reference images when the
+	/// SCENE_DIRECT pick (clientFlux2Model = the client's flux2Model override) resolves (P10-C 3).
 	private Response generateSceneV3(BaseRecord user, Chat chat, OpenAIRequest req, SDUtil sdu, BaseRecord sdConfig,
-			BaseRecord systemChar, BaseRecord userChar, String clientModel, String objectId) {
+			BaseRecord systemChar, BaseRecord userChar, String clientModel, String clientFlux2Model, String objectId) {
 		WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Generating scene..."});
 		Chat.ScenePromptResult sceneResult = chat.generateScenePrompt(req, sdConfig);
 		if (sceneResult == null) {
@@ -1676,7 +1677,7 @@ public class ChatService {
 		WebSocketService.chirpUser(user, new String[] {"bgActivity", "landscape", "Rendering scene..."});
 		ChatSceneRenderUtil.ChatSceneRender render;
 		try {
-			render = ChatSceneRenderUtil.render(user, sdu, sdConfig, sceneResult, sysOid, usrOid, clientModel);
+			render = ChatSceneRenderUtil.render(user, sdu, sdConfig, sceneResult, sysOid, usrOid, clientModel, clientFlux2Model);
 		} catch (ChatSceneRenderUtil.RenderFailure f) {
 			logger.error("generateScene(v3): " + f.getStatus() + " " + f.getMessage());
 			WebSocketService.chirpUser(user, new String[] {"bgActivity", "", ""});

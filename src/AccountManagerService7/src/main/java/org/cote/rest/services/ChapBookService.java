@@ -759,6 +759,35 @@ public class ChapBookService {
     }
 
     /**
+     * POST /scene/{sceneObjectId}/split
+     * Split a ChapBook scene's stanza at its line midpoint into two pages: the scene keeps the first half, a
+     * NEW scene directly after it takes the second half, and the book is reindexed {@code 0..n}. Returns
+     * {@code {"split":true,"sceneObjectId":"<the NEW scene's objectId>"}}. The write ordering (create before
+     * truncate, so a failure never loses text), the CHAPBOOK guard and the AccessPoint assertions live in
+     * {@link ChapBookUtil#splitScene} (architecture.md: no business logic in Service7).
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/split")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response splitScene(@PathParam("sceneObjectId") String sceneObjectId,
+            @Context HttpServletRequest request) {
+        OlioModelNames.use();
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+        if (sceneObjectId == null || sceneObjectId.isBlank()) return errorResponse(400, "sceneObjectId is required");
+        try {
+            String newObjectId = ChapBookUtil.splitScene(user, sceneObjectId);
+            return Response.status(200).entity("{\"split\":true,\"sceneObjectId\":\"" + newObjectId + "\"}").build();
+        } catch (PictureBookException e) {
+            return errorResponse(e.getStatus(), e.getMessage());
+        } catch (Exception e) {
+            logger.error("splitScene failed for " + sceneObjectId + ": " + e.getMessage(), e);
+            return errorResponse(500, "Failed to split scene: " + e.getMessage());
+        }
+    }
+
+    /**
      * DELETE /scene/{sceneObjectId}
      * Delete a single ChapBook scene and reindex the survivors so {@code sceneIndex} is a clean
      * {@code 0..n-1}. The CHAPBOOK book-type guard, AccessPoint delete and reindex all live in
