@@ -835,6 +835,8 @@ public class PbNodeExecutor {
 		PbCastPortraitUtil.importCastPortraits(user, book, g.getWorkflow(), composition);
 		RenderPlan plan = PbRenderPlanUtil.buildCompositionPlan(user, book, composition, node, g.getPlanOptions(),
 			sdu.getApiType(), sdu.getServer());
+		/// a ChapBook cover with no referenced cast is straight image generation too (ChapBookStraightGen)
+		plan = ChapBookStraightGen.apply(book, plan);
 		int variants = 1;
 		if(g.getRun() != null && plan.getPreset() != null) {
 			variants = Math.max(1, plan.getPreset().getVariants());
@@ -1444,6 +1446,8 @@ public class PbNodeExecutor {
 					? " (MIGRATED: " + ensured.result.failureReason + ")" : "") + "; re-compose in order to clear",
 				null, RenderPlan.STAGE_BASE)));
 		}
+		/// ChapBook pages are straight image generation: the config's steps / style / negative (ChapBookStraightGen).
+		plan = ChapBookStraightGen.apply(g.getBook(), plan);
 		int variants = 1;
 		if(multiVariant && g.getRun() != null && plan.getPreset() != null) {
 			variants = Math.max(1, plan.getPreset().getVariants());
@@ -1571,6 +1575,12 @@ public class PbNodeExecutor {
 		if(compiled.getNegative() == null || compiled.getNegative().isBlank()) {
 			configNotApplied.add(NOT_APPLIED_DEFAULT_NEGATIVE + ": no negative prompt compiled (the style names no exclusions and the config carries no negativePrompt); the v1 default negative is not applied on the plan path");
 		}
+		/// ChapBook straight generation (ChapBookStraightGen): hires drives the adapter's refiner block on BASE and the
+		/// config's seed is used; steps / style / negative were already applied to the plan, so those notes go.
+		boolean straightGen = ChapBookStraightGen.applies(g.getBook(), plan);
+		if(straightGen) {
+			ChapBookStraightGen.dropHonoured(configNotApplied, plan);
+		}
 
 		Object cfgVal = cfg.get("cfg");
 		double cfgScale = (cfgVal instanceof Number ? ((Number) cfgVal).doubleValue() : 7.0);
@@ -1585,9 +1595,9 @@ public class PbNodeExecutor {
 			.cfg(cfgScale)
 			.sampler((String) cfg.get("sampler"))
 			.scheduler((String) cfg.get("scheduler"))
-			.seed(StageRequest.SEED_RANDOM)
+			.seed(straightGen ? ChapBookStraightGen.seed(cfg) : StageRequest.SEED_RANDOM)
 			.images(1)
-			.hires(false)
+			.hires(straightGen && ChapBookStraightGen.hires(cfg))
 			.config(cfg)
 			.build();
 		/// The shared request carries the config's cfg/sampler/scheduler (SDXL knobs) as-is: renderStages maps

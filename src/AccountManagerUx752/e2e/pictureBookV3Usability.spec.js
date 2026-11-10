@@ -1159,7 +1159,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const promptBefore = await ta.inputValue();
             const lockedPrompt = 'A sun-drenched palace terrace at golden hour, a queen in a gown of woven light, storybook watercolour, warm palette (P9-0 ' + stamp + ')';
             await ta.fill(lockedPrompt);
-            await page.locator('button.cb-save-prompt[data-scene-oid="' + p0.objectId + '"]').click();
+            await page.locator('[data-testid="cb-page-save"][data-scene-oid="' + p0.objectId + '"]').click();
             const saveToast = await waitForToast(page, /saved|Saved|failed/i);
             const t0 = Date.now();
             await page.locator('[data-testid="cb-page-rerender"][data-scene-oid="' + p0.objectId + '"]').click();

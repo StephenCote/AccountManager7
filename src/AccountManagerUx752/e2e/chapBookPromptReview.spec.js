@@ -201,21 +201,21 @@ test.describe('ChapBook — per-scene landscape-prompt review', () => {
             .toHaveValue(storedPrompt, { timeout: 15000 });
 
         // 6. P10-C 4 (master/detail): the page list has one row per scene; the selected card — and only
-        //    it — carries "Re-render this page" + "Save prompt". Before P10-C 4 every card was stacked on
+        //    it — carries "Re-render this page" + the page Save (cb-page-save; "Save prompt" was folded into it 2026-11-10). Before P10-C 4 every card was stacked on
         //    the page and this asserted sceneCount buttons; the product now shows one card at a time.
         //    Selecting each page in turn proves the buttons are reachable for EVERY scene.
         await expect(page.locator('[data-page-item]'), 'page list has one row per scene').toHaveCount(sceneCount, { timeout: 10000 });
         const rerenderBtns = page.locator('button.cb-rerender-page');
-        const savePromptBtns = page.locator('button.cb-save-prompt');
+        const savePromptBtns = page.locator('[data-testid="cb-page-save"]');
         await expect(rerenderBtns, 'Re-render button not on the selected card (exactly one)').toHaveCount(1, { timeout: 10000 });
-        await expect(savePromptBtns, 'Save-prompt button not on the selected card (exactly one)').toHaveCount(1);
+        await expect(savePromptBtns, 'page Save not on the selected card (exactly one)').toHaveCount(1);
         const pageOids = await page.locator('[data-page-item]').evaluateAll(els => els.map(e => e.getAttribute('data-page-item')));
         expect(pageOids[0], 'the first page is selected by default').toBe(firstOid);
         for (const oid of pageOids) {
             await page.locator('[data-page-item="' + oid + '"]').click();
             await expect(page.locator('[data-page-item="' + oid + '"]')).toHaveAttribute('data-page-selected', '1');
             await expect(page.locator('button.cb-rerender-page[data-scene-oid="' + oid + '"]'), 'Re-render button for page ' + oid).toHaveCount(1);
-            await expect(page.locator('button.cb-save-prompt[data-scene-oid="' + oid + '"]'), 'Save-prompt button for page ' + oid).toHaveCount(1);
+            await expect(page.locator('[data-testid="cb-page-save"][data-scene-oid="' + oid + '"]'), 'page Save for page ' + oid).toHaveCount(1);
             await expect(rerenderBtns).toHaveCount(1);
         }
         // Back on the first page for the edit below.

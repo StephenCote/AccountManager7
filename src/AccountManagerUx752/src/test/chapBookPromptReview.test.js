@@ -242,8 +242,9 @@ describe('P10-C 1: doRerenderScene — what the generate POST carries', () => {
     const STORED_ROW = { schema: 'olio.sd.config', objectId: 'cfg-stored', name: 'book-sdConfig', bodyStyle: 'x', steps: 20 };
 
     // sceneRows: what the post-render scene re-read (refreshScenePrompt) returns, keyed by objectId.
-    function wire(generateBody, sceneRows) {
+    function wire(generateBody, sceneRows, opts) {
         calls = [];
+        let o = opts || {};
         global.fetch = vi.fn(async (u, init) => {
             let url = String(u);
             let method = (init && init.method) || 'GET';
@@ -255,6 +256,14 @@ describe('P10-C 1: doRerenderScene — what the generate POST carries', () => {
             }
             if (/\/rest\/olio\/chap-book\/scene\/[^/]+\/generate$/.test(url)) {
                 return { ok: true, status: 200, json: async () => generateBody };
+            }
+            // Re-render's pre-step saves the page's other pending edits (2026-11-10): the scene-field PATCH and
+            // the config-override PUT. o.failSave makes the field PATCH refuse.
+            if (/\/rest\/model$/.test(url) && method === 'PATCH') {
+                return o.failSave ? { ok: false, status: 500, json: async () => ({ error: 'refused' }) } : { ok: true, status: 200, json: async () => true };
+            }
+            if (/\/rest\/olio\/picture-book\/scene\/[^/]+\/config-override$/.test(url) && method === 'PUT') {
+                return { ok: true, status: 200, json: async () => ({ updated: true }) };
             }
             if (/\/rest\/model\/search$/.test(url) && body && body.type === 'olio.pb.scene') {
                 let oidCond = (body.fields || []).find(f => f.name === 'objectId');
@@ -325,12 +334,47 @@ describe('P10-C 1: doRerenderScene — what the generate POST carries', () => {
         expect(gens[0].body.sdPrompt).toBe('  a frozen river under cobalt skies  ');
         expect('chatConfig' in gens[0].body).toBe(false);
         expect(scene._dirty.has('sdPrompt')).toBe(false);
-        expect(scene._dirty.has('title')).toBe(true);
+        // 2026-11-10: Re-render saves the page's other pending edits first - the title went out in a scene PATCH
+        // BEFORE the generate (it used to stay dirty), and the prompt was NOT saved separately (it rides the render).
+        let patches = calls.filter(c => c.method === 'PATCH' && /\/rest\/model$/.test(c.url));
+        expect(patches).toHaveLength(1);
+        expect(patches[0].body.title).toBe(scene.title);
+        expect('sdPrompt' in patches[0].body).toBe(false);
+        expect(calls.indexOf(patches[0])).toBeLessThan(calls.indexOf(gens[0]));
+        expect(scene._dirty.has('title')).toBe(false);
+        expect(calls.some(c => /\/prompt$/.test(c.url))).toBe(false);
         // The lock is the server's call (edit vs echo); the card never sets it on its own — and the text the
         // user sent IS what rendered, so there is nothing to re-read.
         expect(sceneReads()).toHaveLength(0);
         expect(scene.sdPrompt).toBe('  a frozen river under cobalt skies  ');
         expect(scene.promptLocked).toBe(false);
+    });
+
+    it('a pending image-config override is SAVED before the generate, so the render uses it', async () => {
+        wire({ imageObjectId: 'img-ov', rendered: true, skipped: false, llmUnavailable: false, llmDegraded: false }, {});
+        let scene = { objectId: 'scene-ov', name: 'Scene ov', sceneIndex: 2, sdPrompt: 'a harbour at dusk', promptLocked: true, configOverride: null, _dirty: new Set(['override']) };
+        cb.__setReviewStateForTest({ reviewBookObjectId: 'book-ov', reviewScenes: [scene] });
+        await cb.__doRerenderSceneForTest(0);
+        let puts = calls.filter(c => c.method === 'PUT' && /\/config-override$/.test(c.url));
+        let gens = generateCalls();
+        expect(puts).toHaveLength(1);
+        expect(puts[0].url).toBe('/rest/olio/picture-book/scene/scene-ov/config-override');
+        expect(gens).toHaveLength(1);
+        expect(calls.indexOf(puts[0])).toBeLessThan(calls.indexOf(gens[0]));
+        expect(scene._dirty.has('override')).toBe(false);
+    });
+
+    it('when the pending edits cannot be saved, the page is NOT re-rendered and the user is told', async () => {
+        wire({ imageObjectId: 'img-x', rendered: true, skipped: false, llmUnavailable: false, llmDegraded: false }, {}, { failSave: true });
+        const { page } = await import('../core/pageClient.js');
+        let scene = { objectId: 'scene-fail', name: 'Scene f', sceneIndex: 3, title: 'New title', sdPrompt: 'x', promptLocked: true, configOverride: null, _dirty: new Set(['title', 'sdPrompt']) };
+        cb.__setReviewStateForTest({ reviewBookObjectId: 'book-fail', reviewScenes: [scene] });
+        await cb.__doRerenderSceneForTest(0);
+        expect(generateCalls()).toHaveLength(0);
+        expect(page.toast).toHaveBeenCalledWith('error', expect.stringContaining('Not re-rendered'));
+        expect(scene._dirty.has('title')).toBe(true);
+        expect(scene._dirty.has('sdPrompt')).toBe(true);
+        expect(scene._saving).toBe(false);
     });
 
     it('UNEDITED, render SKIPPED: no re-read (nothing rendered, the stored prompt did not change)', async () => {

@@ -3659,7 +3659,7 @@ async function saveSceneRecord(scene, silent) {
         try { await patchSceneFields(scene, changed); }
         catch (e) { failed.push('fields'); }
     }
-    // 2) Landscape prompt (verbatim; blank clears + unlocks — mirrors doSavePagePrompt). The 200 body says
+    // 2) Landscape prompt (verbatim; blank clears + unlocks — the card Save and Re-render both rely on this). The 200 body says
     //    what landed: updated:false keeps the prompt dirty and fails the save; a partial write (scene copy
     //    landed, page composition refused) is shown even when silent — Save all's aggregate toast would
     //    otherwise swallow it.
@@ -3707,30 +3707,21 @@ function doSaveScene(idx) {
     saveSceneRecord(scene, false);
 }
 
-// Per-page "Save prompt" (cb-save-prompt) — persist JUST this card's landscape prompt via the same
-// verbatim PUT the card's single Save uses for sdPrompt, without committing the card's other dirty
-// fields. Blank clears + unlocks (mirrors saveSceneRecord's prompt branch). Clears only the 'sdPrompt'
-// dirty flag so any other pending edits still show as unsaved.
-async function doSavePagePrompt(idx) {
-    let scene = reviewScenes[idx];
-    if (!scene) return;
-    scene._saving = true;
-    m.redraw();
-    try {
-        let val = scene.sdPrompt || '';
-        let res = await putSceneLandscapePrompt(scene.objectId, val);
-        let outcome = promptWriteOutcome(res, 'saved');
-        if (outcome.level !== 'error') {
-            scene.sdPrompt = val.trim() ? val : '';
-            scene.promptLocked = (res && typeof res.promptLocked === 'boolean') ? res.promptLocked : !!val.trim();
-            if (scene._dirty) scene._dirty.delete('sdPrompt');
-        }
-        page.toast(outcome.level, outcome.message);
-    } catch (e) {
-        page.toast('error', 'Save prompt failed: ' + (e.message || ''));
+// Re-render's pre-step: save every pending edit on the page EXCEPT the landscape prompt (the render sends that
+// itself), silently, through the card's own saveSceneRecord. The prompt's dirty flag survives so the render still
+// treats it as an edit. True when nothing needed saving or everything saved.
+async function savePendingBeforeRender(scene) {
+    if (!scene || !scene._dirty) return true;
+    let promptDirty = scene._dirty.has('sdPrompt');
+    let others = Array.from(scene._dirty).filter(function (k) { return k !== 'sdPrompt'; });
+    if (!others.length) return true;
+    scene._dirty = new Set(others);
+    let ok = await saveSceneRecord(scene, true);
+    if (promptDirty) {
+        if (!scene._dirty) scene._dirty = new Set();
+        scene._dirty.add('sdPrompt');
     }
-    scene._saving = false;
-    m.redraw();
+    return ok;
 }
 
 // Per-page "Regen prompt" (cb-page-regen-prompt) — re-derive THIS scene's landscape (SD) prompt via
@@ -4110,6 +4101,34 @@ function computeSceneOverrideDelta(scene) {
     return delta;
 }
 
+// Keys of a persisted override that are carriers, not settings.
+const OVERRIDE_SUMMARY_SKIP = ['schema', 'id', 'objectId', 'name', 'groupId', 'groupPath', 'organizationId', 'ownerId', 'urn'];
+const OVERRIDE_SUMMARY_LABELS = {
+    refinerModel: 'refiner', refinerSteps: 'refiner steps', refinerCfg: 'refiner cfg', refinerMethod: 'refiner method',
+    refinerUpscale: 'refiner upscale', refinerSampler: 'refiner sampler', refinerScheduler: 'refiner scheduler',
+    negativePrompt: 'negative', denoisingStrength: 'denoising'
+};
+
+/** Pure: a short "steps 40 · cfg 5 · refiner lustifySDXL…" line for a persisted override JSON; '' when none. */
+function overrideSummary(configOverride, max) {
+    let o = parseConfigOverride(configOverride);
+    if (!o) return '';
+    let limit = max || 5;
+    let parts = [];
+    Object.keys(o).forEach(function (k) {
+        if (OVERRIDE_SUMMARY_SKIP.indexOf(k) >= 0) return;
+        let v = o[k];
+        if (v === null || v === undefined || v === '') return;
+        if (typeof v === 'object') return;
+        let text = String(v);
+        if (/model$/i.test(k)) text = text.replace(/^.*[\\/]/, '').replace(/\.safetensors$|\.ckpt$/i, '');
+        if (text.length > 28) text = text.slice(0, 27) + '…';
+        parts.push((OVERRIDE_SUMMARY_LABELS[k] || k) + ' ' + text);
+    });
+    if (!parts.length) return '';
+    return parts.length > limit ? parts.slice(0, limit).join(' · ') + ' · +' + (parts.length - limit) + ' more' : parts.join(' · ');
+}
+
 function sceneHasOverride(scene) {
     if (parseConfigOverride(scene.configOverride)) return true;
     let inst = sceneOverrideInsts[scene.objectId];
@@ -4316,6 +4335,16 @@ async function doRerenderScene(idx) {
     m.redraw();
     try {
         let override = rerenderPromptOverride(scene);
+        // Save the page's other pending edits (image config overrides, page fields) BEFORE rendering: the render
+        // reads only the persisted override. The edited prompt is not saved here - it travels with the render
+        // as before (sent verbatim, persisted server-side).
+        if (!(await savePendingBeforeRender(scene))) {
+            page.toast('error', 'Not re-rendered: this page\'s unsaved changes could not be saved');
+            scene._saving = false;
+            m.redraw();
+            return;
+        }
+        scene._saving = true;
         let chatConfigName = override != null ? null : (effectiveChatConfigName() || await fetchDefaultChatConfigName());
         // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
         let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
@@ -4417,6 +4446,8 @@ function renderSceneCard(scene, idx) {
     let oid = scene.objectId;
     let overrideOpen = !!sceneOverrideExpanded[oid];
     let overridden = sceneHasOverride(scene);
+    let overrideSaved = !!overrideSummary(scene.configOverride);
+    let overridePending = !!(scene._dirty && scene._dirty.has('override'));
     return m('div', {
         key: scene.objectId || idx,
         class: 'rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-3'
@@ -4496,6 +4527,8 @@ function renderSceneCard(scene, idx) {
                     class: 'px-3 py-1 rounded text-xs flex items-center gap-1 disabled:opacity-40 ' + (sceneIsDirty(scene)
                         ? 'bg-purple-600 text-white hover:bg-purple-700'
                         : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'),
+                    'data-testid': 'cb-page-save',
+                    'data-scene-oid': scene.objectId,
                     title: sceneIsDirty(scene) ? 'Save unsaved changes on this page' : 'No unsaved changes',
                     disabled: scene._saving || roleWarning || !sceneIsDirty(scene),
                     onclick: function () { doSaveScene(idx); }
@@ -4667,24 +4700,14 @@ function renderSceneCard(scene, idx) {
                 alt: 'Page ' + (idx + 1) + ' image'
             }) : null,
             m('div', { class: 'flex items-center gap-2 mt-1' }, [
-                // Save JUST this page's landscape prompt (verbatim PUT; blank clears). Separate from the
-                // card's single Save so the prompt can be committed on its own after editing/regenerating.
-                m('button', {
-                    class: 'cb-save-prompt px-2 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1',
-                    'data-scene-oid': oid,
-                    title: 'Save this page\'s landscape prompt (blank clears it)',
-                    disabled: scene._saving || roleWarning,
-                    onclick: function () { doSavePagePrompt(idx); }
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'save'),
-                    ' Save prompt'
-                ]),
+                // One way to commit: the card's Save (cb-page-save) saves the prompt with the page's other edits, and
+                // Re-render saves any pending edits before it renders. (The separate "Save prompt" button is gone.)
                 m('button', {
                     class: 'cb-rerender-page px-2 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1',
                     'data-testid': 'cb-page-rerender',
                     'data-scene-oid': oid,
                     'data-pinned': scene.pinned === true ? '1' : '0',
-                    title: 'Re-render just this page using the prompt above — no need to re-render the whole book',
+                    title: "Save this page's pending edits, then re-render just this page — no need to re-render the whole book",
                     disabled: scene._saving || roleWarning,
                     onclick: function () { doRerenderScene(idx); }
                 }, [
@@ -4708,9 +4731,18 @@ function renderSceneCard(scene, idx) {
                         style: 'font-size:16px;transition:transform 0.15s;' + (overrideOpen ? 'transform:rotate(90deg);' : '')
                     }, 'chevron_right'),
                     m('span', 'Image config overrides'),
-                    overridden ? m('span', {
+                    // A status, not a control: "overridden" = this page has SAVED overrides; "unsaved" = edits in the
+                    // panel not yet saved (the card's Save commits them). The old "set" badge read like a button.
+                    overrideSaved ? m('span', {
+                        'data-testid': 'cb-override-saved',
+                        title: 'This page has saved image config overrides; they apply when this page renders',
                         class: 'ml-1 px-1.5 rounded bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
-                    }, 'set') : null
+                    }, 'overridden') : null,
+                    overridePending ? m('span', {
+                        'data-testid': 'cb-override-unsaved',
+                        title: 'Override edits not saved yet — use this page\'s Save',
+                        class: 'ml-1 px-1.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                    }, 'unsaved') : null
                 ]),
                 overridden ? m('button', {
                     class: 'px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-40',
@@ -4719,6 +4751,11 @@ function renderSceneCard(scene, idx) {
                     onclick: function () { doClearSceneOverride(idx); }
                 }, 'Clear') : null
             ]),
+            !overrideOpen && overrideSaved ? m('div', {
+                'data-testid': 'cb-override-summary',
+                class: 'mt-1 ml-5 text-[11px] text-gray-500 dark:text-gray-400 truncate',
+                title: overrideSummary(scene.configOverride, 99)
+            }, overrideSummary(scene.configOverride)) : null,
             overrideOpen ? m('div', { class: 'mt-2' }, m(SdConfigPanel, {
                 inst: getSceneOverrideInst(scene),
                 models: renderSdModelList,
@@ -5009,6 +5046,8 @@ export function __setChatConfigStateForTest(patch) {
 export { chapBookCarriedChatConfig, effectiveChatConfigRef, exportReviewBook as __exportReviewBookForTest, reviewCoverImageUrl as __reviewCoverImageUrlForTest };
 // Exported for Vitest (P10-C 1): the per-page re-render's override decision and the handler it drives.
 export { rerenderPromptOverride, doRerenderScene as __doRerenderSceneForTest, isScenePlaceholderPrompt, placeholderPromptSummary, refreshScenePrompt };
+// Exported for Vitest (2026-11-10): the override badge's summary line.
+export { overrideSummary };
 // Exported for Vitest (P10-C 4): the review's master/detail selection.
 export { selectReviewPage, selectedReviewIndex, ensureReviewSelection, renderReviewPageList as __renderReviewPageListForTest, doSplitScene as __doSplitSceneForTest };
 // Exported for Vitest (P9-4): seed the reader's module state and render its cover slot without mounting the route.
