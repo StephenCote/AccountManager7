@@ -104,6 +104,10 @@ test.describe('PictureBook V3 style presets', () => {
 
         await page.getByTestId('pb2-style-photoreal').check();
         await page.getByTestId('pb2-style-preset').selectOption('anime');
+        /// The select's onchange applies the preset as draft edits and Mithril redraws on the next animation frame, so an
+        /// immediate inputValue() reads the textarea BEFORE the redraw ("" — measured 2026-11-10, run 23's stack, while the
+        /// failure screenshot already showed the filled description). Wait on the retrying assertion, then read.
+        await expect(page.getByTestId('pb2-style-description')).toHaveValue(/^Anime illustration/, { timeout: 15000 });
         const desc = await page.getByTestId('pb2-style-description').inputValue();
         console.log('[pb-preset] description="' + desc + '"');
         expect(desc.startsWith('Anime illustration')).toBe(true);
