@@ -50,7 +50,7 @@
 			"baseModel": "olio.sd.config",
 			"foreign": false,
 			"ephemeral": true,
-			"description": "Optional ALTERNATE config for the composite/Kontext step only (a different pipeline/model). Falls back to sdConfig when absent."
+			"description": "Optional ALTERNATE config for the composite step only (a different pipeline/model). Falls back to sdConfig when absent."
 		},
 		{
 			"name": "sdConfigOverride",

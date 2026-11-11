@@ -9,8 +9,6 @@
  * What they cover:
  *  - U1: cancelPictureBook() POSTs to /rest/olio/picture-book/{key}/cancel and returns the parsed
  *        {cancelled} body (the KI-10 endpoint that previously had no client caller).
- *  - U1: prepareSceneImagePrompts() forwards the caller's AbortSignal to fetch, so a Cancel during
- *        the prepare-images phase actually stops the client awaiting.
  *  - U3: regenerateBlurb() POSTs to /scene/{id}/blurb and returns the parsed {blurb} body.
  *
  * Behavior that needs a live browser/stack (the Cancel button actually aborting an in-flight
@@ -69,110 +67,6 @@ describe('cancelPictureBook (U1 — KI-10 cancel wrapper)', () => {
     });
 });
 
-describe('prepareSceneImagePrompts (U1 — AbortSignal forwarding + full common config)', () => {
-    it('POSTs to /{bookObjectId}/prepare-images with the scene ids + full common sdConfig and forwards the AbortSignal', async () => {
-        mockFetch({ prepared: 2 });
-        const { prepareSceneImagePrompts } = await import('../workflows/sceneExtractor.js');
-
-        // New contract: the whole common olio.sd.config entity is sent (style is the seam), NOT a
-        // bare {style} object — the server only types a schema-tagged record as a BaseRecord.
-        let common = { schema: 'olio.sd.config', style: 'digitalArt', steps: 30, width: 1024, height: 768 };
-        let controller = new AbortController();
-        await prepareSceneImagePrompts('book-1', ['s1', 's2'], 'contentAnalysis', common, null, controller.signal);
-
-        expect(calls).toHaveLength(1);
-        expect(calls[0].url).toContain('/rest/olio/picture-book/book-1/prepare-images');
-        expect(calls[0].opts.method).toBe('POST');
-        // The exact object the caller passed must reach fetch — this is what lets Cancel stop the await.
-        expect(calls[0].opts.signal).toBe(controller.signal);
-
-        let body = JSON.parse(calls[0].opts.body);
-        expect(body.schema).toBe('olio.pictureBookRequest');
-        expect(body.sceneObjectIds).toEqual(['s1', 's2']);
-        expect(body.chatConfig).toBe('contentAnalysis');
-        expect(body.sdConfig).toEqual(common);
-    });
-
-    it('omits the signal cleanly when none is passed (back-compat with non-cancel callers)', async () => {
-        mockFetch({});
-        const { prepareSceneImagePrompts } = await import('../workflows/sceneExtractor.js');
-
-        await prepareSceneImagePrompts('book-2', ['s1'], null, null, null);
-        expect(calls[0].opts.signal).toBeUndefined();
-    });
-});
-
-describe('generateSceneImage (real olio.sd.config common + per-scene delta)', () => {
-    it('POSTs to /scene/{id}/generate with the common sdConfig, the per-scene delta, and forwards the AbortSignal', async () => {
-        mockFetch({ imageObjectId: 'img-9', seed: 12345 });
-        const { generateSceneImage } = await import('../workflows/sceneExtractor.js');
-
-        // Mirrors what pinPictureBookDefaults actually produces: compositeMode drives the composite
-        // pipeline (the legacy useKontext boolean is only a server-side fallback when it is unset).
-        let common = { schema: 'olio.sd.config', style: 'digitalArt', steps: 30, compositeMode: 'flux2' };
-        let delta = { schema: 'olio.sd.config', steps: 45 };
-        let controller = new AbortController();
-        let result = await generateSceneImage('scene-7', {
-            sdConfig: common,
-            sdConfigOverride: delta,
-            chatConfig: 'contentAnalysis',
-            promptTemplate: 'pictureBook.landscape-prompt'
-        }, controller.signal);
-
-        expect(calls).toHaveLength(1);
-        expect(calls[0].url).toContain('/rest/olio/picture-book/scene/scene-7/generate');
-        expect(calls[0].opts.method).toBe('POST');
-        expect(calls[0].opts.signal).toBe(controller.signal);
-
-        let body = JSON.parse(calls[0].opts.body);
-        expect(body.schema).toBe('olio.pictureBookRequest');
-        expect(body.sdConfig).toEqual(common);
-        expect(body.sdConfigOverride).toEqual(delta);
-        expect(body.chatConfig).toBe('contentAnalysis');
-        expect(body.promptTemplate).toBe('pictureBook.landscape-prompt');
-        // No bespoke merged DEFAULT_SD_CONFIG blob and no bare `style` word anymore.
-        expect(result.imageObjectId).toBe('img-9');
-    });
-
-    it('omits sdConfigOverride/compositeSdConfig when not supplied (unedited scene sends no delta)', async () => {
-        mockFetch({ imageObjectId: 'img-1' });
-        const { generateSceneImage } = await import('../workflows/sceneExtractor.js');
-
-        await generateSceneImage('scene-1', { sdConfig: { schema: 'olio.sd.config', style: 'digitalArt' } });
-        let body = JSON.parse(calls[0].opts.body);
-        expect('sdConfigOverride' in body).toBe(false);
-        expect('compositeSdConfig' in body).toBe(false);
-    });
-});
-
-describe('setBookSdConfig (PUT /settings — store the common config once)', () => {
-    it('PUTs the common (+ optional composite) olio.sd.config to /{bookObjectId}/settings', async () => {
-        mockFetch({ stored: true });
-        const { setBookSdConfig } = await import('../workflows/sceneExtractor.js');
-
-        let common = { schema: 'olio.sd.config', style: 'digitalArt', hires: false };
-        let composite = { schema: 'olio.sd.config', style: 'photograph' };
-        await setBookSdConfig('book-5', common, composite);
-
-        expect(calls).toHaveLength(1);
-        expect(calls[0].url).toContain('/rest/olio/picture-book/book-5/settings');
-        expect(calls[0].opts.method).toBe('PUT');
-        let body = JSON.parse(calls[0].opts.body);
-        expect(body.schema).toBe('olio.pictureBookRequest');
-        expect(body.sdConfig).toEqual(common);
-        expect(body.compositeSdConfig).toEqual(composite);
-    });
-
-    it('omits compositeSdConfig when not supplied', async () => {
-        mockFetch({ stored: true });
-        const { setBookSdConfig } = await import('../workflows/sceneExtractor.js');
-
-        await setBookSdConfig('book-6', { schema: 'olio.sd.config', style: 'digitalArt' });
-        let body = JSON.parse(calls[0].opts.body);
-        expect('compositeSdConfig' in body).toBe(false);
-    });
-});
-
 describe('regenerateBlurb (U3 — wired-in blurb regen wrapper)', () => {
     it('POSTs to /scene/{id}/blurb and returns the parsed {blurb} body', async () => {
         mockFetch({ blurb: 'A hush fell over the courtyard.' });
@@ -186,43 +80,5 @@ describe('regenerateBlurb (U3 — wired-in blurb regen wrapper)', () => {
         let body = JSON.parse(calls[0].opts.body);
         expect(body.chatConfig).toBe('contentAnalysis');
         expect(result.blurb).toBe('A hush fell over the courtyard.');
-    });
-});
-
-// ── Landscape route (issue 1: the wasted landscape image) ────────────────────
-//
-// The server generated a landscape prompt (an LLM call) and a landscape image (a full SD pass) for
-// every scene, then SceneCompositeUtil discarded the bytes because the FLUX.2 setting reference was
-// off. PictureBookUtil.landscapeEnabled now gates both; these pin the CLIENT half — that a new book
-// is created with the route off, and that the one checkbox governing it writes BOTH fields.
-describe('picture book landscape route', function () {
-    it('pins a new book to skip the landscape, on both fields', async function () {
-        let pb = await import('../workflows/pictureBook.js');
-        let entity = pb.pinPictureBookDefaults({ schema: 'olio.sd.config' });
-
-        expect(entity.skipLandscape).toBe(true);
-        // Both, not just skipLandscape: flux2IncludeLandscapeRef is what SceneCompositeUtil reads,
-        // and a BOOLEAN with no schema default materialises as false anyway — pinning it keeps the
-        // saved record honest about the route rather than relying on that.
-        expect(entity.flux2IncludeLandscapeRef).toBe(false);
-        // Unchanged by this work — the composite pipeline itself.
-        expect(entity.compositeMode).toBe('flux2');
-    });
-
-    it('keeps the two landscape fields opposite, so one control governs the whole route', function () {
-        // Mirrors SdConfigPanel's "Skip landscape" onchange. Generating a landscape the composite
-        // then discards is the exact waste being fixed, so "generate" and "use" must never disagree.
-        function toggle(config, checked) {
-            config.skipLandscape = checked;
-            config.flux2IncludeLandscapeRef = !checked;
-            return config;
-        }
-        let on = toggle({}, false);
-        expect(on.skipLandscape).toBe(false);
-        expect(on.flux2IncludeLandscapeRef).toBe(true);
-
-        let off = toggle({}, true);
-        expect(off.skipLandscape).toBe(true);
-        expect(off.flux2IncludeLandscapeRef).toBe(false);
     });
 });

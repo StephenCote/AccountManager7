@@ -240,8 +240,8 @@ public class TestPictureBookRestContract extends BaseTest {
 			{ "listReviewQueue", "/review-queue" },
 			{ "getAutoApprove", "/settings/auto-approve" },
 			{ "setAutoApprove", "/settings/auto-approve" },
-			/// P1-6 async render: the scene submit sits beside the synchronous /generate, the book-wide
-			/// submit is a flat segment, and cancel is addressed through the run so the book grant applies.
+			/// P1-6 async render: the scene submit, the book-wide submit as a flat segment, and cancel
+			/// addressed through the run so the book grant applies.
 			{ "renderScene", "/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/render" },
 			{ "renderAll", "/render-all" },
 			{ "cancelRun", "/run/{runObjectId:[0-9A-Za-z\\-]+}/cancel" },
@@ -369,6 +369,40 @@ public class TestPictureBookRestContract extends BaseTest {
 		}
 	}
 
+	/**
+	 * Phase 10 P10-1: the three PB1 entries - {@code POST /scene/{id}/generate}, {@code POST /{book}/prepare-images}
+	 * and {@code PUT /{book}/settings} - are gone, so a client that still calls them gets Jersey's 404, never a
+	 * handler. The settings {@code GET} stays readable (the stored book-tier config is still consulted). Checked
+	 * on the resource class itself: no declared method carries any of the three templates, and no {@code @PUT}
+	 * shares the settings {@code GET}'s template.
+	 */
+	@Test
+	public void TestPb1RoutesAreGone() {
+		String settingsPath = null;
+		for(Method m : PictureBookService.class.getDeclaredMethods()) {
+			if(m.getName().equals("getBookSdConfig")) {
+				assertNotNull("getBookSdConfig must stay a @GET", m.getAnnotation(GET.class));
+				settingsPath = m.getAnnotation(Path.class).value();
+			}
+		}
+		assertNotNull("GET /{book}/settings must still exist", settingsPath);
+		for(Method m : PictureBookService.class.getDeclaredMethods()) {
+			for(String gone : new String[] { "generateSceneImage", "prepareSceneImagePrompts", "setBookSdConfig" }) {
+				assertFalse("PB1 entry " + gone + " must be gone", m.getName().equals(gone));
+			}
+			Path path = m.getAnnotation(Path.class);
+			if(path == null) {
+				continue;
+			}
+			String template = path.value();
+			assertFalse("no route may end in /generate: " + template, template.endsWith("/generate"));
+			assertFalse("no route may end in /prepare-images: " + template, template.endsWith("/prepare-images"));
+			if(template.equals(settingsPath)) {
+				assertNull("PUT " + settingsPath + " must be gone", m.getAnnotation(PUT.class));
+			}
+		}
+	}
+
 	private Method method(String name) {
 		for(Method m : PictureBookService.class.getDeclaredMethods()) {
 			if(m.getName().equals(name)) {
@@ -440,8 +474,8 @@ public class TestPictureBookRestContract extends BaseTest {
 	/**
 	 * The async render routes take no body and must not: the SD backend comes from the servlet context
 	 * (boot-pinned {@code sd.*} init-params), never from the caller, so a client cannot point a render at a
-	 * server of its choosing. Pinned here because the synchronous {@code /generate} beside them DOES read a
-	 * nested {@code sdConfig} override, and the next copy-paste would carry that parameter across.
+	 * server of its choosing. Pinned here because the PB1 {@code /generate} that sat beside them until Phase 10
+	 * DID read a nested {@code sdConfig} override, and a copy-paste from history would carry that parameter across.
 	 * <p>
 	 * The one admitted extra is a primitive-boolean {@code @QueryParam} ({@code renderScene}'s
 	 * {@code ?force=true}): a flag cannot name a server or carry a config. A String/record query parameter
@@ -738,11 +772,11 @@ public class TestPictureBookRestContract extends BaseTest {
 	}
 
 	@Test
-	public void TestGenerateSceneBodyRoundTripsTheNestedSdConfig() {
-		/// POST /scene/{sceneObjectId}/generate — the nested olio.sd.config is the field KI-24's mechanism
-		/// would break most expensively: a dropped sdConfig means the whole render runs on schema defaults
-		/// (including a checkpoint that is almost certainly not installed, which returns an EMPTY image list
-		/// rather than an error — KI-39).
+	public void TestNestedSdConfigBodyRoundTrips() {
+		/// The nested olio.sd.config on olio.pictureBookRequest (PUT /{book}/style's sdConfig) is the field
+		/// KI-24's mechanism would break most expensively: a dropped sdConfig means the whole render runs on
+		/// schema defaults (including a checkpoint that is almost certainly not installed, which returns an
+		/// EMPTY image list rather than an error — KI-39).
 		BaseRecord r = parseBody("{\"chatConfig\": \"cfg\", \"isBook\": true, \"sdConfig\":"
 			+ " {\"schema\": \"olio.sd.config\", \"style\": \"photograph\", \"seed\": 987654321,"
 			+ " \"hires\": false, \"compositeMode\": \"flux2\", \"flux2IncludeLandscapeRef\": true}}");
@@ -759,19 +793,6 @@ public class TestPictureBookRestContract extends BaseTest {
 		assertEquals(Boolean.TRUE, cfg.get("flux2IncludeLandscapeRef"));
 		assertEquals("the seed must survive as sent, or level 2's differential compares two different seeds",
 			987654321L, ((Number) cfg.get("seed")).longValue());
-	}
-
-	@Test
-	public void TestPrepareImagesBodyRoundTrips() {
-		/// POST /{bookObjectId}/prepare-images
-		BaseRecord r = parseBody("{\"sceneObjectIds\": [\"s1\", \"s2\"], \"chatConfig\": \"cfg\","
-			+ " \"sdConfig\": {\"schema\": \"olio.sd.config\", \"style\": \"comic\"}}");
-		assertNotNull(r);
-		List<?> ids = r.get("sceneObjectIds");
-		assertNotNull(ids);
-		assertEquals(2, ids.size());
-		assertTrue(r.get("sdConfig") instanceof BaseRecord);
-		assertEquals("comic", ((BaseRecord) r.get("sdConfig")).get("style"));
 	}
 
 	@Test

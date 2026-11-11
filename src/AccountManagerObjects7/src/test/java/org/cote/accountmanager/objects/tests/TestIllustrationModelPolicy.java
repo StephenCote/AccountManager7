@@ -641,7 +641,7 @@ public class TestIllustrationModelPolicy extends BaseTest {
 		String clientFlux2Model = IllustrationModelPolicy.currentModel(sdConfig, PbModelTaskEnumType.SCENE_DIRECT);
 		assertNull("no model key in the body", clientModel);
 		assertEquals(flux2Name, clientFlux2Model);
-		assertEquals(SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(sdConfig, false));
+		assertEquals(SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(sdConfig));
 
 		ModelResolver.Resolution res = PbModelPolicy.applyWithoutBook(PbModelTaskEnumType.SCENE_DIRECT, sdConfig, clientFlux2Model, SDAPIEnumType.SWARM, server, true);
 		assertEquals(PbModelTaskEnumType.SCENE_DIRECT, res.getTask());
@@ -877,7 +877,7 @@ public class TestIllustrationModelPolicy extends BaseTest {
 			/// flux2 mode with references attached → SCENE_DIRECT, refs=true, pick into flux2Model
 			BaseRecord nodeF = inMemoryNode("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"flux2\"}");
 			BaseRecord effF = PbConfigUtil.resolveEffectiveConfig(null, nodeF, true, null, es);
-			String mode = SceneCompositeUtil.resolveMode(effF, false);
+			String mode = SceneCompositeUtil.resolveMode(effF);
 			assertEquals(SceneCompositeUtil.MODE_FLUX2, mode);
 			boolean flux2 = SceneCompositeUtil.MODE_FLUX2.equals(mode);
 			boolean hasRefs = true;
@@ -903,7 +903,7 @@ public class TestIllustrationModelPolicy extends BaseTest {
 			/// classic mode → LOCATION, refs=false, pick into model
 			BaseRecord nodeC = inMemoryNode("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"classic\"}");
 			BaseRecord effC = PbConfigUtil.resolveEffectiveConfig(null, nodeC, true, null, es);
-			String modeC = SceneCompositeUtil.resolveMode(effC, false);
+			String modeC = SceneCompositeUtil.resolveMode(effC);
 			assertEquals(SceneCompositeUtil.MODE_CLASSIC, modeC);
 			boolean flux2C = SceneCompositeUtil.MODE_FLUX2.equals(modeC);
 			PbModelTaskEnumType taskC = (flux2C ? PbModelTaskEnumType.SCENE_DIRECT : PbModelTaskEnumType.LOCATION);

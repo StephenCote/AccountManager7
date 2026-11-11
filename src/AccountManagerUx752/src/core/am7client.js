@@ -740,8 +740,8 @@ import { cacheDb } from './cacheDb.js';
 		return get(sConfig + "/features/available");
 	}
 
-	/// Boot-pinned PictureBook V3 render-path switch per product: {picturebook:'v1'|'v3', chapbook:'v1'|'v3', chat:'v1'|'v3'};
-	/// both book products default to v3 since P7-1 / P2-6 (v1 = rollback), chat to v1.
+	/// Boot-pinned chat scene render-path switch: {chat:'v1'|'v3'}; default v3 (P10-A 0; v1 = rollback).
+	/// PictureBook and ChapBook are V3-only since P10-1 and have no switch.
 	async function getRenderPath() {
 		return get(sConfig + "/render-path");
 	}

@@ -5,19 +5,18 @@
  * What changed, and what these tests drive through the REAL exported functions with a stubbed fetch:
  *   - renderChapBookScene: a 202 { pending:true, jobId, nodeObjectId } is polled at GET /rest/job/{id}
  *     to the terminal job; the page outcome is read off result.nodes[] and the image objectId off a fresh
- *     by-objectId scene search (the outcome carries the artifact, not the image). A 200 keeps the v1 shape.
- *   - the one-shot sdConfig overlay (book save failed) is persisted as scene.configOverride BEFORE a v3
- *     render, merged UNDER the scene's existing override (scene wins), never on v1 / never when empty.
+ *     by-objectId scene search (the outcome carries the artifact, not the image). A 200 is taken as-is.
+ *   - the one-shot sdConfig overlay (book save failed) is persisted as scene.configOverride BEFORE the
+ *     render, merged UNDER the scene's existing override (scene wins), never when empty.
  *   - a pinned refusal (facade 409 "Node X is pinned …", or a job outcome SKIPPED_PINNED) is classified
  *     by isChapBookPinnedRefusal; renderPageWithPinConfirm shows the server's text and only an explicit
  *     "Unpin and re-render" confirmation sends POST …/node/{n}/pin {pinned:false}; the bulk path never
  *     unpins and reports "N left pinned".
- * No network, LLM or SD is touched; am7client.getRenderPath, Dialog.confirm and page.toast are stubbed.
+ * No network, LLM or SD is touched; Dialog.confirm and page.toast are stubbed.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Dialog } from '../components/dialogCore.js';
 import { page } from '../core/pageClient.js';
-import { am7client } from '../core/am7client.js';
 
 function jsonResponse(status, body) {
     let text = typeof body === 'string' ? body : JSON.stringify(body);
@@ -27,14 +26,14 @@ function jsonResponse(status, body) {
 const PINNED_MSG = 'Node scene-3 is pinned. Unpin it first - pinning means do not replace this artifact.';
 const NO_PROMPT_MSG = 'Page 3 has no prompt; set or generate its landscape prompt before rendering it';
 
-function v1Body(extra) {
-    return Object.assign({ imageObjectId: 'img-v1', rendered: true, skipped: false, pending: false, llmUnavailable: false, llmDegraded: false,
-        renderPath: 'v1', jobId: null, runObjectId: null, nodeObjectId: null, artifactObjectId: null, nodeStatus: null, reviewStatus: null,
+function doneBody(extra) {
+    return Object.assign({ imageObjectId: 'img-done', rendered: true, skipped: false, pending: false, llmUnavailable: false, llmDegraded: false,
+        jobId: null, runObjectId: null, nodeObjectId: null, artifactObjectId: null, nodeStatus: null, reviewStatus: null,
         autoApproved: false, autoApproveSkipped: null }, extra || {});
 }
 function pendingBody(extra) {
     return Object.assign({ imageObjectId: null, rendered: false, skipped: false, pending: true, llmUnavailable: false, llmDegraded: false,
-        renderPath: 'v3', jobId: 'j1', runObjectId: 'r1', nodeObjectId: 'n3', artifactObjectId: null, nodeStatus: null, reviewStatus: null,
+        jobId: 'j1', runObjectId: 'r1', nodeObjectId: 'n3', artifactObjectId: null, nodeStatus: null, reviewStatus: null,
         autoApproved: false, autoApproveSkipped: null }, extra || {});
 }
 function doneJob(nodes, extra) {
@@ -59,7 +58,7 @@ function mockWire(opts) {
         let mg = /\/rest\/olio\/chap-book\/scene\/([^/]+)\/generate$/.exec(url);
         if (mg) {
             gens[mg[1]] = (gens[mg[1]] || 0) + 1;
-            return o.generate ? o.generate(mg[1], gens[mg[1]], body) : jsonResponse(200, v1Body());
+            return o.generate ? o.generate(mg[1], gens[mg[1]], body) : jsonResponse(200, doneBody());
         }
         let mj = /\/rest\/job\/([^/]+)$/.exec(url);
         if (mj) {
@@ -90,7 +89,6 @@ beforeEach(async () => {
     origFetch = global.fetch;
     cb = await import('../features/chapBook.js');
     vi.spyOn(page, 'toast').mockImplementation(() => {});
-    vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'v1', chapbook: 'v3' });
 });
 afterEach(() => {
     global.fetch = origFetch;
@@ -99,17 +97,18 @@ afterEach(() => {
 
 // ─────────────────────────────── pure helpers ───────────────────────────────
 
-describe('coerceSceneRenderResult — v1 shape unless the server sent renderPath', () => {
-    it('no renderPath → exactly the five v1 keys (older bodies / v1 fixtures)', () => {
-        expect(cb.coerceSceneRenderResult({})).toEqual({ imageObjectId: null, rendered: false, skipped: false, llmUnavailable: false, llmDegraded: false });
-        expect(Object.keys(cb.coerceSceneRenderResult({ imageObjectId: 'i', rendered: true }))).toHaveLength(5);
+describe('coerceSceneRenderResult — every key always present', () => {
+    it('an empty body → the twelve keys at their defaults', () => {
+        expect(cb.coerceSceneRenderResult({})).toEqual({ imageObjectId: null, rendered: false, skipped: false, llmUnavailable: false, llmDegraded: false,
+            pending: false, jobId: null, runObjectId: null, nodeObjectId: null, artifactObjectId: null, nodeStatus: null, reviewStatus: null });
+        expect(Object.keys(cb.coerceSceneRenderResult({ imageObjectId: 'i', rendered: true }))).toHaveLength(12);
     });
-    it('renderPath present → v3 keys attached, enum-ish strings upper-cased', () => {
+    it('the V3 keys are taken from the body, enum-ish strings upper-cased; no path marker', () => {
         let r = cb.coerceSceneRenderResult(pendingBody({ nodeStatus: 'running', reviewStatus: 'generated' }));
-        expect(r).toMatchObject({ renderPath: 'v3', pending: true, jobId: 'j1', runObjectId: 'r1', nodeObjectId: 'n3', artifactObjectId: null,
+        expect(r).toMatchObject({ pending: true, jobId: 'j1', runObjectId: 'r1', nodeObjectId: 'n3', artifactObjectId: null,
             nodeStatus: 'RUNNING', reviewStatus: 'GENERATED', rendered: false, imageObjectId: null });
-        expect(cb.coerceSceneRenderResult(v1Body()).renderPath).toBe('v1');
-        expect(cb.coerceSceneRenderResult(v1Body()).pending).toBe(false);
+        expect(cb.coerceSceneRenderResult(doneBody()).pending).toBe(false);
+        expect('renderPath' in cb.coerceSceneRenderResult(doneBody())).toBe(false);
     });
 });
 
@@ -176,35 +175,22 @@ describe('renderResultMessage / renderResultLevel — pages left pinned', () => 
     });
 });
 
-describe('chapBookRenderPath — the chapbook key of GET /rest/config/render-path', () => {
-    it("'v3' only when chapbook is v3; picturebook alone, null, odd shapes and failures are 'v1'", async () => {
-        expect(await cb.chapBookRenderPath()).toBe('v3');
-        am7client.getRenderPath.mockResolvedValue({ picturebook: 'v3', chapbook: 'v1' });
-        expect(await cb.chapBookRenderPath()).toBe('v1');
-        am7client.getRenderPath.mockResolvedValue({ chapbook: 'V3' });
-        expect(await cb.chapBookRenderPath()).toBe('v3');
-        am7client.getRenderPath.mockResolvedValue(null);
-        expect(await cb.chapBookRenderPath()).toBe('v1');
-        am7client.getRenderPath.mockRejectedValue(new Error('down'));
-        expect(await cb.chapBookRenderPath()).toBe('v1');
-    });
-});
-
 // ─────────────────────────────── renderChapBookScene ───────────────────────────────
 
-describe('renderChapBookScene — 200 keeps the v1 contract', () => {
-    it('v1 200 → rendered + image; v3 keys present but no poll, no scene read, no override write', async () => {
-        let calls = mockWire({ generate: () => jsonResponse(200, v1Body()) });
-        let r = await cb.renderChapBookScene('s3', 'cfg', { steps: 20 }, null, { renderPath: 'v1' });
-        expect(r).toMatchObject({ imageObjectId: 'img-v1', rendered: true, skipped: false, llmUnavailable: false, llmDegraded: false, renderPath: 'v1', pending: false });
+describe('renderChapBookScene — a 200 is taken as-is', () => {
+    it('200 with no overlay → rendered + image; no poll, no scene read, no override write, no sdConfig on the wire', async () => {
+        let calls = mockWire({ generate: () => jsonResponse(200, doneBody()) });
+        let r = await cb.renderChapBookScene('s3', 'cfg', {}, null, {});
+        expect(r).toMatchObject({ imageObjectId: 'img-done', rendered: true, skipped: false, llmUnavailable: false, llmDegraded: false, pending: false });
         expect(seqOf(calls)).toEqual(['POST /rest/olio/chap-book/scene/s3/generate']);
-        expect(calls[0].body.sdConfig).toEqual({ steps: 20 });
+        expect('sdConfig' in calls[0].body).toBe(false);
+        expect(calls[0].body.chatConfig).toBe('cfg');
         expect(r.overridePersisted).toBeUndefined();
     });
-    it('a v3 200 (job finished inside the server bound) is taken as-is', async () => {
+    it('a 200 (job finished inside the server bound) is taken as-is', async () => {
         mockWire({ generate: () => jsonResponse(200, pendingBody({ pending: false, rendered: true, imageObjectId: 'img-3', artifactObjectId: 'a9', nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED' })) });
-        let r = await cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3' });
-        expect(r).toMatchObject({ rendered: true, imageObjectId: 'img-3', renderPath: 'v3', pending: false, nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED', artifactObjectId: 'a9' });
+        let r = await cb.renderChapBookScene('s3', null, {}, null, {});
+        expect(r).toMatchObject({ rendered: true, imageObjectId: 'img-3', pending: false, nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED', artifactObjectId: 'a9' });
         expect(global.fetch).toHaveBeenCalledTimes(1);
     });
     it('non-2xx → "Scene render failed: <server error>" with status/error/body on the Error (json-only stubs too)', async () => {
@@ -231,9 +217,9 @@ describe('renderChapBookScene — 202 pending → poll GET /rest/job/{jobId} →
             scene: (oid) => ({ id: 31, objectId: oid, imageObjectId: 'img-new', imageStale: false, configOverride: null })
         });
         let progress = [];
-        let r = await cb.renderChapBookScene('s3', 'cfg', {}, null, { renderPath: 'v3', pollIntervalMs: 1, onJobProgress: j => progress.push(j.status) });
+        let r = await cb.renderChapBookScene('s3', 'cfg', {}, null, { pollIntervalMs: 1, onJobProgress: j => progress.push(j.status) });
         expect(r).toMatchObject({ rendered: true, skipped: false, pending: false, imageObjectId: 'img-new', jobId: 'j1', nodeObjectId: 'n3',
-            artifactObjectId: 'a9', nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED', renderPath: 'v3' });
+            artifactObjectId: 'a9', nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED' });
         expect(progress).toEqual(['running', 'running', 'completed']);
         expect(seqOf(calls)).toEqual([
             'POST /rest/olio/chap-book/scene/s3/generate',
@@ -251,7 +237,7 @@ describe('renderChapBookScene — 202 pending → poll GET /rest/job/{jobId} →
             job: () => jsonResponse(200, doneJob([{ nodeObjectId: 'n3', status: 'DONE', artifactObjectId: 'a9' }])),
             scene: (oid) => ({ objectId: oid, imageObjectId: 'img-new' })
         });
-        let r = await cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3', pollIntervalMs: 1 });
+        let r = await cb.renderChapBookScene('s3', null, {}, null, { pollIntervalMs: 1 });
         expect(r.rendered).toBe(true);
         expect(r.imageObjectId).toBe('img-new');
     });
@@ -260,7 +246,7 @@ describe('renderChapBookScene — 202 pending → poll GET /rest/job/{jobId} →
             generate: () => jsonResponse(202, pendingBody({ llmDegraded: true, llmUnavailable: true })),
             job: () => jsonResponse(200, doneJob([{ nodeObjectId: 'n3', handle: 'scene-3', status: 'FAILED', error: 'SD returned no image' }], { status: 'failed', error: '1 node(s) failed: scene-3' }))
         });
-        let r = await cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3', pollIntervalMs: 1 });
+        let r = await cb.renderChapBookScene('s3', null, {}, null, { pollIntervalMs: 1 });
         expect(r).toMatchObject({ rendered: false, skipped: false, pending: false, imageObjectId: null, nodeStatus: 'FAILED', error: 'SD returned no image', llmUnavailable: true, llmDegraded: false });
         expect(only(calls, /\/rest\/model\/search$/)).toHaveLength(0);
     });
@@ -269,7 +255,7 @@ describe('renderChapBookScene — 202 pending → poll GET /rest/job/{jobId} →
             generate: () => jsonResponse(202, pendingBody()),
             job: () => jsonResponse(200, doneJob([{ nodeObjectId: 'n3', handle: 'scene-3', status: 'SKIPPED_PINNED' }], { result: { nodes: [{ nodeObjectId: 'n3', handle: 'scene-3', status: 'SKIPPED_PINNED' }], skippedNodeCount: 1 } }))
         });
-        let err = await cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3', pollIntervalMs: 1 }).catch(e => e);
+        let err = await cb.renderChapBookScene('s3', null, {}, null, { pollIntervalMs: 1 }).catch(e => e);
         expect(err).toBeInstanceOf(Error);
         expect(err.pinned).toBe(true);
         expect(cb.isChapBookPinnedRefusal(err)).toBe(true);
@@ -281,51 +267,50 @@ describe('renderChapBookScene — 202 pending → poll GET /rest/job/{jobId} →
             job: () => jsonResponse(200, doneJob([{ nodeObjectId: 'n3', status: 'DONE_UNVERIFIED', artifactObjectId: 'a9' }])),
             scene: () => null
         });
-        let r = await cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3', pollIntervalMs: 1 });
+        let r = await cb.renderChapBookScene('s3', null, {}, null, { pollIntervalMs: 1 });
         expect(r.rendered).toBe(true);
         expect(r.imageObjectId).toBeNull();
     });
     it('pending without a jobId is an error, not a hang', async () => {
         mockWire({ generate: () => jsonResponse(202, pendingBody({ jobId: null })) });
-        await expect(cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3' })).rejects.toThrow(/pending but the server sent no jobId/);
+        await expect(cb.renderChapBookScene('s3', null, {}, null, {})).rejects.toThrow(/pending but the server sent no jobId/);
     });
 });
 
-describe('renderChapBookScene — one-shot sdConfig overlay persisted as scene.configOverride before a v3 render', () => {
+describe('renderChapBookScene — one-shot sdConfig overlay persisted as scene.configOverride before the render', () => {
     const OVERLAY = { steps: 20, cfgScale: 4, schema: 'olio.sd.config' };
-    it('v3 + overlay + known scene override → PUT config-override (scene wins) BEFORE the generate POST; result.overridePersisted', async () => {
+    it('overlay + known scene override → PUT config-override (scene wins) BEFORE the generate POST; result.overridePersisted', async () => {
         let calls = mockWire({ generate: () => jsonResponse(200, pendingBody({ pending: false, rendered: true, imageObjectId: 'img-3', artifactObjectId: 'a9', nodeStatus: 'DONE_UNVERIFIED' })) });
         let existing = JSON.stringify({ schema: 'olio.sd.config', steps: 30 });
-        let r = await cb.renderChapBookScene('s3', null, OVERLAY, null, { renderPath: 'v3', sceneConfigOverride: existing });
+        let r = await cb.renderChapBookScene('s3', null, OVERLAY, null, { sceneConfigOverride: existing });
         expect(seqOf(calls)).toEqual(['PUT /rest/olio/picture-book/scene/s3/config-override', 'POST /rest/olio/chap-book/scene/s3/generate']);
         let persisted = JSON.parse(calls[0].body.configOverride);
         expect(persisted).toEqual({ steps: 30, cfgScale: 4, schema: 'olio.sd.config' });
         expect(JSON.parse(r.overridePersisted)).toEqual(persisted);
-        expect(calls[1].body.sdConfig).toEqual(OVERLAY);   // still on the wire (harmless on v3, used on v1)
+        expect(calls[1].body.sdConfig).toEqual(OVERLAY);   // still on the wire (the page node ignores it)
     });
-    it('v3 + overlay + unknown (null) scene override → the existing override is READ first, then merged under', async () => {
+    it('overlay + unknown (null) scene override → the existing override is READ first, then merged under', async () => {
         let calls = mockWire({
             generate: () => jsonResponse(200, pendingBody({ pending: false, rendered: true, imageObjectId: 'img-3' })),
             scene: (oid) => ({ objectId: oid, imageObjectId: 'img-old', configOverride: JSON.stringify({ schema: 'olio.sd.config', sampler: 'dpm' }) })
         });
-        await cb.renderChapBookScene('s3', null, OVERLAY, null, { renderPath: 'v3', sceneConfigOverride: null });
+        await cb.renderChapBookScene('s3', null, OVERLAY, null, { sceneConfigOverride: null });
         expect(seqOf(calls)).toEqual(['POST /rest/model/search', 'PUT /rest/olio/picture-book/scene/s3/config-override', 'POST /rest/olio/chap-book/scene/s3/generate']);
         expect(JSON.parse(calls[1].body.configOverride)).toEqual({ steps: 20, cfgScale: 4, sampler: 'dpm', schema: 'olio.sd.config' });
     });
-    it('NOT persisted on v1, nor on v3 with an empty overlay, nor without a renderPath', async () => {
-        let calls = mockWire({ generate: () => jsonResponse(200, v1Body()) });
-        await cb.renderChapBookScene('s3', null, OVERLAY, null, { renderPath: 'v1', sceneConfigOverride: null });
-        await cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3', sceneConfigOverride: null });
-        await cb.renderChapBookScene('s3', null, OVERLAY, null);
+    it('NOT persisted with an empty or absent overlay', async () => {
+        let calls = mockWire({ generate: () => jsonResponse(200, doneBody()) });
+        await cb.renderChapBookScene('s3', null, {}, null, { sceneConfigOverride: null });
+        await cb.renderChapBookScene('s3', null, null, null);
         expect(only(calls, /config-override$/)).toHaveLength(0);
         expect(only(calls, /\/rest\/model\/search$/)).toHaveLength(0);
-        expect(only(calls, /\/generate$/)).toHaveLength(3);
+        expect(only(calls, /\/generate$/)).toHaveLength(2);
     });
-    it('a failed override PUT aborts the render (the dialog values would otherwise be silently ignored on v3)', async () => {
-        let calls = mockWire({ generate: () => jsonResponse(200, v1Body()) });
+    it('a failed override PUT aborts the render (the dialog values would otherwise be silently ignored)', async () => {
+        let calls = mockWire({ generate: () => jsonResponse(200, doneBody()) });
         let real = global.fetch;
         global.fetch = vi.fn(async (u, init) => /config-override$/.test(String(u)) ? jsonResponse(403, { error: 'denied' }) : real(u, init));
-        await expect(cb.renderChapBookScene('s3', null, OVERLAY, null, { renderPath: 'v3', sceneConfigOverride: '{"schema":"olio.sd.config","steps":1}' }))
+        await expect(cb.renderChapBookScene('s3', null, OVERLAY, null, { sceneConfigOverride: '{"schema":"olio.sd.config","steps":1}' }))
             .rejects.toThrow(/Save override failed: 403/);
         expect(only(calls, /\/generate$/)).toHaveLength(0);
     });
@@ -334,13 +319,13 @@ describe('renderChapBookScene — one-shot sdConfig overlay persisted as scene.c
 describe('renderChapBookScene — the pinned 409', () => {
     it('rejects with the server body on the Error; isChapBookPinnedRefusal classifies it; the un-prompted 409 is not pinned', async () => {
         mockWire({ generate: () => jsonResponse(409, { error: PINNED_MSG }) });
-        let err = await cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3' }).catch(e => e);
+        let err = await cb.renderChapBookScene('s3', null, {}, null, {}).catch(e => e);
         expect(err.message).toBe('Scene render failed: ' + PINNED_MSG);
         expect(err.status).toBe(409);
         expect(err.error).toBe(PINNED_MSG);
         expect(cb.isChapBookPinnedRefusal(err)).toBe(true);
         mockWire({ generate: () => jsonResponse(409, { error: NO_PROMPT_MSG }) });
-        let e2 = await cb.renderChapBookScene('s3', null, {}, null, { renderPath: 'v3' }).catch(e => e);
+        let e2 = await cb.renderChapBookScene('s3', null, {}, null, {}).catch(e => e);
         expect(e2.status).toBe(409);
         expect(cb.isChapBookPinnedRefusal(e2)).toBe(false);
     });
@@ -416,7 +401,7 @@ describe('renderPageWithPinConfirm — the only path that unpins is the explicit
         });
         vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
         let scene = { objectId: 's3', sceneIndex: 3, sceneNodeObjectId: 'n3', configOverride: null, pinned: true };
-        let r = await cb.renderPageWithPinConfirm(scene, 'book-1', () => cb.renderChapBookScene('s3', null, {}, 'a verbatim prompt', { renderPath: 'v3', pollIntervalMs: 1, sceneConfigOverride: scene.configOverride }));
+        let r = await cb.renderPageWithPinConfirm(scene, 'book-1', () => cb.renderChapBookScene('s3', null, {}, 'a verbatim prompt', { pollIntervalMs: 1, sceneConfigOverride: scene.configOverride }));
         expect(r).toMatchObject({ rendered: true, imageObjectId: 'img-new', reviewStatus: 'GENERATED' });
         expect(seqOf(calls)).toEqual([
             'POST /rest/olio/chap-book/scene/s3/generate',
@@ -457,17 +442,16 @@ describe('renderScenesSerially — a pinned result is neither rendered, skipped 
     });
 });
 
-describe('renderChapBookScenes — v3 bulk never unpins and never asks', () => {
+describe('renderChapBookScenes — bulk never unpins and never asks', () => {
     it('a page pinned in the page list is not submitted; a server pinned 409 is folded to "left pinned"; no dialog, no pin call', async () => {
         let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
         let calls = mockWire({
             pages: [{ objectId: 's2', sceneIndex: 2, sceneNodeObjectId: 'n2', nodeStatus: 'DONE', pinned: true }],
-            generate: () => jsonResponse(200, v1Body())
+            generate: () => jsonResponse(200, doneBody())
         });
         let r = await cb.renderChapBookScenes('book-1', 'cfg', {});
         expect(r).toEqual({ rendered: 0, failed: 0, skipped: 0, llmUnavailable: 0, llmDegraded: 0, total: 1, pinnedLeft: 1 });
         expect(only(calls, /\/generate$/)).toHaveLength(0);
-        expect(am7client.getRenderPath).toHaveBeenCalledTimes(1);
 
         let calls2 = mockWire({
             pages: [{ objectId: 's3', sceneIndex: 3, sceneNodeObjectId: 'n3', nodeStatus: 'DONE', pinned: false }],
@@ -480,7 +464,7 @@ describe('renderChapBookScenes — v3 bulk never unpins and never asks', () => {
         expect(confirm).not.toHaveBeenCalled();
         expect(cb.renderResultLevel(r2)).toBe('warn');
     });
-    it('a v3 page the server finished inside its bound renders normally; other errors still count as failed', async () => {
+    it('a page the server finished inside its bound renders normally; other errors still count as failed', async () => {
         let calls = mockWire({
             pages: [{ objectId: 's1', sceneIndex: 1, sceneNodeObjectId: 'n1', nodeStatus: 'READY', pinned: false }],
             generate: () => jsonResponse(200, pendingBody({ pending: false, rendered: true, imageObjectId: 'img-1', nodeObjectId: 'n1', artifactObjectId: 'a1', nodeStatus: 'DONE_UNVERIFIED' }))
@@ -491,13 +475,5 @@ describe('renderChapBookScenes — v3 bulk never unpins and never asks', () => {
         mockWire({ pages: [{ objectId: 's1', sceneIndex: 1, pinned: false }], generate: () => jsonResponse(500, { error: 'boom' }) });
         let r2 = await cb.renderChapBookScenes('book-1', null, {});
         expect(r2).toEqual({ rendered: 0, failed: 1, skipped: 0, llmUnavailable: 0, llmDegraded: 0, total: 1 });
-    });
-    it('on v1 the page-list pin flag is ignored (there is nothing to pin) and the generate call is made', async () => {
-        am7client.getRenderPath.mockResolvedValue({ picturebook: 'v1', chapbook: 'v1' });
-        let calls = mockWire({ pages: [{ objectId: 's2', sceneIndex: 2, pinned: true }], generate: () => jsonResponse(200, v1Body()) });
-        let r = await cb.renderChapBookScenes('book-1', null, {});
-        expect(r).toEqual({ rendered: 1, failed: 0, skipped: 0, llmUnavailable: 0, llmDegraded: 0, total: 1 });
-        expect(only(calls, /\/generate$/)).toHaveLength(1);
-        expect(only(calls, /config-override$/)).toHaveLength(0);
     });
 });

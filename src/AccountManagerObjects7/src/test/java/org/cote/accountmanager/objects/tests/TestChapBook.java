@@ -6,15 +6,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
-import javax.imageio.ImageIO;
 
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
@@ -23,9 +19,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
-import org.cote.accountmanager.olio.picturebook.PbConfigUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
-import org.cote.accountmanager.olio.picturebook.PbServiceFacade;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
@@ -35,17 +29,13 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
-import org.cote.accountmanager.util.FileUtil;
 import org.junit.Before;
 import org.junit.Test;
 
 /**
- * Integration test for ChapBookUtil.renderChapBook.
- * Creates real olio.cb.poem records, builds a ChapBook via createChapBook,
- * then calls renderChapBook against the live Swarm SD server and verifies
- * that at least one scene has an imageObjectId persisted.
- *
- * Gated on test.swarm.server — skipped when the property is absent.
+ * Integration tests for {@link ChapBookUtil}: poem text extraction, createChapBook's workflow, the landscape-prompt
+ * LLM path and prompt resolution, and the no-config degrade signal. The old-path (v1) render cases went with the
+ * {@code chapbook.renderPath} key at Phase 10 P10-1; the V3 render is proven by {@code TestChapBookV3Render}.
  */
 public class TestChapBook extends BaseTest {
 
@@ -75,12 +65,6 @@ public class TestChapBook extends BaseTest {
 	@Before
 	public void setUpChapBook() {
 		// BaseTest.setup() is @Before too and runs first; OlioModelNames.use() is called there.
-		// The render cases assert the v1 SD block (client sdConfig overlay, synchronous image patch),
-		// which v3 replaces with a graph job that drops the overlay. BaseTest re-pins v3 on every
-		// @Before. v3 is covered by TestChapBookV3Render.
-		org.cote.accountmanager.olio.picturebook.PbRenderPath.configure(
-			org.cote.accountmanager.olio.picturebook.PbRenderPath.V3,
-			org.cote.accountmanager.olio.picturebook.PbRenderPath.V1);
 		// Create a stable test user for this suite.
 		org.cote.accountmanager.io.OrganizationContext ctx =
 			getTestOrganization(ORG_PATH);
@@ -140,131 +124,6 @@ public class TestChapBook extends BaseTest {
 
 		logger.info("testExtractPoemTextFromLegacyDocFile: extracted {} chars of readable prose from {}",
 			poemFromNull.length(), docFile.getName());
-	}
-
-	/**
-	 * End-to-end test: create two poems → createChapBook → renderChapBook.
-	 * Asserts rendered >= 1 and that at least one scene has imageObjectId set in the DB.
-	 */
-	@Test
-	public void TestChapBookRender() throws Exception {
-		String swarmServer = testProperties.getProperty("test.swarm.server");
-		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render");
-
-		String dataPath = testProperties.getProperty("test.datagen.path");
-		assertNotNull("test.datagen.path must be set", dataPath);
-
-		long ts = System.currentTimeMillis();
-		String slug = "cb-test-" + ts;
-		String title = "ChapBook Test " + ts;
-
-		// ── 1. Create two olio.cb.poem records ──────────────────────────────────
-		String poem1Text =
-			"The light falls soft on winter boughs,\n" +
-			"A silver hush where no bird calls,\n" +
-			"The world holds still as snowfall flows,\n" +
-			"And quiet fills the frozen halls.";
-
-		String poem2Text =
-			"Come spring and break the ice apart,\n" +
-			"Let green reclaim the barren earth,\n" +
-			"With warmth restored to every heart,\n" +
-			"And songs reborn to celebrate birth.";
-
-		String poemPath = "~/Data/ChapBookTest-" + ts;
-
-		BaseRecord poem1 = createPoem(testUser, poemPath, "Poem One " + ts, poem1Text);
-		assertNotNull("Poem 1 should be created", poem1);
-		String poem1Oid = poem1.get(FieldNames.FIELD_OBJECT_ID);
-		assertNotNull("Poem 1 must have objectId", poem1Oid);
-
-		BaseRecord poem2 = createPoem(testUser, poemPath, "Poem Two " + ts, poem2Text);
-		assertNotNull("Poem 2 should be created", poem2);
-		String poem2Oid = poem2.get(FieldNames.FIELD_OBJECT_ID);
-		assertNotNull("Poem 2 must have objectId", poem2Oid);
-
-		logger.info("Created poem1={} poem2={}", poem1Oid, poem2Oid);
-
-		// ── 2. Create ChapBook (null chatConfig = no LLM, uses default sdPrompt) ──
-		List<String> poemOids = new ArrayList<>();
-		poemOids.add(poem1Oid);
-		poemOids.add(poem2Oid);
-
-		long createStart = System.currentTimeMillis();
-		// maxLinesPerPage=4 so each 4-line stanza becomes one scene (2 poems → 2 scenes)
-		BaseRecord book = ChapBookUtil.createChapBook(testUser, dataPath, slug, title, poemOids, 4, null);
-		logger.info("createChapBook took {}ms", System.currentTimeMillis() - createStart);
-
-		assertNotNull("createChapBook must return a book record", book);
-		String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
-		assertNotNull("Book must have an objectId", bookObjectId);
-
-		// Verify bookType was patched to CHAPBOOK
-		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
-		bq.field(FieldNames.FIELD_ORGANIZATION_ID, ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue());
-		bq.setRequest(new String[]{
-			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID,
-			FieldNames.FIELD_OWNER_ID, OlioFieldNames.FIELD_PB_BOOK_TYPE
-		});
-		bq.setCache(false);
-		BaseRecord bookCheck = IOSystem.getActiveContext().getAccessPoint().find(testUser, bq);
-		assertNotNull("Book must be findable by objectId", bookCheck);
-		String bookType = bookCheck.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
-		assertTrue("bookType must be CHAPBOOK, got: " + bookType,
-			bookType != null && "CHAPBOOK".equalsIgnoreCase(bookType));
-
-		// Verify scenes were created
-		List<BaseRecord> scenes = PbBookUtil.listScenes(testUser, bookCheck);
-		assertTrue("At least one scene must have been created from the poems", !scenes.isEmpty());
-		logger.info("Scenes created: {}", scenes.size());
-
-		// ── 3. Render the ChapBook against the live Swarm SD server ─────────────
-		long renderStart = System.currentTimeMillis();
-		int rendered = ChapBookUtil.renderChapBook(testUser, bookObjectId, "SWARM", swarmServer, null, renderConfig);
-		logger.info("renderChapBook took {}ms, rendered={}/{} scenes",
-			System.currentTimeMillis() - renderStart, rendered, scenes.size());
-
-		assertTrue("At least 1 scene must be rendered (returned " + rendered + ")", rendered >= 1);
-
-		// ── 4. Verify imageObjectId persisted on at least one scene ─────────────
-		// Re-query scenes from the DB to get the updated imageObjectId fields
-		List<BaseRecord> updatedScenes = PbBookUtil.listScenes(testUser, bookCheck);
-		long scenesWithImage = updatedScenes.stream()
-			.filter(s -> {
-				String oid = s.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
-				return oid != null && !oid.isBlank();
-			})
-			.count();
-
-		logger.info("Scenes with imageObjectId set: {}/{}", scenesWithImage, updatedScenes.size());
-		assertTrue("At least one scene must have imageObjectId persisted after renderChapBook; got "
-			+ scenesWithImage + "/" + updatedScenes.size() + " with image",
-			scenesWithImage >= 1);
-
-		// ── 5. Verify bookPageView enriches rendered pages with MediaServlet URL fields ──────────
-		// The viewer needs the image data.data record's groupPath + name to build a /media URL;
-		// dataObjectId alone 404s (no /rest/resource route exists). Assert the facade now supplies them.
-		List<Map<String, Object>> pages = PbServiceFacade.bookPageView(testUser, bookObjectId);
-		assertNotNull("bookPageView must return pages", pages);
-		assertTrue("bookPageView must return at least one page", !pages.isEmpty());
-		long pagesWithImageUrl = pages.stream()
-			.filter(pg -> pg.get("dataObjectId") != null)
-			.filter(pg -> {
-				String gp = (String) pg.get("imageGroupPath");
-				String nm = (String) pg.get("imageName");
-				return gp != null && !gp.isBlank() && nm != null && !nm.isBlank();
-			})
-			.count();
-		logger.info("Pages with resolvable image URL fields (imageGroupPath+imageName): {}/{}",
-			pagesWithImageUrl, pages.size());
-		for (Map<String, Object> pg : pages) {
-			logger.info("page dataObjectId={} imageGroupPath={} imageName={} imageContentType={}",
-				pg.get("dataObjectId"), pg.get("imageGroupPath"), pg.get("imageName"), pg.get("imageContentType"));
-		}
-		assertTrue("At least one rendered page must carry non-null imageGroupPath + imageName so the "
-			+ "viewer can build a MediaServlet URL; got " + pagesWithImageUrl + "/" + pages.size(),
-			pagesWithImageUrl >= 1);
 	}
 
 	/**
@@ -428,352 +287,6 @@ public class TestChapBook extends BaseTest {
 			+ "LLM server: " + llmServer + ". If the LLM is unreachable or the prompt template is "
 			+ "missing, all scenes will carry the fallback prefix.",
 			foundLlmGeneratedPrompt);
-	}
-
-	/**
-	 * GAP 2 (PictureBook2ChapBookGapAnalysis-2026-08-31): a ChapBook landscape render to the Issue-13
-	 * evidence standard.
-	 * <p>
-	 * End-to-end, against the LIVE backend (LLM at {@code test.llm.ollama.server}, SD/Swarm at
-	 * {@code test.swarm.server}):
-	 * <ol>
-	 * <li>Real poem content — the exact {@link #POEM_TEXT} the UX e2e uses.</li>
-	 * <li>{@code createChapBook} with a real LLM {@code chatConfig} so the landscape-prompt path runs,
-	 *     then {@code renderChapBook} against the live Swarm.</li>
-	 * <li>Before render, set a distinctive per-scene {@code configOverride} (steps=42) and assert (via
-	 *     {@code resolveEffectiveConfig} on that scene — the exact carrier {@code renderChapBook} passes)
-	 *     that the override WINS the merge, proving it flows into the real render/config path.</li>
-	 * <li>Resolve a rendered scene's {@code imageObjectId} &rarr; {@code data.data} record &rarr; bytes
-	 *     via {@code ByteModelUtil.getValue} (never a raw {@code byteStore .get()}).</li>
-	 * <li>Assert the leading bytes are PNG ({@code 89 50 4E 47}) or JPEG ({@code FF D8 FF}) magic, then
-	 *     DECODE via {@code ImageIO.read} asserting a real raster (width &gt; 0 &amp;&amp; height &gt; 0).
-	 *     A zero-byte/HTML/JSON error blob FAILS both checks.</li>
-	 * <li>Emit the decoded image AND the LLM-generated {@code sdPrompt} to disk for visual inspection and
-	 *     log the emit paths.</li>
-	 * </ol>
-	 * Gated on {@code test.swarm.server} AND {@code test.llm.ollama.server} — {@code assumeTrue} SKIPS
-	 * (not fails) when either is absent. With both present it MUST run.
-	 */
-	@Test
-	public void TestChapBookRenderDecodedEmitE2E() throws Exception {
-		String swarmServer = testProperties.getProperty("test.swarm.server");
-		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render");
-		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		SdTestGate.requireLlmReachable(llmServer);
-
-		String dataPath = testProperties.getProperty("test.datagen.path");
-		assertNotNull("test.datagen.path must be set", dataPath);
-
-		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-
-		// Test-side-only disk emission for manual visual inspection (production code knows nothing of it).
-		String emitDir = new File(dataPath, "chapbook-e2e").getAbsolutePath();
-		new File(emitDir).mkdirs();
-
-		// Real LLM chatConfig so createChapBookScene runs the chapBook.landscape-prompt LLM path.
-		BaseRecord chatConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookLlmTestConfig", testProperties);
-		assertNotNull("chatConfig must be created for the LLM landscape-prompt path", chatConfig);
-
-		long ts = System.currentTimeMillis();
-		String slug = "cb-e2e-" + ts;
-		String title = "ChapBook Verified E2E " + ts;
-
-		// ── 1. Real poem content ────────────────────────────────────────────────
-		String poemPath = "~/Data/ChapBookE2E-" + ts;
-		BaseRecord poem = createPoem(testUser, poemPath, "Poem E2E " + ts, POEM_TEXT);
-		assertNotNull("Poem must be created", poem);
-		String poemOid = poem.get(FieldNames.FIELD_OBJECT_ID);
-		assertNotNull("Poem must have objectId", poemOid);
-
-		List<String> poemOids = new ArrayList<>();
-		poemOids.add(poemOid);
-
-		// ── 2. createChapBook with the LLM chatConfig (landscape-prompt path runs) ──
-		long createStart = System.currentTimeMillis();
-		// maxLinesPerPage=5 → each 5-line stanza becomes one scene (POEM_TEXT has two → 2 scenes)
-		BaseRecord book = ChapBookUtil.createChapBook(testUser, dataPath, slug, title, poemOids, 5, chatConfig);
-		logger.info("createChapBook (with LLM chatConfig) took {}ms", System.currentTimeMillis() - createStart);
-		assertNotNull("createChapBook must return a book", book);
-		String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
-		assertNotNull("Book must have an objectId", bookObjectId);
-
-		// Re-query for the fields listScenes needs (organizationId, groupId, groupPath, etc.)
-		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
-		bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		bq.setRequest(new String[]{
-			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID,
-			FieldNames.FIELD_OWNER_ID, OlioFieldNames.FIELD_PB_BOOK_TYPE
-		});
-		bq.setCache(false);
-		BaseRecord bookCheck = IOSystem.getActiveContext().getAccessPoint().find(testUser, bq);
-		assertNotNull("Book must be findable by objectId", bookCheck);
-
-		List<BaseRecord> scenes = PbBookUtil.listScenes(testUser, bookCheck);
-		assertFalse("At least one scene must be created from the poem", scenes.isEmpty());
-		logger.info("ChapBook E2E: {} scene(s) created", scenes.size());
-
-		// ── 3. Prove a per-scene configOverride flows into the REAL render/config path ──
-		// renderChapBook (ChapBookUtil.java) resolves each scene's config via
-		// PbConfigUtil.resolveEffectiveConfig(book, scene, false) — the SCENE is the override carrier.
-		// Set a distinctive override (steps=42) and assert that same resolver returns 42.
-		BaseRecord firstScene = scenes.get(0);
-		String firstSceneOid = firstScene.get(FieldNames.FIELD_OBJECT_ID);
-		BaseRecord cfg42 = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		cfg42.set("steps", 42);
-		String override = PbConfigUtil.sparseOverride(cfg42, Arrays.asList("steps"));
-		assertNotNull("sparseOverride must produce a non-null override JSON", override);
-		assertTrue("override JSON must carry steps=42, got: " + override, override.contains("42"));
-		boolean overrideSet = PbBookUtil.setSceneConfigOverride(testUser, firstSceneOid, override);
-		assertTrue("setSceneConfigOverride must return true", overrideSet);
-
-		BaseRecord sceneReloaded = PbBookUtil.readScene(testUser, firstSceneOid, orgId);
-		assertNotNull("Scene must be re-readable after setSceneConfigOverride", sceneReloaded);
-		assertEquals("Persisted configOverride must round-trip verbatim",
-			override, (String) sceneReloaded.get(OlioFieldNames.FIELD_PB_CONFIG_OVERRIDE));
-		BaseRecord effective = PbConfigUtil.resolveEffectiveConfig(bookCheck, sceneReloaded, false);
-		assertNotNull("resolveEffectiveConfig must not be null", effective);
-		int mergedSteps = ((Number) effective.get("steps")).intValue();
-		assertEquals("Per-scene configOverride (steps=42) MUST win the effective-config merge that "
-			+ "renderChapBook performs (scene is the override carrier)", 42, mergedSteps);
-		logger.info("ChapBook E2E: per-scene configOverride steps=42 wins resolveEffectiveConfig");
-
-		// ── 4. Render against the live Swarm SD server ──────────────────────────
-		long renderStart = System.currentTimeMillis();
-		int rendered = ChapBookUtil.renderChapBook(testUser, bookObjectId, "SWARM", swarmServer, null, renderConfig);
-		logger.info("renderChapBook took {}ms, rendered={}/{} scenes",
-			System.currentTimeMillis() - renderStart, rendered, scenes.size());
-		assertTrue("At least 1 scene must be rendered (returned " + rendered + ")", rendered >= 1);
-
-		// ── 5. Resolve a rendered scene → data.data → bytes → decode + magic-check ──
-		List<BaseRecord> updatedScenes = PbBookUtil.listScenes(testUser, bookCheck);
-		BaseRecord renderedScene = null;
-		String imageOid = null;
-		for (BaseRecord s : updatedScenes) {
-			String oid = s.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
-			if (oid != null && !oid.isBlank()) {
-				renderedScene = s;
-				imageOid = oid;
-				break;
-			}
-		}
-		assertNotNull("At least one scene must carry a persisted imageObjectId after render", imageOid);
-		logger.info("ChapBook E2E: rendered scene imageObjectId={}", imageOid);
-
-		byte[] imageBytes = fetchDataBytes(imageOid, orgId);
-		assertNotNull("Image data.data bytes must be readable via ByteModelUtil.getValue", imageBytes);
-		assertTrue("Image bytes must be non-empty — a 0-byte/HTML-error blob must FAIL (len="
-			+ imageBytes.length + ")", imageBytes.length > 0);
-
-		// Magic-byte check: PNG (89 50 4E 47) or JPEG (FF D8 FF).
-		boolean isPng = imageBytes.length >= 4
-			&& (imageBytes[0] & 0xFF) == 0x89 && (imageBytes[1] & 0xFF) == 0x50
-			&& (imageBytes[2] & 0xFF) == 0x4E && (imageBytes[3] & 0xFF) == 0x47;
-		boolean isJpeg = imageBytes.length >= 3
-			&& (imageBytes[0] & 0xFF) == 0xFF && (imageBytes[1] & 0xFF) == 0xD8
-			&& (imageBytes[2] & 0xFF) == 0xFF;
-		String magicPreview = String.format("%02X %02X %02X %02X",
-			imageBytes[0],
-			imageBytes.length > 1 ? imageBytes[1] : 0,
-			imageBytes.length > 2 ? imageBytes[2] : 0,
-			imageBytes.length > 3 ? imageBytes[3] : 0);
-		assertTrue("Image bytes must start with PNG or JPEG magic (first bytes: " + magicPreview
-			+ ") — an HTML/JSON error blob must FAIL", isPng || isJpeg);
-
-		// Decode a real raster.
-		BufferedImage img = ImageIO.read(new ByteArrayInputStream(imageBytes));
-		assertNotNull("ImageIO must decode a real image from the persisted bytes "
-			+ "(non-decodable bytes = SwarmUI never returned image data)", img);
-		assertTrue("decoded image width must be > 0 (was " + img.getWidth() + ")", img.getWidth() > 0);
-		assertTrue("decoded image height must be > 0 (was " + img.getHeight() + ")", img.getHeight() > 0);
-		logger.info("ChapBook E2E: decoded {}x{} {} image from {} persisted bytes",
-			img.getWidth(), img.getHeight(), isPng ? "PNG" : "JPEG", imageBytes.length);
-
-		// ── 6. sdPrompt proof: the scene's stored sdPrompt is the LLM landscape prompt ──
-		// createChapBookScene (chatConfig != null) generates the landscape prompt via the LLM and stores
-		// it on the scene; a non-LLM fallback would carry the "landscape, " prefix.
-		String sdPrompt = renderedScene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-		assertNotNull("Rendered scene must carry a stored sdPrompt", sdPrompt);
-		assertFalse("sdPrompt must not be blank", sdPrompt.isBlank());
-		assertFalse("sdPrompt must not be the raw poem stanza verbatim",
-			POEM_TEXT.trim().equals(sdPrompt.trim()));
-		assertFalse("sdPrompt must be LLM-generated, not the 'landscape, ' no-LLM fallback (got: "
-			+ (sdPrompt.length() > 60 ? sdPrompt.substring(0, 60) + "…" : sdPrompt) + ")",
-			sdPrompt.startsWith("landscape, "));
-		logger.info("ChapBook E2E: LLM sdPrompt (first 120): {}",
-			sdPrompt.length() > 120 ? sdPrompt.substring(0, 120) + "…" : sdPrompt);
-
-		// ── 7. Emit image + sdPrompt to disk and log the paths ──────────────────
-		String pngPath = emitDir + File.separator + "chapbook_verified_" + ts + ".png";
-		String txtPath = emitDir + File.separator + "chapbook_verified_" + ts + ".txt";
-		assertTrue("Emitting the decoded image to disk must succeed: " + pngPath,
-			FileUtil.emitFile(pngPath, imageBytes));
-		assertTrue("Emitting the sdPrompt to disk must succeed: " + txtPath,
-			FileUtil.emitFile(txtPath, sdPrompt));
-		logger.info("ChapBook E2E EMIT: image -> {} ({} bytes, {}x{})", pngPath, imageBytes.length,
-			img.getWidth(), img.getHeight());
-		logger.info("ChapBook E2E EMIT: sdPrompt -> {}", txtPath);
-	}
-
-	/**
-	 * GAP 6 (PictureBook2ChapBookGapAnalysis-2026-08-31): the NEW per-scene, client-driven ChapBook
-	 * render — {@link ChapBookUtil#renderChapBookScene} — to the Issue-13 evidence standard.
-	 * <p>
-	 * PB2 solved the whole-book gateway-timeout by having the client call ONE per-scene render endpoint
-	 * per scene rather than one bulk HTTP call rendering every scene on a single thread. This test drives
-	 * {@code renderChapBookScene} directly (NOT the bulk {@link ChapBookUtil#renderChapBook}) so the
-	 * hardened parent-book FK resolution (objectId path, else fall back to the FK's numeric {@code id} via
-	 * {@code loadRenderBookById}) and the single-scene render wrapper are genuinely exercised.
-	 * <p>
-	 * End-to-end, against the LIVE backend (LLM at {@code test.llm.ollama.server}, SD/Swarm at
-	 * {@code test.swarm.server}):
-	 * <ol>
-	 * <li>Real poem content — the exact {@link #POEM_TEXT} the UX e2e uses.</li>
-	 * <li>{@code createChapBook} with a real LLM {@code chatConfig}, then pick ONE scene's objectId.</li>
-	 * <li>Call {@code renderChapBookScene(user, sceneObjectId, "SWARM", swarmServer, chatConfig, null)} for
-	 *     that ONE scene — exactly one SD call.</li>
-	 * <li>Assert the returned {@code imageObjectId} is non-null and non-blank.</li>
-	 * <li>Resolve {@code imageObjectId} &rarr; {@code data.data} record &rarr; bytes via
-	 *     {@code ByteModelUtil.getValue} (never a raw {@code byteStore .get()}); assert PNG
-	 *     ({@code 89 50 4E 47}) or JPEG ({@code FF D8 FF}) magic, then {@code ImageIO.read} a real raster
-	 *     (width &gt; 0 &amp;&amp; height &gt; 0). A 0-byte/HTML/JSON error blob FAILS both checks.</li>
-	 * <li>Emit the decoded image to disk ({@code gap6-chapbook-scene-<objectId>.png}) for visual inspection.</li>
-	 * <li>Re-query the scene with {@code setCache(false)} and assert {@code FIELD_PB_IMAGE_OBJECT_ID} was
-	 *     patched to the returned objectId (proves the persistence side-effect happened).</li>
-	 * </ol>
-	 * Gated on {@code test.swarm.server} AND {@code test.llm.ollama.server} — {@code assumeTrue} SKIPS
-	 * (not fails) when either is absent. Both are set in resource.properties, so this MUST run.
-	 */
-	@Test
-	public void TestChapBookRenderSceneDecodedEmitE2E() throws Exception {
-		String swarmServer = testProperties.getProperty("test.swarm.server");
-		BaseRecord renderConfig = SdTestGate.requireRenderConfig(testProperties, swarmServer, "ChapBook render");
-		String llmServer = testProperties.getProperty("test.llm.ollama.server");
-		SdTestGate.requireLlmReachable(llmServer);
-
-		String dataPath = testProperties.getProperty("test.datagen.path");
-		assertNotNull("test.datagen.path must be set", dataPath);
-
-		long orgId = ((Number) testUser.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-
-		// Test-side-only disk emission for manual visual inspection (production code knows nothing of it).
-		String emitDir = new File(dataPath, "chapbook-e2e").getAbsolutePath();
-		new File(emitDir).mkdirs();
-
-		// Real LLM chatConfig so renderChapBookScene runs the chapBook.landscape-prompt LLM path.
-		BaseRecord chatConfig = OlioTestUtil.getPbChatConfig(testUser, "chapbookLlmTestConfig", testProperties);
-		assertNotNull("chatConfig must be created for the LLM landscape-prompt path", chatConfig);
-
-		long ts = System.currentTimeMillis();
-		String slug = "cb-gap6-" + ts;
-		String title = "ChapBook GAP6 Per-Scene E2E " + ts;
-
-		// ── 1. Real poem content ────────────────────────────────────────────────
-		String poemPath = "~/Data/ChapBookGap6-" + ts;
-		BaseRecord poem = createPoem(testUser, poemPath, "Poem GAP6 " + ts, POEM_TEXT);
-		assertNotNull("Poem must be created", poem);
-		String poemOid = poem.get(FieldNames.FIELD_OBJECT_ID);
-		assertNotNull("Poem must have objectId", poemOid);
-
-		List<String> poemOids = new ArrayList<>();
-		poemOids.add(poemOid);
-
-		// ── 2. createChapBook (LLM chatConfig), then pick ONE scene ─────────────
-		long createStart = System.currentTimeMillis();
-		// maxLinesPerPage=5 → each 5-line stanza becomes one scene (POEM_TEXT has two → 2 scenes).
-		// We render only ONE below via renderChapBookScene, so exactly one SD call is made.
-		BaseRecord book = ChapBookUtil.createChapBook(testUser, dataPath, slug, title, poemOids, 5, chatConfig);
-		logger.info("createChapBook (with LLM chatConfig) took {}ms", System.currentTimeMillis() - createStart);
-		assertNotNull("createChapBook must return a book", book);
-		String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
-		assertNotNull("Book must have an objectId", bookObjectId);
-
-		// Re-query for the fields listScenes needs (organizationId, groupId, groupPath, etc.)
-		Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookObjectId);
-		bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-		bq.setRequest(new String[]{
-			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID,
-			FieldNames.FIELD_OWNER_ID, OlioFieldNames.FIELD_PB_BOOK_TYPE
-		});
-		bq.setCache(false);
-		BaseRecord bookCheck = IOSystem.getActiveContext().getAccessPoint().find(testUser, bq);
-		assertNotNull("Book must be findable by objectId", bookCheck);
-
-		List<BaseRecord> scenes = PbBookUtil.listScenes(testUser, bookCheck);
-		assertFalse("At least one scene must be created from the poem", scenes.isEmpty());
-		logger.info("ChapBook GAP6: {} scene(s) created — rendering exactly ONE via renderChapBookScene", scenes.size());
-
-		BaseRecord targetScene = scenes.get(0);
-		String sceneObjectId = targetScene.get(FieldNames.FIELD_OBJECT_ID);
-		assertNotNull("Target scene must have an objectId", sceneObjectId);
-		// Confirm the scene has no image yet (so the assertion below proves THIS call patched it).
-		String preImage = targetScene.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
-		assertTrue("Target scene must start with NO imageObjectId (got: " + preImage + ")",
-			preImage == null || preImage.isBlank());
-
-		// ── 3. Drive the NEW per-scene render path (exactly one SD call) ────────
-		long renderStart = System.currentTimeMillis();
-		ChapBookUtil.SceneRenderResult renderResult = ChapBookUtil.renderChapBookScene(
-			testUser, sceneObjectId, "SWARM", swarmServer, chatConfig, renderConfig);
-		logger.info("renderChapBookScene took {}ms for scene {}",
-			System.currentTimeMillis() - renderStart, sceneObjectId);
-
-		// ── 4. Assert RENDERED status + a non-null, non-blank imageObjectId ─────
-		assertNotNull("renderChapBookScene must return a SceneRenderResult", renderResult);
-		assertEquals("renderChapBookScene must return status RENDERED for a genuine-prompt scene "
-			+ "(SKIPPED_NO_PROMPT = un-prompted / FAILED = SD returned nothing or patch failed)",
-			ChapBookUtil.SceneRenderStatus.RENDERED, renderResult.status);
-		String imageOid = renderResult.imageObjectId;
-		assertNotNull("A RENDERED result must carry a non-null imageObjectId", imageOid);
-		assertFalse("renderChapBookScene must return a non-blank imageObjectId", imageOid.isBlank());
-		logger.info("ChapBook GAP6: renderChapBookScene returned imageObjectId={}", imageOid);
-
-		// ── 5. Resolve imageObjectId → data.data → bytes → magic + decode ───────
-		byte[] imageBytes = fetchDataBytes(imageOid, orgId);
-		assertNotNull("Image data.data bytes must be readable via ByteModelUtil.getValue", imageBytes);
-		assertTrue("Image bytes must be non-empty — a 0-byte/HTML-error blob must FAIL (len="
-			+ imageBytes.length + ")", imageBytes.length > 0);
-
-		boolean isPng = imageBytes.length >= 4
-			&& (imageBytes[0] & 0xFF) == 0x89 && (imageBytes[1] & 0xFF) == 0x50
-			&& (imageBytes[2] & 0xFF) == 0x4E && (imageBytes[3] & 0xFF) == 0x47;
-		boolean isJpeg = imageBytes.length >= 3
-			&& (imageBytes[0] & 0xFF) == 0xFF && (imageBytes[1] & 0xFF) == 0xD8
-			&& (imageBytes[2] & 0xFF) == 0xFF;
-		String magicPreview = String.format("%02X %02X %02X %02X",
-			imageBytes[0],
-			imageBytes.length > 1 ? imageBytes[1] : 0,
-			imageBytes.length > 2 ? imageBytes[2] : 0,
-			imageBytes.length > 3 ? imageBytes[3] : 0);
-		assertTrue("Image bytes must start with PNG or JPEG magic (first bytes: " + magicPreview
-			+ ") — an HTML/JSON error blob must FAIL", isPng || isJpeg);
-
-		BufferedImage img = ImageIO.read(new ByteArrayInputStream(imageBytes));
-		assertNotNull("ImageIO must decode a real image from the persisted bytes "
-			+ "(non-decodable bytes = SwarmUI never returned image data)", img);
-		assertTrue("decoded image width must be > 0 (was " + img.getWidth() + ")", img.getWidth() > 0);
-		assertTrue("decoded image height must be > 0 (was " + img.getHeight() + ")", img.getHeight() > 0);
-		logger.info("ChapBook GAP6: decoded {}x{} {} image from {} persisted bytes",
-			img.getWidth(), img.getHeight(), isPng ? "PNG" : "JPEG", imageBytes.length);
-
-		// ── 6. Emit the decoded image to disk for visual inspection ─────────────
-		String pngPath = emitDir + File.separator + "gap6-chapbook-scene-" + sceneObjectId + ".png";
-		assertTrue("Emitting the decoded image to disk must succeed: " + pngPath,
-			FileUtil.emitFile(pngPath, imageBytes));
-		logger.info("ChapBook GAP6 EMIT: image -> {} ({} bytes, {}x{})", pngPath, imageBytes.length,
-			img.getWidth(), img.getHeight());
-
-		// ── 7. Re-query the scene (cache:false) and assert imageObjectId patched ─
-		BaseRecord sceneAfter = PbBookUtil.readScene(testUser, sceneObjectId, orgId);
-		assertNotNull("Scene must be re-readable after render", sceneAfter);
-		String persistedImageOid = sceneAfter.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID);
-		assertNotNull("Scene must carry a persisted imageObjectId after renderChapBookScene", persistedImageOid);
-		assertFalse("Persisted imageObjectId must not be blank", persistedImageOid.isBlank());
-		assertEquals("The scene's persisted imageObjectId MUST equal the objectId renderChapBookScene "
-			+ "returned (proves the FIELD_PB_IMAGE_OBJECT_ID patch side-effect happened)",
-			imageOid, persistedImageOid);
-		logger.info("ChapBook GAP6: scene {} FIELD_PB_IMAGE_OBJECT_ID persisted = {}", sceneObjectId, persistedImageOid);
 	}
 
 	/**
@@ -1192,10 +705,10 @@ public class TestChapBook extends BaseTest {
 	 * {@code renderResolvedScene}'s {@code llmStepUnavailable}); it is NO LONGER a silent benign skip.
 	 * <p>
 	 * With a stored (fallback) prompt present, the render degrade-ATTEMPTS on it rather than skipping, so
-	 * it DOES reach the SD server. Here the SD URL is a deliberate <i>unreachable</i> dummy
-	 * ({@code 127.0.0.1:1}), so the degrade attempt fails fast (connection refused) and the result is
-	 * {@code FAILED} carrying a truthful {@code llmUnavailable=true} — and, because nothing rendered,
-	 * {@code llmDegraded=false} and no image is produced or persisted.
+	 * it DOES go on to the render path. Here the SD URL is a deliberate <i>unreachable</i> dummy
+	 * ({@code 127.0.0.1:1}), so the attempt fails fast (the page job's model resolver refuses the dead renderer)
+	 * and the result is {@code FAILED} carrying a truthful {@code llmUnavailable=true} — and, because nothing
+	 * rendered, {@code llmDegraded=false} and no image is produced or persisted.
 	 * <p>
 	 * <b>Why this needs no live infrastructure:</b> it requires the SD server to be UNREACHABLE (the dummy
 	 * guarantees that) and needs no LLM at all, so it is NOT gated on {@code test.swarm.server}. It guards
@@ -1255,9 +768,9 @@ public class TestChapBook extends BaseTest {
 			preImage == null || preImage.isBlank());
 
 		// Render with chatConfig == null → the landscape LLM step is UNAVAILABLE for this scene. Because a
-		// stored (fallback) prompt exists, renderResolvedScene degrade-ATTEMPTS on it and DOES reach the SD
-		// server. The SD URL below is a deliberate UNREACHABLE dummy: the attempt fails fast (connection
-		// refused) so the result is FAILED with a truthful llmUnavailable=true — never a silent skip.
+		// stored (fallback) prompt exists, renderResolvedScene degrade-ATTEMPTS on it and DOES go on to the
+		// render path. The SD URL below is a deliberate UNREACHABLE dummy: the attempt fails fast so the
+		// result is FAILED with a truthful llmUnavailable=true — never a silent skip.
 		ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(
 			testUser, sceneObjectId, "SWARM", "http://127.0.0.1:1/dummy-sd-unreachable", null, null);
 
@@ -1285,24 +798,6 @@ public class TestChapBook extends BaseTest {
 	}
 
 	// ── helpers ──────────────────────────────────────────────────────────────
-
-	/**
-	 * Fresh read of a {@code data.data} record's byte payload via {@code ByteModelUtil.getValue}
-	 * (never a raw {@code byteStore .get()}, which would hand back compressed/encrypted bytes).
-	 * {@code cache:false} forces a genuinely fresh read.
-	 */
-	private byte[] fetchDataBytes(String dataObjectId, long organizationId) throws Exception {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, dataObjectId);
-		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
-		q.planMost(false);
-		q.setCache(false);
-		BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(testUser, q);
-		if (data == null) {
-			return null;
-		}
-		IOSystem.getActiveContext().getReader().populate(data, new String[] { FieldNames.FIELD_BYTE_STORE });
-		return ByteModelUtil.getValue(data);
-	}
 
 	/**
 	 * Create an {@code olio.cb.poem} record at the given group path with the given name and text.

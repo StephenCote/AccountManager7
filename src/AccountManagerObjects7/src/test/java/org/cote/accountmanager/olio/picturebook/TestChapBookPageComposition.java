@@ -76,14 +76,6 @@ public class TestChapBookPageComposition extends BaseTest {
 		"a serene alpine lake at dawn, wide natural vista, soft diffuse light, snow on distant peaks";
 	private static final String SECOND_PROMPT =
 		"a warm cottage hearth at dusk, ochre embers, wide natural vista through a frosted window";
-	/**
-	 * A locked prompt deliberately shaped like the no-LLM fallback ("landscape, ..."): {@code isGenuineStoredPrompt}
-	 * says false for it, so on the render path ONLY the lock carried over from the composition keeps recovery
-	 * from running over it. That makes the P4-10 overlay itself load-bearing in the stale-mirror case.
-	 */
-	private static final String LOCKED_FALLBACK_SHAPE =
-		"landscape, a frozen tarn under charcoal skies, silver veins of ice, wide natural vista";
-
 	private OrganizationContext orgCtx;
 	private BaseRecord testUser;
 
@@ -95,8 +87,6 @@ public class TestChapBookPageComposition extends BaseTest {
 	@Before
 	public void setUpChapBookPage() {
 		OlioModelNames.use();
-		assertTrue("resource.properties must put ChapBooks on v3 for this class (BaseTest re-pins it)",
-			PbRenderPath.V3.equals(PbRenderPath.valueFor(chapBookStub())));
 		orgCtx = getTestOrganization(ORG_PATH);
 		assertNotNull("organization " + ORG_PATH, orgCtx);
 		testUser = IOSystem.getActiveContext().getFactory()
@@ -363,105 +353,6 @@ public class TestChapBookPageComposition extends BaseTest {
 		assertEquals(GENUINE_PROMPT, scene3.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
 		assertEquals(Boolean.TRUE, scene3.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
 		assertEquals(GENUINE_PROMPT, PbComposeUtil.readComposition(testUser, compOid, fx.orgId).get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
-	}
-
-	/**
-	 * P4-10 render path (security-review change 3): the v1 render decides from the composition, not from the
-	 * scene mirror. A page is given a LOCKED composition prompt shaped like the no-LLM fallback (so only the
-	 * lock can protect it from recovery), then the scene mirror is blanked directly through
-	 * {@code AccessPoint.update} - a stale mirror, sdPrompt null / unlocked. With ChapBooks flipped to v1
-	 * ({@code PbRenderPath.configure(V3, V1)}, the {@code TestChapBookBookSettings} precedent) and a chatConfig
-	 * whose connection points at an unreachable host, {@code renderChapBookScene} must overlay the composition
-	 * onto the in-memory scene and honour the locked prompt verbatim: the capturing {@code SDUtil} receives one
-	 * {@code createImage} whose {@code description} starts with the locked prompt, the result is FAILED (the
-	 * capture returns no image) with {@code llmUnavailable=false} / {@code llmDegraded=false} because recovery
-	 * never ran. Without the overlay the same inputs give SKIPPED_NO_PROMPT with {@code llmUnavailable=true}
-	 * and no {@code createImage} call - a sharp discriminator with no live LLM involved. Afterwards the
-	 * composition is unchanged (same prompt, still locked, same revision, still USER) and the scene mirror is
-	 * still blank: the overlay is in-memory only and recovery never wrote.
-	 */
-	@Test(timeout = LONG_TIMEOUT_MS)
-	public void staleMirrorRendersLockedCompositionPromptOnV1() throws Exception {
-		Fixture fx = createFixture("stale");
-		String sceneOid = fx.sceneOids.get(0);
-		BaseRecord book = PbBookUtil.readBook(testUser, fx.bookOid, fx.orgId);
-		long groupId = ((Number) book.get(FieldNames.FIELD_GROUP_ID)).longValue();
-		assertFalse("the locked prompt must be fallback-shaped so the lock alone protects it",
-			ChapBookUtil.isGenuineStoredPrompt(LOCKED_FALLBACK_SHAPE));
-		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, LOCKED_FALLBACK_SHAPE));
-		BaseRecord scene1 = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
-		assertNotNull("precondition: the page carries a stanza (so recovery WOULD be built if the lock were lost)",
-			scene1.get(OlioFieldNames.FIELD_CB_POEM_STANZA));
-		BaseRecord comp = PbComposeUtil.findSceneComposition(testUser, scene1, groupId, fx.orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE);
-		assertNotNull(comp);
-		String compOid = comp.get(FieldNames.FIELD_OBJECT_ID);
-		comp = PbComposeUtil.readComposition(testUser, compOid, fx.orgId);
-		assertEquals(LOCKED_FALLBACK_SHAPE, comp.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
-		assertEquals(Boolean.TRUE, comp.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
-		int rev0 = intOf(comp.get(OlioFieldNames.FIELD_PB_REVISION));
-		String source0 = status(comp, OlioFieldNames.FIELD_PB_SOURCE);
-		assertEquals(PbCompositionSourceEnumType.USER.name(), source0);
-
-		/// Stale the mirror directly (what a refused mirror write leaves behind): sdPrompt null, unlocked.
-		BaseRecord blank = PbGraphUtil.patchOf(scene1, OlioModelNames.MODEL_PB_SCENE,
-			OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_PROMPT_LOCKED);
-		blank.set(OlioFieldNames.FIELD_CB_SD_PROMPT, null);
-		blank.set(OlioFieldNames.FIELD_PB_PROMPT_LOCKED, Boolean.FALSE);
-		assertNotNull("scene mirror blank patch", IOSystem.getActiveContext().getAccessPoint().update(testUser, blank));
-		BaseRecord scene2 = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
-		assertNull("precondition: the scene mirror is blank", scene2.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
-		assertNotEquals("precondition: the scene mirror is unlocked", Boolean.TRUE, scene2.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
-		assertEquals("precondition: the composition still carries the locked prompt", LOCKED_FALLBACK_SHAPE,
-			PbComposeUtil.readComposition(testUser, compOid, fx.orgId).get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
-
-		/// A chatConfig whose connection is unreachable: if recovery ran it would hard-fail (llmUnavailable=true).
-		BaseRecord deadLlm = OlioTestUtil.getUnreachableOllamaConfig(testUser, "chapbookP410DeadLlm", DEAD_SERVER, "qwen3:8b", 5);
-		assertNotNull("the unreachable chatConfig must be built", deadLlm);
-
-		final List<BaseRecord> captured = new ArrayList<>();
-		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, DEAD_SERVER) {
-			@Override
-			public List<BaseRecord> createImage(BaseRecord user, String groupPath, BaseRecord sdConfig, String name, int batch, boolean hires, int seed) {
-				captured.add(sdConfig);
-				return new ArrayList<>();
-			}
-		};
-		String savedPb = PbRenderPath.pictureBook();
-		String savedCb = PbRenderPath.chapBook();
-		ChapBookUtil.SceneRenderResult result;
-		long t0 = System.currentTimeMillis();
-		try {
-			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
-			assertEquals("precondition: ChapBooks are on v1 for this case", PbRenderPath.V1, PbRenderPath.valueFor(book));
-			result = ChapBookUtil.renderChapBookScene(testUser, sceneOid, sdu, deadLlm, null, null);
-		}
-		finally {
-			PbRenderPath.configure(savedPb, savedCb);
-		}
-		logger.info("[p48] stale-mirror render durationMs=" + (System.currentTimeMillis() - t0) + " status=" + result.status
-			+ " llmUnavailable=" + result.llmUnavailable + " llmDegraded=" + result.llmDegraded + " captured=" + captured.size());
-		assertEquals("the renderer was called exactly once (the composition prompt satisfied the pre-step)", 1, captured.size());
-		assertEquals("the capture returns no image, so the render is FAILED - never SKIPPED_NO_PROMPT",
-			ChapBookUtil.SceneRenderStatus.FAILED, result.status);
-		assertFalse("recovery never ran, so the LLM step was not unavailable", result.llmUnavailable);
-		assertFalse("nothing was degraded", result.llmDegraded);
-		String description = captured.get(0).get("description");
-		assertNotNull("the SD config carries a positive prompt", description);
-		assertTrue("the positive prompt is the composition's locked prompt, verbatim, first: " + description,
-			description.startsWith(LOCKED_FALLBACK_SHAPE));
-
-		/// The authority is untouched and the mirror is still stale: the overlay was in-memory only.
-		BaseRecord compAfter = PbComposeUtil.readComposition(testUser, compOid, fx.orgId);
-		assertEquals("composition prompt unchanged", LOCKED_FALLBACK_SHAPE, compAfter.get(OlioFieldNames.FIELD_PB_PROMPT_OVERRIDE));
-		assertEquals("composition still locked", Boolean.TRUE, compAfter.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
-		assertEquals("composition revision unchanged", rev0, intOf(compAfter.get(OlioFieldNames.FIELD_PB_REVISION)));
-		assertEquals("composition source unchanged", source0, status(compAfter, OlioFieldNames.FIELD_PB_SOURCE));
-		assertEquals("the same composition, not a second one", compOid,
-			PbComposeUtil.findSceneComposition(testUser, scene2, groupId, fx.orgId, PbCompositionPurposeEnumType.CHAPBOOK_PAGE).get(FieldNames.FIELD_OBJECT_ID));
-		BaseRecord sceneAfter = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
-		assertNull("the scene mirror was not written by the render", sceneAfter.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
-		assertNotEquals("the scene mirror is still unlocked", Boolean.TRUE, sceneAfter.get(OlioFieldNames.FIELD_PB_PROMPT_LOCKED));
-		assertNull("no image was attached", sceneAfter.get(OlioFieldNames.FIELD_PB_IMAGE_OBJECT_ID));
 	}
 
 	// ─────────────────────────────── regenerate (live LLM) ───────────────────────────────
@@ -890,18 +781,6 @@ public class TestChapBookPageComposition extends BaseTest {
 			return;
 		}
 		fail(what + ": expected PictureBookException " + status + " but nothing was thrown");
-	}
-
-	/** A detached CHAPBOOK-typed book record, only for asking {@link PbRenderPath} which switch applies. */
-	private static BaseRecord chapBookStub() {
-		try {
-			BaseRecord stub = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK, new String[] { OlioFieldNames.FIELD_PB_BOOK_TYPE });
-			stub.setValue(OlioFieldNames.FIELD_PB_BOOK_TYPE, "CHAPBOOK");
-			return stub;
-		}
-		catch(Exception e) {
-			throw new AssertionError("Cannot build a chapbook stub: " + e.getMessage(), e);
-		}
 	}
 
 	private BaseRecord createPoem(BaseRecord user, String groupPath, String name, String text) {

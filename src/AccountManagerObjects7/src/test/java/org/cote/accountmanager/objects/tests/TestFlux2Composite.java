@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -411,29 +412,31 @@ public class TestFlux2Composite {
 		return RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
 	}
 
-	/// compositeMode wins over the legacy boolean, in both directions.
+	/// compositeMode is the only switch. The useKontext column is still on the model until Phase 10
+	/// P10-4 drops it, but resolveMode has not read it since P10-3, so it changes nothing either way.
 	@Test
 	public void compositeModeOverridesTheLegacyBoolean() throws Exception {
 		BaseRecord cfg = sdConfig();
 		cfg.set("useKontext", true);
 		cfg.set("compositeMode", "flux2");
 		assertEquals("compositeMode must win over useKontext=true",
-			SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(cfg, true));
+			SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(cfg));
 
 		cfg.set("compositeMode", "classic");
 		assertEquals("compositeMode must win in the other direction too",
-			SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, true));
+			SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg));
 	}
 
 	/// isSupportedMode is the request-time gate ChatService.generateScene uses to answer 400 for a
-	/// mode it does not know, instead of letting resolveMode quietly downgrade it to classic
-	/// (2026-10-07). resolveMode's lenient fallback for already-saved configs is unchanged. Since the
-	/// V3 §37.3 Disable stage (Phase 2, P2-8) "kontext" is no longer supported either — it is retired,
-	/// which TestKontextDeprecation pins separately (isRetiredMode, KONTEXT_RETIRED_MESSAGE).
+	/// mode it does not know (2026-10-07). Since Phase 10 P10-3 resolveMode enforces the same
+	/// vocabulary itself: a saved config carrying any other non-blank value — the retired "kontext"
+	/// literal, a typo, a mode from the future — is REJECTED with IllegalArgumentException, never
+	/// downgraded to classic (§6.C 248 k; feedback-validate-dont-workaround). Until P10-3 this case
+	/// pinned the opposite ("still resolves leniently"); that contract is gone with the Kontext branch.
 	@Test
-	public void unsupportedOrRetiredCompositeModeIsRejectedByTheGateButStillResolvesLeniently() throws Exception {
+	public void unsupportedCompositeModeIsRejectedByTheGateAndByResolveMode() throws Exception {
 		assertTrue(SceneCompositeUtil.isSupportedMode("flux2"));
-		assertFalse("kontext is retired (V3 §37.3 Disable) and no longer supported", SceneCompositeUtil.isSupportedMode("kontext"));
+		assertFalse("kontext was removed at Phase 10 P10-3 and is just one more unknown mode", SceneCompositeUtil.isSupportedMode("kontext"));
 		assertTrue(SceneCompositeUtil.isSupportedMode("classic"));
 		assertTrue("the gate is case-insensitive, like resolveMode", SceneCompositeUtil.isSupportedMode(" FLUX2 "));
 		assertFalse(SceneCompositeUtil.isSupportedMode(" KONTEXT "));
@@ -443,10 +446,23 @@ public class TestFlux2Composite {
 		assertFalse(SceneCompositeUtil.isSupportedMode(null));
 		assertEquals("flux2|classic", SceneCompositeUtil.SUPPORTED_MODES);
 
-		BaseRecord cfg = sdConfig();
-		cfg.set("compositeMode", "bogus");
-		assertEquals("saved configs with a stale mode still resolve to classic rather than failing",
-			SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, false));
+		for (String bad : new String[] { "kontext", " KONTEXT ", "fluxx2", "bogus", "flux3" }) {
+			BaseRecord cfg = sdConfig();
+			cfg.set("compositeMode", bad);
+			try {
+				String got = SceneCompositeUtil.resolveMode(cfg);
+				fail("compositeMode='" + bad + "' must be rejected, not resolved to '" + got + "'");
+			} catch (IllegalArgumentException e) {
+				assertTrue("the error names the offending value: " + e.getMessage(), e.getMessage().contains("'" + bad.trim() + "'"));
+				assertTrue("the error names the vocabulary: " + e.getMessage(), e.getMessage().contains("expected " + SceneCompositeUtil.SUPPORTED_MODES));
+			}
+		}
+		/// The accepted vocabulary is trimmed and case-folded, as the gate is.
+		BaseRecord ok = sdConfig();
+		ok.set("compositeMode", " Classic ");
+		assertEquals(SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(ok));
+		ok.set("compositeMode", "FLUX2");
+		assertEquals(SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(ok));
 	}
 
 	/// A bare, schema-built config must resolve to FLUX.2 — the mode whose checkpoint actually ships.
@@ -459,51 +475,41 @@ public class TestFlux2Composite {
 	/// nothing at all.
 	///
 	/// Fixed 2026-08-10 by making the DEFAULTS honest: compositeMode defaults to "flux2",
-	/// useKontext defaults to false, and kontextModel has no default (Kontext is now an explicit
-	/// opt-in that must name a checkpoint the target node carries).
+	/// useKontext defaults to false, and kontextModel has no default. (Kontext itself was removed at
+	/// Phase 10 P10-3; the two columns stay on the model until P10-4 drops them, so the defaults are
+	/// still asserted here until then.)
 	@Test
 	public void bareConfigResolvesToFlux2ByDefault() throws Exception {
 		BaseRecord bare = sdConfig();
 		assertEquals("useKontext must no longer default to true",
 			Boolean.FALSE, (Boolean) bare.get("useKontext"));
 		assertEquals("compositeMode must default to flux2", "flux2", (String) bare.get("compositeMode"));
-		assertEquals(SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(bare, true));
-		assertEquals("the compositeMode default wins over any caller-supplied legacy default",
-			SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(bare, false));
+		assertEquals(SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.resolveMode(bare));
 		assertTrue("kontextModel must have no default — the old one named an uninstalled checkpoint",
 			bare.get("kontextModel") == null || ((String) bare.get("kontextModel")).isEmpty());
 	}
 
-	/// legacyKontextDefault only actually applies where the field is genuinely absent.
+	/// No config at all resolves to classic: there is no caller-supplied default any more (the
+	/// legacyKontextDefault parameter went with the Kontext branch at Phase 10 P10-3).
 	@Test
-	public void legacyDefaultAppliesOnlyWithNoConfig() {
-		assertEquals("a null config takes the caller's default",
-			SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(null, false));
-		assertEquals("a null config takes the caller's default, other direction",
-			SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.resolveMode(null, true));
+	public void nullConfigResolvesToClassic() {
+		assertEquals(SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(null));
 	}
 
-	/// An explicit useKontext must still be honored when compositeMode is absent, so existing saved
-	/// configs keep working.
+	/// A saved config whose compositeMode was genuinely cleared resolves to classic whatever the
+	/// useKontext column says. Until P10-3 a cleared mode fell back to that boolean (true -> KONTEXT,
+	/// which every entry point then refused with 409); since P10-3 the boolean is not read at all, so
+	/// such a config simply renders classic. Pinned so the behaviour change is explicit, not accidental.
 	@Test
-	public void legacyBooleanStillHonoredWhenModeAbsent() throws Exception {
+	public void useKontextIsIgnoredWhenModeIsCleared() throws Exception {
 		BaseRecord cfg = sdConfig();
-		/// compositeMode now carries a "flux2" default and compositeMode WINS, so the legacy boolean
-		/// is only reachable once the mode is genuinely cleared — which is exactly the situation a
-		/// saved pre-compositeMode config presents.
 		cfg.set("compositeMode", "");
 		cfg.set("useKontext", false);
-		assertEquals(SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, true));
+		assertEquals(SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg));
 		cfg.set("useKontext", true);
-		assertEquals(SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.resolveMode(cfg, false));
-	}
-
-	/// A typo must degrade to classic with a warning, not silently pick a reference pipeline.
-	@Test
-	public void unrecognizedModeFallsBackToClassic() throws Exception {
-		BaseRecord cfg = sdConfig();
-		cfg.set("compositeMode", "fluxx2");
-		assertEquals(SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg, true));
+		assertEquals("useKontext=true no longer selects anything", SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg));
+		cfg.set("compositeMode", (String) null);
+		assertEquals("a null mode is the same as a blank one", SceneCompositeUtil.MODE_CLASSIC, SceneCompositeUtil.resolveMode(cfg));
 	}
 
 	/// The landscape reference is optional and ON by default. Every reference is encoded into FLUX.2's
@@ -644,18 +650,18 @@ public class TestFlux2Composite {
 		assertEquals("model is untouched", SWUtil.defaultFlux2Model(), req.getModel());
 	}
 
-	/// V3 §37.3 Disable (P2-8): the builder itself refuses the retired Kontext mode, so a caller that
-	/// bypasses the entry-point gates by passing the constant still gets no request (the kontext branch
-	/// stays in the source, unreachable, until Phase 10 Remove). Until P2-8 this case built a Kontext
-	/// request and pinned the prompt-override contract on it; that contract stays pinned on flux2 above.
+	/// The builder has exactly two branches (flux2, classic) since Phase 10 P10-3 removed the Kontext
+	/// one; any other mode string — the retired literal included — yields no request rather than a
+	/// silently-chosen pipeline. Callers resolve the mode through resolveMode first, which rejects
+	/// these values before they get here; this pins the builder's own answer for a caller that does not.
 	@Test
-	public void builderRefusesTheRetiredKontextMode() throws Exception {
-		for (String mode : new String[] { SceneCompositeUtil.MODE_KONTEXT, " Kontext " }) {
+	public void builderReturnsNullForAnUnknownMode() throws Exception {
+		for (String mode : new String[] { "kontext", " Kontext ", "flux3" }) {
 			SWTxt2Img req = SceneCompositeUtil.buildSceneRequest(mode,
 				LEFT_DESC, RIGHT_DESC, ACTION, SETTING, MOOD, OVERRIDE, "",
 				fixture("character1.png"), fixture("character2.png"), fixture("landscape1.png"),
 				0.65, null);
-			assertNull("mode '" + mode + "' is retired; the builder must not produce a request", req);
+			assertNull("mode '" + mode + "' is unknown; the builder must not produce a request", req);
 		}
 	}
 
@@ -759,14 +765,12 @@ public class TestFlux2Composite {
 	// bytes to SceneCompositeUtil — which discards them when flux2IncludeLandscapeRef is false.
 	// Whole cost, no benefit. These pin the decision that now gates both.
 
-	/// The reference-consumption question, per mode. KONTEXT stitches the landscape into its panel
-	/// strip and CLASSIC draws the portraits on top of it, so neither is ever suppressible.
+	/// The reference-consumption question, per mode. CLASSIC draws the portraits on top of the
+	/// landscape, so it is never suppressible.
 	@Test
-	public void kontextAndClassicAlwaysConsumeTheLandscape() throws Exception {
+	public void classicAlwaysConsumesTheLandscape() throws Exception {
 		BaseRecord cfg = sdConfig();
 		cfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
-		assertTrue("KONTEXT stitches the landscape into its strip - it always consumes one",
-			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_KONTEXT, cfg));
 		assertTrue("CLASSIC draws portraits onto the landscape canvas - it always consumes one",
 			SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_CLASSIC, cfg));
 	}
@@ -830,13 +834,12 @@ public class TestFlux2Composite {
 		assertTrue(SceneCompositeUtil.includesLandscapeReference(SceneCompositeUtil.MODE_CLASSIC, null));
 	}
 
-	/// skipLandscape is the explicit switch, and it wins over every mode - including the two that
+	/// skipLandscape is the explicit switch, and it wins over every mode - including classic, which
 	/// would otherwise consume the landscape. It already existed on olio.sd.config and was already
 	/// honored by ChatService.generateScene; the picture-book pipeline never read it.
 	@Test
 	public void skipLandscapeSuppressesEveryMode() throws Exception {
-		for (String mode : new String[] { SceneCompositeUtil.MODE_FLUX2,
-				SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.MODE_CLASSIC }) {
+		for (String mode : new String[] { SceneCompositeUtil.MODE_FLUX2, SceneCompositeUtil.MODE_CLASSIC }) {
 			BaseRecord cfg = sdConfig();
 			cfg.set("compositeMode", mode);
 			cfg.set("skipLandscape", Boolean.TRUE);
@@ -866,28 +869,36 @@ public class TestFlux2Composite {
 			PictureBookUtil.landscapeEnabled(cfg));
 	}
 
-	/// KONTEXT/CLASSIC are never auto-skipped: they genuinely consume the landscape, so suppressing
-	/// it would be a capability loss rather than a saving.
+	/// CLASSIC is never auto-skipped: it genuinely consumes the landscape, so suppressing it would be
+	/// a capability loss rather than a saving.
 	@Test
-	public void kontextAndClassicAreNeverAutoSkipped() throws Exception {
-		for (String mode : new String[] { SceneCompositeUtil.MODE_KONTEXT, SceneCompositeUtil.MODE_CLASSIC }) {
-			BaseRecord cfg = sdConfig();
-			cfg.set("compositeMode", mode);
-			cfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
-			assertTrue("compositeMode=" + mode + " consumes the landscape and must still generate it",
-				PictureBookUtil.landscapeEnabled(cfg));
-		}
+	public void classicIsNeverAutoSkipped() throws Exception {
+		BaseRecord cfg = sdConfig();
+		cfg.set("compositeMode", SceneCompositeUtil.MODE_CLASSIC);
+		cfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
+		assertTrue("compositeMode=classic consumes the landscape and must still generate it",
+			PictureBookUtil.landscapeEnabled(cfg));
 	}
 
-	/// Mode resolution inside the gate must match generateSceneImage's own inline branch: a config
-	/// whose compositeMode was genuinely cleared falls back to the legacy useKontext boolean.
+	/// The gate resolves the mode the same way everything else does since Phase 10 P10-3: a cleared
+	/// compositeMode is classic regardless of useKontext (so the landscape is generated — classic
+	/// consumes it), and a saved "kontext" is rejected rather than quietly read as either mode.
 	@Test
-	public void landscapeGateFollowsTheLegacyKontextFallback() throws Exception {
+	public void landscapeGateIgnoresUseKontextAndRejectsTheRetiredMode() throws Exception {
 		BaseRecord cfg = sdConfig();
 		cfg.set("compositeMode", (String) null);
 		cfg.set("useKontext", Boolean.TRUE);
 		cfg.set("flux2IncludeLandscapeRef", Boolean.FALSE);
-		assertTrue("A cleared compositeMode with useKontext=true resolves KONTEXT, which consumes a landscape",
+		assertTrue("A cleared compositeMode resolves classic (useKontext is not read), which consumes a landscape",
 			PictureBookUtil.landscapeEnabled(cfg));
+		assertTrue(PictureBookUtil.landscapeSkipReason(cfg).contains("compositeMode=classic"));
+
+		cfg.set("compositeMode", "kontext");
+		try {
+			PictureBookUtil.landscapeEnabled(cfg);
+			fail("a saved compositeMode=kontext must be rejected, not downgraded");
+		} catch (IllegalArgumentException e) {
+			assertTrue(e.getMessage(), e.getMessage().contains("'kontext'"));
+		}
 	}
 }

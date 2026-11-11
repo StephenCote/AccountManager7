@@ -10314,14 +10314,14 @@
 			"name": "useKontext",
 			"type": "boolean",
 			"default": false,
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Legacy: use the FLUX Kontext stitch-and-prompt pipeline. Ignored when compositeMode is set."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): legacy switch for the FLUX Kontext stitch-and-prompt pipeline. Not read by anything since Phase 10 P10-3; the column is dropped at P10-4."
 		},
 		{
 			"name": "compositeMode",
 			"type": "string",
 			"maxLength": 16,
 			"default": "flux2",
-			"description": "Scene composite pipeline: 'flux2' (default) or 'classic'. 'kontext' is retired (V3 design section 37.3; disabled in Phase 2, removed in Phase 10) and is refused by every entry point."
+			"description": "Scene composite pipeline: 'flux2' (default) or 'classic'. 'kontext' was retired (V3 design section 37.3) and removed at Phase 10 P10-3: it is an unsupported value, refused like any other unknown mode (400, expected flux2|classic)."
 		},
 		{
 			"name": "flux2Model",

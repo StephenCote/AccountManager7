@@ -16,9 +16,9 @@ import org.junit.Test;
  * call on every scene ({@code stripSDXLWeighting}: {@code SWUtil.newFlux2SceneTxt2Img} and the portrait /
  * landscape builders). No database, no server, no {@code BaseTest}.
  * <p>
- * Relocated here by P5-3 from {@code TestKontext.testStripSDXLWeighting}: that class is Surefire-excluded
- * ({@code pom.xml}), so the only test of a helper on the live path was never run. The assertions are the
- * original ones, unchanged.
+ * Relocated here by P5-3 from {@code TestKontext.testStripSDXLWeighting}: that class was Surefire-excluded
+ * ({@code pom.xml}), so the only test of a helper on the live path was never run; the class itself was
+ * deleted at Phase 10 P10-3. The assertions are the original ones, unchanged.
  */
 public class TestSwUtilPromptText {
 

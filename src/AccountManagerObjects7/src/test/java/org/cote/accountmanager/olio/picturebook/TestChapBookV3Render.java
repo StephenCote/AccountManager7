@@ -15,7 +15,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -25,6 +24,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.illustration.ModelResolver;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.RendererAdapter;
@@ -52,8 +52,8 @@ import org.junit.Before;
 import org.junit.Test;
 
 /**
- * PictureBook V3 Phase 1 P1-9 and Phase 2 P2-6 (design §24, §28.1): a ChapBook page on
- * {@code chapbook.renderPath=v3} renders as a LANDSCAPE graph node with an artifact through the same
+ * PictureBook V3 Phase 1 P1-9 and Phase 2 P2-6 (design §24, §28.1): a ChapBook page renders (since Phase 10
+ * P10-1 the only path) as a LANDSCAPE graph node with an artifact through the same
  * {@code pb.render} job PictureBooks use, the page's {@code imageStale} maps to node STALE, and
  * select/approve/reject plus auto-approve apply. Since P2-6 the page is <em>planned</em>: the executor builds
  * and persists a {@code renderPlan} artifact (TEXT_ONLY, the page's {@code sdPrompt} as the plan's location
@@ -84,10 +84,6 @@ public class TestChapBookV3Render extends BaseTest {
 	/// P2-6 §24: a scene override that sets every knob the plan path reports under configNotApplied.
 	private static final String OVERRIDE_STYLE = "photograph";
 	private static final String OVERRIDE_NEGATIVE = "blurry, low quality, text";
-	/// Each configNotApplied entry is "CODE: text" for one of the four published codes (CFG_CLAMPED since P10-A 5).
-	private static final Pattern NOT_APPLIED_SHAPE = Pattern.compile("^(" + PbNodeExecutor.NOT_APPLIED_HIRES + "|"
-		+ PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE + "|" + PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE + "|"
-		+ PbNodeExecutor.NOT_APPLIED_CFG_CLAMPED + "): \\S");
 
 	private static final String POEM_TEXT =
 		"Outside, all is pristine,\n" +
@@ -111,8 +107,6 @@ public class TestChapBookV3Render extends BaseTest {
 
 	@Before
 	public void setUpChapBookV3() {
-		assertTrue("resource.properties must put ChapBooks on v3 for this class (BaseTest re-pins it)",
-			PbRenderPath.V3.equals(PbRenderPath.valueFor(chapBookStub())));
 		OrganizationContext ctx = getTestOrganization(ORG_PATH);
 		testUser = IOSystem.getActiveContext().getFactory()
 			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());
@@ -196,8 +190,7 @@ public class TestChapBookV3Render extends BaseTest {
 
 	/**
 	 * A page with no prompt is a 409 from the facade and gets no node; through the ChapBook seam it is
-	 * {@code SKIPPED_NO_PROMPT} reporting the book's actual render path ({@code v3}, not the v1 ctor default),
-	 * and {@code createImage} is never reached. A ChapBook created without a chatConfig stores a fallback-shaped
+	 * {@code SKIPPED_NO_PROMPT} and {@code createImage} is never reached. A ChapBook created without a chatConfig stores a fallback-shaped
 	 * prompt, so the page is un-prompted explicitly through {@link ChapBookUtil#setSceneLandscapePrompt}.
 	 */
 	@Test
@@ -213,7 +206,6 @@ public class TestChapBookV3Render extends BaseTest {
 		ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(testUser, sceneOid, sdu, null, null, null);
 		assertNotNull(result);
 		assertEquals(ChapBookUtil.SceneRenderStatus.SKIPPED_NO_PROMPT, result.status);
-		assertEquals("A skipped page must report the book's real render path", PbRenderPath.V3, result.renderPath);
 		assertTrue("With chatConfig == null and no stored prompt the LLM step is reported unavailable", result.llmUnavailable);
 		assertNull("No job for a skipped page", result.jobId);
 		assertNull("No node for a skipped page", result.nodeObjectId);
@@ -347,55 +339,6 @@ public class TestChapBookV3Render extends BaseTest {
 		} catch (PictureBookException e) {
 			assertEquals(409, e.getStatus());
 			assertTrue("409 must name the missing prompts, got: " + e.getMessage(), e.getMessage().contains("has a prompt"));
-		}
-	}
-
-	/**
-	 * {@code v1} is the ChapBook rollback value (§28.1 Stage 2; the product default is {@code v3}): configured
-	 * explicitly, the old path comes back - the seam renders synchronously on the request thread and reports
-	 * {@code v1}, no node or plan artifact is made, the detachable submit returns {@code null}, and the v3 facade
-	 * entry refuses 409. No Swarm gate: v1 proceeds with the deployment default even when the inventory is down.
-	 */
-	@Test
-	public void v1RollbackReenablesTheOldPath() throws Exception {
-		Fixture fx = createFixture("v1");
-		String sceneOid = fx.sceneOids.get(0);
-		assertTrue(ChapBookUtil.setSceneLandscapePrompt(testUser, sceneOid, GENUINE_PROMPT));
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
-		try {
-			CapturingSdu sdu = new CapturingSdu(swarmServer(), false);
-			ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(testUser, sceneOid, sdu, null, null, null);
-			assertEquals("v1 renders on the request thread and reports v1", PbRenderPath.V1, result.renderPath);
-			assertEquals(ChapBookUtil.SceneRenderStatus.FAILED, result.status);
-			assertNull("v1 has no job", result.jobId);
-			assertNull("v1 has no node", result.nodeObjectId);
-			assertEquals("v1 reaches txt2img once, through createImage", 1, sdu.captured.size());
-			String v1Prompt = sdu.captured.get(0).getPrompt();
-			assertTrue("v1 renders the stored prompt, got: " + v1Prompt, v1Prompt != null && v1Prompt.startsWith(GENUINE_PROMPT));
-
-			assertNull("The detachable submit must return null on v1",
-				ChapBookUtil.submitChapBookRender(testUser, fx.bookOid, "SWARM", swarmServer(), null, null));
-
-			try {
-				PbServiceFacade.requestChapBookPageRender(testUser, fx.bookOid, sceneOid, sdu, swarmServer());
-				fail("The v3 facade entry must refuse on v1");
-			} catch (PictureBookException e) {
-				assertEquals(409, e.getStatus());
-				assertTrue("The refusal must name the render path, got: " + e.getMessage(),
-					e.getMessage().startsWith(PbRenderPath.REFUSAL_PREFIX));
-			}
-			// createChapBook makes the workflow (and its unlinked cb-scene-<i> nodes) on every path; what v1 must
-			// never do is add the LANDSCAPE page node or link the scene to one.
-			BaseRecord book = PbBookUtil.readBook(testUser, fx.bookOid, fx.orgId);
-			BaseRecord workflow = PbGraphUtil.findWorkflow(testUser, book);
-			if (workflow != null) {
-				assertNull("v1 creates no page node",
-					PbPipelineUtil.findNodeByHandle(testUser, workflow, PbPipelineUtil.landscapeHandle(sceneOid)));
-			}
-			BaseRecord after = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
-			assertNull("v1 never links the scene to a node", after.get(OlioFieldNames.FIELD_PB_SCENE_NODE));
-		} finally {
-			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
 		}
 	}
 
@@ -572,7 +515,6 @@ public class TestChapBookV3Render extends BaseTest {
 			+ " artifact=" + result.artifactObjectId + " review=" + result.reviewStatus);
 
 		assertEquals("The live render must RENDER", ChapBookUtil.SceneRenderStatus.RENDERED, result.status);
-		assertEquals(PbRenderPath.V3, result.renderPath);
 		assertNotNull(result.jobId);
 		assertNotNull(result.runObjectId);
 		assertNotNull(result.nodeObjectId);
@@ -675,15 +617,16 @@ public class TestChapBookV3Render extends BaseTest {
 	}
 
 	/**
-	 * P2-6 (§24 as-built): what the page's plan path does not apply reaches the caller through the per-node
-	 * outcome of the {@code pb.render} job ({@code PbRenderJobUtil} copies the executor's {@code configNotApplied}
-	 * onto the outcome), never as a degradation. Page 0 - no book tier, no override: the effective config is the
-	 * schema default ({@code hires=true}, no style, no negative), so the outcome reports exactly
-	 * {HIRES, DEFAULT_NEGATIVE} and the txt2img request the job sent carries no refiner and no negative. Page 1 -
-	 * a scene override with {@code hires=false}, {@code style=photograph} and a {@code negativePrompt}, mirrored
-	 * onto the node by the facade: exactly {STYLE_CLAUSE} naming the style, and the config's negative is what was
-	 * sent. Each set is also checked against the §24 iff-rule computed from the node's persisted plan. Two real
-	 * renders through the facade's page seam and the job.
+	 * P2-6 (§24 as-built) as re-pinned for ChapBook straight generation ({@link ChapBookStraightGen}, 2026-11-10):
+	 * a ChapBook page is a TEXT_ONLY plan, so the effective config's hires, style clause and the default negative
+	 * are honoured rather than reported, and the {@code pb.render} job's per-node outcome carries no
+	 * {@code configNotApplied} (the executor's list is emptied by {@code dropHonoured}; the job serialiser drops an
+	 * empty list) and no degradation. Page 0 - no book tier, no override: the schema default ({@code hires=true},
+	 * no style, no negative) - the persisted plan compiles the default negative into BASE, the txt2img request
+	 * carries it, and no refiner is sent because the default config names no refinerModel. Page 1 - a scene
+	 * override with {@code hires=false}, {@code style=photograph} and a {@code negativePrompt}, mirrored onto the
+	 * node by the facade: the photograph clause is appended to the BASE prompt, the config's negative is what was
+	 * sent, no refiner. Two real renders through the facade's page seam and the job.
 	 */
 	@Test(timeout = 2L * RENDER_TIMEOUT_MS)
 	public void pageRenderReportsConfigNotAppliedThroughTheJobOutcome() throws Exception {
@@ -713,26 +656,24 @@ public class TestChapBookV3Render extends BaseTest {
 		Object deg0 = outcome0.get("degradations");
 		assertTrue("Not a degradation (absent or empty), got " + deg0, deg0 == null || ((List<?>) deg0).isEmpty());
 		Object na0 = outcome0.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED);
-		assertTrue("The outcome carries configNotApplied as a list, got " + na0, na0 instanceof List);
-		Set<String> codes0 = notAppliedCodes((List<?>) na0);
+		assertTrue("Straight generation honours hires and the default negative: configNotApplied absent or empty, got " + na0,
+			na0 == null || ((List<?>) na0).isEmpty());
 		RenderPlan plan0 = selectedPlanOf(PbGraphUtil.readNode(testUser, node0Oid, fx.orgId));
+		assertTrue("A ChapBook page is a TEXT_ONLY plan (straight generation applies)", ChapBookStraightGen.isTextOnly(plan0));
 		Map<String, Object> cfg0 = plan0.getConfig();
 		assertEquals("The schema default hires=true is the effective config", Boolean.TRUE, cfg0.get("hires"));
 		assertNull("No tier set a style", cfg0.get("style"));
 		assertNull("No tier set a negativePrompt", cfg0.get("negativePrompt"));
+		assertNull("The default config names no refinerModel", cfg0.get("refinerModel"));
 		String negative0 = plan0.getCompiled().get(RenderPlan.STAGE_BASE).getNegative();
-		assertTrue("No exclusions and no negativePrompt compile to a blank negative, got '" + negative0 + "'",
-			negative0 == null || negative0.isBlank());
-		assertEquals("HIRES iff hires, STYLE_CLAUSE iff style, DEFAULT_NEGATIVE iff blank negative: " + na0,
-			expectedCodesOf(plan0), codes0);
-		assertEquals(new HashSet<>(Arrays.asList(PbNodeExecutor.NOT_APPLIED_HIRES, PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE)), codes0);
+		assertEquals("No exclusions and no negativePrompt: the persisted plan compiles the default negative into BASE",
+			NarrativeUtil.getDefaultNegativePrompt(), negative0);
 		assertEquals("txt2img must be reached once", 1, sdu0.captured.size());
 		SWTxt2Img req0 = sdu0.captured.get(0);
 		assertEquals("The deployment default (installed) is what was sent", installed, req0.getModel());
-		assertNull("HIRES: no refiner pass was sent", req0.getRefinerModel());
-		assertTrue("DEFAULT_NEGATIVE: no negative was sent (the v1 default is not applied), got " + req0.getNegativePrompt(),
-			req0.getNegativePrompt() == null || req0.getNegativePrompt().isBlank());
-		logger.info("MEASURED: P2-6 page 0 configNotApplied=" + na0);
+		assertNull("hires=true but no refinerModel in the config: the adapter skips the refiner", req0.getRefinerModel());
+		assertEquals("The default negative is what was sent", NarrativeUtil.getDefaultNegativePrompt(), req0.getNegativePrompt());
+		logger.info("MEASURED: P2-6 page 0 configNotApplied=" + na0 + " negativeSent=" + req0.getNegativePrompt().length() + " chars");
 
 		/// Page 1: a scene override setting each knob the plan path reports, mirrored onto the node by the facade.
 		String scene1 = fx.sceneOids.get(1);
@@ -753,8 +694,8 @@ public class TestChapBookV3Render extends BaseTest {
 		Object deg1 = outcome1.get("degradations");
 		assertTrue("An installed override is not a degradation (absent or empty), got " + deg1, deg1 == null || ((List<?>) deg1).isEmpty());
 		Object na1 = outcome1.get(PbNodeExecutor.KEY_CONFIG_NOT_APPLIED);
-		assertTrue("The outcome carries configNotApplied as a list, got " + na1, na1 instanceof List);
-		Set<String> codes1 = notAppliedCodes((List<?>) na1);
+		assertTrue("Straight generation applies the style clause: configNotApplied absent or empty, got " + na1,
+			na1 == null || ((List<?>) na1).isEmpty());
 		RenderPlan plan1 = selectedPlanOf(node1);
 		Map<String, Object> cfg1 = plan1.getConfig();
 		assertEquals("The override's hires=false is the effective config", Boolean.FALSE, cfg1.get("hires"));
@@ -762,16 +703,17 @@ public class TestChapBookV3Render extends BaseTest {
 		assertEquals("The override's negativePrompt is the effective config", OVERRIDE_NEGATIVE, cfg1.get("negativePrompt"));
 		assertEquals("The config's negativePrompt compiles into the BASE negative", OVERRIDE_NEGATIVE,
 			plan1.getCompiled().get(RenderPlan.STAGE_BASE).getNegative());
-		assertEquals("HIRES iff hires, STYLE_CLAUSE iff style, DEFAULT_NEGATIVE iff blank negative: " + na1,
-			expectedCodesOf(plan1), codes1);
-		assertEquals(new HashSet<>(Arrays.asList(PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE)), codes1);
-		assertTrue("STYLE_CLAUSE names the style it did not apply: " + na1, String.valueOf(((List<?>) na1).get(0)).contains("'" + OVERRIDE_STYLE + "'"));
+		String prompt1 = plan1.getCompiled().get(RenderPlan.STAGE_BASE).getPrompt();
+		assertTrue("The BASE prompt still carries the scene's landscape prompt: " + prompt1, prompt1.contains(SECOND_PROMPT));
+		assertTrue("The config's photograph clause is appended to the BASE prompt (SDUtil.applyConfigStyle): " + prompt1,
+			prompt1.contains("(Photograph) taken with a ("));
 		assertEquals("txt2img must be reached once", 1, sdu1.captured.size());
 		SWTxt2Img req1 = sdu1.captured.get(0);
 		assertEquals("The override's installed checkpoint is what was sent", installed, req1.getModel());
 		assertNull("hires=false: no refiner pass was sent", req1.getRefinerModel());
 		assertEquals("The compiled negative is what was sent", OVERRIDE_NEGATIVE, req1.getNegativePrompt());
-		logger.info("MEASURED: P2-6 page 1 configNotApplied=" + na1);
+		assertEquals("The styled BASE prompt is what was sent", prompt1, req1.getPrompt());
+		logger.info("MEASURED: P2-6 page 1 configNotApplied=" + na1 + " prompt=" + prompt1);
 	}
 
 	/**
@@ -1251,8 +1193,7 @@ public class TestChapBookV3Render extends BaseTest {
 
 		long t0 = System.currentTimeMillis();
 		ChapBookUtil.ChapBookRenderSummary summary = ChapBookUtil.submitChapBookRender(testUser, fx.bookOid, "SWARM", server, null, null);
-		assertNotNull("The bulk submit must return a summary on v3", summary);
-		assertEquals(PbRenderPath.V3, summary.renderPath);
+		assertNotNull("The bulk submit must return a summary", summary);
 		assertTrue("The bulk submit must detach", summary.pending);
 		assertNotNull(summary.jobId);
 		assertNotNull(summary.runObjectId);
@@ -1321,40 +1262,6 @@ public class TestChapBookV3Render extends BaseTest {
 		RenderPlan plan = PbRenderPlanUtil.readPlanArtifact(planArtifact);
 		assertNotNull("The renderPlan artifact must decode", plan);
 		return plan;
-	}
-
-	/** Every configNotApplied entry is "CODE: text" for a published code, no code twice; returns the codes. */
-	private static Set<String> notAppliedCodes(List<?> entries) {
-		Set<String> codes = new HashSet<>();
-		for (Object o : entries) {
-			assertTrue("a configNotApplied entry is a string: " + o, o instanceof String);
-			String e = (String) o;
-			assertTrue("entry shape 'CODE: text' with a published code: '" + e + "'", NOT_APPLIED_SHAPE.matcher(e).find());
-			String code = e.substring(0, e.indexOf(':'));
-			assertTrue("code " + code + " reported twice: " + entries, codes.add(code));
-		}
-		return codes;
-	}
-
-	/**
-	 * The §24 contract computed from the persisted plan itself: HIRES iff the plan's config asks for hires,
-	 * STYLE_CLAUSE iff it carries a non-blank style, DEFAULT_NEGATIVE iff the compiled BASE negative is blank.
-	 */
-	private static Set<String> expectedCodesOf(RenderPlan plan) {
-		Set<String> expected = new HashSet<>();
-		Map<String, Object> cfg = plan.getConfig();
-		if (Boolean.TRUE.equals(cfg.get("hires"))) {
-			expected.add(PbNodeExecutor.NOT_APPLIED_HIRES);
-		}
-		Object style = cfg.get("style");
-		if (style instanceof String && !((String) style).isBlank()) {
-			expected.add(PbNodeExecutor.NOT_APPLIED_STYLE_CLAUSE);
-		}
-		String negative = plan.getCompiled().get(RenderPlan.STAGE_BASE).getNegative();
-		if (negative == null || negative.isBlank()) {
-			expected.add(PbNodeExecutor.NOT_APPLIED_DEFAULT_NEGATIVE);
-		}
-		return expected;
 	}
 
 	/** The one node outcome of a COMPLETED single-page {@code pb.render} job, with the run-level counts checked. */
@@ -1497,17 +1404,6 @@ public class TestChapBookV3Render extends BaseTest {
 			}
 		}
 		return out;
-	}
-
-	/** A detached CHAPBOOK-typed book record, only for asking {@link PbRenderPath} which switch applies. */
-	private static BaseRecord chapBookStub() {
-		try {
-			BaseRecord stub = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK, new String[] { OlioFieldNames.FIELD_PB_BOOK_TYPE });
-			stub.setValue(OlioFieldNames.FIELD_PB_BOOK_TYPE, "CHAPBOOK");
-			return stub;
-		} catch (Exception e) {
-			throw new AssertionError("Cannot build a chapbook stub: " + e.getMessage(), e);
-		}
 	}
 
 	private BaseRecord createPoem(BaseRecord user, String groupPath, String name, String text) {

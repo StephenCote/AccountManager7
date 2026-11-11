@@ -53,14 +53,10 @@ services:
       HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-}
       # Concurrent SD generations per backend for PictureBook render runs; empty = 1.
       PB_RENDER_SD_PERMITS: ${PB_RENDER_SD_PERMITS:-}
-      # PictureBook V3 render-path switch per product: v1 | v3 (graph rendering). Boot-pinned;
-      # rollback = v1 + restart. PictureBook is v3 from Stage 2 (Phase 7: the PB1 entry points refuse
-      # with "replaced by V3"; PICTUREBOOK_RENDER_PATH=v1 is the rollback, logged at WARN); ChapBook is v3
-      # from Stage 2 (the old ChapBook path is disabled; CHAPBOOK_RENDER_PATH=v1 is the rollback, logged at
-      # WARN); chat is v3 (P10-A 0: the chat scene renders through the shared illustration service;
-      # CHAT_RENDER_PATH=v1 is the rollback to the inline composite, logged at WARN).
-      PICTUREBOOK_RENDER_PATH: ${PICTUREBOOK_RENDER_PATH:-v3}
-      CHAPBOOK_RENDER_PATH: ${CHAPBOOK_RENDER_PATH:-v3}
+      # Chat scene render-path switch: v1 | v3, default v3 (P10-A 0: the chat scene renders through the
+      # shared illustration service; CHAT_RENDER_PATH=v1 is the rollback to the inline composite, logged
+      # at WARN). Boot-pinned; rollback = v1 + restart. PictureBook and ChapBook are V3-only since
+      # Phase 10 P10-1 and have no switch.
       CHAT_RENDER_PATH: ${CHAT_RENDER_PATH:-v3}
       # Must include whatever origin the browser actually uses to reach nginx.
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.12:8899,https://192.168.1.12:8443}

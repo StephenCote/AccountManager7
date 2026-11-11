@@ -29,15 +29,19 @@ import org.junit.Test;
  * {@link ModelTaskKeys} against a fixed in-memory inventory shaped like a Swarm listing (folder +
  * extension). No DB, no SD server, no BaseTest. The family rules come from the real
  * {@code capabilities.json} on the classpath (flux2 enabled/refs/masks since P5-1, sdxl enabled/no
- * refs/masks, kontext disabled), so a change to that resource is caught here too.
+ * refs/masks; the Kontext family row went at Phase 10 P10-3, so a flux1Kontext* name matches no
+ * family at all), so a change to that resource is caught here too.
  */
 public class TestModelResolver {
 
 	static final String SDXL = "SDXL/juggernautXL_ragnarokBy.safetensors";
 	static final String FLUX2 = "Flux/flux2Klein_9b.safetensors";
+	/// A LISTED Kontext checkpoint: since P10-3 it is simply a listed model of no known family.
 	static final String KONTEXT = "Flux/flux1-kontext-dev.safetensors";
 	static final String UNKNOWN_FAMILY = "misc/foo_v1.safetensors";
 	static final List<String> INV = Arrays.asList(SDXL, FLUX2, KONTEXT, UNKNOWN_FAMILY);
+	/// The same inventory without any Kontext checkpoint — the shipped .39 shape (design §36.1).
+	static final List<String> INV_NO_KONTEXT = Arrays.asList(SDXL, FLUX2, UNKNOWN_FAMILY);
 
 	@Before
 	public void reload() {
@@ -282,8 +286,11 @@ public class TestModelResolver {
 
 	// ─────────────────────────────── family rules ───────────────────────────────
 
+	/// Phase 10 P10-3 (design §37.5, §6.C 248 d): with the Kontext family row gone from
+	/// capabilities.json, a LISTED flux1Kontext* checkpoint is a model of no known family — refused
+	/// as FAMILY_UNKNOWN exactly like misc/foo_v1, no dedicated "disabled" answer any more.
 	@Test
-	public void kontextOverrideRefusedFamilyDisabled() {
+	public void listedKontextCheckpointIsFamilyUnknown() {
 		Resolution r = ModelResolver.resolve(req(PbModelTaskEnumType.PORTRAIT)
 			.override("flux1-kontext-dev")
 			.deploymentModel("juggernautXL_ragnarokBy")
@@ -293,14 +300,15 @@ public class TestModelResolver {
 		assertEquals(SDXL, r.getModel());
 		assertTrue(r.isDegraded());
 		Candidate k = r.getCandidates().get(0);
-		assertEquals(Reason.FAMILY_DISABLED, k.getReason());
+		assertEquals(Reason.FAMILY_UNKNOWN, k.getReason());
 		assertEquals(KONTEXT, k.getListedName());
-		assertEquals(RendererCapabilities.PATTERN_KONTEXT, k.getFamily());
-		assertTrue(r.getDegradationText(), r.getDegradationText().contains("disabled"));
+		assertNull(k.getCapabilities());
+		assertNull(k.getFamily());
+		assertTrue(r.getDegradationText(), r.getDegradationText().contains("no known family"));
 	}
 
 	@Test
-	public void kontextNeverChosenFromAnyStep() {
+	public void listedKontextNeverChosenFromAnyStep() {
 		Resolution r = ModelResolver.resolve(req(PbModelTaskEnumType.PORTRAIT)
 			.override("flux1-kontext-dev")
 			.taskModels(taskModels(PbModelTaskEnumType.PORTRAIT, KONTEXT))
@@ -311,8 +319,41 @@ public class TestModelResolver {
 		assertEquals(Reason.NO_CANDIDATE, r.getReason());
 		assertEquals(4, r.getCandidates().size());
 		for(Candidate c : r.getCandidates()) {
-			assertEquals(c.toString(), Reason.FAMILY_DISABLED, c.getReason());
+			assertEquals(c.toString(), Reason.FAMILY_UNKNOWN, c.getReason());
 			assertEquals(KONTEXT, c.getListedName());
+		}
+	}
+
+	/// Design §37.5: a style (or any step) naming a flux1Kontext* checkpoint that the server does not
+	/// list resolves to "not installed" like any other missing model — the shipped case, since no
+	/// Kontext checkpoint is installed on .39 (§36.1). The old schema default name is used verbatim.
+	@Test
+	public void unlistedFlux1KontextCheckpointIsNotInstalledLikeAnyOtherMissingModel() {
+		Resolution r = ModelResolver.resolve(req(PbModelTaskEnumType.PORTRAIT)
+			.styleModel("flux1Kontext_flux1KontextDev")
+			.deploymentModel("juggernautXL_ragnarokBy")
+			.build(), INV_NO_KONTEXT);
+		assertTrue(r.isResolved());
+		assertEquals(Step.DEPLOYMENT_DEFAULT, r.getStep());
+		assertEquals(SDXL, r.getModel());
+		assertTrue(r.isDegraded());
+		Candidate k = r.getCandidates().get(0);
+		assertEquals(Step.STYLE_DEFAULT, k.getStep());
+		assertEquals(Reason.NOT_INSTALLED, k.getReason());
+		assertNull(k.getListedName());
+		assertNull(k.getFamily());
+
+		Resolution all = ModelResolver.resolve(req(PbModelTaskEnumType.PORTRAIT)
+			.override("flux1Kontext_flux1KontextDev")
+			.taskModels(taskModels(PbModelTaskEnumType.PORTRAIT, "Flux/flux1Kontext_flux1KontextDev.safetensors"))
+			.styleModel("flux1Kontext_flux1KontextDev")
+			.deploymentModel("flux1Kontext_flux1KontextDev.safetensors")
+			.build(), INV_NO_KONTEXT);
+		assertFalse(all.isResolved());
+		assertEquals(Reason.NO_CANDIDATE, all.getReason());
+		assertEquals(4, all.getCandidates().size());
+		for(Candidate c : all.getCandidates()) {
+			assertEquals(c.toString(), Reason.NOT_INSTALLED, c.getReason());
 		}
 	}
 
@@ -380,13 +421,11 @@ public class TestModelResolver {
 	public void supportsTaskTable() {
 		RendererCapabilities sdxl = RendererCapabilities.forModel(SDXL);
 		RendererCapabilities flux2 = RendererCapabilities.forModel(FLUX2);
-		RendererCapabilities kontext = RendererCapabilities.forModel(KONTEXT);
 		assertNotNull(sdxl);
 		assertNotNull(flux2);
-		assertNotNull(kontext);
+		assertNull("no family matches a Kontext checkpoint since Phase 10 P10-3", RendererCapabilities.forModel(KONTEXT));
 		assertEquals(Reason.FAMILY_UNKNOWN, ModelResolver.supportsTask(null, PbModelTaskEnumType.PORTRAIT, false));
-		assertEquals(Reason.FAMILY_DISABLED, ModelResolver.supportsTask(kontext, PbModelTaskEnumType.PORTRAIT, false));
-		assertEquals(Reason.FAMILY_DISABLED, ModelResolver.supportsTask(kontext, PbModelTaskEnumType.SCENE_DIRECT, true));
+		assertEquals(Reason.FAMILY_UNKNOWN, ModelResolver.supportsTask(RendererCapabilities.forModel(KONTEXT), PbModelTaskEnumType.SCENE_DIRECT, true));
 		for(PbModelTaskEnumType t : new PbModelTaskEnumType[] {PbModelTaskEnumType.PORTRAIT, PbModelTaskEnumType.LOCATION, PbModelTaskEnumType.UPSCALE}) {
 			assertEquals(t.name(), Reason.OK, ModelResolver.supportsTask(sdxl, t, false));
 			assertEquals(t.name(), Reason.OK, ModelResolver.supportsTask(flux2, t, false));
@@ -463,7 +502,6 @@ public class TestModelResolver {
 	@Test
 	public void modeLiteralsMirrorSceneCompositeUtil() {
 		assertEquals(SceneCompositeUtil.MODE_FLUX2, ModelResolver.MODE_FLUX2);
-		assertEquals(SceneCompositeUtil.MODE_KONTEXT, ModelResolver.MODE_KONTEXT);
 		assertEquals(SceneCompositeUtil.MODE_CLASSIC, ModelResolver.MODE_CLASSIC);
 	}
 

@@ -106,10 +106,10 @@ public class TestPbRenderPlanActors extends BaseTest {
 	/// whose inventory is seeded in-JVM, so the family alone decides slots, masks and the INPAINT pick.
 	private static final String FLUX2_SERVER = "http://p52-flux2.invalid:1";
 	private static final String SDXL_SERVER = "http://p52-sdxl.invalid:1";
-	private static final String KONTEXT_SERVER = "http://p52-kontext.invalid:1";
+	private static final String NOFAMILY_SERVER = "http://p52-nofamily.invalid:1";
 	private static final String FLUX2_MODEL = "flux2Klein_p52.safetensors";
 	private static final String SDXL_MODEL = "p52Scene_sdxl.safetensors";
-	private static final String KONTEXT_MODEL = "p52_kontext.safetensors";
+	private static final String NOFAMILY_MODEL = "p52_nofamily.safetensors";
 	private static final String STYLE_PATH = "~/p52styles";
 	private static final String[] CAST = new String[] { "Ilsa Varne", "Tobin Reske", "Mara Quill", "Dov Halloran" };
 
@@ -594,9 +594,10 @@ public class TestPbRenderPlanActors extends BaseTest {
 	 * (3 slots, masks, inpaint) -> priorities 0-2 BASE, the 4th ACTOR_REGION with its own compiled
 	 * {@code ACTOR_REGION#actor} key (no bare {@code ACTOR_REGION}), a resolved INPAINT pick and SEQUENTIAL_INPAINT;
 	 * the same 4th actor without a box (R4) is {@code ACTOR_TEXT_ONLY "reference limit 3; no box for a region
-	 * pass"} under DIRECT_REFERENCE. sdxl caps (0 slots, masks, inpaint) -> ACTOR_REGION for all four. kontext
-	 * (disabled family) -> no pick resolves, so no actor is referenced and the plan is TEXT_ONLY carrying the
-	 * resolver's MODEL_SUBSTITUTED degradation.
+	 * pass"} under DIRECT_REFERENCE. sdxl caps (0 slots, masks, inpaint) -> ACTOR_REGION for all four. A listed
+	 * checkpoint of no known family (the shape a Kontext checkpoint has since Phase 10 P10-3 removed its family
+	 * row) -> no pick resolves, so no actor is referenced and the plan is TEXT_ONLY carrying the resolver's
+	 * MODEL_SUBSTITUTED degradation.
 	 */
 	@Test
 	public void case04_overflowBecomesActorRegionOnMaskFamily() throws Exception {
@@ -698,27 +699,28 @@ public class TestPbRenderPlanActors extends BaseTest {
 			assertFalse("no bare ACTOR_REGION key", sdxl.getCompiled().containsKey(RenderPlan.STAGE_ACTOR_REGION));
 			assertNoActorDegradation(sdxl);
 
-			/// kontext: disabled family -> nothing resolves, caps unknown, no actor referenced
-			seedInventory(KONTEXT_SERVER, List.of(KONTEXT_MODEL));
-			assertEquals("precondition: kontext is a disabled family", ModelResolver.Reason.FAMILY_DISABLED,
-				ModelResolver.supportsTask(RendererCapabilities.forModel(KONTEXT_MODEL), PbModelTaskEnumType.LOCATION, false));
-			styles.add(pinBookStyle(u, bk, "kontext", KONTEXT_MODEL));
-			RenderPlan kontext = PbRenderPlanUtil.buildScenePlan(u, PbBookUtil.readBook(u, oidOf(bk), orgId), freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, KONTEXT_SERVER);
-			log("kontext strategy=" + kontext.getStrategy().getName() + " reason=" + kontext.getStrategy().getReason() + " models=" + kontext.getModels() + " degradations=" + kontext.getDegradations());
-			assertEquals("kontext strategy", PbStrategyEnumType.TEXT_ONLY, kontext.getStrategy().getName());
-			assertEquals("kontext reason", StrategySelector.REASON_NO_REFERENCED_ACTORS, kontext.getStrategy().getReason());
-			assertFalse("kontext LOCATION pick unresolved", kontext.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.LOCATION)).isResolved());
-			assertFalse("kontext INPAINT pick unresolved", kontext.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.INPAINT)).isResolved());
-			assertTrue("kontext: no actor referenced", kontext.getActors().stream().noneMatch(RenderPlan.Actor::isReferenced));
-			assertTrue("kontext: MODEL_SUBSTITUTED reported: " + kontext.getDegradations(),
-				kontext.getDegradations().stream().anyMatch(d -> RenderPlan.Degradation.MODEL_SUBSTITUTED.equals(d.getCode())));
-			assertTrue("kontext: no ACTOR_REGION compiled", kontext.getCompiled().keySet().stream().noneMatch(k -> k.startsWith(RenderPlan.STAGE_ACTOR_REGION)));
+			/// no known family: nothing resolves, caps unknown, no actor referenced
+			seedInventory(NOFAMILY_SERVER, List.of(NOFAMILY_MODEL));
+			assertNull("precondition: the checkpoint matches no family", RendererCapabilities.forModel(NOFAMILY_MODEL));
+			assertEquals("precondition: no family -> FAMILY_UNKNOWN", ModelResolver.Reason.FAMILY_UNKNOWN,
+				ModelResolver.supportsTask(RendererCapabilities.forModel(NOFAMILY_MODEL), PbModelTaskEnumType.LOCATION, false));
+			styles.add(pinBookStyle(u, bk, "nofamily", NOFAMILY_MODEL));
+			RenderPlan nofamily = PbRenderPlanUtil.buildScenePlan(u, PbBookUtil.readBook(u, oidOf(bk), orgId), freshScene, PlanOptions.NONE, SDAPIEnumType.SWARM, NOFAMILY_SERVER);
+			log("nofamily strategy=" + nofamily.getStrategy().getName() + " reason=" + nofamily.getStrategy().getReason() + " models=" + nofamily.getModels() + " degradations=" + nofamily.getDegradations());
+			assertEquals("nofamily strategy", PbStrategyEnumType.TEXT_ONLY, nofamily.getStrategy().getName());
+			assertEquals("nofamily reason", StrategySelector.REASON_NO_REFERENCED_ACTORS, nofamily.getStrategy().getReason());
+			assertFalse("nofamily LOCATION pick unresolved", nofamily.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.LOCATION)).isResolved());
+			assertFalse("nofamily INPAINT pick unresolved", nofamily.getModels().get(ModelTaskKeys.key(PbModelTaskEnumType.INPAINT)).isResolved());
+			assertTrue("nofamily: no actor referenced", nofamily.getActors().stream().noneMatch(RenderPlan.Actor::isReferenced));
+			assertTrue("nofamily: MODEL_SUBSTITUTED reported: " + nofamily.getDegradations(),
+				nofamily.getDegradations().stream().anyMatch(d -> RenderPlan.Degradation.MODEL_SUBSTITUTED.equals(d.getCode())));
+			assertTrue("nofamily: no ACTOR_REGION compiled", nofamily.getCompiled().keySet().stream().noneMatch(k -> k.startsWith(RenderPlan.STAGE_ACTOR_REGION)));
 			log("case04 done");
 		}
 		finally {
 			SwarmModelInventory.invalidate(FLUX2_SERVER);
 			SwarmModelInventory.invalidate(SDXL_SERVER);
-			SwarmModelInventory.invalidate(KONTEXT_SERVER);
+			SwarmModelInventory.invalidate(NOFAMILY_SERVER);
 			deleteBook(u, bk);
 			for(BaseRecord s : styles) {
 				try {

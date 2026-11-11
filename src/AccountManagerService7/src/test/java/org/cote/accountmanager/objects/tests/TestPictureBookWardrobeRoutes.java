@@ -27,7 +27,6 @@ import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.picturebook.PbWardrobeUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -45,7 +44,6 @@ import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
 import org.cote.service.util.ServiceUtil;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -108,8 +106,6 @@ public class TestPictureBookWardrobeRoutes extends BaseTest {
 	private BaseRecord reader;
 	private BaseRecord stranger;
 	private long orgId;
-	private String pb0;
-	private String cb0;
 
 	private static final class Fixture {
 		String slug;
@@ -136,8 +132,6 @@ public class TestPictureBookWardrobeRoutes extends BaseTest {
 	public void setup() {
 		super.setup();
 		ServiceUtil.clearCache();
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
 		orgId = orgContext.getOrganizationId();
 		admin = orgContext.getAdminUser();
 		assertNotNull("Admin is null", admin);
@@ -151,16 +145,6 @@ public class TestPictureBookWardrobeRoutes extends BaseTest {
 		assertNotNull("Olio principal is null", olioUser);
 		bootstrapOlioRoot();
 		ensureBooksUniverse();
-	}
-
-	/// The switch is process-global and other classes in this JVM depend on it: always restored.
-	@After
-	public void restoreRenderPath() {
-		PbRenderPath.configure(pb0, cb0);
-	}
-
-	private void v3() {
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
 	}
 
 	// ─────────────────────────────── fixture (TestPictureBookComposeRoutes' shape) ───────────────────────────────
@@ -607,7 +591,6 @@ public class TestPictureBookWardrobeRoutes extends BaseTest {
 		try {
 			HttpServletRequestMock s = requestAs(stranger);
 			String nf = "Book not found";
-			v3();
 			refused(service.listWardrobe(f.bookOid, NIL_UUID, s), 404, nf, "stranger wardrobe list");
 			refused(service.createWardrobeAlternate(f.bookOid, NIL_UUID, json("description", "a red dress"), s, SD_CONTEXT), 404, nf, "stranger alternate");
 			refused(service.setDefaultApparel(f.bookOid, NIL_UUID, NIL_UUID, s), 404, nf, "stranger default");
@@ -629,7 +612,6 @@ public class TestPictureBookWardrobeRoutes extends BaseTest {
 	public void TestReaderReadsButEveryWriteIs403() throws Exception {
 		Fixture f = createWorldBook(true);
 		try {
-			v3();
 			Cast a = addCharacter(f, "Reader Case");
 			String a1 = addApparel(f, a, "Default outfit", true);
 			BaseRecord scene = addScene(f, 1);
@@ -687,7 +669,6 @@ public class TestPictureBookWardrobeRoutes extends BaseTest {
 	public void TestOwnerWardrobeDefaultAndRefusals() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			HttpServletRequestMock o = requestAs(owner);
 			Cast a = addCharacter(f, "Mira");
 			Cast b = addCharacter(f, "Tomas");
@@ -789,7 +770,6 @@ public class TestPictureBookWardrobeRoutes extends BaseTest {
 	public void TestOwnerPinCarryForwardOutfitsAndMigrate() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			HttpServletRequestMock o = requestAs(owner);
 			Cast a = addCharacter(f, "Mira");
 			Cast b = addCharacter(f, "Tomas");

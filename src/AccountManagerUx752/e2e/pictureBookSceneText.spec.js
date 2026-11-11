@@ -13,17 +13,15 @@
  * Run against the Docker UAT stack:
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/pictureBookSceneText.spec.js --workers=1 --project=chromium
  *
- * Two tiers:
- *  - DEFAULT (load-safe, no LLM/SD): /chapter -> create-from-scenes with blurb-only scenes -> the
- *    persisted scene notes carry the blurb. No characters are supplied, so no LLM call is made.
- *  - GATED (PB_SD_TESTS=1, --workers=1): render one scene (LLM prompt + SD) so the olio.pb.scene row
- *    exists, then /pages carries the blurb and the in-browser PB2 reader displays it.
+ * Load-safe, no LLM/SD: /chapter -> create-from-scenes with blurb-only scenes -> the persisted scene
+ * notes carry the blurb. No characters are supplied, so no LLM call is made. (The gated "/pages carries
+ * the blurb after a render" case went with POST /scene/{id}/generate at Phase 10 P10-1.)
  *
  * NEVER uses the admin user for assertions — ensureSharedTestUser()/ensureChatConfig() provision;
  * every assertion runs as e2etest_shared.
  */
 import { test, expect } from '@playwright/test';
-import { ensureSharedTestUser, ensureChatConfig, ensurePath, pb1Retired, PB1_RETIRED_SKIP } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig, ensurePath } from './helpers/api.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -70,34 +68,7 @@ async function apiLoginShared(request) {
     expect(resp.ok() || resp.status() === 204, 'shared-user API login failed: ' + resp.status()).toBeTruthy();
 }
 
-/** Log in as the shared test user (page.request shares the browser cookie jar), then boot the SPA. */
-async function loginAsSharedUser(page) {
-    await apiLoginShared(page.request);
-    // Stub WebSocket — Docker's nginx strips cookies on the WS upgrade so Tomcat closes the
-    // connection, which triggers forceLogin() and redirects to #!/sig.
-    await page.addInitScript(() => {
-        window.WebSocket = class StubWS {
-            constructor(url) {
-                this.url = url; this.readyState = 0;
-                this.onopen = null; this.onclose = null; this.onmessage = null; this.onerror = null;
-                this.bufferedAmount = 0; this.extensions = ''; this.protocol = '';
-                setTimeout(() => { this.readyState = 1; if (this.onopen) this.onopen({ type: 'open', target: this }); }, 50);
-            }
-            send() {} close() { this.readyState = 3; }
-            addEventListener() {} removeEventListener() {} dispatchEvent() { return true; }
-        };
-        window.WebSocket.CONNECTING = 0; window.WebSocket.OPEN = 1;
-        window.WebSocket.CLOSING = 2; window.WebSocket.CLOSED = 3;
-    });
-    await page.goto('/', { timeout: 30000 });
-    await page.waitForFunction(
-        () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
-        { timeout: 30000 }
-    );
-}
-
 const RUN = Date.now().toString(36);
-const RENDER_ENABLED = process.env.PB_SD_TESTS === '1';
 let chatConfigName = null;
 let pb2BookObjectId = null;
 let metaScenes = [];
@@ -161,48 +132,5 @@ test.describe.serial('PictureBook — scene text persists from extraction to rea
                 'scene ' + i + ' blurb was lost on persistence (sceneNoteStore clobbered it): ' + note.text)
                 .toBe(SCENES[i].blurb);
         }
-    });
-
-    // GATED (PB_SD_TESTS=1, --workers=1): render one scene so the olio.pb.scene row exists, then the
-    // reader must show the text. Lives in the same serial group so a retry in a fresh worker re-runs
-    // beforeAll and never sees a null book.
-    test('/pages carries the blurb and the PB2 reader displays it (LLM+SD, gated)', async ({ page, request }) => {
-        test.skip(!RENDER_ENABLED, 'PB_SD_TESTS!=1 — skips LLM/SD render');
-        test.setTimeout(900000);
-        test.skip(await pb1Retired(request), PB1_RETIRED_SKIP); // P7-2: PB1 generate is 409 under v3
-        await apiLoginShared(request);
-        expect(pb2BookObjectId, 'beforeAll must have created the book').toBeTruthy();
-        expect(metaScenes.length, 'beforeAll must have persisted scenes').toBeGreaterThan(0);
-
-        const genResp = await request.post(PB + '/scene/' + metaScenes[0].objectId + '/generate', {
-            data: { schema: 'olio.pictureBookRequest', chatConfig: chatConfigName, sdConfig: { steps: 20, hires: false } },
-            timeout: 600000
-        });
-        expect(genResp.ok(), 'scene generate failed: ' + genResp.status() + ' ' + await genResp.text()).toBe(true);
-        const gen = await genResp.json();
-        expect(gen && gen.imageObjectId, 'generateSceneImage produced no image: ' + JSON.stringify(gen)).toBeTruthy();
-
-        const pagesResp = await request.get(PB + '/' + pb2BookObjectId + '/pages');
-        expect(pagesResp.ok(), 'pages fetch failed: ' + pagesResp.status()).toBe(true);
-        const pages = await pagesResp.json();
-        console.log('[sceneText] pages=' + JSON.stringify(pages.map(p => ({ i: p.sceneIndex, title: p.title, blurb: p.blurb }))));
-        const rendered = pages.find(p => p.title === SCENES[0].title);
-        expect(rendered, 'no /pages entry for the rendered scene').toBeTruthy();
-        expect(rendered.blurb, '/pages blurb is empty — the dual-write copied nothing').toBe(SCENES[0].blurb);
-
-        await loginAsSharedUser(page);
-        await page.evaluate((oid) => { window.location.hash = '!/picture-book/v2/' + oid; }, pb2BookObjectId);
-        const begin = page.locator('button:has-text("Begin")');
-        await expect(begin, 'reader cover must offer Begin once a page exists').toBeVisible({ timeout: 30000 });
-        await begin.click();
-
-        const pageText = page.locator('p.italic');
-        await expect(pageText.first()).toBeVisible({ timeout: 15000 });
-        const bodyText = await page.evaluate(() => document.body.innerText || '');
-        const shot = path.join(OUT_DIR, 'pb2-reader-scene-text.png');
-        await page.screenshot({ path: shot, fullPage: true });
-        console.log('[sceneText] reader screenshot: ' + shot);
-        expect(bodyText.includes('No text yet.'), 'reader still shows "No text yet."').toBe(false);
-        expect(bodyText, 'reader does not display the scene blurb').toContain(SCENES[0].blurb);
     });
 });

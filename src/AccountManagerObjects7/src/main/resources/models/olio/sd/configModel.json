@@ -312,14 +312,14 @@
 			"name": "useKontext",
 			"type": "boolean",
 			"default": false,
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): When true, use FLUX Kontext stitch-and-prompt pipeline for scene compositing instead of classic Graphics2D + SDXL img2img. Ignored when compositeMode is set."
+			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): legacy switch for the FLUX Kontext stitch-and-prompt pipeline. Not read by anything since Phase 10 P10-3 (resolveMode consults compositeMode only; a cleared compositeMode resolves to classic regardless of this value); the column is dropped at P10-4."
 		},
 		{
 			"name": "compositeMode",
 			"type": "string",
 			"maxLength": 16,
 			"default": "flux2",
-			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, the default and recommended mode) or 'classic' (Graphics2D paste + SDXL img2img). 'kontext' (FLUX Kontext stitched panel strip) is RETIRED (V3 design section 37.3; disabled in Phase 2, removed in Phase 10): a config that resolves to it - this field set to 'kontext', or the legacy useKontext=true with this field cleared - is refused by every entry point with the 'replaced by V3' response before any LLM or SD work. DEFAULTS TO flux2 because its checkpoint (flux2Model, default flux2Klein_9b) is the one that actually ships on the local Swarm. It previously defaulted to unset, which fell back to useKontext=true and requested kontextModel's default flux1Kontext_flux1KontextDev - a checkpoint absent from the local node, so Swarm refused EVERY composite with 'Invalid model value for param Model' and the pipeline produced nothing."
+			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, the default and recommended mode) or 'classic' (Graphics2D paste + SDXL img2img). 'kontext' (FLUX Kontext stitched panel strip) was RETIRED at V3 design section 37.3 and REMOVED at Phase 10 P10-3: it is now simply an unsupported value, refused like any other unknown mode (resolveMode throws 'expected flux2|classic'; the chat scene route answers 400) before any LLM or SD work. A cleared value resolves to classic. DEFAULTS TO flux2 because its checkpoint (flux2Model, default flux2Klein_9b) is the one that actually ships on the local Swarm. It previously defaulted to unset, which fell back to useKontext=true and requested kontextModel's default flux1Kontext_flux1KontextDev - a checkpoint absent from the local node, so Swarm refused EVERY composite with 'Invalid model value for param Model' and the pipeline produced nothing."
 		},
 		{
 			"name": "flux2Model",

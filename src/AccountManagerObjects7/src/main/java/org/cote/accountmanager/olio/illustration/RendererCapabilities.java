@@ -28,7 +28,6 @@ public final class RendererCapabilities {
 
 	public static final String PATTERN_FLUX2 = "flux2*";
 	public static final String PATTERN_SDXL = "*xl*";
-	public static final String PATTERN_KONTEXT = "*kontext*";
 
 	/// Prompt token budget when a family declares none (three CLIP chunks, the SDXL figure).
 	public static final int DEFAULT_PROMPT_TOKEN_BUDGET = 225;
@@ -69,8 +68,6 @@ public final class RendererCapabilities {
 		l.add(new RendererCapabilities(PATTERN_SDXL, true, 0, false, false, true, true, false, true, true, true,
 			12, 20, 30, 5.0, 7.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024}, new int[] {1024, 768}, new int[] {768, 1024}, new int[] {832, 1216}, new int[] {1216, 832})), null, 225,
 			new InpaintParams(25, 0.6, 16, 8), seeds(1.5, 1.0)));
-		l.add(new RendererCapabilities(PATTERN_KONTEXT, false, 1, true, false, true, false, false, true, true, false,
-			20, 28, 28, 1.0, 1.0, Collections.unmodifiableList(List.of(new int[] {1024, 1024})), null, 225, null, Collections.emptyMap()));
 		FALLBACK = Collections.unmodifiableList(l);
 	}
 
@@ -275,8 +272,11 @@ public final class RendererCapabilities {
 		return ro;
 	}
 
+	/// Public so a test can declare a family the shipped resource does not (a maskless family, a degenerate
+	/// cfgRange - Phase 10 P10-3 removed the Kontext row that used to be those fixtures); production reaches
+	/// it only through {@link #load()}.
 	@SuppressWarnings("unchecked")
-	private static RendererCapabilities fromMap(Map<String, Object> m) {
+	public static RendererCapabilities fromMap(Map<String, Object> m) {
 		Object pat = m.get("pattern");
 		if(!(pat instanceof String) || ((String) pat).isBlank()) {
 			logger.error("Capabilities family without a pattern skipped: " + m);

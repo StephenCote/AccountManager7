@@ -72,7 +72,7 @@ beforeEach(async () => {
     pbc = await import('../workflows/pictureBookCharacters.js');
     wf = await import('../workflows/pictureBookWorkflow.js');
     pbc.__setPbCharStateForTest({
-        bookObjectId: BOOK, standalone: true, renderPath: 'v3', selectedObjectId: 'c1', selectedInst: { entity: { objectId: 'c1', name: 'Alice' } },
+        bookObjectId: BOOK, standalone: true, selectedObjectId: 'c1', selectedInst: { entity: { objectId: 'c1', name: 'Alice' } },
         affected: null, lastSaveKind: null, regen: null, editingIdentity: false, editName: '', editDescription: '', regenPollIntervalMs: 2,
         wardrobe: null, wardrobeBusy: null, wardrobeAddText: '', wardrobeRuns: {}
     });
@@ -158,10 +158,8 @@ describe('setDefaultText / migrateText — DTO counts → sentences', () => {
 // ─────────────────────────────── panel rendering ───────────────────────────────
 
 describe('renderWardrobePanel — gating and states', () => {
-    it('is null outside V3 / standalone / a selected character', () => {
-        pbc.__setPbCharStateForTest({ renderPath: 'v2' });
-        expect(pbc.renderWardrobePanel()).toBeNull();
-        pbc.__setPbCharStateForTest({ renderPath: 'v3', standalone: false });
+    it('is null outside standalone / a book / a selected character', () => {
+        pbc.__setPbCharStateForTest({ standalone: false });
         expect(pbc.renderWardrobePanel()).toBeNull();
         pbc.__setPbCharStateForTest({ standalone: true, bookObjectId: null });
         expect(pbc.renderWardrobePanel()).toBeNull();
@@ -290,14 +288,14 @@ describe('loadWardrobe — the one read', () => {
         let v = pbc.renderWardrobePanel();
         expect(byTestId(v, 'pb-wd-entry-ap1').length).toBe(1);
     });
-    it('keeps the server message when the read fails, and is a no-op outside V3', async () => {
+    it('keeps the server message when the read fails, and is a no-op outside standalone', async () => {
         let calls = wire({ route: (method, url) => method === 'GET' && /\/wardrobe$/.test(url) ? jsonResponse(404, { error: 'Character c1 is not a character of this book' }) : null });
         await pbc.__pbCharLoadWardrobeForTest('c1');
         let st = pbc.__pbCharStateForTest();
         expect(st.wardrobe.error).toBe('(404) Character c1 is not a character of this book');
         expect(textOf(one(pbc.renderWardrobePanel(), 'pb-wd-error'))).toBe('(404) Character c1 is not a character of this book');
         expect(calls.length).toBe(1);
-        pbc.__setPbCharStateForTest({ renderPath: 'v2' });
+        pbc.__setPbCharStateForTest({ standalone: false });
         await pbc.__pbCharLoadWardrobeForTest('c1');
         expect(pbc.__pbCharStateForTest().wardrobe).toBeNull();
         expect(calls.length).toBe(1);

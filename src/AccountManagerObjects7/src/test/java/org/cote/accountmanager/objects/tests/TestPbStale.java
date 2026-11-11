@@ -543,7 +543,7 @@ public class TestPbStale extends BaseTest {
 
 		/// The refusal must be side-effect-free: a miss in RecordFactory.getSchema runs a DB query, a
 		/// classpath probe and logs a stack trace through ResourceUtil/ErrorUtil, so those loggers are
-		/// captured (TestKontextDeprecation's LoggerConfig pattern) across the refusing call alone.
+		/// captured (the LoggerConfig-level CapturingAppender pattern) across the refusing call alone.
 		LoggerContext lctx = (LoggerContext) LogManager.getContext(false);
 		LoggerConfig rootCfg = lctx.getConfiguration().getLoggerConfig(ResourceUtil.class.getName());
 		final List<String> resolverLines = java.util.Collections.synchronizedList(new ArrayList<>());

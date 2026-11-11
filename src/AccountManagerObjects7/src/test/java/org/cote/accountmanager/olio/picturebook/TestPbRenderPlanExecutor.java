@@ -75,8 +75,8 @@ import org.junit.Test;
  * <li>{@link #sceneWithoutTextIsA409BeforeRendering}: a scene with no setting/action/mood/sdPrompt/summary/
  *     title compiles to nothing -> 409 "has no text to render" after the model check. Needs the inventory,
  *     no render.</li>
- * <li>{@link #strangerAndV1AreRefusedBeforeAnyWork}: a stranger -> 404; a book whose product is pinned to
- *     the V1 render path -> 409 {@link PbRenderPath#REFUSAL_PREFIX}. No SD.</li>
+ * <li>{@link #strangerAndUnknownSceneAreRefusedBeforeAnyWork}: a stranger -> 404; an unknown scene -> 404.
+ *     No SD. (The V1-pinned 409 case went with the picturebook.renderPath key at Phase 10 P10-1.)</li>
  * <li>{@link #configNotAppliedReportsWhatThePlanPathDropsAndReviewQueueOmitsThePlan} (P2-6, §24): the DTO
  *     reports exactly the {@code HIRES} / {@code STYLE_CLAUSE} / {@code DEFAULT_NEGATIVE} codes the
  *     effective config calls for, each checked against the persisted plan and the request Swarm received,
@@ -696,10 +696,10 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 		}
 	}
 
-	// ─── 6. stranger 404, V1 409 (no SD) ─────────────────────────────────────────
+	// ─── 6. stranger 404, unknown scene 404 (no SD) ─────────────────────────────────────────
 
 	@Test
-	public void strangerAndV1AreRefusedBeforeAnyWork() throws Exception {
+	public void strangerAndUnknownSceneAreRefusedBeforeAnyWork() throws Exception {
 		SDUtil dead = new SDUtil(SDAPIEnumType.SWARM, DEAD_SERVER);
 		Fixture f = fixture("p25s", true);
 		BaseRecord stranger = getCreateUser("pbPlanStranger");
@@ -720,20 +720,6 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 				assertEquals(404, e.getStatus());
 			}
 			assertEquals("refusals before the node gate create no node", 0, nodeCount(f));
-
-			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
-			try {
-				PbServiceFacade.requestRenderPlanScene(f.owner, f.bookOid, f.sceneOid, dead);
-				fail("a V1-pinned product must be refused");
-			}
-			catch(PictureBookException e) {
-				assertEquals("V1 -> 409 (" + e.getMessage() + ")", 409, e.getStatus());
-				assertTrue(e.getMessage(), e.getMessage().startsWith(PbRenderPath.REFUSAL_PREFIX));
-			}
-			finally {
-				PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
-			}
-			assertEquals("the V1 refusal creates no node either", 0, nodeCount(f));
 		}
 		finally {
 			cleanup(f);

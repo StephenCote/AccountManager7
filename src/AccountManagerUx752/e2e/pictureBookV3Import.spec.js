@@ -2,7 +2,7 @@
  * PictureBook P7-4 — opening a pre-V3 book: the "replaced by V3" notice's Import runs POST /migrate-v1
  * and opens the V3 reader on the imported book, with the result shown over it; the imported image shows.
  *
- * Why: under picturebook renderPath v3 a pure PB1 book (group → .pictureBookMeta → scene notes, no
+ * Why: a pure PB1 book (group → .pictureBookMeta → scene notes, no
  * olio.pb.book) is shown read-only on the PB1 viewer (P7-3). The only way forward for it is the
  * server's PbMigrationUtil.importV1Book, which creates the V3 book + scenes, carries the scene text,
  * the rendered scene image (the note's imageObjectId, read by bookPageView's fallback) and the
@@ -19,22 +19,20 @@
  * re-opening the PB1 route redirects to the V3 reader → a second /migrate-v1 is the 409 slug
  * conflict (REST; the UI's handling of it is in src/test/pictureBookV3Import.test.js).
  *
- * Needs the Docker stack (PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443), renderPath v3. Skips under v1.
+ * Needs the Docker stack (PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443).
  * Never the admin user. Nothing here calls the LLM or the SD server.
  */
 import fs from 'fs';
 import path from 'path';
 import { test, expect } from './helpers/fixtures.js';
-import { ensureSharedTestUser, apiLogin, apiLogout, ensurePath, deleteObject, createObject, pb1Retired } from './helpers/api.js';
+import { ensureSharedTestUser, apiLogin, apiLogout, ensurePath, deleteObject, createObject } from './helpers/api.js';
 import { screenshot } from './helpers/auth.js';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 const PB_REST = REST + '/olio/picture-book';
-const V1_SKIP = 'picturebook.renderPath=v1: the V3 import under test only exists under v3 (P7-4).';
 
 let shared = null;
-let v3 = true;
 
 async function restLogin(ctx) {
     expect(shared, 'ensureSharedTestUser() must run before any login').toBeTruthy();
@@ -130,8 +128,6 @@ test.describe('PictureBook V3 import of a pre-V3 book (P7-4)', () => {
 
     test.beforeAll(async ({ request }) => {
         shared = await ensureSharedTestUser(request);
-        v3 = await pb1Retired(request, { userName: shared.testUserName, password: shared.testPassword });
-        if (!v3) return;
         await restLogin(request);
 
         tag = Date.now().toString(36);
@@ -188,7 +184,6 @@ test.describe('PictureBook V3 import of a pre-V3 book (P7-4)', () => {
     });
 
     test.afterAll(async ({ request }) => {
-        if (!v3) return;
         try {
             await restLogin(request);
             await resetBook(request, importedPb2Oid);
@@ -206,7 +201,6 @@ test.describe('PictureBook V3 import of a pre-V3 book (P7-4)', () => {
     });
 
     test('Import on the legacy notice migrates the book, opens the V3 reader with the result, and the image shows', async ({ page }) => {
-        test.skip(!v3, V1_SKIP);
         await loginAsSharedUser(page);
         const consoleErrors = [];
         page.on('pageerror', (e) => consoleErrors.push(String(e && e.message)));
@@ -285,7 +279,6 @@ test.describe('PictureBook V3 import of a pre-V3 book (P7-4)', () => {
     });
 
     test('PB1 records are untouched; the group now bridges to the V3 book; a re-import is the 409 slug conflict', async ({ page, request }) => {
-        test.skip(!v3, V1_SKIP);
         expect(importedPb2Oid, 'the import test must have run first').toBeTruthy();
         await restLogin(request);
 

@@ -27,7 +27,6 @@ import org.cote.accountmanager.olio.picturebook.PbComposeUtil;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
 import org.cote.accountmanager.olio.picturebook.PbLocationUtil;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.picturebook.PbServiceFacade;
 import org.cote.accountmanager.olio.picturebook.PictureBookException;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -46,7 +45,6 @@ import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
 import org.cote.service.util.ServiceUtil;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -91,8 +89,6 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 	private BaseRecord reader;
 	private BaseRecord stranger;
 	private long orgId;
-	private String pb0;
-	private String cb0;
 
 	private static final class Fixture {
 		String slug;
@@ -109,8 +105,6 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 	public void setup() {
 		super.setup();
 		ServiceUtil.clearCache();
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
 		orgId = orgContext.getOrganizationId();
 		admin = orgContext.getAdminUser();
 		assertNotNull("Admin is null", admin);
@@ -124,16 +118,6 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 		assertNotNull("Olio principal is null", olioUser);
 		bootstrapOlioRoot();
 		ensureBooksUniverse();
-	}
-
-	/// The switch is process-global and other classes in this JVM depend on it: always restored.
-	@After
-	public void restoreRenderPath() {
-		PbRenderPath.configure(pb0, cb0);
-	}
-
-	private void v3() {
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
 	}
 
 	// ─────────────────────────────── fixture (TestPictureBookComposeRoutes' shape) ───────────────────────────────
@@ -499,7 +483,6 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 	public void TestStrangerIs404() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			refused(service.promoteElement(f.bookOid, NIL_UUID, NIL_UUID, requestAs(stranger)), 404, "Book not found", "stranger promote");
 		}
 		finally {
@@ -513,7 +496,6 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 	public void TestReaderIs403AndWritesNothing() throws Exception {
 		Fixture f = createWorldBook(true);
 		try {
-			v3();
 			BaseRecord loc = addLocation(f);
 			BaseRecord scene = addScene(f, 1, loc);
 			BaseRecord comp = compose(f, scene);
@@ -542,7 +524,6 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 	public void TestOwnerPromotesThenReusesOnRepeat() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			HttpServletRequestMock o = requestAs(owner);
 			BaseRecord loc = addLocation(f);
 			BaseRecord scene = addScene(f, 1, loc);
@@ -599,7 +580,6 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 	public void TestUnknownIdsAre404AndNoLocationIs409() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			HttpServletRequestMock o = requestAs(owner);
 			BaseRecord loc = addLocation(f);
 			BaseRecord located = compose(f, addScene(f, 1, loc));
@@ -631,7 +611,6 @@ public class TestPictureBookPromoteRoutes extends BaseTest {
 	public void TestBlankIdsAre400() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			String some = UUID.randomUUID().toString();
 			facadeRefused("blank composition id", 400, "A composition objectId is required", () -> PbServiceFacade.promoteElement(owner, f.bookOid, " ", some));
 			facadeRefused("null composition id", 400, "A composition objectId is required", () -> PbServiceFacade.promoteElement(owner, f.bookOid, null, some));

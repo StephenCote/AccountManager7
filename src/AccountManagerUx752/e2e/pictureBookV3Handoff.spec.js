@@ -1,12 +1,12 @@
 /**
- * PictureBook V3 hand-off (P7-3, design §30 row 7). Under picturebook.renderPath=v3 (the default) the
- * PB1 wizard ends at step 3 — "Continue to Images" hands off to the V3 reader (/picture-book/v2/{oid})
- * instead of opening the retired steps 4–5 — and every "open an existing book" path (the list-row Edit
- * pencil, the PB1 viewer route handed a book group) lands on the V3 reader too. The PB1 viewer route is
- * only a bridge: it redirects when /pb2 resolves, else shows the PB1 book read-only under the
- * "replaced by V3 — import" notice (P7-4's entry point) with no Edit pencil. Ux752 must not call the
- * three retired PB1 routes (POST /scene/{id}/generate, POST /{book}/prepare-images, PUT /{book}/settings)
- * anywhere on these paths — the server answers 409 for them since P7-2.
+ * PictureBook V3 hand-off (P7-3, design §30 row 7; the only path since Phase 10 P10-1). The wizard ends
+ * at step 3 — "Continue to Images" hands off to the V3 reader (/picture-book/v2/{oid}); steps 4–5 no
+ * longer exist — and every "open an existing book" path (the list-row Edit pencil, the PB1 viewer route
+ * handed a book group) lands on the V3 reader too. The PB1 viewer route is only a bridge: it redirects
+ * when /pb2 resolves, else shows the PB1 book read-only under the "replaced by V3 — import" notice
+ * (P7-4's entry point) with no Edit pencil. Ux752 must not call the three removed PB1 routes
+ * (POST /scene/{id}/generate, POST /{book}/prepare-images, PUT /{book}/settings) anywhere on these
+ * paths — they were deleted from the server at P10-1 (404).
  *
  * Fixtures are built through the REST API as e2etest_shared (never admin), LLM/SD-free:
  *   A. a data.note source document the wizard is driven on. Manual scene entry — no chat config on the
@@ -16,31 +16,28 @@
  *   C. a "legacy" pure-PB1 book: ~/Data/PictureBooks/<name> + /Scenes + one scene note + a .pictureBookMeta
  *      note POSTed directly (createNote() returns ANY existing note of that name first, so it is not used
  *      for the meta), and NO olio.pb.book — its /pb2 404s.
- * Under v3 create-from-scenes also queues a background compose job (P4-4); the reset in afterAll can race
+ * create-from-scenes also queues a background compose job (P4-4); the reset in afterAll can race
  * it — harness noise, logged, never asserted.
  *
- * The whole suite skips when the stack is on v1 (the v1 wizard path is pictureBookWizardUx.spec.js). Run
- * single-threaded against the Docker stack — 127.0.0.1, not localhost (IPv6 ::1 is not mapped):
+ * Run single-threaded against the Docker stack — 127.0.0.1, not localhost (IPv6 ::1 is not mapped):
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/pictureBookV3Handoff.spec.js \
  *       --workers=1 --project=chromium
  */
 import { test, expect } from './helpers/fixtures.js';
-import { ensureSharedTestUser, apiLogin, apiLogout, ensurePath, deleteObject, pb1Retired } from './helpers/api.js';
+import { ensureSharedTestUser, apiLogin, apiLogout, ensurePath, deleteObject } from './helpers/api.js';
 import { screenshot } from './helpers/auth.js';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
 const PB_REST = REST + '/olio/picture-book';
-const V1_SKIP = 'picturebook.renderPath=v1: the V3 hand-off under test only exists under v3 (P7-3).';
 
-// POST/PUT to a retired PB1 route — the thing Ux752 must never do under v3 (P7-2 answers 409).
+// POST/PUT to a removed PB1 route — the thing Ux752 must never do (the server has had no such route since P10-1).
 const RETIRED_PB1_RE = /\/olio\/picture-book\/(scene\/[^/]+\/generate|[^/]+\/prepare-images|[^/]+\/settings)(\?|$)/;
 
 const STORY = 'A lighthouse keeper rows out at dawn to free a gull tangled in a drifting net. '
     + 'The tide turns before the keeper is halfway back, and the gull rides home on the bow.';
 
 let shared = null;
-let v3 = true;
 
 async function restLogin(ctx) {
     expect(shared, 'ensureSharedTestUser() must run before any login').toBeTruthy();
@@ -162,9 +159,11 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
     test.describe.configure({ timeout: 240000 });
 
     test.beforeAll(async ({ request }) => {
+        // describe.configure({timeout}) does not cover hooks (they keep the 60 s default). The fixture creates
+        // four data.note records, each of which embeds on the stack's single-slot Ollama and can queue behind a
+        // running chat completion plus a model swap (measured 36 s for one note, 2026-11-10). A time budget only.
+        test.setTimeout(240000);
         shared = await ensureSharedTestUser(request);
-        v3 = await pb1Retired(request, { userName: shared.testUserName, password: shared.testPassword });
-        if (!v3) return;
         await restLogin(request);
 
         tag = Date.now().toString(36);
@@ -240,7 +239,6 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
     });
 
     test.afterAll(async ({ request }) => {
-        if (!v3) return;
         try {
             await restLogin(request);
             await resetBook(request, wizardPb2Oid);
@@ -259,11 +257,10 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         }
     });
 
-    // 1. create → step 3 → reader. Manual scene entry on a fresh source document; the v3 progress bar
+    // 1. create → step 3 → reader. Manual scene entry on a fresh source document; the progress bar
     //    has no Images/View steps; "Continue to Images" closes the wizard and opens the V3 reader on the
     //    book the step-2 Continue created; no retired PB1 route is called along the way.
     test('wizard: step 3 "Continue to Images" hands off to the V3 reader', async ({ page }) => {
-        test.skip(!v3, V1_SKIP);
         const retired = trackRetiredPb1Calls(page);
         await loginAsSharedUser(page);
 
@@ -276,7 +273,7 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
 
         const dlg = wizardDialog(page).last();
         await expect(dlg, 'wizard dialog did not open').toBeVisible({ timeout: 30000 });
-        // v3 progress bar: Source › Scenes › Characters — the retired Images/View steps are not offered.
+        // Progress bar: Source › Scenes › Characters — there are no Images/View steps.
         await expect(dlg.getByText('Characters', { exact: true })).toBeVisible();
         await expect(dlg.getByText('Images', { exact: true })).toHaveCount(0);
         await expect(dlg.getByText('View', { exact: true })).toHaveCount(0);
@@ -315,13 +312,12 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         await expect(wizardDialog(page)).toHaveCount(0);
         await expect(page.locator('text=Image Generation')).toHaveCount(0);
         await screenshot(page, 'p73-wizard-reader-handoff');
-        expect(retired, 'Ux752 called a retired PB1 route under v3').toEqual([]);
+        expect(retired, 'Ux752 called a removed PB1 route').toEqual([]);
         console.log('[p73] wizard book pb2=' + wizardPb2Oid);
     });
 
     // 2. resume: the list-row Edit pencil on an existing book opens the V3 reader, never the wizard.
     test('list-row Edit on an existing book opens the V3 reader, not the wizard', async ({ page }) => {
-        test.skip(!v3, V1_SKIP);
         const retired = trackRetiredPb1Calls(page);
         await loginAsSharedUser(page);
         const book = await findBook(page.request, bridgedPb2Oid);
@@ -335,13 +331,12 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         await expect(page.locator('[data-pb2-book-name]')).toHaveText(displayName(book), { timeout: 30000 });
         await expect(wizardDialog(page)).toHaveCount(0);
         await expect(page.locator('text=Image Generation')).toHaveCount(0);
-        expect(retired, 'Ux752 called a retired PB1 route under v3').toEqual([]);
+        expect(retired, 'Ux752 called a removed PB1 route').toEqual([]);
     });
 
     // 3. redirect: the PB1 viewer route on a book group that bridges to a pb2 book replaces itself with
     //    the V3 reader (history entry replaced, no legacy notice).
     test('PB1 viewer route redirects to the V3 reader when /pb2 resolves', async ({ page }) => {
-        test.skip(!v3, V1_SKIP);
         const retired = trackRetiredPb1Calls(page);
         await loginAsSharedUser(page);
         const book = await findBook(page.request, bridgedPb2Oid);
@@ -359,13 +354,12 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         // src/test/pictureBookV3Handoff.test.js: it cannot be proven here, because driving navigation
         // through window.location.hash makes router.js's hashchange bridge re-push the same route
         // before Mithril resolves it, so a page.goBack() lands on that duplicate entry and redirects again.
-        expect(retired, 'Ux752 called a retired PB1 route under v3').toEqual([]);
+        expect(retired, 'Ux752 called a removed PB1 route').toEqual([]);
     });
 
     // 4. no V3 record: a pure PB1 book stays on the viewer route, read-only, under the "replaced by V3 —
     //    import" notice, with no Edit pencil (the wizard cannot take it anywhere).
     test('PB1 viewer shows a pure PB1 book read-only with the replaced-by-V3 notice', async ({ page }) => {
-        test.skip(!v3, V1_SKIP);
         const retired = trackRetiredPb1Calls(page);
         await loginAsSharedUser(page);
         const pb2Lookup = page.waitForResponse((r) => r.url().includes('/picture-book/' + legacyGroup.objectId + '/pb2'), { timeout: 30000 });
@@ -386,6 +380,6 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         await expect(notice).toBeVisible();
         await expect(page.locator('button[title="Edit Book"]')).toHaveCount(0);
         await expect(wizardDialog(page)).toHaveCount(0);
-        expect(retired, 'Ux752 called a retired PB1 route under v3').toEqual([]);
+        expect(retired, 'Ux752 called a removed PB1 route').toEqual([]);
     });
 });

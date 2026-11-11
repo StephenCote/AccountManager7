@@ -1759,62 +1759,6 @@ public class SDUtil {
 		}
 	}
 
-	/// Stitch up to three source images side-by-side into equal square panels: the PB2 REFERENCE_STRIP
-	/// node's IMAGE_STRIP ({@code PbNodeExecutor.executeReferenceStrip}, deprecated with PB1 at design
-	/// §28.1 Stage 4, Phase 10). V3 never stitches - references travel as separate graph inputs.
-	/// Each non-null image is center-cropped to square, then scaled to panelSize x panelSize.
-	/// Layout: [left | center | right] — e.g. [sysPortrait | usrPortrait | landscape].
-	/// @param leftBytes   Left panel image (e.g. system character portrait), or null to skip
-	/// @param centerBytes Center panel image (e.g. user character portrait), or null to skip
-	/// @param rightBytes  Right panel image (e.g. landscape background), or null to skip
-	/// @param panelSize   Size of each square panel in pixels (e.g. 1024)
-	/// @return Stitched PNG bytes, or null if all inputs are null
-	public static byte[] stitchSceneImages(byte[] leftBytes, byte[] centerBytes, byte[] rightBytes, int panelSize) {
-		byte[][] sources = new byte[][] { leftBytes, centerBytes, rightBytes };
-		int panelCount = 0;
-		for (byte[] src : sources) {
-			if (src != null && src.length > 0) panelCount++;
-		}
-		if (panelCount == 0) return null;
-
-		try {
-			int totalWidth = panelCount * panelSize;
-			java.awt.image.BufferedImage canvas = new java.awt.image.BufferedImage(totalWidth, panelSize, java.awt.image.BufferedImage.TYPE_INT_RGB);
-			java.awt.Graphics2D g2d = canvas.createGraphics();
-			g2d.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-
-			int panelIndex = 0;
-			for (byte[] src : sources) {
-				if (src == null || src.length == 0) continue;
-				java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(src));
-				if (img == null) continue;
-
-				/// Center-crop to square: use the shorter dimension as the crop size
-				int w = img.getWidth();
-				int h = img.getHeight();
-				int cropSize = Math.min(w, h);
-				int cropX = (w - cropSize) / 2;
-				int cropY = (h - cropSize) / 2;
-				java.awt.image.BufferedImage cropped = img.getSubimage(cropX, cropY, cropSize, cropSize);
-
-				/// Draw into panel slot
-				int xOffset = panelIndex * panelSize;
-				g2d.drawImage(cropped, xOffset, 0, panelSize, panelSize, null);
-				panelIndex++;
-			}
-			g2d.dispose();
-
-			java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-			javax.imageio.ImageIO.write(canvas, "png", baos);
-			byte[] result = baos.toByteArray();
-			logger.info("stitchSceneImages: " + panelCount + " panels stitched → " + totalWidth + "x" + panelSize + " (" + result.length + " bytes)");
-			return result;
-		} catch (Exception e) {
-			logger.error("stitchSceneImages failed", e);
-			return null;
-		}
-	}
-
 	/// Generate an animal image with optional landscape reference.
 	/// @param user The user record
 	/// @param animal The animal record
@@ -1970,8 +1914,8 @@ public class SDUtil {
 	/// invent a model name.
 	///
 	/// Java used to carry the literal "sdXL_v10VAEFix.safetensors" in seven places. That name does not
-	/// exist on every SwarmUI install — verified 2026-08-07, the local server has neither it nor
-	/// flux1Kontext_flux1KontextDev, while a second server has both. A wrong checkpoint name does not
+	/// exist on every SwarmUI install — verified 2026-08-07, the local server does not have it while a
+	/// second server does. A wrong checkpoint name does not
 	/// fail loudly; Swarm returns an empty image list, which callers log and skip (see KI-39: live SD
 	/// tests "passing" green against a server missing the schema-default model).
 	///
@@ -2127,8 +2071,9 @@ public class SDUtil {
 
 	/// Scale an image to fit a target canvas WITHOUT distorting it, letterboxing the remainder.
 	///
-	/// This is the alternative to {@link #stitchSceneImages}' center-crop, which discards whatever
-	/// doesn't fit the square: a 1024x576 landscape center-cropped to 576x576 loses 44% of its width,
+	/// This is the alternative to the center-crop the retired Kontext panel strip used (stitchSceneImages,
+	/// removed at Phase 10 P10-3), which discarded whatever did not fit the square: a 1024x576
+	/// landscape center-cropped to 576x576 loses 44% of its width,
 	/// so the setting the scene prompt describes is largely thrown away before the model ever sees it.
 	/// For a reference image that is exactly backwards — the whole point is to show the model what the
 	/// scene and the people look like.
@@ -2175,7 +2120,7 @@ public class SDUtil {
 
 	/// Build the reference-image list for a FLUX.2 multi-reference composite.
 	///
-	/// Unlike the Kontext path, these are NOT pre-stitched into one panel image: FLUX.2 accepts
+	/// Unlike the retired Kontext path, these are NOT pre-stitched into one panel image: FLUX.2 accepts
 	/// several independent reference images, which is the guidance's own escalation when identity
 	/// drifts (aiDocs/archive/imageComposite.md: "switch to a Flux.2 multi-reference capable checkpoint").
 	/// Keeping them separate also removes the two things that made the stitched panel actively
@@ -2318,7 +2263,7 @@ public class SDUtil {
 		/// denoisingStrength is declared "default": 0.75 in configModel.json, so get() never returns
 		/// null on a schema-built record - the "else MANNEQUIN_INIT_IMAGE_CREATIVITY" branch could
 		/// never fire and the 0.6 was dead code. Confirmed live 2026-08-07: a generation logged
-		/// "Init Image Creativity: 0.75". Same trap as steps/width/height and useKontext; the fix is
+		/// "Init Image Creativity: 0.75". Same trap as steps/width/height; the fix is
 		/// the same, a dedicated field with no schema default.
 		Double cfgDenoise = config.get("mannequinCreativity");
 		double mannequinCreativity = (cfgDenoise != null && cfgDenoise > 0)

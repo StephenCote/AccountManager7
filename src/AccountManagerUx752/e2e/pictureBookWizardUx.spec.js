@@ -1,7 +1,6 @@
 /**
  * Picture Book Wizard — real UX click-through of the reordered flow
- * (extract scenes -> create characters at Step 2->3 -> Manage Characters -> Images under v1, or the
- * V3 reader hand-off under picturebook.renderPath=v3, P7-3).
+ * (extract scenes -> create characters at Step 2->3 -> Manage Characters -> the V3 reader hand-off, P7-3).
  *
  * Unlike pictureBookLive.spec.js (which drives the backend via page.evaluate/fetch),
  * this test drives the actual rendered wizard: real login, real button clicks, real
@@ -17,7 +16,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { login, screenshot } from './helpers/auth.js';
-import { setupWorkflowTestData, cleanupTestUser, apiLogin, apiLogout, ensurePath, createNote, resolveChatRoute, pb1Retired } from './helpers/api.js';
+import { setupWorkflowTestData, cleanupTestUser, apiLogin, apiLogout, ensurePath, createNote, resolveChatRoute } from './helpers/api.js';
 
 const REST = '/AccountManagerService7/rest';
 const LLM_ENABLED = process.env.PB_ASYNC_TESTS === '1';
@@ -52,14 +51,10 @@ test.describe('Picture Book Wizard — real UX flow', () => {
     let testInfo = {};
     let docName = '';
     let noteObjectId = null;
-    // P7-3: under picturebook.renderPath=v3 (the default) step 3's "Continue to Images" hands off to
-    // the V3 reader instead of opening the retired step 4; under v1 it still advances to step 4.
-    let v3 = true;
 
     test.beforeAll(async ({ request }) => {
         test.skip(!LLM_ENABLED, 'PB_ASYNC_TESTS!=1 — skips the live LLM wizard click-through');
         testInfo = await setupWorkflowTestData(request, { suffix: 'pbux' + Date.now().toString(36) });
-        v3 = await pb1Retired(request, { userName: testInfo.testUserName, password: testInfo.testPassword });
 
         await apiLogin(request, { user: testInfo.testUserName, password: testInfo.testPassword });
 
@@ -256,18 +251,12 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         await expect(openEditorLink).toBeVisible({ timeout: 5000 });
 
         await page.locator('button:has-text("Continue to Images")').click();
-        if (v3) {
-            // P7-3: the wizard closes and the V3 reader opens on the book the wizard created; the
-            // retired step 4 never renders.
-            await expect.poll(() => page.evaluate(() => location.hash), { timeout: 15000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);
-            await expect(page.locator('[data-pb2-book-name]').first()).toBeVisible({ timeout: 15000 });
-            await expect(page.locator('text=Picture Book —')).toHaveCount(0);
-            await expect(page.locator('text=Image Generation')).toHaveCount(0);
-            await screenshot(page, 'wizardux-v3-reader-handoff');
-            return;
-        }
-        // v1: Continue to Images (Step 4) confirms Step 3 -> Step 4 advance still works post-reorder
-        await expect(page.locator('text=Image Generation')).toBeVisible({ timeout: 10000 });
-        await screenshot(page, 'wizardux-step4-images');
+        // P7-3 (the only path since P10-1): the wizard closes and the V3 reader opens on the book the
+        // wizard created; there is no step 4.
+        await expect.poll(() => page.evaluate(() => location.hash), { timeout: 15000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);
+        await expect(page.locator('[data-pb2-book-name]').first()).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('text=Picture Book —')).toHaveCount(0);
+        await expect(page.locator('text=Image Generation')).toHaveCount(0);
+        await screenshot(page, 'wizardux-v3-reader-handoff');
     });
 });

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * PictureBook V3 reader (P1-10 S2 + S3) — the PB2 reader's render-path gate, per-scene status chip,
- * async render-run progress and resume/re-attach flows.
+ * PictureBook V3 reader (P1-10 S2 + S3) — the PB2 reader's per-scene status chip, async render-run
+ * progress and resume/re-attach flows.
  *
- * Why: V3 renders are 202 + background job, and the reader must (a) show nothing V3 while the product
- * is on the v1 path, (b) derive the scene chip from the bookPageView fields the server now emits,
+ * Why: V3 renders are 202 + background job, and the reader must (a) offer the V3 controls whenever a
+ * book is loaded (there is no other path since P10-1), (b) derive the scene chip from the bookPageView fields the server now emits,
  * (c) drive the stage list from job polling, (d) re-attach from SERVER state only (workflow
  * lastRunObjectId → run → jobId | INTERRUPTED+resumable), and (e) never silently unpin: a pinned 409 is
  * shown verbatim and only an explicit "Unpin and re-render" confirmation sends pin {pinned:false}.
@@ -28,7 +28,7 @@ beforeEach(async () => {
     pbf = await import('../features/pictureBook.js');
     pbf.__pb2StopWatchingForTest();
     pbf.__setPb2V3StateForTest({
-        pb2RenderPath: 'v1', pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null,
+        pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null,
         pb2Submitting: false, pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: 'Harlot\'s Eight', pb2PollIntervalMs: 5,
         pb2Pages: [{ objectId: 's1', sceneIndex: 1, title: 'Arrival', sceneNodeObjectId: 'n1', nodeStatus: 'DONE', pinned: false, dataObjectId: 'd1' }]
     });
@@ -46,38 +46,23 @@ afterEach(() => {
 
 // ─────────────────────────────── pure helpers ───────────────────────────────
 
-describe('pb2IsV3 — render-path gate', () => {
-    it('is true only for picturebook === "v3"', () => {
-        expect(pbf.pb2IsV3({ picturebook: 'v3', chapbook: 'v1' })).toBe(true);
-        expect(pbf.pb2IsV3({ picturebook: 'v1' })).toBe(false);
-        expect(pbf.pb2IsV3({ chapbook: 'v3' })).toBe(false);
-        expect(pbf.pb2IsV3(null)).toBe(false);
-        expect(pbf.pb2IsV3(undefined)).toBe(false);
-        expect(pbf.pb2IsV3('v3')).toBe(false);
-    });
-});
-
 describe('sceneChip — bookPageView fields → chip', () => {
-    it('STALE node → stale regardless of path; imageStale flag too', () => {
-        expect(pbf.sceneChip({ nodeStatus: 'STALE', reviewStatus: 'APPROVED' }, true)).toBe('stale');
-        expect(pbf.sceneChip({ nodeStatus: 'stale' }, false)).toBe('stale');
-        expect(pbf.sceneChip({ nodeStatus: 'DONE', imageStale: true }, false)).toBe('stale');
+    it('STALE node → stale; imageStale flag too', () => {
+        expect(pbf.sceneChip({ nodeStatus: 'STALE', reviewStatus: 'APPROVED' })).toBe('stale');
+        expect(pbf.sceneChip({ nodeStatus: 'stale' })).toBe('stale');
+        expect(pbf.sceneChip({ nodeStatus: 'DONE', imageStale: true })).toBe('stale');
     });
-    it('v1: only stale or nothing (no approved/review chips)', () => {
-        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'APPROVED', artifactObjectId: 'a1' }, false)).toBeNull();
-        expect(pbf.sceneChip({ nodeStatus: 'DONE', dataObjectId: 'd1' }, false)).toBeNull();
-    });
-    it('v3: APPROVED → approved; selected artifact (GENERATED/REJECTED) → review; no artifact → null', () => {
-        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'APPROVED' }, true)).toBe('approved');
-        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'approved' }, true)).toBe('approved');
-        expect(pbf.sceneChip({ nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED', artifactObjectId: 'a1' }, true)).toBe('review');
-        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'REJECTED', artifactObjectId: 'a1' }, true)).toBe('review');
+    it('APPROVED → approved; selected artifact (GENERATED/REJECTED) → review; no artifact → null', () => {
+        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'APPROVED' })).toBe('approved');
+        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'approved' })).toBe('approved');
+        expect(pbf.sceneChip({ nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED', artifactObjectId: 'a1' })).toBe('review');
+        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'REJECTED', artifactObjectId: 'a1' })).toBe('review');
         // Legacy page image with no artifact: nothing is in the review queue, so no chip.
-        expect(pbf.sceneChip({ nodeStatus: 'DONE', dataObjectId: 'd1' }, true)).toBeNull();
+        expect(pbf.sceneChip({ nodeStatus: 'DONE', dataObjectId: 'd1' })).toBeNull();
         // Wire: sceneNodeObjectId/nodeStatus/reviewStatus/artifactObjectId absent (not null) without a node; pinned always boolean.
-        expect(pbf.sceneChip({ pinned: false, dataObjectId: 'd1' }, true)).toBeNull();
-        expect(pbf.sceneChip({ nodeStatus: 'READY' }, true)).toBeNull();
-        expect(pbf.sceneChip(null, true)).toBeNull();
+        expect(pbf.sceneChip({ pinned: false, dataObjectId: 'd1' })).toBeNull();
+        expect(pbf.sceneChip({ nodeStatus: 'READY' })).toBeNull();
+        expect(pbf.sceneChip(null)).toBeNull();
     });
 });
 
@@ -146,18 +131,11 @@ describe('runSummaryText', () => {
     });
 });
 
-// ─────────────────────────────── view gating (v1 vs v3) ───────────────────────────────
+// ─────────────────────────────── view gating ───────────────────────────────
 
-describe('renderPb2Header — V3 controls only on the v3 render path', () => {
-    it('v1: no auto-approve badge, Render-all or Review link', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v1' });
-        let text = JSON.stringify(pbf.renderPb2Header());
-        expect(text).not.toContain('pb2-auto-approve-badge');
-        expect(text).not.toContain('pb2-render-all');
-        expect(text).not.toContain('pb2-review-link');
-    });
-    it('v3: badge reflects auto-approve state; Render-all and Review link present', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2AutoApprove: true });
+describe('renderPb2Header — V3 controls', () => {
+    it('badge reflects auto-approve state; Render-all and Review link present', () => {
+        pbf.__setPb2V3StateForTest({ pb2AutoApprove: true });
         let text = JSON.stringify(pbf.renderPb2Header());
         expect(text).toContain('"data-testid":"pb2-auto-approve-badge"');
         expect(text).toContain('"data-on":"1"');
@@ -167,30 +145,16 @@ describe('renderPb2Header — V3 controls only on the v3 render path', () => {
         pbf.__setPb2V3StateForTest({ pb2AutoApprove: false });
         expect(JSON.stringify(pbf.renderPb2Header())).toContain('"data-on":"0"');
     });
-    it('v3: Render-all is disabled while a run is being watched', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1'], job: { terminal: false }, label: 'Render all', error: null } });
+    it('Render-all is disabled while a run is being watched', () => {
+        pbf.__setPb2V3StateForTest({ pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1'], job: { terminal: false }, label: 'Render all', error: null } });
         let text = JSON.stringify(pbf.renderPb2Header());
         expect(text).toMatch(/"data-testid":"pb2-render-all","class":null,"disabled":true/);
     });
 });
 
 describe('renderPb2ScenePage — chip, stale overlay, per-scene Render button', () => {
-    it('v1 stale page: image still drawn, stale badge overlays, no Render button, chip = stale', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v1', pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'STALE', dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED' }] });
-        let text = JSON.stringify(pbf.renderPb2ScenePage());
-        expect(text).toContain('"data-testid":"pb2-scene-image"');
-        expect(text).toContain('/media/Public/data.data/PictureBook/x/scene-1.png');
-        expect(text).toContain('"data-testid":"pb2-stale-badge"');
-        expect(text).toContain('Image is stale');
-        expect(text).toContain('"data-chip":"stale"');
-        expect(text).not.toContain('pb2-scene-render');
-    });
-    it('v1 approved page: no chip at all (approved/review are v3 concepts)', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v1', pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', dataObjectId: 'd1', reviewStatus: 'APPROVED' }] });
-        expect(JSON.stringify(pbf.renderPb2ScenePage())).not.toContain('pb2-scene-chip');
-    });
-    it('v3 approved + pinned page: approved chip with pinned suffix, Re-render button, no badge', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', pinned: true, dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED' }] });
+    it('approved + pinned page: approved chip with pinned suffix, Re-render button, no badge', () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', pinned: true, dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED' }] });
         let text = JSON.stringify(pbf.renderPb2ScenePage());
         expect(text).toContain('"data-chip":"approved"');
         expect(text).toContain('Approved · pinned');
@@ -198,8 +162,8 @@ describe('renderPb2ScenePage — chip, stale overlay, per-scene Render button', 
         expect(text).toContain('Re-render');
         expect(text).not.toContain('pb2-stale-badge');
     });
-    it('v3 never-rendered page: no image, "Needs render" badge only when STALE, button says Render', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'READY' }] });
+    it('never-rendered page: no image, "Needs render" badge only when STALE, button says Render', () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'READY' }] });
         let text = JSON.stringify(pbf.renderPb2ScenePage());
         expect(text).not.toContain('pb2-scene-image');
         expect(text).not.toContain('pb2-stale-badge');
@@ -303,7 +267,7 @@ async function waitForTerminal(maxMs) {
 
 describe('per-scene render → 202 → job polling → terminal refresh', () => {
     it('POSTs /scene/{id}/render?force=true (an explicit per-scene render re-rolls a current node), polls /rest/job/{jobId}, then clears scene cache and reloads pages', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3' });
+        pbf.__setPb2V3StateForTest({});
         let calls = mockRenderStack();
         await pbf.__pb2SubmitRenderSceneForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
         let st = await waitForTerminal();
@@ -323,7 +287,7 @@ describe('per-scene render → 202 → job polling → terminal refresh', () => 
     });
 
     it('a 429 / in-flight 409 is toasted verbatim and never unpins', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3' });
+        pbf.__setPb2V3StateForTest({});
         let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
         let calls = mockRenderStack({ sceneRender: () => jsonResponse(429, { error: 'Principal already has 2 of 2 render runs in flight' }) });
         await pbf.__pb2SubmitRenderSceneForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
@@ -340,7 +304,7 @@ describe('per-scene render → 202 → job polling → terminal refresh', () => 
     });
 
     it('pinned 409: body shown in the confirmation; declining sends nothing more', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3' });
+        pbf.__setPb2V3StateForTest({});
         let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(false);
         let calls = mockRenderStack({ sceneRender: () => jsonResponse(409, { error: 'Nothing to render: every node of scene 1 is current (0 reused, 1 pinned)' }) });
         await pbf.__pb2SubmitRenderSceneForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
@@ -354,7 +318,7 @@ describe('per-scene render → 202 → job polling → terminal refresh', () => 
     });
 
     it('pinned 409: accepting sends pin {pinned:false} to the scene node, then re-submits WITH force and watches', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3' });
+        pbf.__setPb2V3StateForTest({});
         vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
         let attempt = 0;
         // The planner's view: a pinned terminal is a 409 (pinned count) whatever the flag; once unpinned the node is
@@ -381,7 +345,7 @@ describe('per-scene render → 202 → job polling → terminal refresh', () => 
     });
 
     it('pinned 409 on a page with no sceneNodeObjectId: toasted, no confirmation (nothing to unpin)', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE' }] });
+        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE' }] });
         let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
         mockRenderStack({ sceneRender: () => jsonResponse(409, { error: 'Nothing to render: every node of scene 1 is current (0 reused, 1 pinned)' }) });
         await pbf.__pb2SubmitRenderSceneForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
@@ -392,7 +356,7 @@ describe('per-scene render → 202 → job polling → terminal refresh', () => 
 
 describe('render-all dialog → 202 → watch', () => {
     it('warns about scenesWithoutNode, closes the dialog and starts watching the job', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3' });
+        pbf.__setPb2V3StateForTest({});
         let close = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
         let calls = mockRenderStack();
         await pbf.__pb2SubmitRenderAllForTest();
@@ -403,7 +367,7 @@ describe('render-all dialog → 202 → watch', () => {
         expect(st.pb2Run.label).toBe('Render all');
     });
     it('a 409 "nothing to render" from render-all is toasted verbatim (no unpin offer for the whole book)', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3' });
+        pbf.__setPb2V3StateForTest({});
         let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
         mockRenderStack({ renderAll: () => jsonResponse(409, { error: 'Nothing to render: every node of book B1 is current (3 reused, 2 pinned)' }) });
         await pbf.__pb2SubmitRenderAllForTest();
@@ -453,7 +417,7 @@ describe('re-attach from server state (no localStorage)', () => {
 
 describe('resume an INTERRUPTED run', () => {
     it('POST /run/{id}/resume → 202 → watching; banner cleared', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2ResumeRun: { runObjectId: 'R1', name: 'run-2', runStatus: 'INTERRUPTED', resumable: true, requestedNodeIds: [1], nodes: [] } });
+        pbf.__setPb2V3StateForTest({ pb2ResumeRun: { runObjectId: 'R1', name: 'run-2', runStatus: 'INTERRUPTED', resumable: true, requestedNodeIds: [1], nodes: [] } });
         let calls = mockRenderStack();
         await pbf.__pb2ResumeInterruptedForTest();
         expect(calls[0].method + ' ' + calls[0].url.replace(/^.*\/rest\//, '/rest/')).toBe('POST /rest/olio/picture-book/B1/run/R1/resume');
@@ -462,7 +426,7 @@ describe('resume an INTERRUPTED run', () => {
         expect(st.pb2Run.label).toBe('Resume run-2');
     });
     it('409 (run no longer INTERRUPTED) → toasted verbatim and the banner is dropped; other errors keep it', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2ResumeRun: { runObjectId: 'R1', runStatus: 'INTERRUPTED', resumable: true, requestedNodeIds: [1], nodes: [] } });
+        pbf.__setPb2V3StateForTest({ pb2ResumeRun: { runObjectId: 'R1', runStatus: 'INTERRUPTED', resumable: true, requestedNodeIds: [1], nodes: [] } });
         mockRenderStack({ resume: () => jsonResponse(409, { error: 'Run R1 is DONE; only an INTERRUPTED run can be resumed' }) });
         await pbf.__pb2ResumeInterruptedForTest();
         expect(page.toast).toHaveBeenCalledWith('error', '(409) Run R1 is DONE; only an INTERRUPTED run can be resumed');
@@ -477,7 +441,7 @@ describe('resume an INTERRUPTED run', () => {
 
 describe('auto-approve toggle', () => {
     it('PUT /settings/auto-approve {autoApprove:true} and mirrors the server answer', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2AutoApprove: false });
+        pbf.__setPb2V3StateForTest({ pb2AutoApprove: false });
         let calls = mockRenderStack();
         await pbf.__pb2ToggleAutoApproveForTest(true);
         expect(calls[0].method).toBe('PUT');
@@ -487,7 +451,7 @@ describe('auto-approve toggle', () => {
         expect(pbf.__pb2V3StateForTest().pb2AutoApproveSaving).toBe(false);
     });
     it('a 400 keeps the previous state and toasts the server message', async () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2AutoApprove: false });
+        pbf.__setPb2V3StateForTest({ pb2AutoApprove: false });
         global.fetch = vi.fn(async () => jsonResponse(400, { error: true, message: 'autoApprove must be a boolean' }));
         await pbf.__pb2ToggleAutoApproveForTest(true);
         expect(pbf.__pb2V3StateForTest().pb2AutoApprove).toBe(false);

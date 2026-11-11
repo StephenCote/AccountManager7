@@ -47,8 +47,8 @@ import org.junit.Test;
  * settings surface.
  * <p>
  * Live {@code am7db}, no SD server: every run here executes a SCENE_PROMPT node (a TEXT artifact built from the
- * scene's description) or a REFERENCE_STRIP node (pure Java2D), both of which {@code executeNodeRun} accepts
- * with a null {@code SDUtil}. The shared {@code pb2c-graph} fixture book is used, as the other Pb tests do; the
+ * scene's description), which {@code executeNodeRun} accepts with a null {@code SDUtil} (the REFERENCE_STRIP case
+ * went with the PB1 strip executor at Phase 10 P10-1). The shared {@code pb2c-graph} fixture book is used, as the other Pb tests do; the
  * book's {@code autoApprove} switch is reset to off in {@link #resetAutoApprove} because other tests in the same
  * workflow assume it. Every assertion is scoped to the nodes this test created.
  */
@@ -233,48 +233,6 @@ public class TestPbAutoApprove extends BaseTest {
 		assertTrue("rule 1 still auto-selects the only attempt", selected(a));
 		assertNull(a.get(OlioFieldNames.FIELD_PB_APPROVED_BY));
 		assertFalse("a degraded attempt never pins", pinned(u, node, orgId));
-	}
-
-	/**
-	 * The reference strip is the executor whose fallbacks used to be invisible (the v1 {@code landscapeFailed}
-	 * flag is vacuous on V3): one bound portrait with real bytes, one bound portrait node with no artifact. The
-	 * strip renders from what it has, reports {@code portrait1: no selected artifact}, and - switch on - is not
-	 * auto-approved because of it. No SD server: the strip is pure Java2D.
-	 */
-	@Test
-	public void case05_referenceStripReportsMissingSourceAndIsNotApproved() throws Exception {
-		BaseRecord u = user();
-		BaseRecord bk = withAutoApprove(u, book(u), true);
-		BaseRecord wf = workflow(u, bk);
-		long orgId = orgOf(u);
-		String wfPath = PbBookUtil.workflowGroupPath(SLUG);
-
-		BaseRecord nodeA = node(u, wf, "p15-c05-a", PbNodeTypeEnumType.PORTRAIT);
-		BaseRecord nodeB = node(u, wf, "p15-c05-b", PbNodeTypeEnumType.PORTRAIT);
-		BaseRecord strip = node(u, wf, "p15-c05-strip", PbNodeTypeEnumType.REFERENCE_STRIP);
-		BaseRecord portraitA = imageArtifact(u, nodeA, "c05-a", 64, 96, 0x3366AA);
-		assertTrue("precondition: A's portrait is selected", selected(portraitA));
-		assertNull("precondition: B has no portrait", PbArtifactUtil.findSelected(u, nodeB, PbPipelineUtil.ROLE_PORTRAIT));
-		assertNotNull(PbGraphUtil.addBinding(u, wf, strip, PbPipelineUtil.ROLE_PORTRAIT_0, 0, nodeA, null, wfPath));
-		assertNotNull(PbGraphUtil.addBinding(u, wf, strip, PbPipelineUtil.ROLE_PORTRAIT_1, 0, nodeB, null, wfPath));
-
-		Map<String, Object> out = PbNodeExecutor.executeNodeRun(u, bk, wf, strip, (SDUtil) null);
-		logger.info("P1-5 case05 durationMs=" + out.get("durationMs") + " out=" + out);
-
-		assertEquals(PbRunStatusEnumType.COMPLETED.name(), status(out.get("runStatus")));
-		Long byteLength = (Long) out.get("byteLength");
-		assertTrue("the strip was rendered from the one available portrait", byteLength != null && byteLength.longValue() > 0L);
-		List<String> degradations = PbNodeExecutor.degradationsOf(out);
-		assertEquals("exactly the missing portrait1 is reported: " + degradations, 1, degradations.size());
-		assertEquals(PbPipelineUtil.ROLE_PORTRAIT_1 + ": no selected artifact", degradations.get(0));
-		assertEquals(Boolean.FALSE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
-		String skipped = (String) out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED);
-		assertTrue("skipped as degraded: " + skipped, skipped != null && skipped.startsWith("degraded: ")
-			&& skipped.contains(PbPipelineUtil.ROLE_PORTRAIT_1 + ": no selected artifact"));
-
-		BaseRecord a = artifactOf(u, out, orgId);
-		assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(a));
-		assertFalse(pinned(u, strip, orgId));
 	}
 
 	// ─────────────────────────────── guard (c): switching off un-approves nothing ───────────────────────────────

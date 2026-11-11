@@ -27,7 +27,6 @@ import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PbRenderJobUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -42,7 +41,6 @@ import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
 import org.cote.service.util.ServiceUtil;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -63,7 +61,7 @@ import jakarta.ws.rs.core.Response;
 /// THE UAT BLOCKER THIS PINS. A book made by the wizard (scenes and characters extracted, no workflow yet) answered
 /// every render from the reader with the 404 "This book has no workflow yet - generate a scene first" while plainly
 /// having a scene list. The contract now: the workflow and the scene's RENDER_PLAN node are created on first use,
-/// AFTER the gates (404 book / 409 switch / 403 update / 404 scene), as the book's updater - so the first render
+/// AFTER the gates (404 book / 403 update / 404 scene), as the book's updater - so the first render
 /// of a brand-new book is a 202 whose body says `nodeMaterialized:true`, a graph build is a 200 that materializes
 /// one node per scene and is idempotent, and render-all plans every scene with `scenesWithoutNode` always empty.
 /// A book with no scenes at all is render-all's 409 and the ONE case that leaves no workflow behind: the refusal
@@ -125,8 +123,6 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	private BaseRecord reader;
 	private BaseRecord stranger;
 	private long orgId;
-	private String pb0;
-	private String cb0;
 
 	private static final class Fixture {
 		String slug;
@@ -142,8 +138,6 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	public void setup() {
 		super.setup();
 		ServiceUtil.clearCache();
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
 		orgId = orgContext.getOrganizationId();
 		admin = orgContext.getAdminUser();
 		assertNotNull("Admin is null", admin);
@@ -158,20 +152,6 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 		assertNotNull("Olio principal is null", olioUser);
 		bootstrapOlioRoot();
 		ensureBooksUniverse();
-	}
-
-	/// The switch is process-global and other classes in this JVM depend on it: always restored.
-	@After
-	public void restoreRenderPath() {
-		PbRenderPath.configure(pb0, cb0);
-	}
-
-	private void v3() {
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
-	}
-
-	private void v1() {
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1);
 	}
 
 	// ─────────────────────────────── fixture (TestPictureBookCoverRoutes' shape) ───────────────────────────────
@@ -289,7 +269,7 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 		}
 	}
 
-	/// A bare book row owned by the owner in a group the owner owns (TestPbRenderPathRefusal's fixture): no world,
+	/// A bare book row owned by the owner in a group the owner owns (TestPbRouteGateOrder's fixture): no world,
 	/// no Workflow group, so only the refusals that precede ensureWorkflow are exercised on it.
 	private BaseRecord createBareBook() throws Exception {
 		String slug = "p10bb-" + UUID.randomUUID().toString().substring(0, 12);
@@ -519,21 +499,18 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 		refused(service.getWorkflow(NIL_UUID, anon), 401, NO_PRINCIPAL, "anonymous GET workflow");
 	}
 
-	/// Gate order: an unknown book is 404 BEFORE the switch is consulted (under v1 the refusal would otherwise be
-	/// the 409), so a refusal never discloses whether a book the caller cannot see exists.
+	/// Gate order: an unknown book is 404 before any later gate is consulted, so a refusal never discloses whether a
+	/// book the caller cannot see exists.
 	@Test
-	public void TestUnknownBookIs404BeforeTheSwitch() {
-		v1();
+	public void TestUnknownBookIs404() {
 		refused(render(owner, NIL_UUID, NIL_UUID), 404, NOT_FOUND, "scene render on an unknown book");
 		refused(build(owner, NIL_UUID), 404, NOT_FOUND, "graph build on an unknown book");
 		refused(renderAll(owner, NIL_UUID), 404, NOT_FOUND, "render-all on an unknown book");
-		assertFalse("the 404 must not carry the switch's refusal", errorText(renderAll(owner, NIL_UUID)).startsWith(PbRenderPath.REFUSAL_PREFIX));
 	}
 
 	/// A user with no grant on the book cannot tell it exists: 404 (not 403) on every route, and nothing is written.
 	@Test
 	public void TestStrangerIs404AndWritesNothing() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			String s0 = oid(addScene(f, 0));
@@ -549,32 +526,11 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 		}
 	}
 
-	/// Under v1 all three write routes are the switch's 409 with the documented prefix, after the book was found and
-	/// before anything is written; the refusal never reaches the workflow gate.
-	@Test
-	public void TestRefusedUnderV1AndWritesNothing() throws Exception {
-		v3();
-		Fixture f = createWorldBook(false);
-		try {
-			String s0 = oid(addScene(f, 0));
-			v1();
-			refusedNotByTheWorkflowGate(render(owner, f.bookOid, s0), 409, PbRenderPath.REFUSAL_PREFIX, "scene render under v1");
-			refusedNotByTheWorkflowGate(build(owner, f.bookOid), 409, PbRenderPath.REFUSAL_PREFIX, "graph build under v1");
-			refusedNotByTheWorkflowGate(renderAll(owner, f.bookOid), 409, PbRenderPath.REFUSAL_PREFIX, "render-all under v1");
-			v3();
-			assertNoWorkflow(f, "after the v1 refusals");
-		}
-		finally {
-			cleanup(f);
-		}
-	}
-
 	/// A Reader (Read on the book group and the world tree, nothing more) may look but not build or render: 403
 	/// naming the action, nothing written - and the gate answers before the scene is even resolved, so a reader
 	/// learns nothing about the scene list from a render.
 	@Test
 	public void TestReaderIs403AndWritesNothing() throws Exception {
-		v3();
 		Fixture f = createWorldBook(true);
 		try {
 			String s0 = oid(addScene(f, 0));
@@ -595,7 +551,6 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	/// is created: the owner's refused render leaves no workflow behind.
 	@Test
 	public void TestUnknownSceneIs404AndWritesNothing() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		Fixture other = null;
 		try {
@@ -619,7 +574,6 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	/// workflow first, this would be a 500, not the 409.
 	@Test
 	public void TestRenderAllOfASceneLessBookIs409AndWritesNothing() throws Exception {
-		v3();
 		BaseRecord bare = createBareBook();
 		try {
 			String bookOid = oid(bare);
@@ -637,7 +591,6 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	/// with no nodes, a repeat build idempotent on the same workflow - and render-all still the 409 "no scenes".
 	@Test
 	public void TestBuildGraphOnASceneLessBookIs200() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			refused(view(owner, f.bookOid), 404, NO_WORKFLOW, "precondition: GET workflow before any build");
@@ -671,7 +624,6 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	/// second render of a scene whose node exists reports `nodeMaterialized:false` with the same node.
 	@Test
 	public void TestNewBookRendersWithoutAGraphBuild() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			final int n = 3;

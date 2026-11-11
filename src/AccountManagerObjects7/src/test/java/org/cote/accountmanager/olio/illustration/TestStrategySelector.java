@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 import org.cote.accountmanager.olio.illustration.RenderPlan.Degradation;
 import org.cote.accountmanager.olio.illustration.RenderPlan.Strategy;
@@ -193,26 +194,31 @@ public class TestStrategySelector {
 		assertEquals(StrategySelector.REASON_FORCED, StrategySelector.select(b.build(), caps("flux2Klein_9b.safetensors"), true, null).getReason());
 	}
 
-	/// P5-2 §2.2: an ACTOR_REGION actor on a family with no mask support (Kontext) degrades every referenced
-	/// actor to text, TEXT_ONLY with the family named; a hand-built plan can ask for what the family lacks.
+	/// P5-2 §2.2: an ACTOR_REGION actor on a family with no mask support degrades every referenced actor to
+	/// text, TEXT_ONLY with the family named; a hand-built plan can ask for what the family lacks. Every
+	/// shipped family supports masks since Phase 10 P10-3 removed the Kontext row, so the family is declared
+	/// here through the resource-shape factory - the branch (StrategySelector REASON_NO_MASK_SUPPORT_SUFFIX)
+	/// is live code and stays pinned.
 	@Test
 	public void masklessFamilyDegradesRegionActorsToTextOnly() {
 		RenderPlan p = plan(false)
 			.actor(new RenderPlan.Actor.Builder("c01").name("Jideon").referenced(true).referenceStage(RenderPlan.STAGE_BASE).build())
 			.actor(new RenderPlan.Actor.Builder("c02").name("Mara").box(new RenderPlan.Box(0.6, 0.1, 0.3, 0.8)).referenced(true).referenceStage(RenderPlan.STAGE_ACTOR_REGION).build())
-			.model(sceneDirect("flux1_kontext_dev.safetensors"))
+			.model(sceneDirect("maskless_v1.safetensors"))
 			.build();
-		RendererCapabilities kontext = caps("flux1_kontext_dev.safetensors");
-		assertTrue(kontext.isSupportsReferences());
-		assertTrue(!kontext.isSupportsMasks());
+		RendererCapabilities maskless = RendererCapabilities.fromMap(Map.of(
+			"pattern", "*maskless*", "maxReferences", 1, "supportsReferences", true, "supportsMasks", false,
+			"cfgRange", List.of(1.0, 3.5)));
+		assertTrue(maskless.isSupportsReferences());
+		assertTrue(!maskless.isSupportsMasks());
 		List<Degradation> degs = new ArrayList<>();
-		Strategy s = StrategySelector.select(p, kontext, false, degs);
+		Strategy s = StrategySelector.select(p, maskless, false, degs);
 		assertEquals(PbStrategyEnumType.TEXT_ONLY, s.getName());
-		assertEquals("TEXT_ONLY: renderer family *kontext* has no mask support", s.getReason());
+		assertEquals("TEXT_ONLY: renderer family *maskless* has no mask support", s.getReason());
 		assertEquals(Collections.singletonList(RenderPlan.STAGE_BASE), s.getStages());
 		assertEquals("every referenced actor is degraded, not only the region one", 2, degs.size());
 		assertEquals("c01", degs.get(0).getActorId());
-		assertEquals("Mara rendered from description (renderer family *kontext* has no mask support)", degs.get(1).getMessage());
+		assertEquals("Mara rendered from description (renderer family *maskless* has no mask support)", degs.get(1).getMessage());
 		assertEquals(RenderPlan.STAGE_BASE, degs.get(1).getStage());
 	}
 }

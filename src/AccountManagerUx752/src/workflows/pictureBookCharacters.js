@@ -56,16 +56,15 @@ let savingIdentity = false;
 // {standalone: true} option passed by the launch site — never inferred from the dialog stack.
 let standalone = false;
 // V3 (P1-10 S5): "affected scenes" for the selected character. Only in standalone mode (where
-// bookObjectId IS the olio.pb.book objectId the V3 routes take) and only on the v3 render path.
+// bookObjectId IS the olio.pb.book objectId the V3 routes take).
 // getAffectedBy is called once per character-detail open and once after saveIdentity - never per
 // row, never on a poll.
-let renderPath = 'v1';
 let affected = null;          // { forObjectId, loading, data, error }
 let lastSaveKind = null;      // 'watched' | 'unwatched' | 'none' after the last saveIdentity (caveat text)
 let regen = null;             // { total, done, current, aborted } while "Regenerate" runs
 let regenPollIntervalMs = undefined; // pollJob default; Vitest shortens it through the test seam
 // V3 P4-9: the selected character's wardrobe (GET /{book}/character/{char}/wardrobe), read once per
-// detail open and once after each wardrobe write. Only in standalone + v3, like the affected panel.
+// detail open and once after each wardrobe write. Only in standalone, like the affected panel.
 let wardrobe = null;          // { forObjectId, loading, data: normalizeWardrobe(), error }
 let wardrobeBusy = null;      // 'add' | 'migrate' | 'default:<apparelOid>' | 'reference:<apparelOid>' while a write runs
 let wardrobeAddText = '';     // the "Add alternate" description input
@@ -88,7 +87,6 @@ function resetState() {
     editDescription = '';
     savingIdentity = false;
     standalone = false;
-    renderPath = 'v1';
     affected = null;
     lastSaveKind = null;
     regen = null;
@@ -157,7 +155,7 @@ function scenesForIndexes(pages, indexes) {
 }
 
 function v3Enabled() {
-    return standalone && renderPath === 'v3' && !!bookObjectId;
+    return standalone && !!bookObjectId;
 }
 
 /** The ONE affected-by read for a character detail (open, or post-save re-open). */
@@ -1113,16 +1111,9 @@ async function initCharacterManager(theBookObjectId, opts) {
     standalone = !!(opts && opts.standalone);
     loading = true;
     m.redraw();
-    let work = [refreshList()];
-    if (standalone) {
-        // Standalone = launched with the olio.pb.book objectId (PB2), the id the V3 routes take; the
-        // wizard passes the data.group id, so the affected panel never applies there. Missing/failed
-        // render-path read = v1 (same rule as pictureBook.js pb2IsV3).
-        work.push(Promise.resolve().then(function () { return am7client.getRenderPath(); })
-            .then(function (rp) { renderPath = (rp && typeof rp === 'object' && rp.picturebook === 'v3') ? 'v3' : 'v1'; })
-            .catch(function () { renderPath = 'v1'; }));
-    }
-    await Promise.all(work);
+    // Standalone = launched with the olio.pb.book objectId (PB2), the id the V3 routes take; the
+    // wizard passes the data.group id, so the affected panel never applies there.
+    await refreshList();
     loading = false;
     m.redraw();
 }
@@ -1133,10 +1124,9 @@ function renderCharacterManagerContent() {
 }
 
 /**
- * Open Manage Characters as its own Dialog — used by the wizard's steps 4/5 "Manage Characters"
- * button (a quick one-off tweak while generating/viewing, stacked on top of the wizard's own open
- * Dialog), independent of Step 3's inline rendering of the exact same content; and by the PB2 book
- * list / reader header, which pass {standalone: true} because nothing is open underneath.
+ * Open Manage Characters as its own Dialog — used by the PB2 book list / reader header, which pass
+ * {standalone: true} because nothing is open underneath; independent of the wizard Step 3's inline
+ * rendering of the exact same content.
  * @param {string} theBookObjectId - book group objectId
  * @param {{standalone?: boolean}} [opts] - standalone: no wizard Dialog underneath (see openFullEditor)
  */
@@ -1156,7 +1146,7 @@ async function openCharacterManager(theBookObjectId, opts) {
 // ── Vitest seams (P1-10 S5) — not for production callers ─────────────
 export function __pbCharStateForTest() {
     return {
-        bookObjectId: bookObjectId, standalone: standalone, renderPath: renderPath,
+        bookObjectId: bookObjectId, standalone: standalone,
         selectedObjectId: selectedObjectId, selectedInst: selectedInst,
         affected: affected, lastSaveKind: lastSaveKind, regen: regen,
         editingIdentity: editingIdentity, editName: editName, editDescription: editDescription,
@@ -1167,7 +1157,6 @@ export function __setPbCharStateForTest(patch) {
     patch = patch || {};
     if ('bookObjectId' in patch) bookObjectId = patch.bookObjectId;
     if ('standalone' in patch) standalone = patch.standalone;
-    if ('renderPath' in patch) renderPath = patch.renderPath;
     if ('selectedObjectId' in patch) selectedObjectId = patch.selectedObjectId;
     if ('selectedInst' in patch) selectedInst = patch.selectedInst;
     if ('affected' in patch) affected = patch.affected;

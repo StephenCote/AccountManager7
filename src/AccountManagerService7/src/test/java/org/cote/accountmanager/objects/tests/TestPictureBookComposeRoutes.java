@@ -26,7 +26,6 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -42,7 +41,6 @@ import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
 import org.cote.service.util.ServiceUtil;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -61,9 +59,7 @@ import jakarta.ws.rs.core.Response;
 ///
 /// FIXTURE. The same hand-built H2 world fixture as TestPictureBookLocationRoutes (its doc comment says why a bare book
 /// is not enough: composing a scene opens the book's world context) with its own user names, slug prefix and group so
-/// the two classes never share rows. The render-path switch is process-global and the Service7 harness defaults
-/// PictureBook to v1, so every case pins it (configure) and @After restores what it found, as
-/// TestChapBookRestContract does.
+/// the two classes never share rows.
 ///
 /// LLM. The harness has no `generalChat` chat config in any group the test users can see (asserted as a precondition
 /// in the job case, not assumed): PictureBookUtil.callLlmInternal then raises the hard flag WITHOUT an HTTP call, so
@@ -106,8 +102,6 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 	private BaseRecord reader;
 	private BaseRecord stranger;
 	private long orgId;
-	private String pb0;
-	private String cb0;
 
 	private static final class Fixture {
 		String slug;
@@ -121,8 +115,6 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 	public void setup() {
 		super.setup();
 		ServiceUtil.clearCache();
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
 		orgId = orgContext.getOrganizationId();
 		admin = orgContext.getAdminUser();
 		assertNotNull("Admin is null", admin);
@@ -136,20 +128,6 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 		assertNotNull("Olio principal is null", olioUser);
 		bootstrapOlioRoot();
 		ensureBooksUniverse();
-	}
-
-	/// The switch is process-global and other classes in this JVM depend on it: always restored.
-	@After
-	public void restoreRenderPath() {
-		PbRenderPath.configure(pb0, cb0);
-	}
-
-	private void v3() {
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
-	}
-
-	private void v1() {
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1);
 	}
 
 	// ─────────────────────────────── fixture (TestPictureBookLocationRoutes' shape) ───────────────────────────────
@@ -487,45 +465,34 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 		refused(service.proposeLocations(NIL_UUID, "", o), 404, "Book not found", "propose with a blank body");
 	}
 
-	/// A user with no grant on the book cannot tell it exists: 404 "Book not found" on all three, on either render path,
-	/// the scene id never being consulted.
+	/// A user with no grant on the book cannot tell it exists: 404 "Book not found" on all three, the scene id never
+	/// being consulted.
 	@Test
 	public void TestStrangerIs404OnEveryRoute() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
 			HttpServletRequestMock s = requestAs(stranger);
 			String nf = "Book not found";
-			v3();
-			refused(service.compose(f.bookOid, "{}", s, SD_CONTEXT), 404, nf, "stranger compose (v3)");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", s, NO_SD_CONTEXT), 404, nf, "stranger scene compose (v3)");
-			refused(service.proposeLocations(f.bookOid, "{}", s), 404, nf, "stranger propose (v3)");
-			v1();
-			refused(service.compose(f.bookOid, "{}", s, SD_CONTEXT), 404, nf, "stranger compose (v1)");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", s, NO_SD_CONTEXT), 404, nf, "stranger scene compose (v1)");
-			refused(service.proposeLocations(f.bookOid, "{}", s), 404, nf, "stranger propose (v1)");
+			refused(service.compose(f.bookOid, "{}", s, SD_CONTEXT), 404, nf, "stranger compose");
+			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", s, NO_SD_CONTEXT), 404, nf, "stranger scene compose");
+			refused(service.proposeLocations(f.bookOid, "{}", s), 404, nf, "stranger propose");
 		}
 		finally {
 			cleanup(f);
 		}
 	}
 
-	/// A book on the v1 path has no compositions to make: both compose routes are 409 with the render-path refusal,
-	/// before the scene is looked up. The location pass is not a V3 feature (P3-4 shipped it on both paths), so the
-	/// propose job is accepted for the same book - and on a scene-less book it reports nothing to cluster.
+	/// The location pass is accepted on a scene-less book (every gate passes; there is simply nothing to cluster) and
+	/// the job reports exactly that: no scene considered, no chunk built, no proposal, and not a hard failure.
 	@Test
-	public void TestV1BookRefusesComposeButNotPropose() throws Exception {
+	public void TestProposeOnASceneLessBookReportsNothing() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
 			HttpServletRequestMock o = requestAs(owner);
-			v1();
-			refused(service.compose(f.bookOid, "{}", o, SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "v1 compose");
-			refused(service.compose(f.bookOid, json("quickStart", Boolean.TRUE, "force", Boolean.TRUE), o, SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "v1 compose with options");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", o, NO_SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "v1 scene compose");
-
-			Map<String, Object> submit = accepted(service.proposeLocations(f.bookOid, "{}", o), "v1 propose");
+			Map<String, Object> submit = accepted(service.proposeLocations(f.bookOid, "{}", o), "scene-less propose");
 			assertEquals(f.bookOid, submit.get("bookObjectId"));
 			assertEquals("pb.proposeLocations", submit.get("kind"));
-			Map<String, Object> pass = awaitJob(owner, submit, "v1 propose job");
+			Map<String, Object> pass = awaitJob(owner, submit, "scene-less propose job");
 			assertEquals(f.bookOid, pass.get("bookObjectId"));
 			assertEquals("pb.proposeLocations", pass.get("kind"));
 			assertEquals("no scene has a setting, so none were considered", 0, num(pass, "scenesConsidered"));
@@ -539,25 +506,19 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 	}
 
 	/// A Read-only grantee may not compose or propose: 403 naming the refused action, before any body value, chat
-	/// config or scene is consulted. The facade orders the render-path check before the grant check, so under v1
-	/// the same reader sees the 409 (measured order, PbServiceFacade.requestCompose / composeScene).
+	/// config or scene is consulted.
 	@Test
 	public void TestReaderIs403OnEveryRoute() throws Exception {
 		Fixture f = createWorldBook(true);
 		try {
 			HttpServletRequestMock r = requestAs(reader);
 			String na = "Not authorized to ";
-			v3();
 			refused(service.compose(f.bookOid, "{}", r, SD_CONTEXT), 403, na + "compose scenes in this book", "reader compose");
 			refused(service.compose(f.bookOid, json("chatConfigName", MISSING_CONFIG, "quickStart", Boolean.TRUE), r, NO_SD_CONTEXT), 403, na + "compose scenes in this book", "reader compose is the 403, not the 404 config or the 500 SD");
 			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", r, NO_SD_CONTEXT), 403, na + "compose scenes in this book", "reader scene compose");
 			refused(service.composeScene(f.bookOid, NIL_UUID, json("chatConfigName", MISSING_CONFIG, "force", Boolean.TRUE), r, NO_SD_CONTEXT), 403, na + "compose scenes in this book", "reader scene compose is the 403, not the 404");
 			refused(service.proposeLocations(f.bookOid, "{}", r), 403, na + "propose locations in this book", "reader propose");
 			refused(service.proposeLocations(f.bookOid, json("chatConfigName", MISSING_CONFIG), r), 403, na + "propose locations in this book", "reader propose is the 403, not the 404 config");
-			v1();
-			refused(service.compose(f.bookOid, "{}", r, SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "reader compose under v1");
-			refused(service.composeScene(f.bookOid, NIL_UUID, "{}", r, NO_SD_CONTEXT), 409, PbRenderPath.REFUSAL_PREFIX, "reader scene compose under v1");
-			refused(service.proposeLocations(f.bookOid, "{}", r), 403, na + "propose locations in this book", "reader propose under v1");
 			/// and nothing was queued for the book
 			assertEquals("no job runs for the book", 0, AsyncJobRegistry.list(reader).stream().filter(j -> !j.isTerminal()).count());
 		}
@@ -575,7 +536,6 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 		BaseRecord bare = createBareBook();
 		try {
 			HttpServletRequestMock o = requestAs(owner);
-			v3();
 			String noWorld = "has no resolvable world";
 			refused(service.compose(oid(bare), "{}", o, SD_CONTEXT), 409, noWorld, "bare compose");
 			refused(service.compose(oid(bare), json("force", Boolean.TRUE), o, SD_CONTEXT), 409, noWorld, "bare forced compose");
@@ -597,7 +557,6 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 		Fixture f = createWorldBook(false);
 		try {
 			HttpServletRequestMock o = requestAs(owner);
-			v3();
 			String cnf = "Chat config not found: " + MISSING_CONFIG;
 			refused(service.compose(f.bookOid, json("chatConfigName", MISSING_CONFIG), o, SD_CONTEXT), 404, cnf, "compose with unknown config");
 			refused(service.compose(f.bookOid, json("chatConfigName", "  " + MISSING_CONFIG + " "), o, SD_CONTEXT), 404, cnf, "compose with unknown config is trimmed");
@@ -651,7 +610,6 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 		Fixture f = createWorldBook(false);
 		try {
 			HttpServletRequestMock o = requestAs(owner);
-			v3();
 			assertNull("precondition: this case relies on no 'generalChat' chat config being resolvable as the owner on this harness",
 				ChatUtil.resolveConfig(owner, OlioModelNames.MODEL_CHAT_CONFIG, "generalChat", null));
 			BaseRecord scene = addScene(f, 1);
@@ -825,7 +783,6 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 		Fixture f = createWorldBook(false);
 		try {
 			HttpServletRequestMock o = requestAs(owner);
-			v3();
 			assertNull("precondition: this case relies on no 'generalChat' chat config being resolvable as the owner on this harness",
 				ChatUtil.resolveConfig(owner, OlioModelNames.MODEL_CHAT_CONFIG, "generalChat", null));
 			BaseRecord scene = addScene(f, 1);

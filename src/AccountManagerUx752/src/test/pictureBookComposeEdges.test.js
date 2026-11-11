@@ -388,7 +388,7 @@ describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose
         origFetch = global.fetch;
         pbf = await import('../features/pictureBook.js');
         pbf.__pb2StopWatchingForTest();
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3', pb2Run: null, pb2ResumeRun: null, pb2Submitting: false, pb2CurrentPage: 0, pb2BookObjectId: 'B1', pb2BookName: 'Quay', pb2Pages: PAGES2, pb2SceneDegradations: {} });
+        pbf.__setPb2V3StateForTest({ pb2Run: null, pb2ResumeRun: null, pb2Submitting: false, pb2CurrentPage: 0, pb2BookObjectId: 'B1', pb2BookName: 'Quay', pb2Pages: PAGES2, pb2SceneDegradations: {} });
         calls = [];
         global.fetch = vi.fn(async (u, init) => {
             let url = String(u).replace(/^.*\/rest\//, '/rest/');
@@ -404,7 +404,7 @@ describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose
     });
     afterEach(() => {
         pbf.__pb2StopWatchingForTest();
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v1', pb2Run: null, pb2ResumeRun: null, pb2CurrentPage: 0, pb2Pages: [], pb2SceneDegradations: {} });
+        pbf.__setPb2V3StateForTest({ pb2Run: null, pb2ResumeRun: null, pb2CurrentPage: 0, pb2Pages: [], pb2SceneDegradations: {} });
         global.fetch = origFetch;
         vi.restoreAllMocks();
     });
@@ -462,19 +462,11 @@ describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose
         expect(errChip.attrs.title).toBe('nodeView failed: 500');
         expect(textOf(errChip)).toContain('plan not read');
     });
-    it('the Compose button routes to /picture-book/{book}/compose/{scene}; under v1 there is no button, no chip and no node read', async () => {
+    it('the Compose button routes to /picture-book/{book}/compose/{scene}', () => {
         pbf.__setPb2V3StateForTest({ pb2CurrentPage: 1 });
         let btn = one(pbf.renderPb2ScenePage(), 'pb2-scene-compose');
         expect(btn.attrs.title).toBe('Open the composition board for this scene (camera, actors, elements, wardrobe)');
         btn.attrs.onclick();
         expect(m.route.set).toHaveBeenCalledWith('/picture-book/B1/compose/s1');
-
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v1', pb2CurrentPage: 0, pb2SceneDegradations: {} });
-        nextButton().attrs.onclick();
-        await new Promise(r => setTimeout(r, 10));
-        expect(calls).toEqual([]);
-        let v = pbf.renderPb2ScenePage();
-        none(v, 'pb2-scene-compose');
-        none(v, 'pb2-scene-degradations');
     });
 });

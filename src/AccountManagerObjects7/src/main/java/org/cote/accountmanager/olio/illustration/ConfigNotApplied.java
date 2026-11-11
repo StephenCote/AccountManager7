@@ -17,7 +17,7 @@ public final class ConfigNotApplied {
 	/// No negative prompt compiled; the v1 default negative is not applied on the plan path.
 	public static final String DEFAULT_NEGATIVE = "DEFAULT_NEGATIVE";
 
-	/// The config's compositeMode (flux2/kontext/classic) is a v1 composite concept; the plan path selects a strategy.
+	/// The config's compositeMode (flux2/classic) is a v1 composite concept; the plan path selects a strategy.
 	public static final String COMPOSITE_MODE = "COMPOSITE_MODE";
 
 	/// The config's skipLandscape flag; the plan path renders no landscape stage for a chat scene.

@@ -282,12 +282,10 @@ services:
       # Neither is set in the main docker-compose.yml -- production stays inert.
       LLM_EMULATOR_FIXTURE_ROOT: ${LLM_EMULATOR_FIXTURE_ROOT:-/fixtures/llm}
       LLM_EMULATOR_RECORD_DIR: ${LLM_EMULATOR_RECORD_DIR:-}
-      # PictureBook V3 render-path switch per product (design §28.1 Stage 1; chat §24.1). The TEST
-      # stack boots all three on v3 so every Playwright spec exercises the graph render path; since
-      # P10-A 0 the main docker-compose.yml defaults all three to v3 as well (v1 is the per-product
-      # rollback). Boot-pinned: a change needs `up -d am7`, not `restart`.
-      PICTUREBOOK_RENDER_PATH: ${PICTUREBOOK_RENDER_PATH:-v3}
-      CHAPBOOK_RENDER_PATH: ${CHAPBOOK_RENDER_PATH:-v3}
+      # Chat scene render-path switch (design §24.1): the TEST stack boots chat on v3 so the chat specs
+      # exercise the shared illustration service; the main docker-compose.yml defaults it to v3 as well
+      # (v1 is the rollback). Boot-pinned: a change needs `up -d am7`, not `restart`. PictureBook and
+      # ChapBook are V3-only since Phase 10 P10-1 and have no switch.
       CHAT_RENDER_PATH: ${CHAT_RENDER_PATH:-v3}
     volumes:
       # Persistent host location (see AM7_DATA_DIR above): app keystores/vault/datagen/streams

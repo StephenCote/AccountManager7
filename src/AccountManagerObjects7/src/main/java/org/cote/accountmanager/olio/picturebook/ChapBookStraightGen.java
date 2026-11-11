@@ -19,7 +19,7 @@ import org.cote.accountmanager.util.JSONUtil;
 
 /// ChapBook pages are straight image generation (Stephen, 2026-11-10): on the V3 plan path a ChapBook render must
 /// honour its effective olio.sd.config - book config, then the page's configOverride (mirrored onto the page node,
-/// PbBookUtil.mirrorSceneOntoNode) - the way the v1 page path (ChapBookUtil.renderResolvedSceneV1) always did,
+/// PbBookUtil.mirrorSceneOntoNode) - the way the direct-SD v1 page path (ChapBookUtil.renderResolvedSceneV1, removed at Phase 10 P10-1) always did,
 /// instead of the PictureBook plan rules (preset-governed steps D6, BASE only, look from olio.pb.style only):
 /// <ol>
 /// <li><b>steps</b> - the config's steps when set (> 0), else the preset's;</li>

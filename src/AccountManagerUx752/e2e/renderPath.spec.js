@@ -1,22 +1,19 @@
 /**
- * P1-8 — the boot-pinned PictureBook V3 render-path switch (design §28.1 Stage 1), live against the
- * Docker test stack, which docker-compose.test.yml boots with BOTH products on v3:
+ * The boot-pinned render-path switch (P1-8 / P2-7; chat-only since Phase 10 P10-1), live against the
+ * Docker test stack, which docker-compose.test.yml boots with chat on v3:
  *
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/renderPath.spec.js --workers=1 --project=chromium
  *
  * What is proven here, as the shared non-admin user:
- *   1. GET /rest/config/render-path reports { picturebook, chapbook } and the test stack is v3/v3
- *      (so every other Phase 1 spec is really exercising V3, not silently being refused);
- *      an unauthenticated call is not served.
- *   2. A STORY book and a CHAPBOOK book the shared user owns are ADMITTED past the switch: a V3 route
- *      answers (auto-approve 200) and an unknown run id gets the 404 behind the switch, never the
- *      "render path is v1" 409.
- *   3. The admin Feature Configuration page shows both values read-only (as the AccountAdministrators
+ *   1. GET /rest/config/render-path reports exactly { chat } and the test stack is v3; an unauthenticated
+ *      call is not served.
+ *   2. A STORY book and a CHAPBOOK book the shared user owns answer on their V3 routes (auto-approve 200,
+ *      an unknown run id 404) — there is no per-product switch in front of them any more.
+ *   3. The admin Feature Configuration page shows the chat value read-only (as the AccountAdministrators
  *      -role TEST user, never the admin account).
  *
- * The v1 refusal itself cannot be produced against a running stack without restarting it on a
- * different environment; that side is covered by Service7's TestPbRenderPathRefusal (H2) and Objects7's
- * TestPbRenderPath (am7db), which flip the process-global switch in-JVM.
+ * The chat v1 rollback cannot be produced against a running stack without restarting it on a different
+ * environment; that side is Service7's TestChatSceneRenderPath (H2) and Objects7's TestPbRenderPath (am7db).
  *
  * Fixtures are find-or-create by stable slug so the olio world behind each book is created at most once.
  */
@@ -31,7 +28,6 @@ const REST = '/AccountManagerService7/rest';
 const PB = REST + '/olio/picture-book';
 const STORY_SLUG = 'rp-spec-story';
 const CHAPBOOK_SLUG = 'rp-spec-chapbook';
-const REFUSAL = 'render path is v1';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -69,7 +65,7 @@ async function findBookBySlug(request, slug) {
     return (b && b.results && b.results.length) ? b.results[0] : null;
 }
 
-test.describe('P1-8 render-path switch — live', () => {
+test.describe('render-path switch (chat) — live', () => {
 
     test.beforeAll(async ({ request }) => {
         shared = await ensureSharedTestUser(request);
@@ -106,12 +102,12 @@ test.describe('P1-8 render-path switch — live', () => {
         console.log('[renderPath] story =', storyBookOid, '| chapbook =', chapBookOid);
     });
 
-    test('GET /rest/config/render-path reports v3/v3/v3 on the test stack and needs a principal', async ({ request }) => {
+    test('GET /rest/config/render-path reports { chat: v3 } on the test stack and needs a principal', async ({ request }) => {
         await apiLogin(request, shared.testUserName, shared.testPassword);
         const r = await request.get(REST + '/config/render-path');
         expect(r.status(), 'render-path status (a 404 means the Service7 under test predates P1-8)').toBe(200);
         const body = await r.json();
-        expect(body, 'a missing chat key means the Service7 under test predates P2-7').toEqual({ picturebook: 'v3', chapbook: 'v3', chat: 'v3' });
+        expect(body, 'chat-only body since P10-1').toEqual({ chat: 'v3' });
         await request.get(REST + '/logout');
 
         // No session at all: a fresh context must not be served the switch.
@@ -124,7 +120,7 @@ test.describe('P1-8 render-path switch — live', () => {
         }
     });
 
-    test('a STORY book is admitted past the picturebook switch (no "render path is v1" 409)', async ({ request }) => {
+    test('a STORY book answers on its V3 routes', async ({ request }) => {
         await apiLogin(request, shared.testUserName, shared.testPassword);
         const fixture = await findBookBySlug(request, STORY_SLUG);
         expect(fixture && String(fixture.bookType).toLowerCase(), 'fixture bookType').toBe('story');
@@ -138,20 +134,18 @@ test.describe('P1-8 render-path switch — live', () => {
 
         const run = await request.get(PB + '/' + storyBookOid + '/run/no-such-run-' + Date.now().toString(36));
         const runText = await run.text();
-        expect(run.status(), 'unknown run id under v3 reaches the 404 behind the switch: ' + runText).toBe(404);
-        expect(runText).not.toContain(REFUSAL);
+        expect(run.status(), 'unknown run id is a 404: ' + runText).toBe(404);
 
         // A book straight from POST /chapter has no workflow yet, so the queue is either the empty
-        // list (200) or the facade's own "no workflow yet" 404 — both are behind the switch.
+        // list (200) or the facade's own "no workflow yet" 404.
         const q = await request.get(PB + '/' + storyBookOid + '/review-queue');
         const qText = await q.text();
-        expect([200, 404], 'review-queue under v3: ' + qText).toContain(q.status());
-        expect(qText).not.toContain(REFUSAL);
+        expect([200, 404], 'review-queue: ' + qText).toContain(q.status());
         if (q.status() === 404) expect(qText).toContain('no workflow yet');
         await request.get(REST + '/logout');
     });
 
-    test('a CHAPBOOK book is admitted past the chapbook switch (no "render path is v1" 409)', async ({ request }) => {
+    test('a CHAPBOOK book answers on its V3 routes', async ({ request }) => {
         await apiLogin(request, shared.testUserName, shared.testPassword);
         const fixture = await findBookBySlug(request, CHAPBOOK_SLUG);
         expect(fixture && String(fixture.bookType).toLowerCase(), 'fixture bookType').toBe('chapbook');
@@ -163,12 +157,11 @@ test.describe('P1-8 render-path switch — live', () => {
 
         const run = await request.get(PB + '/' + chapBookOid + '/run/no-such-run-' + Date.now().toString(36));
         const runText = await run.text();
-        expect(run.status(), 'unknown run id under v3: ' + runText).toBe(404);
-        expect(runText).not.toContain(REFUSAL);
+        expect(run.status(), 'unknown run id is a 404: ' + runText).toBe(404);
         await request.get(REST + '/logout');
     });
 
-    test('the Feature Configuration page shows all three products read-only', async ({ page, request }) => {
+    test('the Feature Configuration page shows the chat render path read-only', async ({ page, request }) => {
         const featAdmin = await ensureAdminRoleTestUser(request);
         expect(featAdmin.user && featAdmin.user.objectId, 'admin-role test user').toBeTruthy();
         expect(featAdmin.roleAssigned, 'AccountAdministrators role on the test user').toBe(true);
@@ -181,15 +174,11 @@ test.describe('P1-8 render-path switch — live', () => {
         await page.evaluate(() => window.m.route.set('/admin/features'));
         await expect(page.locator('h2').filter({ hasText: 'Feature Configuration' })).toBeVisible({ timeout: 15000 });
 
-        const pb = page.locator('[data-testid="render-path-picturebook"]');
-        const cb = page.locator('[data-testid="render-path-chapbook"]');
         const ch = page.locator('[data-testid="render-path-chat"]');
-        await expect(pb).toHaveAttribute('data-value', 'v3', { timeout: 15000 });
-        await expect(cb).toHaveAttribute('data-value', 'v3');
-        await expect(ch).toHaveAttribute('data-value', 'v3');
-        await expect(pb).toContainText('v3 (graph)');
-        await expect(cb).toContainText('v3 (graph)');
+        await expect(ch).toHaveAttribute('data-value', 'v3', { timeout: 15000 });
         await expect(ch).toContainText('v3 (graph)');
+        await expect(page.locator('[data-testid="render-path-picturebook"]')).toHaveCount(0);
+        await expect(page.locator('[data-testid="render-path-chapbook"]')).toHaveCount(0);
         // Read-only: no control inside the section.
         const section = page.locator('[data-testid="render-path"]');
         await expect(section).toBeVisible();

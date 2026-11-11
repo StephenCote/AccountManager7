@@ -19,7 +19,6 @@ import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -31,7 +30,6 @@ import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
 import org.cote.service.util.ServiceUtil;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -52,14 +50,12 @@ import jakarta.ws.rs.core.Response;
 /// the book's /Olio/Universes/Books/Worlds/<slug>/Workflow group, which only PbBookUtil.createBook's Olio
 /// world initialization builds, and a plain user cannot create the top-level /Olio node on this harness
 /// (TestChapBookServiceRenderPath, measured 2026-10-11). So every refusal that precedes the workflow - 401,
-/// the three 404s, the v1 409 and the unrecognised-API-type 500 - is pinned here against the real route, and
+/// the three 404s and the unrecognised-API-type 500 - is pinned here against the real route, and
 /// the world-less SD-backed call is pinned as a loud 500 naming the workflow, never a 200 and never a graph
 /// row. The contracts BEYOND the workflow - 503 INVENTORY_UNAVAILABLE, 409 NO_CANDIDATE, 409 empty text,
 /// MODEL_SUBSTITUTED still rendering, and the 200 with its base artifact - are TestPbRenderPlanExecutor
 /// (Objects7, am7db, real createBook, Swarm .39), and the 200 on the Docker stack is the Playwright spec
 /// e2e/pictureBookV3RenderPlan.spec.js.
-///
-/// The render-path switch is process-global; the one case that flips it restores it in finally.
 public class TestPictureBookRenderPlanRoute extends BaseTest {
 
 	private static final String OWNER_NAME = "pbrenderplanowner";
@@ -77,10 +73,6 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 	private BaseRecord owner;
 	private BaseRecord stranger;
 	private long orgId;
-	/// This harness boots on the v1 default (Objects7's BaseTest pins v3; Service7's does not), so every case
-	/// pins v3 itself and the switch is restored to what the harness had (TestChapBookServiceRenderPath).
-	private String pb0;
-	private String cb0;
 
 	@Override
 	@Before
@@ -93,14 +85,6 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 		assertNotNull("owner user is null", owner);
 		assertNotNull("stranger user is null", stranger);
 		assertNotEquals("owner and stranger must be different users", oid(owner), oid(stranger));
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
-	}
-
-	@After
-	public void restoreSwitch() {
-		PbRenderPath.configure(pb0, cb0);
 	}
 
 	// ─────────────────────────────── request / response helpers ───────────────────────────────
@@ -297,31 +281,6 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 			Response r = render(stranger, oid(book), oid(scenes.get(0)));
 			assertEquals("Book not found", refusal(r, 404, "stranger"));
 			assertNoWorkflow(book, "the stranger's 404");
-		}
-		finally {
-			cleanup(book, scenes);
-		}
-	}
-
-	/// With the PictureBook render path pinned to v1 the executor is refused with the v1 409 before the
-	/// workflow is touched (PbRenderPath.requireV3). Process-global switch, re-pinned to v3 in finally.
-	@Test
-	public void TestV1IsRefusedBeforeAnyGraphWork() throws Exception {
-		BaseRecord book = createBareBook();
-		List<BaseRecord> scenes = new ArrayList<>();
-		try {
-			scenes.add(addScene(book, 0, SETTING));
-			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3);
-			Response r;
-			try {
-				r = render(owner, oid(book), oid(scenes.get(0)));
-			}
-			finally {
-				PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
-			}
-			String text = refusal(r, 409, "v1 render path");
-			assertTrue("the v1 refusal names the render path: " + text, text.startsWith(PbRenderPath.REFUSAL_PREFIX));
-			assertNoWorkflow(book, "the v1 409");
 		}
 		finally {
 			cleanup(book, scenes);

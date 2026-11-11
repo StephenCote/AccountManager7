@@ -24,7 +24,6 @@ import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -38,7 +37,6 @@ import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
 import org.cote.service.util.ServiceUtil;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -92,8 +90,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 	private BaseRecord reader;
 	private BaseRecord stranger;
 	private long orgId;
-	private String pb0;
-	private String cb0;
 
 	private static final class Fixture {
 		String slug;
@@ -107,8 +103,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 	public void setup() {
 		super.setup();
 		ServiceUtil.clearCache();
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
 		orgId = orgContext.getOrganizationId();
 		admin = orgContext.getAdminUser();
 		assertNotNull("Admin is null", admin);
@@ -122,16 +116,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 		assertNotNull("Olio principal is null", olioUser);
 		bootstrapOlioRoot();
 		ensureBooksUniverse();
-	}
-
-	/// The switch is process-global and other classes in this JVM depend on it: always restored.
-	@After
-	public void restoreRenderPath() {
-		PbRenderPath.configure(pb0, cb0);
-	}
-
-	private void v3() {
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
 	}
 
 	// ─────────────────────────────── fixture (TestPictureBookPromoteRoutes' shape) ───────────────────────────────
@@ -410,7 +394,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 	public void TestStrangerIs404() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			BaseRecord scene = addScene(f, 1);
 			BaseRecord comp = compose(f, scene);
 			String sOid = oid(scene);
@@ -443,7 +426,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 	public void TestReaderIs403OnEveryWrite() throws Exception {
 		Fixture f = createWorldBook(true);
 		try {
-			v3();
 			BaseRecord scene = addScene(f, 1);
 			BaseRecord comp = compose(f, scene);
 			String sOid = oid(scene);
@@ -485,7 +467,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 	public void TestOwnerCrudRoundTrip() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			BaseRecord scene = addScene(f, 1);
 			BaseRecord comp = compose(f, scene);
 			String sOid = oid(scene);
@@ -623,7 +604,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 	public void TestUnknownIdsAre404() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			BaseRecord scene = addScene(f, 1);
 			BaseRecord comp = compose(f, scene);
 			String sOid = oid(scene);
@@ -659,7 +639,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 	public void TestBadBodyIs400() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			v3();
 			BaseRecord scene = addScene(f, 1);
 			BaseRecord comp = compose(f, scene);
 			String sOid = oid(scene);
@@ -731,7 +710,6 @@ public class TestPictureBookCompositionRoutes extends BaseTest {
 		Fixture a = createWorldBook(false);
 		Fixture b = createWorldBook(false);
 		try {
-			v3();
 			BaseRecord sceneA = addScene(a, 1);
 			BaseRecord compA = compose(a, sceneA);
 			BaseRecord sceneB = addScene(b, 1);

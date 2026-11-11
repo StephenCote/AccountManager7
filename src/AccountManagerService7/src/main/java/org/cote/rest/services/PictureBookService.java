@@ -72,16 +72,13 @@ import jakarta.ws.rs.core.Response;
  *   GET  /extract-checkpoints                 — The caller's unfinished extractions (checkpoint notes with no book yet)
  *   GET  /{workObjectId}/extract-checkpoints  — One document's checkpoints (whole-document + chapter ranges)
  *   DELETE /{workObjectId}/extract-checkpoints?startOffset=&endOffset= — Discard a checkpoint without re-extracting
- *   POST /scene/{sceneObjectId}/generate      — Generate SD image for one scene
  *   POST /scene/{sceneObjectId}/blurb         — Regenerate scene blurb via LLM
  *   GET  /{bookObjectId}/scenes               — Ordered scene list from .pictureBookMeta (bookObjectId = book group objectId OR olio.pb.book objectId)
  *   GET  /{bookObjectId}/settings              — Last-used image generation settings for this book (same either-id as /scenes)
- *   PUT  /{bookObjectId}/settings              — Store the book's common (+ optional composite) olio.sd.config once (same either-id as /scenes)
- *   POST /{bookObjectId}/prepare-images        — Batch-resolve landscape prompts for a set of scenes, then flush idle Ollama models once
  *   PUT  /{bookObjectId}/scenes/order         — Reorder scenes
  *   PUT  /scene/{sceneObjectId}/status        — Persist a client-driven scene status (accepted/skipped/pending/...)
  *   PUT  /scene/{sceneObjectId}/config-override — Persist a per-scene sparse olio.sd.config override (ChapBook scenes feed the config-precedence merge through this)
- *   POST /{key}/cancel                        — KI-10: cancel an in-flight extraction/prepare-images call (key = the same workObjectId/bookObjectId passed to the call being cancelled)
+ *   POST /{key}/cancel                        — KI-10: cancel an in-flight extraction call (key = the same workObjectId passed to the call being cancelled)
  *   DELETE /{bookObjectId}/reset              — Delete the whole book footprint (PbDeleteUtil.deleteBookComplete): PB2 graph, roles, world, ~U tree, meta, source range
  *
  * Health check + self-heal (PbHealthUtil via PbServiceFacade; GETs are read-only and create nothing,
@@ -710,59 +707,6 @@ public class PictureBookService {
         return m;
     }
 
-    /**
-     * POST /scene/{sceneObjectId}/generate
-     * Generate SD image for one scene using the 4-stage pipeline (see PictureBookUtil.generateSceneImage).
-     * Body: { chatConfig, sdConfig: {steps,refinerSteps,cfg,hires}, promptOverride }
-     *
-     * @deprecated PB1 (v1) entry, design §28.1 Stage 2 since P7-2: under the {@code picturebook.renderPath=v3}
-     *             default the body refuses with 409 {@code PbRenderPath.PB1_REPLACED_PREFIX} (after authorization,
-     *             so a stranger still gets 403; the {@code ~/Chat} single-image fallback is exempt). Replaced by
-     *             {@code POST /{bookObjectId}/scene/{sceneObjectId}/render-plan} / {@code /{bookObjectId}/render-all};
-     *             {@code picturebook.renderPath=v1} is the rollback; removal is Stage 4, Phase 10.
-     */
-    @Deprecated
-    @RolesAllowed({"admin", "user"})
-    @POST
-    @Path("/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/generate")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response generateSceneImage(@PathParam("sceneObjectId") String sceneObjectId,
-            String json, @Context HttpServletRequest request, @Context ServletContext context) {
-        BaseRecord user = ServiceUtil.getPrincipalUser(request);
-
-        PictureBookUtil.SceneGenerationParams sgp = new PictureBookUtil.SceneGenerationParams();
-        BaseRecord params = parseParams(json);
-        if (params != null) {
-            sgp.chatConfigName = params.get("chatConfig");
-            sgp.promptOverride = params.get("promptOverride");
-            sgp.promptTemplateOverride = params.get("promptTemplate");
-            Object ibv = params.get("isBook");
-            if (ibv instanceof Boolean) sgp.isBookOverride = (Boolean) ibv;
-            // The nested sdConfig / compositeSdConfig / sdConfigOverride are full olio.sd.config
-            // records (ephemeral model fields declared on olio.pictureBookRequest). ALL SD
-            // generation params now live on those records — PictureBookUtil merges
-            // (common -> override -> fillStyleDefaults) and derives style via getSDConfigPrompt.
-            // This layer stays pure transport: parse the records, no flattened-scalar extraction.
-            Object sdc = params.get("sdConfig");
-            if (sdc instanceof BaseRecord) sgp.sdConfig = (BaseRecord) sdc;
-            Object csdc = params.get("compositeSdConfig");
-            if (csdc instanceof BaseRecord) sgp.compositeSdConfig = (BaseRecord) csdc;
-            Object osdc = params.get("sdConfigOverride");
-            if (osdc instanceof BaseRecord) sgp.sdConfigOverride = (BaseRecord) osdc;
-        }
-
-        String sdApiType = resolveSdApiType(context);
-        String sdServer  = resolveSdServer(context);
-
-        try {
-            BaseRecord genResult = PictureBookUtil.generateSceneImage(user, sceneObjectId, sgp, sdApiType, sdServer);
-            return Response.status(200).entity(toJson(genResult)).build();
-        } catch (PictureBookException e) {
-            return handlePictureBookException(e);
-        }
-    }
-
     /** The {@code SDAPIEnumType} name the deployment pins in the {@code sd.server.apiType} init-param. */
     private static String resolveSdApiType(ServletContext context) {
         return context.getInitParameter("sd.server.apiType");
@@ -778,69 +722,9 @@ public class PictureBookService {
     }
 
     /**
-     * POST /{bookObjectId}/prepare-images
-     * Batch-resolve (and cache) the landscape prompt for every listed scene, then flush idle
-     * Ollama models ONCE — so a "Generate All" run does all of its LLM calls up front instead of
-     * interleaving one LLM call per scene between rounds of GPU-heavy SD calls. Call this before
-     * looping the per-scene /generate calls. bookObjectId is accepted for routing symmetry with
-     * the other book-scoped endpoints but isn't otherwise used — the scene objectIds carry
-     * everything PictureBookUtil needs.
-     * Body: { sceneObjectIds: [...], chatConfig, promptTemplate, sdConfig: { style } }
-     *
-     * @deprecated PB1 (v1) entry, design §28.1 Stage 2 since P7-2: prepares prompts for the PB1
-     *             {@code /scene/{id}/generate} loop; under the {@code picturebook.renderPath=v3} default the
-     *             first authorized book scene refuses with 409 {@code PbRenderPath.PB1_REPLACED_PREFIX}
-     *             (a stranger still gets 403). V3 compiles prompts inside the render plan
-     *             ({@code /{bookObjectId}/render-all}); {@code v1} is the rollback; removal Stage 4, Phase 10.
-     */
-    @Deprecated
-    @RolesAllowed({"admin", "user"})
-    @POST
-    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/prepare-images")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response prepareSceneImagePrompts(@PathParam("bookObjectId") String bookObjectId,
-            String json, @Context HttpServletRequest request) {
-        BaseRecord user = ServiceUtil.getPrincipalUser(request);
-
-        List<String> sceneObjectIds = new ArrayList<>();
-        String chatConfigName = null;
-        String promptTemplateOverride = null;
-        BaseRecord sdConfig = null;
-        BaseRecord params = parseParams(json);
-        if (params != null) {
-            chatConfigName = params.get("chatConfig");
-            promptTemplateOverride = params.get("promptTemplate");
-            Object idsObj = params.get("sceneObjectIds");
-            if (idsObj instanceof List) {
-                for (Object o : (List<?>) idsObj) {
-                    if (o instanceof String) sceneObjectIds.add((String) o);
-                }
-            }
-            // The common olio.sd.config (ephemeral model field). Its style is the single seam
-            // (getSDConfigPrompt) baked into each pre-resolved prompt; PictureBookUtil fills defaults.
-            Object sdc = params.get("sdConfig");
-            if (sdc instanceof BaseRecord) sdConfig = (BaseRecord) sdc;
-        }
-
-        // KI-10: registered under (principal, bookObjectId) — the same id the client already holds
-        // to fire a concurrent POST /{bookObjectId}/cancel while this batch is still in-flight.
-        SummarizeProgress cancelToken = PictureBookCancelRegistry.register(user, bookObjectId);
-        try {
-            PictureBookUtil.prepareSceneImagePrompts(user, sceneObjectIds, chatConfigName, sdConfig, promptTemplateOverride, cancelToken);
-            BaseRecord result = PictureBookUtil.buildResult();
-            return Response.status(200).entity(toJson(result)).build();
-        } catch (PictureBookException e) {
-            return handlePictureBookException(e);
-        } finally {
-            PictureBookCancelRegistry.unregister(user, bookObjectId, cancelToken);
-        }
-    }
-
-    /**
      * POST /{key}/cancel
      * KI-10: cancel an in-flight extraction ({@code /extract-scenes-only}, {@code /extract-chunked})
-     * or {@code /prepare-images} call. {@code key} must be the exact workObjectId/bookObjectId the
+     * call. {@code key} must be the exact workObjectId the
      * client passed to the call it wants to cancel — the client always already has this value
      * (it's the path param of the call being cancelled), so no separate session/token bookkeeping
      * is needed, unlike {@code ChatService}'s session-scoped {@code summarizingRefs}. A 200 with
@@ -1101,48 +985,6 @@ public class PictureBookService {
         try {
             BaseRecord sdConfig = PictureBookUtil.getBookSdConfig(user, bookObjectId);
             return Response.status(200).entity(sdConfig != null ? toJson(sdConfig) : "{}").build();
-        } catch (PictureBookException e) {
-            return handlePictureBookException(e);
-        }
-    }
-
-    /**
-     * PUT /{bookObjectId}/settings
-     * Store the book's COMMON (and optional composite) image config once, so subsequent scene
-     * generation reads it back as the base for every scene (portraits/landscape/scene). This lets
-     * the test/Ux "set one config" per book, matching the CardGame _default pattern. Body:
-     * { sdConfig: {...olio.sd.config...}, compositeSdConfig?: {...olio.sd.config...} }. Transport
-     * only — the fill/merge logic lives in PictureBookUtil.setBookSdConfig. Returns the stored
-     * common config (toFullString), or {"updated":true} if nothing was supplied.
-     *
-     * @deprecated PB1 (v1) settings write, design §28.1 Stage 2 since P7-2: under the
-     *             {@code picturebook.renderPath=v3} default it refuses with 409 {@code PbRenderPath.PB1_REPLACED_PREFIX}
-     *             (after the caller-scoped book lookup, so a missing / unreadable book stays 404). The V3 book-tier
-     *             setter is {@code PUT /{bookObjectId}/style} ({@code sdConfig}); the {@code GET} above stays readable;
-     *             {@code v1} is the rollback; removal Stage 4, Phase 10.
-     */
-    @Deprecated
-    @RolesAllowed({"admin", "user"})
-    @PUT
-    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/settings")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response setBookSdConfig(@PathParam("bookObjectId") String bookObjectId,
-            String json, @Context HttpServletRequest request) {
-        BaseRecord user = ServiceUtil.getPrincipalUser(request);
-        BaseRecord params = parseParams(json);
-        BaseRecord sdConfig = null;
-        BaseRecord compositeSdConfig = null;
-        if (params != null) {
-            // Both are ephemeral olio.sd.config model fields on olio.pictureBookRequest.
-            Object sdc = params.get("sdConfig");
-            if (sdc instanceof BaseRecord) sdConfig = (BaseRecord) sdc;
-            Object csdc = params.get("compositeSdConfig");
-            if (csdc instanceof BaseRecord) compositeSdConfig = (BaseRecord) csdc;
-        }
-        try {
-            BaseRecord stored = PictureBookUtil.setBookSdConfig(user, bookObjectId, sdConfig, compositeSdConfig);
-            return Response.status(200).entity(stored != null ? toJson(stored) : "{\"updated\":true}").build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }

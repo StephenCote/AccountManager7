@@ -626,7 +626,8 @@ public class TestFlux2Compiler {
 		assertTrue(PromptCompilers.forPick(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, XL, null, "DEPLOYMENT_DEFAULT", "OK", false, null)) instanceof SdxlCompiler);
 		assertTrue("an unknown family falls back to SDXL",
 			PromptCompilers.forPick(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, "mystery_v1.safetensors", null, "DEPLOYMENT_DEFAULT", "OK", false, null)) instanceof SdxlCompiler);
-		assertTrue(PromptCompilers.forPick(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, "k.safetensors", "*kontext*", "DEPLOYMENT_DEFAULT", "OK", false, null)) instanceof SdxlCompiler);
+		assertTrue("a non-null family string no compiler claims also falls back to SDXL",
+			PromptCompilers.forPick(new RenderPlan.ModelPick(PbModelTaskEnumType.LOCATION, "k.safetensors", "*nofamily*", "DEPLOYMENT_DEFAULT", "OK", false, null)) instanceof SdxlCompiler);
 		assertTrue(PromptCompilers.forPick(null) instanceof SdxlCompiler);
 		assertTrue(PromptCompilers.forFamily(null) instanceof SdxlCompiler);
 		assertTrue(PromptCompilers.forFamily("flux2*") instanceof Flux2Compiler);

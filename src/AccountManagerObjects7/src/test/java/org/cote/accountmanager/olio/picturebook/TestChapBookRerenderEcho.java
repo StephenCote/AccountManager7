@@ -15,6 +15,8 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.illustration.RenderPlan;
+import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
@@ -36,12 +38,14 @@ import org.junit.Test;
  * the stored prompt goes through the normal pre-step.
  * <p>
  * Live {@code am7db}, {@code chapbookTestUser} in {@code /Development/ChapBook Tests}, a real ChapBook from
- * Stephen's poem created WITHOUT a chatConfig (so every page starts on the placeholder). ChapBooks are flipped
- * to v1 for the render calls ({@code PbRenderPath.configure(V3, V1)}, the {@code TestChapBookPageComposition}
- * precedent) with a capturing {@link SDUtil} that returns no image, so the exact positive prompt that reaches
- * the renderer is asserted with no live SD; the decision under test lives in the pre-step both paths share.
- * The one chatConfig used points at an unreachable host, so a recovery that should NOT run would show up as
- * {@code llmUnavailable=true}. No live LLM is touched.
+ * Stephen's poem created WITHOUT a chatConfig (so every page starts on the placeholder). Every render goes through
+ * the V3 page job against a dead renderer ({@code DEAD_SERVER}): the model resolver refuses after the plan is built
+ * (503, the P2-5 shape - the {@code TestChapBookPageComposition} precedent), so the result is FAILED, the page node
+ * reads FAILED and its selected renderPlan artifact carries the exact positive prompt that reached the render
+ * path - asserted with no live SD; the decision under test lives in the shared pre-step. (Until Phase 10 P10-1
+ * this class pinned ChapBooks to v1 and captured the SD config instead.) The one chatConfig used points at an
+ * unreachable host, so a recovery that should NOT run would show up as {@code llmUnavailable=true}. No live LLM
+ * is touched.
  */
 public class TestChapBookRerenderEcho extends BaseTest {
 
@@ -105,18 +109,16 @@ public class TestChapBookRerenderEcho extends BaseTest {
 		assertFalse("a blank is never an echo", ChapBookUtil.isStoredScenePrompt(testUser, book, scene0, "   "));
 		assertFalse("a different text is not an echo", ChapBookUtil.isStoredScenePrompt(testUser, book, scene0, EDIT_PROMPT));
 
-		List<BaseRecord> captured = new ArrayList<>();
-		ChapBookUtil.SceneRenderResult result = renderOnV1(sceneOid, capturing(captured), null, stored);
+		ChapBookUtil.SceneRenderResult result = renderOnDeadRenderer(sceneOid, null, stored);
 		logger.info("[p10c1] placeholder echo status=" + result.status + " llmUnavailable=" + result.llmUnavailable
-			+ " llmDegraded=" + result.llmDegraded + " captured=" + captured.size());
-		assertEquals("the renderer was called once (degrade-render on the stored placeholder)", 1, captured.size());
-		assertTrue("the positive prompt is the stored placeholder: " + captured.get(0).get("description"),
-			String.valueOf((Object) captured.get(0).get("description")).startsWith(stored));
+			+ " llmDegraded=" + result.llmDegraded + " node=" + result.nodeObjectId);
+		String planned = plannedPromptOf(fx, result);
+		assertTrue("the positive prompt is the stored placeholder (degrade-render): " + planned, planned.startsWith(stored));
 		assertTrue("the degrade path reports llmUnavailable (no chatConfig, so nothing could recover a prompt)", result.llmUnavailable);
-		/// llmDegraded is "the scene STILL rendered, on the stored prompt" (SceneRenderResult): the capturing
-		/// renderer returns no image, so the result is FAILED and by contract carries llmDegraded=false. The
-		/// degrade path itself is proven above: the placeholder reached the renderer with no chatConfig.
-		assertEquals("the capture returns no image, so FAILED - never RENDERED on a silent lock-in",
+		/// llmDegraded is "the scene STILL rendered, on the stored prompt" (SceneRenderResult): the dead renderer
+		/// produces no image, so the result is FAILED and by contract carries llmDegraded=false. The degrade path
+		/// itself is proven above: the placeholder reached the render path with no chatConfig.
+		assertEquals("a dead renderer produces no image, so FAILED - never RENDERED on a silent lock-in",
 			ChapBookUtil.SceneRenderStatus.FAILED, result.status);
 		assertFalse("a FAILED result never claims a degraded render", result.llmDegraded);
 
@@ -150,13 +152,11 @@ public class TestChapBookRerenderEcho extends BaseTest {
 
 		BaseRecord deadLlm = OlioTestUtil.getUnreachableOllamaConfig(testUser, "chapbookP10C1DeadLlm", DEAD_SERVER, "qwen3:8b", 5);
 		assertNotNull("the unreachable chatConfig must be built", deadLlm);
-		List<BaseRecord> captured = new ArrayList<>();
-		ChapBookUtil.SceneRenderResult result = renderOnV1(sceneOid, capturing(captured), deadLlm, GENUINE_PROMPT);
+		ChapBookUtil.SceneRenderResult result = renderOnDeadRenderer(sceneOid, deadLlm, GENUINE_PROMPT);
 		logger.info("[p10c1] genuine echo status=" + result.status + " llmUnavailable=" + result.llmUnavailable
-			+ " llmDegraded=" + result.llmDegraded + " captured=" + captured.size());
-		assertEquals("rendered once", 1, captured.size());
-		assertTrue("the positive prompt is the genuine stored prompt, verbatim: " + captured.get(0).get("description"),
-			String.valueOf((Object) captured.get(0).get("description")).startsWith(GENUINE_PROMPT));
+			+ " llmDegraded=" + result.llmDegraded + " node=" + result.nodeObjectId);
+		String planned = plannedPromptOf(fx, result);
+		assertTrue("the positive prompt is the genuine stored prompt, verbatim: " + planned, planned.startsWith(GENUINE_PROMPT));
 		assertFalse("recovery never ran (a genuine stored prompt is preferred)", result.llmUnavailable);
 		assertFalse("nothing was degraded", result.llmDegraded);
 
@@ -187,13 +187,11 @@ public class TestChapBookRerenderEcho extends BaseTest {
 		BaseRecord book = PbBookUtil.readBook(testUser, fx.bookOid, fx.orgId);
 		assertTrue("the echo is recognised against the composition too", ChapBookUtil.isStoredScenePrompt(testUser, book, scene1, EDIT_PROMPT));
 
-		List<BaseRecord> captured = new ArrayList<>();
-		ChapBookUtil.SceneRenderResult result = renderOnV1(sceneOid, capturing(captured), null, EDIT_PROMPT);
+		ChapBookUtil.SceneRenderResult result = renderOnDeadRenderer(sceneOid, null, EDIT_PROMPT);
 		logger.info("[p10c1] locked echo status=" + result.status + " llmUnavailable=" + result.llmUnavailable
-			+ " llmDegraded=" + result.llmDegraded + " captured=" + captured.size());
-		assertEquals("rendered once", 1, captured.size());
-		assertTrue("the positive prompt is the locked prompt, verbatim: " + captured.get(0).get("description"),
-			String.valueOf((Object) captured.get(0).get("description")).startsWith(EDIT_PROMPT));
+			+ " llmDegraded=" + result.llmDegraded + " node=" + result.nodeObjectId);
+		String planned = plannedPromptOf(fx, result);
+		assertTrue("the positive prompt is the locked prompt, verbatim: " + planned, planned.startsWith(EDIT_PROMPT));
 		assertFalse("a locked prompt is never degraded", result.llmDegraded);
 
 		BaseRecord comp2 = PbComposeUtil.readComposition(testUser, compOid, fx.orgId);
@@ -221,12 +219,10 @@ public class TestChapBookRerenderEcho extends BaseTest {
 		assertFalse("the edit is deliberately placeholder-shaped", ChapBookUtil.isGenuineStoredPrompt(edit));
 		assertNull("precondition: no page composition", findComposition(fx, scene0));
 
-		List<BaseRecord> captured = new ArrayList<>();
-		ChapBookUtil.SceneRenderResult result = renderOnV1(sceneOid, capturing(captured), null, edit);
-		logger.info("[p10c1] edit status=" + result.status + " llmDegraded=" + result.llmDegraded + " captured=" + captured.size());
-		assertEquals("rendered once", 1, captured.size());
-		assertTrue("the positive prompt is the edit, verbatim: " + captured.get(0).get("description"),
-			String.valueOf((Object) captured.get(0).get("description")).startsWith(edit));
+		ChapBookUtil.SceneRenderResult result = renderOnDeadRenderer(sceneOid, null, edit);
+		logger.info("[p10c1] edit status=" + result.status + " llmDegraded=" + result.llmDegraded + " node=" + result.nodeObjectId);
+		String planned = plannedPromptOf(fx, result);
+		assertTrue("the positive prompt is the edit, verbatim: " + planned, planned.startsWith(edit));
 		assertFalse("an explicit edit is never degraded", result.llmDegraded);
 
 		BaseRecord after = PbBookUtil.readScene(testUser, sceneOid, fx.orgId);
@@ -242,28 +238,32 @@ public class TestChapBookRerenderEcho extends BaseTest {
 
 	// ─────────────────────────────── helpers ───────────────────────────────
 
-	/** A capturing renderer: records the SD config it is handed and returns no image. */
-	private static SDUtil capturing(List<BaseRecord> captured) {
-		return new SDUtil(SDAPIEnumType.SWARM, DEAD_SERVER) {
-			@Override
-			public List<BaseRecord> createImage(BaseRecord user, String groupPath, BaseRecord sdConfig, String name, int batch, boolean hires, int seed) {
-				captured.add(sdConfig);
-				return new ArrayList<>();
-			}
-		};
+	/** One per-scene render through the V3 page job against a dead renderer (no live SD is ever reached). */
+	private ChapBookUtil.SceneRenderResult renderOnDeadRenderer(String sceneOid, BaseRecord chatConfig, String promptOverride) {
+		SwarmModelInventory.invalidateAll();
+		return ChapBookUtil.renderChapBookScene(testUser, sceneOid, new SDUtil(SDAPIEnumType.SWARM, DEAD_SERVER), chatConfig, null, promptOverride);
 	}
 
-	/** One per-scene render with ChapBooks pinned to v1 for the call (restored afterwards). */
-	private ChapBookUtil.SceneRenderResult renderOnV1(String sceneOid, SDUtil sdu, BaseRecord chatConfig, String promptOverride) {
-		String savedPb = PbRenderPath.pictureBook();
-		String savedCb = PbRenderPath.chapBook();
-		try {
-			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
-			return ChapBookUtil.renderChapBookScene(testUser, sceneOid, sdu, chatConfig, null, promptOverride);
-		}
-		finally {
-			PbRenderPath.configure(savedPb, savedCb);
-		}
+	/**
+	 * The positive prompt that reached the render path: the render is FAILED (the model resolver refused the dead
+	 * renderer after the plan was built), the page node is FAILED with the resolver's error - never the no-prompt
+	 * 409 - and its selected renderPlan artifact's location text is returned.
+	 */
+	private String plannedPromptOf(Fixture fx, ChapBookUtil.SceneRenderResult result) {
+		assertEquals("a dead renderer produces no image", ChapBookUtil.SceneRenderStatus.FAILED, result.status);
+		assertNotNull("the page job was submitted (the pre-step produced a prompt)", result.nodeObjectId);
+		BaseRecord node = PbGraphUtil.readNode(testUser, result.nodeObjectId, fx.orgId);
+		assertNotNull(node);
+		String lastError = node.get(OlioFieldNames.FIELD_PB_LAST_ERROR);
+		assertFalse("the page reached the plan, not the no-prompt gate: " + lastError, lastError != null && lastError.contains("has no prompt"));
+		BaseRecord planArtifact = PbArtifactUtil.findSelected(testUser, node, PbPipelineUtil.ROLE_RENDER_PLAN);
+		assertNotNull("the plan was built and persisted before the resolver refused", planArtifact);
+		RenderPlan plan = PbRenderPlanUtil.readPlanArtifact(planArtifact);
+		assertNotNull("the renderPlan artifact decodes", plan);
+		assertNotNull("the plan has a location", plan.getLocation());
+		String description = plan.getLocation().getDescription();
+		assertNotNull("the plan carries a positive prompt", description);
+		return description;
 	}
 
 	private BaseRecord findComposition(Fixture fx, BaseRecord scene) {

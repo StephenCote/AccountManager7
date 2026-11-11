@@ -1430,15 +1430,9 @@ public class ChatService {
 		if (sdConfig != null) {
 			String requestedMode = null;
 			try { requestedMode = sdConfig.get("compositeMode"); } catch (Exception e) { /* field may not exist */ }
-			/// V3 §37.3 Disable (Phase 2): an explicit request for the retired Kontext pipeline is invalid
-			/// content - 400 with the same "replaced by V3" message every entry point uses, not the
-			/// generic "unsupported" hint, so the caller learns it is retired rather than misspelled.
-			if (SceneCompositeUtil.isRetiredMode(requestedMode)) {
-				logger.warn("generateScene: retired compositeMode 'kontext' requested by " + user.get("name"));
-				return Response.status(400).entity("{\"error\":\"" + escJson(SceneCompositeUtil.KONTEXT_RETIRED_MESSAGE) + "\"}").build();
-			}
-			/// Reject an unrecognized mode outright rather than letting resolveMode downgrade it to
-			/// classic: a caller who asked for "flux3" should be told, not silently given SDXL img2img.
+			/// Reject an unrecognized mode outright: a caller who asked for "flux3" should be told, not
+			/// silently given SDXL img2img. Since Phase 10 P10-3 the retired "kontext" literal is one more
+			/// unrecognized mode - it gets this same 400 and SUPPORTED_MODES hint, no dedicated message.
 			if (requestedMode != null && !requestedMode.isBlank() && !SceneCompositeUtil.isSupportedMode(requestedMode)) {
 				String echoMode = boundedEcho(requestedMode);
 				logger.warn("generateScene: unsupported compositeMode '" + echoMode + "' requested by " + user.get("name"));
@@ -1450,15 +1444,18 @@ public class ChatService {
 			}
 		}
 		/// Pipeline selection lives in Objects7 (SceneCompositeUtil), not here - this endpoint is
-		/// transport. `false`: chat's absent-field fallback is classic, like every other caller (V3 design
-		/// §37.3 Deprecate, Phase 0; chat historically passed `true`). Resolved ONCE here, before the
-		/// session lookup and before the render-path branch, so a config that resolves to Kontext by the
-		/// legacy useKontext boolean is refused on BOTH render paths (409: the config's state, not the
-		/// request's syntax) before any DB, LLM or SD work - V3 §37.3 Disable, Phase 2.
-		String compositeMode = SceneCompositeUtil.resolveMode(sdConfig, false);
-		if (SceneCompositeUtil.isRetiredMode(compositeMode)) {
-			logger.warn("generateScene: config resolves to the retired compositeMode 'kontext' for " + user.get("name"));
-			return Response.status(409).entity("{\"error\":\"" + escJson(SceneCompositeUtil.KONTEXT_RETIRED_MESSAGE) + "\"}").build();
+		/// transport. Absent/blank compositeMode resolves to classic. Resolved ONCE here, before the
+		/// session lookup and before the render-path branch. resolveMode throws on a non-blank value
+		/// outside SUPPORTED_MODES (Phase 10 P10-3: reject, never downgrade); the vocabulary check above
+		/// already answered that case with a 400, so this catch is defence in depth for the same contract
+		/// rather than a second reachable path - it keeps the route at 400, never a 500, if the two ever
+		/// disagree on what a mode is.
+		String compositeMode;
+		try {
+			compositeMode = SceneCompositeUtil.resolveMode(sdConfig);
+		} catch (IllegalArgumentException e) {
+			logger.warn("generateScene: " + e.getMessage() + " (" + user.get("name") + ")");
+			return Response.status(400).entity("{\"error\":\"" + escJson(e.getMessage()) + "\"}").build();
 		}
 		/// P2-3 one model policy (V3 §16): no `sd.model` defaulting here any more - the checkpoint for
 		/// each pass is resolved by PbModelPolicy against the renderer's inventory right before the
@@ -1532,7 +1529,7 @@ public class ChatService {
 		if (sdConfig != null) {
 			try { skipLandscape = (boolean) sdConfig.get("skipLandscape"); } catch (Exception e) { /* default false */ }
 		}
-		/// compositeMode was resolved (and a Kontext result refused) at the top of the route.
+		/// compositeMode was resolved (and an unsupported value refused) at the top of the route.
 		double sceneCreativity = SceneCompositeUtil.defaultCreativity(compositeMode);
 		if (sdConfig != null) {
 			try {
@@ -1583,7 +1580,7 @@ public class ChatService {
 			return Response.status(500).entity("{\"error\":\"Failed to generate scene prompt\"}").build();
 		}
 
-		/// 3b–3d: Branch between Kontext (stitch-and-prompt) and classic (Graphics2D composite) pipelines
+		/// 3b–3d: Branch between the flux2 (multi-reference) and classic (Graphics2D composite) pipelines
 		String groupPath = "~/Gallery/Scenes/" + sceneResult.label;
 		String name = sceneResult.label;
 		String sysOid = systemChar.get(FieldNames.FIELD_OBJECT_ID);
@@ -1597,7 +1594,7 @@ public class ChatService {
 
 		/// One model policy (V3 §16): the scene pass resolves its checkpoint for the task the mode
 		/// actually runs - SCENE_DIRECT (flux2Model) when the flux2 reference pipeline is selected and
-		/// references are attached, LOCATION (model) for classic/kontext - against the renderer's
+		/// references are attached, LOCATION (model) for classic - against the renderer's
 		/// inventory. The classic fallback below re-resolves for LOCATION, so a flux2 pick never leaks
 		/// into the classic request.
 		boolean refsAttached = (sceneResult.sysPortraitBytes != null || sceneResult.usrPortraitBytes != null
@@ -1618,10 +1615,9 @@ public class ChatService {
 			sceneResult.sysPortraitBytes, sceneResult.usrPortraitBytes, landscapeBytes,
 			sceneCreativity, sdConfig);
 		if (s2i == null) {
-			/// Unreachable for any mode resolveMode can return (the two supported modes pass, the retired
-			/// kontext result was already 409'd above, and the vocabulary check 400'd anything else); kept
-			/// as a defensive guard so a future mode added to resolveMode but not buildSceneRequest
-			/// fails loudly with the mode named instead of an NPE.
+			/// Unreachable for any mode resolveMode can return (the two supported modes pass and anything
+			/// else was 400'd above); kept as a defensive guard so a future mode added to resolveMode but
+			/// not buildSceneRequest fails loudly with the mode named instead of an NPE.
 			logger.error("generateScene: could not build a request for compositeMode=" + compositeMode);
 			return Response.status(500).entity("{\"error\":\"No scene pipeline for composite mode '" + escJson(compositeMode)
 				+ "'; expected " + SceneCompositeUtil.SUPPORTED_MODES + "\"}").build();

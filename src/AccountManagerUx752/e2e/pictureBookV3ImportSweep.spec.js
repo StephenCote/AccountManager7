@@ -23,7 +23,7 @@
  * books are reported, not failed. Nothing timed is a threshold. Nothing here calls the SD server.
  */
 import { test, expect } from './helpers/fixtures.js';
-import { ensureSharedTestUser, apiLogin, pb1Retired } from './helpers/api.js';
+import { ensureSharedTestUser, apiLogin } from './helpers/api.js';
 import { screenshot } from './helpers/auth.js';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
@@ -35,12 +35,10 @@ const KEEP = process.env.PB_MIGRATE_SWEEP_KEEP === '1';
 const ORG = process.env.PB_MIGRATE_SWEEP_ORG || '/Development';
 const PASSWORD = process.env.PB_MIGRATE_SWEEP_PASSWORD || 'password';
 const USERS_ENV = (process.env.PB_MIGRATE_SWEEP_USERS || '').split(',').map((s) => s.trim()).filter(Boolean);
-const V1_SKIP = 'picturebook.renderPath=v1: the V3 import under sweep only exists under v3 (P7-4).';
 const GATE_SKIP = 'PB_MIGRATE_SWEEP=1 not set: the verify-check-2 migration sweep is opt-in.';
 const TAG = '[p74-sweep]';
 
 let shared = null;
-let v3 = true;
 
 function dotPath(orgPath) {
     return String(orgPath || '').replace(/^\/+/, '').replace(/\//g, '.');
@@ -157,12 +155,10 @@ test.describe('PictureBook V3 migration sweep of the stack\'s pre-V3 books (P7-4
     test.beforeAll(async ({ request }) => {
         if (!SWEEP) return;
         shared = await ensureSharedTestUser(request);
-        v3 = await pb1Retired(request, { userName: shared.testUserName, password: shared.testPassword });
     });
 
     test('every PB1-only book of each owner imports, its pages and images read back, and the reader opens', async ({ browser }) => {
         test.skip(!SWEEP, GATE_SKIP);
-        test.skip(!v3, V1_SKIP);
         const owners = USERS_ENV.length ? USERS_ENV : [shared.testUserName];
         expect(owners.includes('admin'), 'the sweep never runs as admin').toBe(false);
         console.log(TAG + ' owners=' + owners.length + ' org=' + ORG + ' keep=' + KEEP);

@@ -5,7 +5,7 @@
  * Why: a charPerson edit under the V3 graph path marks the scenes bound to that character STALE on
  * the server; the manager must show that (once per detail open, once after a save — never per row,
  * never on a poll), navigate to the review queue, and re-render the affected scenes serially with
- * the same "never silently unpin" rule the reader uses. The wizard (data.group id, v1) is untouched.
+ * the same "never silently unpin" rule the reader uses. The wizard (data.group id) is untouched.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import m from 'mithril';
@@ -55,7 +55,7 @@ beforeEach(async () => {
     origFetch = global.fetch;
     pbc = await import('../workflows/pictureBookCharacters.js');
     pbc.__setPbCharStateForTest({
-        bookObjectId: 'book-1', standalone: true, renderPath: 'v3', selectedObjectId: null, selectedInst: null,
+        bookObjectId: 'book-1', standalone: true, selectedObjectId: null, selectedInst: null,
         affected: null, lastSaveKind: null, regen: null, editingIdentity: false, editName: '', editDescription: '', regenPollIntervalMs: 5
     });
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
@@ -154,12 +154,10 @@ describe('affectedSummary / scenesForIndexes — affected-by → panel numbers �
 // ─────────────────────────────── panel rendering ───────────────────────────────
 
 describe('renderAffectedPanel — gating and states', () => {
-    it('renders nothing unless standalone + v3 + a loaded character', () => {
+    it('renders nothing unless standalone + a loaded character', () => {
         pbc.__setPbCharStateForTest({ selectedInst: { entity: ENTITY }, affected: { forObjectId: 'c1', loading: false, data: AFFECTED, error: null } });
         expect(pbc.renderAffectedPanel()).not.toBeNull();
-        pbc.__setPbCharStateForTest({ renderPath: 'v1' });
-        expect(pbc.renderAffectedPanel()).toBeNull();
-        pbc.__setPbCharStateForTest({ renderPath: 'v3', standalone: false });
+        pbc.__setPbCharStateForTest({ standalone: false });
         expect(pbc.renderAffectedPanel()).toBeNull();
         pbc.__setPbCharStateForTest({ standalone: true, selectedInst: null });
         expect(pbc.renderAffectedPanel()).toBeNull();
@@ -215,7 +213,7 @@ describe('renderAffectedPanel — gating and states', () => {
 // ─────────────────────────────── detail open / save → ONE affected-by read each ───────────────────────────────
 
 describe('selectCharacter / saveIdentity — affected-by call budget', () => {
-    it('opening a detail makes exactly one GET affected-by and one GET wardrobe (P4-9); v1 makes none', async () => {
+    it('opening a detail makes exactly one GET affected-by and one GET wardrobe (P4-9); outside standalone none', async () => {
         let calls = mockStack();
         await pbc.__pbCharSelectCharacterForTest('c1');
         let st = pbc.__pbCharStateForTest();
@@ -229,7 +227,7 @@ describe('selectCharacter / saveIdentity — affected-by call budget', () => {
         expect(st.wardrobe.forObjectId).toBe('c1');
         expect(st.wardrobe.loading).toBe(false);
 
-        pbc.__setPbCharStateForTest({ renderPath: 'v1' });
+        pbc.__setPbCharStateForTest({ standalone: false });
         await pbc.__pbCharSelectCharacterForTest('c1');
         expect(seqOf(calls).length).toBe(2);
         expect(pbc.__pbCharStateForTest().affected).toBeNull();
@@ -385,12 +383,12 @@ describe('regenerateAffected — serial per-scene render over the affected scene
         expect(calls.length).toBe(0);
     });
 
-    it('is a no-op under v1 / while another regenerate is running', async () => {
+    it('is a no-op outside standalone / while another regenerate is running', async () => {
         let calls = mockStack();
-        pbc.__setPbCharStateForTest({ renderPath: 'v1' });
+        pbc.__setPbCharStateForTest({ standalone: false });
         await pbc.__pbCharRegenerateAffectedForTest();
         expect(calls.length).toBe(0);
-        pbc.__setPbCharStateForTest({ renderPath: 'v3', regen: { total: 1, done: 0 } });
+        pbc.__setPbCharStateForTest({ standalone: true, regen: { total: 1, done: 0 } });
         await pbc.__pbCharRegenerateAffectedForTest();
         expect(calls.length).toBe(0);
     });

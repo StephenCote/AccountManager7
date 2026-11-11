@@ -4,7 +4,7 @@
  * opens the V3 reader on the imported book with the result (scenesImported / scenesFailed /
  * landscapesImported / warnings) shown over it.
  *
- * Why: under renderPath v3 a pure PB1 book (scene notes, no olio.pb.book) is shown read-only; the
+ * Why: a pure PB1 book (scene notes, no olio.pb.book) is shown read-only; the
  * only way forward is the server's PbMigrationUtil.importV1Book, which never modifies the PB1
  * records and answers 404 (no book group / no .pictureBookMeta), 400 (slug unparseable), 409 (a V3
  * book with that slug already exists) or 200 with the counts. The UI must relay those verbatim,
@@ -63,7 +63,7 @@ beforeEach(async () => {
     toast = vi.spyOn(page, 'toast').mockImplementation(() => {});
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
     vi.spyOn(m, 'redraw').mockImplementation(() => {});
-    pbf.__setViewerStateForTest({ viewerBookId: 'GRP-OLD', viewerScenes: [{ objectId: 's1' }], viewerLoading: false, viewerError: null, viewerRenderPath: 'v3', viewerLegacy: true, viewerImporting: false });
+    pbf.__setViewerStateForTest({ viewerBookId: 'GRP-OLD', viewerScenes: [{ objectId: 's1' }], viewerLoading: false, viewerError: null, viewerLegacy: true, viewerImporting: false });
 });
 
 afterEach(() => {

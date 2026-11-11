@@ -495,7 +495,6 @@ public class TestPbCoverExitCriterionLive extends BaseTest {
 			f.book = PbBookUtil.readBook(owner, f.bookOid, orgId);
 			assertNotNull("ChapBook re-read", f.book);
 			assertEquals("bookType CHAPBOOK", "CHAPBOOK", status(f.book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE)));
-			assertTrue("ChapBooks render on v3 in this JVM", PbRenderPath.isV3(f.book));
 			List<BaseRecord> scenes = PbBookUtil.listScenes(owner, f.book);
 			assertFalse("the poem made at least one scene", scenes.isEmpty());
 			describeBook(owner, f.book, POEM_TEXT);

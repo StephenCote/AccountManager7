@@ -13,132 +13,87 @@ import org.cote.accountmanager.util.DocumentUtil;
 
 /// Shared scene-composite pipeline selection and request construction.
 ///
-/// Two callers build "put these people into this setting" image requests: PictureBookUtil's
-/// generateSceneImage and ChatService.generateScene. They had independently grown the same
-/// three-way branch, which is how they drifted — chat defaulted useKontext=true while the picture
-/// book defaulted it false, so the same config produced different pipelines depending on which
-/// feature you came through. Worse, the chat copy lives in Service7, which
-/// .claude/rules/architecture.md says is transport only. This class is where that decision belongs.
+/// Two callers used to build "put these people into this setting" image requests: PictureBookUtil's
+/// generateSceneImage (removed at Phase 10 P10-1; the picture book renders through the V3 graph) and
+/// ChatService.generateScene, whose inline composite is the chat.renderPath=v1 rollback. They had
+/// independently grown the same mode branch, which is how they drifted — chat defaulted one way, the
+/// picture book the other, so the same config produced different pipelines depending on which feature
+/// you came through. Worse, the chat copy lives in Service7, which .claude/rules/architecture.md says
+/// is transport only. This class is where that decision belongs.
 ///
-/// The three modes and why they differ (verified against Stephen's staged fixtures in
+/// The two modes and why they differ (verified against Stephen's staged fixtures in
 /// AccountManagerObjects7/media/flux):
 ///   FLUX2   - separate, letterboxed reference images + edit-model parameters. Current best.
-///   KONTEXT - one stitched [left|center|right] panel strip. The strip reads to the model as a
-///             picture, and it rendered it into the scene as a propped-up board (bad.composite.png).
 ///   CLASSIC - Graphics2D pastes the portraits onto the landscape, then SDXL img2img. Hard edges,
 ///             studio backgrounds intact, wrong scale (bad.merge.png).
+/// A third mode, KONTEXT (one stitched [left|center|right] panel strip, which the model rendered as a
+/// propped-up board), was retired on the V3 §37.3 lifecycle and removed at Phase 10 P10-3: the literal
+/// "kontext" is now an unsupported compositeMode like any other typo, wherever it appears.
 public class SceneCompositeUtil {
 
 	private static final Logger logger = LogManager.getLogger(SceneCompositeUtil.class);
 
 	public static final String MODE_FLUX2 = "flux2";
-	/// Retired (V3 design §37.3 Disable, Phase 2): never accepted by isSupportedMode; resolveMode still
-	/// names it so callers can refuse it with KONTEXT_RETIRED_MESSAGE. Removed in Phase 10.
-	public static final String MODE_KONTEXT = "kontext";
 	public static final String MODE_CLASSIC = "classic";
 
 	/// The accepted compositeMode vocabulary, for error messages ("expected flux2|classic").
 	public static final String SUPPORTED_MODES = MODE_FLUX2 + "|" + MODE_CLASSIC;
 
-	/// The refusal every entry point returns for a config that resolves to Kontext — the same "replaced by
-	/// V3" shape the PB1 entry points use at §28.1 Stage 2. ASCII only: it travels on the wire as a JSON
-	/// error body. Callers may append a scope ("(scene X)"), so match with startsWith.
-	public static final String KONTEXT_RETIRED_MESSAGE = "compositeMode=kontext has been replaced by V3 (design section 37.3): "
-		+ "FLUX.2 (compositeMode=flux2) is the supported composite path; Kontext is disabled in Phase 2 and removed in Phase 10";
-
-	/// Panel size for the KONTEXT stitched strip. Unchanged from both original call sites.
-	private static final int KONTEXT_PANEL_SIZE = 1024;
-
 	private SceneCompositeUtil() { }
 
-	/// Is {@code mode} (case-insensitive, trimmed) one of the pipelines a caller may still ask for?
-	/// Null/blank is NOT supported here — "absent" is resolveMode's business, not a mode. Since the
-	/// V3 §37.3 Disable stage (Phase 2) "kontext" is NOT supported: buildSceneRequest can still build
-	/// it (the code stays until Phase 10), but no entry point accepts it — see isRetiredMode.
+	/// Is {@code mode} (case-insensitive, trimmed) one of the pipelines a caller may ask for?
+	/// Null/blank is NOT supported here — "absent" is resolveMode's business, not a mode.
 	///
-	/// Exists so a transport boundary can reject an unknown compositeMode with a clear 400 BEFORE
-	/// resolveMode silently downgrades it to classic. resolveMode keeps that fallback on purpose for
-	/// saved configs read back from the DB; a value a caller just typed into a request is different.
+	/// Exists so a transport boundary can reject an unknown compositeMode in a request body with a
+	/// clear 400 and the SUPPORTED_MODES hint before any config is loaded. resolveMode applies the same
+	/// vocabulary to a saved config and throws on anything else, so the two agree on what is a mode.
 	public static boolean isSupportedMode(String mode) {
 		if (mode == null) return false;
 		String m = mode.trim().toLowerCase();
 		return MODE_FLUX2.equals(m) || MODE_CLASSIC.equals(m);
 	}
 
-	/// Is {@code mode} (case-insensitive, trimmed) the retired Kontext pipeline? Distinct from
-	/// "unsupported": a typo is a 400 with the SUPPORTED_MODES hint, a retired mode gets
-	/// KONTEXT_RETIRED_MESSAGE. Works on both a raw request value and a resolveMode result.
-	public static boolean isRetiredMode(String mode) {
-		return mode != null && MODE_KONTEXT.equals(mode.trim().toLowerCase());
-	}
-
-	/// Resolve the composite pipeline for a config.
-	///
-	/// compositeMode wins when set. When it is absent we fall back to the legacy useKontext boolean.
+	/// Resolve the composite pipeline for a config: the config's {@code compositeMode}, trimmed and
+	/// lower-cased, when it is set; {@link #MODE_CLASSIC} when the config is null or the field is
+	/// absent/blank.
 	///
 	/// DEFAULTS (corrected 2026-08-10). compositeMode is declared `"default": "flux2"`, so a bare
 	/// schema-built record resolves to FLUX.2 — the mode whose checkpoint (flux2Model, default
-	/// flux2Klein_9b) actually ships. useKontext now defaults to FALSE and kontextModel has no
-	/// default at all; Kontext is an explicit opt-in that must name an installed checkpoint.
-	///
-	/// It used to be the reverse, and that was the bug: `useKontext` was `"default": true`, and a
-	/// schema default is never null, so "unset" was indistinguishable from "explicitly true". Any
-	/// book config omitting the field silently ran Kontext, which then sent kontextModel's default
-	/// flux1Kontext_flux1KontextDev — absent from the local Swarm — and every composite was refused
-	/// with "Invalid model value for param Model", producing nothing. The picture book's comments
-	/// claimed classic was its default, but that only held because Ux752 and the tests wrote
-	/// useKontext=false explicitly.
-	///
-	/// Because compositeMode's default is non-null and compositeMode WINS, legacyKontextDefault (and
-	/// the legacy boolean) now only take effect for a null config or a record whose compositeMode was
-	/// genuinely cleared — i.e. a saved pre-compositeMode config.
+	/// flux2Klein_9b) actually ships. The classic fallback here is reached only by a null config or a
+	/// record whose compositeMode was genuinely cleared — i.e. a saved pre-compositeMode config.
 	/// (Same schema-default trap as `steps`/`width`/`height`, which is why the flux2 params use
 	/// dedicated fields.)
 	///
-	/// RETIRED PATH (V3 design §37.3; Deprecate in Phase 0, Disable in Phase 2): Kontext is retired on
-	/// the §28.1 lifecycle. Resolution stays pure — every resolution that lands on KONTEXT (explicit
-	/// compositeMode, useKontext=true, or the caller's legacyKontextDefault) still RETURNS kontext and
-	/// logs ONE WARN, so a caller can tell "this config asks for Kontext" apart from a typo. Since
-	/// Phase 2 every entry point then refuses that result (isRetiredMode → KONTEXT_RETIRED_MESSAGE,
-	/// via PbRenderPath.requireEnabledCompositeMode or the ChatService gates) before any LLM or SD
-	/// work. No caller passes legacyKontextDefault=true any more (ChatService flipped to false in Phase 0).
+	/// REJECT, NEVER DOWNGRADE (Phase 10 P10-3, §6.C 248 k): a non-blank compositeMode outside
+	/// SUPPORTED_MODES — a typo, or the retired literal "kontext" that a config saved before Phase 10
+	/// may still carry — throws {@link IllegalArgumentException} naming the value and the vocabulary.
+	/// Until P10-3 an unknown value was logged and silently resolved to classic, and "kontext" resolved
+	/// to itself so the transport could refuse it with a dedicated message; both paths are gone. A
+	/// saved config that asks for a pipeline that does not exist is an invalid input, and the caller
+	/// (ChatService.generateScene) turns the exception into a 400 rather than rendering a different
+	/// pipeline than the one the config names. The legacy {@code useKontext} boolean, which this method
+	/// consulted when compositeMode was absent, is ignored from P10-3 (its column goes at P10-4).
 	///
-	/// @param legacyKontextDefault what useKontext means when the field is genuinely absent
-	public static String resolveMode(BaseRecord sdConfig, boolean legacyKontextDefault) {
-		String result = resolveModeValue(sdConfig, legacyKontextDefault);
-		if (MODE_KONTEXT.equals(result)) {
-			logger.warn("compositeMode=kontext is deprecated and disabled (V3 design §37.3): FLUX.2 is the supported composite path; "
-				+ "callers refuse it in Phase 2 and it is removed in Phase 10");
-		}
-		return result;
-	}
-
-	/// The unchanged resolution rules; resolveMode wraps this so the deprecation WARN has one site.
-	private static String resolveModeValue(BaseRecord sdConfig, boolean legacyKontextDefault) {
+	/// @throws IllegalArgumentException when compositeMode is set to a value outside SUPPORTED_MODES
+	public static String resolveMode(BaseRecord sdConfig) {
 		if (sdConfig != null) {
 			String mode = null;
 			try { mode = sdConfig.get("compositeMode"); } catch (Exception e) { /* field may not exist */ }
 			if (mode != null && !mode.isBlank()) {
 				String m = mode.trim().toLowerCase();
-				if (MODE_FLUX2.equals(m) || MODE_KONTEXT.equals(m) || MODE_CLASSIC.equals(m)) {
+				if (MODE_FLUX2.equals(m) || MODE_CLASSIC.equals(m)) {
 					return m;
 				}
-				logger.warn("Unrecognized compositeMode '" + mode + "' - expected "
-					+ SUPPORTED_MODES + "; falling back to classic");
-				return MODE_CLASSIC;
+				throw new IllegalArgumentException("Unsupported compositeMode '" + mode.trim() + "'; expected " + SUPPORTED_MODES);
 			}
-			try {
-				Boolean uk = sdConfig.get("useKontext");
-				if (uk != null) return uk.booleanValue() ? MODE_KONTEXT : MODE_CLASSIC;
-			} catch (Exception e) { /* field may not exist */ }
 		}
-		return legacyKontextDefault ? MODE_KONTEXT : MODE_CLASSIC;
+		return MODE_CLASSIC;
 	}
 
 	/// Will the composite built for {@code mode}/{@code sdConfig} actually CONSUME a landscape image?
 	///
-	/// KONTEXT stitches it into the panel strip and CLASSIC draws on top of it, so both always do.
-	/// FLUX.2 passes it as a third reference and that is OPTIONAL, ON by default: every reference is
+	/// CLASSIC draws on top of it, so it always does. FLUX.2 passes it as a third reference and that is
+	/// OPTIONAL, ON by default: every reference is
 	/// encoded into FLUX.2's context, so the third one is real compute — MEASURED ~40s per reference at
 	/// 1024px/4 steps on the local Strix Halo iGPU (2 refs ~80s, 3 refs ~120s), i.e. LINEAR in
 	/// reference count at this scale. An earlier version of this comment asserted superlinear growth
@@ -183,7 +138,7 @@ public class SceneCompositeUtil {
 	/// @deprecated v1 composite builder (design §28.1 Stage 1 Coexist, P5-3): live through the chat scene image
 	///             ({@code chat.renderPath=v1}) and persisted PB2 COMPOSITE nodes; V3 compiles the scene through
 	///             {@code PbRenderPlanUtil} / RENDER_PLAN. Removed at Stage 4 (Phase 10) after the chat default
-	///             flips (Phase 7+). The mode vocabulary and refusal on this class are not deprecated.
+	///             flips (Phase 7+). The mode vocabulary on this class is not deprecated.
 	@Deprecated
 	public static boolean includesLandscapeReference(String mode, BaseRecord sdConfig) {
 		if (!MODE_FLUX2.equals(mode)) return true;
@@ -196,11 +151,8 @@ public class SceneCompositeUtil {
 
 	/// Build the fully-configured request for a composite scene, including its reference/init imagery.
 	///
-	/// Returns null when the mode is unknown or retired; every supported mode produces a usable request
-	/// even with no reference bytes at all (it degrades to text-only rather than failing the scene).
-	/// The retired-mode refusal is defence in depth for the V3 §37.3 Disable stage: every entry point
-	/// already refuses Kontext before reaching here, and this keeps a future caller from re-enabling
-	/// it by passing the constant. The Kontext branch below stays, unreachable, until Phase 10 Remove.
+	/// Returns null when the mode is unknown; every supported mode produces a usable request even with
+	/// no reference bytes at all (it degrades to text-only rather than failing the scene).
 	///
 	/// @param mode        one of MODE_*, from resolveMode
 	/// @param leftDesc    appearance description of the first character
@@ -218,17 +170,12 @@ public class SceneCompositeUtil {
 	/// @deprecated v1 composite builder (design §28.1 Stage 1 Coexist, P5-3): live through the chat scene image
 	///             ({@code chat.renderPath=v1}) and persisted PB2 COMPOSITE nodes; V3 compiles the scene through
 	///             {@code PbRenderPlanUtil} / RENDER_PLAN. Removed at Stage 4 (Phase 10) after the chat default
-	///             flips (Phase 7+). The mode vocabulary and refusal on this class are not deprecated.
+	///             flips (Phase 7+). The mode vocabulary on this class is not deprecated.
 	@Deprecated
 	public static SWTxt2Img buildSceneRequest(String mode, String leftDesc, String rightDesc,
 			String action, String setting, String mood, String classicPrompt, String classicNegative,
 			byte[] leftBytes, byte[] rightBytes, byte[] landscapeBytes, double creativity,
 			BaseRecord sdConfig) {
-
-		if (isRetiredMode(mode)) {
-			logger.error(KONTEXT_RETIRED_MESSAGE + " (buildSceneRequest)");
-			return null;
-		}
 
 		if (MODE_FLUX2.equals(mode)) {
 			Integer refSizeV = null;
@@ -283,21 +230,6 @@ public class SceneCompositeUtil {
 			return s2i;
 		}
 
-		if (MODE_KONTEXT.equals(mode)) {
-			// Kontext wants every panel filled; the original call sites substituted the landscape for
-			// a missing portrait rather than shipping a two-panel strip.
-			byte[] stitchLeft = (leftBytes != null) ? leftBytes : landscapeBytes;
-			byte[] stitchCenter = (rightBytes != null) ? rightBytes : landscapeBytes;
-			byte[] stitched = SDUtil.stitchSceneImages(stitchLeft, stitchCenter, landscapeBytes, KONTEXT_PANEL_SIZE);
-			SWTxt2Img s2i = SWUtil.newKontextSceneTxt2Img(leftDesc, rightDesc, action, setting, sdConfig);
-			if (stitched != null) {
-				s2i.setPromptImages(List.of("data:image/png;base64," + Base64.getEncoder().encodeToString(stitched)));
-			}
-			logger.info("Scene composite [kontext]: model=" + s2i.getModel()
-				+ " stitched=" + (stitched != null ? stitched.length + " bytes" : "none"));
-			return s2i;
-		}
-
 		if (MODE_CLASSIC.equals(mode)) {
 			SWTxt2Img s2i = SWUtil.newSceneTxt2Img(classicPrompt, classicNegative, sdConfig);
 			byte[] composite = SDUtil.compositeSceneCanvas(landscapeBytes, leftBytes, rightBytes,
@@ -317,8 +249,8 @@ public class SceneCompositeUtil {
 
 	/// Replace the composed text prompt with a caller-supplied one, verbatim, in any mode.
 	///
-	/// FLUX2 and KONTEXT compose their own prompt from (leftDesc, rightDesc, action, setting, mood)
-	/// and ignore classicPrompt entirely, so a per-scene prompt edit that only reached classicPrompt
+	/// FLUX2 composes its own prompt from (leftDesc, rightDesc, action, setting, mood) and ignores
+	/// classicPrompt entirely, so a per-scene prompt edit that only reached classicPrompt
 	/// was persisted, displayed as "the prompt used", and never sent - the image came out unchanged.
 	/// This is the one seam every mode goes through after buildSceneRequest.
 	///
@@ -329,7 +261,7 @@ public class SceneCompositeUtil {
 	/// @deprecated v1 composite builder (design §28.1 Stage 1 Coexist, P5-3): live through the chat scene image
 	///             ({@code chat.renderPath=v1}) and persisted PB2 COMPOSITE nodes; V3 compiles the scene through
 	///             {@code PbRenderPlanUtil} / RENDER_PLAN. Removed at Stage 4 (Phase 10) after the chat default
-	///             flips (Phase 7+). The mode vocabulary and refusal on this class are not deprecated.
+	///             flips (Phase 7+). The mode vocabulary on this class is not deprecated.
 	@Deprecated
 	public static SWTxt2Img applyPromptOverride(SWTxt2Img s2i, String promptOverride) {
 		if (s2i == null || promptOverride == null || promptOverride.isBlank()) return s2i;
@@ -341,11 +273,11 @@ public class SceneCompositeUtil {
 	}
 
 	/// Default img2img creativity per mode, preserving the values both original call sites used.
-	/// Only CLASSIC actually consumes it; the reference-based modes don't run an init-image pass.
+	/// Only CLASSIC actually consumes it; the reference-based FLUX.2 mode doesn't run an init-image pass.
 	/// @deprecated v1 composite builder (design §28.1 Stage 1 Coexist, P5-3): live through the chat scene image
 	///             ({@code chat.renderPath=v1}) and persisted PB2 COMPOSITE nodes; V3 compiles the scene through
 	///             {@code PbRenderPlanUtil} / RENDER_PLAN. Removed at Stage 4 (Phase 10) after the chat default
-	///             flips (Phase 7+). The mode vocabulary and refusal on this class are not deprecated.
+	///             flips (Phase 7+). The mode vocabulary on this class is not deprecated.
 	@Deprecated
 	public static double defaultCreativity(String mode) {
 		return MODE_CLASSIC.equals(mode) ? 0.85 : 0.65;

@@ -218,7 +218,7 @@ public class TestChatDuelLong extends BaseTest {
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		/// OlioTestUtil.getContext is the well-trodden path that working tests
-		/// (TestGameUtil, TestKontext) use to get a context with a populated
+		/// (TestGameUtil) use to get a context with a populated
 		/// realm. OlioContextUtil.getGridContext alone creates the map
 		/// structure but on a fresh DB the realm population is empty —
 		/// getRealmPopulation comes back with 0 entries.

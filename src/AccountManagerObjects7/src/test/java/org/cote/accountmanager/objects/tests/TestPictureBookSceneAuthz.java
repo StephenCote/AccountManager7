@@ -8,7 +8,6 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.util.Arrays;
 import java.util.UUID;
 
 import org.cote.accountmanager.io.IOSystem;
@@ -47,8 +46,9 @@ import org.junit.Test;
  *
  * <p><b>No LLM and no Stable Diffusion are required.</b> Every assertion here is on the DENIAL
  * path, which returns before any generation is attempted. The permit path of
- * {@code generateSceneImage}/{@code regenerateBlurb} (i.e. an actual image/blurb) is NOT covered by
- * this class — that needs live SD/Ollama and lives in TestPictureBookCustom / TestPictureBookUtilE2E.
+ * {@code regenerateBlurb} (i.e. an actual blurb) is NOT covered by this class — that needs live
+ * Ollama. (The PB1 image entries {@code generateSceneImage} / {@code prepare-images} went at Phase 10
+ * P10-1; the V3 render-plan entry's authorization is {@code TestPbRenderPlanExecutor}.)
  * What IS covered on the permit side is that the owner passes the new authorization gate itself
  * ({@code authorizeSceneAccess} returns the scene, and {@code setSceneStatus} still writes).
  *
@@ -199,8 +199,8 @@ public class TestPictureBookSceneAuthz extends BaseTest {
 	 * <p>User B is granted Read+Update on the book's {@code Scenes} group — so B genuinely CAN read
 	 * and write the scene note through {@code AccessPoint} — but is granted nothing on the book
 	 * group above it. Before this fix that was enough to drive {@code setSceneStatus},
-	 * {@code regenerateBlurb}, {@code generateSceneImage} and {@code prepare-images} on someone
-	 * else's book. It must now be a 403.
+	 * {@code regenerateBlurb} (and the since-removed PB1 image entries) on someone else's book. It
+	 * must now be a 403.
 	 */
 	@Test
 	public void TestSceneAuthzDeniesSceneReaderWithNoRightsOnTheBook() throws Exception {
@@ -248,17 +248,11 @@ public class TestPictureBookSceneAuthz extends BaseTest {
 	}
 
 	/**
-	 * {@code generateSceneImage} and {@code prepareSceneImagePrompts} must refuse BEFORE they reach
-	 * their SD / Ollama calls. Proven by handing them a deliberately unreachable SD endpoint and a
-	 * null chat config: if authorization ran late, the failure would be a connection/config error,
-	 * not a 403.
+	 * {@code regenerateBlurb} must refuse BEFORE it reaches its Ollama call. Proven by handing it a null
+	 * chat config: if authorization ran late, the failure would be a config error, not a 403.
 	 *
-	 * <p>The permit path of these two is not exercised here — it needs a live SD backend.
-	 *
-	 * <p>Deliberately NOT pinned to {@code picturebook.renderPath=v1}: under the default v3 both entries
-	 * are PB1 entry points that refuse with 409 "replaced by V3" (P7-2, design §28.1 Stage 2), and that
-	 * gate must sit AFTER authorization (ledger §6.C 215 a). A stranger therefore still gets 403 here;
-	 * a 409 would mean the gate moved ahead of the authorization check.
+	 * <p>The permit path is not exercised here — it needs a live LLM. (The PB1 image entries this case
+	 * also covered, {@code generateSceneImage} / {@code prepare-images}, went at Phase 10 P10-1.)
 	 */
 	@Test
 	public void TestGenerationEntryPointsDenyBeforeAnyGeneration() throws Exception {
@@ -270,23 +264,11 @@ public class TestPictureBookSceneAuthz extends BaseTest {
 			new String[] { PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString() });
 		CacheUtil.clearCache();
 
-		/// A syntactically valid SDAPIEnumType and a host nothing is listening on: reaching the SD
-		/// stage at all would surface as a connection error rather than the 403 asserted below.
-		final String deadSdServer = "http://127.0.0.1:1";
-
-		assertEquals("generateSceneImage must deny on the book before any SD work", 403,
-			expectDenied("generateSceneImage(B)", () -> PictureBookUtil.generateSceneImage(userB,
-				book.sceneObjectId, new PictureBookUtil.SceneGenerationParams(), "SWARM", deadSdServer)));
-
 		assertEquals("regenerateBlurb must deny on the book before any LLM work", 403,
 			expectDenied("regenerateBlurb(B)",
 				() -> PictureBookUtil.regenerateBlurb(userB, book.sceneObjectId, null)));
 
-		assertEquals("prepare-images must deny on the book, not silently skip the scene", 403,
-			expectDenied("prepareSceneImagePrompts(B)", () -> PictureBookUtil.prepareSceneImagePrompts(
-				userB, Arrays.asList(book.sceneObjectId), null, null, null)));
-
-		assertNull("None of the denied calls may have written a status", readSceneStatus(userA, book.sceneObjectId));
+		assertNull("The denied call may not have written a status", readSceneStatus(userA, book.sceneObjectId));
 	}
 
 	/** A scene objectId that does not exist must be 404, not 403 — absence is not an authz answer. */

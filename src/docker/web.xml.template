@@ -68,25 +68,12 @@
 		<param-value>${PB_RENDER_SD_PERMITS}</param-value>
 	</context-param>
 	<!--
-		PictureBook V3 render-path switch, one per product: v1 | v3. Empty = the product default:
-		picturebook v3 (Stage 2 since Phase 7: the PB1 entry points refuse with 409 "replaced by V3";
-		picturebook v1 is the rollback and is logged at WARN), chapbook v3 (the old ChapBook path
-		is disabled, Stage 2; chapbook v1 is the rollback and is logged at WARN), chat v3 (P10-A 0: the
-		scene renders through the shared illustration service; chat v1 is the rollback to the inline
-		scene composite, logged at WARN, and never refuses). With v1 the V3 graph routes refuse with 409
-		"render path is v1". Set via the
-		PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH / CHAT_RENDER_PATH environment variables - this
-		file is regenerated from the template on every boot, so an edit here is lost on restart.
-		Rollback = v1 + restart. Applied at startup only.
+		Chat scene render-path switch: v1 | v3. Empty = v3 (P10-A 0: the chat scene renders through the
+		shared illustration service; v1 is the rollback to the inline scene composite, logged at WARN,
+		and never refuses). Set via the CHAT_RENDER_PATH environment variable - this file is regenerated
+		from the template on every boot, so an edit here is lost on restart. Rollback = v1 + restart.
+		Applied at startup only. PictureBook and ChapBook are V3-only since Phase 10 P10-1 and have no switch.
 	-->
-	<context-param>
-		<param-name>picturebook.renderPath</param-name>
-		<param-value>${PICTUREBOOK_RENDER_PATH}</param-value>
-	</context-param>
-	<context-param>
-		<param-name>chapbook.renderPath</param-name>
-		<param-value>${CHAPBOOK_RENDER_PATH}</param-value>
-	</context-param>
 	<context-param>
 		<param-name>chat.renderPath</param-name>
 		<param-value>${CHAT_RENDER_PATH}</param-value>

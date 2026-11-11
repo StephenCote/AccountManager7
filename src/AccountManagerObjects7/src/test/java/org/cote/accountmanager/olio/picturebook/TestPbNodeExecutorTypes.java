@@ -48,18 +48,18 @@ public class TestPbNodeExecutorTypes extends BaseTest {
 	@Test
 	public void TestEveryNodeTypeIsEitherExecutableOrA501BeforeAnyIO() throws Exception {
 		OlioModelNames.use();
-		/// V3 Phase 3 (P3-4) added LOCATION as the eighth single-node stage (SD-backed: it renders a location
-		/// or variant through the render plan).
+		/// V3 Phase 3 (P3-4) added LOCATION as an SD-backed single-node stage (it renders a location or variant
+		/// through the render plan); Phase 10 P10-1 removed the PB1-era REFERENCE_STRIP / COMPOSITE executors, so
+		/// those two types are 501 again (the enum constants stay until the P10-5 data cleanup).
 		EnumSet<PbNodeTypeEnumType> expectedExecutable = EnumSet.of(
 			PbNodeTypeEnumType.PORTRAIT, PbNodeTypeEnumType.LANDSCAPE, PbNodeTypeEnumType.SCENE_PROMPT,
-			PbNodeTypeEnumType.LANDSCAPE_PROMPT, PbNodeTypeEnumType.REFERENCE_STRIP, PbNodeTypeEnumType.COMPOSITE,
-			PbNodeTypeEnumType.RENDER_PLAN, PbNodeTypeEnumType.LOCATION);
-		assertEquals("the declared executable set is exactly the eight implemented stages", expectedExecutable, PbNodeExecutor.EXECUTABLE_TYPES);
+			PbNodeTypeEnumType.LANDSCAPE_PROMPT, PbNodeTypeEnumType.RENDER_PLAN, PbNodeTypeEnumType.LOCATION);
+		assertEquals("the declared executable set is exactly the six implemented stages", expectedExecutable, PbNodeExecutor.EXECUTABLE_TYPES);
 		assertTrue("LOCATION needs an SD backend", PbNodeExecutor.SD_BACKED_TYPES.contains(PbNodeTypeEnumType.LOCATION));
 		assertFalse("null is never executable", PbNodeExecutor.isExecutable((PbNodeTypeEnumType) null));
 		assertFalse("a null node is never executable", PbNodeExecutor.isExecutable((BaseRecord) null));
 		List<String> names = PbNodeExecutor.executableTypeNames();
-		assertEquals(8, names.size());
+		assertEquals(6, names.size());
 		assertTrue(names.contains("PORTRAIT"));
 		assertTrue(names.contains("RENDER_PLAN"));
 		assertTrue(names.contains("LOCATION"));
@@ -154,7 +154,7 @@ public class TestPbNodeExecutorTypes extends BaseTest {
 					}
 				}
 			}
-			assertEquals("seven executable types", PbNodeExecutor.EXECUTABLE_TYPES.size(), executableCount);
+			assertEquals("six executable types", PbNodeExecutor.EXECUTABLE_TYPES.size(), executableCount);
 		}
 		finally {
 			DeleteResult res = PbDeleteUtil.deleteBookComplete(owner, bookOid);

@@ -383,14 +383,12 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			}
 		}
 
-		/// PictureBook V3 render-path switch (design §28.1; P1-8 Stage 1, P2-6 Stage 2, P2-7 chat): v1 | v3 per
-		/// product; absent/unrecognised pins the product default (v3 for all three since P7-1 / P2-6 / P10-A 0;
-		/// v1 is the rollback for each, logged at WARN). Boot-pinned, read once; on Docker web.xml is regenerated from the template at every boot,
-		/// so the Docker-side value is PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH / CHAT_RENDER_PATH. Propagation bound
-		/// is a restart; exposed read-only through GET /rest/config/render-path.
+		/// Chat scene render-path switch (design §24.1, P2-7): v1 | v3; absent/unrecognised pins v3 (P10-A 0;
+		/// v1 is the rollback, logged at WARN). Boot-pinned, read once; on Docker web.xml is regenerated from the
+		/// template at every boot, so the Docker-side value is CHAT_RENDER_PATH. Propagation bound is a restart;
+		/// exposed read-only through GET /rest/config/render-path. (The picturebook / chapbook switches went at
+		/// Phase 10 P10-1: those products are V3-only.)
 		org.cote.accountmanager.olio.picturebook.PbRenderPath.configure(
-			context.getInitParameter(org.cote.accountmanager.olio.picturebook.PbRenderPath.PICTUREBOOK_CONFIG_KEY),
-			context.getInitParameter(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAPBOOK_CONFIG_KEY),
 			context.getInitParameter(org.cote.accountmanager.olio.picturebook.PbRenderPath.CHAT_CONFIG_KEY));
 
 		/// Must run before any HTTP call - the shared Client caches the timeout at first use. Sized by

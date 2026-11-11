@@ -88,8 +88,8 @@ import org.junit.Test;
  *     family's cfgMax with one CFG_CLAMPED entry naming the stage, the value, the range and what was sent;
  *     a second application changes nothing and reports nothing new.</li>
  * <li>{@link #helperClampsTheSdxlCfgToo}: {@code cfg 12} on an SDXL pick goes out at the SDXL cfgMax.</li>
- * <li>{@link #helperLeavesADegenerateRangeAlone}: a family whose range is {@code [x, x]} (*kontext*) clamps
- *     nothing.</li>
+ * <li>{@link #helperLeavesADegenerateRangeAlone}: a family whose range is {@code [x, x]} (declared in the test
+ *     since Phase 10 P10-3 removed the Kontext row that was the shipped degenerate case) clamps nothing.</li>
  * <li>{@link #outOfRangeCfgIsClampedOncePerRenderAcrossVariants}: two variants through
  *     {@code renderPlanned} both go out clamped and the attempt reports CFG_CLAMPED once.</li>
  * <li>{@link #sdxlPickOutOfRangeCfgIsClampedOnThePlanPath}: the SDXL clamp on the plan path itself.</li>
@@ -125,8 +125,10 @@ public class TestPbFlux2TextOnlyOffline extends BaseTest {
 	/// config-tier FLUX.2 sampler / scheduler (olio.sd.config flux2Sampler / flux2Scheduler, P10-A 5)
 	private static final String BOOK_FLUX2_SAMPLER = "res_multistep";
 	private static final String BOOK_FLUX2_SCHEDULER = "beta";
-	/// the disabled *kontext* family: cfgRange [1, 1], the degenerate case the clamp must leave alone
-	private static final String KONTEXT_MODEL = "flux1Kontext_dev";
+	/// a family with cfgRange [1, 1], the degenerate case the clamp must leave alone; declared through
+	/// RendererCapabilities.fromMap because no shipped family is degenerate since Phase 10 P10-3
+	private static final String DEGENERATE_PATTERN = "degenerate*";
+	private static final String DEGENERATE_MODEL = "degenerate_v1.safetensors";
 	private static final double EPS = 0.0001;
 	private static final String NO_QA_NOTE = "offline test: no QA provider";
 	/// the graph-path cases: two fixture actors with solid-colour portraits, as in TestPbRenderStagesOffline
@@ -358,14 +360,16 @@ public class TestPbFlux2TextOnlyOffline extends BaseTest {
 
 	@Test
 	public void helperLeavesADegenerateRangeAlone() {
-		RendererCapabilities kontext = RendererCapabilities.forModel(KONTEXT_MODEL);
-		assertNotNull("capabilities of " + KONTEXT_MODEL, kontext);
-		assertEquals("precondition: the Kontext range is degenerate", kontext.getCfgMin(), kontext.getCfgMax(), EPS);
-		assertNotEquals("precondition: not the FLUX.2 pattern", RendererCapabilities.PATTERN_FLUX2, kontext.getPattern());
+		RendererCapabilities degenerate = RendererCapabilities.fromMap(Map.of(
+			"pattern", DEGENERATE_PATTERN, "cfgRange", List.of(1.0, 1.0)));
+		assertNotNull("capabilities for " + DEGENERATE_PATTERN, degenerate);
+		assertEquals("precondition: the range is degenerate", degenerate.getCfgMin(), degenerate.getCfgMax(), EPS);
+		assertNotEquals("precondition: not the FLUX.2 pattern", RendererCapabilities.PATTERN_FLUX2, degenerate.getPattern());
+		assertNull("precondition: no shipped family is degenerate since P10-3", RendererCapabilities.forModel(DEGENERATE_MODEL));
 		Map<String, Object> cfg = sdxlConfig();
-		StageRequest req = sdxlRequest(cfg, 28).toBuilder().model(KONTEXT_MODEL).build();
+		StageRequest req = sdxlRequest(cfg, 28).toBuilder().model(DEGENERATE_MODEL).build();
 		List<String> notApplied = new ArrayList<>();
-		StageRequest out = FamilyRequest.apply(req, kontext, cfg, notApplied);
+		StageRequest out = FamilyRequest.apply(req, degenerate, cfg, notApplied);
 		assertSame("a degenerate range clamps nothing: the same request", req, out);
 		assertEquals("cfg 7 is not pulled to 1", SDXL_CFG, out.getCfg(), EPS);
 		assertTrue("nothing reported", notApplied.isEmpty());

@@ -321,7 +321,7 @@ public class TestChatSceneRenderUtil extends BaseTest {
 		assertTrue("nothing to report: " + out, out.isEmpty());
 
 		/// all five at once, each exactly once, in order, and never STYLE_CLAUSE
-		out = ChatSceneRenderUtil.configNotApplied(map("hires", Boolean.TRUE, "compositeMode", "kontext", "skipLandscape", Boolean.TRUE,
+		out = ChatSceneRenderUtil.configNotApplied(map("hires", Boolean.TRUE, "compositeMode", "classic", "skipLandscape", Boolean.TRUE,
 			"sceneCreativity", 0.4d, "style", "photograph"), noNegative, "TEXT_ONLY");
 		assertEquals(out.toString(), 5, out.size());
 		assertTrue(out.get(0).startsWith(ConfigNotApplied.HIRES + ": "));

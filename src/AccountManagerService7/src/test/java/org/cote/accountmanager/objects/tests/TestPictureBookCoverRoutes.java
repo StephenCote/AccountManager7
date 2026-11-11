@@ -34,7 +34,6 @@ import org.cote.accountmanager.olio.picturebook.PbGraphUtil;
 import org.cote.accountmanager.olio.picturebook.PbOlioContextUtil;
 import org.cote.accountmanager.olio.picturebook.PbPipelineUtil;
 import org.cote.accountmanager.olio.picturebook.PbRenderJobUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.picturebook.PbSeriesUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -51,7 +50,6 @@ import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.PictureBookService;
 import org.cote.service.util.ServiceUtil;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -177,8 +175,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	private BaseRecord stranger;
 	private BaseRecord sibling;
 	private long orgId;
-	private String pb0;
-	private String cb0;
 
 	private static final class Fixture {
 		String slug;
@@ -207,8 +203,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	public void setup() {
 		super.setup();
 		ServiceUtil.clearCache();
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
 		orgId = orgContext.getOrganizationId();
 		admin = orgContext.getAdminUser();
 		assertNotNull("Admin is null", admin);
@@ -224,20 +218,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 		assertNotNull("Olio principal is null", olioUser);
 		bootstrapOlioRoot();
 		ensureBooksUniverse();
-	}
-
-	/// The switch is process-global and other classes in this JVM depend on it: always restored.
-	@After
-	public void restoreRenderPath() {
-		PbRenderPath.configure(pb0, cb0);
-	}
-
-	private void v3() {
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
-	}
-
-	private void v1() {
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1);
 	}
 
 	// ─────────────────────────────── fixture (TestPictureBookCompositionRoutes' shape + the Workflow / Artifacts groups) ───────────────────────────────
@@ -809,7 +789,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// A body that is not JSON is the transport's 400, before the facade sees the book.
 	@Test
 	public void TestMalformedBodyIs400() {
-		v3();
 		refused(create(owner, NIL_UUID, "cover", "{not json"), 400, MALFORMED, "malformed create");
 		refused(create(owner, NIL_UUID, "cover", "[1,2]"), 400, MALFORMED, "array body create");
 		refused(patch(owner, NIL_UUID, "cover", "{not json"), 400, MALFORMED, "malformed patch");
@@ -821,7 +800,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// An unknown book is 404 on all six routes, write or read.
 	@Test
 	public void TestUnknownBookIs404() {
-		v3();
 		refused(view(owner, NIL_UUID), 404, NOT_FOUND, "GET covers of an unknown book");
 		refused(create(owner, NIL_UUID, "cover", manual()), 404, NOT_FOUND, "create on an unknown book");
 		refused(render(owner, NIL_UUID, "cover"), 404, NOT_FOUND, "render on an unknown book");
@@ -835,7 +813,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// A user with no grant on the book cannot tell it exists: 404 (not 403) on every route, and nothing is written.
 	@Test
 	public void TestStrangerIs404AndWritesNothing() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			assertNull("precondition: the stranger cannot read the book", PbBookUtil.readBook(stranger, f.bookOid, orgId));
@@ -861,27 +838,20 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 		}
 	}
 
-	/// On the v1 render path the three writes are the 409 refusal naming the path, before anything is written;
-	/// the reads (view, board, plan) are not gated - they report what exists (nothing: a 404 naming the purpose).
+	/// The reads (view, board, plan) on a fresh book report what exists - nothing: a view naming the book with no
+	/// workflow, no series and no cover entry, and a 404 naming the purpose from the board and the plan.
 	@Test
-	public void TestV1BookRefusesWritesButViewReads() throws Exception {
-		v1();
+	public void TestFreshBookViewIsEmptyAndReadsAre404() throws Exception {
 		Fixture f = createWorldBook(false);
 		try {
-			refused(create(owner, f.bookOid, "cover", manual()), 409, PbRenderPath.REFUSAL_PREFIX, "v1 create");
-			refused(create(owner, f.bookOid, "title-page", manual()), 409, PbRenderPath.REFUSAL_PREFIX, "v1 create title page");
-			refused(render(owner, f.bookOid, "cover"), 409, PbRenderPath.REFUSAL_PREFIX, "v1 render");
-			refused(patch(owner, f.bookOid, "cover", settingAndBand("top")), 409, PbRenderPath.REFUSAL_PREFIX, "v1 patch");
-			refused(patch(owner, f.bookOid, "poster", settingAndBand("top")), 409, PbRenderPath.REFUSAL_PREFIX, "v1 patch is the 409, not the 400 purpose");
-			assertNothingWritten(f, "after the v1 refusals");
-			Map<String, Object> v = ok(view(owner, f.bookOid), "v1 GET covers");
+			Map<String, Object> v = ok(view(owner, f.bookOid), "fresh GET covers");
 			assertEquals("the view names the book", f.bookOid, str(v, "bookObjectId"));
 			assertNull("no workflow on a book that never rendered", str(v, "workflowObjectId"));
 			/// P10-A 7: a standalone book's view carries no series (NON_EMPTY export drops the null, so absent == null).
 			assertNull("a standalone book's view has no seriesObjectId: " + v, str(v, "seriesObjectId"));
 			assertTrue("no cover entries on a fresh book: " + v, coversOf(v).isEmpty());
-			refused(board(owner, f.bookOid, "cover"), 404, NO_COVER, "v1 GET cover board is the read's 404, not the path's 409");
-			refused(plan(owner, f.bookOid, "cover", "{}"), 404, NO_COVER, "v1 plan is the read's 404, not the path's 409");
+			refused(board(owner, f.bookOid, "cover"), 404, NO_COVER, "GET cover board of a fresh book");
+			refused(plan(owner, f.bookOid, "cover", "{}"), 404, NO_COVER, "plan on a fresh book");
 		}
 		finally {
 			cleanup(f);
@@ -893,7 +863,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// made a cover the reader's board and plan are 200 (reads), the patch is still the 403.
 	@Test
 	public void TestReaderViewsButCannotWrite() throws Exception {
-		v3();
 		Fixture f = createWorldBook(true);
 		try {
 			assertNotNull("precondition: the reader can read the book", PbBookUtil.readBook(reader, f.bookOid, orgId));
@@ -930,7 +899,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// route, a bad mode is 400, AUTO with a named config that does not exist is 404 - and none writes a row.
 	@Test
 	public void TestBadPurposeModeAndConfigWriteNothing() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			refused(create(owner, f.bookOid, "poster", manual()), 400, BAD_PURPOSE, "create of an unknown purpose");
@@ -958,7 +926,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// no node. The purpose words are route words: `cover`, `title-page`, `TITLE_PAGE` all resolve.
 	@Test
 	public void TestManualCoverIsIdempotentAndViewed() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			Map<String, Object> c = ok(create(owner, f.bookOid, "cover", manual()), "manual create");
@@ -1038,7 +1005,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// a CLONE of that scene's SCENE composition, a cover-type row of its own (no scene FK) that names its source.
 	@Test
 	public void TestFromSceneClonesTheSceneComposition() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			BaseRecord bare = addScene(f, 0);
@@ -1079,7 +1045,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// logged, not asserted.
 	@Test
 	public void TestRenderMaterializesNodeAndRefusesPinned() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		String jobId = null;
 		AsyncJob job = null;
@@ -1142,7 +1107,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// SERIES_ART, and render is the 404 (there is no composition to render - the render path never creates one).
 	@Test
 	public void TestSeriesArtOnANonChapterIs409() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			refused(create(owner, f.bookOid, "series-art", manual()), 409, "is not a chapter of a series", "SERIES_ART create on a non-chapter");
@@ -1166,7 +1130,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// changes the series' chapter count.
 	@Test
 	public void TestSeriesAndChapterRoutesCreateLinkedChapters() throws Exception {
-		v3();
 		SeriesFixture s = createSeriesWithTwoChapters();
 		try {
 			refused(service.createChapter(json("seriesObjectId", s.seriesOid, "slug", s.a.slug, "title", "again", "chapter", 3), requestAs(owner), DATA_CONTEXT),
@@ -1199,7 +1162,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// book's 404 on both chapters.
 	@Test
 	public void TestSeriesArtOnAChapterIsSharedAndFollowsHostGrants() throws Exception {
-		v3();
 		SeriesFixture s = createSeriesWithTwoChapters();
 		try {
 			BaseRecord groupA = groupOf(PbBookUtil.bookGroupPath(s.a.slug));
@@ -1325,7 +1287,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// SD is logged, not asserted.
 	@Test
 	public void TestSeriesArtRenderIsTheHostsSeenFromEveryChapter() throws Exception {
-		v3();
 		SeriesFixture s = createSeriesWithTwoChapters();
 		String jobId = null;
 		AsyncJob job = null;
@@ -1428,7 +1389,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// book that never rendered, and the board then reads the edit back. Each later patch bumps the revision again.
 	@Test
 	public void TestCoverBoardReadsAndPatchBumpsRevision() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			refused(board(owner, f.bookOid, "cover"), 404, NO_COVER, "board with no cover");
@@ -1520,7 +1480,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// written by a plan: the revision and the workflow are what they were.
 	@Test
 	public void TestPlanCoverNeedsDescriptionAndCarriesTheBand() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		try {
 			refused(plan(owner, f.bookOid, "cover", "{}"), 404, NO_COVER, "plan with no cover");
@@ -1595,7 +1554,6 @@ public class TestPictureBookCoverRoutes extends BaseTest {
 	/// A render after the patch is then admitted without force (the 202 - the node is no longer pinned / fresh).
 	@Test
 	public void TestPatchAfterRenderMarksNodeStale() throws Exception {
-		v3();
 		Fixture f = createWorldBook(false);
 		String jobId = null;
 		AsyncJob job = null;

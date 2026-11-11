@@ -154,11 +154,11 @@ public class FeatureConfigService {
 		return Response.status(200).entity(manifest).build();
 	}
 
-	/// GET /rest/config/render-path - the boot-pinned PictureBook V3 render-path switch per product
-	/// (design §28.1 Stage 1; chat per §24.1), read-only:
-	/// {"picturebook":"v1"|"v3","chapbook":"v1"|"v3","chat":"v1"|"v3"}. Kept beside the
-	/// manifest rather than spliced into its array so that endpoint stays verbatim. Process-global, not
-	/// per-organization; changing it is a deployment restart, so there is no PUT.
+	/// GET /rest/config/render-path - the boot-pinned chat scene render-path switch (design §24.1),
+	/// read-only: {"chat":"v1"|"v3"}. (The picturebook / chapbook keys went at Phase 10 P10-1: those
+	/// products are V3-only.) Kept beside the manifest rather than spliced into its array so that endpoint
+	/// stays verbatim. Process-global, not per-organization; changing it is a deployment restart, so there
+	/// is no PUT.
 	@RolesAllowed({"user"})
 	@GET
 	@Path("/render-path")
@@ -169,8 +169,6 @@ public class FeatureConfigService {
 			return Response.status(401).entity(null).build();
 		}
 		Map<String, Object> body = new LinkedHashMap<>();
-		body.put("picturebook", org.cote.accountmanager.olio.picturebook.PbRenderPath.pictureBook());
-		body.put("chapbook", org.cote.accountmanager.olio.picturebook.PbRenderPath.chapBook());
 		body.put("chat", org.cote.accountmanager.olio.picturebook.PbRenderPath.chat());
 		return Response.status(200).entity(JSONUtil.exportObject(body)).build();
 	}

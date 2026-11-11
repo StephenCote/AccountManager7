@@ -106,9 +106,6 @@
 						<include>**/Test*.java</include>
 					</includes>
 					<excludes>
-					<!-- 
-						<exclude>**/TestPictureBookCustom.java</exclude>
-					-->
 					<exclude>**/TestExtractLegacyUsesReduce</exclude>
 					<exclude>**/TestPromptResourceUtil</exclude>
 					<exclude>**/TestRepairProvisioning</exclude>
@@ -137,9 +134,7 @@
 						<exclude>**/TestPageIndexMarkerLocation.java</exclude>
 						<exclude>**/TestPhase1Cleanup.java</exclude>
 						
-						<exclude>**/TestPictureBookFull.java</exclude>
 						<exclude>**/TestPictureBookMinimalConfigRepro.java</exclude>
-						<exclude>**/TestPictureBookPipeline.java</exclude>
 						<exclude>**/TestPictureBookService.java</exclude>
 						<exclude>**/TestPortraitReuse.java</exclude>
 						<exclude>**/TestPortraitReuseSceneFetch.java</exclude>
@@ -151,7 +146,6 @@
 						<exclude>**/TestVectorCleanup.java</exclude>
 						<exclude>**/TestZipUtil.java</exclude>
 
-						<exclude>**/TestKontext</exclude>
 
 						<exclude>**/TestContextRefs</exclude>
 						<exclude>**/TestConnection</exclude>
@@ -165,7 +159,6 @@
 						<exclude>**/TestPageIndexMcp</exclude>
 						<exclude>**/TestAutoTitle</exclude>
 						<exclude>**/TestBodyStats</exclude>
-						<exclude>**/TestPictureBookUtilE2E</exclude>
 						<exclude>**/TestAsyncLLMSlotRegistry</exclude>
 						<exclude>**/TestMapReduceSummary</exclude>
 						<exclude>**/TestMemorySharing</exclude>

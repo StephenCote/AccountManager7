@@ -18,10 +18,8 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
-import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
-import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.SdConfigUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -37,9 +35,8 @@ import org.junit.Test;
  * <p>
  * Persistence shape is PB1's - exactly one {@code olio.sd.config} row named
  * {@link PbBookUtil#BOOK_SD_CONFIG_NAME} in the book group, referenced from {@code olio.pb.book.sdConfig}.
- * Everything here runs against the live {@code am7db}; nothing is mocked. The one render in this class
- * goes through the package-private {@code renderChapBookScene(user, sceneOid, SDUtil, ...)} seam with a
- * capturing {@link SDUtil} subclass that returns no images, so it never touches a GPU.
+ * Everything here runs against the live {@code am7db}; nothing is mocked and no GPU is touched. (The v1
+ * render-overlay case went with the {@code chapbook.renderPath} key at Phase 10 P10-1.)
  */
 public class TestChapBookBookSettings extends BaseTest {
 
@@ -63,9 +60,6 @@ public class TestChapBookBookSettings extends BaseTest {
 
 	@Before
 	public void setUpChapBookSettings() {
-		/// renderDoesNotMutateStoredBookConfig asserts the v1 SD block (client sdConfig overlay), which
-		/// v3 drops. BaseTest re-pins v3 on every @Before. v3 is covered by TestChapBookV3Render.
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
 		OrganizationContext ctx = getTestOrganization(ORG_PATH);
 		testUser = IOSystem.getActiveContext().getFactory()
 			.getCreateUser(ctx.getAdminUser(), "chapbookTestUser", ctx.getOrganizationId());
@@ -181,51 +175,6 @@ public class TestChapBookBookSettings extends BaseTest {
 		assertEquals(preOid, viaGet.get(FieldNames.FIELD_OBJECT_ID));
 	}
 
-	/**
-	 * Rendering with a client overlay reads the book tier but never writes it: after a render whose
-	 * overlay says {@code steps=23}, the stored book config still says {@code steps=31}, and the render
-	 * itself saw 23.
-	 */
-	@Test
-	public void renderDoesNotMutateStoredBookConfig() throws Exception {
-		Fixture fx = createFixture("render");
-		BaseRecord bookSparse = sparse(new String[] { "steps", "negativePrompt" });
-		bookSparse.setValue("steps", 31);
-		bookSparse.setValue("negativePrompt", "book-level negative p0-10a");
-		BaseRecord stored = ChapBookUtil.setBookSdConfig(testUser, fx.bookOid, bookSparse);
-		String storedOid = stored.get(FieldNames.FIELD_OBJECT_ID);
-
-		patchScenePrompt(fx.scenes.get(0), "a lantern-lit cottage in deep snow, warm window glow, winter night");
-		BaseRecord overlay = sparse(new String[] { "steps", "description" });
-		overlay.setValue("steps", 23);
-		overlay.setValue("description", "overlay description that must never be stored");
-
-		List<BaseRecord> captured = new ArrayList<>();
-		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, swarmServer()) {
-			@Override
-			public List<BaseRecord> createImage(BaseRecord user, String groupPath, BaseRecord sdConfig, String name, int batch, boolean hires, int seed) {
-				captured.add(sdConfig);
-				return new ArrayList<>();
-			}
-		};
-		ChapBookUtil.SceneRenderResult result = ChapBookUtil.renderChapBookScene(
-			testUser, fx.sceneOids.get(0), sdu, null, overlay, null);
-		assertEquals(ChapBookUtil.SceneRenderStatus.FAILED, result.status);
-		assertEquals("createImage must be called exactly once", 1, captured.size());
-		assertEquals("The render must see the overlay's steps", Integer.valueOf(23), captured.get(0).get("steps"));
-		assertEquals("The render must see the book's negative prompt (no overlay value)",
-			"book-level negative p0-10a", captured.get(0).get("negativePrompt"));
-
-		BaseRecord after = ChapBookUtil.getBookSdConfig(testUser, fx.bookOid);
-		assertNotNull(after);
-		assertEquals("The render must not relink the book to another row", storedOid, after.get(FieldNames.FIELD_OBJECT_ID));
-		assertEquals("The stored book steps must be untouched by a render overlay", Integer.valueOf(31), after.get("steps"));
-		String afterDesc = after.get("description");
-		assertTrue("The stored book description must be untouched by a render overlay, got: " + afterDesc,
-			afterDesc == null || afterDesc.isBlank());
-		assertEquals("Still exactly one book-sdConfig row after a render", 1, countBookConfigRows(fx.bookGroupId));
-	}
-
 	/** The ChapBook wrappers refuse a non-CHAPBOOK book with 403, before any write. */
 	@Test
 	public void nonChapBookIs403() throws Exception {
@@ -326,22 +275,6 @@ public class TestChapBookBookSettings extends BaseTest {
 		BaseRecord fk = b.get(OlioFieldNames.FIELD_PB_SD_CONFIG);
 		assertNotNull("The book sdConfig FK must be set", fk);
 		return fk.get(FieldNames.FIELD_ID);
-	}
-
-	private String swarmServer() {
-		String s = testProperties.getProperty(SdTestGate.PROP_SWARM_SERVER);
-		assertNotNull(SdTestGate.PROP_SWARM_SERVER + " must be set", s);
-		return s;
-	}
-
-	private void patchScenePrompt(BaseRecord scene, String prompt) throws Exception {
-		BaseRecord patch = RecordFactory.newInstance(OlioModelNames.MODEL_PB_SCENE, new String[] {
-			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, OlioFieldNames.FIELD_CB_SD_PROMPT });
-		patch.set(FieldNames.FIELD_ID, scene.get(FieldNames.FIELD_ID));
-		patch.set(FieldNames.FIELD_OBJECT_ID, scene.get(FieldNames.FIELD_OBJECT_ID));
-		patch.set(FieldNames.FIELD_NAME, scene.get(FieldNames.FIELD_NAME));
-		patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, prompt);
-		assertNotNull("Scene prompt patch must succeed", IOSystem.getActiveContext().getAccessPoint().update(testUser, patch));
 	}
 
 	private BaseRecord reloadBook(String bookObjectId) {

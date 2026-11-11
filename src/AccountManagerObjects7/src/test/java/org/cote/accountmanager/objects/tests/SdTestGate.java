@@ -295,7 +295,7 @@ public final class SdTestGate {
 	 * NEVER returns normally: either a visible Skip (checkpoint genuinely absent on this node) or a
 	 * hard failure (the checkpoint is there, so the generation really did fail).
 	 *
-	 * @param what human-readable name of the stage, e.g. "portrait" / "landscape" / "Kontext scene"
+	 * @param what human-readable name of the stage, e.g. "portrait" / "landscape" / "composite scene"
 	 */
 	public static void emptyResultIsSkipOrFailure(SDUtil sdu, String swarmServer, String model, String what) {
 		boolean installed = isModelInstalled(sdu, model);

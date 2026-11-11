@@ -29,7 +29,6 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.thread.AsyncJobLimitException;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
@@ -142,14 +141,13 @@ public class ChapBookService {
         return Response.status(status).entity("{\"error\":" + escapeJson(message) + "}").build();
     }
 
-    /** The bulk-render summary body: the three v1 counts plus the v3 job/run identifiers (null on v1). */
+    /** The bulk-render summary body: the per-page counts plus the job/run identifiers. */
     private static String summaryJson(ChapBookUtil.ChapBookRenderSummary s) {
         return "{\"rendered\":" + s.rendered
             + ",\"skipped\":" + s.skipped
             + ",\"llmUnavailable\":" + s.llmUnavailable
             + ",\"failed\":" + s.failed
             + ",\"pending\":" + s.pending
-            + ",\"renderPath\":" + escapeJson(s.renderPath)
             + ",\"jobId\":" + escapeJson(s.jobId)
             + ",\"runObjectId\":" + escapeJson(s.runObjectId)
             + ",\"plannedNodeCount\":" + s.plannedNodeCount + "}";
@@ -393,58 +391,21 @@ public class ChapBookService {
         // still the preferred client-driven path; this makes the BULK route survivable too, with
         // progress and a cancel it never had.
         if (async) {
-            // V3 §24 (P1-9): on the v3 render path the bulk render IS a registry job already (pb.renderAll),
-            // so it is submitted directly and its own job id returned - never wrapped in a cb.render job
-            // that would sit awaiting another registry job. submitChapBookRender returns null on v1,
-            // which means "no detachable job here" and falls through to the existing wrapper below.
+            // V3 §24 (P1-9): the bulk render IS a registry job already (pb.renderAll), so it is submitted
+            // directly and its own job id returned - never wrapped in a cb.render job that would sit
+            // awaiting another registry job. A null jobId means there was nothing to render (200).
             try {
                 ChapBookUtil.ChapBookRenderSummary sub = ChapBookUtil.submitChapBookRender(
                         user, bookObjectId, sdApiType, sdServer, chatConfig, sdConfig);
-                if (sub != null) {
-                    if (sub.jobId != null) {
-                        return Response.status(202).entity(summaryJson(sub)).build();
-                    }
-                    return Response.status(200).entity(summaryJson(sub)).build();
-                }
+                return Response.status(sub.jobId != null ? 202 : 200).entity(summaryJson(sub)).build();
             } catch (AsyncJobLimitException e) {
                 return errorResponse(429, e.getMessage());
             } catch (PictureBookException e) {
                 return errorResponse(e.getStatus(), e.getMessage());
             } catch (Exception e) {
-                logger.error("renderChapBook (v3 submit) failed: " + e.getMessage(), e);
+                logger.error("renderChapBook (submit) failed: " + e.getMessage(), e);
                 return errorResponse(500, "Render failed: " + e.getMessage());
             }
-            final String fSdApiType = sdApiType;
-            final String fSdServer = sdServer;
-            final BaseRecord fChatConfig = chatConfig;
-            final BaseRecord fSdConfig = sdConfig;
-            AsyncJob job;
-            try {
-                job = AsyncJobRegistry.submit(user, "cb.render", bookObjectId, j -> {
-                    ChapBookUtil.ChapBookRenderSummary s = ChapBookUtil.renderChapBookSummary(
-                            user, bookObjectId, fSdApiType, fSdServer, fChatConfig, fSdConfig,
-                            j.getProgress());
-                    // Report what happened, including that it stopped early: a cancelled bulk render
-                    // keeps every image it already generated, so "rendered" is real work either way.
-                    // "complete" means every scene was ATTEMPTED — the loop also breaks on thread
-                    // interruption (a Tomcat stop), which no cancel flag reflects. The progress token
-                    // counts attempted scenes, so current >= total is exactly that condition.
-                    SummarizeProgress rp = j.getProgress();
-                    boolean renderComplete = !rp.isCancelled()
-                        && (rp.getTotal() <= 0 || rp.getCurrent() >= rp.getTotal());
-                    return "{\"rendered\":" + s.rendered
-                        + ",\"skipped\":" + s.skipped
-                        + ",\"llmUnavailable\":" + s.llmUnavailable
-                        + ",\"complete\":" + renderComplete + "}";
-                });
-            } catch (AsyncJobLimitException e) {
-                return errorResponse(429, e.getMessage());
-            }
-            if (job != null) {
-                return Response.status(202).entity("{\"jobId\":\"" + job.getJobId()
-                        + "\",\"status\":\"" + job.getStatus().name().toLowerCase() + "\"}").build();
-            }
-            logger.warn("Async ChapBook render requested but the job could not be submitted — running synchronously");
         }
 
         try {
@@ -453,8 +414,8 @@ public class ChapBookService {
             // single HTTP request runs long); this bulk /render/{bookObjectId} remains for small
             // books / backward compatibility.
             ChapBookUtil.ChapBookRenderSummary summary = ChapBookUtil.renderChapBookSummary(user, bookObjectId, sdApiType, sdServer, chatConfig, sdConfig);
-            // A v3 summary that is still pending (the synchronous wait reached its bound) is a 202 with
-            // the job identifiers, like the async branch; everything else is the 200 the v1 path returned.
+            // A summary that is still pending (the synchronous wait reached its bound) is a 202 with
+            // the job identifiers, like the async branch; everything else is a 200.
             return Response.status(summary.pending ? 202 : 200).entity(summaryJson(summary)).build();
         } catch (PictureBookException e) {
             return errorResponse(e.getStatus(), e.getMessage());
@@ -548,7 +509,6 @@ public class ChapBookService {
                 + ",\"pending\":" + pending
                 + ",\"llmUnavailable\":" + result.llmUnavailable
                 + ",\"llmDegraded\":" + result.llmDegraded
-                + ",\"renderPath\":" + escapeJson(result.renderPath)
                 + ",\"jobId\":" + escapeJson(result.jobId)
                 + ",\"runObjectId\":" + escapeJson(result.runObjectId)
                 + ",\"nodeObjectId\":" + escapeJson(result.nodeObjectId)

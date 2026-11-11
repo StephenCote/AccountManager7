@@ -27,7 +27,7 @@ import {
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { loadPictureBook } from '../workflows/sceneExtractor.js';
-import { pictureBookFromId, pictureBookRenderPath } from '../workflows/pictureBook.js';
+import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { ObjectPicker } from '../components/picker.js';
 import { Dialog } from '../components/dialogCore.js';
 
@@ -110,9 +110,6 @@ let error = null;
 // Render all create the graph on first use — P10-B, PbServiceFacade.ensureWorkflow + sceneTerminal) and,
 // when the PB2 book id is known, "Build graph" (POST /{book}/graph/build) to see the nodes first.
 let emptyState = null;
-// P7-3 / P10-B: where "open to render" goes. 'v3' = the V3 reader (/picture-book/v2/{oid}); 'v1' = the
-// PB1 wizard (pictureBookFromId). Read once per canvas load, only on the empty-state branches.
-let renderPath = 'v3';
 let building = false;
 
 let selectedNodeId = null;
@@ -346,7 +343,6 @@ async function loadGraph(groupOid) {
                 let hit = (books || []).find(function (b) { return b.objectId === groupOid; });
                 if (hit) bookName = hit.name || hit.slug || '';
             } catch (_) { /* name is cosmetic; the header falls back to the id */ }
-            renderPath = await pictureBookRenderPath();
             emptyState = noWorkflowYetState(scenes);
             loading = false;
             m.redraw();
@@ -366,7 +362,6 @@ async function loadGraph(groupOid) {
                     // The PB1 book has extracted scenes but no PB2 record/graph — the first render
                     // creates the graph, so show the same "nothing rendered yet" state. No PB2 id is
                     // known here, so "Build graph" is not offered (renderEmptyState checks pb2BookObjectId).
-                    renderPath = await pictureBookRenderPath();
                     emptyState = noWorkflowYetState(scenes);
                 } else {
                     // State (a): genuinely legacy — no PB2 record AND no scenes. Nothing to record.
@@ -388,7 +383,6 @@ async function loadGraph(groupOid) {
                 // The book resolves to a PB2 book, but no olio.pb.workflow row exists for it yet.
                 // The graph is created at first render, so list the scenes.
                 let scenes = await loadPictureBook(pb2BookObjectId);
-                renderPath = await pictureBookRenderPath();
                 emptyState = noWorkflowYetState(scenes);
                 loading = false;
                 m.redraw();
@@ -401,7 +395,6 @@ async function loadGraph(groupOid) {
             // State (c): a workflow row exists but holds zero nodes — this book genuinely has
             // never been rendered. (Toolbar still shows the book name / "0 nodes".) Same two ways
             // forward as the no-workflow state: render in the reader, or build the scene nodes now.
-            renderPath = await pictureBookRenderPath();
             emptyState = {
                 icon: 'draft',
                 title: 'Nothing rendered yet',
@@ -435,7 +428,7 @@ function renderEmptyState() {
         emptyState.actions ? m('div', { class: 'pb-wf-empty-actions', style: 'display:flex;gap:8px;flex-wrap:wrap;justify-content:center;' }, [
             renderOpenToRenderButton(),
             // "Build graph" needs the PB2 book id (POST /{pb2Book}/graph/build); the PB1-only bridge
-            // case (getBookInfo 404) has none, so it offers the reader/wizard handoff alone.
+            // case (getBookInfo 404) has none, so it offers the reader handoff alone.
             pb2BookObjectId ? renderBuildGraphButton() : null
         ]) : null,
     ]);
@@ -463,29 +456,24 @@ function renderEmptyStateScenes(scenes) {
     ]);
 }
 
-// The render action on the empty canvas. Under the V3 render path (the default) this is the V3 reader
-// (/picture-book/v2/{pb2 book}), whose per-page Render / Render all create the graph on first use
-// (P10-B) — the same place the book list's Edit pencil lands (features/pictureBook.js
-// renderPb2EditButton → pictureBookFromId → tryResumeExistingBook handoff). Under v1 it is the PB1
-// wizard, which resumes on its scene step and resolves the SD config itself (ensureSdConfig →
-// persistBookSettings). The label says where it goes; the earlier "Open in wizard to render" label
-// sent V3 users to the reader while promising a wizard. The route id is what the handoff resumes
-// with: the PB2 book id on a direct hit, the PB1 group id via the bridge (resolveBookGroupEither).
+// The render action on the empty canvas: the V3 reader (/picture-book/v2/{pb2 book}), whose per-page
+// Render / Render all create the graph on first use (P10-B) — the same place the book list's Edit pencil
+// lands (features/pictureBook.js renderPb2EditButton → pictureBookFromId → tryResumeExistingBook handoff).
+// The label says where it goes. The route id is what the handoff resumes with: the PB2 book id on a
+// direct hit, the PB1 group id via the bridge (resolveBookGroupEither).
 function renderOpenToRenderButton() {
-    let v3 = renderPath !== 'v1';
     return m('button', {
         'data-wf-open-wizard': bookGroupObjectId,
-        'data-wf-open-target': v3 ? 'reader' : 'wizard',
+        'data-wf-open-target': 'reader',
         class: 'mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm flex items-center gap-1',
-        title: v3 ? 'Open this book in the reader — Render on a page or Render all creates the graph'
-            : 'Open this book in the Picture Book wizard to render its scenes',
+        title: 'Open this book in the reader — Render on a page or Render all creates the graph',
         onclick: function () {
-            if (v3 && pb2BookObjectId) m.route.set('/picture-book/v2/' + pb2BookObjectId);
+            if (pb2BookObjectId) m.route.set('/picture-book/v2/' + pb2BookObjectId);
             else pictureBookFromId(bookGroupObjectId, bookName || '');
         }
     }, [
-        m('span', { class: 'material-symbols-outlined text-sm' }, v3 ? 'auto_stories' : 'edit'),
-        v3 ? 'Open in reader to render' : 'Open in wizard to render'
+        m('span', { class: 'material-symbols-outlined text-sm' }, 'auto_stories'),
+        'Open in reader to render'
     ]);
 }
 

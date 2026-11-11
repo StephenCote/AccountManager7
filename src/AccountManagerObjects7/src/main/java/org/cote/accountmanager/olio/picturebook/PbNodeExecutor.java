@@ -11,12 +11,10 @@ import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
@@ -45,16 +43,12 @@ import org.cote.accountmanager.olio.picturebook.PbPipelineUtil.SceneGraph;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.ResolvedCharacter;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
-import org.cote.accountmanager.olio.sd.Flux2Defaults;
 import org.cote.accountmanager.olio.sd.PbCalibrationUtil;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
-import org.cote.accountmanager.olio.sd.SceneCompositeUtil;
-import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
@@ -69,8 +63,8 @@ import org.cote.accountmanager.util.JSONUtil;
  * Single-node executor for the PB2 canvas. Drives one node synchronously, persists a new artifact
  * revision, marks it selected, and propagates staleness downstream.
  * <p>
- * PORTRAIT, LANDSCAPE, SCENE_PROMPT, LANDSCAPE_PROMPT, REFERENCE_STRIP, COMPOSITE and (V3 P2-5)
- * RENDER_PLAN are implemented. Callers discover unsupported types via a 501 {@link PictureBookException}
+ * PORTRAIT, LANDSCAPE, SCENE_PROMPT, LANDSCAPE_PROMPT, LOCATION and (V3 P2-5) RENDER_PLAN are
+ * implemented (the PB1-era REFERENCE_STRIP / COMPOSITE executors were removed at Phase 10, P10-1). Callers discover unsupported types via a 501 {@link PictureBookException}
  * so the API can be extended incrementally without silent no-ops.
  * <p>
  * Two entry points (V3 P1-3):
@@ -84,7 +78,7 @@ import org.cote.accountmanager.util.JSONUtil;
  * COMPLETED or FAILED. This is what {@code PbServiceFacade.requestRegenerate} submits.</li>
  * </ul>
  * Both take the SD backend as the {@code (sdApiType, sdServer)} pair the caller resolved from its own
- * deployment config, exactly as {@code PictureBookUtil.generateSceneImage} does; a null or blank server
+ * deployment config; a null or blank server
  * yields no {@link SDUtil} and the SD-backed types refuse with a 500 before touching the graph.
  */
 public class PbNodeExecutor {
@@ -105,8 +99,6 @@ public class PbNodeExecutor {
 		PbNodeTypeEnumType.LANDSCAPE,
 		PbNodeTypeEnumType.SCENE_PROMPT,
 		PbNodeTypeEnumType.LANDSCAPE_PROMPT,
-		PbNodeTypeEnumType.REFERENCE_STRIP,
-		PbNodeTypeEnumType.COMPOSITE,
 		PbNodeTypeEnumType.RENDER_PLAN,
 		PbNodeTypeEnumType.LOCATION
 	));
@@ -115,7 +107,6 @@ public class PbNodeExecutor {
 	public static final Set<PbNodeTypeEnumType> SD_BACKED_TYPES = Collections.unmodifiableSet(EnumSet.of(
 		PbNodeTypeEnumType.PORTRAIT,
 		PbNodeTypeEnumType.LANDSCAPE,
-		PbNodeTypeEnumType.COMPOSITE,
 		PbNodeTypeEnumType.RENDER_PLAN,
 		PbNodeTypeEnumType.LOCATION
 	));
@@ -150,7 +141,7 @@ public class PbNodeExecutor {
 
 	/**
 	 * The {@link SDUtil} for a resolved {@code (sdApiType, sdServer)} pair, or null when either is
-	 * missing. Mirrors {@code PictureBookUtil.generateSceneImage(String, String)}: the executor never
+	 * missing. As the removed PB1 pipeline did (P10-1): the executor never
 	 * assumes SWARM and never invents a server. A blank server is treated as missing — {@code SDUtil}'s
 	 * constructor accepts a null/blank server without complaint and the failure would otherwise surface
 	 * only as a connection error deep inside the render.
@@ -570,12 +561,6 @@ public class PbNodeExecutor {
 			case SCENE_PROMPT:
 			case LANDSCAPE_PROMPT:
 				return executePromptNode(g, node, nodeType);
-			case REFERENCE_STRIP:
-				warnLegacyNode(g, node, nodeType);
-				return executeReferenceStrip(g, node);
-			case COMPOSITE:
-				warnLegacyNode(g, node, nodeType);
-				return executeComposite(g, node, sdu);
 			case RENDER_PLAN:
 				return executeRenderPlan(g, node, sdu);
 			case LOCATION:
@@ -584,16 +569,6 @@ public class PbNodeExecutor {
 				throw new PictureBookException(501,
 					"Single-node execution is not yet implemented for node type " + nodeType);
 		}
-	}
-
-	/// One line per execution of a PB2-era node (§28.1 Stage 1 Coexist, P5-3): the type is deprecated in
-	/// favour of RENDER_PLAN and goes with PB1 at Stage 4 (Phase 10). Only persisted legacy nodes reach
-	/// here - PB1's own path never enters dispatch - so each line is one real re-execution, worth keeping.
-	private static void warnLegacyNode(SceneGraph g, BaseRecord node, PbNodeTypeEnumType nodeType) {
-		BaseRecord book = g.getBook();
-		logger.warn("Legacy PB2 node type " + nodeType + " executed: node " + node.get(FieldNames.FIELD_OBJECT_ID)
-			+ " (" + node.get(OlioFieldNames.FIELD_PB_HANDLE) + ") in book " + (book != null ? book.get(FieldNames.FIELD_OBJECT_ID) : "?")
-			+ " - replaced by RENDER_PLAN; removed with PB1 at design §28.1 Stage 4 (Phase 10)");
 	}
 
 	/// The message stamped on the node and the run; a BASE stage failure also carries the renderer's detail
@@ -2383,265 +2358,11 @@ public class PbNodeExecutor {
 		return artifactDto(node, "DONE_UNVERIFIED", artifact, null, downstream, degradations);
 	}
 
-	// ─── reference strip ─────────────────────────────────────────────────────────
-
-	/**
-	 * Stitch the source portrait and landscape artifacts side-by-side into an IMAGE_STRIP for use
-	 * as a FLUX.2 reference image. Does NOT require an SD server — pure Java 2D work.
-	 *
-	 * @deprecated PB2-era node (§28.1 Stage 1 Coexist): only PB1 ({@code PictureBookUtil.generateSceneImage})
-	 *             creates REFERENCE_STRIP nodes; V3 passes references through the compiled graph
-	 *             ({@link #renderStages}) and never stitches. Kept so persisted nodes still execute; removed
-	 *             with PB1 at Stage 4 (Phase 10) together with {@code SDUtil.stitchSceneImages}.
-	 */
-	@Deprecated
-	private static Map<String, Object> executeReferenceStrip(SceneGraph g, BaseRecord node) {
-		BaseRecord user = g.getUser();
-		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-
-		// Gather portrait and landscape bytes from bound source nodes (cache:false via listBindings)
-		List<BaseRecord> bindings = PbGraphUtil.listBindings(user, node);
-		byte[] portrait0Bytes = null;
-		byte[] portrait1Bytes = null;
-		byte[] landscapeBytes = null;
-		List<String> degradations = new ArrayList<>();
-
-		for(BaseRecord binding : bindings) {
-			String role = binding.get(OlioFieldNames.FIELD_PB_ROLE);
-			if(role == null) continue;
-			if(!PbPipelineUtil.ROLE_PORTRAIT_0.equals(role) && !PbPipelineUtil.ROLE_PORTRAIT_1.equals(role)
-					&& !PbPipelineUtil.ROLE_LANDSCAPE.equals(role)) {
-				continue;
-			}
-			BaseRecord srcStub = binding.get(OlioFieldNames.FIELD_PB_SOURCE_NODE);
-			String srcOid = (srcStub != null ? srcStub.get(FieldNames.FIELD_OBJECT_ID) : null);
-			BaseRecord srcNode = (srcOid != null ? PbGraphUtil.readNode(user, srcOid, orgId) : null);
-			if(srcNode == null) {
-				degradations.add(role + ": source node unreadable");
-				continue;
-			}
-
-			String imgRole = PbPipelineUtil.ROLE_LANDSCAPE.equals(role)
-				? PbPipelineUtil.ROLE_LANDSCAPE : PbPipelineUtil.ROLE_PORTRAIT;
-			BaseRecord sel = PbArtifactUtil.findSelected(user, srcNode, imgRole);
-			if(sel == null) {
-				degradations.add(role + ": no selected artifact");
-				continue;
-			}
-			byte[] artifactBytes = readArtifactBytes(user, sel);
-			if(artifactBytes == null || artifactBytes.length == 0) {
-				degradations.add(role + ": artifact has no image bytes");
-				continue;
-			}
-
-			if(PbPipelineUtil.ROLE_PORTRAIT_0.equals(role)) {
-				portrait0Bytes = artifactBytes;
-			} else if(PbPipelineUtil.ROLE_PORTRAIT_1.equals(role)) {
-				portrait1Bytes = artifactBytes;
-			} else if(PbPipelineUtil.ROLE_LANDSCAPE.equals(role)) {
-				landscapeBytes = artifactBytes;
-			}
-		}
-
-		if(portrait0Bytes == null && portrait1Bytes == null && landscapeBytes == null) {
-			throw new PictureBookException(400, "Reference-strip node "
-				+ node.get(OlioFieldNames.FIELD_PB_HANDLE)
-				+ " has no resolved source artifacts — execute portrait and landscape nodes first");
-		}
-
-		int panelSize = Flux2Defaults.referenceSize();
-		byte[] stripBytes = SDUtil.stitchSceneImages(portrait0Bytes, portrait1Bytes, landscapeBytes, panelSize);
-		if(stripBytes == null || stripBytes.length == 0) {
-			throw new PictureBookException(500, "stitchSceneImages returned empty bytes for reference strip");
-		}
-
-		String artifactPath = g.getArtifactGroupPath();
-		String stripName = "ref_strip_" + node.get(OlioFieldNames.FIELD_PB_HANDLE) + "_" + System.currentTimeMillis();
-
-		// Create and persist a data.data record for the stitched bytes (pattern from PbPipelineUtil.persistBytes)
-		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, artifactPath);
-		plist.parameter(FieldNames.FIELD_NAME, stripName);
-		BaseRecord dataRecord;
-		try {
-			dataRecord = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, plist);
-			ByteModelUtil.setValue(dataRecord, stripBytes);
-			dataRecord.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
-		}
-		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-			throw new PictureBookException(500, "Failed to assemble reference strip data record: " + e.getMessage());
-		}
-		BaseRecord createdData = IOSystem.getActiveContext().getAccessPoint().create(user, dataRecord);
-		if(createdData == null) {
-			throw new PictureBookException(500, "Failed to create reference strip data record in " + artifactPath);
-		}
-
-		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_REFERENCE_STRIP,
-			PbArtifactTypeEnumType.IMAGE_STRIP, artifactPath, createdData, null, null, null);
-
-		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
-		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
-
-		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(stripBytes.length), downstream, degradations);
-	}
-
-	// ─── composite ───────────────────────────────────────────────────────────────
-
-	/**
-	 * The PB2-era scene composite: one {@code SceneCompositeUtil.buildSceneRequest} T2I request from the
-	 * bound portraits, landscape and the scene's mirrored prompt.
-	 *
-	 * @deprecated PB2-era node (§28.1 Stage 1 Coexist): only PB1 creates COMPOSITE nodes; V3 renders the
-	 *             scene through RENDER_PLAN ({@link #executeRenderPlan}). Kept so persisted nodes still
-	 *             execute - including the retired-mode refusal it shares with every other entry point -
-	 *             and removed with PB1 at Stage 4 (Phase 10).
-	 */
-	@Deprecated
-	private static Map<String, Object> executeComposite(SceneGraph g, BaseRecord node, SDUtil sdu) {
-		BaseRecord user = g.getUser();
-		BaseRecord book = g.getBook();
-		String scopeRef = node.get(OlioFieldNames.FIELD_PB_SCOPE_REF);
-		if(scopeRef == null || scopeRef.trim().isEmpty()) {
-			throw new PictureBookException(400, "Composite node "
-				+ node.get(OlioFieldNames.FIELD_PB_HANDLE) + " carries no scopeRef (scene objectId)");
-		}
-
-		long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-
-		// Load scene for action/setting/mood/prompt
-		BaseRecord scene = findSceneByNodeRef(user, book, node, orgId, new String[] {
-			FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
-			FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
-			OlioFieldNames.FIELD_CB_SD_PROMPT, OlioFieldNames.FIELD_PB_MOOD,
-			OlioFieldNames.FIELD_PB_SETTING, OlioFieldNames.FIELD_PB_ACTION, FieldNames.FIELD_DESCRIPTION
-		});
-		if(scene == null) {
-			throw new PictureBookException(404, "Scene " + scopeRef + " not found");
-		}
-		String action = scene.get(OlioFieldNames.FIELD_PB_ACTION);
-		String setting = scene.get(OlioFieldNames.FIELD_PB_SETTING);
-		String mood = scene.get(OlioFieldNames.FIELD_PB_MOOD);
-		/// P4-10: the SCENE composition's promptOverride first, the scene's mirrored sdPrompt second, the
-		/// scene description last - this text goes to SD through buildSceneRequest.
-		String scenePrompt = compositionPrompt(findComposition(user, book, scene, orgId, PbCompositionPurposeEnumType.SCENE));
-		if(scenePrompt == null) {
-			scenePrompt = scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT);
-		}
-		if(scenePrompt == null || scenePrompt.isBlank()) {
-			scenePrompt = scene.get(FieldNames.FIELD_DESCRIPTION);
-		}
-		if(scenePrompt == null) scenePrompt = "";
-
-		// Gather portrait bytes + descriptions and landscape bytes from bound source nodes
-		List<BaseRecord> bindings = PbGraphUtil.listBindings(user, node);
-		byte[] leftBytes = null;     // PORTRAIT_0
-		byte[] centerBytes = null;   // PORTRAIT_1 (mapped to buildSceneRequest's rightBytes param)
-		byte[] landscapeBytes = null;
-		String leftDesc = "";
-		String rightDesc = "";
-		List<String> degradations = new ArrayList<>();
-
-		for(BaseRecord binding : bindings) {
-			String bRole = binding.get(OlioFieldNames.FIELD_PB_ROLE);
-			if(bRole == null) continue;
-			boolean isPort0 = PbPipelineUtil.ROLE_PORTRAIT_0.equals(bRole);
-			boolean isPort1 = PbPipelineUtil.ROLE_PORTRAIT_1.equals(bRole);
-			boolean isLand  = PbPipelineUtil.ROLE_LANDSCAPE.equals(bRole);
-			if(!isPort0 && !isPort1 && !isLand) continue;
-
-			BaseRecord srcStub = binding.get(OlioFieldNames.FIELD_PB_SOURCE_NODE);
-			String srcOid = (srcStub != null ? srcStub.get(FieldNames.FIELD_OBJECT_ID) : null);
-			BaseRecord srcNode = (srcOid != null ? PbGraphUtil.readNode(user, srcOid, orgId) : null);
-			if(srcNode == null) {
-				degradations.add(bRole + ": source node unreadable");
-				continue;
-			}
-
-			String imgRole = isLand ? PbPipelineUtil.ROLE_LANDSCAPE : PbPipelineUtil.ROLE_PORTRAIT;
-			BaseRecord sel = PbArtifactUtil.findSelected(user, srcNode, imgRole);
-			if(sel == null) {
-				degradations.add(bRole + ": no selected artifact");
-				continue;
-			}
-			byte[] artifactBytes = readArtifactBytes(user, sel);
-			if(artifactBytes == null || artifactBytes.length == 0) {
-				degradations.add(bRole + ": artifact has no image bytes");
-				continue;
-			}
-
-			if(isPort0) {
-				leftBytes = artifactBytes;
-				String pt = srcNode.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT);
-				if(pt != null && !pt.isBlank()) leftDesc = pt;
-			} else if(isPort1) {
-				centerBytes = artifactBytes;
-				String pt = srcNode.get(OlioFieldNames.FIELD_PB_PROMPT_TEXT);
-				if(pt != null && !pt.isBlank()) rightDesc = pt;
-			} else {
-				landscapeBytes = artifactBytes;
-			}
-		}
-
-		PbStyleResolver.EffectiveStyle style = styleFor(g, node);
-		BaseRecord effectiveConfig = PbConfigUtil.resolveEffectiveConfig(book, node, true, null, style);
-		String mode = SceneCompositeUtil.resolveMode(effectiveConfig, false);
-		/// V3 §37.3 Disable: a retired mode fails the node (and the run, via executeNodeRun's catch)
-		/// before the model policy and before any SD contact.
-		PbRenderPath.requireEnabledCompositeMode(mode, "scene " + scopeRef);
-		boolean flux2 = SceneCompositeUtil.MODE_FLUX2.equals(mode);
-		boolean hasRefs = (leftBytes != null || centerBytes != null || landscapeBytes != null);
-		applyModelPolicy(g, node, true, style, (flux2 ? PbModelTaskEnumType.SCENE_DIRECT : PbModelTaskEnumType.LOCATION),
-			effectiveConfig, sdu, flux2 && hasRefs);
-		double creativity = SceneCompositeUtil.defaultCreativity(mode);
-		String negPrompt = NarrativeUtil.getDefaultNegativePrompt();
-
-		// centerBytes maps to buildSceneRequest's "rightBytes" parameter (second portrait)
-		SWTxt2Img sceneRequest = SceneCompositeUtil.buildSceneRequest(mode,
-			leftDesc, rightDesc, action, setting, mood, scenePrompt, negPrompt,
-			leftBytes, centerBytes, landscapeBytes, creativity, effectiveConfig);
-		if(sceneRequest == null) {
-			throw new PictureBookException(500,
-				"Could not build a composite scene request for scene " + scopeRef + " mode=" + mode);
-		}
-
-		String artifactPath = g.getArtifactGroupPath();
-		String sceneName = "composite_" + scopeRef + "_" + System.currentTimeMillis();
-
-		long callStarted = System.currentTimeMillis();
-		List<BaseRecord> images = sdu.createSceneImage(user, artifactPath, sceneName, sceneRequest, null, null);
-		long callMs = System.currentTimeMillis() - callStarted;
-		discardIfCancelled(g, images, "composite of scene " + scopeRef);
-		if(images == null || images.isEmpty()) {
-			throw new PictureBookException(500, "SD backend returned no images for composite of scene " + scopeRef);
-		}
-		BaseRecord image = images.get(0);
-		byte[] bytes;
-		try {
-			bytes = ByteModelUtil.getValue(image);
-		}
-		catch(FieldException | ValueException e) {
-			throw new PictureBookException(500, "Failed to read composite bytes for scene " + scopeRef + ": " + e.getMessage());
-		}
-		if(bytes == null || bytes.length == 0) {
-			throw new PictureBookException(500, "Composite image for scene " + scopeRef + " decoded to empty bytes");
-		}
-
-		BaseRecord artifact = PbArtifactUtil.persistArtifact(user, node, PbPipelineUtil.ROLE_COMPOSITE,
-			PbArtifactTypeEnumType.IMAGE, artifactPath, image, null, effectiveConfig, null);
-		int[] wh = PbPipelineUtil.decodeDimensions(bytes);
-		PbArtifactUtil.recordImageMetrics(user, artifact, bytes, "image/png", wh[0], wh[1], null, sdu.getApiType(), callMs);
-
-		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
-		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
-
-		return artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(bytes.length), downstream, degradations);
-	}
-
 	// ─── portrait ────────────────────────────────────────────────────────────────
 
 	/**
-	 * Render a character portrait the way the v1 scene pipeline's Stage 1 does
-	 * ({@code PictureBookUtil.generateSceneImage}; gap doc G-30), so a portrait regenerated from the
-	 * canvas is the portrait the book would have rendered:
+	 * Render a character portrait the way the PB1 scene pipeline's Stage 1 did (removed at P10-1; gap doc
+	 * G-30), so a portrait regenerated from the canvas is the portrait the book would have rendered:
 	 * <ol>
 	 * <li>the character is resolved through {@code PictureBookUtil.resolveSceneCharacter} — a
 	 * PBAC-checked read as the caller, with the record-driven narrative refresh, the hand-written

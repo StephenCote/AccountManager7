@@ -26,7 +26,7 @@ import {
     resolveCharacterNames, sceneCharacterLabels,
     listExtractCheckpoints, discardExtractCheckpoints, pollJob
 } from '../workflows/sceneExtractor.js';
-import { pictureBookFromId, describeCheckpointRow, pictureBookRenderPath } from '../workflows/pictureBook.js';
+import { pictureBookFromId, describeCheckpointRow } from '../workflows/pictureBook.js';
 import { openCharacterManager } from '../workflows/pictureBookCharacters.js';
 import { routes as wfRoutes } from './pictureBookWorkflow.js';
 import { routes as reviewRoutes } from './pictureBookReview.js';
@@ -790,9 +790,8 @@ let imageUrls = {};      // imageObjectId → resolved media URL
 let characterNames = {}; // charPerson objectId → display name (see resolveCharacterNames)
 let viewerLoading = false;
 let viewerError = null;
-// P7-3: the picturebook render path the viewer was opened under, and whether the book on screen is a
-// PB1 book being shown read-only under v3 (it has scenes but no olio.pb.book — "replaced by V3 — import").
-let viewerRenderPath = 'v1';
+// P7-3: whether the book on screen is a PB1 book being shown read-only (it has scenes but no
+// olio.pb.book — "replaced by V3 — import").
 let viewerLegacy = false;
 // P7-4: an import of the PB1 book on screen is in flight (POST /migrate-v1); the notice's button is
 // disabled meanwhile so a double click cannot queue a second import that would 409 on the slug.
@@ -821,13 +820,12 @@ async function loadViewer(bookObjectId) {
     clearImageCache();
     m.redraw();
 
-    // P7-3: under v3 this route is only a bridge. A book with a V3 record (a PB1 group bridged via /pb2,
-    // or a pb2 book oid handed straight to this route) opens in the V3 reader; the redirect replaces the
+    // P7-3: this route is only a bridge. A book with a V3 record (a PB1 group bridged via /pb2, or a
+    // pb2 book oid handed straight to this route) opens in the V3 reader; the redirect replaces the
     // history entry so Back does not bounce through here. viewerLoading stays true across the redirect
     // so the empty state never flashes. Anything else (a pure PB1 book, or a source document with no
     // book yet) continues below.
-    viewerRenderPath = await pictureBookRenderPath();
-    if (viewerRenderPath === 'v3') {
+    {
         let pb2 = null;
         try { pb2 = await resolvePb2BookObjectId(bookObjectId); } catch (e) { pb2 = null; }
         if (pb2) {
@@ -874,7 +872,7 @@ async function loadViewer(bookObjectId) {
         try { scenes = await loadPictureBook(bookObjectId); } catch (e) { /* meta may not exist */ }
         viewerScenes = Array.isArray(scenes) ? scenes : [];
         // P7-3: scenes but no V3 record (the redirect above did not fire) ⇒ a PB1 book shown read-only.
-        viewerLegacy = viewerRenderPath === 'v3' && viewerScenes.length > 0;
+        viewerLegacy = viewerScenes.length > 0;
 
         if (viewerScenes.length) {
             // Both resolutions are independent lookups over the same loaded scenes — run them
@@ -1157,8 +1155,8 @@ export async function importLegacyBook() {
 // ── Header action slots (between chevrons/export/fullscreen) ───────────
 
 function renderViewerActionsLeft(nav) {
-    // Edit Book — reopen wizard. P7-3: not for a PB1 book shown read-only under v3 — the wizard's
-    // steps 4–5 are gone and the book has no V3 record for the reader; the notice above is its path.
+    // Edit Book — reopen wizard. P7-3: not for a PB1 book shown read-only — the wizard has no image
+    // steps and the book has no V3 record for the reader; the notice above is its path.
     return (!nav.fullscreen && viewerScenes.length && !viewerLegacy) ? m('button', {
         class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
         title: 'Edit Book',
@@ -1247,7 +1245,7 @@ var pictureBookView = {
 export { loadViewer as __loadViewerForTest, renderViewerActionsLeft as __renderViewerActionsLeftForTest,
     renderViewerLegacyNotice as __renderViewerLegacyNoticeForTest, importLegacyBook as __importLegacyBookForTest };
 export function __viewerStateForTest() {
-    return { viewerBookId, viewerWorkName, viewerScenes, viewerLoading, viewerError, viewerRenderPath, viewerLegacy, viewerImporting };
+    return { viewerBookId, viewerWorkName, viewerScenes, viewerLoading, viewerError, viewerLegacy, viewerImporting };
 }
 export function __setViewerStateForTest(patch) {
     patch = patch || {};
@@ -1256,7 +1254,6 @@ export function __setViewerStateForTest(patch) {
     if ('viewerScenes' in patch) viewerScenes = Array.isArray(patch.viewerScenes) ? patch.viewerScenes : [];
     if ('viewerLoading' in patch) viewerLoading = !!patch.viewerLoading;
     if ('viewerError' in patch) viewerError = patch.viewerError;
-    if ('viewerRenderPath' in patch) viewerRenderPath = patch.viewerRenderPath === 'v3' ? 'v3' : 'v1';
     if ('viewerLegacy' in patch) viewerLegacy = !!patch.viewerLegacy;
     if ('viewerImporting' in patch) viewerImporting = !!patch.viewerImporting;
 }
@@ -1274,9 +1271,6 @@ let pb2SeriesName = null;
 let pb2SceneTotal = null;      // GET /{id}/scenes count (all extracted scenes); null = unknown
 let pb2Health = null;          // GET /{id}/health report; null = not checked or the check failed
 let pb2HealthRepairing = false;
-// V3 P1-10 (S2): the picturebook render-path switch (GET /rest/config/render-path) gates every V3
-// control in the reader; nothing below is rendered or requested under 'v1'.
-let pb2RenderPath = 'v1';
 let pb2AutoApprove = false;
 let pb2AutoApproveSaving = false;
 let pb2Run = null;             // the render job this reader is watching: {jobId, runObjectId, planned[], job, label, error}
@@ -1288,7 +1282,7 @@ let pb2PollIntervalMs = undefined; // pollJob default (3s); Vitest shortens it t
 // {loading, summary: degradationSummary() | null, error}. Emptied by pb2RefreshPages (a render or
 // compose may have produced a new plan); a scene whose node has no renderPlan yet caches a null summary.
 let pb2SceneDegradations = {};
-// P9-4 (V3 §40): the book's cover-art view (GET /{id}/covers, normalizeCoverView) under v3; null when not read or
+// P9-4 (V3 §40): the book's cover-art view (GET /{id}/covers, normalizeCoverView); null when not read or
 // the read failed. The reader's cover page shows the APPROVED COVER render when there is one, else page 1's image.
 let pb2Covers = null;
 
@@ -1311,7 +1305,7 @@ function pb2CoverRef() { return pb2CoverEntry().ref; }
 async function pb2EnsureSceneDegradations(scene) {
     let bookId = pb2BookObjectId;
     let nodeOid = scene && scene.sceneNodeObjectId;
-    if (!bookId || !nodeOid || pb2RenderPath !== 'v3' || pb2SceneDegradations[nodeOid]) return;
+    if (!bookId || !nodeOid || pb2SceneDegradations[nodeOid]) return;
     let entry = { loading: true, summary: null, error: null };
     pb2SceneDegradations[nodeOid] = entry;
     try {
@@ -1327,27 +1321,21 @@ async function pb2EnsureSceneDegradations(scene) {
 
 // ── V3 pure helpers (exported for Vitest) ───────────────────────────────
 
-/** GET /rest/config/render-path → is the picturebook product on the V3 graph path? Missing/failed = v1. */
-export function pb2IsV3(rp) {
-    return !!(rp && typeof rp === 'object' && rp.picturebook === 'v3');
-}
-
 /**
  * Scene status chip from the bookPageView fields (sceneNodeObjectId, nodeStatus, pinned, reviewStatus,
  * artifactObjectId, imageStale): 'stale' when the node is STALE or the page flags imageStale (an
- * approved image stays drawn - the badge overlays it); under v3, 'approved' when the selected
- * artifact is APPROVED, else 'review' when a selected artifact exists (GENERATED/REJECTED); under
- * v1 only 'stale' or nothing. sceneNodeObjectId/nodeStatus/reviewStatus/artifactObjectId are ABSENT
+ * approved image stays drawn - the badge overlays it); 'approved' when the selected artifact is
+ * APPROVED, else 'review' when a selected artifact exists (GENERATED/REJECTED).
+ * sceneNodeObjectId/nodeStatus/reviewStatus/artifactObjectId are ABSENT
  * (not null) when the page has no node / no selected artifact; reviewStatus is pre-folded by the
  * server to GENERATED|APPROVED|REJECTED. Enums arrive in either case. A legacy dataObjectId with no
  * artifact has nothing in the review queue, so it gets no chip.
  */
-export function sceneChip(page, isV3) {
+export function sceneChip(page) {
     if (!page) return null;
     let ns = String(page.nodeStatus || '').toUpperCase();
     let stale = ns === 'STALE' || page.imageStale === true;
     if (stale) return 'stale';
-    if (!isV3) return null;
     let rs = String(page.reviewStatus || '').toUpperCase();
     if (rs === 'APPROVED') return 'approved';
     if (page.artifactObjectId) return 'review';
@@ -1393,7 +1381,7 @@ async function pb2RefreshPages(bookId) {
         let loaded = await Promise.all([
             bookPages(bookId),
             bookHealth(bookId).catch(function () { return null; }),
-            pb2RenderPath === 'v3' ? getCovers(bookId).catch(function () { return null; }) : Promise.resolve(null)
+            getCovers(bookId).catch(function () { return null; })
         ]);
         if (bookId !== pb2BookObjectId) return;
         pb2Pages = Array.isArray(loaded[0]) ? loaded[0] : [];
@@ -1849,11 +1837,10 @@ export function renderPb2RunProgress() {
 }
 
 export function __pb2V3StateForTest() {
-    return { pb2RenderPath, pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations };
+    return { pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations };
 }
 export function __setPb2V3StateForTest(patch) {
     patch = patch || {};
-    if ('pb2RenderPath' in patch) pb2RenderPath = patch.pb2RenderPath === 'v3' ? 'v3' : 'v1';
     if ('pb2AutoApprove' in patch) pb2AutoApprove = !!patch.pb2AutoApprove;
     if ('pb2AutoApproveSaving' in patch) pb2AutoApproveSaving = !!patch.pb2AutoApproveSaving;
     if ('pb2Run' in patch) pb2Run = patch.pb2Run;
@@ -2000,20 +1987,17 @@ async function loadPb2Pages(pb2ObjId) {
         // name — never the first page's scene title.)
         // The read-only health report rides along so the reader can explain an empty/short page list
         // (e.g. a stale workflow blocking rendering) and offer Repair. Its failure never blocks the pages.
-        // The render-path switch rides along: it decides whether any V3 control exists on this page.
         let loaded = await Promise.all([
             bookPages(pb2ObjId),
             loadPictureBook(pb2ObjId).catch(function () { return null; }),
-            bookHealth(pb2ObjId).catch(function () { return null; }),
-            Promise.resolve().then(function () { return am7client.getRenderPath(); }).catch(function () { return null; })
+            bookHealth(pb2ObjId).catch(function () { return null; })
         ]);
         pb2Pages = Array.isArray(loaded[0]) ? loaded[0] : [];
         pb2SceneTotal = Array.isArray(loaded[1]) ? loaded[1].length : null;
         pb2Health = loaded[2] || null;
-        pb2RenderPath = pb2IsV3(loaded[3]) ? 'v3' : 'v1';
         await loadPb2Chapters(pb2ObjId, bookFull);
-        if (pb2RenderPath === 'v3' && pb2ObjId === pb2BookObjectId) {
-            // v3 only: the auto-approve setting for the header badge + Render dialog, the workflow's
+        if (pb2ObjId === pb2BookObjectId) {
+            // The auto-approve setting for the header badge + Render dialog, the workflow's
             // last run so an in-flight or interrupted render re-attaches from server state, and the
             // cover-art view for the cover page. No failure blocks the pages (a book with no workflow
             // yet has no run to re-attach; a book with no covers shows page 1 on its cover).
@@ -2147,7 +2131,7 @@ const PB2_CHIP_LABEL = { stale: 'Stale', approved: 'Approved', review: 'Review' 
 
 /** The status chip for the open scene page (S3). Null when there is nothing to say. */
 export function renderPb2SceneChip(scene) {
-    let chip = sceneChip(scene, pb2RenderPath === 'v3');
+    let chip = sceneChip(scene);
     if (!chip) return null;
     return m('span', {
         'data-testid': 'pb2-scene-chip',
@@ -2221,8 +2205,7 @@ export function renderPb2ScenePage() {
     if (!scene) return m('div', { class: 'text-sm text-gray-500 italic p-4' }, 'No scene data.');
     let imgUrl = pb2ImageUrl(scene);
     let text = scene.poemStanza || scene.blurb || scene.summary || '';
-    let chip = sceneChip(scene, pb2RenderPath === 'v3');
-    let v3 = pb2RenderPath === 'v3';
+    let chip = sceneChip(scene);
     let watching = !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error);
     return m('div', { class: 'flex flex-col items-center' }, [
         // The image (approved or not) is always drawn; the stale badge overlays it and never replaces it.
@@ -2251,30 +2234,30 @@ export function renderPb2ScenePage() {
             }, scene.title || 'Scene ' + pb2SceneNumber()),
             renderPb2SceneChip(scene),
             renderPb2LocationChip(scene),
-            v3 ? renderPb2DegradationChip(scene) : null,
-            v3 ? m('button', {
+            renderPb2DegradationChip(scene),
+            m('button', {
                 'data-testid': 'pb2-scene-compose',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700',
                 title: 'Open the composition board for this scene (camera, actors, elements, wardrobe)',
                 onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/compose/' + scene.objectId); }
-            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'view_in_ar'), 'Compose']) : null,
-            v3 ? m('button', {
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'view_in_ar'), 'Compose']),
+            m('button', {
                 'data-testid': 'pb2-scene-render',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
                 disabled: pb2Submitting || watching,
                 title: watching ? 'A render is already running' : (chip === 'stale' ? 'Re-render this scene' : 'Render this scene'),
                 onclick: function () { pb2SubmitRenderScene(scene); }
-            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'brush'), chip === 'stale' || imgUrl ? 'Re-render' : 'Render']) : null,
-            v3 ? m('button', {
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'brush'), chip === 'stale' || imgUrl ? 'Re-render' : 'Render']),
+            m('button', {
                 'data-testid': 'pb2-plan-render',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
                 disabled: pb2Submitting || watching,
                 title: watching ? 'A render is already running' : 'Preview the illustration plan and estimate, then generate',
                 onclick: function () { pb2OpenPlanDialog(scene); }
-            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'route'), 'Plan & generate']) : null
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'route'), 'Plan & generate'])
         ]),
 
-        v3 ? renderPb2TruncatedLines(scene) : null,
+        renderPb2TruncatedLines(scene),
 
         m('div', { class: 'max-w-2xl w-full px-4' },
             m('p', {
@@ -2300,7 +2283,7 @@ export function renderPb2Header() {
     let pageLabel = pb2SceneNumber() <= 0
         ? pb2PageLabel(pb2CurrentPage)
         : 'Page ' + pb2SceneNumber() + ' of ' + pb2Pages.length;
-    let v3 = pb2RenderPath === 'v3' && !!pb2BookObjectId;
+    let v3 = !!pb2BookObjectId;
     let watching = !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error);
     return m('div', { class: 'flex items-center gap-3 mb-4' }, [
         m('button', {
@@ -2330,7 +2313,7 @@ export function renderPb2Header() {
             onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
         }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right')),
 
-        // V3 only (render-path 'v3'): auto-approve badge, Render (async run), Review queue link.
+        // With a book id: auto-approve badge, Render (async run), Review queue link, the V3 tool routes.
         v3 ? m('span', {
             'data-testid': 'pb2-auto-approve-badge',
             'data-on': pb2AutoApprove ? '1' : '0',
@@ -2377,12 +2360,8 @@ export function renderPb2Header() {
             onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/cover'); }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'menu_book')) : null,
 
-        // Edit (wizard) and Characters — same pair the book list rows offer. P7-3: under v3 the
-        // wizard would only hand straight back to this reader (its steps 4–5 are gone), so the
-        // pencil is hidden here; Characters stays.
-        (pb2BookObjectId && !v3) ? renderPb2EditButton(
-            { objectId: pb2BookObjectId, name: (pb2BookName && pb2BookName !== 'Loading...') ? pb2BookName : '' },
-            'text-gray-500 hover:text-purple-600') : null,
+        // Characters — as on the book list rows. The Edit pencil is not offered here: the wizard would
+        // only hand straight back to this reader (P7-3 / P10-1).
         pb2BookObjectId ? renderPb2CharactersButton(
             { objectId: pb2BookObjectId }, 'text-gray-500 hover:text-purple-600') : null,
 

@@ -132,17 +132,10 @@ public class SWUtil {
 
 	/// Fallback FLUX.2 checkpoint, read from the olio.sd.config schema's `flux2Model` default rather
 	/// than duplicated as a literal here — checkpoint availability is per-deployment (verified
-	/// 2026-08-07: the local Swarm has flux2Klein_9b and flux2_dev but NOT flux1Kontext_flux1KontextDev
-	/// or sdXL_v10VAEFix, while another server has the opposite pair). Change the model default in
-	/// configModel.json, not in Java.
+	/// 2026-08-07: the local Swarm has flux2Klein_9b and flux2_dev but NOT sdXL_v10VAEFix, while
+	/// another server has the opposite). Change the model default in configModel.json, not in Java.
 	public static String defaultFlux2Model() {
 		String m = org.cote.accountmanager.olio.sd.SDUtil.schemaDefault("flux2Model");
-		return (m != null) ? m : org.cote.accountmanager.olio.sd.SDUtil.getDefaultModel();
-	}
-
-	/// Fallback FLUX Kontext checkpoint, likewise from the schema's `kontextModel` default.
-	public static String defaultKontextModel() {
-		String m = org.cote.accountmanager.olio.sd.SDUtil.schemaDefault("kontextModel");
 		return (m != null) ? m : org.cote.accountmanager.olio.sd.SDUtil.getDefaultModel();
 	}
 
@@ -160,7 +153,7 @@ public class SWUtil {
 
 	/// Build a FLUX.2 multi-reference scene request.
 	///
-	/// Differs from the Kontext builder in the three ways that matter:
+	/// Differs from the retired Kontext builder (removed at Phase 10 P10-3) in the three ways that matter:
 	///  1. MULTIPLE independent reference images (people, then setting) instead of one pre-stitched
 	///     panel strip. FLUX.2 is multi-reference capable; this is the doc's escalation path when
 	///     identity drifts, and it avoids the stitched sheet being read as a picture to draw.
@@ -206,8 +199,8 @@ public class SWUtil {
 		/// carry SDXL-tuned values for the portrait and landscape stages, and the model schema gives
 		/// them non-null defaults (steps 20, width 1024, height 1024), so "fall back when unset" would
 		/// never fire — a real config would silently force the composite to 1024x1024 square at the
-		/// SDXL step count. That is precisely the defect this path exists to fix (the Kontext builder
-		/// was handed the SDXL cfg of 5 the same way). One family of parameters per model family.
+		/// SDXL step count. That is precisely the defect this path exists to fix (the retired Kontext
+		/// builder was handed the SDXL cfg of 5 the same way). One family of parameters per model family.
 		Integer cfgSteps = null;
 		Integer cfgWidth = null;
 		Integer cfgHeight = null;
@@ -232,7 +225,7 @@ public class SWUtil {
 		s2i.setScheduler(org.cote.accountmanager.olio.NarrativeUtil.isMeaningful(cfgScheduler) ? cfgScheduler.trim() : org.cote.accountmanager.olio.sd.Flux2Defaults.scheduler());
 		s2i.setSeed(Math.abs(rand.nextInt()));
 		s2i.setImages(1);
-		/// No refiner: the SDXL refiner block the Kontext requests carried (refinercfgscale 7,
+		/// No refiner: the SDXL refiner block the retired Kontext requests carried (refinercfgscale 7,
 		/// PostApply, pixel-lanczos) is meaningless to a FLUX checkpoint. 0.0 keeps it inert.
 		s2i.setRefinerControlPercentage(0.0);
 		s2i.setNegativePrompt(org.cote.accountmanager.olio.sd.Flux2Defaults.negativePrompt());
@@ -242,7 +235,7 @@ public class SWUtil {
 		/// received Swarm payload containing "graffiti<U+2011>scarred" and "gull<U+2011>wing", the exact
 		/// non-breaking hyphens that normalization exists to remove. The whole typography fix was
 		/// installed at the appendLoras seam on the grounds that every setPrompt call passed through it;
-		/// this builder and the Kontext one did not.
+		/// this builder (and the since-removed Kontext one) did not.
 		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(
 			buildFlux2ScenePrompt(leftDesc, rightDesc, action, setting, mood, sdConfig,
 				hasLeftRef, hasRightRef, hasSettingRef), sdConfig));
@@ -422,160 +415,6 @@ public class SWUtil {
 		return p.toString().trim();
 	}
 
-	/// Build a FLUX Kontext scene request using a single stitched composite as the prompt image.
-	/// The composite contains [portrait1 | portrait2 | landscape] stitched side-by-side.
-	/// Caller creates the composite via SDUtil.stitchSceneImages() and passes it as a single promptImage.
-	/// @param sysCharDesc   SD description of the first character (left panel)
-	/// @param usrCharDesc   SD description of the second character (center panel)
-	/// @param sceneDesc     LLM-generated scene verb phrase (what the characters are doing)
-	/// @param settingDesc   Setting/location description from chatConfig
-	/// @param sdConfig      SD config record (for kontextModel override); may be null
-	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc, BaseRecord sdConfig) {
-		return newKontextSceneTxt2Img(sysCharDesc, usrCharDesc, sceneDesc, settingDesc, null, null, sdConfig);
-	}
-
-	/// Style/mood-aware overload of the FLUX Kontext scene request builder.
-	/// When style is null/empty AND mood is null/empty the produced prompt is BYTE-IDENTICAL to the
-	/// legacy 5-arg output, so existing callers (ChatService, tests) are unaffected.
-	/// @param style   user-selected style (see configModel.json style limit); may be null/empty
-	/// @param mood    per-scene mood; appended as a clause when non-empty; may be null/empty
-	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc, String style, String mood, BaseRecord sdConfig) {
-		return newKontextSceneTxt2Img(sysCharDesc, usrCharDesc, sceneDesc, settingDesc, style, mood, sdConfig, null, null, null);
-	}
-
-	/// Full overload accepting explicit steps/cfgScale/negativePrompt overrides. Added so callers
-	/// that already resolve their own generation params (e.g. PictureBookUtil's params.steps/cfg)
-	/// aren't silently ignored by Kontext the way every other stage (portraits, landscape, classic
-	/// pipeline) respects them. Passing null for steps/cfgScale/negativePrompt reproduces the exact
-	/// legacy behavior (steps=28, cfgScale=1, negativePrompt="") that ChatService.generateScene and
-	/// existing tests (TestKontext, TestPictureBookPipeline) depend on byte-for-byte — this overload
-	/// is purely additive, no existing call site's behavior changes.
-	/// @param steps          explicit sampling steps; null preserves the legacy hardcoded 28
-	/// @param cfgScale       explicit CFG scale; null preserves the legacy hardcoded 1
-	/// @param negativePrompt explicit negative prompt; null preserves the legacy hardcoded ""
-	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc,
-			String style, String mood, BaseRecord sdConfig, Integer steps, Integer cfgScale, String negativePrompt) {
-		return newKontextSceneTxt2Img(sysCharDesc, usrCharDesc, sceneDesc, settingDesc, style, mood, sdConfig, steps, cfgScale, negativePrompt, false);
-	}
-
-	/// Config-style-aware overload. When {@code useConfigStyle} is true the style suffix is derived from
-	/// the sdConfig via {@code SDUtil.getSDConfigPrompt} — the canonical, detail-field-driven style used
-	/// everywhere else — with SDXL {@code (...)} weighting stripped because FLUX Kontext ignores it. When
-	/// false it uses the legacy {@link #styleClause(String)} clause, preserving byte-for-byte behavior for
-	/// existing callers (ChatService.generateScene, TestKontext, TestPictureBookPipeline). PictureBook's
-	/// composite step passes true so the composite shares the SAME config style as its portraits/landscape.
-	public static SWTxt2Img newKontextSceneTxt2Img(String sysCharDesc, String usrCharDesc, String sceneDesc, String settingDesc,
-			String style, String mood, BaseRecord sdConfig, Integer steps, Integer cfgScale, String negativePrompt, boolean useConfigStyle) {
-		SWTxt2Img s2i = newKontextBase(sdConfig, steps, cfgScale);
-
-		/// Strip SDXL-style prompt weighting — FLUX doesn't support ((...:1.5)) syntax
-		String cleanSys = stripSDXLWeighting(sysCharDesc);
-		String cleanUsr = stripSDXLWeighting(usrCharDesc);
-
-		StringBuilder prompt = new StringBuilder();
-		prompt.append("Combine the reference images into one cohesive scene. ");
-		prompt.append("Place both people from the left and center panels into the environment shown in the right panel. ");
-		if (cleanSys != null && !cleanSys.isEmpty()) {
-			prompt.append("The first person is ").append(cleanSys).append(". ");
-		}
-		if (cleanUsr != null && !cleanUsr.isEmpty()) {
-			prompt.append("The second person is ").append(cleanUsr).append(". ");
-		}
-		if (sceneDesc != null && !sceneDesc.isEmpty()) {
-			prompt.append("They are ").append(sceneDesc).append(". ");
-		}
-		if (settingDesc != null && !settingDesc.isEmpty()) {
-			prompt.append("The setting is ").append(settingDesc).append(". ");
-		}
-		if (mood != null && !mood.isEmpty()) {
-			prompt.append("The mood is ").append(mood).append(". ");
-		}
-		prompt.append("Maintain their exact appearances, clothing, and features. ");
-		if (useConfigStyle) {
-			String cfgStyle = stripSDXLWeighting(org.cote.accountmanager.olio.sd.SDUtil.getSDConfigPrompt(sdConfig));
-			prompt.append(cfgStyle != null ? cfgStyle : "");
-		}
-		else {
-			prompt.append(styleClause(style));
-		}
-
-		/// Through appendLoras for the ASCII typography normalization - see the FLUX.2 builder above;
-		/// this call site had the same bypass.
-		s2i.setPrompt(org.cote.accountmanager.olio.sd.SDUtil.appendLoras(prompt.toString(), sdConfig));
-		s2i.setNegativePrompt(negativePrompt != null ? negativePrompt : "");
-		return s2i;
-	}
-
-	/// Map a configModel.json style value to short natural-language FLUX phrasing.
-	/// The default (null/empty/unknown) is the legacy photograph phrasing, so the byte-identical
-	/// guarantee of the legacy Kontext prompt holds. Comparison is case-insensitive.
-	public static String styleClause(String style) {
-		String photo = "Natural lighting consistent with the background. High quality photograph.";
-		if (style == null) return photo;
-		String s = style.trim().toLowerCase();
-		if (s.isEmpty()) return photo;
-		switch (s) {
-			case "photograph":
-			case "selfie":
-			case "custom":
-				return photo;
-			case "illustration":
-				return "Rendered as a detailed illustration.";
-			case "art":
-			case "digitalart":
-				return "Digital painting art style.";
-			case "movie":
-				return "Cinematic film still.";
-			case "anime":
-				return "Anime art style.";
-			case "comic":
-				return "Comic book art style.";
-			case "portrait":
-				return "Studio portrait photograph.";
-			case "fashion":
-				return "High fashion editorial photograph.";
-			case "vintage":
-				return "Vintage film photograph aesthetic.";
-			default:
-				return photo;
-		}
-	}
-
-	/// Create base Kontext SWTxt2Img with model and optimal defaults.
-	private static SWTxt2Img newKontextBase(BaseRecord sdConfig) {
-		return newKontextBase(sdConfig, null, null);
-	}
-
-	/// Same as {@link #newKontextBase(BaseRecord)} but with optional explicit steps/cfgScale
-	/// overrides — null preserves the legacy hardcoded 28/1 (see
-	/// {@link #newKontextSceneTxt2Img(String, String, String, String, String, String, BaseRecord, Integer, Integer, String)}).
-	private static SWTxt2Img newKontextBase(BaseRecord sdConfig, Integer steps, Integer cfgScale) {
-		SWTxt2Img s2i = new SWTxt2Img();
-
-		String kontextModel = null;
-		if (sdConfig != null) {
-			try { kontextModel = sdConfig.get("kontextModel"); } catch (Exception e) { /* ignore */ }
-		}
-		if (kontextModel == null || kontextModel.isEmpty()) {
-			kontextModel = defaultKontextModel();
-		}
-		s2i.setModel(kontextModel);
-
-		s2i.setSteps(steps != null ? steps : 28);
-		s2i.setCfgScale(cfgScale != null ? cfgScale : 1);
-		s2i.setSampler("euler");
-		s2i.setScheduler("simple");
-		s2i.setSeed(Math.abs(rand.nextInt()));
-		s2i.setWidth(1024);
-		s2i.setHeight(1024);
-		s2i.setRefinerControlPercentage(0.0);
-
-		return s2i;
-	}
-
-	/// Strip SDXL-style prompt weighting syntax from descriptions.
-	/// Removes patterns like ((word:1.5)), (word), and ((word)) leaving just the text.
-	/// FLUX Kontext ignores this syntax, so it just clutters the prompt.
 	/// Null-and-blank test used by the FLUX.2 prompt builder. A description that is present but blank
 	/// must not make the prompt announce a person.
 	private static boolean isPresent(String s) {
@@ -594,6 +433,9 @@ public class SWUtil {
 		}
 	}
 
+	/// Strip SDXL-style prompt weighting syntax from descriptions.
+	/// Removes patterns like ((word:1.5)), (word), and ((word)) leaving just the text.
+	/// FLUX checkpoints ignore this syntax, so it just clutters the prompt.
 	public static String stripSDXLWeighting(String desc) {
 		if (desc == null || desc.isEmpty()) return desc;
 		/// Remove weight numbers like :1.5)

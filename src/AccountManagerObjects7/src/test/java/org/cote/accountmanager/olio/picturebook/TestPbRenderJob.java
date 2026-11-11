@@ -144,7 +144,7 @@ public class TestPbRenderJob extends BaseTest {
 		BaseRecord bk = book(u);
 		BaseRecord wf = workflow(u, bk);
 		String gp = PbBookUtil.workflowGroupPath(SLUG);
-		BaseRecord consumer = plainNode(u, wf, "p16-c02-C", PbNodeTypeEnumType.COMPOSITE, 0);
+		BaseRecord consumer = plainNode(u, wf, "p16-c02-C", PbNodeTypeEnumType.LANDSCAPE, 0);
 		BaseRecord pending = plainNode(u, wf, "p16-c02-A", PbNodeTypeEnumType.PORTRAIT, 5);
 		BaseRecord pinned = plainNode(u, wf, "p16-c02-P", PbNodeTypeEnumType.PORTRAIT, 1);
 		BaseRecord skipped = plainNode(u, wf, "p16-c02-K", PbNodeTypeEnumType.PORTRAIT, 2);
@@ -163,7 +163,7 @@ public class TestPbRenderJob extends BaseTest {
 			Arrays.asList(handleOf(pending), handleOf(consumer)), plan.handles());
 		assertEquals("the pinned producer is counted", 1, plan.pinned);
 		assertEquals("the SKIPPED producer is reused", 1, plan.reused);
-		assertTrue("a PORTRAIT/COMPOSITE plan needs the SD backend", plan.needsSd);
+		assertTrue("a PORTRAIT/LANDSCAPE plan needs the SD backend", plan.needsSd);
 		assertEquals("scope label for one terminal", "this scene", plan.scopeLabel);
 
 		/// Stored RUNNING, no claim in this JVM: the recompute would read READY/PENDING (no inputHash), the
@@ -390,7 +390,7 @@ public class TestPbRenderJob extends BaseTest {
 	}
 
 	/**
-	 * A failed producer blocks its consumer in the same run: A (PORTRAIT) throws, C (COMPOSITE, bound to A)
+	 * A failed producer blocks its consumer in the same run: A (PORTRAIT) throws, C (LANDSCAPE, bound to A)
 	 * is FAILED "blocked by failed producer A" without the backend being asked for it, and the run closes
 	 * FAILED counting both.
 	 */
@@ -403,7 +403,7 @@ public class TestPbRenderJob extends BaseTest {
 		String gp = PbBookUtil.workflowGroupPath(SLUG);
 		BaseRecord cp = createPortraitCharacter(u, "c05");
 		BaseRecord producer = portraitNode(u, wf, "p16-c05-A", cp.get(FieldNames.FIELD_OBJECT_ID), null);
-		BaseRecord consumer = plainNode(u, wf, "p16-c05-C", PbNodeTypeEnumType.COMPOSITE, 0);
+		BaseRecord consumer = plainNode(u, wf, "p16-c05-C", PbNodeTypeEnumType.LANDSCAPE, 0);
 		assertNotNull(PbGraphUtil.addBinding(u, wf, consumer, PbPipelineUtil.ROLE_PORTRAIT, 0, producer, null, gp));
 
 		List<String> calls = Collections.synchronizedList(new ArrayList<>());
@@ -1310,7 +1310,7 @@ public class TestPbRenderJob extends BaseTest {
 		BaseRecord scene = PbBookUtil.createScene(u, bk, sceneIndex, "p75-c12 scene", PbBookUtil.bookGroupPath(SLUG));
 		assertNotNull("scene " + sceneIndex, scene);
 		String sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
-		BaseRecord terminal = plainNode(u, wf, "p75-c12-S", PbNodeTypeEnumType.COMPOSITE, 0);
+		BaseRecord terminal = plainNode(u, wf, "p75-c12-S", PbNodeTypeEnumType.LANDSCAPE, 0);
 		BaseRecord producer = plainNode(u, wf, "p75-c12-P", PbNodeTypeEnumType.PORTRAIT, 1);
 		assertNotNull(PbGraphUtil.addBinding(u, wf, terminal, PbPipelineUtil.ROLE_PORTRAIT, 0, producer, null, gp));
 		BaseRecord link = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_PB_SCENE_NODE);
@@ -1456,7 +1456,7 @@ public class TestPbRenderJob extends BaseTest {
 	 * A LANDSCAPE node scoped to a fresh {@code olio.pb.scene} of the fixture book that carries a hand-written
 	 * {@code sdPrompt} (no LLM in the loop), so {@code executeLandscape} renders the scene prompt itself rather
 	 * than the no-prompt fallback. Scene creation copies TestPbAutoApprove.promptNode; the prompt patch copies
-	 * TestChapBookRenderStyle.patchScenePrompt.
+	 * the patchScenePrompt idiom of TestChapBookRenderStyle (that class went with Phase 10 P10-1).
 	 */
 	private BaseRecord landscapeNode(BaseRecord u, BaseRecord bk, BaseRecord wf, String prefix, String configOverride) throws Exception {
 		int sceneIndex = 100000 + Math.abs(UUID.randomUUID().hashCode() % 800000);

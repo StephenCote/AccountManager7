@@ -37,7 +37,7 @@ import jakarta.ws.rs.core.Response;
 /// must reach PbMigrationUtil.importV1Book, which is proven by its own 404s coming back through the route.
 ///
 /// Exercised through the real PictureBookService method, the real Objects7 utilities and the real test
-/// database, with the HttpServletRequestMock + UserPrincipal pattern of TestPbRenderPathRefusal. Nothing is
+/// database, with the HttpServletRequestMock + UserPrincipal pattern of TestPbRouteGateOrder. Nothing is
 /// mocked. The 200 path (PbBookUtil.createBook needs an Olio datagen path this harness does not have, per
 /// TestChapBookServiceRenderPath) is covered by Objects7 TestPbMigration (direct) and the Ux752 Playwright
 /// spec e2e/pictureBookV3Import.spec.js (real Tomcat).

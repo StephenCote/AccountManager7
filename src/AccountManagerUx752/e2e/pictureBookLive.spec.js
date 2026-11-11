@@ -10,16 +10,15 @@
  *   PB_LLM_TESTS=1  — beforeAll runs the real LLM extraction (DGX at 192.168.1.42, --workers=1) and the
  *                     scene-dependent phases (D–I, H.1) get data. Without it the extraction is NOT run and
  *                     every scene-dependent test skips with NO_SCENES_REASON. B.1/B.2 (extract from the page)
- *                     are gated the same way.
- *   E2E_SD_LIVE=1   — B.4 (POST .../scene/{id}/generate, a real Stable Diffusion render) is allowed to run.
+ *                     are gated the same way. (B.4/B.5/E.3 — the PB1 scene render and what it produced —
+ *                     went with POST /scene/{id}/generate at Phase 10 P10-1.)
  * The selector/picker/wizard/reimage-dialog tests (C.*, L.*) make no LLM or SD call and always run.
  */
 import { test as base, expect } from '@playwright/test';
 import { login } from './helpers/auth.js';
 import {
     setupWorkflowTestData, apiLogin, apiLogout,
-    ensurePath, createNote, createObject,
-    pb1Retired, PB1_RETIRED_SKIP
+    ensurePath, createNote, createObject
 } from './helpers/api.js';
 import fs from 'fs';
 import path from 'path';
@@ -37,11 +36,9 @@ function saveScreenshot(pg, name) {
 }
 
 const PB_LLM = !!process.env.PB_LLM_TESTS;
-const SD_LIVE = !!process.env.E2E_SD_LIVE;
 const NO_SCENES_REASON = PB_LLM
     ? 'No scenes from extraction'
     : 'LLM extraction gated: set PB_LLM_TESTS=1 and run with --workers=1';
-const NO_SD_REASON = 'SD generation gated: set E2E_SD_LIVE=1 (serial SD slot)';
 
 // Shared state across all tests in this describe block
 let testInfo = {};
@@ -49,7 +46,6 @@ let workObjectId = null;     // Source document objectId (for extract API)
 let bookObjectId = null;     // Book group objectId (for scenes/viewer/reset APIs)
 let chatConfigName = null;
 let extractedScenes = [];  // populated by Phase B
-let generatedImageId = null;
 let pickNoteName = null;     // a second AIME note in ~/Notes, never extracted — what "Browse Notes" must list (C.2/C.3)
 let pickNoteObjectId = null;
 let apparelObj = null;       // olio.apparel owned by the test user (L.1); createObject returns identity only
@@ -401,87 +397,6 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                 expect(s.title).toBeTruthy();
             }
             if (!extractedScenes.length) extractedScenes = result.scenes;
-        });
-
-        test('B.4 Generate scene image', async ({ page, request }) => {
-            test.setTimeout(300000);
-            test.skip(!SD_LIVE, NO_SD_REASON);
-            test.skip(!workObjectId, 'No work created');
-            test.skip(!extractedScenes.length, NO_SCENES_REASON);
-            // P7-2: POST /scene/{id}/generate is a PB1 entry (409 under picturebook.renderPath=v3).
-            test.skip(await pb1Retired(request, { userName: testInfo.testUserName, password: testInfo.testPassword }), PB1_RETIRED_SKIP);
-
-            await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
-
-            let sceneOid = extractedScenes[0].objectId;
-            console.log('=== B.4 Generating image for scene: ' + sceneOid + ' ===');
-
-            let result = await page.evaluate(async (args) => {
-                let { applicationPath } = await import('/src/core/config.js');
-                let resp = await fetch(applicationPath + '/rest/olio/picture-book/scene/' + args.sceneOid + '/generate', {
-                    method: 'POST', credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        schema: 'olio.pictureBookRequest',
-                        chatConfig: args.chatConfigName,
-                        sdConfig: { steps: 20, hires: false }
-                    })
-                });
-                let text = await resp.text();
-                let parsed = null;
-                try { parsed = JSON.parse(text); } catch (e) {}
-                return { status: resp.status, body: text.substring(0, 500), data: parsed };
-            }, { sceneOid, chatConfigName });
-
-            console.log('  Status: ' + result.status);
-            console.log('  Response: ' + result.body);
-            await saveScreenshot(page, 'B4-imageGenerated');
-
-            expect(result.status).toBe(200);
-            expect(result.data).toBeTruthy();
-            if (result.data && result.data.imageObjectId) {
-                generatedImageId = result.data.imageObjectId;
-                console.log('VERIFIED: Image generated, objectId=' + generatedImageId);
-            }
-        });
-
-        test('B.5 Verify image record and URL', async ({ page }) => {
-            test.setTimeout(30000);
-            test.skip(!generatedImageId, 'No image from B.4');
-
-            await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
-
-            let result = await page.evaluate(async (args) => {
-                let { am7client } = await import('/src/core/am7client.js');
-                let { applicationPath } = await import('/src/core/config.js');
-
-                let rec = await am7client.get('data.data', args.imageId);
-                if (!rec) return { found: false };
-
-                let url = am7client.mediaDataPath(rec);
-                return {
-                    found: true,
-                    name: rec.name,
-                    groupPath: rec.groupPath,
-                    url: url,
-                    urlHasUndefined: (url || '').includes('undefined'),
-                    urlHasObject: (url || '').includes('[object')
-                };
-            }, { imageId: generatedImageId });
-
-            console.log('=== B.5 Image Record ===');
-            console.log('  Found: ' + result.found);
-            console.log('  Name: ' + result.name);
-            console.log('  GroupPath: ' + result.groupPath);
-            console.log('  URL: ' + result.url);
-
-            expect(result.found).toBe(true);
-            expect(result.name).toBeTruthy();
-            expect(result.groupPath).toBeTruthy();
-            expect(result.url).toBeTruthy();
-            expect(result.urlHasUndefined).toBe(false);
-            expect(result.urlHasObject).toBe(false);
-            console.log('VERIFIED: Image record valid, URL clean');
         });
     });
 
@@ -933,55 +848,6 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             console.log('  Badges: ' + badges.length);
             badges.forEach(b => console.log('    ' + b));
             // Characters are optional — just log, don't fail
-        });
-
-        test('E.3 Image display (if generated)', async ({ page }) => {
-            test.setTimeout(60000);
-            test.skip(!workObjectId, 'No work created');
-            test.skip(!generatedImageId, 'No image generated in B.4');
-            await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
-
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForFunction(() => {
-                let text = document.body.innerText;
-                return !text.includes('Loading') && (text.includes('Begin') || text.includes('Page '));
-            }, null, { timeout: 15000 }).catch(() => {});
-            await page.waitForTimeout(2000);
-
-            // Navigate through ALL pages looking for an image (B.4 only generates for one scene)
-            let totalDots = await page.evaluate(() => document.querySelectorAll('button.rounded-full').length);
-            let imgState = { found: false };
-            for (let i = 0; i < totalDots; i++) {
-                if (i > 0) { await page.keyboard.press('ArrowRight'); await page.waitForTimeout(1000); }
-                let check = await page.evaluate(() => {
-                    let imgs = document.querySelectorAll('img');
-                    for (let img of imgs) {
-                        if (img.src && img.src.includes('/media/')) {
-                            return {
-                                found: true,
-                                src: img.src,
-                                hasUndefined: img.src.includes('undefined'),
-                                hasObject: img.src.includes('[object'),
-                                loaded: img.complete && img.naturalWidth > 0
-                            };
-                        }
-                    }
-                    return { found: false };
-                });
-                if (check.found) { imgState = check; break; }
-            }
-
-            console.log('=== E.3 Image Display ===');
-            console.log('  Found: ' + imgState.found);
-            if (imgState.found) {
-                console.log('  Src: ' + imgState.src);
-                console.log('  Loaded: ' + imgState.loaded);
-            }
-
-            if (imgState.found) {
-                expect(imgState.hasUndefined).toBe(false);
-                expect(imgState.hasObject).toBe(false);
-            }
         });
 
         test('E.4 Navigate ALL pages with screenshots', async ({ page }) => {

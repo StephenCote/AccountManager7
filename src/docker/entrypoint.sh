@@ -46,16 +46,11 @@ set -euo pipefail
 # produced on the SD server regardless; only the caller gave up).
 : "${PB_RENDER_SD_PERMITS:=}"
 # Concurrent SD generations per backend for PictureBook render runs; empty uses the code default of 1.
-: "${PICTUREBOOK_RENDER_PATH:=v3}"
-: "${CHAPBOOK_RENDER_PATH:=v3}"
 : "${CHAT_RENDER_PATH:=v3}"
-# PictureBook V3 render-path switch per product: v1 | v3 (graph rendering). All three default to v3:
-# PictureBook v3 (Stage 2 since Phase 7: the PB1 entry points refuse with "replaced by V3";
-# PICTUREBOOK_RENDER_PATH=v1 is the rollback and is logged at WARN); ChapBook v3 (the old ChapBook path is
-# disabled, Stage 2; CHAPBOOK_RENDER_PATH=v1 is the rollback and is logged at WARN); chat v3 (P10-A 0: the chat
-# scene renders through the shared illustration service; CHAT_RENDER_PATH=v1 is the rollback to the inline
-# scene composite, which stays live, and is logged at WARN).
-# Boot-pinned: web.xml is regenerated from the template below on every start, so these variables are
+# Chat scene render-path switch: v1 | v3, default v3 (P10-A 0: the chat scene renders through the shared
+# illustration service; CHAT_RENDER_PATH=v1 is the rollback to the inline scene composite, which stays live,
+# and is logged at WARN). PictureBook and ChapBook are V3-only since Phase 10 P10-1 and have no switch.
+# Boot-pinned: web.xml is regenerated from the template below on every start, so this variable is
 # the only place the value survives a restart on Docker. Rollback = v1 + restart.
 : "${LLM_EMULATOR_FIXTURE_ROOT:=}"
 # LLM emulator fixture root (system.connection.dialect = emulator). Empty = emulator inert. The test
@@ -76,7 +71,7 @@ export DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD SESSION_STORE_PATH \
   STORE_PATH DATAGEN_PATH VAULT_PATH VAULT_CREDENTIAL_PATH \
   TASK_SERVER TASK_API_KEY SD_SERVER FACE_SERVER TAG_SERVER \
   VOICE_TTS_SERVER VOICE_STT_SERVER EMBEDDING_SERVER EMBEDDING_TYPE EMBEDDING_MODEL EMBEDDING_AUTH_TOKEN CORS_ALLOWED_ORIGINS \
-  SD_DEFAULT_MODEL HTTP_READ_TIMEOUT PB_RENDER_SD_PERMITS PICTUREBOOK_RENDER_PATH CHAPBOOK_RENDER_PATH CHAT_RENDER_PATH \
+  SD_DEFAULT_MODEL HTTP_READ_TIMEOUT PB_RENDER_SD_PERMITS CHAT_RENDER_PATH \
   LLM_EMULATOR_FIXTURE_ROOT LLM_EMULATOR_RECORD_DIR
 
 APP_DIR="$CATALINA_HOME/webapps/${APP_CONTEXT}"
@@ -116,7 +111,7 @@ render_xml_template() {
 render_xml_template '$DB_HOST $DB_PORT $DB_NAME $DB_USER $DB_PASSWORD $SESSION_STORE_PATH' \
   "$APP_DIR/META-INF/context.xml.template" "$APP_DIR/META-INF/context.xml"
 
-render_xml_template '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_MODEL $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $PB_RENDER_SD_PERMITS $PICTUREBOOK_RENDER_PATH $CHAPBOOK_RENDER_PATH $CHAT_RENDER_PATH $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
+render_xml_template '$STORE_PATH $DATAGEN_PATH $VAULT_PATH $VAULT_CREDENTIAL_PATH $TASK_SERVER $TASK_API_KEY $SD_SERVER $FACE_SERVER $TAG_SERVER $VOICE_TTS_SERVER $VOICE_STT_SERVER $EMBEDDING_SERVER $EMBEDDING_TYPE $EMBEDDING_MODEL $EMBEDDING_AUTH_TOKEN $CORS_ALLOWED_ORIGINS $SD_DEFAULT_MODEL $HTTP_READ_TIMEOUT $PB_RENDER_SD_PERMITS $CHAT_RENDER_PATH $LLM_EMULATOR_FIXTURE_ROOT $LLM_EMULATOR_RECORD_DIR' \
   "$APP_DIR/WEB-INF/web.xml.template" "$APP_DIR/WEB-INF/web.xml"
 
 # Both rendered files carry credentials (DB password, task/embedding tokens). Readable by the app

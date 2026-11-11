@@ -283,26 +283,6 @@ public class TestModelResolverLive extends BaseTest {
 		}
 	}
 
-	@Test
-	public void case07_anyInstalledKontextIsFamilyDisabledEvenAsAnOverride() {
-		ModelInventory inv = liveInventory();
-		String kontext = null;
-		for(String name : inv.installedModels()) {
-			RendererCapabilities rc = RendererCapabilities.forModel(name);
-			if(rc != null && RendererCapabilities.PATTERN_KONTEXT.equals(rc.getPattern())) {
-				kontext = name;
-				break;
-			}
-		}
-		Assume.assumeTrue("SKIPPED: " + server + " lists no Kontext checkpoint. This is NOT a pass.", kontext != null);
-		ModelResolver.Resolution r = ModelResolver.resolve(
-			ModelResolver.Request.builder(PbModelTaskEnumType.PORTRAIT).override(kontext).build(), inv);
-		assertFalse("Kontext is retired (§37.3): " + r, r.isResolved());
-		assertEquals(1, r.getCandidates().size());
-		assertEquals(ModelResolver.Reason.FAMILY_DISABLED, r.getCandidates().get(0).getReason());
-		assertEquals(kontext, r.getCandidates().get(0).getListedName());
-	}
-
 	// ─────────────────────────────── 8–11: the facade, as the test user ───────────────────────────────
 
 	@Test

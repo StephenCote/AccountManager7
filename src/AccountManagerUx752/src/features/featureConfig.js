@@ -27,21 +27,16 @@ let error = null;
 let successMsg = null;
 // D2: a client wiring id with no manifest entry is a hard error surfaced here, never a silent skip.
 let manifestErrors = [];
-// PictureBook V3 render-path switch per product (design §28.1; Stage 2 for ChapBook since P2-6 and for
-// PictureBook since P7-1, chat scene v3 since P10-A 0). Boot-pinned on the server and read-only here; a
-// missing or failed GET, a null body or an unrecognised value means the server's own product default -
-// v3 for all three (v1 is the rollback value for each, which the server only ever reports when it was
-// set explicitly).
-const RENDER_PATH_DEFAULT = Object.freeze({ picturebook: 'v3', chapbook: 'v3', chat: 'v3' });
+// Chat scene render-path switch (design §24.1; v3 since P10-A 0). Boot-pinned on the server and read-only
+// here; a missing or failed GET, a null body or an unrecognised value means the server's default, v3 (v1 is
+// the rollback value, which the server only ever reports when it was set explicitly). PictureBook and
+// ChapBook are V3-only since P10-1 and have no switch.
+const RENDER_PATH_DEFAULT = Object.freeze({ chat: 'v3' });
 let renderPathState = RENDER_PATH_DEFAULT;
 
 function normalizeRenderPath(rp) {
     if (!rp || typeof rp !== 'object') return RENDER_PATH_DEFAULT;
-    return {
-        picturebook: rp.picturebook === 'v1' ? 'v1' : 'v3',
-        chapbook: rp.chapbook === 'v1' ? 'v1' : 'v3',
-        chat: rp.chat === 'v1' ? 'v1' : 'v3'
-    };
+    return { chat: rp.chat === 'v1' ? 'v1' : 'v3' };
 }
 
 export function renderPath() {
@@ -278,14 +273,12 @@ let featureConfigView = {
             ),
 
             // Render path — deployment-wide, boot-pinned, read-only (no PUT exists; changing it is a
-            // restart with PICTUREBOOK_RENDER_PATH / CHAPBOOK_RENDER_PATH / CHAT_RENDER_PATH set).
+            // restart with CHAT_RENDER_PATH set).
             m("div", { class: "mt-6 border-t border-gray-200 dark:border-gray-700 pt-4", "data-testid": "render-path" }, [
                 m("h3", { class: "field-label mb-2" }, "Render Path"),
                 m("p", { class: "text-sm text-gray-500 dark:text-gray-400 mb-2" },
-                    "Rendering engine per product. Set at deployment start-up (picturebook.renderPath / chapbook.renderPath / chat.renderPath); not editable here."),
+                    "Chat scene rendering engine. Set at deployment start-up (chat.renderPath); not editable here. PictureBook and ChapBook are V3-only."),
                 m("div", { class: "flex gap-4 text-sm" }, [
-                    renderPathChip("PictureBook", renderPathState.picturebook, "render-path-picturebook"),
-                    renderPathChip("ChapBook", renderPathState.chapbook, "render-path-chapbook"),
                     renderPathChip("Chat", renderPathState.chat, "render-path-chat")
                 ])
             ]),

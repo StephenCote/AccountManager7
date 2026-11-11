@@ -154,8 +154,11 @@ describe('renderChapBookScene — per-scene generate body (verbatim sdPrompt / o
         expect('sdConfig' in body).toBe(false);
         expect('chatConfig' in body).toBe(false);
 
+        // A non-empty overlay is persisted as the scene's configOverride first (scene read + PUT), so the
+        // generate POST is no longer call 1: find it by URL.
         await renderChapBookScene('oid-5', 'cfg', { steps: 20 }, 'p');
-        body = bodyOfCall(1);
+        let gen = fetchMock.mock.calls.find(c => /\/scene\/oid-5\/generate$/.test(String(c[0])));
+        body = JSON.parse(gen[1].body);
         expect(body.sdConfig).toEqual({ steps: 20 });
         expect(body.chatConfig).toBe('cfg');
         expect(body.sdPrompt).toBe('p');
@@ -169,7 +172,14 @@ describe('renderChapBookScene — per-scene generate body (verbatim sdPrompt / o
             rendered: false,
             skipped: false,
             llmUnavailable: false,
-            llmDegraded: false
+            llmDegraded: false,
+            pending: false,
+            jobId: null,
+            runObjectId: null,
+            nodeObjectId: null,
+            artifactObjectId: null,
+            nodeStatus: null,
+            reviewStatus: null
         });
     });
 
@@ -184,7 +194,14 @@ describe('renderChapBookScene — per-scene generate body (verbatim sdPrompt / o
             rendered: true,
             skipped: false,
             llmUnavailable: true,
-            llmDegraded: true
+            llmDegraded: true,
+            pending: false,
+            jobId: null,
+            runObjectId: null,
+            nodeObjectId: null,
+            artifactObjectId: null,
+            nodeStatus: null,
+            reviewStatus: null
         });
     });
 
@@ -210,7 +227,7 @@ describe('renderChapBookScene — per-scene generate body (verbatim sdPrompt / o
  *
  * Driven through the REAL exported doRerenderScene with the review state seeded (__setReviewStateForTest),
  * a stubbed fetch router (GET …/settings → a stored row, so no PUT; POST …/generate → a v1 body) and
- * am7sd.loadConfig / am7client.getRenderPath / am7client.get / page.toast stubbed. No network, LLM or SD.
+ * am7sd.loadConfig / am7client.get / page.toast stubbed. No network, LLM or SD.
  */
 describe('P10-C 1: rerenderPromptOverride — only an EDITED, non-blank textarea is an override', () => {
     let rerenderPromptOverride;
@@ -282,7 +299,6 @@ describe('P10-C 1: doRerenderScene — what the generate POST carries', () => {
         const { am7client } = await import('../core/am7client.js');
         const { page } = await import('../core/pageClient.js');
         vi.spyOn(am7sd, 'loadConfig').mockResolvedValue({ schema: 'olio.sd.config', objectId: 'pref-1', name: 'sdcfg-default', bodyStyle: 'seeded' });
-        vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'v1', chapbook: 'v1' });
         vi.spyOn(am7client, 'get').mockImplementation((type, id, cbk) => { cbk(null); });
         if (typeof page.toast !== 'function') page.toast = () => {};
         vi.spyOn(page, 'toast').mockImplementation(() => {});

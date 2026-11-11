@@ -629,7 +629,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> requestRegenerate(BaseRecord user, String bookObjectId, String nodeObjectId,
 			String sdApiType, String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "regenerate a node");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
@@ -697,7 +696,6 @@ public class PbServiceFacade {
 	static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			org.cote.accountmanager.olio.sd.SDUtil sdu) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "render a scene plan");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
 		return executePlanScene(user, book, scene, sdu, PbRenderPlanUtil.PlanOptions.NONE, null);
@@ -777,7 +775,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String sdApiType, String sdServer, boolean force) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "render a scene");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
 		/// After the gates: the workflow and the scene's terminal are created on first use (P10-B 1), as the
@@ -848,7 +845,6 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestBuildGraph(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "build the book's graph");
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("bookObjectId", book.get(FieldNames.FIELD_OBJECT_ID));
@@ -888,7 +884,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> requestRenderAll(BaseRecord user, String bookObjectId, String sdApiType,
 			String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "render the book");
 		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
 		if(scenes.isEmpty()) {
@@ -934,7 +929,6 @@ public class PbServiceFacade {
 	 */
 	public static BaseRecord checkChapBookPageRender(BaseRecord user, String bookObjectId, String sceneObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireChapBook(book);
 		requireBookUpdate(user, book, "render a page");
 		return requireSceneOfBook(user, book, sceneObjectId);
@@ -964,7 +958,6 @@ public class PbServiceFacade {
 	static Map<String, Object> requestChapBookPageRender(BaseRecord user, String bookObjectId, String sceneObjectId,
 			org.cote.accountmanager.olio.sd.SDUtil sdu, String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireChapBook(book);
 		requireBookUpdate(user, book, "render a page");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
@@ -1009,7 +1002,6 @@ public class PbServiceFacade {
 	static Map<String, Object> requestChapBookRenderAll(BaseRecord user, String bookObjectId,
 			org.cote.accountmanager.olio.sd.SDUtil sdu, String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireChapBook(book);
 		requireBookUpdate(user, book, "render the book");
 		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
@@ -1250,7 +1242,6 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> cancelRun(BaseRecord user, String bookObjectId, String runObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "cancel a run");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord run = requireRunOfBook(user, workflow, runObjectId);
@@ -1288,7 +1279,6 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> getRun(BaseRecord user, String bookObjectId, String runObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord run = requireRunOfBook(user, workflow, runObjectId);
 		return runDto(user, workflow, run);
@@ -1305,7 +1295,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> resumeRun(BaseRecord user, String bookObjectId, String runObjectId,
 			String sdApiType, String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "resume a run");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord run = requireRunOfBook(user, workflow, runObjectId);
@@ -2613,7 +2602,6 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> selectArtifact(BaseRecord user, String bookObjectId, String artifactObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "select an artifact");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
@@ -2628,7 +2616,6 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> approveArtifact(BaseRecord user, String bookObjectId, String artifactObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "approve an artifact");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
@@ -2644,7 +2631,6 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> rejectArtifact(BaseRecord user, String bookObjectId, String artifactObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "reject an artifact");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord artifact = requireArtifactOfBook(user, workflow, artifactObjectId);
@@ -2688,7 +2674,6 @@ public class PbServiceFacade {
 				+ REVIEW_FILTER_ALL + " or " + REVIEW_FILTER_AUTO_APPROVED);
 		}
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		BaseRecord workflow = requireWorkflow(user, book);
 
 		List<Map<String, Object>> nodes = new ArrayList<>();
@@ -2767,7 +2752,6 @@ public class PbServiceFacade {
 	/** Read the book's auto-approve switch: {@code {bookObjectId, autoApprove}}. Book 404 only - any reader of the book may see it. */
 	public static Map<String, Object> getAutoApprove(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		return autoApproveResult(book);
 	}
 
@@ -2778,7 +2762,6 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> setAutoApprove(BaseRecord user, String bookObjectId, boolean on) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "change auto-approve");
 		if(!PbBookUtil.setAutoApprove(user, book, on)) {
 			throw new PictureBookException(500, "Failed to persist autoApprove=" + on + " on book "
@@ -3541,7 +3524,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> testNode(BaseRecord user, String bookObjectId, String nodeObjectId,
 			String sdApiType, String sdServer) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "test a node");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
@@ -3880,7 +3862,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> requestCompose(BaseRecord user, String bookObjectId, boolean quickStart, boolean force,
 			String chatConfigName, String sdApiType, String sdServer, String dataPath) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "compose scenes");
 		return PbComposeJobUtil.submitCompose(user, book, quickStart, force, chatConfigName, sdApiType, sdServer, dataPath);
 	}
@@ -3902,7 +3883,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> composeScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String chatConfigName, boolean force, String dataPath) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, "compose scenes");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
 		PbComposeJobUtil.requireNotComposing(bookObjectId);
@@ -3951,10 +3931,6 @@ public class PbServiceFacade {
 		}
 		try {
 			BaseRecord book = requireBook(user, pb2BookObjectId);
-			if(!PbRenderPath.isV3(book)) {
-				out.put("composeJobSkipped", "render path is not v3");
-				return out;
-			}
 			requireBookUpdate(user, book, "compose scenes");
 			try {
 				out.put("graph", buildSceneGraph(user, book));
@@ -5244,7 +5220,7 @@ public class PbServiceFacade {
 	/**
 	 * Get-or-create the book's cover-type composition of {@code purposeWord} (V3 §40, P9-3): idempotent, an
 	 * existing row is returned untouched ({@code existingReturned}), never a 409. Gate order (232 d M6):
-	 * {@link #requireBook} 404 → {@link PbRenderPath#requireV3} 409 → {@link #requireBookUpdate} 403 → purpose /
+	 * {@link #requireBook} 404 → {@link #requireBookUpdate} 403 → purpose /
 	 * mode words 400 → FROM_SCENE {@link #requireSceneOfBook} 404 → AUTO chat-config resolution → the util.
 	 * AUTO is LLM-bound and synchronous; an LLM failure is reported on the result ({@code llmFailure},
 	 * {@code hardFailure}, {@code failureReason}) with nothing written, never thrown.
@@ -5257,7 +5233,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> createCover(BaseRecord user, String bookObjectId, String purposeWord, String modeWord,
 			String sceneObjectId, String chatConfigName, String dataPath) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, WHAT_CREATE_COVER);
 		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
 		PbCoverUtil.Mode mode = PbCoverUtil.modeOf(modeWord);
@@ -5310,7 +5285,7 @@ public class PbServiceFacade {
 	/**
 	 * Queue a render of the book's cover-type composition of {@code purposeWord} (V3 §40, P9-3): the
 	 * {@link #requestLocationRender} shape over the composition's RENDER_PLAN node. Gate order: {@link #requireBook}
-	 * 404 → {@link PbRenderPath#requireV3} 409 → {@link #requireBookUpdate} 403 → purpose word 400 → the composition
+	 * 404 → {@link #requireBookUpdate} 403 → purpose word 400 → the composition
 	 * must already exist (404 naming the purpose: the render path never creates one - make it through
 	 * {@link #createCover} first) → {@link #requireCoverHost} 409 (a SERIES_ART row addressed from a sibling chapter
 	 * renders from its host, §6.C 257) → {@link #ensureWorkflow} → {@link #ensureCompositionPlanNode} (the one write a
@@ -5324,7 +5299,6 @@ public class PbServiceFacade {
 	public static Map<String, Object> requestCoverRender(BaseRecord user, String bookObjectId, String purposeWord,
 			String sdApiType, String sdServer, boolean force) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, WHAT_RENDER_COVER);
 		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
 		BaseRecord comp = requireCover(user, book, purpose);
@@ -5350,7 +5324,6 @@ public class PbServiceFacade {
 	static Map<String, Object> renderCover(BaseRecord user, String bookObjectId, String purposeWord,
 			org.cote.accountmanager.olio.sd.SDUtil sdu) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, WHAT_RENDER_COVER);
 		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
 		BaseRecord comp = requireCover(user, book, purpose);
@@ -5417,7 +5390,7 @@ public class PbServiceFacade {
 	 * scene). The edit lands through {@link PbComposeUtil#patchCompositionFields} (400 on an unknown key) and
 	 * {@link PbComposeUtil#touchEdited} with no scene, which marks the composition's own {@code composition_plan@}
 	 * node STALE when one exists so a DONE cover re-renders without {@code force}. Gate order: book 404 →
-	 * {@link PbRenderPath#requireV3} 409 → {@link #requireBookUpdate} 403 → purpose word 400 → 404 when the book
+	 * {@link #requireBookUpdate} 403 → purpose word 400 → 404 when the book
 	 * has no such composition → body 400.
 	 *
 	 * @return {@link #editResultDto} ({@code sceneObjectId} absent) + {@code purpose}, {@code updated: true} and the
@@ -5425,7 +5398,6 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> patchCover(BaseRecord user, String bookObjectId, String purposeWord, Map<String, Object> body) {
 		BaseRecord book = requireBook(user, bookObjectId);
-		PbRenderPath.requireV3(book);
 		requireBookUpdate(user, book, WHAT_EDIT_COVER);
 		PbCompositionPurposeEnumType purpose = PbCoverUtil.purposeOf(purposeWord);
 		BaseRecord comp = requireCover(user, book, purpose);

@@ -217,7 +217,7 @@ async function renderBare(request, bookOid, sceneOid, label) {
         expect(job.status).toBe('completed');
     }
     const read = await readNodePrompt(request, bookOid, body.nodeObjectId, label);
-    console.log('[p10c1 ' + label + ' render] renderPath=' + body.renderPath + ' rendered=' + body.rendered
+    console.log('[p10c1 ' + label + ' render] rendered=' + body.rendered
         + ' llmUnavailable=' + body.llmUnavailable + ' llmDegraded=' + body.llmDegraded
         + ' nodeStatus=' + body.nodeStatus);
     return Object.assign({ body }, read);

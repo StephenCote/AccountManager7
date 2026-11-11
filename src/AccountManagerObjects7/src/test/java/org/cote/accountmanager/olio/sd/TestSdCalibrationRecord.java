@@ -84,7 +84,6 @@ public class TestSdCalibrationRecord extends BaseTest {
 		assertTrue(region.isSeed());
 		assertEquals(13.8, region.getSecondsPerStepPerMegapixel(), DELTA);
 
-		assertNull("kontext carries no seed", PbCalibrationUtil.sample(u, SERVER, "kontext*", RenderPlan.STAGE_BASE));
 		assertNull("an unknown family has no figure anywhere", PbCalibrationUtil.sample(u, SERVER, "nosuchfamily*", RenderPlan.STAGE_BASE));
 
 		assertNull("A read must not create the group", findGroup(u));

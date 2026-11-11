@@ -32,7 +32,6 @@ public final class ModelResolver {
 	/// Composite-mode storage vocabulary, mirrored from olio.sd.SceneCompositeUtil.MODE_* so this
 	/// class stays free of SD imports; TestModelResolver asserts the two agree.
 	public static final String MODE_FLUX2 = "flux2";
-	public static final String MODE_KONTEXT = "kontext";
 	public static final String MODE_CLASSIC = "classic";
 
 	private ModelResolver() { }
@@ -271,8 +270,10 @@ public final class ModelResolver {
 	/// The task->family rule from capabilities.json flags only. PORTRAIT, LOCATION and UPSCALE accept
 	/// any enabled family (there is no upscale flag; the refiner upscale works on any checkpoint,
 	/// §15); SCENE_DIRECT needs supportsReferences when references are requested; INPAINT needs
-	/// supportsMasks; HARMONIZE needs supportsInitImage. A null family is FAMILY_UNKNOWN; a disabled
-	/// one (Kontext, §37.3) is FAMILY_DISABLED at every step, an explicit override included.
+	/// supportsMasks; HARMONIZE needs supportsInitImage. A null family is FAMILY_UNKNOWN; a family the
+	/// resource marks 'enabled: false' is FAMILY_DISABLED at every step, an explicit override included
+	/// (no shipped family is disabled since the Kontext row went at Phase 10 P10-3; the flag stays for
+	/// a deployment that edits the resource).
 	public static Reason supportsTask(RendererCapabilities rc, PbModelTaskEnumType task, boolean referencesRequested) {
 		if(rc == null) {
 			return Reason.FAMILY_UNKNOWN;
@@ -300,7 +301,7 @@ public final class ModelResolver {
 	}
 
 	/// The one place a stored composite mode becomes a §13 strategy: flux2 -> DIRECT_REFERENCE,
-	/// classic -> CLASSIC_COMPOSITE; kontext (retired, §37.3), null and anything else -> UNKNOWN.
+	/// classic -> CLASSIC_COMPOSITE; null and anything else (including the removed "kontext") -> UNKNOWN.
 	/// Strategy SELECTION (fallbacks such as SEQUENTIAL_INPAINT) is the planner's, not this table's.
 	public static PbStrategyEnumType strategyForMode(String compositeMode) {
 		if(compositeMode == null) {

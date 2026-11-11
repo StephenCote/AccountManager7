@@ -23,17 +23,18 @@ import org.junit.Test;
 import jakarta.ws.rs.core.Response;
 
 /**
- * PictureBook V3 Phase 2, P2-8: Kontext Disable (design §37.3) at the chat transport.
- * {@code POST /rest/chat/{objectId}/generateScene} refuses the retired Kontext pipeline at route entry, on
- * BOTH render paths, before the chat session is looked up and before any LLM or SD work:
+ * The composite-mode gate at the chat transport. {@code POST /rest/chat/{objectId}/generateScene} resolves
+ * {@code compositeMode} ONCE at route entry, on BOTH render paths, before the chat session is looked up and
+ * before any LLM or SD work. Written as P2-8 (Kontext Disable, design §37.3: a dedicated 400/409 "replaced
+ * by V3" refusal); rewritten at Phase 10 P10-3 (Kontext Removal, §37.5) when that pipeline and its dedicated
+ * refusal were deleted - since then:
  * <ul>
- * <li>an explicit {@code compositeMode=kontext} (any case/whitespace) is invalid content - 400 with
- * {@link SceneCompositeUtil#KONTEXT_RETIRED_MESSAGE}, not the generic "unsupported" hint;</li>
- * <li>a body that <i>resolves</i> to Kontext - the legacy {@code useKontext=true} with a blank or null
- * {@code compositeMode} - is refused by state, 409, same message. With the key absent the schema default
- * {@code flux2} is materialised on read and the boolean is never consulted (measured; see the case javadoc);</li>
- * <li>an unknown mode is still the generic 400 whose vocabulary no longer lists kontext;</li>
- * <li>a supported mode (or no mode at all) passes the gates and reaches the session lookup - for a random
+ * <li>{@code compositeMode=kontext} (any case/whitespace) is simply one more unsupported value: the generic
+ * 400 with the {@link SceneCompositeUtil#SUPPORTED_MODES} hint, exactly like {@code bogus};</li>
+ * <li>the legacy {@code useKontext} boolean is not read at all: {@code true} with a blank or null
+ * {@code compositeMode} resolves to classic and passes the gate (previously 409). With the key absent the
+ * schema default {@code flux2} is materialised on read (measured; see the case javadoc);</li>
+ * <li>a supported mode (or no mode at all) passes the gate and reaches the session lookup - for a random
  * objectId that is the 404 "Chat request not found", the farthest a direct call can go without a session.</li>
  * </ul>
  * Direct {@link ChatService} call on the H2 fixture; the asserting principal is a plain non-admin user. The
@@ -42,16 +43,15 @@ import jakarta.ws.rs.core.Response;
  * Not covered here, stated plainly: the HTTP surface, which the Playwright item-14 block
  * ({@code e2e/chatChainSceneReimageRoutes.spec.js}) pins against the Docker stack as e2etest_shared.
  */
-public class TestChatSceneKontextDisable extends BaseTest {
+public class TestChatSceneCompositeModeGate extends BaseTest {
 
-	private static final String USER_NAME = "chatkontextuser";
-	private static final String RETIRED_MARK = "replaced by V3";
+	private static final String USER_NAME = "chatmodegateuser";
+	private static final String UNSUPPORTED_PREFIX = "Unsupported composite mode '";
+	private static final String EXPECTED_SUFFIX = "'; expected " + SceneCompositeUtil.SUPPORTED_MODES;
 
 	private final ChatService service = new ChatService();
 
 	private BaseRecord user;
-	private String pb0;
-	private String cb0;
 	private String ch0;
 
 	@Override
@@ -61,48 +61,47 @@ public class TestChatSceneKontextDisable extends BaseTest {
 		ServiceUtil.clearCache();
 		user = getCreateUser(USER_NAME);
 		assertNotNull("User is null", user);
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
 		ch0 = PbRenderPath.chat();
 	}
 
 	@After
 	public void restoreSwitch() {
-		PbRenderPath.configure(pb0, cb0, ch0);
-	}
-
-	@Test
-	public void TestExplicitKontextIs400WithRetiredMessageOnBothPaths() {
-		for (String chatPath : new String[] { PbRenderPath.V1, PbRenderPath.V3 }) {
-			PbRenderPath.configure(pb0, cb0, chatPath);
-			Response r = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"kontext\",\"refinerModel\":\"x\"}");
-			assertEquals("chat=" + chatPath + ": explicit kontext is invalid content", 400, r.getStatus());
-			assertRetiredError(r, "chat=" + chatPath);
-		}
-	}
-
-	@Test
-	public void TestExplicitKontextIsCaseAndWhitespaceInsensitive() {
-		Response r = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\" KONTEXT \",\"refinerModel\":\"x\"}");
-		assertEquals(400, r.getStatus());
-		assertRetiredError(r, "' KONTEXT '");
+		PbRenderPath.configure(ch0);
 	}
 
 	/**
-	 * A body that only RESOLVES to kontext - a blank or null {@code compositeMode} with the legacy
-	 * {@code useKontext=true} (what a client posts when it round-trips a pre-{@code compositeMode} saved config,
-	 * whose column is SQL NULL) - passes the explicit-mode gate and is refused by state, 409, on both paths.
+	 * Phase 10 P10-3: the removed Kontext literal is an unsupported value like any other - the generic 400
+	 * with the vocabulary hint, on both render paths, no dedicated message. The echo is trimmed by the route.
 	 */
 	@Test
-	public void TestLegacyUseKontextWithBlankOrNullModeIs409OnBothPaths() {
+	public void TestKontextIsAnUnsupportedModeOnBothPaths() {
 		for (String chatPath : new String[] { PbRenderPath.V1, PbRenderPath.V3 }) {
-			PbRenderPath.configure(pb0, cb0, chatPath);
+			PbRenderPath.configure(chatPath);
+			for (String mode : new String[] { "kontext", " KONTEXT ", "Kontext" }) {
+				Response r = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"" + mode + "\",\"refinerModel\":\"x\"}");
+				assertEquals("chat=" + chatPath + " mode '" + mode + "': an unsupported value", 400, r.getStatus());
+				assertUnsupportedError(r, "chat=" + chatPath + " mode '" + mode + "'", mode.trim());
+			}
+		}
+	}
+
+	/**
+	 * Phase 10 P10-3: the legacy {@code useKontext} boolean is not read by {@code resolveMode} any more (its
+	 * column goes at P10-4). {@code true} with a blank or null {@code compositeMode} - what a client posts when
+	 * it round-trips a pre-{@code compositeMode} saved config whose column is SQL NULL - therefore resolves to
+	 * classic and passes the gate on both paths (404 = session lookup reached). Before P10-3 this was the 409
+	 * "resolves to the retired mode" refusal.
+	 */
+	@Test
+	public void TestUseKontextWithBlankOrNullModeResolvesClassicAndPassesOnBothPaths() {
+		for (String chatPath : new String[] { PbRenderPath.V1, PbRenderPath.V3 }) {
+			PbRenderPath.configure(chatPath);
 			Response blank = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"\",\"useKontext\":true,\"refinerModel\":\"x\"}");
-			assertEquals("chat=" + chatPath + ": blank compositeMode + useKontext=true resolves to the retired mode", 409, blank.getStatus());
-			assertRetiredError(blank, "chat=" + chatPath + " blank");
+			assertEquals("chat=" + chatPath + ": blank compositeMode + useKontext=true is classic since P10-3", 404, blank.getStatus());
+			assertEquals("Chat request not found", body(blank).get("error"));
 			Response nul = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":null,\"useKontext\":true,\"refinerModel\":\"x\"}");
-			assertEquals("chat=" + chatPath + ": null compositeMode + useKontext=true resolves to the retired mode", 409, nul.getStatus());
-			assertRetiredError(nul, "chat=" + chatPath + " null");
+			assertEquals("chat=" + chatPath + ": null compositeMode + useKontext=true is classic since P10-3", 404, nul.getStatus());
+			assertEquals("Chat request not found", body(nul).get("error"));
 		}
 	}
 
@@ -110,9 +109,9 @@ public class TestChatSceneKontextDisable extends BaseTest {
 	 * Measured, not assumed (2026-10-15): {@code useKontext=true} with the {@code compositeMode} KEY ABSENT is not
 	 * refused. {@code RecordDeserializer} keeps only the fields the JSON names, but {@code BaseRecord.get} of a
 	 * declared-but-absent field materialises it at its schema default ({@code checkField} →
-	 * {@code RecordFactory.newFieldInstance}), so {@code resolveMode} reads {@code compositeMode="flux2"} and never
-	 * consults the boolean - the same "schema default wins" rule the Objects7 override path shows. The route
-	 * therefore proceeds (404 = session lookup reached) and Kontext is unreachable by the boolean alone.
+	 * {@code RecordFactory.newFieldInstance}), so {@code resolveMode} reads {@code compositeMode="flux2"} - the
+	 * same "schema default wins" rule the Objects7 override path shows. The route proceeds (404 = session lookup
+	 * reached). Since P10-3 the boolean is not consulted in any case; this pins the materialised default.
 	 */
 	@Test
 	public void TestUseKontextAloneMaterialisesTheFlux2DefaultAndPasses() {
@@ -121,11 +120,11 @@ public class TestChatSceneKontextDisable extends BaseTest {
 		assertEquals("Chat request not found", body(r).get("error"));
 	}
 
-	/** §6.C 14 at the transport: a blank mode with no boolean resolves CLASSIC (chat passes {@code false}), never kontext. */
+	/** §6.C 14 at the transport: a blank mode with no boolean resolves CLASSIC and passes. */
 	@Test
 	public void TestBlankModeWithoutUseKontextResolvesClassicAndPasses() {
 		Response r = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"\",\"refinerModel\":\"x\"}");
-		assertEquals("a blank mode with no boolean is classic, not the retired mode", 404, r.getStatus());
+		assertEquals("a blank mode with no boolean is classic", 404, r.getStatus());
 		assertEquals("Chat request not found", body(r).get("error"));
 	}
 
@@ -133,9 +132,8 @@ public class TestChatSceneKontextDisable extends BaseTest {
 	public void TestUnknownModeIsGeneric400WithoutKontextInTheVocabulary() {
 		Response r = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"bogus\",\"refinerModel\":\"x\"}");
 		assertEquals(400, r.getStatus());
-		Map<String, Object> b = body(r);
-		assertEquals("Unsupported composite mode 'bogus'; expected flux2|classic", b.get("error"));
-		assertEquals("the accepted vocabulary no longer names kontext", "flux2|classic", SceneCompositeUtil.SUPPORTED_MODES);
+		assertUnsupportedError(r, "bogus", "bogus");
+		assertEquals("the accepted vocabulary does not name kontext", "flux2|classic", SceneCompositeUtil.SUPPORTED_MODES);
 	}
 
 	/**
@@ -162,7 +160,7 @@ public class TestChatSceneKontextDisable extends BaseTest {
 		}
 	}
 
-	/** No mode and no legacy boolean resolves to classic (chat passes {@code false}); the route proceeds to the 404 lookup. */
+	/** No mode and no legacy boolean resolves to classic; the route proceeds to the 404 lookup. */
 	@Test
 	public void TestAbsentModeResolvesToClassicAndReachesTheSessionLookup() {
 		Response r = generate("{\"schema\":\"olio.sd.config\",\"refinerModel\":\"x\"}");
@@ -179,15 +177,14 @@ public class TestChatSceneKontextDisable extends BaseTest {
 		return r;
 	}
 
-	private void assertRetiredError(Response r, String label) {
+	/// The one refusal shape the gate has since P10-3: the trimmed echo in quotes plus the SUPPORTED_MODES hint.
+	private void assertUnsupportedError(Response r, String label, String echo) {
 		Map<String, Object> b = body(r);
 		Object err = b.get("error");
 		assertNotNull(label + ": error body", err);
 		String e = err.toString();
-		assertTrue(label + ": the error starts with the shared retirement message: " + e,
-			e.startsWith(SceneCompositeUtil.KONTEXT_RETIRED_MESSAGE));
-		assertTrue(label + ": the error says it was replaced by V3: " + e, e.contains(RETIRED_MARK));
-		assertTrue(label + ": the error cites design section 37.3: " + e, e.contains("37.3"));
+		assertEquals(label + ": the generic unsupported-mode message", UNSUPPORTED_PREFIX + echo + EXPECTED_SUFFIX, e);
+		assertTrue(label + ": no dedicated retirement wording survives: " + e, !e.contains("replaced by V3") && !e.contains("37.3"));
 	}
 
 	private HttpServletRequestMock requestAs(BaseRecord u) {

@@ -1,19 +1,17 @@
 // @vitest-environment jsdom
 /**
- * PictureBook P7-3 — the wizard hands off to the V3 workspace; existing books open in V3.
+ * PictureBook P7-3 / P10-1 — the wizard hands off to the V3 workspace; existing books open in V3.
  *
- * Why: under picturebook renderPath v3 the server answers 409 "replaced by V3" for the three PB1
- * routes the wizard's steps 4–5 call (scene generate, prepare-images, PUT settings). So under v3 the
- * wizard must END at step 3 — "Continue to Images" opens the V3 reader on the pb2 book the step-2
- * Continue created — and an existing book must never re-enter the wizard (the list pencils, the
- * viewer pencil and the /picture-book/:groupOid route all resolve to the V3 reader instead). A pure
- * PB1 book (scenes, no olio.pb.book) is the one thing left on the PB1 viewer, read-only, with the
- * "replaced by V3 — import" notice P7-4 wires up. v1 keeps every pre-P7-3 behaviour.
+ * Why: the three PB1 routes the wizard's old steps 4–5 called (scene generate, prepare-images, PUT
+ * settings) no longer exist (P10-1). The wizard ENDS at step 3 — "Continue to Images" opens the V3
+ * reader on the pb2 book the step-2 Continue created — and an existing book never re-enters the
+ * wizard (the list pencils and the /picture-book/:groupOid route resolve to the V3 reader instead). A
+ * pure PB1 book (scenes, no olio.pb.book) is the one thing left on the PB1 viewer, read-only, with the
+ * "replaced by V3 — import" notice P7-4 wires up.
  *
- * Covered: pictureBookRenderPath (v1 only when explicit, v3 on failure), resolvePb2BookObjectId's
- * three lookups, the step-3 action under v3 vs v1, the progress bar, tryResumeExistingBook's four
- * outcomes, handOffToReader with/without a V3 record, the PB1 viewer's redirect / legacy notice / no
- * Edit pencil, and the PB2 reader header hiding its Edit pencil under v3.
+ * Covered: resolvePb2BookObjectId's three lookups, the step-3 action, the progress bar,
+ * tryResumeExistingBook's four outcomes, handOffToReader with/without a V3 record, the PB1 viewer's
+ * redirect / legacy notice / no Edit pencil, and the PB2 reader header never offering its Edit pencil.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import m from 'mithril';
@@ -83,23 +81,6 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-// ─────────────────────────────── render path ───────────────────────────────
-
-describe('pictureBookRenderPath — v1 only when the server says so', () => {
-    it('is v1 for an explicit picturebook v1', async () => {
-        vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'v1', chapbook: 'v3', chat: 'v1' });
-        expect(await pb.pictureBookRenderPath()).toBe('v1');
-    });
-    it('is v3 for v3, for a missing key, and when the config cannot be read', async () => {
-        let spy = vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'V3' });
-        expect(await pb.pictureBookRenderPath()).toBe('v3');
-        spy.mockResolvedValue({ chapbook: 'v1' });
-        expect(await pb.pictureBookRenderPath()).toBe('v3');
-        spy.mockRejectedValue(new Error('401'));
-        expect(await pb.pictureBookRenderPath()).toBe('v3');
-    });
-});
-
 // ─────────────────────────── resolvePb2BookObjectId ─────────────────────────
 
 describe('resolvePb2BookObjectId — any id the wizard is handed → olio.pb.book oid or null', () => {
@@ -138,9 +119,9 @@ function continueToImages() {
 }
 
 describe('step 3 "Continue to Images"', () => {
-    it('v3: closes the wizard and opens the V3 reader on the pb2 book; step 4 is never reached', async () => {
+    it('closes the wizard and opens the V3 reader on the pb2 book; there is no step 4', async () => {
         stubServer({ pb2Books: ['PB2-A'] });
-        pb.__setExtractStateForTest({ step: 3, pbRenderPath: 'v3', bookObjectId: 'GRP-1', pb2WizardBookOid: 'PB2-A' });
+        pb.__setExtractStateForTest({ step: 3, bookObjectId: 'GRP-1', pb2WizardBookOid: 'PB2-A' });
         continueToImages().onclick();
         await flush();
         expect(dialogClose).toHaveBeenCalledTimes(1);
@@ -148,31 +129,22 @@ describe('step 3 "Continue to Images"', () => {
         expect(pb.__extractStateForTest().step).toBe(3);
         expect(global.fetch).not.toHaveBeenCalled();
     });
-    it('v3 resumed on a PB1 group without a cached pb2 oid: resolves it via /pb2 first', async () => {
+    it('resumed on a PB1 group without a cached pb2 oid: resolves it via /pb2 first', async () => {
         stubServer({ bridges: { 'GRP-1': 'PB2-B' } });
-        pb.__setExtractStateForTest({ step: 3, pbRenderPath: 'v3', bookObjectId: 'GRP-1', pb2WizardBookOid: null });
+        pb.__setExtractStateForTest({ step: 3, bookObjectId: 'GRP-1', pb2WizardBookOid: null });
         continueToImages().onclick();
         await flush();
         expect(routeSet).toHaveBeenCalledWith('/picture-book/v2/PB2-B');
         expect(pb.__extractStateForTest().pb2WizardBookOid).toBe('PB2-B');
     });
-    it('v3 with no V3 record: stays on step 3 with an error toast, no route, dialog open', async () => {
+    it('no V3 record: stays on step 3 with an error toast, no route, dialog open', async () => {
         stubServer({});
-        pb.__setExtractStateForTest({ step: 3, pbRenderPath: 'v3', bookObjectId: 'GRP-1', pb2WizardBookOid: null });
+        pb.__setExtractStateForTest({ step: 3, bookObjectId: 'GRP-1', pb2WizardBookOid: null });
         expect(await pb.handOffToReader()).toBeNull();
         expect(page.toast).toHaveBeenCalledWith('error', expect.stringMatching(/no V3 record/));
         expect(routeSet).not.toHaveBeenCalled();
         expect(dialogClose).not.toHaveBeenCalled();
         expect(pb.__extractStateForTest().step).toBe(3);
-    });
-    it('v1: advances to step 4 exactly as before, no route, dialog stays open', async () => {
-        stubServer({});
-        pb.__setExtractStateForTest({ step: 3, pbRenderPath: 'v1', bookObjectId: 'GRP-1', pb2WizardBookOid: 'PB2-A' });
-        continueToImages().onclick();
-        await flush();
-        expect(pb.__extractStateForTest().step).toBe(4);
-        expect(routeSet).not.toHaveBeenCalled();
-        expect(dialogClose).not.toHaveBeenCalled();
     });
 });
 
@@ -188,66 +160,46 @@ describe('renderProgressBar', () => {
         })(vnode);
         return out.filter(t => /^[A-Z][a-z]+$/.test(t));
     }
-    it('v3 ends at Characters — no Images / View steps', () => {
-        pb.__setExtractStateForTest({ step: 3, pbRenderPath: 'v3' });
+    it('ends at Characters — no Images / View steps', () => {
+        pb.__setExtractStateForTest({ step: 3 });
         let labels = labelsOf(pb.renderProgressBar());
         expect(labels).toEqual(['Source', 'Scenes', 'Characters']);
-    });
-    it('v1 keeps all five', () => {
-        pb.__setExtractStateForTest({ step: 3, pbRenderPath: 'v1' });
-        expect(labelsOf(pb.renderProgressBar())).toEqual(['Source', 'Scenes', 'Characters', 'Images', 'View']);
     });
 });
 
 // ─────────────────────────── tryResumeExistingBook ──────────────────────────
 
-describe('tryResumeExistingBook under v3 — existing books never re-enter the wizard', () => {
+describe('tryResumeExistingBook — existing books never re-enter the wizard', () => {
     it('a pb2 book oid (list / reader pencils) → the V3 reader route', async () => {
         stubServer({ pb2Books: ['PB2-A'], scenes: { 'PB2-A': [{ objectId: 's1' }] } });
-        pb.__setExtractStateForTest({ pbRenderPath: 'v3' });
         expect(await pb.tryResumeExistingBook('PB2-A')).toEqual({ route: '/picture-book/v2/PB2-A' });
         expect(pb.__extractStateForTest().step).toBe(1);
         expect(pb.__extractStateForTest().bookObjectId).toBeNull();
     });
     it('a PB1 group oid bridged via /pb2 (viewer pencil) → the V3 reader route', async () => {
         stubServer({ bridges: { 'GRP-1': 'PB2-B' }, scenes: { 'GRP-1': [{ objectId: 's1' }] } });
-        pb.__setExtractStateForTest({ pbRenderPath: 'v3' });
         expect(await pb.tryResumeExistingBook('GRP-1')).toEqual({ route: '/picture-book/v2/PB2-B' });
     });
     it('a pure PB1 book (scenes, no V3 record) → the read-only PB1 viewer route', async () => {
         stubServer({ scenes: { 'GRP-OLD': [{ objectId: 's1', imageObjectId: 'i1' }] } });
-        pb.__setExtractStateForTest({ pbRenderPath: 'v3' });
         expect(await pb.tryResumeExistingBook('GRP-OLD')).toEqual({ route: '/picture-book/GRP-OLD' });
         expect(pb.__extractStateForTest().step).toBe(1);
     });
     it('a fresh source document → null, the wizard opens at step 1', async () => {
         stubServer({});
-        pb.__setExtractStateForTest({ pbRenderPath: 'v3' });
         expect(await pb.tryResumeExistingBook('DOC-1')).toBeNull();
         expect(pb.__extractStateForTest().step).toBe(1);
-    });
-    it('v1 is unchanged: a PB1 book with unresolved scenes resumes onto step 4 in the wizard', async () => {
-        stubServer({ scenes: { 'GRP-1': [{ objectId: 's1', status: 'pending' }] } });
-        vi.spyOn(am7client, 'get').mockImplementation((t, id, cb) => cb(null));
-        pb.__setExtractStateForTest({ pbRenderPath: 'v1' });
-        let r = await pb.tryResumeExistingBook('GRP-1');
-        expect(r).toBeUndefined();
-        let s = pb.__extractStateForTest();
-        expect(s.step).toBe(4);
-        expect(s.bookObjectId).toBe('GRP-1');
-        expect(routeSet).not.toHaveBeenCalled();
     });
 });
 
 // ─────────────────────────────── PB1 viewer ────────────────────────────────
 
-describe('PB1 viewer /picture-book/:groupOid under v3', () => {
+describe('PB1 viewer /picture-book/:groupOid — a bridge to the V3 reader', () => {
     beforeEach(() => {
         vi.spyOn(am7client, 'search').mockResolvedValue({ results: [] });
-        pbf.__setViewerStateForTest({ viewerBookId: null, viewerScenes: [], viewerLoading: false, viewerError: null, viewerRenderPath: 'v1', viewerLegacy: false });
+        pbf.__setViewerStateForTest({ viewerBookId: null, viewerScenes: [], viewerLoading: false, viewerError: null, viewerLegacy: false });
     });
     it('redirects (replace) to the V3 reader when the group has a pb2 record, without loading PB1 scenes', async () => {
-        vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'v3' });
         let calls = stubServer({ bridges: { 'GRP-1': 'PB2-B' }, scenes: { 'GRP-1': [{ objectId: 's1' }] } });
         await pbf.__loadViewerForTest('GRP-1');
         expect(routeSet).toHaveBeenCalledWith('/picture-book/v2/PB2-B', null, { replace: true });
@@ -255,13 +207,11 @@ describe('PB1 viewer /picture-book/:groupOid under v3', () => {
         expect(pbf.__viewerStateForTest().viewerLegacy).toBe(false);
     });
     it('a pb2 book oid handed straight to the route also redirects', async () => {
-        vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'v3' });
         stubServer({ pb2Books: ['PB2-A'] });
         await pbf.__loadViewerForTest('PB2-A');
         expect(routeSet).toHaveBeenCalledWith('/picture-book/v2/PB2-A', null, { replace: true });
     });
     it('a pure PB1 book shows read-only: legacy notice rendered, no Edit pencil', async () => {
-        vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'v3' });
         stubServer({ scenes: { 'GRP-OLD': [{ objectId: 's1', title: 'One' }, { objectId: 's2', title: 'Two' }] } });
         await pbf.__loadViewerForTest('GRP-OLD');
         let s = pbf.__viewerStateForTest();
@@ -277,7 +227,6 @@ describe('PB1 viewer /picture-book/:groupOid under v3', () => {
         expect(pbf.__renderViewerActionsLeftForTest({ fullscreen: false })).toBeNull();
     });
     it('a source document with no book yet is not legacy: empty state, no notice', async () => {
-        vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'v3' });
         stubServer({});
         await pbf.__loadViewerForTest('DOC-1');
         let s = pbf.__viewerStateForTest();
@@ -286,23 +235,11 @@ describe('PB1 viewer /picture-book/:groupOid under v3', () => {
         expect(s.viewerLegacy).toBe(false);
         expect(pbf.__renderViewerLegacyNoticeForTest()).toBeNull();
     });
-    it('v1: no redirect, no notice, Edit pencil present for a book with scenes', async () => {
-        vi.spyOn(am7client, 'getRenderPath').mockResolvedValue({ picturebook: 'v1' });
-        stubServer({ bridges: { 'GRP-1': 'PB2-B' }, scenes: { 'GRP-1': [{ objectId: 's1' }] } });
-        await pbf.__loadViewerForTest('GRP-1');
-        let s = pbf.__viewerStateForTest();
-        expect(routeSet).not.toHaveBeenCalled();
-        expect(s.viewerLegacy).toBe(false);
-        expect(pbf.__renderViewerLegacyNoticeForTest()).toBeNull();
-        let pencil = pbf.__renderViewerActionsLeftForTest({ fullscreen: false });
-        expect(pencil).not.toBeNull();
-        expect(pencil.attrs.title).toBe('Edit Book');
-    });
 });
 
 // ─────────────────────────── PB2 reader header pencil ───────────────────────
 
-describe('renderPb2Header — the Edit (wizard) pencil is v1-only', () => {
+describe('renderPb2Header — the Edit (wizard) pencil is never offered; Characters stays', () => {
     beforeEach(() => {
         pbf.__pb2StopWatchingForTest();
         vi.spyOn(am7client, 'dotPath').mockReturnValue('Public');
@@ -319,13 +256,7 @@ describe('renderPb2Header — the Edit (wizard) pencil is v1-only', () => {
     function charactersCount() {
         return (JSON.stringify(pbf.renderPb2Header()).match(/"data-pb2-characters"/g) || []).length;
     }
-    it('v1: pencil and Characters both offered', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v1' });
-        expect(pencilCount()).toBe(1);
-        expect(charactersCount()).toBe(1);
-    });
-    it('v3: pencil hidden, Characters stays', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3' });
+    it('pencil hidden, Characters stays', () => {
         expect(pencilCount()).toBe(0);
         expect(charactersCount()).toBe(1);
     });

@@ -1,13 +1,14 @@
 /**
- * ChapBook on the v3 render path (PictureBook V3 Phase 1, P1-9) — LIVE SD end-to-end over REST.
+ * ChapBook on the V3 render path (PictureBook V3 Phase 1, P1-9; the only path since Phase 10 P10-1) — LIVE SD
+ * end-to-end over REST.
  *
- * With chapbook.renderPath=v3 (the Docker test stack), a ChapBook page render is a graph node run through
+ * A ChapBook page render is a graph node run through
  * the same pb.render job the PictureBook pipeline uses, and the result is an olio.pb.artifact in the node's
  * version chain with a review status. This spec proves the three v3 job-shape bodies off H2 — against the
  * real SD server (192.168.1.39) through Docker Tomcat — and then reads the artifact row, the review
  * transitions, the stale mapping and the reader back over REST and in the browser:
  *
- *   TEST A (SD): POST /scene/{id}/generate on v3 → 200 (or 202 PENDING, then polled) carrying renderPath=v3,
+ *   TEST A (SD): POST /scene/{id}/generate → 200 (or 202 PENDING, then polled) carrying
  *     jobId/runObjectId/nodeObjectId/artifactObjectId and nodeStatus; GET /rest/job/{jobId} is a completed
  *     pb.render job naming that node; the artifact is the selected landscape revision 1, GENERATED, whose
  *     dataObjectId is the scene's imageObjectId; approve pins the node (a re-render is then 409 "pinned");
@@ -23,14 +24,14 @@
  *     for one pb.renderAll job; polled to completion every page carries an image.
  *   TEST D (SD): the synchronous bulk POST /render/{book} → 200 with settled counts on v3.
  *   TEST E (no SD): the v3 review surface without a render — settings/auto-approve GET/PUT contract and the
- *     review-queue filter validation. Skips itself on a v1 deployment (settings answers 409 there).
+ *     review-queue filter validation.
  *
  * A–D are GATED behind CB_LIVE_GEN so the default suite never fires the GPU; run them SINGLE-THREADED:
  *   CB_LIVE_GEN=1 PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 \
  *     npx playwright test e2e/chapBookRenderPathV3.spec.js --project=chromium --workers=1
  *
  * Every page is given an explicit, locked landscape prompt (PUT /scene/{id}/prompt) before a bulk render so
- * the v1 prompt pre-step never calls the LLM: these tests are SD-only. Timings are recorded (durationMs on
+ * the prompt pre-step never calls the LLM: these tests are SD-only. Timings are recorded (durationMs on
  * the bodies, logged) and never asserted; the only bounds are the generous test timeouts.
  */
 import { test, expect } from '@playwright/test';
@@ -124,7 +125,6 @@ async function renderPage(request, bookOid, sceneOid, sdPrompt) {
     expect([200, 202].includes(r.status()), 'generate on v3 answered HTTP ' + r.status() + ' ' + text).toBe(true);
     const body = JSON.parse(text);
     console.log('[v3 generate] HTTP ' + r.status() + ' in ' + (Date.now() - started) + 'ms →', JSON.stringify(body));
-    expect(body.renderPath, 'the page went down the v3 path').toBe('v3');
     expect(body.jobId, 'a pb.render job id').toBeTruthy();
     expect(body.runObjectId, 'an olio.pb.run objectId').toBeTruthy();
     expect(body.nodeObjectId, 'the page node objectId').toBeTruthy();
@@ -188,15 +188,15 @@ test.describe('ChapBook on the v3 render path — LIVE SD over REST', () => {
         expect(jobNode, 'the job result names the page node').toBeTruthy();
         expect(DONE_STATUSES).toContain(String(jobNode.status).toUpperCase());
         console.log('[v3 job] node durationMs=' + jobNode.durationMs + ' total durationMs=' + job.result.durationMs);
-        // P2-6 (design §24 as-built): the page compiled through the plan path, and what the v1 page path applied
-        // that the plan does not (sd.config style clause, hires, the default negative) is reported per render as
-        // "CODE: text" entries, never dropped silently. These are not degradations (logged, not asserted empty).
-        // CFG_CLAMPED (P10-A 5): the config's cfg was outside the picked family's capabilities.json range.
-        expect(Array.isArray(jobNode.configNotApplied), 'P2-6: the node outcome reports configNotApplied').toBe(true);
-        for (const entry of jobNode.configNotApplied) {
-            expect(entry, 'configNotApplied entry shape').toMatch(/^(HIRES|STYLE_CLAUSE|DEFAULT_NEGATIVE|CFG_CLAMPED): \S/);
-        }
-        console.log('[v3 job] configNotApplied=' + JSON.stringify(jobNode.configNotApplied) + ' degradations=' + JSON.stringify(jobNode.degradations || []));
+        // P2-6 (design §24 as-built, since edf35b94 "Chapbook patch"): a ChapBook page is a TEXT_ONLY plan, so
+        // ChapBookStraightGen honours the effective config's hires, style clause and the default negative instead
+        // of reporting them; the executor's configNotApplied list is emptied and the job serialiser drops it. A fresh
+        // book on the default config (no override) therefore carries no configNotApplied at all and no degradation -
+        // the same contract TestChapBookV3Render#pageRenderReportsConfigNotAppliedThroughTheJobOutcome pins on page 0.
+        const na = jobNode.configNotApplied;
+        expect(na == null || (Array.isArray(na) && na.length === 0),
+            'P2-6: straight generation honours hires and the default negative; configNotApplied absent or empty, got ' + JSON.stringify(na)).toBe(true);
+        console.log('[v3 job] configNotApplied=' + JSON.stringify(na) + ' degradations=' + JSON.stringify(jobNode.degradations || []));
 
         // ── 3. The artifact row: selected landscape revision 1, GENERATED, data = the scene image ──
         const art1 = await artifactView(request, bookOid, first.artifactObjectId);
@@ -383,7 +383,6 @@ test.describe('ChapBook on the v3 render path — LIVE SD over REST', () => {
         expect(r.status(), 'async bulk on v3 is a 202 submission').toBe(202);
         const body = JSON.parse(text);
         expect(body.pending).toBe(true);
-        expect(body.renderPath).toBe('v3');
         expect(body.jobId).toBeTruthy();
         expect(body.runObjectId).toBeTruthy();
         expect(body.plannedNodeCount, 'every prompted page is planned').toBe(pages.length);
@@ -431,7 +430,6 @@ test.describe('ChapBook on the v3 render path — LIVE SD over REST', () => {
         console.log('[v3 bulk sync] HTTP ' + r.status() + ' in ' + (Date.now() - started) + 'ms → ' + text);
         expect(r.status(), 'the synchronous bulk render settled').toBe(200);
         const body = JSON.parse(text);
-        expect(body.renderPath).toBe('v3');
         expect(body.pending).toBe(false);
         expect(body.jobId, 'the sync path still ran as a job').toBeTruthy();
         expect(body.runObjectId).toBeTruthy();
@@ -456,7 +454,6 @@ test.describe('ChapBook on the v3 render path — LIVE SD over REST', () => {
         const { bookOid } = await seed(request, 'e2e-cb-v3-surface', [POEMS_BOTH[0]], 12);
 
         const probe = await request.get(PB_REST + '/' + bookOid + '/settings/auto-approve');
-        test.skip(probe.status() === 409, 'this deployment serves ChapBook on the v1 render path');
         const before = await jsonOf(probe, 'GET settings/auto-approve');
         expect(before.bookObjectId).toBe(bookOid);
         expect(before.autoApprove).toBe(false);

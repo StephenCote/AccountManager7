@@ -320,7 +320,7 @@ describe('reader Plan & generate dialog', () => {
         pbf = await import('../features/pictureBook.js');
         pbf.__pb2StopWatchingForTest();
         pbf.__setPb2V3StateForTest({
-            pb2RenderPath: 'v3', pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null,
+            pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null,
             pb2Submitting: false, pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: 'P29', pb2PollIntervalMs: 5,
             pb2Pages: [SCENE]
         });
@@ -343,11 +343,7 @@ describe('reader Plan & generate dialog', () => {
         return calls;
     }
 
-    it('v1 path shows neither the Plan & generate button nor the style link', () => {
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v1' });
-        expect(findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render')).toBeNull();
-        expect(findByTestId(pbf.renderPb2Header(), 'pb2-style-link')).toBeNull();
-        pbf.__setPb2V3StateForTest({ pb2RenderPath: 'v3' });
+    it('shows the Plan & generate button and the style link', () => {
         expect(findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render')).not.toBeNull();
         expect(findByTestId(pbf.renderPb2Header(), 'pb2-style-link')).not.toBeNull();
     });

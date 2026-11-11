@@ -240,9 +240,6 @@ test.beforeAll(async ({ request }) => {
     });
     expect(login.ok() || login.status() === 204, 'shared-user login failed: ' + login.status()).toBe(true);
 
-    const rp = await expectStatus(await api.get(REST + '/config/render-path'), 200, 'GET /config/render-path');
-    expect(String(rp.picturebook).toLowerCase(), 'the board is V3-only; the test stack boots picturebook on v3').toBe('v3');
-
     bookSlug = 'p49brd' + Date.now().toString(36);
     const cb = await expectStatus(await api.post(PB + '/chapter', { data: { slug: bookSlug, title: 'P4-9 Board ' + bookSlug }, timeout: 180000 }), 200, 'POST /chapter');
     bookObjectId = cb.bookObjectId;

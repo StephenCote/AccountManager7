@@ -180,7 +180,7 @@ async function getBookSettings(bookObjectId) {
 
 // PUT the SPARSE fields to merge into the book's stored olio.sd.config (the server sparse-merges:
 // unsent fields survive; identity / description / imagePath / imageName / tags / controls / attributes
-// and '' values are discarded server-side). Returns the stored row. Mirrors PB2's setBookSdConfig.
+// and '' values are discarded server-side). Returns the stored row (ChapBook PUT /{book}/settings).
 async function putBookSettings(bookObjectId, sparse) {
     let resp = await fetch(cbBase() + '/' + encodeURIComponent(bookObjectId) + '/settings', {
         method: 'PUT',
@@ -196,8 +196,7 @@ async function putBookSettings(bookObjectId, sparse) {
     return resp.json();
 }
 
-// Gap 6: render ONE ChapBook scene via the new per-scene async endpoint. Mirrors PB2's
-// generateSceneImage (workflows/sceneExtractor.js): one HTTP call per scene, same
+// Gap 6: render ONE ChapBook scene via the per-scene async endpoint: one HTTP call per scene, same
 // olio.pictureBookRequest body shape (chatConfig + sdConfig) the bulk /render path sent, so no
 // single request runs long enough to time out at the gateway on a multi-page book.
 // Returns { imageObjectId, rendered, skipped, llmUnavailable, llmDegraded }.
@@ -214,31 +213,26 @@ async function putBookSettings(bookObjectId, sparse) {
 //                              the LLM prompt step was unavailable (implies llmUnavailable:true).
 // A benign un-prompted skip is skipped:true && llmUnavailable:false (poem just needs Analyze).
 //
-// V3 (P1-10 S8): on the graph render path (chapbook.renderPath=v3) the same call submits the page's
-// pb.render job. The server waits a bounded time; a job that finishes inside it answers 200 exactly as
-// v1 does (plus the v3 keys below), one that does not answers 202 { pending:true, jobId, nodeObjectId }
-// and this function polls GET /rest/job/{jobId} to the terminal job, reads the page's outcome off
-// result.nodes[] and re-reads the scene row for the new imageObjectId (the job outcome carries the
-// artifact, not the image). Every response now carries renderPath ('v1'|'v3'); the v3 keys
-// (renderPath, pending, jobId, runObjectId, nodeObjectId, artifactObjectId, nodeStatus, reviewStatus)
-// are attached to the result only when the server sent renderPath, so v1 callers see the 5-key shape.
-//   opts.renderPath          'v3'|'v1' — the chapbook render path (chapBookRenderPath()); resolved ONCE
-//                            per action by the caller, never per scene.
+// V3 (P1-10 S8; the only path since P10-1): the call submits the page's pb.render job. The server
+// waits a bounded time; a job that finishes inside it answers 200 with the keys above plus the V3 keys
+// (pending, jobId, runObjectId, nodeObjectId, artifactObjectId, nodeStatus, reviewStatus), one that
+// does not answers 202 { pending:true, jobId, nodeObjectId } and this function polls
+// GET /rest/job/{jobId} to the terminal job, reads the page's outcome off result.nodes[] and re-reads
+// the scene row for the new imageObjectId (the job outcome carries the artifact, not the image).
 //   opts.sceneConfigOverride the scene's persisted configOverride when the caller already has it; absent
 //                            or blank → re-read before the overlay merge (null is ambiguous on the review
 //                            page: "no override" vs "backfill failed").
 //   opts.pollIntervalMs / opts.pollDeadlineMs / opts.onJobProgress / opts.signal → pollJob.
 // The per-request sdConfig overlay is only ever the save-failed fallback from syncBookSdConfigForRender
-// (the book row carries the dialog values otherwise). The v3 page node renders from the stored book row
-// + scene.configOverride and IGNORES the request's sdConfig (ChapBookUtil.renderResolvedScene hands
-// clientSdConfig only to the v1 branch), so on v3 the overlay is persisted as the scene's sparse
+// (the book row carries the dialog values otherwise). The page node renders from the stored book row
+// + scene.configOverride and IGNORES the request's sdConfig, so the overlay is persisted as the scene's sparse
 // configOverride FIRST — merged UNDER any existing scene override (the scene's own override wins, G-32
 // precedence) — and the result carries `overridePersisted` so the caller can mirror it on its scene.
 async function renderChapBookScene(sceneObjectId, chatConfigName, sdConfig, sdPrompt, opts) {
     let o = opts || {};
     let overlay = (sdConfig && Object.keys(sdConfig).length > 0) ? sdConfig : null;
     let overridePersisted;
-    if (overlay && o.renderPath === 'v3') {
+    if (overlay) {
         let existing = (typeof o.sceneConfigOverride === 'string' && o.sceneConfigOverride.trim()) ? o.sceneConfigOverride : null;
         if (existing == null) {
             let cur = await loadSceneRenderFields(sceneObjectId);
@@ -339,29 +333,24 @@ function isChapBookPinnedRefusal(err) {
     return /\bis pinned\b/i.test(text);
 }
 
-// Pure: the per-scene generate response → the documented result. The five v1 keys are always present;
-// the v3 keys only when the server sent renderPath (every current server response does; older bodies and
-// the v1 unit fixtures do not). Enum-ish strings are upper-cased (list projections may read lowercase).
+// Pure: the per-scene generate response → the documented result. Every key is always present (since P10-1
+// the body carries no path marker). Enum-ish strings are upper-cased (list projections may read lowercase).
 function coerceSceneRenderResult(body) {
     let r = body || {};
-    let out = {
+    return {
         imageObjectId: r.imageObjectId != null ? r.imageObjectId : null,
         rendered: !!r.rendered,
         skipped: !!r.skipped,
         llmUnavailable: !!r.llmUnavailable,
-        llmDegraded: !!r.llmDegraded
+        llmDegraded: !!r.llmDegraded,
+        pending: !!r.pending,
+        jobId: r.jobId != null ? r.jobId : null,
+        runObjectId: r.runObjectId != null ? r.runObjectId : null,
+        nodeObjectId: r.nodeObjectId != null ? r.nodeObjectId : null,
+        artifactObjectId: r.artifactObjectId != null ? r.artifactObjectId : null,
+        nodeStatus: r.nodeStatus != null ? String(r.nodeStatus).toUpperCase() : null,
+        reviewStatus: r.reviewStatus != null ? String(r.reviewStatus).toUpperCase() : null
     };
-    if (r.renderPath != null) {
-        out.renderPath = String(r.renderPath).toLowerCase();
-        out.pending = !!r.pending;
-        out.jobId = r.jobId != null ? r.jobId : null;
-        out.runObjectId = r.runObjectId != null ? r.runObjectId : null;
-        out.nodeObjectId = r.nodeObjectId != null ? r.nodeObjectId : null;
-        out.artifactObjectId = r.artifactObjectId != null ? r.artifactObjectId : null;
-        out.nodeStatus = r.nodeStatus != null ? String(r.nodeStatus).toUpperCase() : null;
-        out.reviewStatus = r.reviewStatus != null ? String(r.reviewStatus).toUpperCase() : null;
-    }
-    return out;
 }
 
 // Pure: read a terminal pb.render job back into the page's outcome, mirroring ChapBookUtil.v3PageResult:
@@ -398,19 +387,6 @@ function v3JobOutcome(job, nodeObjectId) {
         autoApproved: !!(outcome && outcome.autoApproved),
         error: error
     };
-}
-
-// The chapbook render path from GET /rest/config/render-path ({ picturebook, chapbook }, each 'v1'|'v3'),
-// normalised to 'v3' | 'v1'; any failure or odd shape is 'v1' (the server's own default). Resolved once
-// per action (one bulk render, one per-page click) — not cached across actions, so an admin change to
-// the setting is picked up without a reload, and never per scene or per poll.
-async function chapBookRenderPath() {
-    try {
-        let rp = await am7client.getRenderPath();
-        return (rp && typeof rp === 'object' && String(rp.chapbook || '').toLowerCase() === 'v3') ? 'v3' : 'v1';
-    } catch (_) {
-        return 'v1';
-    }
 }
 
 // Pure: the sparse scene override to persist before a v3 render when a one-shot sdConfig overlay is in
@@ -1483,7 +1459,7 @@ function pinnedSceneResult(message) {
 // bulk /render/{bookObjectId} call (which renders every scene on one server thread and times out at
 // the gateway for multi-page books). onSceneImage(oid, url) lets a view refresh a page's image in
 // place as each scene completes.
-// S8 (v3): the render path is resolved once here and handed to every scene call; each v3 scene is
+// S8: each scene is
 // submit → poll → next (the server's per-page job is awaited before the cooldown, so the shared SD
 // server still sees one page at a time). A page whose node is pinned (bookPages' `pinned`, always a
 // boolean) is not submitted — it would 409 — and a pinned refusal from the server is folded to the same
@@ -1492,7 +1468,6 @@ function pinnedSceneResult(message) {
 async function renderChapBookScenes(bookObjectId, chatConfigName, sdConfig, onSceneImage) {
     let pages = await bookPages(bookObjectId);
     pages = Array.isArray(pages) ? pages : [];
-    let renderPath = await chapBookRenderPath();
     let sceneOids = pages.map(function (p) { return p.objectId; }).filter(Boolean);
     let pinnedByScene = {};
     pages.forEach(function (p) { if (p && p.objectId && p.pinned === true) pinnedByScene[p.objectId] = true; });
@@ -1502,10 +1477,10 @@ async function renderChapBookScenes(bookObjectId, chatConfigName, sdConfig, onSc
     renderDone = 0;
     m.redraw();
     return renderScenesSerially(sceneOids, function (oid) {
-        if (renderPath === 'v3' && pinnedByScene[oid]) {
+        if (pinnedByScene[oid]) {
             return Promise.resolve(pinnedSceneResult('page node is pinned'));
         }
-        return renderChapBookScene(oid, chatConfigName, sdConfig, undefined, { renderPath: renderPath, bookObjectId: bookObjectId })
+        return renderChapBookScene(oid, chatConfigName, sdConfig, undefined, { bookObjectId: bookObjectId })
             .catch(function (e) {
                 if (isChapBookPinnedRefusal(e)) return pinnedSceneResult(e.error || e.message);
                 throw e;
@@ -4215,10 +4190,9 @@ async function doRegenerateScene(idx) {
         let chatConfigName = effectiveChatConfigName() || await fetchDefaultChatConfigName();
         // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
         let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
-        let renderPath = await chapBookRenderPath();
         let result = await renderPageWithPinConfirm(scene, bookObjectId, function () {
             return renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {}, undefined,
-                { renderPath: renderPath, bookObjectId: bookObjectId, sceneConfigOverride: scene.configOverride });
+                { bookObjectId: bookObjectId, sceneConfigOverride: scene.configOverride });
         });
         if (result === null) {
             // Pinned and the user kept it pinned (or the node could not be resolved) — already toasted.
@@ -4348,10 +4322,9 @@ async function doRerenderScene(idx) {
         let chatConfigName = override != null ? null : (effectiveChatConfigName() || await fetchDefaultChatConfigName());
         // P0-10d: book-level SD config is persisted first; the overlay is only the save-failed fallback.
         let { sdConfig } = await syncBookSdConfigForRender(bookObjectId);
-        let renderPath = await chapBookRenderPath();
         let result = await renderPageWithPinConfirm(scene, bookObjectId, function () {
             return renderChapBookScene(scene.objectId, chatConfigName, sdConfig || {}, override,
-                { renderPath: renderPath, bookObjectId: bookObjectId, sceneConfigOverride: scene.configOverride });
+                { bookObjectId: bookObjectId, sceneConfigOverride: scene.configOverride });
         });
         if (result === null) {
             // Pinned and the user kept it pinned (or the node could not be resolved) — already toasted.
@@ -5016,7 +4989,7 @@ export const routes = {
     }
 };
 
-export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, putSceneLandscapePrompt, promptWriteOutcome, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig, isChapBookPinnedRefusal, coerceSceneRenderResult, v3JobOutcome, mergeSceneOverlay, chapBookRenderPath, renderPageWithPinConfirm, applyPageRenderResult, loadSceneRenderFields, pageLocationLabel, loadSceneOverrides, doSetSceneLocation };
+export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, putSceneLandscapePrompt, promptWriteOutcome, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig, isChapBookPinnedRefusal, coerceSceneRenderResult, v3JobOutcome, mergeSceneOverlay, renderPageWithPinConfirm, applyPageRenderResult, loadSceneRenderFields, pageLocationLabel, loadSceneOverrides, doSetSceneLocation };
 // Exported for Vitest (P3-7): seed the review view's module state without mounting the route.
 export function __setReviewStateForTest(patch) {
     patch = patch || {};

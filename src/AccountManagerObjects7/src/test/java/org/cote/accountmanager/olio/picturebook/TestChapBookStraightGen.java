@@ -25,7 +25,7 @@ import org.junit.Test;
 /**
  * ChapBook straight generation on the V3 plan path (2026-11-10): a ChapBook TEXT_ONLY plan takes the effective
  * config's steps, style clause and default negative, and its BASE request the config's hires and seed - what the
- * v1 page path (ChapBookUtil.renderResolvedSceneV1) always honoured. A referenced (non-TEXT_ONLY) plan is
+ * direct-SD v1 page path (ChapBookUtil.renderResolvedSceneV1, removed at Phase 10 P10-1) always honoured. A referenced (non-TEXT_ONLY) plan is
  * untouched. No SD server is contacted; the plan is built directly. Runs under BaseTest so the model registry (olio.sd.config, the sdConfigData vocabulary) is the one Service7 runs with.
  */
 public class TestChapBookStraightGen extends BaseTest {

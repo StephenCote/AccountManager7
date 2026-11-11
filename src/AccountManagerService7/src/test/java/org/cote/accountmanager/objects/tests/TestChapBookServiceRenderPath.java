@@ -17,8 +17,6 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.picturebook.ChapBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderJobUtil;
-import org.cote.accountmanager.olio.picturebook.PbRenderPath;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -28,11 +26,9 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbBookStatusEnumType;
 import org.cote.accountmanager.schema.type.PbBookTypeEnumType;
 import org.cote.accountmanager.schema.type.PbCompositionPurposeEnumType;
-import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.rest.services.ChapBookService;
 import org.cote.service.util.ServiceUtil;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -40,17 +36,16 @@ import jakarta.servlet.ServletContext;
 import jakarta.ws.rs.core.Response;
 
 /// P1-9 (design §24, §28.1 Stage 1) and P2-6 (§28.1 Stage 2): the two ChapBook render routes - POST
-/// /chapbook/scene/{id}/generate and POST /chapbook/render/{book}[?async=true] - keep one request/response
-/// contract on both render paths: v3 (the ChapBook default since P2-6) refuses or skips before any graph
-/// work exactly where v1 would, and the explicit v1 cases below are the ROLLBACK proof - with
-/// chapbook.renderPath=v1 the routes still answer on the direct SD path with the legacy bodies.
+/// /chapbook/scene/{id}/generate and POST /chapbook/render/{book}[?async=true] - refuse or skip before any
+/// graph work, and report it in one request/response contract. (The chapbook.renderPath switch and the
+/// v1 direct-SD rollback it selected went at Phase 10 P10-1; ChapBook is V3-only, and the bodies no longer
+/// name a path.)
 ///
 /// Exercised through the real ChapBookService methods -> ChapBookUtil -> PbServiceFacade -> SDUtil, the
 /// real AsyncJobRegistry and the real (H2) database, with Service7's own HttpServletRequestMock +
-/// UserPrincipal (the TestPbRenderPathRefusal pattern) and a ServletContext that answers only the two SD
+/// UserPrincipal (the TestPbRouteGateOrder pattern) and a ServletContext that answers only the two SD
 /// init-params the routes read. Nothing in the application is mocked; the SD server is a real SDUtil
-/// pointed at a closed loopback port, so a v1 SD call fails fast with a refused connection and the test
-/// reads how the route REPORTS that failure.
+/// pointed at a closed loopback port, so nothing here can reach a renderer.
 ///
 /// FIXTURE. A bare CHAPBOOK olio.pb.book row the user owns (no Olio world) plus olio.pb.scene rows
 /// created through PbBookUtil.createScene as that user; a page gets its prompt through
@@ -66,8 +61,6 @@ import jakarta.ws.rs.core.Response;
 /// the ChapBook Playwright suite on v3, and the v3 node/artifact rows by TestChapBookV3Render (Objects7,
 /// am7db, real createChapBook). What this test pins for v3 is the contract BELOW that fixture: a
 /// world-less ChapBook is a loud 500 naming the workflow, never a 200 with rendered=false.
-///
-/// The render-path switch is process-global; every case restores it in finally.
 public class TestChapBookServiceRenderPath extends BaseTest {
 
 	private static final String USER_NAME = "cbrenderpathuser";
@@ -77,8 +70,6 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 	/// deterministically. This is never a statement about any real SD server.
 	private static final String UNREACHABLE_SD = "http://127.0.0.1:1";
 	private static final String GENUINE_PROMPT = "a quiet river at dawn, mist rising over the reeds, soft golden light on the water";
-	/// Bound on how long a case waits for a registry job to settle - never a timing assertion.
-	private static final long JOB_WAIT_MS = 5L * 60L * 1000L;
 
 	private static final ServletContext SD_CONTEXT = initParams(Map.of("sd.server.apiType", SD_API_TYPE, "sd.server", UNREACHABLE_SD));
 	private static final ServletContext NO_SD_CONTEXT = initParams(Collections.emptyMap());
@@ -87,8 +78,6 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 
 	private BaseRecord user;
 	private long orgId;
-	private String pb0;
-	private String cb0;
 
 	@Override
 	@Before
@@ -98,13 +87,6 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 		orgId = orgContext.getOrganizationId();
 		user = getCreateUser(USER_NAME);
 		assertNotNull("Test user is null", user);
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
-	}
-
-	@After
-	public void restoreSwitch() {
-		PbRenderPath.configure(pb0, cb0);
 	}
 
 	/// The routes read exactly two init-params and nothing else off the ServletContext
@@ -212,13 +194,6 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 		return scene.get(OlioFieldNames.FIELD_PB_SCENE_NODE);
 	}
 
-	private AsyncJob awaitJob(String jobId) {
-		assertNotNull("jobId is null", jobId);
-		AsyncJob job = PbRenderJobUtil.awaitTerminal(user, jobId, JOB_WAIT_MS);
-		assertNotNull("Job " + jobId + " did not settle within the wait bound", job);
-		return job;
-	}
-
 	/// Best-effort cleanup. Never asserted, so a failed delete cannot mask the case's own failure;
 	/// every fixture carries a unique slug so residue (workflow group, node, run rows) cannot collide.
 	private void deleteFixture(BaseRecord book, BaseRecord... scenes) {
@@ -234,16 +209,14 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 
 	/// ------------------------------------------------------------------------------------------
 
-	/// On v3 a prompted page of a ChapBook whose world was never built (so the workflow group cannot be
-	/// created as the user) is a loud 500 naming the workflow on both routes - never a 200 with
-	/// rendered=false, never a skip - and nothing is left behind: no node on the scene, no job submitted.
-	/// The same book on v1 renders (case below); the difference is the v3 graph requirement, not the book.
+	/// A prompted page of a ChapBook whose world was never built (so the workflow group cannot be created
+	/// as the user) is a loud 500 naming the workflow on both routes - never a 200 with rendered=false,
+	/// never a skip - and nothing is left behind: no node on the scene, no job submitted.
 	@Test
-	public void TestV3OnAWorldlessChapBookIs500NamingTheWorkflow() throws Exception {
+	public void TestWorldlessChapBookIs500NamingTheWorkflow() throws Exception {
 		BaseRecord book = createChapBook();
 		BaseRecord page = addPage(book, 0, GENUINE_PROMPT);
 		try {
-			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
 			Response rs = service.renderChapBookScene(oid(page), "{}", requestAs(user), SD_CONTEXT);
 			Map<String, Object> bs = body(rs);
 			assertEquals("page render on a world-less v3 ChapBook: " + bs, 500, rs.getStatus());
@@ -261,53 +234,21 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 			assertNull("No node may have been linked to the page", sceneNodeOf(oid(page)));
 		}
 		finally {
-			PbRenderPath.configure(pb0, cb0);
 			deleteFixture(book, page);
 		}
 	}
 
-	/// Rollback (chapbook.renderPath=v1, §28.1 Stage 2): the same route stays on the direct SD path: no job,
-	/// no run, no node, and the scene row is never linked to a graph node. The refused SD call is reported
-	/// as rendered=false with the v1 shape.
+	/// An un-prompted page is skipped before any node or job exists (SKIPPED_NO_PROMPT), and the body
+	/// names no render path (P10-1: there is one).
 	@Test
-	public void TestPageRenderOnV1StaysOnTheDirectPath() throws Exception {
-		BaseRecord book = createChapBook();
-		BaseRecord page = addPage(book, 0, GENUINE_PROMPT);
-		try {
-			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1);
-			Response r = service.renderChapBookScene(oid(page), "{}", requestAs(user), SD_CONTEXT);
-			Map<String, Object> b = body(r);
-			assertEquals("A v1 page render answers 200: " + b, 200, r.getStatus());
-			assertEquals(PbRenderPath.V1, str(b, "renderPath"));
-			assertNull("v1 has no job: " + b, str(b, "jobId"));
-			assertNull("v1 has no run: " + b, str(b, "runObjectId"));
-			assertNull("v1 has no node: " + b, str(b, "nodeObjectId"));
-			assertNull("v1 has no artifact: " + b, str(b, "artifactObjectId"));
-			assertNull("v1 has no node status: " + b, str(b, "nodeStatus"));
-			assertFlag(b, "rendered", false);
-			assertFlag(b, "skipped", false);
-			assertFlag(b, "pending", false);
-			assertNull("No image when the SD call was refused: " + b, str(b, "imageObjectId"));
-			assertNull("v1 must not create a graph node for the page", sceneNodeOf(oid(page)));
-		}
-		finally {
-			PbRenderPath.configure(pb0, cb0);
-			deleteFixture(book, page);
-		}
-	}
-
-	/// An un-prompted page on v3 is skipped before any node or job exists - the v1 meaning of
-	/// SKIPPED_NO_PROMPT, with the v3 renderPath so the client knows which path declined.
-	@Test
-	public void TestUnPromptedPageOnV3IsSkippedWithoutANode() throws Exception {
+	public void TestUnPromptedPageIsSkippedWithoutANode() throws Exception {
 		BaseRecord book = createChapBook();
 		BaseRecord page = addPage(book, 0, null);
 		try {
-			PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
 			Response r = service.renderChapBookScene(oid(page), "{}", requestAs(user), SD_CONTEXT);
 			Map<String, Object> b = body(r);
 			assertEquals("A skipped page is 200: " + b, 200, r.getStatus());
-			assertEquals(PbRenderPath.V3, str(b, "renderPath"));
+			assertFalse("The body names no render path: " + b, b.containsKey("renderPath"));
 			assertFlag(b, "skipped", true);
 			assertFlag(b, "rendered", false);
 			assertFlag(b, "pending", false);
@@ -318,68 +259,35 @@ public class TestChapBookServiceRenderPath extends BaseTest {
 			assertNull("A skipped page must not have been given a graph node", sceneNodeOf(oid(page)));
 		}
 		finally {
-			PbRenderPath.configure(pb0, cb0);
 			deleteFixture(book, page);
 		}
 	}
 
-	/// Rollback (chapbook.renderPath=v1): the bulk route with ?async=true keeps the legacy cb.render wrapper
-	/// job and its legacy body ({jobId, status}); after it settles no page has a graph node.
-	@Test
-	public void TestBulkAsyncOnV1IsTheLegacyWrapperJob() throws Exception {
-		BaseRecord book = createChapBook();
-		BaseRecord prompted = addPage(book, 0, GENUINE_PROMPT);
-		try {
-			PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1);
-			Response r = service.renderChapBook(oid(book), true, "{}", requestAs(user), SD_CONTEXT);
-			Map<String, Object> b = body(r);
-			assertEquals("The legacy wrapper is submitted as 202: " + b, 202, r.getStatus());
-			assertNotNull("The wrapper job id: " + b, str(b, "jobId"));
-			assertNotNull("The wrapper job status: " + b, str(b, "status"));
-			assertFalse("The legacy body carries no renderPath: " + b, b.containsKey("renderPath"));
-			assertFalse("The legacy body carries no run: " + b, b.containsKey("runObjectId"));
-			AsyncJob job = awaitJob(str(b, "jobId"));
-			assertTrue("The wrapper job must settle", job.isTerminal());
-			assertNull("v1 must not create a graph node for the page", sceneNodeOf(oid(prompted)));
-		}
-		finally {
-			PbRenderPath.configure(pb0, cb0);
-			deleteFixture(book, prompted);
-		}
-	}
-
-	/// No principal is 401 on both routes regardless of the switch - and before the SD init-params are
-	/// consulted, so a missing SD configuration never changes the answer to an unauthenticated caller.
+	/// No principal is 401 on both routes - and before the SD init-params are consulted, so a missing SD
+	/// configuration never changes the answer to an unauthenticated caller.
 	@Test
 	public void TestNoPrincipalIs401() {
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1);
 		assertEquals(401, service.renderChapBookScene("x", "{}", new HttpServletRequestMock(), NO_SD_CONTEXT).getStatus());
 		assertEquals(401, service.renderChapBook("x", true, "{}", new HttpServletRequestMock(), NO_SD_CONTEXT).getStatus());
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
-		assertEquals(401, service.renderChapBookScene("x", "{}", new HttpServletRequestMock(), NO_SD_CONTEXT).getStatus());
 		assertEquals(401, service.renderChapBook("x", false, "{}", new HttpServletRequestMock(), NO_SD_CONTEXT).getStatus());
 	}
 
-	/// Missing SD init-params are a 500 naming them, on both routes and both paths, before any book or
-	/// scene is looked up - so the fixture is never touched and no job is submitted.
+	/// Missing SD init-params are a 500 naming them, on both routes, before any book or scene is looked
+	/// up - so the fixture is never touched and no job is submitted.
 	@Test
 	public void TestMissingSdInitParamsAre500BeforeAnyRender() throws Exception {
 		BaseRecord book = createChapBook();
 		BaseRecord page = addPage(book, 0, GENUINE_PROMPT);
 		try {
-			for (String path : new String[] { PbRenderPath.V1, PbRenderPath.V3 }) {
-				PbRenderPath.configure(path, path);
-				Response rs = service.renderChapBookScene(oid(page), "{}", requestAs(user), NO_SD_CONTEXT);
-				assertEquals("page render under " + path, 500, rs.getStatus());
-				assertTrue(String.valueOf(body(rs).get("error")).startsWith("SD server not configured"));
-				Response rb = service.renderChapBook(oid(book), true, "{}", requestAs(user), NO_SD_CONTEXT);
-				assertEquals("bulk render under " + path, 500, rb.getStatus());
-				assertTrue(String.valueOf(body(rb).get("error")).startsWith("SD server not configured"));
-			}
+			Response rs = service.renderChapBookScene(oid(page), "{}", requestAs(user), NO_SD_CONTEXT);
+			assertEquals("page render", 500, rs.getStatus());
+			assertTrue(String.valueOf(body(rs).get("error")).startsWith("SD server not configured"));
+			Response rb = service.renderChapBook(oid(book), true, "{}", requestAs(user), NO_SD_CONTEXT);
+			assertEquals("bulk render", 500, rb.getStatus());
+			assertTrue(String.valueOf(body(rb).get("error")).startsWith("SD server not configured"));
 			assertNull("No render ran, so no node was made", sceneNodeOf(oid(page)));
 		}
 		finally {
-			PbRenderPath.configure(pb0, cb0);
 			deleteFixture(book, page);
 		}
 	}

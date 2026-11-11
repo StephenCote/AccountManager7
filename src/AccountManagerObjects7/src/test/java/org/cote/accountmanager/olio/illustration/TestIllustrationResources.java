@@ -93,13 +93,13 @@ public class TestIllustrationResources {
 
 	// ───────────────────────────── §15 renderer capabilities ─────────────────────────────
 
+	/// Two families since Phase 10 P10-3 removed the retired Kontext row (design §37.5, §6.C 248 d).
 	@Test
-	public void familiesAreTheThreeDeclaredInResourceOrder() {
+	public void familiesAreTheTwoDeclaredInResourceOrder() {
 		List<RendererCapabilities> fams = RendererCapabilities.families();
-		assertEquals(3, fams.size());
+		assertEquals(2, fams.size());
 		assertEquals(RendererCapabilities.PATTERN_FLUX2, fams.get(0).getPattern());
 		assertEquals(RendererCapabilities.PATTERN_SDXL, fams.get(1).getPattern());
-		assertEquals(RendererCapabilities.PATTERN_KONTEXT, fams.get(2).getPattern());
 	}
 
 	@Test
@@ -185,18 +185,13 @@ public class TestIllustrationResources {
 		assertEquals(RendererCapabilities.PATTERN_FLUX2, RendererCapabilities.forModel("FLUX2klein_9b").getPattern());
 	}
 
+	/// Phase 10 P10-3: the Kontext family row is gone, so a Kontext checkpoint name matches no family at
+	/// all - the resolver treats it as FAMILY_UNKNOWN / not installed like any other stranger (§37.5).
 	@Test
-	public void kontextIsKnownButDisabled() {
-		RendererCapabilities rc = RendererCapabilities.forModel("flux1-kontext-dev");
-		assertNotNull("the family is declared so the refusal can name it", rc);
-		assertEquals(RendererCapabilities.PATTERN_KONTEXT, rc.getPattern());
-		assertFalse("Kontext is retired (§37.3)", rc.isEnabled());
-		assertEquals(1, rc.getMaxReferences());
-		assertTrue(rc.isSupportsReferences());
-		assertFalse(rc.isSupportsStyleReferences());
-		assertFalse(rc.isSupportsBatch());
-		assertEquals(1.0, rc.getCfgMin(), EPS);
-		assertEquals(1.0, rc.getCfgMax(), EPS);
+	public void kontextMatchesNoFamily() {
+		assertNull(RendererCapabilities.forModel("flux1-kontext-dev"));
+		assertNull(RendererCapabilities.forModel("flux1Kontext_flux1KontextDev"));
+		assertNull(RendererCapabilities.forModel("Flux/flux1-kontext-dev.safetensors"));
 	}
 
 	@Test
@@ -219,8 +214,7 @@ public class TestIllustrationResources {
 	/**
 	 * Only a family that was measured on .39 carries a timing (§15/§18). P5-0 measured flux2 at
 	 * (102 - 38.6) s / 4 steps / 3 refs, ratified as 5.0 s/step/reference (2026-10-24); sdxl takes no
-	 * references and kontext is retired, so both stay null. The figure is an estimate input, never a
-	 * threshold.
+	 * references, so it stays null. The figure is an estimate input, never a threshold.
 	 */
 	@Test
 	public void onlyTheMeasuredFamilyCarriesATiming() {
@@ -234,15 +228,6 @@ public class TestIllustrationResources {
 					rc.getSecondsPerStepPerReference());
 			}
 		}
-	}
-
-	@Test
-	public void kontextDeclaresNoInpaintBlock() {
-		RendererCapabilities rc = RendererCapabilities.forModel("flux1-kontext-dev");
-		assertNotNull(rc);
-		assertNull("a family without an inpaint block cannot run ACTOR_REGION; it is not guessed", rc.getInpaint());
-		assertNull("kontext declares no calibration seed; the estimate must say it has no figure", rc.getCalibrationSeed(RenderPlan.STAGE_BASE));
-		assertNull(rc.getCalibrationSeed(RenderPlan.STAGE_ACTOR_REGION));
 	}
 
 	@Test

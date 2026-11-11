@@ -42,11 +42,11 @@ import jakarta.ws.rs.core.Response;
 /// P2-3 (PictureBook V3 §4/§4.1, §6.C 157 n/p/q, 158 q): the three style routes on PictureBookService
 /// (GET /{book}/style, PUT /{book}/style, POST /{book}/style/lock) exercised through the real service
 /// methods -> PbServiceFacade -> PbStyleResolver/PbStyleUtil -> real AccessPoint/PBAC -> the real (H2)
-/// database, with HttpServletRequestMock + UserPrincipal exactly as TestPbRenderPathRefusal and
+/// database, with HttpServletRequestMock + UserPrincipal exactly as TestPbRouteGateOrder and
 /// TestModelServicePatch do. Nothing is mocked and no actor is ever the admin or olio principal.
 ///
 /// FIXTURE. A bare olio.pb.book row the owning test user created through AccessPoint in a group it owns
-/// (TestPbRenderPathRefusal.createBareBook) is the exact minimum: the style routes are not gated on the
+/// (TestPbRouteGateOrder.createBareBook) is the exact minimum: the style routes are not gated on the
 /// render path and need no workflow, so requireBook -> requireBookUpdate -> body validation -> lock ->
 /// write are all reachable without an Olio world. Every case creates its own book and deletes the book
 /// and every style row it created in finally, as the test user.
@@ -183,7 +183,7 @@ public class TestPictureBookStyleRoutes extends BaseTest {
 	// ─────────────────────────────── fixture ───────────────────────────────
 
 	/// A bare book row owned by the owner user, in a group the owner owns. Created through AccessPoint as
-	/// that user - no admin, no RecordUtil bypass - and deleted the same way (TestPbRenderPathRefusal).
+	/// that user - no admin, no RecordUtil bypass - and deleted the same way (TestPbRouteGateOrder).
 	private BaseRecord createBareBook() throws Exception {
 		String slug = "sty-" + UUID.randomUUID().toString().substring(0, 12);
 		BaseRecord dir = ioContext.getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, GROUP_PATH, "DATA", orgId);
@@ -793,7 +793,7 @@ public class TestPictureBookStyleRoutes extends BaseTest {
 		}
 	}
 
-	/// No principal is 401 on all three routes (requireBook's first gate), as TestPbRenderPathRefusal.
+	/// No principal is 401 on all three routes (requireBook's first gate), as TestPbRouteGateOrder.
 	@Test
 	public void TestNoPrincipalIs401() throws Exception {
 		BaseRecord book = createBareBook();

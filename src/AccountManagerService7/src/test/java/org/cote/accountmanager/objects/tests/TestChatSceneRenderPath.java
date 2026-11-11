@@ -26,8 +26,9 @@ import jakarta.ws.rs.core.Response;
  * PictureBook V3 P2-7: the boot-pinned {@code chat.renderPath} switch as the transport consumes it.
  * {@code ChatService.generateScene} branches on {@link PbRenderPath#isChatV3()} at route entry and the
  * client discovers the value from {@code GET /rest/config/render-path}; this file pins the switch's
- * semantics (three-value configure, two-value configure leaving chat alone, the v3 default since P10-A 0) and the
- * v1 {@code render} marker ({@link ChatSceneRenderUtil#describeV1()}). Same H2 fixture as
+ * semantics (normalisation, the v3 default since P10-A 0; chat is the only key since Phase 10 P10-1
+ * retired the picturebook / chapbook switches) and the v1 {@code render} marker
+ * ({@link ChatSceneRenderUtil#describeV1()}). Same H2 fixture as
  * {@link TestFeatureConfigService}; the asserting principal is a plain non-admin user.
  * <p>
  * Not covered here, stated plainly: the v1 response body's {@code render} node is attached by
@@ -42,8 +43,6 @@ public class TestChatSceneRenderPath extends BaseTest {
 	private final FeatureConfigService service = new FeatureConfigService();
 
 	private BaseRecord reader;
-	private String pb0;
-	private String cb0;
 	private String ch0;
 
 	@Override
@@ -53,53 +52,34 @@ public class TestChatSceneRenderPath extends BaseTest {
 		ServiceUtil.clearCache();
 		reader = getCreateUser(READER_NAME);
 		assertNotNull("Reader user is null", reader);
-		pb0 = PbRenderPath.pictureBook();
-		cb0 = PbRenderPath.chapBook();
 		ch0 = PbRenderPath.chat();
 	}
 
 	@After
 	public void restoreSwitch() {
-		PbRenderPath.configure(pb0, cb0, ch0);
+		PbRenderPath.configure(ch0);
 	}
 
 	@Test
 	public void TestChatV3IsOnlyWhenPinnedV3() {
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, PbRenderPath.V1);
+		PbRenderPath.configure(PbRenderPath.V1);
 		assertEquals(PbRenderPath.V1, PbRenderPath.chat());
 		assertFalse("chat=v1 must not be v3", PbRenderPath.isChatV3());
 
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, PbRenderPath.V3);
+		PbRenderPath.configure(PbRenderPath.V3);
 		assertEquals(PbRenderPath.V3, PbRenderPath.chat());
 		assertTrue("chat=v3 must be v3", PbRenderPath.isChatV3());
 
 		/// case and whitespace are normalised; anything else pins the chat default (v3 since P10-A 0)
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, " V1 ");
+		PbRenderPath.configure(" V1 ");
 		assertFalse("' V1 ' normalises to v1", PbRenderPath.isChatV3());
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, "v2");
+		PbRenderPath.configure("v2");
 		assertTrue("an unrecognised chat value pins the chat default v3 (a typo must not roll chat back)", PbRenderPath.isChatV3());
 		assertEquals(PbRenderPath.CHAT_DEFAULT, PbRenderPath.chat());
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, PbRenderPath.V1);
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, null);
+		PbRenderPath.configure(PbRenderPath.V1);
+		PbRenderPath.configure(null);
 		assertEquals("an absent chat value pins the chat default v3", PbRenderPath.V3, PbRenderPath.chat());
 		assertEquals("the chat default is v3 (P10-A 0: the inline composite is the v1 rollback)", PbRenderPath.V3, PbRenderPath.CHAT_DEFAULT);
-	}
-
-	@Test
-	public void TestTwoValueConfigureLeavesChatUnchanged() {
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, PbRenderPath.V3);
-		assertTrue(PbRenderPath.isChatV3());
-
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V1);
-		assertEquals(PbRenderPath.V3, PbRenderPath.pictureBook());
-		assertEquals(PbRenderPath.V1, PbRenderPath.chapBook());
-		assertEquals("the two-value configure must not move chat", PbRenderPath.V3, PbRenderPath.chat());
-		assertTrue(PbRenderPath.isChatV3());
-
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V1, PbRenderPath.V1);
-		PbRenderPath.configure(PbRenderPath.V3, PbRenderPath.V3);
-		assertEquals("the two-value configure must not move chat off v1 either", PbRenderPath.V1, PbRenderPath.chat());
-		assertFalse(PbRenderPath.isChatV3());
 	}
 
 	@Test
@@ -116,22 +96,21 @@ public class TestChatSceneRenderPath extends BaseTest {
 
 	@Test
 	public void TestRenderPathEndpointEchoesChatForBothValues() {
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3, PbRenderPath.V1);
+		PbRenderPath.configure(PbRenderPath.V1);
 		Response r1 = service.getRenderPath(requestAs(reader));
 		assertEquals(200, r1.getStatus());
 		Map<String, Object> b1 = body(r1);
 		assertEquals(PbRenderPath.V1, b1.get("chat"));
-		assertEquals(PbRenderPath.V1, b1.get("picturebook"));
-		assertEquals(PbRenderPath.V3, b1.get("chapbook"));
 
-		PbRenderPath.configure(PbRenderPath.V1, PbRenderPath.V3, PbRenderPath.V3);
+		PbRenderPath.configure(PbRenderPath.V3);
 		Response r3 = service.getRenderPath(requestAs(reader));
 		assertEquals(200, r3.getStatus());
 		Map<String, Object> b3 = body(r3);
 		assertEquals(PbRenderPath.V3, b3.get("chat"));
-		assertEquals("picturebook is unaffected by the chat value", PbRenderPath.V1, b3.get("picturebook"));
-		assertEquals("chapbook is unaffected by the chat value", PbRenderPath.V3, b3.get("chapbook"));
-		assertEquals("the body carries exactly the three product keys: " + b3.keySet(), 3, b3.size());
+		/// P10-1: picturebook and chapbook are V3-only products, not switches - the body carries chat alone
+		assertEquals("the body carries exactly the chat key: " + b3.keySet(), 1, b3.size());
+		assertFalse("no picturebook key: " + b3.keySet(), b3.containsKey("picturebook"));
+		assertFalse("no chapbook key: " + b3.keySet(), b3.containsKey("chapbook"));
 
 		/// no principal -> 401, same as the other config reads
 		Response anon = service.getRenderPath(new HttpServletRequestMock());

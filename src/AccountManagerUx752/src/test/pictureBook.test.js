@@ -10,11 +10,6 @@ describe('sceneExtractor module exports', () => {
         expect(mod.DEFAULT_SD_CONFIG).toBeUndefined();
     });
 
-    it('should export setBookSdConfig as a function (PUT /settings — common config)', async () => {
-        let mod = await import('../workflows/sceneExtractor.js');
-        expect(typeof mod.setBookSdConfig).toBe('function');
-    });
-
     it('should export MAX_SCENES_DEFAULT as -1 (no max, backend decides)', async () => {
         let { MAX_SCENES_DEFAULT } = await import('../workflows/sceneExtractor.js');
         expect(MAX_SCENES_DEFAULT).toBe(-1);
@@ -33,11 +28,6 @@ describe('sceneExtractor module exports', () => {
     it('should export createFromScenes as a function', async () => {
         let mod = await import('../workflows/sceneExtractor.js');
         expect(typeof mod.createFromScenes).toBe('function');
-    });
-
-    it('should export generateSceneImage as a function', async () => {
-        let mod = await import('../workflows/sceneExtractor.js');
-        expect(typeof mod.generateSceneImage).toBe('function');
     });
 
     it('should export regenerateBlurb as a function', async () => {

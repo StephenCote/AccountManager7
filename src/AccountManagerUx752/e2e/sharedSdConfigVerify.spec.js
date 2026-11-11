@@ -1,7 +1,7 @@
 /**
  * Shared SD-config regression guard — proves the components/sdConfig.js `loadConfig` fix (line 116:
  * public `am7client.getFull(...)` instead of the never-exported `getFullByObjectId`, which threw and
- * was swallowed so loadConfig returned NULL for every caller) did NOT break the TWO other consumers
+ * was swallowed so loadConfig returned NULL for every caller) did NOT break the other consumer
  * of that shared utility beyond ChapBook (already proven in chapBookVerify.spec.js):
  *
  *   REIMAGE (workflows/reimage.js) — the character Reimage dialog loads a per-character saved config
@@ -9,20 +9,14 @@
  *     `if (charConfig) am7sd.applyConfig(...)` branch (reimage.js:146) was DEAD. It now FIRES: assert
  *     the Model <select> shows the saved model value (proves the saved config LOADED and APPLIED).
  *
- *   PB2 (workflows/pictureBook.js) — the wizard's step-4 SD-config panel loads the user's saved
- *     default (`sdcfg-default`, ~/Data/.preferences) via ensureSdConfig (pictureBook.js:218). Before
- *     the fix that branch was DEAD (loadConfig null → buildEntity fallback). It now FIRES: resume an
- *     existing book (REST-seeded scenes, no LLM), open the wizard to step 4, assert the render config
- *     panel is USABLE (not stuck on "Loading SD configuration…") and its Model <select> is the saved
- *     default. No multi-minute image generation.
- *
  * Run against the Docker stack (host 9443, 127.0.0.1 required — localhost resolves to IPv6 ::1 which
  * Docker does not map):
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/sharedSdConfigVerify.spec.js \
  *     --workers=1 --project=chromium
  *
- * Both tests read the live SD catalog (Docker CAN reach the SD host at 192.168.1.39), so the Model
- * control is a real populated <select>. Neither makes an LLM/SD generation call.
+ * The test reads the live SD catalog (Docker CAN reach the SD host at 192.168.1.39), so the Model
+ * control is a real populated <select>. It makes no LLM/SD generation call. (The PB2 wizard step-4
+ * SD-config case went with the wizard's step 4 at Phase 10 P10-1.)
  */
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -33,7 +27,6 @@ import { fileURLToPath } from 'url';
 const SPEC_DIR = path.dirname(fileURLToPath(import.meta.url));
 const RESULTS = path.resolve(SPEC_DIR, '../test-results');
 const REST = '/AccountManagerService7/rest';
-const PB_REST = REST + '/olio/picture-book';
 
 // A REAL model from this stack's live SD catalog (GET /rest/olio/sdModels), chosen because it is NOT
 // the schema/random default — so a match on it proves the saved config was loaded, not a default.
@@ -48,7 +41,6 @@ let prefsGroupId = null;
 let prefsGroupPath = null;
 let charObjectId = null;
 let charName = null;
-let pbBookObjectId = null; // the create-from-scenes olio.pb.book objectId (the id /scenes accepts)
 
 async function restLogin(request, name, password) {
     const resp = await request.post(REST + '/login', {
@@ -123,7 +115,7 @@ async function loginAndLoad(page, name, password) {
     );
 }
 
-test.describe('Shared SD config — reimage & PB2 regression guard', () => {
+test.describe('Shared SD config — reimage regression guard', () => {
     test.describe.configure({ timeout: 120000 });
 
     test.beforeAll(async ({ request }) => {
@@ -164,44 +156,6 @@ test.describe('Shared SD config — reimage & PB2 regression guard', () => {
         const charCfgOid = await seedSdConfig(request, 'sdcfg-' + charObjectId);
         expect(charCfgOid, 'sdcfg-<charObjectId> not seeded').toBeTruthy();
 
-        // ── PB2 setup: user default config + a resumable book (REST-seeded scenes, no LLM) ──
-        const defCfgOid = await seedSdConfig(request, 'sdcfg-default');
-        expect(defCfgOid, 'sdcfg-default not seeded').toBeTruthy();
-
-        const dataDir = await request.get(REST + '/path/make/auth.group/data/' + encPath('~/Data'));
-        const dataDirBody = await dataDir.json();
-        const suffix = 'sdcfgpb' + Date.now().toString(36);
-        const srcResp = await request.post(REST + '/model', {
-            data: { schema: 'data.data', name: suffix + '-src.txt', contentType: 'text/plain', groupId: dataDirBody.id, groupPath: dataDirBody.path }
-        });
-        const srcRec = await srcResp.json().catch(() => null);
-        const srcOid = srcRec && srcRec.objectId;
-        expect(srcOid, 'source doc not created').toBeTruthy();
-
-        // Create the PB2 book (group) then commit a manual scene list against it.
-        const chapResp = await request.post(PB_REST + '/chapter', { data: { slug: suffix, title: 'SD Config Verify Book' } });
-        const chapBody = await chapResp.json().catch(() => null);
-        const groupBookOid = chapBody && chapBody.bookObjectId;
-        expect(groupBookOid, 'chapter (group book) not created').toBeTruthy();
-
-        const cfsResp = await request.post(PB_REST + '/' + srcOid + '/create-from-scenes', {
-            data: {
-                schema: 'olio.pictureBookRequest',
-                sceneList: [{ title: 'Scene One', summary: 'A quiet meadow at dawn.' }],
-                bookName: 'SD Config Verify Book',
-                pb2BookObjectId: groupBookOid
-            }
-        });
-        const cfsBody = await cfsResp.json().catch(() => null);
-        pbBookObjectId = cfsBody && cfsBody.bookObjectId;
-        expect(pbBookObjectId, 'create-from-scenes returned no bookObjectId').toBeTruthy();
-
-        // Verify the scenes are actually resolvable via the id the viewer/wizard will use.
-        const scenesResp = await request.get(PB_REST + '/' + pbBookObjectId + '/scenes');
-        expect(scenesResp.ok(), 'GET /scenes failed for resumable book: ' + scenesResp.status()).toBe(true);
-        const scenes = await scenesResp.json().catch(() => null);
-        expect(Array.isArray(scenes) && scenes.length > 0, 'resumable book has no scenes').toBe(true);
-
         await request.get(REST + '/logout');
         fs.mkdirSync(RESULTS, { recursive: true });
     });
@@ -232,35 +186,5 @@ test.describe('Shared SD config — reimage & PB2 regression guard', () => {
 
         await page.screenshot({ path: path.join(RESULTS, 'verify-reimage-saved-config.png'), fullPage: true });
         expect(pageErrors, 'uncaught page error(s) during reimage: ' + pageErrors.join(' | ')).toEqual([]);
-    });
-
-    // ── PB2: wizard step-4 render config loads the saved default; panel usable, not stuck loading ─────
-    test('pb2: wizard render config loads the saved default (step-4 panel usable, Model <select> = saved model)', async ({ page }) => {
-        const pageErrors = [];
-        page.on('pageerror', (e) => pageErrors.push(String(e)));
-
-        await loginAndLoad(page, 'e2etest_shared', 'password');
-        // Open the book viewer for the resumable book; scenes load → the "Edit Book" control appears.
-        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid; }, pbBookObjectId);
-
-        const editBtn = page.locator('button[title="Edit Book"]').first();
-        await expect(editBtn, 'Edit Book control not visible (viewer did not load scenes)').toBeVisible({ timeout: 25000 });
-        await editBtn.click();
-
-        // The wizard opens and resumes to step 4 (scenes exist). Its render config panel must actually
-        // finish loading — NOT stay on the "Loading SD configuration…" spinner.
-        await expect(page.locator('text=SD Configuration').first(), 'PB2 render config section not shown (wizard not on step 4?)').toBeVisible({ timeout: 20000 });
-        await expect(page.locator('text=Loading SD configuration'), 'PB2 render config stuck on the loading spinner').toHaveCount(0, { timeout: 20000 });
-
-        const modelSelect = page.locator('xpath=//label[normalize-space()="Model"]/following-sibling::select[1]');
-        await expect(modelSelect, 'expected a <select> for Model (live catalog is populated)').toBeVisible({ timeout: 15000 });
-        const optionCount = await modelSelect.locator('option').count();
-        expect(optionCount, 'model <select> not populated with real options').toBeGreaterThanOrEqual(3);
-        // The SELECTED value is the user's saved default (sdcfg-default) — proving ensureSdConfig's
-        // now-live loadConfig branch (pictureBook.js:218/223) loaded and applied it.
-        await expect(modelSelect).toHaveValue(SEEDED_MODEL);
-
-        await page.screenshot({ path: path.join(RESULTS, 'verify-pb2-saved-default.png'), fullPage: true });
-        expect(pageErrors, 'uncaught page error(s) during PB2 resume: ' + pageErrors.join(' | ')).toEqual([]);
     });
 });

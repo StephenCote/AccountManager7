@@ -14,14 +14,12 @@
  *       --workers=1 --project=chromium
  * (127.0.0.1 is mandatory — localhost resolves to IPv6 ::1 which Docker does not map.)
  *
- * Render-path aware (P7-3): the edit pencils and the canvas "Open in wizard" button open the wizard
- * resumed on steps 4/5 ONLY under picturebook renderPath v1. Under v3 (the default) an existing book
- * never re-enters the wizard — those same controls open the V3 reader (/picture-book/v2/{oid}), the
- * PB2 reader header has no Edit pencil, and the wizard-launched character manager (8b) is unreachable.
- * `pb1Retired` is read once in beforeAll and each affected test asserts the branch the stack is on.
+ * An existing book never re-enters the wizard (P7-3; the only path since P10-1): the list-row Edit pencil
+ * and the canvas "Open in reader" button open the V3 reader (/picture-book/v2/{oid}), the PB2 reader
+ * header has no Edit pencil, and the wizard-launched character manager (the former 8b) is unreachable.
  */
 import { test, expect } from './helpers/fixtures.js';
-import { ensureSharedTestUser, pb1Retired, PB1_RETIRED_SKIP } from './helpers/api.js';
+import { ensureSharedTestUser } from './helpers/api.js';
 
 function b64(str) { return Buffer.from(str).toString('base64'); }
 
@@ -120,9 +118,8 @@ let charBook = null;     // a book whose /characters is non-empty
 let character = null;    // { objectId, name } from charBook
 let renderedSceneTotal = null;    // GET /{rendered}/scenes length — the M in "N rendered of M scenes"
 let unrenderedSceneTotal = null;  // GET /{unrendered}/scenes length — the canvas scene-list length
-let v3 = true;                    // picturebook renderPath on the stack is not v1 (P7-3 hand-off branch)
 
-// v3: a control that used to open the wizard now lands on the V3 reader for `book`, with no wizard dialog.
+// A control that used to open the wizard lands on the V3 reader for `book`, with no wizard dialog.
 async function expectReaderHandoff(page, book) {
     await expect.poll(() => page.evaluate(() => window.location.hash), { timeout: 30000 })
         .toBe('#!/picture-book/v2/' + book.objectId);
@@ -135,7 +132,6 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);
-        v3 = await pb1Retired(request);
         await restLoginShared(request);
 
         const resp = await request.get(PB_REST + '/books');
@@ -191,29 +187,15 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         await request.get(REST + '/logout').catch(() => {});
     });
 
-    // 1. Book list row → Edit. v1: opens the wizard, titled with the book's name, resumed on a scene
-    //    step. v3 (P7-3): opens the V3 reader on the book instead — no wizard dialog.
-    test('list row Edit opens the wizard titled with the PB2 book name', async ({ page }) => {
+    // 1. Book list row → Edit opens the V3 reader on the book (P7-3) — no wizard dialog.
+    test('list row Edit opens the V3 reader on the PB2 book', async ({ page }) => {
         test.skip(!unrendered, 'no PB2 book with scenes but no workflow available to the shared user');
         await loginAsSharedUser(page);
         await gotoHash(page, '!/picture-book');
         const row = await revealBookRow(page, unrendered);
 
         await row.locator('[data-pb2-edit="' + unrendered.objectId + '"]').click();
-        if (v3) {
-            await expectReaderHandoff(page, unrendered);
-            return;
-        }
-        const dlg = page.locator('.am7-dialog').filter({ has: page.locator('.am7-dialog-title', { hasText: 'Picture Book —' }) }).last();
-        await expect(dlg, 'wizard dialog did not open').toBeVisible({ timeout: 30000 });
-        await expect(dlg.locator('.am7-dialog-title')).toHaveText('Picture Book — ' + displayName(unrendered));
-        // Resume lands on Images (4) or View (5) — never Step 1 treating the book id as a source doc.
-        const activeStep = dlg.locator('.rounded-full.bg-blue-500').first();
-        await expect(activeStep).toBeVisible({ timeout: 30000 });
-        expect(['4', '5'], 'wizard did not resume on a scene step').toContain((await activeStep.textContent()).trim());
-
-        await closeTopDialog(page, 'Cancel');
-        await expect(dlg).toHaveCount(0, { timeout: 10000 });
+        await expectReaderHandoff(page, unrendered);
     });
 
     // 2. Book list row → Characters opens the manager directly against the book.
@@ -233,9 +215,9 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         await expect(dlg).toHaveCount(0, { timeout: 10000 });
     });
 
-    // 3. Reader header carries Edit (v1 only — P7-3 hides it under v3, the wizard would only hand
-    //    straight back here) + Characters; cover says "N rendered of M scenes", not a page title.
-    test('PB2 reader header has Edit + Characters and the cover reports rendered-of-total', async ({ page }) => {
+    // 3. Reader header carries Characters and no Edit (P7-3: the wizard would only hand straight back
+    //    here); cover says "N rendered of M scenes", not a page title.
+    test('PB2 reader header has Characters, no Edit, and the cover reports rendered-of-total', async ({ page }) => {
         test.skip(!rendered, 'no rendered PB2 book (graph + series) available to the shared user');
         await loginAsSharedUser(page);
         await gotoHash(page, '!/picture-book/v2/' + rendered.objectId);
@@ -243,8 +225,7 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         const header = page.locator('[data-pb2-book-name]');
         await expect(header).toHaveText(displayName(rendered), { timeout: 30000 });
         await expect(page.locator('[data-pb2-characters="' + rendered.objectId + '"]')).toBeVisible();
-        if (v3) await expect(page.locator('[data-pb2-edit="' + rendered.objectId + '"]')).toHaveCount(0);
-        else await expect(page.locator('[data-pb2-edit="' + rendered.objectId + '"]')).toBeVisible();
+        await expect(page.locator('[data-pb2-edit="' + rendered.objectId + '"]')).toHaveCount(0);
 
         const count = page.locator('[data-pb2-cover-count]');
         await expect(count).toBeVisible({ timeout: 30000 });
@@ -258,16 +239,6 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         expect(renderedSceneTotal, '/scenes for the rendered book was not readable').not.toBeNull();
         expect(total).toBe(Math.max(renderedSceneTotal, n));
 
-        // v1 only: header Edit opens the wizard titled with this book's name (resumed, not Step 1).
-        if (!v3) {
-            await page.locator('[data-pb2-edit="' + rendered.objectId + '"]').click();
-            const dlg = page.locator('.am7-dialog').filter({ has: page.locator('.am7-dialog-title', { hasText: 'Picture Book —' }) }).last();
-            await expect(dlg).toBeVisible({ timeout: 30000 });
-            await expect(dlg.locator('.am7-dialog-title')).toHaveText('Picture Book — ' + displayName(rendered));
-            await closeTopDialog(page, 'Cancel');
-            await expect(dlg).toHaveCount(0, { timeout: 10000 });
-        }
-
         // Header Characters opens the manager.
         await page.locator('[data-pb2-characters="' + rendered.objectId + '"]').click();
         const cdlg = page.locator('.am7-dialog').filter({ has: page.locator('.am7-dialog-title', { hasText: 'Manage Characters' }) }).last();
@@ -277,8 +248,7 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
     });
 
     // 4/5. Canvas on an unrendered book: honest "no workflow yet" state + read-only scene list + TWO
-    //      actions (P10-B, 2026-11-04): "Open in reader to render" under v3 ("Open in wizard to render"
-    //      under v1 — the wizard owns SD config via ensureSdConfig / persistBookSettings) and "Build graph"
+    //      actions (P10-B, 2026-11-04): "Open in reader to render" and "Build graph"
     //      (POST /{book}/graph/build, one node per extracted scene, nothing rendered). There are no
     //      per-scene Render buttons on the canvas. Then "← Book" lands on the PB2 reader with the book's
     //      name. "Build graph" is NOT clicked here: it would turn this fixture into a graph-bearing book
@@ -298,13 +268,13 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         await expect(items.first()).toBeVisible({ timeout: 30000 });
         expect(await items.count()).toBe(unrenderedSceneTotal);
         await expect(items.first()).toContainText('1.');
-        // No per-scene Render buttons on the canvas — rendering goes through the reader (v3) / wizard (v1).
+        // No per-scene Render buttons on the canvas — rendering goes through the reader.
         expect(await empty.locator('button').count()).toBe(2);
         expect(await empty.locator('.pb-wf-render-scene').count()).toBe(0);
         const openWizard = empty.locator('[data-wf-open-wizard="' + unrendered.objectId + '"]');
         await expect(openWizard).toHaveCount(1);
-        await expect(openWizard).toHaveText(v3 ? /Open in reader to render/ : /Open in wizard to render/);
-        await expect(openWizard).toHaveAttribute('data-wf-open-target', v3 ? 'reader' : 'wizard');
+        await expect(openWizard).toHaveText(/Open in reader to render/);
+        await expect(openWizard).toHaveAttribute('data-wf-open-target', 'reader');
         const buildGraph = empty.locator('[data-wf-build-graph="' + unrendered.objectId + '"]');
         await expect(buildGraph).toHaveCount(1);
         await expect(buildGraph).toHaveText(/Build graph/);
@@ -312,41 +282,19 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         // Toolbar title resolves the book name even though there is no graph DTO to read it from.
         await expect(page.locator('[data-wf-title]')).toHaveText(displayName(unrendered) + ' — Workflow', { timeout: 30000 });
 
-        // The single button opens the wizard resumed on this book (NOT clicking Generate/Render inside it).
-        // v3 (P7-3): the same button hands off to the V3 reader — the wizard never resumes on steps
-        // 4/5 — so the "← Book" leg below is reached by going back to the canvas first.
+        // The button hands off to the V3 reader (P7-3) — the wizard never resumes on an existing book —
+        // so the "← Book" leg below is reached by going back to the canvas first.
         await openWizard.click();
-        if (v3) {
-            await expectReaderHandoff(page, unrendered);
-            await expect(page.locator('[data-pb2-empty]')).toHaveText(
-                unrenderedSceneTotal + ' scene' + (unrenderedSceneTotal !== 1 ? 's' : '') + ' extracted — none rendered yet.',
-                { timeout: 30000 });
-            await gotoHash(page, '!/picture-book/' + unrendered.objectId + '/workflow');
-            await expect(empty).toBeVisible({ timeout: 45000 });
-            await page.locator('[data-back-to-book]').click();
-            await expect.poll(() => page.evaluate(() => window.location.hash), { timeout: 15000 })
-                .toBe('#!/picture-book/v2/' + unrendered.objectId);
-            await expect(page.locator('[data-pb2-book-name]')).toHaveText(displayName(unrendered), { timeout: 30000 });
-            return;
-        }
-        const wiz = page.locator('.am7-dialog').filter({ has: page.locator('.am7-dialog-title', { hasText: 'Picture Book —' }) }).last();
-        await expect(wiz, 'wizard dialog did not open from the canvas empty state').toBeVisible({ timeout: 30000 });
-        await expect(wiz.locator('.am7-dialog-title')).toHaveText('Picture Book — ' + displayName(unrendered));
-        const activeStep = wiz.locator('.rounded-full.bg-blue-500').first();
-        await expect(activeStep).toBeVisible({ timeout: 30000 });
-        expect(['4', '5'], 'wizard did not resume on a scene step').toContain((await activeStep.textContent()).trim());
-        await closeTopDialog(page, 'Cancel');
-        await expect(wiz).toHaveCount(0, { timeout: 10000 });
-        // Still on the canvas route after the wizard closes.
-        expect(await page.evaluate(() => window.location.hash)).toBe('#!/picture-book/' + unrendered.objectId + '/workflow');
-
+        await expectReaderHandoff(page, unrendered);
+        await expect(page.locator('[data-pb2-empty]')).toHaveText(
+            unrenderedSceneTotal + ' scene' + (unrenderedSceneTotal !== 1 ? 's' : '') + ' extracted — none rendered yet.',
+            { timeout: 30000 });
+        await gotoHash(page, '!/picture-book/' + unrendered.objectId + '/workflow');
+        await expect(empty).toBeVisible({ timeout: 45000 });
         await page.locator('[data-back-to-book]').click();
         await expect.poll(() => page.evaluate(() => window.location.hash), { timeout: 15000 })
             .toBe('#!/picture-book/v2/' + unrendered.objectId);
         await expect(page.locator('[data-pb2-book-name]')).toHaveText(displayName(unrendered), { timeout: 30000 });
-        await expect(page.locator('[data-pb2-empty]')).toHaveText(
-            unrenderedSceneTotal + ' scene' + (unrenderedSceneTotal !== 1 ? 's' : '') + ' extracted — none rendered yet.',
-            { timeout: 30000 });
     });
 
     // 6a. Same-route canvas navigation: a series chapter tile issues a NEW /workflow request and the
@@ -419,57 +367,6 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         await expect(page.locator('.list-results-container .result-nav')).toBeVisible({ timeout: 30000 });
         await expect.poll(() => page.evaluate((n) => Array.from(document.querySelectorAll('.list-results-container input'))
             .some((i) => i.value === n), character.name), { timeout: 30000 }).toBe(true);
-    });
-
-    // 8b. Character manager launched FROM INSIDE THE WIZARD (footer "Manage Characters" on step 4/5):
-    //     "Open Full Editor" opens a NEW TAB at /view/olio.charPerson/<oid>; the wizard and manager
-    //     dialogs — and the in-progress wizard state — stay exactly as they were in the original page.
-    test('wizard-launched character manager "Open Full Editor" opens a new tab and keeps the wizard open', async ({ page }) => {
-        test.skip(!charBook || !character, 'no PB2 book with a named character available to the shared user');
-        // P7-3: under v3 the pencil opens the V3 reader, so a wizard footer "Manage Characters" on
-        // step 4/5 is unreachable for an existing book — this is the v1 rollback proof of that path.
-        test.skip(v3, PB1_RETIRED_SKIP);
-        // The popup is a second page in the same context — it needs the WebSocket stub too.
-        await page.context().addInitScript(wsStubInit);
-        await loginAsSharedUser(page);
-        await gotoHash(page, '!/picture-book');
-        const row = await revealBookRow(page, charBook);
-
-        await row.locator('[data-pb2-edit="' + charBook.objectId + '"]').click();
-        const wiz = page.locator('.am7-dialog').filter({ has: page.locator('.am7-dialog-title', { hasText: 'Picture Book —' }) }).last();
-        await expect(wiz, 'wizard dialog did not open').toBeVisible({ timeout: 60000 });
-        await expect(wiz.locator('.am7-dialog-title')).toHaveText('Picture Book — ' + displayName(charBook));
-        const activeStep = wiz.locator('.rounded-full.bg-blue-500').first();
-        await expect(activeStep).toBeVisible({ timeout: 30000 });
-        expect(['4', '5'], 'wizard did not resume on a scene step').toContain((await activeStep.textContent()).trim());
-
-        const manageBtn = wiz.locator('.am7-dialog-footer button').filter({ hasText: 'Manage Characters' }).first();
-        await expect(manageBtn, 'wizard footer has no Manage Characters (bookObjectId not resumed?)').toBeVisible({ timeout: 30000 });
-        await manageBtn.click();
-        const mgr = page.locator('.am7-dialog').filter({ has: page.locator('.am7-dialog-title', { hasText: 'Manage Characters' }) }).last();
-        await expect(mgr).toBeVisible({ timeout: 30000 });
-        await mgr.locator('[data-char-item="' + character.objectId + '"]').click({ timeout: 30000 });
-        const link = mgr.locator('[data-char-full-editor="' + character.objectId + '"]');
-        await expect(link).toBeVisible({ timeout: 30000 });
-
-        const popupP = page.waitForEvent('popup', { timeout: 30000 });
-        await link.click();
-        const popup = await popupP;
-        await popup.waitForURL((u) => u.hash === '#!/view/olio.charPerson/' + character.objectId, { timeout: 30000 });
-        // The new tab shows the generic editor for the character (same session cookie).
-        await expect(popup.locator('.list-results-container .result-nav')).toBeVisible({ timeout: 45000 });
-
-        // Original page: route unchanged, wizard AND manager still open.
-        expect(await page.evaluate(() => window.location.hash)).toBe('#!/picture-book');
-        await expect(mgr).toBeVisible();
-        await expect(wiz).toBeVisible();
-        await expect(wiz.locator('.am7-dialog-title')).toHaveText('Picture Book — ' + displayName(charBook));
-
-        await popup.close();
-        await closeTopDialog(page, 'Close');
-        await expect(mgr).toHaveCount(0, { timeout: 10000 });
-        await closeTopDialog(page, 'Cancel');
-        await expect(wiz).toHaveCount(0, { timeout: 10000 });
     });
 
     // 7. Inline rename round-trip in the character manager (PATCH olio.charPerson), restored afterwards.

@@ -10,7 +10,7 @@
  *   GET  /rest/job/{jobId}, POST /rest/job/{jobId}/cancel
  *
  * Tiers (a gated skip is a skip, never a pass):
- *   default            — GET /rest/config/render-path says v3; compose on a scene-less book is a 200 no-op that
+ *   default            — compose on a scene-less book is a 200 no-op that
  *                        queues nothing; malformed body 400; unknown book 404; unknown scene 404; a create-from-scenes
  *                        import with no PictureBook bound answers composeJobSkipped. No LLM, no SD.
  *   PB_LLM_TESTS=1     — a create-from-scenes import bound to a /chapter book dual-writes its olio.pb.scene rows and
@@ -184,13 +184,6 @@ test.afterAll(async () => {
 
 // ────────────────────────────── default tier: no LLM, no SD ──────────────────────────────
 test.describe('compose routes (default tier)', () => {
-
-    test('the stack is on the V3 render path for PictureBook', async () => {
-        const r = await api.get(REST + '/config/render-path');
-        const rp = await expectStatus(r, 200, 'GET /config/render-path');
-        console.log(TAG + ' render-path: ' + JSON.stringify(rp));
-        expect(String(rp.picturebook).toLowerCase(), 'the compose routes are V3-only; the test stack boots picturebook on v3').toBe('v3');
-    });
 
     test('compose on a scene-less book is a 200 no-op: nothing is queued, the reason is named', async () => {
         const r = await api.post(PB + '/' + bookObjectId + '/compose', { data: {} });
@@ -767,15 +760,11 @@ test.describe('P4-12: per-scene compose migrates a locked legacy prompt first; a
         // As built (P2-5, asserted in pictureBookV3RenderPlan.spec.js): the Quick start DRAFT render executes the
         // scene's RENDER_PLAN node but never links it as scene.sceneNode - that pointer is written by the ChapBook
         // page render and the v1 graph build only. markSceneNodeStale keys on scene.sceneNode, so after Quick
-        // start alone a compose has no node to stale (§6.C 200 r). Measure that first, then link the rendered
-        // node as the fixture step (the precondition TestPbComposeFallback manufactures the same way) and prove
-        // the stale over REST on the product's own path.
-        let pages = await expectStatus(await api.get(PB + '/' + bookObjectId + '/pages'), 200, 'GET /pages before');
-        let page1 = pages.find(p => p.objectId === sceneIds[0]);
-        expect(page1, 'page for scene 1: ' + JSON.stringify(pages).slice(0, 600)).toBeTruthy();
-        console.log(TAG + ' scene 1 page after Quick start, before the link: ' + JSON.stringify(page1));
-        expect(page1.sceneNodeObjectId == null, 'Quick start does not link scene.sceneNode (P2-5 contract): ' + JSON.stringify(page1)).toBe(true);
-
+        // start alone a compose has no node to stale (§6.C 200 r). Measure that first on the scene record itself,
+        // then link the rendered node as the fixture step (the precondition TestPbComposeFallback manufactures
+        // the same way) and prove the stale over REST on the product's own path.
+        // Since P10-A 2 (§6.C 251) /pages resolves the scene's RENDER_PLAN node and its selected `base` first,
+        // so the page already shows the rendered node + image before any link; the link changes the FK, not the page.
         const wf = await expectStatus(await api.get(PB + '/' + bookObjectId + '/workflow'), 200, 'GET /workflow');
         const rp = (wf.nodes || []).filter(n => String(n.nodeType).toUpperCase() === 'RENDER_PLAN' && n.scopeRef === sceneIds[0]);
         expect(rp.length, 'one RENDER_PLAN node for scene 1 (Quick start rendered it): ' + JSON.stringify(wf.nodes).slice(0, 600)).toBe(1);
@@ -783,12 +772,37 @@ test.describe('P4-12: per-scene compose migrates a locked legacy prompt first; a
         console.log(TAG + ' scene 1 RENDER_PLAN node ' + rp[0].handle + ' ' + nodeOid + ' storedStatus=' + rp[0].storedStatus);
         expect(['DONE', 'DONE_UNVERIFIED'], 'rendered node is done before the compose').toContain(String(rp[0].storedStatus).toUpperCase());
 
+        const sceneNodeOf = async (label) => {
+            const res = await expectStatus(await api.post(REST + '/model/search', {
+                data: {
+                    schema: 'io.query', type: 'olio.pb.scene', request: ['id', 'objectId', 'sceneNode'], cache: false,
+                    fields: [
+                        { name: 'objectId', comparator: 'equals', value: sceneIds[0] },
+                        { name: 'organizationId', comparator: 'equals', value: 2 }
+                    ]
+                }
+            }), 200, 'olio.pb.scene search ' + label);
+            const rows = (res && res.results) || [];
+            expect(rows.length, 'scene 1 record ' + label).toBe(1);
+            return rows[0].sceneNode ? rows[0].sceneNode.objectId : null;
+        };
+        expect(await sceneNodeOf('before the link'), 'Quick start does not link scene.sceneNode (P2-5 contract)').toBeNull();
+
+        let pages = await expectStatus(await api.get(PB + '/' + bookObjectId + '/pages'), 200, 'GET /pages before');
+        let page1 = pages.find(p => p.objectId === sceneIds[0]);
+        expect(page1, 'page for scene 1: ' + JSON.stringify(pages).slice(0, 600)).toBeTruthy();
+        console.log(TAG + ' scene 1 page after Quick start, before the link: ' + JSON.stringify(page1));
+        expect(page1.sceneNodeObjectId, '/pages resolves the RENDER_PLAN node with no link (P10-A 2)').toBe(nodeOid);
+        expect(page1.dataObjectId, '/pages resolves the RENDER_PLAN node\'s selected base image (P10-A 2)').toBeTruthy();
+        const baseDataOid = page1.dataObjectId;
+
         const nodeRec = await expectStatus(await api.get(REST + '/model/olio.pb.node/' + nodeOid), 200, 'GET olio.pb.node');
         const sceneRec = await expectStatus(await api.get(REST + '/model/olio.pb.scene/' + sceneIds[0]), 200, 'GET olio.pb.scene');
         expect(nodeRec.id && sceneRec.id, 'numeric ids for the link patch').toBeTruthy();
         const linkBody = { schema: 'olio.pb.scene', id: sceneRec.id, objectId: sceneIds[0], sceneNode: { schema: 'olio.pb.node', id: nodeRec.id, objectId: nodeOid } };
         const linked = await expectStatus(await api.patch(REST + '/model', { data: linkBody }), 200, 'PATCH scene.sceneNode -> RENDER_PLAN node');
         expect(linked, 'PATCH returned ' + JSON.stringify(linked)).toBe(true);
+        expect(await sceneNodeOf('after the link'), 'scene.sceneNode now points at the RENDER_PLAN node').toBe(nodeOid);
 
         pages = await expectStatus(await api.get(PB + '/' + bookObjectId + '/pages'), 200, 'GET /pages after the link');
         page1 = pages.find(p => p.objectId === sceneIds[0]);
@@ -796,11 +810,8 @@ test.describe('P4-12: per-scene compose migrates a locked legacy prompt first; a
             + ' dataObjectId=' + page1.dataObjectId + ' reviewStatus=' + page1.reviewStatus);
         expect(page1.sceneNodeObjectId, '/pages resolves the linked node').toBe(nodeOid);
         expect(['DONE', 'DONE_UNVERIFIED'], 'stored status before the compose').toContain(String(page1.nodeStatus).toUpperCase());
-        // Measured, not asserted: even linked, /pages resolves a non-LANDSCAPE page node's image under artifact
-        // role `composite` (PbServiceFacade.pageArtifactRole) while executeRenderPlan records its image under
-        // role `base`, so dataObjectId stays absent here (§6.C 200 r). The stale contract under test does not
-        // depend on it.
-        expect(page1.dataObjectId, 'the RENDER_PLAN image is a `base` artifact, which /pages does not resolve (§6.C 200 r)').toBeUndefined();
+        // The RENDER_PLAN base wins before and after the link (P10-A 2): the image the page shows does not change.
+        expect(page1.dataObjectId, 'the RENDER_PLAN base image is still the page image after the link').toBe(baseDataOid);
 
         const t0 = Date.now();
         const r = await api.post(PB + '/' + bookObjectId + '/scene/' + sceneIds[0] + '/compose', { data: { force: true, chatConfigName }, timeout: 14 * 60 * 1000 });

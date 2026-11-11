@@ -116,8 +116,6 @@ public class TestChapBookPageLocation extends BaseTest {
 
 	@Before
 	public void setUpChapBookPageLocation() {
-		assertTrue("resource.properties must put ChapBooks on v3 for this class (BaseTest re-pins it)",
-			PbRenderPath.V3.equals(PbRenderPath.valueFor(chapBookStub())));
 		OlioModelNames.use();
 		OlioContextUtil.clearCache();
 		OrganizationContext ctx = getTestOrganization(ORG_PATH);
@@ -174,17 +172,6 @@ public class TestChapBookPageLocation extends BaseTest {
 	private static String status(BaseRecord rec, String field) {
 		Object v = rec.get(field);
 		return (v != null ? String.valueOf(v).toUpperCase() : null);
-	}
-
-	private static BaseRecord chapBookStub() {
-		try {
-			BaseRecord stub = RecordFactory.newInstance(OlioModelNames.MODEL_PB_BOOK, new String[] { OlioFieldNames.FIELD_PB_BOOK_TYPE });
-			stub.setValue(OlioFieldNames.FIELD_PB_BOOK_TYPE, "CHAPBOOK");
-			return stub;
-		}
-		catch (Exception e) {
-			throw new AssertionError("Cannot build a chapbook stub: " + e.getMessage(), e);
-		}
 	}
 
 	private static String planOidOf(String message) {

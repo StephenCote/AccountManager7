@@ -2427,7 +2427,7 @@ public class Chat {
 		public String sysPortraitObjectId;
 		public String usrPortraitObjectId;
 		public String label;
-		/// Individual components for Kontext pipeline (Option C stitch-and-prompt)
+		/// Individual components the composite builders (SceneCompositeUtil) consume
 		public String sysCharDesc;
 		public String usrCharDesc;
 		public String sceneDesc;
