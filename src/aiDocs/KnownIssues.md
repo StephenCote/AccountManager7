@@ -4086,13 +4086,13 @@ pass did not re-run. Numbering continues from KI-82.
   syntax as supported (`profile.portrait`); at least for this foreign `MODEL` field it is not. Work
   around by projecting the foreign record and resolving its fields with a second search.
 
-### KI-84. `GET /rest/olio/picture-book/{oid}/settings` 404s (`Book not found`) for a series-chapter `olio.pb.book` objectId — carried 2026-10-23; a fix appears present in code (`PictureBookService.java:1054-1064`, "same either-id as /scenes"), NOT re-verified live by this doc pass
+### KI-84. `GET /rest/olio/picture-book/{oid}/settings` 404s (`Book not found`) for a series-chapter `olio.pb.book` objectId — CLOSED 2026-11-12: re-verified live; `pictureBookChapteredManuscriptUx.spec.js:510-514` now pins `/settings` on every chapter id that just answered `/scenes`, and it answered 200 on all four chapters of the 4-chapter browser run (`scratch/post10-1/10-e2e-chaptered-4ch-rerun.log:81` ok, `:85 1 passed`, `:86 EXIT=0`; ledger §6.C 285). Fix is `PictureBookService.java:980` (`/{bookObjectId}/settings`) → `PictureBookUtil.getBookSdConfig:2030`, which resolves the id through `resolveBookGroupEither` (`:2032`), the same either-id resolution `/scenes` uses
 - `GET /rest/olio/picture-book/{oid}/settings` **404s (`Book not found`) for a series-chapter
   `olio.pb.book` objectId** — the same resolution gap Issue 1/B2 fixed for `/scenes`, `/characters`
   and reorder via `resolveBookGroupEither`, not applied to `/settings`. Seen from the wizard's Step 4
   on the `muhpnuzi` ch1 book; the wizard tolerates it.
 
-### KI-85. Scene prompts render `"0 year old boy child"` for adult characters whose `age` was never extracted — carried 2026-10-23; a fix appears present in code (`NarrativeUtil.isAgeUnstated`, `TestNarrativeUnstatedAge`), NOT re-verified by this doc pass
+### KI-85. Scene prompts render `"0 year old boy child"` for adult characters whose `age` was never extracted — CLOSED 2026-11-12: `TestNarrativeUnstatedAge` 3/3 (`scratch/post10-1/1-o7-series-set.log:64`, live LLM `:53 route=litellm tier=local`), and no `age=0` character in the 4-chapter browser run's cast of 17 (`10-e2e-chaptered-4ch-rerun.log:54-70`; ledger §6.C 285). Fix is `NarrativeUtil.isAgeUnstated`
 - **Scene prompts render `"0 year old boy child"` for adult characters whose `age` was never
   extracted.** Seen in the `muhpnuzi` ch1 scene "Simon and Braevarn in the Factory": `Simon: lean,
   straight-framed 0 year old boy child …`. `NarrativeUtil.describePhysical` (`:1165`) appends `age +
@@ -4100,7 +4100,7 @@ pass did not re-run. Numbering continues from KI-82.
   (0) tells SD to draw a child. This is a text-faithfulness defect on the same footing as race and it
   changes the image content. Not fixed here (shared Olio describer + extraction default) — flagged.
 
-### KI-86. Junk duplicate character `"Braevar,"` (trailing list separator) persisted beside the real `Braevarn` — carried 2026-10-23; a fix appears present in code (`PictureBookUtil.CharacterNameResolver` rule 3, `TestPictureBookCharacterNames`), NOT re-verified by this doc pass
+### KI-86. Junk duplicate character `"Braevar,"` (trailing list separator) persisted beside the real `Braevarn` — CLOSED 2026-11-12: `TestPictureBookCharacterNames` 29/29 (`scratch/post10-1/1-o7-series-set.log:89`), and no trailing-separator name in the 4-chapter browser run's cast of 17 (`10-e2e-chaptered-4ch-rerun.log:54-70`; ledger §6.C 285). Fix is `PictureBookUtil.CharacterNameResolver` rule 3. Still observed, out of this rule's scope: case-variant / abbreviation near-duplicates (`Caleb Mackay` + `Caleb MacKay`, `Lav. Drake` + `Lavrent Drake`) — an LLM output matter, not reopened here
 - **Junk duplicate character `"Braevar,"`** (trailing comma, age 0, "translucent wings") persisted
   alongside the real `Braevarn` (20-year-old man) in the same chapter. Character names coming out of
   reduce-character are not trimmed of trailing punctuation or de-duplicated by normalised name, so one

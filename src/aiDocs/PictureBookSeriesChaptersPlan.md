@@ -1,9 +1,11 @@
 # PictureBook Series / Chapters (N-series) — Implementation Plan
 
-**Status:** IN PROGRESS (2026-09-23) — authored 2026-09-20. Backend + Ux fan-out for the bounded
-per-chapter async extraction (fixes Issue 1's 90-min timeout, `archive/IssueLog-2026-09-22.md`) is landed;
-per-chapter scene persistence into each series chapter book (Full N-series) is being completed. Not
-yet end-to-end verified over a full multi-chapter manuscript.
+**Status:** BUILT AND TESTED (re-derived 2026-11-12 against the post-Phase-10 tree — §0a below has the
+`file:line` / `log:line`). Authored 2026-09-20; IN PROGRESS 2026-09-23 (backend + Ux fan-out for the bounded
+per-chapter async extraction landed, fixing Issue 1's 90-min timeout, `archive/IssueLog-2026-09-22.md`).
+End-to-end verified 2026-11-12 over the first 4 chapters of the real manuscript in a real browser against
+the Docker stack. Residue: the three §6.A authorization reds (Stephen's design call) and KI-83 / KI-87 —
+§0a. §2's exists/missing snapshot is left as the 2026-09-20 history it is.
 **Scope:** The "N-series" of `archive/PictureBookWorkflowOverhaul.md` §6 (N1–N4): make series/chapters
 real, share one Olio world per series, additive per-chapter ingest, series reader + chapter-scoped
 canvas. The "W-series" (W1–W5, graph recording) is already **done and verified** — this plan does
@@ -30,6 +32,30 @@ chapters. A single `.docx` → this is deliberately the **range-within-one-manus
 | Q9 | `MAX_SCENES` is per-chapter for now (no UX surface yet; if surfaced later, per-book/extension). Canvas shows **whole series AND can zoom to a single chapter** — two distinct view states. | N4: no new scene-cap field today; canvas gets two view states. |
 | Q11 | Chapter boundaries via **auto-detect headings + manual override** in the Ux. | N3: a real boundary→offset detector + an editable Ux review step. |
 | Age | **NO age floor in production code.** Stephen explicitly declined it — the age-handling code stays exactly as-is (`if (age > 0) charPerson.set("age", age)`). The toddler render was a **test-content** matter, not a code bug to patch. | N4: **remove** the proposed floor. This is only a **test-design caution** (§4): when choosing/exercising test characters, verify none render as children — do not manufacture a moral problem and imply Stephen requested it. |
+
+---
+
+## 0a. Build / test state as of 2026-11-12 (post-Phase-10 re-derivation, ledger §6.C 285)
+
+Every claim below was re-grepped on 2026-11-12 against HEAD `8184d9fe`; the test lines are quoted from
+the two runs in `scratch/post10-1/` (class-1 evidence, see `ArtifactInventory.md`).
+
+| Item | Landed in (`file:line`) | Proof |
+|---|---|---|
+| **N1** series record, one world per series, series Writer/Admin pair, chapters authorize against it (Q6/Q7) | `PbSeriesUtil.getCreateSeries:87` / `readSeries:223` / `findSeriesByWorld:258` / `incrementBookCount:292` / `deleteSeries:347`; `PbBookUtil.createBook(…series…):301` (no world minted — `book.world = series.universe`), `readBook:612`, `requireBookUpdate:626`; `PbOlioContextUtil.SERIES_ROLE_BASE:96`, `getCreateSeriesContext:607`; baseline→shadow copy / recopy / merge `PbSharingUtil.copyToChapterShadow:298`, `mergeChapterShadows:401`, `ROLE_CHAPTER_SOURCE:63`; `PbServiceFacade.createChapter:1511`, `recopyChapter:1679`, `mergeChapter:1783` | JUnit series set (`1-o7-series-set.log:53 [LLM-GATE] route=litellm tier=local` = in-stack LiteLLM over the container Ollama; `:4697 Tests run: 77, Failures: 3, Errors: 0, Skipped: 0`): `TestPbSeriesOneWorld` 1/1 `:4660`, `TestPbSeriesCreateFromScenesOneWorld` 1/1 `:4445`, `TestPbSeriesSlugRoundTrip` 1/1 `:4670`, `TestSeriesWorldDeleteGuard` 3/3 `:4688`, `TestPbSeriesCast` 6/7 `:4205` (baseline tier, distinct shadows per chapter, recopy discards shadow edits, merge pulls the baseline scalar and keeps the foreign override, chapter-delete scoped to its own shadows, scene resolver prefers the shadow — §4's (a)(b)(d)(e)), `TestPbSeriesMergeImagePrompt` 1/1 `:4597` and `TestPbChapterBookApparelRenderE2E` 1/1 `:3506` (both real `txt2img` calls to SwarmUI `http://192.168.1.39:7801`, gate `:48`/`:50`, `sd_xl_base_1.0`) |
+| **N2** `olio.pb.sourceRange` sub-record on the chapter, range-aware checkpoint key, provenance (Q8) | `models/olio/pb/sourceRangeModel.json`, `bookModel.json:40-58` (`series`, `sourceRange`); `PbServiceFacade.persistSourceProvenance:1874`; `PictureBookUtil.resolveExtractRange:1894`, `progressNoteName:5240` (range-keyed note name) | `TestExtractCheckpoint` 23/23 `:3323` incl. `TestTwoRangesOfOneDocumentGetIndependentCheckpoints` (`TestExtractCheckpoint.java:576`) and `TestOrphanCleanupPrefixDeletesEveryRangeNote` (`:644`); `TestPbChapterTextParity` 2/2 `:3519`; `TestPbSeriesChapterScenesResolve` 1/1 `:4352` |
+| **N3** heading detector + editable boundary review in the wizard (Q11) | `PbChapterBoundaryUtil.detectBoundaries:142`; Service7 `GET /chapter/detect-boundaries` `PictureBookService.java:1712`; Ux752 `workflows/pictureBookWorkflow.js` `detectBoundaries:874`, wizard `workflows/pictureBook.js:384` (detect) / `:463` (`createSeries`) / `createChapter:893` | `TestPbChapterBoundary` 2/2 `:83`; the browser run below detected 21 chapters of `HarlotsEight_Vol1_SM.docx` (`10-e2e-chaptered-4ch-rerun.log:7`) |
+| **N4** series reader (chapter `<select>`), bundled series card in the list, canvas Chapter / Series view states (Q9) | Service7 `/series` `:1563`, `/chapter` `:1598`, `/{book}/cast/recopy` `:1659`, `/{book}/cast/merge` `:1685`, `/series/{id}/books` `:1759`, `DELETE /series/{id}` `:1783`, `/{book}/settings` `:980`; Ux752 `workflows/pictureBookWorkflow.js` `listSeriesBooks:608`, `createSeries:630`; `features/pictureBookWorkflow.js` `boundaryRows:186`, `viewMode:195`, `renderSeriesView:1786` | `e2e/pictureBookChapteredManuscriptUx.spec.js` at `PB_UX_MAX_CHAPTERS=4` in a real Chromium against the Docker stack: `10-e2e-chaptered-4ch-rerun.log:4 [e2e-llm] route=litellm server=http://litellm:4000` (container Ollama on the host GPU; no Azure, no `.42`), `:47` fan-out 19.1 min / 0 passage retries, `:49` scenes per chapter `{"1":13,"2":9,"3":8,"4":8}`, `:52` chapter select lists all four, `:53` 17 characters, `:71` race tally all valid, `:80` teardown complete, `:81 ok 1 …`, `:85 1 passed (19.5m)`, `:86 EXIT=0`. The per-chapter `/settings` pin (KI-84) answered 200 on all four chapter ids inside that pass. Screens looked at: list bundled (4 chapter rows under the series card), reader on chapter 2, canvas landing (ch1 `13 nodes`, READY render_plan nodes), canvas **Series** view ("Series — 4 chapters", Ch 1 current) |
+
+**Residue, not closed by this pass:** (1) the three §6.A reds in that JUnit set — `TestPbDeleteSeries:119`,
+`TestPbListSeriesBooks:138`, `TestPbSeriesCast:532` (`:4693-4695`): a chapter's `sourceData` / `sourceRange` are
+the author's private `data.data`, so the olio principal and a series Writer are denied `readBook` by the
+foreign-access read rules; the remedies are listed in the archive (`PictureBookV3Implementation-P0-P4.md:6752`)
+and the choice is Stephen's — not a regression, byte-identical since 2026-10-10. (2) KI-83 (nested-path
+`request` projection) OPEN; KI-87 (the real DB's old prompt template) Stephen's. (3) The first 4-chapter run
+(`8-e2e-chaptered-4ch.log`) was red only on the spec's own listener flagging the wizard's designed resume probe
+(`GET /rest/model/olio.pb.book/{sourceDocId}` → 404, `tryResumeExistingBook` → `resolvePb2BookObjectId`,
+P7-3 / P10-1); the spec now exempts that one probe on its own manuscript id and nothing else (§6.C 285).
 
 ---
 

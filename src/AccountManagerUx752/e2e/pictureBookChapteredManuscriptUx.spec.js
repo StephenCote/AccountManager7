@@ -343,9 +343,16 @@ test.describe('PictureBook chaptered manuscript — real browser flow on Docker'
                 console.log('[NETWORK ' + resp.status() + '] ' + u + ' ' + body);
             }
             // The reader must never fetch a PictureBook record through a route that cannot serve it
-            // (/full on olio.pb.book 404s on the 100-argument limit). Any failing REST read is a defect.
+            // (/full on olio.pb.book 404s on the 100-argument limit). Any failing REST read is a defect,
+            // with ONE designed exception: the wizard's resume detection (tryResumeExistingBook →
+            // resolvePb2BookObjectId, P7-3/P10-1) asks GET /rest/model/olio.pb.book/{id} for the id it
+            // was opened on and reads a 404 as "not a book, fresh source document" — the same family as
+            // its /pb2 and /scenes probes. Only that probe, only on this run's own manuscript id, only a
+            // 404; a 404 on any chapter-book id, a /full read, or any other status still fails the run.
             if (u.includes('/rest/model/') && resp.request().method() === 'GET' && resp.status() >= 400) {
-                failedReads.push(resp.status() + ' ' + u);
+                const designedProbe = docObjectId && resp.status() === 404
+                    && u.endsWith('/rest/model/olio.pb.book/' + docObjectId);
+                if (!designedProbe) failedReads.push(resp.status() + ' ' + u);
             }
         });
         // Evidence: the chatConfig name the wizard actually sends on each extraction / create call.
