@@ -1,4 +1,5 @@
 > Archived 2026-10-25: closed `KnownIssues.md` entries that had **zero inbound citations** anywhere in the repo (code, tests, rules, docs, auto-memory) at the time of the move — KI-5, 6, 26, 41, 43a, 46, 50, 51, 52, 54, 55, 57, 58, 73, 75, 76 — moved verbatim under their original `## ` group headings. **Numbering is global with `../KnownIssues.md`; never reuse a number.** The live file keeps a one-line stub per moved id. Entries cited from source or docs stay live regardless of status.
+> Superseded 2026-11-10 (Phase 10, `../PictureBookV3Design.md` §28.1 Stage 4 / §37): the PB1 pipeline and FLUX Kontext this document describes are removed from the build (`../PictureBookV3Implementation.md` §6.C 270–274); history only.
 
 # AccountManager7 — Known Issues: closed, archived entries
 

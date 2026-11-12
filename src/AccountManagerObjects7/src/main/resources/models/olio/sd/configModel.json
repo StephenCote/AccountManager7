@@ -309,17 +309,11 @@
 			"description": "When true, skip landscape reference generation and use text-only scene prompt (single-stage generation)."
 		},
 		{
-			"name": "useKontext",
-			"type": "boolean",
-			"default": false,
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): legacy switch for the FLUX Kontext stitch-and-prompt pipeline. Not read by anything since Phase 10 P10-3 (resolveMode consults compositeMode only; a cleared compositeMode resolves to classic regardless of this value); the column is dropped at P10-4."
-		},
-		{
 			"name": "compositeMode",
 			"type": "string",
 			"maxLength": 16,
 			"default": "flux2",
-			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, the default and recommended mode) or 'classic' (Graphics2D paste + SDXL img2img). 'kontext' (FLUX Kontext stitched panel strip) was RETIRED at V3 design section 37.3 and REMOVED at Phase 10 P10-3: it is now simply an unsupported value, refused like any other unknown mode (resolveMode throws 'expected flux2|classic'; the chat scene route answers 400) before any LLM or SD work. A cleared value resolves to classic. DEFAULTS TO flux2 because its checkpoint (flux2Model, default flux2Klein_9b) is the one that actually ships on the local Swarm. It previously defaulted to unset, which fell back to useKontext=true and requested kontextModel's default flux1Kontext_flux1KontextDev - a checkpoint absent from the local node, so Swarm refused EVERY composite with 'Invalid model value for param Model' and the pipeline produced nothing."
+			"description": "Scene composite pipeline: 'flux2' (FLUX.2 multi-reference, the default and recommended mode) or 'classic' (Graphics2D paste + SDXL img2img). 'kontext' (FLUX Kontext stitched panel strip) was RETIRED at V3 design section 37.3 and REMOVED at Phase 10 P10-3: it is now simply an unsupported value, refused like any other unknown mode (resolveMode throws 'expected flux2|classic'; the chat scene route answers 400) before any LLM or SD work. A cleared value resolves to classic. DEFAULTS TO flux2 because its checkpoint (flux2Model, default flux2Klein_9b) is the one that actually ships on the local Swarm. It previously defaulted to unset, which fell back to the legacy Kontext boolean (then default true) and requested that pipeline's default checkpoint - one absent from the local node, so Swarm refused EVERY composite with 'Invalid model value for param Model' and the pipeline produced nothing. The six legacy Kontext fields (the boolean, model, steps, cfg, sampler, scheduler) were removed from this model at Phase 10 P10-4; their columns are dropped only by the database.dropColumns boot flag."
 		},
 		{
 			"name": "flux2Model",
@@ -396,39 +390,6 @@
 			"minValue": 256,
 			"maxValue": 2048,
 			"description": "Height of the FLUX.2 composite. Leave unset to use 768 (landscape, matching the classic pipeline)."
-		},
-		{
-			"name": "kontextModel",
-			"type": "string",
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE: the old default flux1Kontext_flux1KontextDev is not installed on the local Swarm, and because a default is never null it was sent on every kontext-mode request and refused with 'Invalid model value for param Model'. compositeMode now defaults to flux2 instead, and since Phase 2 compositeMode=kontext is refused at every entry point, so nothing reads this field until Phase 10 removes it."
-		},
-		{
-			"name": "kontextSteps",
-			"type": "int",
-			"minValue": 1,
-			"maxValue": 100,
-			"default": 28,
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Sampling steps for FLUX Kontext generation."
-		},
-		{
-			"name": "kontextCfg",
-			"type": "int",
-			"minValue": 1,
-			"maxValue": 20,
-			"default": 1,
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): CFG scale for FLUX Kontext (FLUX uses internal guidance, typically 1)."
-		},
-		{
-			"name": "kontextSampler",
-			"type": "string",
-			"default": "euler",
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Sampler for FLUX Kontext generation."
-		},
-		{
-			"name": "kontextScheduler",
-			"type": "string",
-			"default": "simple",
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Scheduler for FLUX Kontext generation."
 		},
 		{
 			"name": "landscapeSetting",

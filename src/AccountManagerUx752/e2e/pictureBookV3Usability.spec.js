@@ -6,9 +6,11 @@
  * single-document path rather than the hours-long per-chapter fan-out) is created by the walk itself and
  * LEFT IN PLACE in the resettable stack DB for inspection. No fixture short-cuts between steps: the book
  * the wizard made is the book the reader shows, the style editor locks, the board composes, the canvas
- * drags, the queue approves. Where a §16 step has no UI control today (ChapBook creation from a .docx,
- * Propose-from-scenes with a chosen chat config) the REST route is used and the short-cut is recorded in
- * the step note so it lands in §6.C. Step 15 (P9-6, §16 "Cover & Art") rides the P9-4 cover board and reader
+ * drags, the queue approves. What still runs over REST is fixture seeding the UI has no surface for (the
+ * legacy PB1 book of step 1, the .docx uploads of steps 2 and 13), the read-backs, and step 6's Propose
+ * fallback when the UI Propose yields nothing — each recorded in the step note so it lands in §6.C. The
+ * step-13 ChapBook is made through the UI (Add from Data → picker → Set poem order → Import → Create
+ * ChapBook → reader; P10-D 6). Step 15 (P9-6, §16 "Cover & Art") rides the P9-4 cover board and reader
  * hooks: Auto cover on the walk's book (LLM + the picked chat config) and a Manual cover with a saved camera on
  * the step-13 ChapBook, each rendered, approved, read back from GET /{book}/covers and shown by its reader;
  * the ChapBook export's cover slot carries the approved render.
@@ -32,7 +34,7 @@ import { gunzipSync } from 'zlib';
 import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, resolveChatRoute, ensureChatConfig, ensurePath, createObject } from './helpers/api.js';
-import { REST, PB_REST, CB_REST, restLoginShared, loginAsSharedUser, ensurePoemsGroup } from './helpers/chapbook.js';
+import { REST, PB_REST, restLoginShared, loginAsSharedUser } from './helpers/chapbook.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = '[p90-gate]';
@@ -203,6 +205,12 @@ async function step(page, n, name, fn) {
             for (let i = 0; i < 3 && (await page.locator('.am7-dialog, [role="dialog"]').count()); i++) {
                 const close = page.locator('.am7-dialog button:has-text("Close"), [role="dialog"] button:has-text("Close"), .am7-dialog button:has(span:text-is("close"))').last();
                 if (await close.count()) await close.click({ timeout: 5000 }).catch(() => {}); else await page.keyboard.press('Escape').catch(() => {});
+                await page.waitForTimeout(500);
+            }
+            // The ChapBook's own "Set poem order" / "Create ChapBook" overlays (step 13) are plain fixed divs, not .am7-dialog.
+            const cbDialog = page.locator('div.fixed.inset-0', { has: page.locator('h3:text-is("Create ChapBook"), h3:has-text("Set poem order")') });
+            for (let i = 0; i < 2 && (await cbDialog.count()); i++) {
+                await cbDialog.last().locator('button:has-text("Cancel"), button:has-text("Close"), button:has(span:text-is("close"))').last().click({ timeout: 5000 }).catch(() => {});
                 await page.waitForTimeout(500);
             }
             if (await page.locator('.am7-dialog, [role="dialog"]').count()) note += ' [dialog still open after cleanup]';
@@ -624,6 +632,10 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await expect(page.locator('.am7-dialog img').first()).toBeVisible({ timeout: 60000 });
             const portraitImg = await page.locator('.am7-dialog img').count();
             await shot(page, '05d-character-with-portrait');
+            // P10-D 3 (§6.C 267 i): the manager re-reads /characters from reimage's onImages callback, after the
+            // profile patch, so the row's `no portrait` badge is gone before any other write (run 24 still read
+            // "Alekhyano portrait" here and after the description save).
+            await expect(items.first(), 'list row after portrait render').not.toContainText('no portrait', { timeout: T.ui });
             const charsAfter = await pbGet(request, '/' + fx.book.objectId + '/characters');
             const me = (Array.isArray(charsAfter.body) ? charsAfter.body : []).find(c => c.objectId === firstOid) || {};
             expect(me.hasPortrait, '/characters hasPortrait for ' + firstOid).toBe(true);
@@ -804,6 +816,12 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await expect(page.getByTestId('pb-cmp-camera')).toBeVisible({ timeout: 60000 });
             const actors = await page.locator('li[data-actor-objectid]').count();
             const boxes = await page.locator('[data-testid^="pb-cmp-box-actor-"]').count();
+            // P10-D 1 (§6.C 267 i): no placement box or actor row is labelled by the raw actor.<comp>.<n> record name.
+            const boxLabels = await page.locator('[data-testid^="pb-cmp-box-actor-"]').allTextContents();
+            const rowHeads = await page.locator('li[data-actor-objectid] span.font-medium').allTextContents();
+            for (const t of boxLabels.concat(rowHeads)) {
+                expect(t.trim(), 'board label is never the system record name: ' + JSON.stringify(boxLabels) + ' ' + JSON.stringify(rowHeads)).not.toMatch(/^actor\.[0-9a-f-]+\.\d+$/);
+            }
             await shot(page, '07a-board-composed');
             // Camera / mood edit → save → revision bump.
             const revBefore = ((await page.getByTestId('pb-cmp-revision').textContent()) || '').trim();
@@ -1133,19 +1151,74 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
 
         // ── 13. ChapBook ─────────────────────────────────────────────────────────────────────────────
         await step(page, 13, 'ChapBook', async () => {
-            // Creation is REST (no UI control takes a .docx straight to a ChapBook) — a recorded partial short-cut.
-            const { groupId, organizationId } = await ensurePoemsGroup(request);
+            // P10-D 6 (§6.C 267 i): the ChapBook is made through the UI — Add from Data → the ObjectPicker in its default
+            // container (~/Data, name filter) → "Set poem order" → Import → "Create ChapBook (1)" → the Create dialog (title,
+            // slug, max lines, the dialog's own default chat config) → Create (async job) → the reader. Only the .docx upload
+            // stays a REST fixture: the generic data.data upload form is not a ChapBook surface, and every ChapBook spec seeds
+            // its sources that way (chapBookDataPickerNav.spec.js is the picker pattern).
             const docPath = path.join(MEDIA_DIR, SOURCE_DOC);
-            const dataName = 'p90-cb-' + stamp + '-' + SOURCE_DOC;
-            const data = await jsonOf(await request.post(REST + '/model', { data: { schema: 'data.data', name: dataName, groupId, contentType: DOCX_MIME, dataBytesStore: fs.readFileSync(docPath).toString('base64') } }));
+            const dataDir = await ensurePath(request, 'auth.group', 'data', '~/Data');        // the picker's default container for data.data
+            const dataName = 'p90-cb-' + stamp + '-' + SOURCE_DOC;                              // no '/', '~' or '..': the picker filter reads those as a path
+            const data = await jsonOf(await request.post(REST + '/model', { data: { schema: 'data.data', name: dataName, groupId: dataDir.id, groupPath: dataDir.path, contentType: DOCX_MIME, dataBytesStore: fs.readFileSync(docPath).toString('base64') } }));
             expect(data && data.objectId, 'ChapBook source upload').toBeTruthy();
-            const imp = await jsonOf(await request.post(CB_REST + '/poems', { data: { sources: [{ type: 'data.data', objectId: data.objectId, title: 'Kiss of the Sun Queen (P9-0 ' + stamp + ')' }] } }));
-            expect(imp.poems && imp.poems.length === 1 && !(imp.errors || []).length, 'POST /poems: ' + JSON.stringify(imp).slice(0, 300)).toBe(true);
+            await page.goto('/#!/chap-book', { timeout: T.ui });
+            const addFromData = page.locator('button', { hasText: 'Add from Data' });
+            if (!(await addFromData.isVisible().catch(() => false))) await page.locator('[data-testid="cb-config-toggle"]').click();
+            await expect(addFromData).toBeVisible({ timeout: T.ui });
+            await addFromData.click();
+            const overlay = page.locator('.am7-picker-overlay');
+            await expect(overlay).toBeVisible({ timeout: 15000 });
+            const filter = overlay.locator('#listFilter');
+            await filter.waitFor({ state: 'visible', timeout: 15000 });
+            await filter.fill(dataName);
+            await Promise.all([
+                page.waitForResponse(r => /\/rest\/model\/search$/.test(r.url()) && r.request().method() === 'POST', { timeout: 15000 }).catch(() => null),
+                filter.press('Enter')
+            ]);
+            const row = overlay.locator('tr.tabular-row', { hasText: dataName });
+            await expect(row, 'picker lists the uploaded .docx in ~/Data under its name filter').toBeVisible({ timeout: 20000 });
+            await row.first().click();
+            await overlay.locator('button:has(span.material-symbols-outlined:text-is("check"))').click();
+            const orderH3 = page.locator('h3', { hasText: 'Set poem order' });
+            await expect(orderH3).toBeVisible({ timeout: 15000 });
+            const orderTitle = ((await orderH3.textContent()) || '').trim();
+            await expect(page.locator('li[class*="rounded"] span[title="' + dataName + '"]'), 'the picked .docx is the one note to import').toBeVisible({ timeout: 10000 });
+            await shot(page, '13c-chapbook-poem-order');
+            const t0i = Date.now();
+            await page.locator('button', { hasText: 'Import 1 poem(s) in this order' }).click();
+            const importToast = await waitForToast(page, /Imported \d+ of \d+ poem|No poems were imported|Import failed/i, 120000);
+            const importMs = Date.now() - t0i;
+            expect(importToast, 'poem import (Tika, no LLM)').toMatch(/Imported 1 of 1/);
+            const createBtn = page.locator('button', { hasText: 'Create ChapBook (1)' });
+            await expect(createBtn, 'the imported poem is auto-selected').toBeVisible({ timeout: T.ui });
+            await createBtn.click();
+            const dialog = page.locator('div.fixed.inset-0', { has: page.locator('h3:text-is("Create ChapBook")') }).last();
+            await expect(dialog).toBeVisible({ timeout: 15000 });
             const cbSlug = 'p90-chap-' + stamp;
-            const created = await jsonOf(await request.post(CB_REST + '/create', { data: { slug: cbSlug, title: 'P9-0 ChapBook ' + stamp, poemObjectIds: [imp.poems[0].objectId], maxLinesPerPage: 20 } }));
-            const cbOid = created.objectId || created.bookObjectId;
-            expect(cbOid, 'POST /create: ' + JSON.stringify(created).slice(0, 300)).toBeTruthy();
-            fx.chapBook = { objectId: cbOid, slug: cbSlug, organizationId };
+            const cbTitle = 'P9-0 ChapBook ' + stamp;
+            const textInputs = dialog.locator('input[type="text"]');
+            await textInputs.nth(0).fill(cbTitle);                       // Title (the dialog slugifies it into Slug)
+            const autoSlug = await textInputs.nth(1).inputValue();
+            await textInputs.nth(1).fill(cbSlug);                        // Slug, kept at the gate's p90-chap-<stamp> shape
+            await dialog.locator('input[type="number"]').fill('20');     // Max Lines per Page (dialog default 8; the REST walk sent 20)
+            // The dialog's own default chat config (contentAnalysis, then generalChat — P10-D 4) is left as resolved; observation only.
+            await expect(dialog.locator('span', { hasText: 'Resolving default' })).toHaveCount(0, { timeout: T.ui }).catch(() => {});
+            const dialogChatConfig = ((await dialog.locator('label:has-text("Chat Config") + div > span').first().textContent().catch(() => '(unread)')) || '').trim();
+            await shot(page, '13d-chapbook-create-dialog');
+            const create = dialog.getByRole('button', { name: 'Create', exact: true });
+            await expect(create).toBeEnabled({ timeout: 5000 });
+            const t0c = Date.now();
+            await create.click();
+            await page.waitForURL(/#!\/chap-book\/read\//, { timeout: T.plan });
+            const createMs = Date.now() - t0c;
+            const cbOid = page.url().split('/chap-book/read/')[1].split(/[?#]/)[0];
+            expect(cbOid, 'reader route after Create').toBeTruthy();
+            const createdToast = await page.locator('.toast-text', { hasText: /ChapBook created/ }).count();
+            fx.chapBook = { objectId: cbOid, slug: cbSlug, organizationId: fx.user.organizationId };
+            // Read-back: the book the dialog made carries the slug typed into it.
+            const bookRows = await search(request, 'olio.pb.book', [{ name: 'objectId', comparator: 'equals', value: cbOid }], ['id', 'objectId', 'name', 'slug']);
+            const bookSlug = (bookRows[0] || {}).slug || '(book row not readable via model/search)';
+            expect(bookSlug, 'slug persisted from the Create dialog').toBe(cbSlug);
             const pages0 = await pbGet(request, '/' + cbOid + '/pages');
             const cbPages = Array.isArray(pages0.body) ? pages0.body : [];
             expect(cbPages.length, 'ChapBook pages').toBeGreaterThan(0);
@@ -1190,7 +1263,8 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await expect(pageImg).toBeVisible({ timeout: 60000 });
             const loaded = await pageImg.evaluate(el => el.complete && el.naturalWidth > 0);
             await shot(page, '13b-chapbook-reader');
-            return 'ChapBook ' + cbOid + ' slug=' + cbSlug + ' pages ' + cbPages.length + '; location chip count ' + chipCount + ' (location-id "' + chipLoc + '"); prompt before ' + (promptBefore ? promptBefore.length + ' chars' : 'empty') + '; save → "' + saveToast.trim() + '"; re-render → "' + rerenderToast.trim() + '" in ' + Math.round(renderMs / 1000) + ' s'
+            return 'UI: picker row "' + dataName + '" → "' + orderTitle + '" → "' + importToast.trim() + '" in ' + Math.round(importMs / 1000) + ' s → Create dialog (auto slug "' + autoSlug + '", chat config "' + dialogChatConfig + '") → reader in ' + Math.round(createMs / 1000) + ' s (created toast count ' + createdToast + '); REST book slug "' + bookSlug + '"'
+                + '; ChapBook ' + cbOid + ' slug=' + cbSlug + ' pages ' + cbPages.length + '; location chip count ' + chipCount + ' (location-id "' + chipLoc + '"); prompt before ' + (promptBefore ? promptBefore.length + ' chars' : 'empty') + '; save → "' + saveToast.trim() + '"; re-render → "' + rerenderToast.trim() + '" in ' + Math.round(renderMs / 1000) + ' s'
                 + '; REST composition promptLocked=' + c0.promptLocked + ' revision=' + c0.revision + ' (scene mirror rows ' + sceneRows.length + ' promptLocked=' + s0.promptLocked + ') image=' + (q0.dataObjectId || s0.imageObjectId) + '; reader cover <img> ' + coverImgs + ', page image loaded=' + loaded + '; no pre-V3 lock notice element exists (lock is the saved-prompt state, recorded)';
         });
 

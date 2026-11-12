@@ -137,14 +137,18 @@ writes from the epoch (`PbStaleUtil.put(scan, epoch)`, `persistStatus(…, inval
 
 ## Feature / product gates sit after authorization and existence checks, never before
 
-A gate that refuses a call because a product switch is off (`PbRenderPath.requireV3`, `requirePb1Entry`,
-`requireEnabledCompositeMode`) must run **after** the caller has been authorized against the record and the
-record has been resolved: `requireV3` sits after `requireBook` in `PbServiceFacade`; the PB1 gate sits in the
-`PictureBookUtil` body after `authorizeSceneAccess` / `authorizeSceneRecord` / the 404 (`PictureBookUtil.java:9711`
-states the invariant). A gate in a wrapper, or at the top of a batch method whose authorization is per item,
-turns a stranger's 403 / 404 into a 409 that confirms the record exists and breaks the authz tests
-(`TestPictureBookSceneAuthz`). Gates never live deep inside a job or node executor either: a switch changed
-mid-run must not abort work that was already admitted (design §28.1, ledger §6.C 215 a).
+A gate that refuses a call because a product switch is off must run **after** the caller has been authorized
+against the record and the record has been resolved. The three gates that established the rule
+(`PbRenderPath.requireV3`, `requirePb1Entry`, `requireEnabledCompositeMode`) were removed with PB1 and FLUX
+Kontext at Phase 10 (2026-11-10, P10-1 / P10-3) — the surviving example is the chat scene's `chat.renderPath`
+switch, which never refuses but is still read only at the top of `ChatService.generateScene`, after the user and
+session are resolved and after the `compositeMode` validation, and nowhere below it (`PbRenderPath.isChatV3()`);
+the `PbServiceFacade` `requireBook` → `requireBookUpdate` → `requireWorkflow` / `requireSceneOfBook` ordering is
+where any future gate goes, after those. A gate in a wrapper, or at the top of a batch method whose authorization
+is per item, turns a stranger's 403 / 404 into a 409 that confirms the record exists and breaks the authz tests
+(`TestPictureBookSceneAuthz` still pins the scene-entry denial order for the surviving entries;
+`TestChatSceneCompositeModeGate` pins the chat order). Gates never live deep inside a job or node executor
+either: a switch changed mid-run must not abort work that was already admitted (design §28.1, ledger §6.C 215 a).
 
 ## Config: DB-backed vs boot-pinned
 

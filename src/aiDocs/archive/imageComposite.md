@@ -1,4 +1,5 @@
 > Archived 2026-10-25: raw two-person Flux Kontext composite prompt (2026-08); the composite contract is now `../PictureBookV3Design.md` §37 (Kontext: deprecate or keep) and §38 (dynamic Comfy workflow compilation, `comfyworkflowraw`). Still cited by comments in `SDUtil.java`, `SWTxt2Img.java`, `SWUtil.java` and `olio/sd/flux2Defaults.json`, which now point at `aiDocs/archive/imageComposite.md`.
+> Superseded 2026-11-10 (Phase 10, `../PictureBookV3Design.md` §28.1 Stage 4 / §37): the PB1 pipeline and FLUX Kontext this document describes are removed from the build (`../PictureBookV3Implementation.md` §6.C 270–274); history only.
 
 Instruction for AI / Script
 Generate a composite image of two people in a shared setting using the SwarmUI HTTP API with a Flux Kontext (or Flux.2 / Qwen Image Edit) model.

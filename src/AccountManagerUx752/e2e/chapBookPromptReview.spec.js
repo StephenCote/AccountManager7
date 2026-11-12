@@ -7,6 +7,9 @@
  *   - the review is master/detail (P10-C 4): the page list has one row per scene and the ungated
  *     "Re-render this page" button (`.cb-rerender-page`) is on the ONE selected card — for every page
  *     once it is selected (it used to be stacked on every card at once);
+ *   - the "N of N pages have no LLM landscape prompt" summary toast (P10-C 1; this book is created with
+ *     no LLM, so every page carries the placeholder) is shown once per book load (P10-D 5, 266 j): a
+ *     Split through the UI reloads the review and must NOT re-fire it with the new page count;
  *   - editing a card's textarea then clicking Re-render drives the per-scene generate call with the
  *     EDITED text as a verbatim `sdPrompt` in the POST body. We intercept
  *     `**​/scene/*​/generate` with page.route and fulfil a stub (no real SD/LLM — the Docker stack has
@@ -199,6 +202,11 @@ test.describe('ChapBook — per-scene landscape-prompt review', () => {
         await expect(firstTextarea, 'landscape-prompt textarea for first scene not visible').toBeVisible({ timeout: 30000 });
         await expect(firstTextarea, 'textarea did not pre-fill with the stored landscape prompt')
             .toHaveValue(storedPrompt, { timeout: 15000 });
+        // 5b. P10-D 5 (266 j): the placeholder summary toast fires once on entry (the create ran with no LLM,
+        //     and the generic PATCH above does not lock the seeded prompt, so every page is a placeholder).
+        //     Asserted here, right after the load, because the toast expires after 5 s.
+        const summaryToast = page.locator('.toast-box', { hasText: 'no LLM landscape prompt' });
+        await expect(summaryToast, 'the entry load shows the placeholder summary once').toHaveCount(1, { timeout: 10000 });
 
         // 6. P10-C 4 (master/detail): the page list has one row per scene; the selected card — and only
         //    it — carries "Re-render this page" + the page Save (cb-page-save; "Save prompt" was folded into it 2026-11-10). Before P10-C 4 every card was stacked on
@@ -220,6 +228,17 @@ test.describe('ChapBook — per-scene landscape-prompt review', () => {
         }
         // Back on the first page for the edit below.
         await page.locator('[data-page-item="' + firstOid + '"]').click();
+        await expect(firstTextarea).toHaveValue(storedPrompt, { timeout: 15000 });
+
+        // 6b. P10-D 5 (266 j): once the entry toast has expired, Split the first page through the UI: the
+        //     review reloads with one more page and must not say "N+1 of N+1 pages …" again.
+        await expect(summaryToast, 'the entry toast expires').toHaveCount(0, { timeout: 15000 });
+        await page.getByTitle('Split stanza at midpoint into two pages').click();
+        await expect(page.locator('.toast-box', { hasText: 'Scene split' }), 'the split succeeded').toHaveCount(1, { timeout: 30000 });
+        await expect(page.locator('[data-page-item]'), 'the reload shows one more page').toHaveCount(sceneCount + 1, { timeout: 15000 });
+        // The reload's summary (pre-fix) arrives with the page list; give it a moment, then assert it did not.
+        await page.waitForTimeout(2000);
+        await expect(summaryToast, 'the split reload re-fired the placeholder summary').toHaveCount(0);
         await expect(firstTextarea).toHaveValue(storedPrompt, { timeout: 15000 });
 
         // 7. Intercept the per-scene generate call and stub it (no real SD/LLM). Capture the body.

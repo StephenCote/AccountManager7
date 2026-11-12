@@ -95,11 +95,30 @@ let toastConfig = {
     }
 };
 
+// P10-D 2 (§6.C 267 i): the region never piles up over the page toolbar. A toast identical to one still showing
+// (same type + message) is collapsed into it — its counter goes up and its timer restarts — and the region
+// holds at most TOAST_MAX_VISIBLE: a newer toast evicts the oldest one that is neither an error nor sticky
+// (expiry < 0, the indefinite progress toasts cleared by clearToast). Errors and sticky toasts are never evicted.
+const TOAST_MAX_VISIBLE = 3;
+let toastTimers = {};
+
+function liveToasts() { return toast.filter((t) => !t.burning); }
+
+function armToastExpiry(nt) {
+    if (toastTimers[nt.id]) { window.clearTimeout(toastTimers[nt.id]); delete toastTimers[nt.id]; }
+    if (nt.expiry >= 0) {
+        toastTimers[nt.id] = window.setTimeout(() => { burnToast(nt); }, nt.expiry);
+    }
+}
+
 function removeToast(id) {
+    if (toastTimers[id]) { window.clearTimeout(toastTimers[id]); delete toastTimers[id]; }
     toast = toast.filter((t) => t.id != id);
 }
 
 function burnToast(nt) {
+    if (nt.burning) return;
+    nt.burning = true;
     let o = document.querySelector("#toast-box-" + nt.id);
     if (o) {
         o.className = "transition transition-0 toast-box " + toastConfig[nt.type].style;
@@ -112,6 +131,8 @@ function burnToast(nt) {
 }
 
 function clearToast() {
+    toast.forEach((t) => { if (toastTimers[t.id]) window.clearTimeout(toastTimers[t.id]); });
+    toastTimers = {};
     toast = [];
     m.redraw();
 }
@@ -120,12 +141,26 @@ function addToast(type, msg, timeout) {
     // An unknown type must degrade, not throw: loadToast runs inside every redraw, so one bad
     // type string ('warning') used to take down the whole app render.
     if (!toastConfig[type]) type = (type === 'warning') ? 'warn' : 'info';
+    let dup = liveToasts().find((t) => t.type === type && t.message === msg);
+    if (dup) {
+        dup.count = (dup.count || 1) + 1;
+        if (timeout) dup.expiry = timeout;
+        armToastExpiry(dup);
+        m.redraw();
+        return dup.id;
+    }
+    let live = liveToasts();
+    if (live.length >= TOAST_MAX_VISIBLE) {
+        let victim = live.find((t) => t.type !== 'error' && t.expiry >= 0);
+        if (victim) burnToast(victim);
+    }
     let nt = {
         id: uid(luidStub),
         type,
         message: msg,
         visible: false,
-        expiry: timeout || 5000
+        expiry: timeout || 5000,
+        count: 1
     };
     toast.push(nt);
     window.setTimeout(() => {
@@ -135,11 +170,7 @@ function addToast(type, msg, timeout) {
             o.className = "transition transition-100 toast-box " + toastConfig[nt.type].style;
         }
     }, 10);
-    if (nt.expiry >= 0) {
-        window.setTimeout(() => {
-            burnToast(nt);
-        }, nt.expiry);
-    }
+    armToastExpiry(nt);
     m.redraw();
     return nt.id;
 }
@@ -155,11 +186,12 @@ function loadToast() {
         },
             m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "close")
         );
-        return m("div", { id: "toast-box-" + t.id, class: "transition transition-" + (t.visible ? "100" : "0") + " toast-box " + cfg.style, role: "status" }, [
+        return m("div", { id: "toast-box-" + t.id, class: "transition transition-" + (t.visible ? "100" : "0") + " toast-box " + cfg.style, role: "status", 'data-toast-type': t.type, 'data-toast-count': String(t.count || 1) }, [
             m("div", { class: cfg.icoStyle + " ico-box" }, [
                 m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, cfg.ico)
             ]),
             m("div", { class: "toast-text" }, t.message),
+            (t.count > 1 ? m("span", { class: "toast-count", title: String(t.count) + " identical notifications" }, "\u00d7" + t.count) : null),
             closeBtn
         ]);
     });

@@ -542,6 +542,54 @@ describe('canvas', () => {
     });
 });
 
+// P10-D 1 (§6.C 267 i): the server's actor DTO always carries the system record name `actor.<composition>.<i>`
+// (PbComposeUtil.createActor); the board must never show it. Label = characterName, else description, else role.
+describe('actor labels', () => {
+    const SYS = 'actor.a12959c9-d615-4dd3-8aa0-2d565bf1c66a.1';
+    function unbound(extra) {
+        return actorWire(Object.assign({ objectId: 'a9', name: SYS, characterObjectId: null, characterName: null, role: 'crowd', count: 3 }, extra || {}));
+    }
+    it('actorLabel: character name, else description, else the role lowercased, else "actor" — never the system name', () => {
+        expect(cmp.actorLabel({ name: SYS, characterName: 'Biju Rao', description: 'ignored' })).toBe('Biju Rao');
+        expect(cmp.actorLabel({ name: SYS, characterName: null, description: 'shadowy figures in traditional attire', role: 'crowd' })).toBe('shadowy figures in traditional attire');
+        expect(cmp.actorLabel({ name: SYS, characterName: null, description: null, role: 'CROWD' })).toBe('crowd');
+        expect(cmp.actorLabel({ name: SYS })).toBe('actor');
+        expect(cmp.actorLabel(null)).toBe('actor');
+    });
+    it('an unbound actor with a description is labelled by it on the row, the canvas box, the focal picker and the remove prompt', async () => {
+        seedBoard({ board: boardWire({ actors: [actorWire(), unbound({ description: 'shadowy figures in traditional attire' })] }), outfits: {} });
+        let v = view();
+        let row = one(v, 'pb-cmp-actor-a9');
+        expect(textOf(row)).toContain('shadowy figures in traditional attire');
+        expect(textOf(row)).not.toContain('actor.a12959c9');
+        let box = one(v, 'pb-cmp-box-actor-a9');
+        expect(textOf(box)).toBe('shadowy figures in traditional attire');
+        expect(box.attrs.title).toBe('shadowy figures in traditional attire');
+        let opts = one(v, 'pb-cmp-focal').children;
+        expect(opts.map(o => textOf(o))).toEqual(['(none)', 'Alice', 'shadowy figures in traditional attire']);
+        let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(false);
+        one(row, 'pb-cmp-actor-delete').attrs.onclick();
+        await waitFor(() => confirm.mock.calls.length === 1);
+        expect(confirm.mock.calls[0][0].message).toBe('Remove shadowy figures in traditional attire from the composition?');
+        expect(JSON.stringify(v)).not.toContain(SYS);
+    });
+    it('an unbound actor with no description is labelled by its role, not its system name', () => {
+        seedBoard({ board: boardWire({ actors: [unbound({ description: null })] }), outfits: {} });
+        let v = view();
+        expect(textOf(one(v, 'pb-cmp-box-actor-a9'))).toBe('crowd');
+        expect(textOf(one(v, 'pb-cmp-actor-a9'))).toContain('crowd');
+        expect(one(v, 'pb-cmp-focal').children.map(o => textOf(o))).toEqual(['(none)', 'crowd']);
+        expect(JSON.stringify(v)).not.toContain(SYS);
+    });
+    it('a bound actor keeps its character name and the row still carries the (unnamed) chip only when unbound', () => {
+        seedBoard({ board: boardWire({ actors: [actorWire({ name: 'actor.a12959c9-d615-4dd3-8aa0-2d565bf1c66a.0', description: 'ignored when bound' })] }), outfits: {} });
+        let v = view();
+        expect(textOf(one(v, 'pb-cmp-box-actor-a1'))).toBe('Alice');
+        expect(textOf(one(v, 'pb-cmp-actor-a1'))).not.toContain('unnamed');
+        expect(JSON.stringify(v)).not.toContain('actor.a12959c9');
+    });
+});
+
 describe('plan side', () => {
     it('shows the headline compiled prompt beside the composition and hands the full plan to PbPlanInspector', () => {
         seedBoard();

@@ -14,7 +14,6 @@
 import m from 'mithril';
 import { layout, pageLayout } from '../router.js';
 import { page } from '../core/pageClient.js';
-import { applicationPath } from '../core/config.js';
 import {
     getBookInfo, workflowView, nodeView, listStale,
     regenerateNode, pinNode, addMembers, createChapter, testNode,
@@ -26,7 +25,7 @@ import {
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
-import { loadPictureBook } from '../workflows/sceneExtractor.js';
+import { loadPictureBook, resolveImageUrl } from '../workflows/sceneExtractor.js';
 import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { ObjectPicker } from '../components/picker.js';
 import { Dialog } from '../components/dialogCore.js';
@@ -90,8 +89,27 @@ function statusColor(status) {
     return STATUS_COLOR[(status || '').toUpperCase()] || STATUS_COLOR.UNKNOWN;
 }
 
+// P10-D 7 (§6.C 233 e): there is no objectId-based /rest/resource route — every such <img> 404ed (~31 a gate
+// walk) — so an artifact's dataObjectId is resolved to its path-based /media URL through
+// sceneExtractor.resolveImageUrl (GET data.data → groupPath + name, memoised by objectId), the way the review queue,
+// the Locations panel and the character manager do. `imageUrls` is dataObjectId → url | null (null = in flight
+// or unresolvable); a tile whose URL is not resolved yet shows its placeholder, never a broken <img>.
+let imageUrls = {};
+
 function imageUrl(dataObjectId) {
-    return applicationPath + '/rest/resource/data.data/' + dataObjectId;
+    return (dataObjectId && imageUrls[dataObjectId]) || null;
+}
+
+/** Start resolving every artifact dataObjectId in a node view's role lists (once per id; redraws as each lands). */
+function resolveThumbs(artifacts) {
+    Object.keys(artifacts || {}).forEach(function (role) {
+        (artifacts[role] || []).forEach(function (a) {
+            let id = a && a.dataObjectId;
+            if (!id || imageUrls[id] !== undefined) return;
+            imageUrls[id] = null;
+            resolveImageUrl(id).then(function (u) { imageUrls[id] = u || null; m.redraw(); });
+        });
+    });
 }
 
 // ── Module-level state ────────────────────────────────────────────────
@@ -508,6 +526,7 @@ async function selectNode(nodeOid) {
     m.redraw();
     try {
         nodeDetails = await nodeView(pb2BookObjectId, nodeOid);
+        resolveThumbs(nodeDetails && nodeDetails.artifacts);
     } catch (e) {
         page.toast('error', 'Failed to load node detail');
     }
@@ -523,6 +542,7 @@ async function reloadNodeDetails() {
     m.redraw();
     try {
         nodeDetails = await nodeView(pb2BookObjectId, selectedNodeId);
+        resolveThumbs(nodeDetails && nodeDetails.artifacts);
         let known = {};
         Object.keys((nodeDetails && nodeDetails.artifacts) || {}).forEach(function (role) {
             (nodeDetails.artifacts[role] || []).forEach(function (a) { if (a && a.objectId) known[a.objectId] = true; });
@@ -810,9 +830,10 @@ function renderArtifactThumb(artifacts) {
         if (!list || !list.length) continue;
         let art = pickThumbArtifact(list);
         if (!art) continue;
-        if (art.dataObjectId && art.mimeType && art.mimeType.startsWith('image/')) {
+        let url = art.mimeType && String(art.mimeType).startsWith('image/') ? imageUrl(art.dataObjectId) : null;
+        if (url) {
             return m('img', {
-                src: imageUrl(art.dataObjectId),
+                src: url,
                 style: 'width:40px;height:40px;object-fit:cover;border-radius:4px;flex-shrink:0;',
                 loading: 'lazy',
             });
@@ -990,7 +1011,7 @@ function toggleCompare(objectId) {
 function renderArtifactTile(art) {
     let tile = artifactTileStyle(art);
     let compareIdx = artifactUi.compare.indexOf(art.objectId);
-    let isImage = !!(art.dataObjectId && art.mimeType && String(art.mimeType).startsWith('image/'));
+    let url = art.dataObjectId && art.mimeType && String(art.mimeType).startsWith('image/') ? imageUrl(art.dataObjectId) : null;
     return m('div', {
         key: art.objectId,
         'data-testid': 'pbwf-art-tile',
@@ -1009,9 +1030,9 @@ function renderArtifactTile(art) {
                 compareIdx >= 0 ? 'box-shadow:0 0 0 2px #f59e0b;' : ''
             ].join('')
         }, [
-            isImage
+            url
                 ? m('img', {
-                    src: imageUrl(art.dataObjectId),
+                    src: url,
                     style: 'width:56px;height:56px;object-fit:cover;display:block;',
                     loading: 'lazy',
                 })
@@ -1075,11 +1096,12 @@ function renderArtifactCompare() {
         ]),
         m('div', { style: 'display:flex;gap:6px;' }, picks.map(function (a, i) {
             let isImage = !!(a.dataObjectId && a.mimeType && String(a.mimeType).startsWith('image/'));
+            let url = isImage ? imageUrl(a.dataObjectId) : null;
             return m('div', { key: a.objectId, 'data-testid': 'pbwf-art-compare-item', style: 'flex:1;min-width:0;' }, [
-                isImage
-                    ? m('img', { src: imageUrl(a.dataObjectId), style: 'width:100%;aspect-ratio:1;object-fit:contain;background:#fff;border:1px solid #e2e8f0;border-radius:4px;display:block;' })
+                url
+                    ? m('img', { src: url, style: 'width:100%;aspect-ratio:1;object-fit:contain;background:#fff;border:1px solid #e2e8f0;border-radius:4px;display:block;' })
                     : m('div', { style: 'width:100%;aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:10px;color:#64748b;background:#fff;border:1px solid #e2e8f0;border-radius:4px;' },
-                        a.bytesDeleted ? 'bytes deleted' : (a.artifactType || 'no image')),
+                        a.bytesDeleted ? 'bytes deleted' : isImage ? '' : (a.artifactType || 'no image')),
                 m('div', { style: 'font-size:9px;color:#374151;margin-top:2px;word-break:break-word;' }, [
                     m('b', (i === 0 ? 'A ' : 'B ') + a.role + ' r' + (a.revision != null ? a.revision : '?')),
                     a.attempt != null ? ' v' + a.variantIndex : '',
@@ -1997,10 +2019,10 @@ export { openMemberDialog, openChapterDialog, openRetentionDialog };
 // Exported for Vitest (P1-10 S6): pure layout/colour helpers plus a seam for the drag-drop save.
 // P6-4 adds the variant strip / compare / retention pieces.
 export { computePositions, storedPosition, pickThumbArtifact, statusColor, STATUS_COLOR, onCanvasMouseUp, renderNodeDetailPanel, toggleNodePlan, NODE_TYPE_RANK, TYPE_ACCENT, typeAccent, renderNodeCard };
-export { renderArtifactHistory, renderArtifactCompare, artifactTileStyle, artifactTileTitle, toggleCompare, renderRetentionDialogContent, retentionDialogActions, doScanRetention, doApplyRetention };
+export { renderArtifactHistory, renderArtifactCompare, artifactTileStyle, artifactTileTitle, toggleCompare, renderRetentionDialogContent, retentionDialogActions, doScanRetention, doApplyRetention, resolveThumbs, selectNode };
 export const CANVAS_GEOMETRY = { CARD_W, CARD_H, COL_GAP, ROW_GAP, CANVAS_PAD };
 export function __canvasStateForTest() {
-    return { graphData, positions, draggingNodeId, pb2BookObjectId, selectedNodeId, nodeDetails, nodePlan, artifactUi, retention };
+    return { graphData, positions, draggingNodeId, pb2BookObjectId, selectedNodeId, nodeDetails, nodePlan, artifactUi, retention, imageUrls };
 }
 export function __setCanvasStateForTest(patch) {
     patch = patch || {};
@@ -2014,6 +2036,7 @@ export function __setCanvasStateForTest(patch) {
     if ('nodePlan' in patch) nodePlan = Object.assign({ nodeId: null, loading: false, open: false, plan: null, artifact: null, error: null }, patch.nodePlan || {});
     if ('artifactUi' in patch) artifactUi = Object.assign({ showArchived: false, compare: [] }, patch.artifactUi || {});
     if ('retention' in patch) retention = Object.assign({}, RETENTION_DEFAULTS, patch.retention || {});
+    if ('imageUrls' in patch) imageUrls = Object.assign({}, patch.imageUrls || {});
 }
 
 // ── Routes ────────────────────────────────────────────────────────────

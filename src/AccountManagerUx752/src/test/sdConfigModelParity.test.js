@@ -63,7 +63,8 @@ describe('client olio.sd.config mirrors the server configModel.json', () => {
 
     it('every checkpoint-name default the client seeds is exactly the server default (never an invented name)', () => {
         let modelFields = Object.keys(sf).filter(n => /model$/i.test(n));
-        expect(modelFields).toEqual(expect.arrayContaining(['model', 'refinerModel', 'flux2Model', 'kontextModel']));
+        expect(modelFields).toEqual(expect.arrayContaining(['model', 'refinerModel', 'flux2Model']));
+        expect(modelFields, 'the legacy Kontext checkpoint field left the model at Phase 10 P10-4').not.toContain('kontextModel');
         let prim = am7model.newPrimitive('olio.sd.config');
         modelFields.forEach(name => {
             if (sf[name].default === undefined) expect(prim[name], name + ' must stay unset').toBeNull();

@@ -207,6 +207,9 @@
     .toast-box .toast-text {
         @apply ms-3 text-sm font-normal
     }
+    .toast-box .toast-count {
+        @apply ms-2 px-1.5 rounded-full text-xs font-semibold bg-black/10 dark:bg-white/20
+    }
     .toast-box.transition {
         @apply transition-opacity duration-300 ease-in-out
     }

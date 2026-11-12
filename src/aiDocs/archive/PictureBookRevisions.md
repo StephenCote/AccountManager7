@@ -1,3 +1,5 @@
+> Superseded 2026-11-10 (Phase 10, `../PictureBookV3Design.md` §28.1 Stage 4 / §37): the PB1 pipeline and FLUX Kontext this document describes are removed from the build (`../PictureBookV3Implementation.md` §6.C 270–274); history only.
+
 # Picture Book — Revision Plan
 
 **Date:** 2026-03-29

@@ -31,9 +31,11 @@ import jakarta.ws.rs.core.Response;
  * <ul>
  * <li>{@code compositeMode=kontext} (any case/whitespace) is simply one more unsupported value: the generic
  * 400 with the {@link SceneCompositeUtil#SUPPORTED_MODES} hint, exactly like {@code bogus};</li>
- * <li>the legacy {@code useKontext} boolean is not read at all: {@code true} with a blank or null
- * {@code compositeMode} resolves to classic and passes the gate (previously 409). With the key absent the
- * schema default {@code flux2} is materialised on read (measured; see the case javadoc);</li>
+ * <li>a blank or null {@code compositeMode} resolves to classic and passes the gate (previously, with the
+ * legacy Kontext boolean set, 409). With the key absent the schema default {@code flux2} is materialised on
+ * read (measured; see the case javadoc). Since P10-4 the six legacy Kontext fields are not on the model at
+ * all, so a body still carrying them (a client round-tripping an old saved config) has them dropped by the
+ * deserializer and is otherwise handled exactly as above;</li>
  * <li>a supported mode (or no mode at all) passes the gate and reaches the session lookup - for a random
  * objectId that is the 404 "Chat request not found", the farthest a direct call can go without a session.</li>
  * </ul>
@@ -86,45 +88,46 @@ public class TestChatSceneCompositeModeGate extends BaseTest {
 	}
 
 	/**
-	 * Phase 10 P10-3: the legacy {@code useKontext} boolean is not read by {@code resolveMode} any more (its
-	 * column goes at P10-4). {@code true} with a blank or null {@code compositeMode} - what a client posts when
-	 * it round-trips a pre-{@code compositeMode} saved config whose column is SQL NULL - therefore resolves to
-	 * classic and passes the gate on both paths (404 = session lookup reached). Before P10-3 this was the 409
-	 * "resolves to the retired mode" refusal.
+	 * Phase 10 P10-3: a blank or null {@code compositeMode} - what a client posts when it round-trips a
+	 * pre-{@code compositeMode} saved config whose column is SQL NULL - resolves to classic and passes the gate
+	 * on both paths (404 = session lookup reached). Before P10-3 such a body with the legacy Kontext boolean
+	 * set was the 409 "resolves to the retired mode" refusal.
 	 */
 	@Test
-	public void TestUseKontextWithBlankOrNullModeResolvesClassicAndPassesOnBothPaths() {
+	public void TestBlankOrNullModeResolvesClassicAndPassesOnBothPaths() {
 		for (String chatPath : new String[] { PbRenderPath.V1, PbRenderPath.V3 }) {
 			PbRenderPath.configure(chatPath);
-			Response blank = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"\",\"useKontext\":true,\"refinerModel\":\"x\"}");
-			assertEquals("chat=" + chatPath + ": blank compositeMode + useKontext=true is classic since P10-3", 404, blank.getStatus());
+			Response blank = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"\",\"refinerModel\":\"x\"}");
+			assertEquals("chat=" + chatPath + ": blank compositeMode is classic since P10-3", 404, blank.getStatus());
 			assertEquals("Chat request not found", body(blank).get("error"));
-			Response nul = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":null,\"useKontext\":true,\"refinerModel\":\"x\"}");
-			assertEquals("chat=" + chatPath + ": null compositeMode + useKontext=true is classic since P10-3", 404, nul.getStatus());
+			Response nul = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":null,\"refinerModel\":\"x\"}");
+			assertEquals("chat=" + chatPath + ": null compositeMode is classic since P10-3", 404, nul.getStatus());
 			assertEquals("Chat request not found", body(nul).get("error"));
 		}
 	}
 
 	/**
-	 * Measured, not assumed (2026-10-15): {@code useKontext=true} with the {@code compositeMode} KEY ABSENT is not
-	 * refused. {@code RecordDeserializer} keeps only the fields the JSON names, but {@code BaseRecord.get} of a
-	 * declared-but-absent field materialises it at its schema default ({@code checkField} →
-	 * {@code RecordFactory.newFieldInstance}), so {@code resolveMode} reads {@code compositeMode="flux2"} - the
-	 * same "schema default wins" rule the Objects7 override path shows. The route proceeds (404 = session lookup
-	 * reached). Since P10-3 the boolean is not consulted in any case; this pins the materialised default.
+	 * Phase 10 P10-4: the six legacy Kontext fields are no longer declared on {@code olio.sd.config}. A body that
+	 * still carries them - the deprecated Ux7 client seeded its saved sdConfig with the boolean and the checkpoint
+	 * name - must be tolerated, not refused: {@code RecordDeserializer} logs {@code Invalid field} for each unknown
+	 * key and drops it, so the body is handled exactly like one without them (blank mode -> classic -> 404, the
+	 * session lookup reached; no mode -> the flux2 default materialised -> 404).
 	 */
 	@Test
-	public void TestUseKontextAloneMaterialisesTheFlux2DefaultAndPasses() {
-		Response r = generate("{\"schema\":\"olio.sd.config\",\"useKontext\":true,\"refinerModel\":\"x\"}");
-		assertEquals(404, r.getStatus());
-		assertEquals("Chat request not found", body(r).get("error"));
+	public void TestRemovedKontextKeysOnTheWireAreDroppedNotRefused() {
+		Response blank = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"\",\"useKontext\":true,\"kontextModel\":\"flux1Kontext_flux1KontextDev\",\"kontextSteps\":28,\"refinerModel\":\"x\"}");
+		assertEquals("removed keys with a blank mode: classic, lookup reached", 404, blank.getStatus());
+		assertEquals("Chat request not found", body(blank).get("error"));
+		Response alone = generate("{\"schema\":\"olio.sd.config\",\"useKontext\":true,\"refinerModel\":\"x\"}");
+		assertEquals("removed boolean alone: the flux2 default is materialised, lookup reached", 404, alone.getStatus());
+		assertEquals("Chat request not found", body(alone).get("error"));
 	}
 
-	/** §6.C 14 at the transport: a blank mode with no boolean resolves CLASSIC and passes. */
+	/** §6.C 14 at the transport: a blank mode resolves CLASSIC and passes. */
 	@Test
-	public void TestBlankModeWithoutUseKontextResolvesClassicAndPasses() {
+	public void TestBlankModeResolvesClassicAndPasses() {
 		Response r = generate("{\"schema\":\"olio.sd.config\",\"compositeMode\":\"\",\"refinerModel\":\"x\"}");
-		assertEquals("a blank mode with no boolean is classic", 404, r.getStatus());
+		assertEquals("a blank mode is classic", 404, r.getStatus());
 		assertEquals("Chat request not found", body(r).get("error"));
 	}
 
@@ -160,15 +163,19 @@ public class TestChatSceneCompositeModeGate extends BaseTest {
 		}
 	}
 
-	/** No mode and no legacy boolean resolves to classic; the route proceeds to the 404 lookup. */
+	/**
+	 * Measured, not assumed (2026-10-15): with the {@code compositeMode} KEY ABSENT the route is not refused.
+	 * {@code RecordDeserializer} keeps only the fields the JSON names, but {@code BaseRecord.get} of a
+	 * declared-but-absent field materialises it at its schema default ({@code checkField} →
+	 * {@code RecordFactory.newFieldInstance}), so {@code resolveMode} reads {@code compositeMode="flux2"} - the
+	 * same "schema default wins" rule the Objects7 override path shows. The route proceeds (404 = session lookup
+	 * reached). This pins the materialised default.
+	 */
 	@Test
-	public void TestAbsentModeResolvesToClassicAndReachesTheSessionLookup() {
+	public void TestAbsentModeMaterialisesTheFlux2DefaultAndReachesTheSessionLookup() {
 		Response r = generate("{\"schema\":\"olio.sd.config\",\"refinerModel\":\"x\"}");
 		assertEquals(404, r.getStatus());
 		assertEquals("Chat request not found", body(r).get("error"));
-		/// explicit useKontext=false is the classic path too
-		Response r2 = generate("{\"schema\":\"olio.sd.config\",\"useKontext\":false,\"refinerModel\":\"x\"}");
-		assertEquals(404, r2.getStatus());
 	}
 
 	private Response generate(String json) {

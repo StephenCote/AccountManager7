@@ -10311,17 +10311,11 @@
 			"description": "When true, skip landscape reference generation and use text-only scene prompt (single-stage generation)."
 		},
 		{
-			"name": "useKontext",
-			"type": "boolean",
-			"default": false,
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): legacy switch for the FLUX Kontext stitch-and-prompt pipeline. Not read by anything since Phase 10 P10-3; the column is dropped at P10-4."
-		},
-		{
 			"name": "compositeMode",
 			"type": "string",
 			"maxLength": 16,
 			"default": "flux2",
-			"description": "Scene composite pipeline: 'flux2' (default) or 'classic'. 'kontext' was retired (V3 design section 37.3) and removed at Phase 10 P10-3: it is an unsupported value, refused like any other unknown mode (400, expected flux2|classic)."
+			"description": "Scene composite pipeline: 'flux2' (default) or 'classic'. 'kontext' was retired (V3 design section 37.3) and removed at Phase 10 P10-3: it is an unsupported value, refused like any other unknown mode (400, expected flux2|classic). The six legacy Kontext fields were removed from this model at P10-4."
 		},
 		{
 			"name": "flux2Model",
@@ -10391,39 +10385,6 @@
 			"minValue": 1,
 			"maxValue": 150,
 			"description": "Sampling steps for the mannequin img2img pass. Unset means 60."
-		},
-		{
-			"name": "kontextModel",
-			"type": "string",
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): FLUX Kontext model name for scene compositing. NO DEFAULT ON PURPOSE; since Phase 2 compositeMode=kontext is refused at every entry point, so nothing reads this field until Phase 10 removes it."
-		},
-		{
-			"name": "kontextSteps",
-			"type": "int",
-			"minValue": 1,
-			"maxValue": 100,
-			"default": 28,
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Sampling steps for FLUX Kontext generation."
-		},
-		{
-			"name": "kontextCfg",
-			"type": "int",
-			"minValue": 1,
-			"maxValue": 20,
-			"default": 1,
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): CFG scale for FLUX Kontext (FLUX uses internal guidance, typically 1)."
-		},
-		{
-			"name": "kontextSampler",
-			"type": "string",
-			"default": "euler",
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Sampler for FLUX Kontext generation."
-		},
-		{
-			"name": "kontextScheduler",
-			"type": "string",
-			"default": "simple",
-			"description": "DEPRECATED (V3 §37.3; disabled in Phase 2, removed in Phase 10): Scheduler for FLUX Kontext generation."
 		},
 		{
 			"name": "landscapeSetting",

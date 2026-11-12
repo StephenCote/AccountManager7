@@ -71,8 +71,8 @@ public class SceneCompositeUtil {
 	/// to itself so the transport could refuse it with a dedicated message; both paths are gone. A
 	/// saved config that asks for a pipeline that does not exist is an invalid input, and the caller
 	/// (ChatService.generateScene) turns the exception into a 400 rather than rendering a different
-	/// pipeline than the one the config names. The legacy {@code useKontext} boolean, which this method
-	/// consulted when compositeMode was absent, is ignored from P10-3 (its column goes at P10-4).
+	/// pipeline than the one the config names. The legacy Kontext boolean this method once consulted
+	/// when compositeMode was absent stopped being read at P10-3 and left the model at P10-4.
 	///
 	/// @throws IllegalArgumentException when compositeMode is set to a value outside SUPPORTED_MODES
 	public static String resolveMode(BaseRecord sdConfig) {

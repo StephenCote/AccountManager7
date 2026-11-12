@@ -507,6 +507,11 @@ test.describe('PictureBook chaptered manuscript — real browser flow on Docker'
             expect(['failed', 'unknown'], 'chapter ' + b.chapter + ' status ' + b.bookStatus)
                 .not.toContain(String(b.bookStatus).toLowerCase());
             expect(list.length, 'chapter ' + b.chapter + ' has scenes').toBeGreaterThan(0);
+            // KI-84: /settings once 404'd ("Book not found") for a series-chapter objectId because it lacked the
+            // either-id resolution /scenes got. Pin it on every chapter: the same id that just answered /scenes
+            // must answer /settings (getJson asserts ok()).
+            const settings = await getJson(request, PB_REST + '/' + b.objectId + '/settings');
+            expect(settings && typeof settings === 'object', 'chapter ' + b.chapter + ' /settings body').toBe(true);
         }
         console.log('[ux-chapters] scenes per chapter: ' + JSON.stringify(sceneCounts));
 

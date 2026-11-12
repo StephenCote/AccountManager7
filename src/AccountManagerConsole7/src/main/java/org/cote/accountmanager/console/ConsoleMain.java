@@ -17,6 +17,7 @@ import org.cote.accountmanager.console.actions.ExportAction;
 import org.cote.accountmanager.console.actions.IAction;
 import org.cote.accountmanager.console.actions.OlioAction;
 import org.cote.accountmanager.console.actions.PatchAction;
+import org.cote.accountmanager.console.actions.PbCleanupAction;
 import org.cote.accountmanager.console.actions.ServerConfigAction;
 import org.cote.accountmanager.console.actions.TestAction;
 import org.cote.accountmanager.io.IOContext;
@@ -46,7 +47,8 @@ public class ConsoleMain {
 		new PatchAction(),
 		new ExportAction(),
 		new TestAction(),
-		new ServerConfigAction()
+		new ServerConfigAction(),
+		new PbCleanupAction()
 	};
 	
 	public static void main(String[] args){

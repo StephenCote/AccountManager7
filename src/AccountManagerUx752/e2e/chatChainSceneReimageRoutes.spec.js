@@ -10,9 +10,10 @@
  *       P2-8 (2026-10-15, V3 design §37.3 Disable) gave 'kontext' a dedicated 400/409 "replaced by
  *       V3" refusal; Phase 10 P10-3 (2026-11-10, §37.5 Removal) deleted the pipeline and that
  *       refusal, so compositeMode:'kontext' (any case) is now the same generic 400 as any unknown
- *       mode, and the legacy useKontext boolean is not read at all - useKontext:true with a
- *       blank/null compositeMode resolves to classic and passes the gate (404 = session lookup
- *       reached), as does useKontext:true ALONE (the flux2 schema default is materialised).
+ *       mode; a blank/null compositeMode resolves to classic and passes the gate (404 = session
+ *       lookup reached). P10-4 removed the six legacy Kontext fields from olio.sd.config, so a body
+ *       still carrying them (an old saved config) has them dropped by the deserializer and is
+ *       otherwise handled the same way.
  *   15. POST /rest/olio/olio.charPerson/{objectId}/reimage — the literal "((DEPRECATED))" prompt
  *       argument was removed end-to-end (OlioService → SDUtil → SWUtil → NarrativeUtil). This hits
  *       the live Swarm SD server configured on the stack and is gated behind E2E_SD_LIVE=1 because
@@ -24,7 +25,7 @@
  *       has history, then two renders against the stack SD server:
  *         (a) compositeMode:'classic' — the classic img2img branch; the PNG is the posted 512x512 and
  *             the container log shows `Scene composite [classic]`, no `[flux2]`.
- *         (b) compositeMode and useKontext ABSENT — the olio.sd.config schema default (`flux2`,
+ *         (b) compositeMode ABSENT — the olio.sd.config schema default (`flux2`,
  *             configModel.json) is materialized by the deserializer, so the body resolves to FLUX2
  *             at the flux2Defaults.json size (1024x768), not classic. The absent-field classic
  *             fallback is only reachable for hand-built configs with a null compositeMode; a REST
@@ -288,35 +289,39 @@ test.describe('generateScene composite mode validation (item 14)', () => {
         }
     });
 
-    // Phase 10 P10-3: resolveMode no longer reads the legacy useKontext boolean (its column goes at P10-4),
-    // so the P2-8 409 "resolves to the retired mode" refusal is gone - these bodies resolve to classic.
-    test('legacy useKontext:true with a blank or null compositeMode resolves to classic since P10-3 and passes the gate', async ({ request }) => {
+    // Phase 10 P10-3: resolveMode reads compositeMode only, so the P2-8 409 "resolves to the retired
+    // mode" refusal is gone - a blank or null mode resolves to classic. P10-4 then removed the six legacy
+    // Kontext fields from olio.sd.config; a body still carrying them (the deprecated Ux7 client seeded its
+    // saved sdConfig with the boolean and the checkpoint name) must be tolerated, not refused: the
+    // deserializer drops each unknown key (ERROR "Invalid field" in the server log) and the body is
+    // handled exactly like one without them.
+    test('a blank or null compositeMode resolves to classic since P10-3; the Kontext keys removed at P10-4 are dropped on the wire, not refused', async ({ request }) => {
         const { ctx } = await userContext(request);
         try {
             for (const compositeMode of ['', null]) {
                 const resp = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
-                    data: { schema: 'olio.sd.config', compositeMode, useKontext: true }
+                    data: { schema: 'olio.sd.config', compositeMode }
                 });
-                expect(resp.status(), 'compositeMode ' + JSON.stringify(compositeMode) + ' + useKontext:true is classic now').toBe(404);
+                expect(resp.status(), 'compositeMode ' + JSON.stringify(compositeMode) + ' is classic now').toBe(404);
                 expect((await resp.json()).error).toBe('Chat request not found');
             }
 
+            // removed keys + blank mode: dropped, classic, lookup reached
+            const legacyKeys = { useKontext: true, kontextModel: 'flux1Kontext_flux1KontextDev', kontextSteps: 28 };
+            const stale = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
+                data: Object.assign({ schema: 'olio.sd.config', compositeMode: '' }, legacyKeys)
+            });
+            expect(stale.status(), 'removed Kontext keys with a blank mode are dropped, not refused').toBe(404);
+            expect((await stale.json()).error).toBe('Chat request not found');
+
             // Measured 2026-10-15: with the compositeMode KEY ABSENT the schema default (flux2) is
             // materialised when the route reads the field (BaseRecord.get of a declared-but-absent field),
-            // so the route proceeds (404 = session lookup reached). Since P10-3 the boolean is not consulted
-            // in any case; this pins the materialised default.
+            // so the route proceeds (404 = session lookup reached); the removed boolean changes nothing.
             const alone = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
-                data: { schema: 'olio.sd.config', useKontext: true }
+                data: Object.assign({ schema: 'olio.sd.config' }, legacyKeys)
             });
             expect(alone.status()).toBe(404);
             expect((await alone.json()).error).toBe('Chat request not found');
-
-            // the boolean's other value is classic and passes the gates
-            const classic = await ctx.post(REST + '/chat/' + randomUUID() + '/generateScene', {
-                data: { schema: 'olio.sd.config', compositeMode: '', useKontext: false }
-            });
-            expect(classic.status()).toBe(404);
-            expect((await classic.json()).error).toBe('Chat request not found');
         } finally {
             await apiLogout(ctx);
             await ctx.dispose();
@@ -803,7 +808,6 @@ test.describe('generateScene live composite modes (item 14 live)', () => {
             expect(tmplResp.ok()).toBe(true);
             const template = await tmplResp.json();
             delete template.compositeMode;
-            delete template.useKontext;
             delete template.style;
             delete template.landscapeSetting;
             delete template.referenceImageId;
@@ -854,7 +858,7 @@ test.describe('generateScene live composite modes (item 14 live)', () => {
             expect(classic.sceneDescLine, 'scene description came from the LLM, not the no-history fallback')
                 .not.toContain('two people facing each other');
 
-            /// (b) absent compositeMode/useKontext: the deserializer materializes the schema default
+            /// (b) absent compositeMode: the deserializer materializes the schema default
             /// (compositeMode="flux2"), so this is the FLUX2 branch at the flux2Defaults.json size —
             /// NOT classic. Pins the contract so a future "absent means classic" assumption fails here.
             const dflt = await generateScene(ctx, session, Object.assign({}, template), 'schema-default');

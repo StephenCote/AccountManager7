@@ -2,7 +2,6 @@ package org.cote.accountmanager.olio.picturebook;
 
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,8 +40,9 @@ import org.cote.accountmanager.util.MemberUtil;
  *   Stage 0  (no notifier; before the SD calls)     -> LANDSCAPE_PROMPT, SCENE_PROMPT nodes
  *   "face"        Generating portraits...           -> one PORTRAIT node per scene character
  *   "landscape"   Generating landscape...           -> LANDSCAPE node
- *   "auto_awesome_mosaic" Preparing/Stitching refs  -> REFERENCE_STRIP node
- *   "image"       Compositing scene...              -> COMPOSITE node
+ *   (the PB1 reference-strip and composite stages, and their two node types, were removed at Phase 10 P10-1;
+ *    only {@code compositeHandle} survives below, because the scene-approval patch still looks a retained
+ *    composite node up by handle; the P10-5 cleanup reads handles off the records, not from here)
  * </pre>
  * <p>
  * <b>FIND-ONLY for the book and its world; create-only inside them.</b> This class never creates a book
@@ -1241,10 +1241,6 @@ public class PbPipelineUtil {
 		return "landscape@" + shortRef(sceneObjectId);
 	}
 
-	public static String referenceHandle(String sceneObjectId) {
-		return "reference@" + shortRef(sceneObjectId);
-	}
-
 	public static String compositeHandle(String sceneObjectId) {
 		return "composite@" + shortRef(sceneObjectId);
 	}
@@ -1291,24 +1287,4 @@ public class PbPipelineUtil {
 		return ROLE_PORTRAIT + ordinal;
 	}
 
-	/** The node types this phase records, in pipeline order. Exposed so a test can assert coverage. */
-	public static List<PbNodeTypeEnumType> recordedNodeTypes() {
-		return Collections.unmodifiableList(Arrays.asList(
-			PbNodeTypeEnumType.LANDSCAPE_PROMPT, PbNodeTypeEnumType.SCENE_PROMPT,
-			PbNodeTypeEnumType.PORTRAIT, PbNodeTypeEnumType.LANDSCAPE,
-			PbNodeTypeEnumType.REFERENCE_STRIP, PbNodeTypeEnumType.COMPOSITE));
-	}
-
-	/** Every node recorded for one PB1 scene, by handle. Used by the phase-3 test and phase 4's reads. */
-	public static List<BaseRecord> listSceneNodes(BaseRecord user, BaseRecord workflow, String sceneObjectId) {
-		List<BaseRecord> out = new ArrayList<>();
-		for(String h : new String[] {landscapePromptHandle(sceneObjectId), scenePromptHandle(sceneObjectId),
-				landscapeHandle(sceneObjectId), referenceHandle(sceneObjectId), compositeHandle(sceneObjectId)}) {
-			BaseRecord n = findNodeByHandle(user, workflow, h);
-			if(n != null) {
-				out.add(n);
-			}
-		}
-		return out;
-	}
 }

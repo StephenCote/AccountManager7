@@ -17,6 +17,7 @@ import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
 import { am7model } from '../core/model.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
+import { resolveDefaultChatConfig } from '../components/pbChatConfig.js';
 import { ReaderShell, exportBook, escHtml } from '../components/readerShell.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
@@ -498,18 +499,12 @@ async function analyzeScene(sceneObjectId, chatConfigName) {
 // resolution PB2's wizard uses — and only fall back to an org-wide search that prefers a
 // /Library/ config over an arbitrary user one. The user can always override via the picker
 // (renderChatConfigRef); this function only supplies the auto-default when they have not.
-const CB_DEFAULT_CHAT_CONFIG_NAMES = ['contentAnalysis', 'generalChat'];
-
+// The names and the lookup loop are components/pbChatConfig.js's (P10-D 4, §6.C 267 d), shared with the
+// PB board, the Locations panel and the PB wizard; only the ChapBook library priming stays here.
 async function resolveSystemChatConfig() {
     try { await LLMConnector.ensureLibrary(); } catch (_) {}
     try { await LLMConnector.initPromptLibrary(); } catch (_) {}
-    for (let name of CB_DEFAULT_CHAT_CONFIG_NAMES) {
-        try {
-            let rec = await LLMConnector.resolveConfig(name);
-            if (rec && rec.name) return rec;
-        } catch (_) {}
-    }
-    return null;
+    return resolveDefaultChatConfig();
 }
 
 async function fetchDefaultChatConfigName() {
@@ -3015,6 +3010,10 @@ let reviewScenes = [];
 // reload that no longer finds it (Remove) lands on the page that took its index (ensureReviewSelection).
 let reviewSelectedOid = null;
 let reviewLoading = false;
+// 266 j (P10-D 5): the book whose "N of N pages have no LLM landscape prompt" toast has been shown for this
+// entry into the review. loadReviewBook is also the reload after split / merge / remove, and each reload
+// re-fired the toast (a split showed it twice). Reset by ChapBookReview.oninit, so re-entering says it again.
+let placeholderToastedFor = null;
 let reviewError = null;
 let reviewRendering = false;
 let reviewGroupId = null;
@@ -3568,7 +3567,10 @@ async function loadReviewBook(bookObjectId) {
                 // render as random landscapes with no per-page signal once they have an image, so say so once
                 // per load — only after the batch-read above, which is where promptLocked comes from.
                 let placeholder = placeholderPromptSummary(reviewScenes);
-                if (placeholder) page.toast('warn', placeholder.message);
+                if (placeholder && placeholderToastedFor !== bookObjectId) {
+                    placeholderToastedFor = bookObjectId;
+                    page.toast('warn', placeholder.message);
+                }
             } catch (_) {}
         }
         // Initialise the toolbar's book-level style from the first scene so it reflects current state.
@@ -4750,6 +4752,8 @@ const ChapBookReview = {
         reviewError = null;
         reviewRendering = false;
         reviewGroupId = null;
+        // 266 j: a re-entered review says the landscape-prompt summary once more (once per book load).
+        placeholderToastedFor = null;
         // Gap 8: reset per-scene override caches so a re-entered review starts fresh
         sceneOverrideInsts = {};
         sceneOverrideExpanded = {};
@@ -5004,6 +5008,8 @@ export function __setReviewStateForTest(patch) {
     if ('reviewCovers' in patch) reviewCovers = patch.reviewCovers || null;
     if ('reviewSceneImageUrls' in patch) reviewSceneImageUrls = patch.reviewSceneImageUrls || {};
     if ('reviewExporting' in patch) reviewExporting = !!patch.reviewExporting;
+    // 266 j: the once-per-load marker for the landscape-prompt toast.
+    if ('placeholderToastedFor' in patch) placeholderToastedFor = patch.placeholderToastedFor || null;
 }
 // Exported for Vitest (P9-8, 240 d): seed the session's chat-config refs and the books it knows, so
 // chapBookCarriedChatConfig can be exercised without mounting any route.
@@ -5023,6 +5029,9 @@ export { rerenderPromptOverride, doRerenderScene as __doRerenderSceneForTest, is
 export { overrideSummary };
 // Exported for Vitest (P10-C 4): the review's master/detail selection.
 export { selectReviewPage, selectedReviewIndex, ensureReviewSelection, renderReviewPageList as __renderReviewPageListForTest, doSplitScene as __doSplitSceneForTest };
+// Exported for Vitest (P10-D 5, 266 j): the review load itself (the reload path after split / merge / remove).
+export { loadReviewBook as __loadReviewBookForTest };
+export function __reviewPageCountForTest() { return reviewScenes.length; }
 // Exported for Vitest (P9-4): seed the reader's module state and render its cover slot without mounting the route.
 export function __setReaderStateForTest(patch) {
     patch = patch || {};

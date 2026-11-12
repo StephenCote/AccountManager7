@@ -46,8 +46,8 @@ let _saveShared = false;    // "Save as Shared Config" checkbox state
 // pictureBook.js's pinPictureBookDefaults so both features render through the same pipeline.
 function pinChatSceneDefaults(entity) {
     // FLUX.2 multi-reference composite, same pipeline the picture book uses. Server-side
-    // resolveMode reads compositeMode only (the legacy useKontext boolean is ignored since Phase 10
-    // P10-3 and its column goes at P10-4); an absent compositeMode resolves to classic. Chat's
+    // resolveMode reads compositeMode only (the legacy Kontext boolean stopped being read at Phase 10
+    // P10-3 and left the model at P10-4); an absent compositeMode resolves to classic. Chat's
     // historical default was Kontext, the stitched-panel-strip path that rendered the reference
     // sheet into the scene as a propped-up board (AccountManagerObjects7/media/flux/bad.composite.png);
     // that pipeline was removed at P10-3 and 'kontext' is now refused as an unsupported mode.

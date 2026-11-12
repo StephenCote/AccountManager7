@@ -237,6 +237,14 @@ export function sceneLabel(pg) {
     return idx + (title ? ' · ' + title : '');
 }
 
+/** Pure: what to call an actor DTO on the board (P10-D 1, §6.C 267 i). The bound character's name, else the
+ *  description, else the role in lowercase, else 'actor' — the same precedence as the server's displayName rule
+ *  (PbComposeUtil.resolveActors). Never the record's system `name`, which is always `actor.<composition>.<i>`. */
+export function actorLabel(a) {
+    if (!a) return 'actor';
+    return a.characterName || a.description || (a.role ? String(a.role).toLowerCase() : '') || 'actor';
+}
+
 /** Pure: the live counter for a running compose job ("3 of 12 · scene 3"); the summary line once terminal. */
 export function composeCounterText(job) {
     if (!job) return 'Submitting…';
@@ -652,7 +660,7 @@ async function saveActor(oid) {
 
 async function removeActor(a) {
     if (!board) return;
-    let ok = await Dialog.confirm({ title: 'Remove actor', message: 'Remove ' + (a.characterName || a.name || 'this actor') + ' from the composition?', confirmLabel: 'Remove', destructive: true });
+    let ok = await Dialog.confirm({ title: 'Remove actor', message: 'Remove ' + actorLabel(a) + ' from the composition?', confirmLabel: 'Remove', destructive: true });
     if (!ok) return;
     await act('actor:' + a.objectId, async function () {
         let res = await deleteActor(bookObjectId, board.compositionObjectId, a.objectId);
@@ -1034,7 +1042,7 @@ async function openOutfitDialog(actor) {
     let st = { loading: true, error: null, wardrobe: null };
     let current = outfits[actor.objectId] || null;
     Dialog.open({
-        title: 'Outfit for ' + (actor.characterName || actor.name || 'actor'),
+        title: 'Outfit for ' + actorLabel(actor),
         size: 'md',
         content: {
             view: function () {
@@ -1354,7 +1362,7 @@ function renderCamera() {
             field('Shot', enumSelect('pb-cmp-shot', shotTypeOptions(), d.shotType, function (v) { d.shotType = v; })),
             field('Viewpoint', enumSelect('pb-cmp-viewpoint', viewpointOptions(), d.viewpoint, function (v) { d.viewpoint = v; })),
             field('Focal actor', m('select', { 'data-testid': 'pb-cmp-focal', class: INPUT, value: d.focalActorObjectId || '', onchange: function (e) { d.focalActorObjectId = e.target.value || ''; } },
-                [m('option', { value: '' }, '(none)')].concat(actors.map(function (a) { return m('option', { value: a.objectId, selected: a.objectId === d.focalActorObjectId }, a.characterName || a.name || a.description || a.objectId); })))),
+                [m('option', { value: '' }, '(none)')].concat(actors.map(function (a) { return m('option', { value: a.objectId, selected: a.objectId === d.focalActorObjectId }, actorLabel(a)); })))),
             coverMode ? field('Title-safe band', enumSelect('pb-cmp-title-band', titleBandOptions(), d.titleSafeBand, function (v) { d.titleSafeBand = v; })) : null
         ]),
         coverMode ? m('div', { class: 'text-[11px] text-gray-500 mt-1' }, 'The band (top or bottom quarter) is reserved for the title: the reader places the title block there and the render plan reports it as reserved.') : null,
@@ -1422,7 +1430,7 @@ function renderActorRow(a) {
     let tid = function (s) { return 'pb-cmp-actor-' + s; };
     return m('li', { 'data-testid': 'pb-cmp-actor-' + a.objectId, 'data-actor-objectid': a.objectId, class: 'border rounded dark:border-gray-700 p-2' }, [
         m('div', { class: 'flex flex-wrap items-center gap-2 mb-1' }, [
-            m('span', { class: 'font-medium text-sm' }, a.characterName || a.name || a.description || '(unnamed)'),
+            m('span', { class: 'font-medium text-sm' }, actorLabel(a)),
             a.characterObjectId ? null : m('span', { class: CHIP }, 'unnamed'),
             m('span', { 'data-testid': tid('outfit-chip'), 'data-source': outfit ? outfit.source : 'none', class: CHIP, title: outfit && outfit.apparelDescription ? outfit.apparelDescription : '' }, outfitChipText(outfit)),
             outfit && outfit.warning ? m('span', { class: WARN_CHIP }, outfit.warning) : null,
@@ -1534,7 +1542,7 @@ function renderCanvas() {
         m('div', { class: 'flex items-center gap-2 mb-1' }, [m('h3', { class: 'text-sm font-semibold' }, 'Placement'),
             m('span', { class: 'text-[11px] text-gray-500' }, 'Drag a box to move it, then Save its row. Boxes are fractions of the page (' + (plan && plan.canvas && plan.canvas.width ? plan.canvas.width + '×' + plan.canvas.height : '4:3') + ').')]),
         m('div', { 'data-testid': 'pb-cmp-canvas', class: 'relative w-full bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 rounded overflow-hidden', style: { aspectRatio: String(aspect), touchAction: 'none' } },
-            board.actors.map(function (a) { return canvasBox('actor', a, edits.actors[a.objectId], a.characterName || a.name || a.description || 'actor'); })
+            board.actors.map(function (a) { return canvasBox('actor', a, edits.actors[a.objectId], actorLabel(a)); })
                 .concat(board.elements.map(function (el) { return canvasBox('element', el, edits.elements[el.objectId], el.description || el.elementType || 'element'); })))
     ]);
 }

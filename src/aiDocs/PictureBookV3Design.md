@@ -1843,6 +1843,13 @@ render path.
 | **3. Verify** | V3 runs as the only path. The exit checks are below | Kept | Kept |
 | **4. Remove** (post-completion) | Delete PB1 and old-path code and tests in a dedicated change; drop dead fields through the off-by-default column-drop property only | Removed | PB1-only data is cleaned up by an explicit, logged admin task. Never as a side effect |
 
+**[Stage 4 executed 2026-11-10 (Phase 10 P10-1 … P10-5), as built:** PB1 removed from the build on 2026-11-10 (P10-1: the three routes and
+their bodies, both book keys and every gate, ten JUnit classes + two specs — `PictureBookV3Implementation.md` §6.C 270); Kontext removed
+(P10-3, §6.C 272) and its six fields dropped from the model (P10-4, §6.C 273 — the columns wait for Stephen's `dropColumns` flip); the
+explicit, logged admin cleanup is Console7 `-pbLegacyCleanup` / `-pbLegacyPurge` (P10-5, §6.C 274 — dry runs recorded on am7db and the
+stack DB; the purge and the LOCAL am72db dry run are Stephen's). The `picturebook.renderPath` / `chapbook.renderPath` keys, their gates and
+the `v1` rollback went with PB1 at P10-1 — both products have exactly one render path, the V3 graph (`PbRenderPath` keeps only `chat.renderPath`).]**
+
 **The switch.**
 - A boot-pinned setting per product: `picturebook.renderPath` / `chapbook.renderPath` =
   `v1` | `v3`, read once at start-up, with the Ux told through the feature manifest.
@@ -2525,6 +2532,17 @@ if supported under new v3 design." This section gives the facts, the criteria un
 keep Kontext, the recommendation, and the full touch list so the decision can be executed without
 re-surveying the tree. **Ratified 2026-10-09: retire** ("Yes to retire kontext"). §37.2 is kept
 for the record; §37.3's retire row and §37.4 are the executable plan.
+
+**[Removed 2026-11-10 — Phase 10 P10-3 / P10-4 / P10-5, as built.** The §37.4 code and tests are gone from the build (`MODE_KONTEXT`, the
+`SceneCompositeUtil` Kontext branch, `SWUtil`'s Kontext builders, the `kontext` family row, `TestKontext` + `TestPbKontextDisable` /
+`TestChatSceneKontextDisable`; `resolveMode` is one-arg and throws on any mode outside `flux2|classic`; `compositeMode=kontext` is an
+unsupported value, refused like any other unknown mode). The six `kontext*` fields left `configModel.json` + `modelDef.js`; their columns
+stay on every table until Stephen flips the off-by-default `dropColumns` property (`TestSdConfigOrphanColumns` enumerates the six
+statements). PB1-only rows (`olio.sd.config` with `compositeMode='kontext'`, PB1 settings rows, legacy `REFERENCE_STRIP` / `COMPOSITE`
+nodes with their bindings and artifacts) are enumerated and, only on an explicit flag, deleted by Console7 `-pbLegacyCleanup` /
+`-pbLegacyPurge` (`PbLegacyCleanupUtil`); the `PbNodeTypeEnumType.REFERENCE_STRIP` / `COMPOSITE` constants **stay** while any served
+database retains such rows (a persisted enum value the class no longer declares makes the whole result set unreadable). Evidence:
+`PictureBookV3Implementation.md` §6.C 272 (P10-3), 273 (P10-4), 274 (P10-5). The remaining Kontext text in this section is history.]**
 
 #### 37.1 What Kontext is in this codebase today (facts)
 

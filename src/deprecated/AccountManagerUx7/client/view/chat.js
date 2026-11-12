@@ -186,9 +186,7 @@
       style: "photograph",
       seed: -1,
       sceneCreativity: 0.65,
-      skipLandscape: false,
-      useKontext: true,
-      kontextModel: "flux1Kontext_flux1KontextDev"
+      skipLandscape: false
     }, JSON.parse(localStorage.getItem("am7_sdConfig") || "{}"));
 
     function saveSdConfig() {
@@ -1537,9 +1535,7 @@
           sdNumber("Seed", "seed", -1, 999999999),
           sdSlider("Creativity", "sceneCreativity", 0, 1, 0.05),
           sdToggle("Hires", "hires"),
-          sdToggle("Skip landscape", "skipLandscape"),
-          sdToggle("Kontext scene", "useKontext"),
-          sdText("Kontext model", "kontextModel")
+          sdToggle("Skip landscape", "skipLandscape")
         ])
       ]);
     }

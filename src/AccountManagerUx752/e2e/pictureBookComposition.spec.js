@@ -71,7 +71,7 @@ let bookReset = false;
 let sceneIds = [];         // objectId in story order
 let compositionObjectId;   // scene 1's hand-seeded composition
 let actorObjectId;         // the seeded text actor
-let actorName;             // its server-assigned name (actor.<comp>.<n>) — the row heading for an unnamed actor
+let actorName;             // its server-assigned name (actor.<comp>.<n>) — never shown on the board (P10-D 1, §6.C 267 i)
 let elementObjectId;       // the seeded element
 let addedElementObjectId;  // the element added through the dialog
 let revision;              // scene 1's composition revision as last read from the board GET; every write bumps it by one
@@ -377,8 +377,10 @@ test.describe('composition board (default tier)', () => {
 
         const actor = page.getByTestId('pb-cmp-actor-' + actorObjectId);
         await expect(actor).toBeVisible();
-        // An unnamed (text) actor is headed by its server-assigned name; its description is the editable field.
-        await expect(actor).toContainText(actorName);
+        // An unnamed (text) actor is headed by its description (P10-D 1, §6.C 267 i); the server-assigned
+        // actor.<comp>.<n> name is never shown. The description is also the editable field.
+        await expect(actor.locator('span.font-medium').first()).toHaveText('a fishwife hauling a herring basket');
+        await expect(actor).not.toContainText(actorName);
         await expect(actor.getByTestId('pb-cmp-actor-description')).toHaveValue('a fishwife hauling a herring basket');
         await expect(actor).toContainText('unnamed');
         await expect(actor.getByTestId('pb-cmp-actor-role')).toHaveValue('hero');
@@ -399,6 +401,8 @@ test.describe('composition board (default tier)', () => {
 
         const abox = page.getByTestId('pb-cmp-box-actor-' + actorObjectId);
         await expect(abox).toBeVisible();
+        await expect(abox, 'placement box labelled by the description, not the raw actor.<comp>.<n> name').toHaveText('a fishwife hauling a herring basket');
+        await expect(abox).toHaveAttribute('title', 'a fishwife hauling a herring basket');
         await expect(abox).toHaveCSS('left', /px$/);
         const style = await abox.getAttribute('style');
         expect(style, 'actor box placed from its normalized x/y/w/h: ' + style).toMatch(/left:\s*10(\.0+)?%/);
@@ -808,16 +812,19 @@ test.describe('composition board (default tier)', () => {
         const b = await getBoard(sceneIds[0]);
         const boy = b.body.actors.find(x => x.description === 'a boy coiling rope');
         expect(boy, JSON.stringify(b.body.actors)).toBeTruthy();
-        expect(boy.name, 'the server names the row').toBeTruthy();
+        expect(boy.name, 'the server names the record (actor.<comp>.<n>)').toBeTruthy();
         const row = page.getByTestId('pb-cmp-actor-' + boy.objectId);
-        await expect(row).toContainText(boy.name);
+        // P10-D 1 (§6.C 267 i): the row and its placement box are headed by the description, never the system name.
+        await expect(row.locator('span.font-medium').first()).toHaveText('a boy coiling rope');
+        await expect(row).not.toContainText(boy.name);
+        await expect(page.getByTestId('pb-cmp-box-actor-' + boy.objectId)).toHaveText('a boy coiling rope');
         await expect(row.getByTestId('pb-cmp-actor-outfit-chip')).toHaveAttribute('data-source', 'none');
         await waitForPlan(page, 'after add actor', planAdd);
 
-        // The confirm names an unnamed actor by its server-assigned name (no character name to show).
+        // The confirm names an unnamed actor by its description (P10-D 1), never the server-assigned record name.
         const planDelete = planWaiter(page);
         await row.getByTestId('pb-cmp-actor-delete').click();
-        await expect(page.getByText('Remove ' + boy.name + ' from the composition?')).toBeVisible();
+        await expect(page.getByText('Remove a boy coiling rope from the composition?')).toBeVisible();
         await dialogButton(page, 'Remove').click();
         await expect(page.getByText(/^Actor removed/)).toBeVisible({ timeout: 60000 });
         await expect(row).toHaveCount(0);

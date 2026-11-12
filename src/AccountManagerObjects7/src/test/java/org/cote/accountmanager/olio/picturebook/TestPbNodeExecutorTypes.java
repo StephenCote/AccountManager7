@@ -50,7 +50,8 @@ public class TestPbNodeExecutorTypes extends BaseTest {
 		OlioModelNames.use();
 		/// V3 Phase 3 (P3-4) added LOCATION as an SD-backed single-node stage (it renders a location or variant
 		/// through the render plan); Phase 10 P10-1 removed the PB1-era REFERENCE_STRIP / COMPOSITE executors, so
-		/// those two types are 501 again (the enum constants stay until the P10-5 data cleanup).
+		/// those two types are 501 again (the enum constants stay while any served database retains rows of
+		/// those types - P10-5 enumerates and purges them; removing the constants is Stephen's call after that).
 		EnumSet<PbNodeTypeEnumType> expectedExecutable = EnumSet.of(
 			PbNodeTypeEnumType.PORTRAIT, PbNodeTypeEnumType.LANDSCAPE, PbNodeTypeEnumType.SCENE_PROMPT,
 			PbNodeTypeEnumType.LANDSCAPE_PROMPT, PbNodeTypeEnumType.RENDER_PLAN, PbNodeTypeEnumType.LOCATION);

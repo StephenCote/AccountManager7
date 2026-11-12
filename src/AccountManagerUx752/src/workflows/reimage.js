@@ -112,8 +112,18 @@ function openGalleryDialog(inst) {
     }
 }
 
-async function reimage(entity, inst) {
+/**
+ * Open the Reimage dialog for `inst` and, on Generate, render `imageCount` images via
+ * POST /olio/{type}/{oid}/reimage; for a charPerson the first image becomes profile.portrait.
+ * Resolves as soon as the dialog is OPEN (Dialog.open does not await the action), so a caller that
+ * must react to the rendered images cannot simply await this call. `opts.onImages(images)` is invoked
+ * from inside the Generate action after the portrait patch and the success toast, once per Generate
+ * that produced at least one image (P10-D 3, §6.C 267 i: the character manager's `no portrait` badge).
+ * A throwing callback is logged and never breaks the render result.
+ */
+async function reimage(entity, inst, opts) {
     let am7olio = am7model._olio;
+    let onImages = (opts && typeof opts.onImages === 'function') ? opts.onImages : null;
     let isCharPerson = inst.model.name === 'olio.charPerson';
 
     // Fetch SD models for dropdowns
@@ -393,6 +403,10 @@ async function reimage(entity, inst) {
                         images.forEach(function (img) { if (img.objectId) page.clearContextObject(img.objectId); });
                         if (isCharPerson) openGalleryDialog(inst);
                         m.redraw();
+                        if (onImages) {
+                            try { await onImages(images); }
+                            catch (e) { console.warn('Reimage onImages callback failed:', e); }
+                        }
                     } else {
                         page.toast('error', 'Reimage failed');
                     }

@@ -18,6 +18,8 @@ import m from 'mithril';
 import { Dialog } from '../components/dialogCore.js';
 import { page } from '../core/pageClient.js';
 import { am7model } from '../core/model.js';
+import { am7client } from '../core/am7client.js';
+import { clearImageCache } from '../workflows/sceneExtractor.js';
 import {
     normalizeArtifact, isArchivedArtifact, groupArtifactsByAttempt, formatBytes,
     normalizeRetention, retentionActionable, scanRetention, applyRetention
@@ -218,11 +220,32 @@ describe('scanRetention / applyRetention wire contract', () => {
 
 // ─────────────────────────────── node detail strip ───────────────────────────────
 
+// P10-D 7 (§6.C 233 e): thumbnails resolve dataObjectId → path-based /media URL through sceneExtractor.resolveImageUrl
+// (GET data.data for groupPath + name); the strip/compare/card render an <img> only once the URL is known.
+const MEDIA = '/media/Public/data.data/PictureBook/x/';
+function stubImageRecords(answer) {
+    vi.spyOn(am7client, 'get').mockImplementation((type, id, cb) => { cb(answer ? { objectId: id, groupPath: '/PictureBook/x', name: id + '.png' } : null); });
+    vi.spyOn(am7client, 'dotPath').mockReturnValue('Public');
+}
+function imgSrcs(v) {
+    let out = [];
+    (function walk(x) {
+        if (!x) return;
+        if (Array.isArray(x)) { x.forEach(walk); return; }
+        if (x.tag === 'img') out.push(x.attrs.src);
+        walk(x.children);
+    })(v);
+    return out;
+}
+
 describe('canvas node detail: attempt-grouped variant strip', () => {
     beforeEach(() => {
-        canvas.__setCanvasStateForTest({ graphData: GRAPH, pb2BookObjectId: 'B1', selectedNodeId: 'n1', nodeDetailsLoading: false,
+        clearImageCache();
+        stubImageRecords(true);
+        canvas.__setCanvasStateForTest({ graphData: GRAPH, pb2BookObjectId: 'B1', selectedNodeId: 'n1', nodeDetailsLoading: false, imageUrls: {},
             nodeDetails: { artifacts: { image: CHAIN }, bindings: [] }, nodePlan: { nodeId: 'n1' }, artifactUi: { showArchived: false, compare: [] } });
     });
+    afterEach(() => { vi.restoreAllMocks(); });
     it('renders one group per attempt, newest first, with v{n} and seed badges; archived hidden behind "Show archived (1)"', () => {
         let v = canvas.renderNodeDetailPanel();
         let role = findByTestId(v, 'pbwf-art-role');
@@ -249,7 +272,7 @@ describe('canvas node detail: attempt-grouped variant strip', () => {
         // selected wins over status so the current artifact is always findable
         expect(canvas.artifactTileStyle({ selected: true, reviewStatus: 'ARCHIVED' }).border).toContain('#3b82f6');
     });
-    it('"Show archived" reveals the archived row as its own group with the bytes-deleted badge; toggle flips the label', () => {
+    it('"Show archived" reveals the archived row as its own group with the bytes-deleted badge; toggle flips the label', async () => {
         let v = canvas.renderNodeDetailPanel();
         findByTestId(v, 'pbwf-art-archived-toggle').attrs.onclick({ stopPropagation() {} });
         expect(canvas.__canvasStateForTest().artifactUi.showArchived).toBe(true);
@@ -262,8 +285,12 @@ describe('canvas node detail: attempt-grouped variant strip', () => {
         expect(tiles.map(t => t.attrs['data-artifact-id'])).toEqual(['a-r2v0', 'a-r2v1', 'a-r1v0', 'a-r1v1', 'a-old']);
         expect(findByTestId(v, 'pbwf-art-bytes-deleted')).not.toBeNull();
         expect(tiles[4].attrs.title).toBe('Rev 1 · archived · archived 2026-10-01T00:00:00Z · bytes deleted');
-        // No image is rendered for an artifact whose bytes are gone (dataObjectId absent).
-        expect(JSON.stringify(tiles[4])).not.toContain('/rest/resource/data.data/');
+        // No image is rendered for an artifact whose bytes are gone (dataObjectId absent) — even after resolution.
+        canvas.resolveThumbs({ image: CHAIN });
+        await tick();
+        let after = findAllByTestId(canvas.renderNodeDetailPanel(), 'pbwf-art-tile');
+        expect(imgSrcs(after[4])).toEqual([]);
+        expect(imgSrcs(after[0])).toEqual([expect.stringMatching(new RegExp(MEDIA + 'd-r2v0\\.png$'))]);
     });
     it('a chain with every row archived says so instead of rendering an empty strip', () => {
         canvas.__setCanvasStateForTest({ nodeDetails: { artifacts: { image: [CHAIN[0]] }, bindings: [] } });
@@ -271,7 +298,9 @@ describe('canvas node detail: attempt-grouped variant strip', () => {
         expect(findAllByTestId(v, 'pbwf-art-tile').length).toBe(0);
         expect(textOf(findByTestId(v, 'pbwf-art-role'))).toContain('All 1 archived');
     });
-    it('clicking tiles builds a two-up compare (A/B); a third pick replaces the oldest; Clear empties it', () => {
+    it('clicking tiles builds a two-up compare (A/B); a third pick replaces the oldest; Clear empties it', async () => {
+        canvas.resolveThumbs({ image: CHAIN });
+        await tick();
         let v = canvas.renderNodeDetailPanel();
         expect(findByTestId(v, 'pbwf-art-compare')).toBeNull();
         let tiles = findAllByTestId(v, 'pbwf-art-tile');
@@ -288,7 +317,10 @@ describe('canvas node detail: attempt-grouped variant strip', () => {
         expect(items.length).toBe(2);
         expect(textOf(items[0])).toContain('A image r4 v0 · seed 200 · approved · 2.0 KB');
         expect(textOf(items[1])).toContain('B image r2 v0 · seed 100 · generated · 1.5 KB');
-        expect(JSON.stringify(items[0])).toContain('/rest/resource/data.data/d-r2v0');
+        // The compare image is the resolved /media URL of the artifact's data.data record (233 e), never /rest/resource.
+        expect(imgSrcs(items[0])).toEqual([expect.stringMatching(new RegExp(MEDIA + 'd-r2v0\\.png$'))]);
+        expect(imgSrcs(items[1])).toEqual([expect.stringMatching(new RegExp(MEDIA + 'd-r1v0\\.png$'))]);
+        expect(JSON.stringify(v)).not.toContain('/rest/resource/');
         expect(findAllByTestId(v, 'pbwf-art-tile').map(t => t.attrs['data-compare'])).toEqual(['1', undefined, '2', undefined]);
         // third pick drops the oldest (A), B becomes A
         findAllByTestId(v, 'pbwf-art-tile')[3].attrs.onclick({ stopPropagation() {} });
@@ -314,6 +346,56 @@ describe('canvas node detail: attempt-grouped variant strip', () => {
     });
 });
 
+// ─────────────────────────────── artifact thumbnails (P10-D 7, 233 e) ───────────────────────────────
+
+describe('canvas thumbnails resolve dataObjectId to the /media URL (233 e: /rest/resource/data.data/{oid} does not exist)', () => {
+    let origFetch;
+    beforeEach(() => {
+        origFetch = global.fetch;
+        clearImageCache();
+        canvas.__setCanvasStateForTest({ graphData: GRAPH, positions: { n1: { x: 0, y: 0 } }, pb2BookObjectId: 'B1', selectedNodeId: null, nodeDetailsLoading: false,
+            nodeDetails: null, nodePlan: { nodeId: null }, artifactUi: { showArchived: true, compare: [] }, imageUrls: {} });
+    });
+    afterEach(() => { global.fetch = origFetch; vi.restoreAllMocks(); });
+    it('before resolution every image tile shows its placeholder — no <img>, nothing pointing at /rest/resource', () => {
+        stubImageRecords(true);
+        canvas.__setCanvasStateForTest({ selectedNodeId: 'n1', nodeDetails: { artifacts: { image: CHAIN }, bindings: [] }, nodePlan: { nodeId: 'n1' } });
+        let v = canvas.renderNodeDetailPanel();
+        expect(findAllByTestId(v, 'pbwf-art-tile').length).toBe(5);
+        expect(imgSrcs(v)).toEqual([]);
+        expect(JSON.stringify(v)).not.toContain('/rest/resource/');
+        expect(imgSrcs(canvas.renderNodeCard(GRAPH.nodes[0]))).toEqual([]);
+    });
+    it('selectNode loads the node view and resolves each image dataObjectId once via GET data.data; tiles and the card thumb then carry /media URLs', async () => {
+        stubImageRecords(true);
+        global.fetch = vi.fn(async (u) => /\/workflow\/node\/n1$/.test(String(u)) ? jsonResponse(200, { artifacts: { image: CHAIN }, bindings: [] }) : jsonResponse(404, { error: 'unmocked ' + u }));
+        await canvas.selectNode('n1');
+        expect(restPath(global.fetch.mock.calls[0][0])).toBe('/rest/olio/picture-book/B1/workflow/node/n1');
+        await tick();
+        expect(am7client.get.mock.calls.map(c => c[0] + ':' + c[1]).sort()).toEqual(['data.data:d-r1v0', 'data.data:d-r1v1', 'data.data:d-r2v0', 'data.data:d-r2v1']);
+        let urls = canvas.__canvasStateForTest().imageUrls;
+        expect(Object.keys(urls).sort()).toEqual(['d-r1v0', 'd-r1v1', 'd-r2v0', 'd-r2v1']);
+        expect(urls['d-r2v0']).toMatch(new RegExp(MEDIA + 'd-r2v0\\.png$'));
+        let v = canvas.renderNodeDetailPanel();
+        expect(imgSrcs(v).map(s => s.replace(/^.*\/media\//, '/media/'))).toEqual([MEDIA + 'd-r2v0.png', MEDIA + 'd-r2v1.png', MEDIA + 'd-r1v0.png', MEDIA + 'd-r1v1.png']);
+        expect(JSON.stringify(v)).not.toContain('/rest/resource/');
+        // The card thumbnail is the selected artifact's (a-r2v0) image.
+        expect(imgSrcs(canvas.renderNodeCard(GRAPH.nodes[0])).map(s => s.replace(/^.*\/media\//, '/media/'))).toEqual([MEDIA + 'd-r2v0.png']);
+        // A second resolve pass (a reload) does not re-read records already resolved.
+        am7client.get.mockClear();
+        canvas.resolveThumbs({ image: CHAIN });
+        expect(am7client.get).not.toHaveBeenCalled();
+    });
+    it('an id whose data.data record cannot be read stays a placeholder (null), never a broken <img>', async () => {
+        stubImageRecords(false);
+        canvas.__setCanvasStateForTest({ selectedNodeId: 'n1', nodeDetails: { artifacts: { image: [CHAIN[3]] }, bindings: [] }, nodePlan: { nodeId: 'n1' } });
+        canvas.resolveThumbs({ image: [CHAIN[3]] });
+        await tick();
+        expect(canvas.__canvasStateForTest().imageUrls).toEqual({ 'd-r2v0': null });
+        expect(imgSrcs(canvas.renderNodeDetailPanel())).toEqual([]);
+    });
+});
+
 // ─────────────────────────────── retention dialog ───────────────────────────────
 
 describe('canvas Retention dialog: dry run → apply', () => {
@@ -325,7 +407,11 @@ describe('canvas Retention dialog: dry run → apply', () => {
         if (!am7model._page) am7model._page = page;
         if (typeof page.toast !== 'function') page.toast = () => {};
         vi.spyOn(page, 'toast').mockImplementation(() => {});
-        canvas.__setCanvasStateForTest({ graphData: GRAPH, pb2BookObjectId: 'B1', selectedNodeId: null, nodeDetails: null, retention: {} });
+        // the post-apply node reload resolves artifact thumbnails (P10-D 7) — stub the data.data GET, or the real
+        // am7client.get fires a jsdom XHR whose "Failed to get" console.error lands after the file tears down
+        clearImageCache();
+        stubImageRecords(true);
+        canvas.__setCanvasStateForTest({ graphData: GRAPH, pb2BookObjectId: 'B1', selectedNodeId: null, nodeDetails: null, retention: {}, imageUrls: {} });
     });
     afterEach(() => {
         vi.restoreAllMocks();
@@ -464,6 +550,15 @@ describe('canvas Retention dialog: dry run → apply', () => {
         let v = canvas.renderNodeDetailPanel();
         expect(findAllByTestId(v, 'pbwf-art-attempt').map(g => g.attrs['data-attempt'])).toEqual([RUN2]);
         expect(textOf(findByTestId(v, 'pbwf-art-archived-toggle'))).toBe('Show archived (3)');
+        // the reload also resolved the thumbnails of the reloaded view (P10-D 7): settle, then every chain id has a /media URL
+        await tick();
+        expect(Object.keys(canvas.__canvasStateForTest().imageUrls).sort()).toEqual(['d-r1v0', 'd-r1v1', 'd-r2v0', 'd-r2v1']);
+        v = canvas.renderNodeDetailPanel();
+        let tileSrcs = findAllByTestId(v, 'pbwf-art-tile').map(t => imgSrcs(t)[0] || null);
+        expect(tileSrcs).toEqual([expect.stringMatching(new RegExp(MEDIA + 'd-r2v0\\.png$')), expect.stringMatching(new RegExp(MEDIA + 'd-r2v1\\.png$'))]);
+        // the compare picks (A = the now-archived a-r1v0, B = a-r2v0) keep their images: archived ≠ bytes gone
+        let compareSrcs = findAllByTestId(v, 'pbwf-art-compare-item').map(t => imgSrcs(t)[0] || null);
+        expect(compareSrcs).toEqual([expect.stringMatching(new RegExp(MEDIA + 'd-r1v0\\.png$')), expect.stringMatching(new RegExp(MEDIA + 'd-r2v0\\.png$'))]);
     });
 
     it('Apply is a no-op without a current scan (state-level guard), and Close resets the form', async () => {

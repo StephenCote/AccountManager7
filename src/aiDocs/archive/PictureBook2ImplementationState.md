@@ -1,4 +1,5 @@
 > Archived 2026-10-25: PB2/ChapBook build-state log frozen at 2026-09-01; superseded by `../PictureBookV3Implementation.md` §1 (status) and `PictureBook2ChapBook-Handoff-2026-09-01.md` (the last handoff, already here). Historical only — `file:line` references below are as of 2026-09-01.
+> Superseded 2026-11-10 (Phase 10, `../PictureBookV3Design.md` §28.1 Stage 4 / §37): the PB1 pipeline and FLUX Kontext this document describes are removed from the build (`../PictureBookV3Implementation.md` §6.C 270–274); history only.
 
 # PictureBook 2.0 — Implementation State
 

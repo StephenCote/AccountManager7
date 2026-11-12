@@ -20,7 +20,7 @@ import { outfitBuilder } from './outfitBuilder.js';
  * {standalone: true}) — see openFullEditor for what `standalone` changes.
  *
  * Reuses existing workflows wholesale rather than re-implementing them:
- *  - reimage(entity, inst)       — portrait regeneration (same call the generic charPerson
+ *  - reimage(entity, inst, opts) — portrait regeneration (same call the generic charPerson
  *                                  "Reimage" command uses, see formDef.js forms.charPerson.commands).
  *  - outfitBuilder(entity, inst) — apparel wizard (same call the generic charPerson
  *                                  "Outfit Builder" command uses).
@@ -659,10 +659,15 @@ async function saveIdentity() {
 
 async function doReimage() {
     if (!selectedInst) return;
-    await reimage(selectedInst.entity, selectedInst);
-    // reimage's own Dialog mutates selectedInst.entity.profile.portrait directly on success —
-    // just refresh the list so the "hasPortrait" badge picks it up too.
-    await refreshList();
+    // reimage() resolves when its dialog OPENS, not when Generate finishes (§6.C 267 i: the list's
+    // `no portrait` badge stayed after "Created 1 image(s)"). reimage's Generate action mutates
+    // selectedInst.entity.profile.portrait and patches the profile itself; the onImages callback runs
+    // after that patch, so this is where the list is re-read for the server's hasPortrait.
+    await reimage(selectedInst.entity, selectedInst, {
+        onImages: async function () {
+            await refreshList();
+        }
+    });
     m.redraw();
 }
 
@@ -1179,6 +1184,7 @@ export const __pbCharAddWardrobeEntryForTest = doAddWardrobeEntry;
 export const __pbCharSetDefaultForTest = doSetDefault;
 export const __pbCharRenderReferenceForTest = doRenderReference;
 export const __pbCharMigrateSceneTagsForTest = doMigrateSceneTags;
+export const __pbCharDoReimageForTest = doReimage;
 
 export {
     openCharacterManager, initCharacterManager, renderCharacterManagerContent,

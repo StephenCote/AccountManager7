@@ -4,6 +4,15 @@ Running list of known issues and out-of-scope refactors surfaced during developm
 
 Numbering is global and never reused. Closed entries with no inbound citations were moved 2026-10-25 to `archive/KnownIssues-closed.md` (one-line stubs stay here so `KI-NN` greps still hit). Next free number: **KI-92**.
 
+> **Phase 10 (2026-11-10): PB1 and FLUX Kontext are removed from the build** (`PictureBookV3Design.md` §28.1 Stage 4 and §37;
+> `PictureBookV3Implementation.md` §6.C 270–274). Any entry below that names `PictureBookUtil.generateSceneImage` / `prepareImages`, the
+> `picturebook.renderPath` gates, `SWUtil.newKontextSceneTxt2Img`, `TestKontext`, `kontext-test-output/`, `compositeMode=kontext` or the six
+> `kontext*` fields describes code that no longer exists and is history unless its own dated note says otherwise. Open entries this touches:
+> KI-47 (its `TestKontext` items are moot — the class is deleted), KI-59 (the Kontext composite evidence is history; the FLUX.2 landscape
+> reference is a V3 design question), KI-89 and KI-91 Q4 (dated notes added in place). PB1-only rows are enumerated and, only on an explicit
+> flag, deleted by Console7 `-pbLegacyCleanup` / `-pbLegacyPurge` (`PbLegacyCleanupUtil`); the six `kontext*` columns stay on every table
+> until Stephen flips the off-by-default `dropColumns` property.
+
 ---
 
 ## Ux752 — Cross-view consistency (2026-07-09, Stephen)
@@ -4129,6 +4138,11 @@ of `type: deny` dumps beside `AUDIT PERMIT` lines does not chase a phantom autho
 **Cause:** `PictureBookUtil.createFromScenes` produces a directory group under `~/Data/PictureBooks/{name}` plus a `.pictureBookMeta` whose `bookObjectId` is the group objectId; it creates no `olio.pb.book` record and no Olio world. `/pages` → `PbServiceFacade.bookPageView` → `requireBook` → `PbBookUtil.readBook` queries `olio.pb.book` and 404s; `/books` lists `olio.pb.book` rows only.
 **Status (2026-10-07 audit, unchanged 2026-10-25):** RESOLVED for the Ux752 wizard path — the endpoint accepts `pb2BookObjectId` (`PictureBookService.createFromScenes` → `PictureBookUtil.createFromScenes(..., pb2BookObjectId)`, the W3 legacy path kept deliberately at `PictureBookUtil.java:8828-8833`), the wizard always passes it (`workflows/sceneExtractor.js:311-317`), and then `/books`, `/pages`, `/workflow` and `/v2` all see the book. OPEN for the bare call.
 **Decision needed:** (a) auto-provision an `olio.pb.book` + world when `pb2BookObjectId` is absent, or (b) remove the legacy path. Fits `PictureBookV3Design.md` §28.1 Stage 4 / Phase 10 (PB1 removal). Default: decide at Phase 10; nothing before.
+**2026-11-10 (Phase 10 P10-6 docs sweep):** still present after P10-1 — PB1's render routes and gates are gone, but this import without a book
+id still writes the group + `.pictureBookMeta` and returns `composeJobSkipped: "no PictureBook was bound to the import"`
+(`PbServiceFacade.createFromScenesAndCompose`), a book no V3 surface lists. With no PB1 reader left, (b) is the only consistent option; it is
+Stephen's call and not done. The P10-5 cleanup (`-pbLegacyCleanup`) does not touch these groups or metas — it covers legacy graph rows,
+PB1 `book-sdConfig` / `book-compositeSdConfig` rows and `compositeMode='kontext'` configs only.
 
 ### KI-90. A created book's `name` is `Book <slug>`, not the passed `title` — OPEN, minor, not re-verified (carried 2026-10-25 from `archive/IssueLog-2026-08-25.md` Issue 10)
 
@@ -4139,7 +4153,7 @@ Noted during the Issue 10 (`/full` 404) audit on 2026-10-07 as "still open from 
 Open questions from the 2026-09-19 workflow overhaul that nothing later answers (Q2 is moot — the `picturebook.v2` flag and `PbFeatureFlag.java` were deleted 2026-10-07; Q6–Q9/Q11 were answered 2026-09-19/20 and are recorded in the archived doc):
 - **Q1 — legacy PB1 books.** Group 443 is a PB1-only test book. Are there real PB1 books worth keeping readable? If no, delete the `<book>/Characters` fallback outright; if yes, one-time migration (create world + move characters) versus carrying the shim. Overlaps KI-89 and V3 §28.1 Stage 4.
 - **Q3 — backfill scope.** Build a graph backfill for `BWO 3` specifically, or accept that books rendered before the graph existed have no graph and must be re-rendered to get one? Backfill cannot invent provenance (`DONE_UNVERIFIED` exists for this).
-- **Q4 — orphan test graphs.** Two org-2 test workflows carry 38 orphan nodes. Delete them or leave them? Do not let them become the canvas's first impression.
+- **Q4 — orphan test graphs.** Two org-2 test workflows carry 38 orphan nodes. Delete them or leave them? Do not let them become the canvas's first impression. **2026-11-10:** the tool now exists — Console7 `-pbLegacyCleanup` (dry run) / `-pbLegacyPurge` deletes legacy `REFERENCE_STRIP` / `COMPOSITE` nodes nothing in V3 reaches (am7db org 2 dry run: 249 nodes + 6 artifacts + 94 settings rows deletable, 33 retained — `PictureBookV3Implementation.md` §6.C 274); running it is Stephen's call.
 - **Q5 — does the canvas earn its place?** 889 lines of Ux with no menu entry. Is the graph primarily a provenance record (API + node detail panel) or an interactive editing surface? The answer decides how much canvas to keep.
 - **Q10 — existing works.** Do standalone books already in the database become implicit one-chapter series (no data movement), or stay outside the series model?
 - **Write-volume caveat.** Graph recording adds node + binding + artifact rows per portrait/landscape/reference/composite; never measured on a 41-scene book.

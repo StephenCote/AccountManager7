@@ -9,8 +9,8 @@ import org.junit.Test;
 
 /**
  * Verifies the prompt-resource error handling: (1) the two picture-book prompt resources that had
- * unescaped inner double-quotes (line-2 JSON syntax errors — the JsonParseException seen in
- * prepareSceneImagePrompts) now parse, and (2) PromptResourceUtil caches results so a single
+ * unescaped inner double-quotes (line-2 JSON syntax errors — the JsonParseException first seen in
+ * the PB1 scene-prompt path, removed at Phase 10 P10-1) now parse, and (2) PromptResourceUtil caches results so a single
  * malformed/missing resource can't cascade into a repeated re-parse/re-log on every call.
  * Pure classpath-resource + parse logic — no DB/LLM, so it does not extend BaseTest.
  */

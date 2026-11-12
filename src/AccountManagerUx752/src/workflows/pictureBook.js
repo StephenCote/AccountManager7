@@ -10,6 +10,7 @@ import { initCharacterManager, renderCharacterManagerContent } from './pictureBo
 import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter, resolvePb2BookObjectId } from './pictureBookWorkflow.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
+import { resolveDefaultChatConfig } from '../components/pbChatConfig.js';
 
 /**
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
@@ -82,7 +83,6 @@ const DEFAULT_PROMPT_NAMES = {
     sceneBlurb: 'pictureBook.scene-blurb',
     landscapePrompt: 'pictureBook.landscape-prompt'
 };
-const DEFAULT_CHAT_CONFIG_NAME = 'contentAnalysis';
 // "single" mode primary template — applied to all prompts if no per-slot override given
 const DEFAULT_SINGLE_TEMPLATE = 'pictureBook.extract-scenes';
 
@@ -194,7 +194,9 @@ async function loadDefaults() {
 
         let lookups = [];
         if (!chatConfigRef) {
-            lookups.push(LLMConnector.resolveConfig(DEFAULT_CHAT_CONFIG_NAME)
+            // The library default every PB surface shares (pbChatConfig.DEFAULT_CHAT_CONFIG_NAMES: contentAnalysis,
+            // then generalChat — P10-D 4, §6.C 267 d; the wizard's own copy tried contentAnalysis only).
+            lookups.push(resolveDefaultChatConfig()
                 .then(r => { chatConfigRef = toRef(r); }));
         }
         if (!promptTemplate) {
@@ -2035,6 +2037,7 @@ export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract, stoppedE
 // decision and handOffToReader are the whole of "the wizard ends at step 3"; they are module-private
 // and reach m.route / Dialog directly, so the test drives them here and stubs those.
 export { buildActions, renderProgressBar, tryResumeExistingBook, handOffToReader };
+export { loadDefaults as __loadDefaultsForTest };
 export function __extractStateForTest() {
     return {
         step, workObjectId, extracting, retryingFailed, extractChaptered, extractError, extractJobId, extractProgress,

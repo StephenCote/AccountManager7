@@ -440,7 +440,7 @@ public class TestPbGraph extends BaseTest {
 		String sparse = PbConfigUtil.sparseOverride(cfg, Arrays.asList("flux2Steps", "style"));
 		assertNotNull("Expected a sparse override", sparse);
 		assertTrue("The set fields must be present: " + sparse, sparse.contains("flux2Steps") && sparse.contains("style"));
-		for(String dead : new String[] {"flux2Cfg", "kontextModel", "mannequinSteps", "mannequinCreativity",
+		for(String dead : new String[] {"flux2Cfg", "flux2Model", "mannequinSteps", "mannequinCreativity",
 				"mannequinUseBaseImage", "refinerModel", "negativePrompt"}) {
 			assertFalse("An unset field must NOT appear in the override: " + dead + " in " + sparse,
 				sparse.contains(dead));
