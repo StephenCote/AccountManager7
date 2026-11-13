@@ -453,4 +453,68 @@ public class TestPbLegacyCleanup extends BaseTest {
 			assertNotNull(scan.get("retainedTotal"));
 		}
 	}
+
+	/// Read-write, opt-in. The purge the Console7 action would run, against this database, per organization
+	/// (-Dp105.orgs as above) - only with -Dp105.purge=true; without it the method logs that nothing was
+	/// requested and passes without a scan. Per organization: scan, purge every category, re-scan, and
+	/// log the surviving legacy nodes per nodeType - the count a PbNodeTypeEnumType value needs at zero
+	/// (on every database the code reads) before it can be removed (design §37.5; EnumValueType.setValue
+	/// throws on a persisted value the enum no longer declares). Stephen's 2026-11-13 order: "do the purge".
+	@Test
+	public void purgeThisDatabaseWhenRequested() {
+		if(!Boolean.getBoolean("p105.purge")) {
+			logger.warn("P10-5 purge not requested (-Dp105.purge=true) on " + dbUrl() + "; nothing scanned or deleted");
+			return;
+		}
+		String orgs = System.getProperty("p105.orgs", ORG_A);
+		for(String path : orgs.split(",")) {
+			path = path.trim();
+			if(path.isEmpty()) {
+				continue;
+			}
+			OrganizationContext org = ioContext.getOrganizationContext(path, OrganizationEnumType.UNKNOWN);
+			assertTrue("organization " + path + " must exist on " + dbUrl() + " (the purge never creates one)", org.isInitialized());
+			BaseRecord u = admin(org);
+			Map<String, Object> before = PbLegacyCleanupUtil.scan(u);
+			String where = dbUrl() + " org " + before.get("organizationId") + " (" + path + ")";
+			logger.warn("P10-5 purge BEFORE on " + where + ": " + summary(before) + "; retained by nodeType " + nodeTypeCounts(before));
+
+			Map<String, Object> purge = PbLegacyCleanupUtil.purge(u, null);
+			@SuppressWarnings("unchecked")
+			List<Map<String, Object>> results = (List<Map<String, Object>>) purge.get("results");
+			for(Map<String, Object> r : results) {
+				logger.warn("P10-5 purged " + r);
+			}
+			logger.warn("P10-5 purge on " + where + ": deleted=" + purge.get("deleted") + ", denied=" + purge.get("denied")
+				+ ", failed=" + purge.get("failed") + "; retained=" + purge.get("retainedTotal") + "; warnings=" + purge.get("warnings"));
+
+			Map<String, Object> after = PbLegacyCleanupUtil.scan(u);
+			for(Map<String, Object> r : retained(after)) {
+				logger.warn("P10-5 still retained " + r);
+			}
+			logger.warn("P10-5 purge AFTER on " + where + ": " + summary(after) + "; retained by nodeType " + nodeTypeCounts(after));
+			assertEquals("every purge outcome must be deleted (denied/failed rows are logged above) on " + where, 0,
+				((Number) purge.get("denied")).intValue() + ((Number) purge.get("failed")).intValue());
+			assertEquals("nothing may remain deletable after the purge on " + where, 0, ((Number) after.get("total")).intValue());
+		}
+	}
+
+	private static String summary(Map<String, Object> scan) {
+		List<String> lines = new ArrayList<>();
+		for(String code : PbLegacyCleanupUtil.PURGE_ORDER) {
+			lines.add(code + "=" + items(scan, code).size());
+		}
+		return String.join(", ", lines) + "; retained=" + scan.get("retainedTotal") + "; warnings=" + scan.get("warnings");
+	}
+
+	/** Retained PB1_LEGACY_NODE rows per nodeType, e.g. {@code {COMPOSITE=5, REFERENCE_STRIP=2}}. */
+	private static Map<String, Integer> nodeTypeCounts(Map<String, Object> scan) {
+		Map<String, Integer> counts = new java.util.TreeMap<>();
+		for(Map<String, Object> r : retained(scan)) {
+			if(PbLegacyCleanupUtil.PB1_LEGACY_NODE.equals(r.get("code"))) {
+				counts.merge(String.valueOf(r.get("nodeType")), 1, Integer::sum);
+			}
+		}
+		return counts;
+	}
 }

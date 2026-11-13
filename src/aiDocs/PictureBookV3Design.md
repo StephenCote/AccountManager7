@@ -15,13 +15,13 @@ as proxy (§38)**, **auto-approve is one general switch (§10)**, **VLM QA defau
 (§7.2 — object/item references)**, **composition up front (§9.1)**, **events/interactions skipped
 (§34 item 15)**, **Q14 source (b) seeded by (a) (ratified 2026-10-24 with P5-0)**. Open: §34 items 3
 (default value only), 7, 8 — none blocks Phase 0–2; the design records a default for each.
-**Inputs:** `archive/PictureBookV3Notes.md` (target architecture), `PictureBookImageGenerationDesign.md`
-(current behaviour and gaps G-1…G-36), `PictureBook2Plan.md` (workflow graph, §6 ComfyUI),
+**Inputs:** `archive/PictureBookV3Notes.md` (target architecture), `archive/PictureBookImageGenerationDesign.md`
+(current behaviour and gaps G-1…G-36; archived 2026-11-13, its banner maps each G-id to where it landed), `PictureBook2Plan.md` (workflow graph, §6 ComfyUI),
 `archive/PictureBookWorkflowOverhaul.md`, `PictureBookAsyncJobDesign.md`, `archive/PictureBookSdConfigRefactor.md`.
 **Not available:** the SequenceDev document that the notes refer to is not in the repository.
 Where this design relies on SequenceDev (location library, background-first and sequential
 inpainting), it uses the notes' description of it. **G-numbers [reconciled 2026-10-09]:**
-`PictureBookImageGenerationDesign.md` was restored to the tree on 2026-10-09 (it had been missing
+`archive/PictureBookImageGenerationDesign.md` (then at `aiDocs/`) was restored to the tree on 2026-10-09 (it had been missing
 from the working tree and every commit). Its G-1…G-36 numbering differs from what this document
 originally cited in eleven places; all G-n references below now match that file (§36.8 lists the
 corrections). Two items this design treats as Phase 0 hygiene — raw `FIELD_BYTE_STORE` writes and
@@ -2500,7 +2500,7 @@ scene-blurb, landscape-prompt, scene-image-prompt}.json` and
 5. ~~Reconcile the G-n ids~~ Done 2026-10-09 (§36.8).
 6. Phase 0 starts with the hygiene items in §30 and their tests; nothing in Part VII changes that.
 
-#### 36.8 G-number reconciliation against `PictureBookImageGenerationDesign.md`
+#### 36.8 G-number reconciliation against `archive/PictureBookImageGenerationDesign.md` (archived 2026-11-13)
 
 The design was written against a draft numbering. Corrected 2026-10-09 (old → new, where in this
 document):
