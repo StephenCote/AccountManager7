@@ -1440,7 +1440,7 @@ public class PbHealthUtil {
 	}
 
 	private static boolean canHeal(BaseRecord user, BaseRecord book) {
-		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, book);
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, PbBookUtil.authorizingView(book));
 		if(prr != null && prr.getType() == PolicyResponseEnumType.PERMIT) {
 			return true;
 		}

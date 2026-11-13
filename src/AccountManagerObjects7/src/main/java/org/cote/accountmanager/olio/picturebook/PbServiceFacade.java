@@ -270,7 +270,9 @@ public class PbServiceFacade {
 	 * workflow and the node proves only that the caller may <i>see</i> them.
 	 */
 	private static void requireBookUpdate(BaseRecord user, BaseRecord book, String what) {
-		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, book);
+		/// Evaluated on the authorizing view (no linkage FKs): the question is Update on THIS book row, never on
+		/// the series row or the manuscript the chapter points at (PbBookUtil.authorizingView; §6.A).
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, PbBookUtil.authorizingView(book));
 		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
 			throw new PictureBookException(403, "Not authorized to " + what + " in this book");
 		}
@@ -1679,7 +1681,7 @@ public class PbServiceFacade {
 	public static Map<String, Object> recopyChapter(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		long orgId = orgOf(user);
-		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, book);
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, PbBookUtil.authorizingView(book));
 		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
 			throw new PictureBookException(403, "Not authorized to recopy this chapter's cast");
 		}
@@ -1783,7 +1785,7 @@ public class PbServiceFacade {
 	public static Map<String, Object> mergeChapter(BaseRecord user, String bookObjectId) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		long orgId = orgOf(user);
-		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, book);
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, PbBookUtil.authorizingView(book));
 		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
 			throw new PictureBookException(403, "Not authorized to merge this chapter's cast");
 		}

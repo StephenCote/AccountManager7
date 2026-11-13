@@ -4,8 +4,8 @@
 `file:line` / `log:line`). Authored 2026-09-20; IN PROGRESS 2026-09-23 (backend + Ux fan-out for the bounded
 per-chapter async extraction landed, fixing Issue 1's 90-min timeout, `archive/IssueLog-2026-09-22.md`).
 End-to-end verified 2026-11-12 over the first 4 chapters of the real manuscript in a real browser against
-the Docker stack. Residue: the three §6.A authorization reds (Stephen's design call) and KI-83 / KI-87 —
-§0a. §2's exists/missing snapshot is left as the 2026-09-20 history it is.
+the Docker stack. Residue: KI-83 / KI-87 — §0a (the three §6.A authorization reds closed 2026-11-12,
+ledger §6.C 286). §2's exists/missing snapshot is left as the 2026-09-20 history it is.
 **Scope:** The "N-series" of `archive/PictureBookWorkflowOverhaul.md` §6 (N1–N4): make series/chapters
 real, share one Olio world per series, additive per-chapter ingest, series reader + chapter-scoped
 canvas. The "W-series" (W1–W5, graph recording) is already **done and verified** — this plan does
@@ -51,7 +51,12 @@ the two runs in `scratch/post10-1/` (class-1 evidence, see `ArtifactInventory.md
 `TestPbListSeriesBooks:138`, `TestPbSeriesCast:532` (`:4693-4695`): a chapter's `sourceData` / `sourceRange` are
 the author's private `data.data`, so the olio principal and a series Writer are denied `readBook` by the
 foreign-access read rules; the remedies are listed in the archive (`PictureBookV3Implementation-P0-P4.md:6752`)
-and the choice is Stephen's — not a regression, byte-identical since 2026-10-10. (2) KI-83 (nested-path
+and the choice is Stephen's — not a regression, byte-identical since 2026-10-10. **Closed 2026-11-12, §6.C 286**
+(remedy option 2, the read-path projection: `PbBookUtil.readBook` / `findBookBySlug` / `requireBookUpdate`
+authorize on `bookAuthorizingRequest()` — no `world` / `series` / `sourceData` / `sourceRange` — and populate
+the linkage raw afterwards; the three classes green unedited, the series set `2-o7-series-set.log:27722
+Tests run: 78, Failures: 0, Errors: 0, Skipped: 2` + the two gated live classes green, `scratch/post10-1b/`).
+(2) KI-83 (nested-path
 `request` projection) OPEN; KI-87 (the real DB's old prompt template) Stephen's. (3) The first 4-chapter run
 (`8-e2e-chaptered-4ch.log`) was red only on the spec's own listener flagging the wizard's designed resume probe
 (`GET /rest/model/olio.pb.book/{sourceDocId}` → 404, `tryResumeExistingBook` → `resolvePb2BookObjectId`,

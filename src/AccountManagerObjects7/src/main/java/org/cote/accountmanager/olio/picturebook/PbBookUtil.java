@@ -3,18 +3,22 @@ package org.cote.accountmanager.olio.picturebook;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.olio.NarrativeUtil;
@@ -604,18 +608,34 @@ public class PbBookUtil {
 		}
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SLUG, slug);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
-		q.setRequest(bookRequest());
-		q.setCache(false);
-		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		return populateBookLinkage(authorizedFind(user, q));
 	}
 
+	/**
+	 * The book with {@code objectId}, read as {@code user} through {@code AccessPoint} and returned in the
+	 * {@link #bookRequest()} shape. Authorization is evaluated on the {@link #bookAuthorizingRequest()}
+	 * projection (the book row and its own-group config); the {@link #BOOK_LINKAGE_FIELDS} are then
+	 * populated raw by {@link #populateBookLinkage}, so a reader entitled to the book row - a series Writer,
+	 * a direct-grant reader of the chapter group, the olio principal - is not denied for lacking Read over
+	 * the series row, the shared world or the author's private manuscript the chapter merely points at.
+	 */
 	public static BaseRecord readBook(BaseRecord user, String objectId, long organizationId) {
 		if(user == null || objectId == null) {
 			return null;
 		}
+		return populateBookLinkage(readBookAuthorizing(user, objectId, organizationId));
+	}
+
+	/** {@link #readBook} WITHOUT the linkage step: the record exactly as it was authorized. */
+	private static BaseRecord readBookAuthorizing(BaseRecord user, String objectId, long organizationId) {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
-		q.setRequest(bookRequest());
+		return authorizedFind(user, q);
+	}
+
+	/** Uncached {@code AccessPoint.find} of ONE book with the authorizing projection. */
+	private static BaseRecord authorizedFind(BaseRecord user, Query q) {
+		q.setRequest(bookAuthorizingRequest());
 		q.setCache(false);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
 	}
@@ -623,13 +643,16 @@ public class PbBookUtil {
 	/// Re-reads the book by objectId as the user and requires UPDATE on the persisted record, so a write into
 	/// the book's graph is gated on the stored book and never on a world/group FK carried by a caller-supplied record.
 	/// 401 without a user or book, 404 when the user cannot read it, 403 when the user may read but not update it.
+	/// The Update gate runs on the record AS AUTHORIZED (bookAuthorizingRequest - no linkage FKs, so no foreign
+	/// rule over the series row or the manuscript); the linkage is populated onto the returned record only after
+	/// the gate has permitted.
 	public static BaseRecord requireBookUpdate(BaseRecord user, BaseRecord book, String what) {
 		if(user == null || book == null) {
 			throw new PictureBookException(401, "No user");
 		}
 		Long orgId = book.get(FieldNames.FIELD_ORGANIZATION_ID);
 		String oid = book.get(FieldNames.FIELD_OBJECT_ID);
-		BaseRecord fresh = (orgId != null ? readBook(user, oid, orgId.longValue()) : null);
+		BaseRecord fresh = (orgId != null ? readBookAuthorizing(user, oid, orgId.longValue()) : null);
 		if(fresh == null) {
 			throw new PictureBookException(404, "Book not found");
 		}
@@ -637,7 +660,7 @@ public class PbBookUtil {
 		if(prr == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
 			throw new PictureBookException(403, "Not permitted to " + what + " of book " + fresh.get(OlioFieldNames.FIELD_PB_SLUG));
 		}
-		return fresh;
+		return populateBookLinkage(fresh);
 	}
 
 	/**
@@ -1589,6 +1612,98 @@ public class PbBookUtil {
 			OlioFieldNames.FIELD_PB_FIX_PAGE_HEIGHT, OlioFieldNames.FIELD_PB_AUTO_APPROVE,
 			OlioFieldNames.FIELD_STYLE
 		};
+	}
+
+	/**
+	 * The book's four <b>linkage</b> FKs: the records a chapter points AT that live under a different
+	 * authority than the book row itself - the shared series world and the series row (olio-owned,
+	 * under the series container), and the author's private manuscript ({@code sourceData}) and its span
+	 * ({@code sourceRange}). The book's config FKs ({@code sdConfig}, {@code compositeSdConfig},
+	 * {@code style}) are NOT linkage: they are created in the book's own group, so Read on the book's
+	 * group is Read on them, and they stay in the authorizing projection.
+	 */
+	public static final String[] BOOK_LINKAGE_FIELDS = new String[] {
+		OlioFieldNames.FIELD_PB_WORLD, OlioFieldNames.FIELD_PB_SERIES,
+		OlioFieldNames.FIELD_PB_SOURCE_DATA, OlioFieldNames.FIELD_PB_SOURCE_RANGE
+	};
+
+	/**
+	 * {@link #bookRequest()} minus {@link #BOOK_LINKAGE_FIELDS}: the projection the book is <b>authorized</b>
+	 * with. {@code PolicyUtil.getSchemaRules} adds one foreign-access rule per populated foreign field present
+	 * on the record being evaluated, so a book read with {@code bookRequest()} is only readable by a caller
+	 * who may ALSO read the series row, the shared world and the author's private manuscript - which a
+	 * series Writer, a direct-grant reader of the chapter group and the olio principal all cannot. Reading
+	 * with this projection evaluates Read (and, in {@link #requireBookUpdate}, Update) on the book row and
+	 * its own-group config only; the linkage is then populated raw by {@link #populateBookLinkage}.
+	 */
+	public static String[] bookAuthorizingRequest() {
+		Set<String> linkage = new HashSet<>(Arrays.asList(BOOK_LINKAGE_FIELDS));
+		return Arrays.stream(bookRequest()).filter(f -> !linkage.contains(f)).toArray(String[]::new);
+	}
+
+	/**
+	 * The authorizing view of a book that was read through {@link #readBook}/{@link #findBookBySlug}: a copy
+	 * carrying {@link #bookAuthorizingRequest()}'s fields only, for a {@code canUpdate} gate on a book that
+	 * already carries its populated linkage. The gate asks "may this user update THIS book row", and the
+	 * answer must not depend on Update over the series row or the manuscript the chapter merely points at.
+	 * Never mutates {@code book}.
+	 */
+	public static BaseRecord authorizingView(BaseRecord book) {
+		if(book == null) {
+			return null;
+		}
+		return book.copyRecord(bookAuthorizingRequest());
+	}
+
+	/**
+	 * Populate {@link #BOOK_LINKAGE_FIELDS} onto an ALREADY AUTHORIZED book, as a raw (no-PBAC), uncached,
+	 * depth-0 read of the book row - each FK materialised exactly as {@code bookRequest()} materialises it
+	 * (the linked model's common fields; never the manuscript bytes). This is the narrowing of §6.A: the
+	 * caller was authorized on the book; the linkage is what the book says it is, not a second authorization
+	 * over the linked records. Uncached deliberately ({@code Query.cache} defaults to true and
+	 * {@code CacheDBSearch} never invalidates by nested reference), so an edited {@code sourceRange} or
+	 * renamed series is seen on the next read exactly as it was under {@code bookRequest()}.
+	 *
+	 * @return {@code book}, with the four linkage fields set (null when the row holds no such FK)
+	 */
+	static BaseRecord populateBookLinkage(BaseRecord book) {
+		if(book == null) {
+			return null;
+		}
+		Object idVal = book.get(FieldNames.FIELD_ID);
+		long id = (idVal instanceof Number ? ((Number) idVal).longValue() : 0L);
+		if(id <= 0L) {
+			logger.error("populateBookLinkage: book " + book.get(FieldNames.FIELD_OBJECT_ID) + " carries no id");
+			return book;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ID, id);
+		List<String> req = new ArrayList<>(Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID));
+		req.addAll(Arrays.asList(BOOK_LINKAGE_FIELDS));
+		q.setRequest(req.toArray(new String[0]));
+		q.setCache(false);
+		BaseRecord raw = null;
+		try {
+			QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+			if(qr != null && qr.getResults() != null && qr.getResults().length > 0) {
+				raw = qr.getResults()[0];
+			}
+		}
+		catch(ReaderException e) {
+			logger.error("populateBookLinkage: " + e.getMessage());
+		}
+		if(raw == null) {
+			logger.error("populateBookLinkage: book id " + id + " could not be re-read for its linkage");
+			return book;
+		}
+		for(String f : BOOK_LINKAGE_FIELDS) {
+			try {
+				book.set(f, (raw.hasField(f) ? raw.get(f) : null));
+			}
+			catch(FieldException | ValueException | ModelNotFoundException e) {
+				logger.error("populateBookLinkage: " + f + ": " + e.getMessage());
+			}
+		}
+		return book;
 	}
 
 	public static String[] sceneRequest() {
