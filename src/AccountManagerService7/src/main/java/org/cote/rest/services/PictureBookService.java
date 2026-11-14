@@ -1268,8 +1268,13 @@ public class PictureBookService {
      * <p>
      * {@code ?force=true}: re-roll the scene's node even when it is current (an explicit per-scene
      * re-render from the reader, the same contract as the ChapBook page path). A pinned node is still a
-     * 409 ({@code pinned} count) until it is unpinned; force never overrides a pin. The flag is the only
-     * input besides the path — the SD backend and config still come from the server, never the caller.
+     * 409 ({@code pinned} count) until it is unpinned; force never overrides a pin. The SD backend and
+     * config still come from the server, never the caller.
+     * <p>
+     * Body (optional, §6.C 226 a): {@code { chatConfigName }} - the {@code olio.llm.chatConfig} the run is
+     * opened with (the visual-QA hook routes the vision model through its connection); absent = the
+     * user's default analysis config, unknown name = 404, malformed JSON = 400. The response and
+     * {@code GET /run/{id}} carry {@code chatConfig {objectId, name}} when one was set.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -1277,17 +1282,31 @@ public class PictureBookService {
     @Produces(MediaType.APPLICATION_JSON)
     public Response renderScene(@PathParam("bookObjectId") String bookObjectId,
             @PathParam("sceneObjectId") String sceneObjectId,
-            @QueryParam("force") @DefaultValue("false") boolean force,
+            @QueryParam("force") @DefaultValue("false") boolean force, String json,
             @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) {
+            return malformedBody();
+        }
         try {
             return Response.status(202)
                 .entity(JSONUtil.exportObject(PbServiceFacade.requestSceneRender(user, bookObjectId, sceneObjectId,
-                    resolveSdApiType(context), resolveSdServer(context), force)))
+                    resolveSdApiType(context), resolveSdServer(context), force, chatConfigNameOf(body))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
         }
+    }
+
+    /**
+     * {@code body.chatConfigName} trimmed, or null when absent / blank - the {@code pbChatConfig.js} convention
+     * (267). The render routes' body is optional (§6.C 226 a): {@link #bodyMap} gives an empty map for the
+     * no-body callers they have always had and null for text that is not a JSON object (400).
+     */
+    private static String chatConfigNameOf(Map<String, Object> body) {
+        String s = (body != null ? bodyString(body, "chatConfigName") : null);
+        return (s != null && !s.isBlank() ? s.trim() : null);
     }
 
     /**
@@ -1332,25 +1351,32 @@ public class PictureBookService {
      * Render the scene from its RenderPlan, synchronously (V3 §12, §16, §20; P2-5): the scene's RENDER_PLAN
      * node is created on first use, the plan is persisted as its {@code renderPlan} artifact BEFORE anything
      * is sent, the BASE stage goes through the renderer adapter (TEXT_ONLY; one image) and the image is
-     * recorded as the node's {@code base} artifact. No body. 200 with the executor's artifact DTO plus
+     * recorded as the node's {@code base} artifact. Body (optional, §6.C 226 a): {@code { chatConfigName }} -
+     * the {@code olio.llm.chatConfig} the run is opened with (absent = the user's default analysis config,
+     * unknown = 404, malformed = 400). 200 with the executor's artifact DTO plus
      * {@code planArtifactObjectId} / {@code planContentHash} / {@code strategy} / {@code stagesPlanned} /
-     * {@code stagesRendered}; 401 anonymous, 404 book/scene, 403 not the book's updater, 409 v1 book / pinned /
-     * in flight / no text / no installed model matches (the resolver's reason, with the plan artifact to inspect),
-     * 503 the renderer's inventory could not be read or the renderer is unreachable, 500 renderer error, no SD
-     * backend or unknown API type. Re-rolls go through POST /node/{id}/regenerate like any other node.
+     * {@code stagesRendered} (and {@code chatConfig {objectId, name}} when one was set); 401 anonymous, 404
+     * book/scene, 403 not the book's updater, 409 v1 book / pinned / in flight / no text / no installed model
+     * matches (the resolver's reason, with the plan artifact to inspect), 503 the renderer's inventory could
+     * not be read or the renderer is unreachable, 500 renderer error, no SD backend or unknown API type.
+     * Re-rolls go through POST /node/{id}/regenerate like any other node.
      */
     @RolesAllowed({"admin", "user"})
     @POST
     @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/render-plan")
     @Produces(MediaType.APPLICATION_JSON)
     public Response renderPlanScene(@PathParam("bookObjectId") String bookObjectId,
-            @PathParam("sceneObjectId") String sceneObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId, String json,
             @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) {
+            return malformedBody();
+        }
         try {
             return Response.status(200)
                 .entity(JSONUtil.exportObject(PbServiceFacade.requestRenderPlanScene(user, bookObjectId, sceneObjectId,
-                    resolveSdApiType(context), resolveSdServer(context))))
+                    resolveSdApiType(context), resolveSdServer(context), chatConfigNameOf(body))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
@@ -1385,19 +1411,24 @@ public class PictureBookService {
      * Asynchronous render of every scene of the book, as one run and one {@code pb.renderAll} job
      * (shared upstream nodes are rendered once). Same semantics and status codes as /scene/{id}/render;
      * a scene without a graph node gets its RENDER_PLAN node created on first use ({@code nodesMaterialized}),
-     * so {@code scenesWithoutNode} is always empty and 409 "no graph node" is gone.
+     * so {@code scenesWithoutNode} is always empty and 409 "no graph node" is gone. Body (optional, §6.C
+     * 226 a): {@code { chatConfigName }} as on /scene/{id}/render - the one run is opened with that config.
      */
     @RolesAllowed({"admin", "user"})
     @POST
     @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/render-all")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response renderAll(@PathParam("bookObjectId") String bookObjectId,
+    public Response renderAll(@PathParam("bookObjectId") String bookObjectId, String json,
             @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) {
+            return malformedBody();
+        }
         try {
             return Response.status(202)
                 .entity(JSONUtil.exportObject(PbServiceFacade.requestRenderAll(user, bookObjectId,
-                    resolveSdApiType(context), resolveSdServer(context))))
+                    resolveSdApiType(context), resolveSdServer(context), chatConfigNameOf(body))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);

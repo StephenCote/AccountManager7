@@ -4161,3 +4161,13 @@ Open questions from the 2026-09-19 workflow overhaul that nothing later answers 
 
 Default: leave all of them; they are listed so the questions are not lost with the archived doc.
 
+
+### KI-92. A shared series character's cast description depends on which chapter job wrote first — one `pbDescription` / `pbSceneRefs` attribute row per chapter, read first-of-ties. OPEN 2026-11-13 (UAT-1)
+
+**Found** by the whole-manuscript emulated spec's replay (`pictureBookChapteredManuscriptEmulated.spec.js`, ledger §6.C 295 b): the `pictureBook.compose-scene` prompts recorded on `.42` for Harlot's Eight missed in replay on a cast line that differed only in the character's description — ch6 "The Dragon's Wounds", Caleb MacKay carried ch5's description in the recording and ch6's in replay.
+
+**Cause.** Every chapter's extraction calls `PictureBookUtil.persistCharacterSceneAttributes` (`:1470-1487`), which APPENDS a `pbDescription` and a `pbSceneRefs` attribute row to the character; a series shares ONE `olio.charPerson` per cast member across its chapters (`createCharPerson` `:7764-7793` returns the existing population record), so after N chapters the person carries N rows of each name. The readers — `PbRenderPlanUtil.actorDescription` (`:1122-1144`, the render plan's identity text) and `PbComposeUtil`'s cast line — go through `AttributeUtil.getAttribute` (`:48-60`), which returns the FIRST equal-name row of a query ordered by `name` only (`common/attributeModel.json:31-32`, `StatementUtil:617/:657`). With the chapter jobs running 2-wide (`am7-asyncjob-1/2`), the first row is whichever chapter's job wrote first — so the description a scene composes and renders with is interleaving-dependent, not a function of the scene.
+
+**Effect.** Harmless to the pipeline (the description is one baseline line, every row is a real description of the same character) but non-deterministic across runs, and never the scene's own chapter by design; it is also why the emulated spec pins the `chat` kind by pipeline shape rather than to zero synth (the fixture set cannot be exact-key stable for that kind).
+
+**Options (Stephen's call, ledger §24 UAT-1):** (a) one attribute per chapter (`pbDescription:<chapterObjectId>`; readers pick the scene's chapter, fall back to any); (b) one row, updated in place (last chapter wins — deterministic only with one job); (c) leave it, the description is a baseline not a per-scene outfit. Default if nothing is said: (c), this entry stays OPEN. Nothing is built until answered.

@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -1030,6 +1031,29 @@ public class PbGraphUtil {
 		return "Run " + workflow.get(FieldNames.FIELD_NAME) + " "
 			+ startedAt.format(DateTimeFormatter.ISO_INSTANT) + " "
 			+ UUID.randomUUID().toString().substring(0, 8);
+	}
+
+	/**
+	 * The run's {@code chatConfig} as the wire shape {@code {objectId, name}} (§6.C 226 a), or null when the run
+	 * names none. {@link #runRequest()} projects the FK without a sub-plan, so the ref carries the config's
+	 * common fields (identity + name) and nothing else - enough for a client to show and to assert which
+	 * config the run was opened with; the full config is read by {@code PbNodeExecutor.runChatConfig}.
+	 */
+	public static Map<String, Object> chatConfigRef(BaseRecord run) {
+		BaseRecord ref = (run != null && run.hasField(OlioFieldNames.FIELD_PB_CHAT_CONFIG)
+			? run.get(OlioFieldNames.FIELD_PB_CHAT_CONFIG) : null);
+		if(ref == null) {
+			return null;
+		}
+		Object oid = ref.hasField(FieldNames.FIELD_OBJECT_ID) ? ref.get(FieldNames.FIELD_OBJECT_ID) : null;
+		Object name = ref.hasField(FieldNames.FIELD_NAME) ? ref.get(FieldNames.FIELD_NAME) : null;
+		if(oid == null && name == null) {
+			return null;
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("objectId", oid);
+		out.put("name", name);
+		return out;
 	}
 
 	public static String[] runRequest() {

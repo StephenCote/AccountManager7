@@ -7,6 +7,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.awt.Color;
 import java.util.ArrayDeque;
@@ -16,6 +17,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
@@ -37,6 +41,7 @@ import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StageResult;
 import org.cote.accountmanager.olio.illustration.SwarmGraphClient;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
+import org.cote.accountmanager.olio.llm.SummarizeProgress;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
 import org.cote.accountmanager.olio.picturebook.PbNodeExecutor.RenderBackend;
 import org.cote.accountmanager.olio.picturebook.PbRenderPlanUtil.PlanOptions;
@@ -49,12 +54,15 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
 import org.cote.accountmanager.schema.type.PbStrategyEnumType;
 import org.cote.accountmanager.schema.type.PbStyleScopeEnumType;
+import org.cote.accountmanager.thread.AsyncJob;
+import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Before;
 import org.junit.Test;
@@ -89,6 +97,20 @@ import org.junit.Test;
  *     carries a one-entry {@code variants[]} with {@code qa}, the page image is IN_REVIEW and its report is on the
  *     page node.</li>
  * </ol>
+ * The cancel check inside the hook (224 b, §24 I-3), each case a STANDARD run whose finals are already recorded
+ * when the cancel lands, so the renderers' own checks cannot see it and only the hook's can:
+ * <ol start="8">
+ * <li>{@link #cancelDuringProviderSelectionPersistsNoReport}: the selector raises the run's cancel flag -> the
+ *     hook throws {@code PbStageCancelledException} once the selector returns; the provider is never asked; no
+ *     {@code qa} artifact; the two finals stay GENERATED with variant 0 selected; the run is CANCELLED with the
+ *     hook's message; the node is READY with no inputHash, not DONE_UNVERIFIED; nothing auto-approved.</li>
+ * <li>{@link #cancelDuringTheCheckPersistsNoReportAndFlagsNothing}: the provider raises the flag while judging
+ *     and answers FAIL -> the verdict is dropped: no report, variant 0 not flagged, same revert.</li>
+ * <li>{@link #jobCancelDuringTheCheckRevertsTheNodeAndClosesTheRunCancelled}: the same through
+ *     {@code PbRenderJobUtil.submit} with {@code PbRunCancelRegistry.cancel(runOid)} raised from inside the check
+ *     -> the job is CANCELLED, the outcome says CANCELLED with the hook's message, the run reads "Cancelled after 0
+ *     of 1 stage(s)", the node is reverted, no report.</li>
+ * </ol>
  * Timings are logged by the hook, never asserted.
  */
 public class TestPbQaHookOffline extends BaseTest {
@@ -101,6 +123,9 @@ public class TestPbQaHookOffline extends BaseTest {
 	private static final String RUN_SD_PROMPT = "two travellers on a basalt headland at dusk, wind in their coats";
 	private static final String PAGE_PROMPT = "a serene alpine lake at dawn, wide natural vista, soft diffuse light, snow on distant peaks";
 	private static final String STYLE_PATH = "~/p84styles";
+	/// the job case: an offline run is seconds, the bound is generous for a small device (timings are never thresholds)
+	private static final long JOB_TIMEOUT_MS = 10L * 60L * 1000L;
+	private static final long POLL_MS = 250L;
 	private static final String POEM_TEXT =
 		"Outside, all is pristine,\n" +
 		"From cobalt skies of charcoal unity\n" +
@@ -202,12 +227,15 @@ public class TestPbQaHookOffline extends BaseTest {
 
 	/// Answers the queued reports in order and keeps every image and plan it was asked to judge; a check past
 	/// the script is a test defect. {@code boom} set makes every check throw it (the hook must catch it).
+	/// {@code onCheck} set runs inside every check, after the image is recorded and before the verdict is
+	/// answered - the cancel cases raise the run's cancel flag there, "while the provider was judging".
 	private static final class ScriptedQa implements QaProvider {
 		static final String NAME = "scripted";
 		final Deque<QaReport> script = new ArrayDeque<>();
 		final List<byte[]> judged = new ArrayList<>();
 		final List<RenderPlan> plans = new ArrayList<>();
 		RuntimeException boom;
+		Runnable onCheck;
 		int probes;
 		/// what appliesTo answers, and how often it was asked
 		boolean applies = true;
@@ -241,6 +269,9 @@ public class TestPbQaHookOffline extends BaseTest {
 		public QaReport check(RenderPlan plan, byte[] imageBytes) {
 			judged.add(imageBytes);
 			plans.add(plan);
+			if(onCheck != null) {
+				onCheck.run();
+			}
 			if(boom != null) {
 				throw boom;
 			}
@@ -273,13 +304,15 @@ public class TestPbQaHookOffline extends BaseTest {
 
 	/// The backend the run uses: the scripted renderer, the fixture graph client, and {@code selection} as the
 	/// attempt's QA choice (null provider = none answered). Counts the selector's calls and keeps the checkpoint
-	/// it was handed, so the OFF case can show the selector was never asked.
+	/// it was handed, so the OFF case can show the selector was never asked. {@code onSelect} set runs inside the
+	/// selector before it answers - case 8 raises the run's cancel flag there, "while the provider was resolved".
 	private static final class QaBackend implements RenderBackend {
 		final ScriptedAdapter adapter;
 		final FixtureGraphClient client;
 		final PbQaUtil.Selection selection;
 		int selections;
 		String checkpoint;
+		Runnable onSelect;
 		/// the run's chatConfig the hook handed the selector (224 a) - null here: these runs name none
 		BaseRecord runChatConfig;
 
@@ -304,6 +337,9 @@ public class TestPbQaHookOffline extends BaseTest {
 			selections++;
 			checkpoint = ckpt;
 			runChatConfig = chatConfig;
+			if(onSelect != null) {
+				onSelect.run();
+			}
 			return selection;
 		}
 	}
@@ -1007,6 +1043,202 @@ public class TestPbQaHookOffline extends BaseTest {
 			assertNotNull(r0);
 			assertEquals(QaReport.Result.FAIL, r0.getResult());
 			assertEquals(oidOf(a0), r0.getImageArtifactObjectId());
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	// ─────────────────────────────── 224 b: the cancel check inside the hook ───────────────────────────────
+
+	private static long idOf(BaseRecord rec) {
+		return ((Number) rec.get(FieldNames.FIELD_ID)).longValue();
+	}
+
+	/// Poll the registry (the way a client polls {@code GET /rest/job/{id}}) until the job is terminal.
+	private static AsyncJob awaitTerminal(BaseRecord u, String jobId, long maxMs) throws InterruptedException {
+		long deadline = System.currentTimeMillis() + maxMs;
+		AsyncJob job = null;
+		while(System.currentTimeMillis() < deadline) {
+			job = AsyncJobRegistry.get(u, jobId);
+			assertNotNull("job " + jobId + " must stay visible to its owner", job);
+			if(job.isTerminal()) {
+				return job;
+			}
+			Thread.sleep(POLL_MS);
+		}
+		fail("job " + jobId + " did not reach a terminal state within " + maxMs + "ms (last: " + (job != null ? job.getStatus() : "null") + ")");
+		return null;
+	}
+
+	/// One {@code executeNodeRun} under STANDARD with {@code token} as the run's cancel token, expected to end in
+	/// the hook's {@code PbStageCancelledException}; returns its message. A normal return is the defect under test.
+	private static String runCancelled(Fixture f, QaBackend backend, SummarizeProgress token) {
+		try {
+			Map<String, Object> out = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, f.node, f.sdu,
+				new PlanOptions(null, false, PbQualityPresetEnumType.STANDARD, null), token, backend);
+			fail("the run completed although the cancel flag was up inside the QA hook: " + out);
+			return null;
+		}
+		catch(PbNodeExecutor.PbStageCancelledException e) {
+			assertTrue("the cancel token was raised", token.isCancelled());
+			return e.getMessage();
+		}
+	}
+
+	/**
+	 * What every cancelled-in-the-hook attempt must leave behind: the two STANDARD finals recorded under the run
+	 * (variant 0 selected, both GENERATED - nothing flagged, nothing auto-approved), no {@code qa} artifact and no
+	 * report for either, the run CANCELLED carrying {@code why}, and the node returned to READY with no inputHash
+	 * (never DONE_UNVERIFIED: {@code completeNode} was not reached).
+	 */
+	private static void assertAbandonedAttempt(Fixture f, String message, String runWhy) {
+		assertNotNull("the exception carries a message", message);
+		assertTrue("names the hook: " + message, message.startsWith("Cancelled visual QA of "));
+		assertTrue("says the finals stay: " + message, message.contains("2 recorded final(s) stay on the node"));
+		assertTrue("says no report was written: " + message, message.contains("no further report written, no image flagged, node not completed"));
+
+		List<BaseRecord> bases = baseArtifacts(f);
+		assertEquals("the recorded finals stay", 2, bases.size());
+		BaseRecord a0 = bases.get(0);
+		BaseRecord a1 = bases.get(1);
+		assertEquals(0, PbArtifactUtil.variantIndexOf(a0));
+		assertEquals(1, PbArtifactUtil.variantIndexOf(a1));
+		assertTrue("variant 0 stays selected", selected(a0));
+		assertFalse(selected(a1));
+		assertEquals("variant 0 not flagged, not approved", PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(a0));
+		assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(a1));
+		assertTrue("no qa artifact", qaArtifacts(f).isEmpty());
+		assertNull("no report for variant 0", PbQaUtil.reportFor(f.owner, f.node, oidOf(a0)));
+		assertNull("no report for variant 1", PbQaUtil.reportFor(f.owner, f.node, oidOf(a1)));
+
+		String runOid = PbArtifactUtil.attemptOf(a0);
+		assertNotNull("the finals name their attempt", runOid);
+		assertEquals(runOid, PbArtifactUtil.attemptOf(a1));
+		BaseRecord run = PbGraphUtil.readRun(f.owner, runOid, orgOf(f.owner));
+		assertNotNull("run row", run);
+		assertEquals("run CANCELLED, never FAILED or COMPLETED", PbRunStatusEnumType.CANCELLED.name(),
+			status(run.get(OlioFieldNames.FIELD_PB_RUN_STATUS)));
+		assertEquals("the run's error is the hook's message", runWhy, run.get(OlioFieldNames.FIELD_PB_ERROR));
+		assertNotNull(run.get(OlioFieldNames.FIELD_PB_COMPLETED_AT));
+
+		CacheUtil.clearCache();
+		BaseRecord fresh = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgOf(f.owner));
+		assertNotNull(fresh);
+		assertEquals("the node is returned to READY, not left RUNNING or completed", PbNodeStatusEnumType.READY.name(),
+			status(fresh.get(OlioFieldNames.FIELD_PB_NODE_STATUS)));
+		assertNull("no inputHash: completeNode never ran", fresh.get(OlioFieldNames.FIELD_PB_INPUT_HASH));
+	}
+
+	@Test
+	public void cancelDuringProviderSelectionPersistsNoReport() throws Exception {
+		logger.info("cancelDuringProviderSelectionPersistsNoReport");
+		Fixture f = null;
+		try {
+			f = fixture("p84xs");
+			prepareRun(f, "xs");
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(solid(90, 120, 60), 8401, 800), ok(solid(60, 90, 120), 8402, 700));
+			ScriptedQa qa = new ScriptedQa().verdicts(failReport());
+			QaBackend backend = backend(adapter, qa);
+			SummarizeProgress token = new SummarizeProgress();
+			/// the flag goes up while the selector is resolving - after both finals were recorded
+			backend.onSelect = token::cancel;
+
+			String message = runCancelled(f, backend, token);
+			assertEquals("both finals rendered before the cancel", 2, adapter.requests.size());
+			assertEquals("the selector was asked", 1, backend.selections);
+			assertTrue("the provider was never asked to judge", qa.judged.isEmpty());
+			assertTrue("the message says where: " + message, message.contains(" once the QA provider was resolved; "));
+			assertTrue("0 judged: " + message, message.contains("0 of them judged"));
+			assertAbandonedAttempt(f, message, message);
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	@Test
+	public void cancelDuringTheCheckPersistsNoReportAndFlagsNothing() throws Exception {
+		logger.info("cancelDuringTheCheckPersistsNoReportAndFlagsNothing");
+		Fixture f = null;
+		try {
+			f = fixture("p84xc");
+			prepareRun(f, "xc");
+			byte[] png0 = solid(90, 120, 60);
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(png0, 8411, 800), ok(solid(60, 90, 120), 8412, 700));
+			/// FAIL: had the hook carried on, it would have persisted a report and flagged variant 0 IN_REVIEW
+			ScriptedQa qa = new ScriptedQa().verdicts(failReport());
+			QaBackend backend = backend(adapter, qa);
+			SummarizeProgress token = new SummarizeProgress();
+			qa.onCheck = token::cancel;
+
+			String message = runCancelled(f, backend, token);
+			assertEquals("the selector was asked", 1, backend.selections);
+			assertEquals("variant 0 was judged once", 1, qa.judged.size());
+			assertArrayEquals(png0, qa.judged.get(0));
+			assertTrue("the message says where: " + message, message.contains(" after " + ScriptedQa.NAME + " judged variant 0 ("));
+			assertTrue("names the dropped verdict: " + message, message.contains(" FAIL (that verdict was dropped); "));
+			assertTrue("0 judged with a report: " + message, message.contains("0 of them judged"));
+			assertAbandonedAttempt(f, message, message);
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	@Test
+	public void jobCancelDuringTheCheckRevertsTheNodeAndClosesTheRunCancelled() throws Exception {
+		logger.info("jobCancelDuringTheCheckRevertsTheNodeAndClosesTheRunCancelled");
+		Fixture f = null;
+		try {
+			f = fixture("p84xj");
+			prepareRun(f, "xj");
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(solid(90, 120, 60), 8421, 800), ok(solid(60, 90, 120), 8422, 700));
+			ScriptedQa qa = new ScriptedQa().verdicts(failReport());
+			QaBackend backend = backend(adapter, qa);
+			/// the job's token is the registry's: cancel the run by objectId from inside the check, once the
+			/// submitting thread has published it (the stage may reach the hook before submit returns here)
+			AtomicReference<String> runOidRef = new AtomicReference<>();
+			CountDownLatch published = new CountDownLatch(1);
+			Map<String, Object> observed = new LinkedHashMap<>();
+			qa.onCheck = () -> {
+				try {
+					published.await(2, TimeUnit.MINUTES);
+				}
+				catch(InterruptedException e) {
+					Thread.currentThread().interrupt();
+				}
+				observed.put("cancelAccepted", Boolean.valueOf(PbRunCancelRegistry.cancel(runOidRef.get())));
+			};
+
+			Map<String, Object> dto = PbRenderJobUtil.submit(f.owner, f.book, f.workflow, List.of(Long.valueOf(idOf(f.node))), f.sdu, OFFLINE_SERVER,
+				PbRenderJobUtil.KIND_RENDER, true, backend);
+			assertNotNull("submit DTO", dto);
+			String jobId = str(dto.get("jobId"));
+			String runOid = str(dto.get("runObjectId"));
+			assertNotNull(jobId);
+			assertNotNull(runOid);
+			runOidRef.set(runOid);
+			published.countDown();
+			AsyncJob job = awaitTerminal(f.owner, jobId, JOB_TIMEOUT_MS);
+
+			assertEquals("the registry accepted the cancel", Boolean.TRUE, observed.get("cancelAccepted"));
+			assertEquals("variant 0 was judged once", 1, qa.judged.size());
+			assertEquals("job status (" + job.getResult() + ")", AsyncJob.Status.CANCELLED, job.getStatus());
+			Map<?, ?> result = JSONUtil.importObject(job.getResult(), Map.class);
+			assertNotNull("the cancelled job keeps its summary", result);
+			assertEquals(PbRunStatusEnumType.CANCELLED.name(), result.get("runStatus"));
+			List<?> nodes = (List<?>) result.get("nodes");
+			assertEquals(1, nodes.size());
+			Map<?, ?> outcome = (Map<?, ?>) nodes.get(0);
+			assertEquals("CANCELLED", outcome.get("status"));
+			assertEquals(PbNodeStatusEnumType.READY.name(), outcome.get("revertedTo"));
+			String message = str(outcome.get("error"));
+			assertTrue("the outcome carries the hook's message: " + message,
+				message != null && message.contains(" after " + ScriptedQa.NAME + " judged variant 0 (") && message.contains("(that verdict was dropped); "));
+			assertAbandonedAttempt(f, message, "Cancelled after 0 of 1 stage(s)");
+			assertNull("the node's inflight claim is released", PbNodeInflight.runOf(idOf(f.node)));
+			assertNull("the cancel registration is released", PbRunCancelRegistry.peek(runOid));
 		}
 		finally {
 			cleanup(f);

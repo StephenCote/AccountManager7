@@ -359,7 +359,7 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	}
 
 	private Response render(BaseRecord u, String bookOid, String sceneOid) {
-		return service.renderScene(bookOid, sceneOid, false, requestAs(u), SD_CONTEXT);
+		return service.renderScene(bookOid, sceneOid, false, null, requestAs(u), SD_CONTEXT);
 	}
 
 	private Response build(BaseRecord u, String bookOid) {
@@ -367,7 +367,7 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	}
 
 	private Response renderAll(BaseRecord u, String bookOid) {
-		return service.renderAll(bookOid, requestAs(u), SD_CONTEXT);
+		return service.renderAll(bookOid, null, requestAs(u), SD_CONTEXT);
 	}
 
 	private String oid(BaseRecord rec) {
@@ -493,9 +493,9 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 	@Test
 	public void TestNoPrincipalIs401() {
 		HttpServletRequestMock anon = new HttpServletRequestMock();
-		refused(service.renderScene(NIL_UUID, NIL_UUID, false, anon, SD_CONTEXT), 401, NO_PRINCIPAL, "anonymous POST scene render");
+		refused(service.renderScene(NIL_UUID, NIL_UUID, false, null, anon, SD_CONTEXT), 401, NO_PRINCIPAL, "anonymous POST scene render");
 		refused(service.buildGraph(NIL_UUID, anon), 401, NO_PRINCIPAL, "anonymous POST graph build");
-		refused(service.renderAll(NIL_UUID, anon, SD_CONTEXT), 401, NO_PRINCIPAL, "anonymous POST render-all");
+		refused(service.renderAll(NIL_UUID, null, anon, SD_CONTEXT), 401, NO_PRINCIPAL, "anonymous POST render-all");
 		refused(service.getWorkflow(NIL_UUID, anon), 401, NO_PRINCIPAL, "anonymous GET workflow");
 	}
 

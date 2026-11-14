@@ -69,6 +69,28 @@ test.describe('ChapBook "Add from Data" sub-group nav + bg opacity', () => {
             const poemsDir = await ensurePath(ctx, 'auth.group', 'data', '~/Data/Poems');
             expect(poemsDir && poemsDir.id, '~/Data/Poems group created').toBeTruthy();
 
+            // Remove THIS spec's fixtures left by earlier runs (DPNPoemA_/DPNPoemB_ only — nothing else in
+            // the group is touched). The picker lists ~/Data/Poems name-ascending, 10 per page, and a
+            // base-36 Date.now() suffix sorts every new run AFTER the old ones, so by 2026-11-13 (16 runs,
+            // 32 leftovers on the stack) the fresh row sat on page 2 and the "row visible after navigating
+            // into ~/Data/Poems" assertion below went red for a reason that had nothing to do with Bug A.
+            const leftovers = await ctx.post(REST + '/model/search', {
+                data: {
+                    schema: 'io.query', type: 'data.data',
+                    fields: [
+                        { name: 'groupId', comparator: 'equals', value: Number(poemsDir.id) },
+                        { name: 'name', comparator: 'like', value: 'DPNPoem%' }
+                    ],
+                    request: ['id', 'objectId', 'name'], recordCount: 500, cache: false
+                }
+            });
+            const leftoverRows = ((await leftovers.json().catch(() => null)) || {}).results || [];
+            for (const r of leftoverRows) {
+                if (r && r.objectId && /^DPNPoem[AB]_/.test(r.name || '') && !r.name.endsWith('_' + RUN)) {
+                    await ctx.delete(REST + '/model/data.data/' + r.objectId).catch(() => {});
+                }
+            }
+
             // Two data.data "poems" that live ONLY inside ~/Data/Poems (unique names → no global
             // createObject short-circuit onto a stale same-named object in another group).
             for (const nm of [POEM_A, POEM_B]) {

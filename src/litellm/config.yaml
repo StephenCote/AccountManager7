@@ -247,6 +247,26 @@ model_list:
       # Split the token if they ever need different caps.
       max_parallel_requests: __LOCAL_MAX_PARALLEL__
 
+  # The PictureBook visual-QA vision model (Objects7 qualityPresets.json `qaModel`,
+  # VlmQaProvider). The provider asks for the model by its VERBATIM upstream name on
+  # whatever connection the run's chat config carries, and probes GET /v1/models for
+  # it first -- so when a chatConfig is routed through this proxy the alias MUST be
+  # the upstream name itself (the same "repoint by swapping only the connection"
+  # rule as `qwen3:8b` above) or the probe logs "model ... not listed by
+  # http://litellm:4000" and QA silently falls back to swarmYolo, which has nothing
+  # to judge on a plain scene (measured 2026-11-13, ledger §6.C 292). Installed on
+  # the LAN box only (not the container Ollama). Images ride as OpenAI `image_url`
+  # content parts; this image's ollama/chat/transformation.py converts them to
+  # Ollama `images`. "v" trips neither of AM7's o-series / gpt-5 prefix heuristics.
+  - model_name: valkyriesys/eudaimonia-dryad3-vision
+    litellm_params:
+      model: ollama_chat/valkyriesys/eudaimonia-dryad3-vision
+      api_base: os.environ/OLLAMA_API_BASE
+      # Innermost timeout -- see the ladder note in litellm_settings below.
+      timeout: 240
+      # Same physical GPU as the other OLLAMA_API_BASE entries; same queue value.
+      max_parallel_requests: __LOCAL_MAX_PARALLEL__
+
   - model_name: way-local-local
     litellm_params:
       model: ollama_chat/way-local

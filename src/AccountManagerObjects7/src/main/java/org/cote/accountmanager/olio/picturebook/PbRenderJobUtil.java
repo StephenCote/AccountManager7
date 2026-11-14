@@ -144,7 +144,22 @@ public final class PbRenderJobUtil {
 	 */
 	public static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
 			Collection<Long> terminals, String sdApiType, String sdServer, String kind, boolean force) {
-		return submit(user, book, workflow, terminals, PbNodeExecutor.toSdUtil(sdApiType, sdServer), sdServer, kind, force);
+		return submit(user, book, workflow, terminals, sdApiType, sdServer, kind, force, null);
+	}
+
+	/**
+	 * {@link #submit(BaseRecord, BaseRecord, BaseRecord, Collection, String, String, String, boolean)} with the
+	 * {@code olio.llm.chatConfig} the run is opened with (§6.C 226 a): it is written to {@code run.chatConfig}
+	 * ({@link PbGraphUtil#startRun(BaseRecord, BaseRecord, String, List, BaseRecord)}) so the visual-QA hook
+	 * routes the vision model through that config's connection (220 e) - the same seam the compose job and the
+	 * synchronous plan render already have. Null leaves the FK unset (the user's default analysis config). The
+	 * caller resolves the name to a record it can read ({@code PbComposeJobUtil.resolveChatConfig}); an
+	 * unknown name is its 404, never a silent default.
+	 */
+	public static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
+			Collection<Long> terminals, String sdApiType, String sdServer, String kind, boolean force, BaseRecord chatConfig) {
+		return submit(user, book, workflow, terminals, PbNodeExecutor.toSdUtil(sdApiType, sdServer), sdServer, kind, force,
+			PbNodeExecutor.RenderBackend.SWARM, chatConfig);
 	}
 
 	/**
@@ -170,6 +185,13 @@ public final class PbRenderJobUtil {
 	 */
 	static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
 			Collection<Long> terminals, SDUtil sdu, String sdServer, String kind, boolean force, PbNodeExecutor.RenderBackend backend) {
+		return submit(user, book, workflow, terminals, sdu, sdServer, kind, force, backend, null);
+	}
+
+	/** The body; {@code chatConfig} as on the public nine-argument overload (§6.C 226 a). */
+	static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
+			Collection<Long> terminals, SDUtil sdu, String sdServer, String kind, boolean force, PbNodeExecutor.RenderBackend backend,
+			BaseRecord chatConfig) {
 		if(user == null || book == null || workflow == null) {
 			throw new PictureBookException(400, "A user, book and workflow are required");
 		}
@@ -215,7 +237,7 @@ public final class PbRenderJobUtil {
 		for(BaseRecord n : plan.execute) {
 			executeIds.add(Long.valueOf(idOf(n)));
 		}
-		BaseRecord run = PbGraphUtil.startRun(user, workflow, PbBookUtil.workflowGroupPath(slug), executeIds);
+		BaseRecord run = PbGraphUtil.startRun(user, workflow, PbBookUtil.workflowGroupPath(slug), executeIds, chatConfig);
 		if(run == null) {
 			throw new PictureBookException(500, "Failed to open a run for " + plan.scopeLabel);
 		}
@@ -280,6 +302,10 @@ public final class PbRenderJobUtil {
 		out.put("reusedNodeCount", Integer.valueOf(plan.reused));
 		out.put("pinnedNodeCount", Integer.valueOf(plan.pinned));
 		out.put("lastRunUpdated", Boolean.valueOf(lastRunUpdated));
+		Map<String, Object> cfgRef = PbGraphUtil.chatConfigRef(run);
+		if(cfgRef != null) {
+			out.put("chatConfig", cfgRef);
+		}
 		return out;
 	}
 

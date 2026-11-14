@@ -325,6 +325,10 @@ public class PbNodeExecutor {
 		if(run != null) {
 			out.put("runObjectId", run.get(FieldNames.FIELD_OBJECT_ID));
 			out.put("runStatus", run.get(OlioFieldNames.FIELD_PB_RUN_STATUS));
+			Map<String, Object> cfgRef = PbGraphUtil.chatConfigRef(run);
+			if(cfgRef != null) {
+				out.put("chatConfig", cfgRef);
+			}
 		}
 		out.put("executedNodeCount", Integer.valueOf(g.getExecuted()));
 		out.put("failedNodeCount", Integer.valueOf(g.getFailed()));
@@ -952,7 +956,16 @@ public class PbNodeExecutor {
 	 * each non-PASS verdict is a {@code QA_FAIL} / {@code QA_WARN} / {@code QA_UNAVAILABLE} degradation, all of
 	 * which auto-approve accepts - the FAIL acts through the ordering in
 	 * {@link PbArtifactUtil#autoApprove(BaseRecord, List, Map, List, String)} (220 c). A provider that throws,
-	 * or none at all, is {@code QA_UNAVAILABLE} and the attempt stands. Never throws; timings are logged only.
+	 * or none at all, is {@code QA_UNAVAILABLE} and the attempt stands. Never throws for anything the provider
+	 * does; timings are logged only.
+	 * <p>
+	 * The one exception it raises is {@link PbStageCancelledException} (224 b, §24 I-3): the owning run's cancel
+	 * flag is read once the provider is resolved (the probe may be a vision-model round trip) and again after
+	 * each {@link QaProvider#check} returns, before its report is persisted. A cancel seen there abandons the
+	 * attempt: the verdict in hand is dropped, no {@code qa} artifact is written and no image is flagged, and the
+	 * caller never reaches {@code completeNode} - the executor's catch returns the node to what its handle computes
+	 * and closes the run CANCELLED. What was already recorded stays: the attempt's finals (selected, unjudged) and
+	 * any report persisted for an earlier variant of an ALL-mode attempt; the message says how many of each.
 	 *
 	 * @param artifacts the recorded finals in variant order, fully projected ({@code PbPipelineUtil.recordImage}
 	 *        returns them so); flagged entries are replaced in place
@@ -976,6 +989,7 @@ public class PbNodeExecutor {
 			logger.error("Visual QA of " + sceneLabel + ": provider selection threw: " + errorMessage(e), e);
 			sel = new PbQaUtil.Selection(null, "selection threw " + errorMessage(e));
 		}
+		abandonQaIfCancelled(g, sceneLabel, artifacts.size(), qa, "once the QA provider was resolved");
 		QaProvider provider = (sel != null ? sel.getProvider() : null);
 		if(provider == null) {
 			String why = (sel != null ? sel.getNote() : "no selection");
@@ -1013,6 +1027,9 @@ public class PbNodeExecutor {
 			}
 			logger.info("Visual QA of " + sceneLabel + " " + label + ": " + rep.getResult() + " via " + provider.name()
 				+ " in " + (System.currentTimeMillis() - t0) + " ms");
+			/// 224 b: a cancel that landed while the provider was judging drops this verdict unpersisted and unflagged.
+			abandonQaIfCancelled(g, sceneLabel, artifacts.size(), qa, "after " + provider.name() + " judged " + label
+				+ " " + rep.getResult() + " (that verdict was dropped)");
 			String qaOid = null;
 			try {
 				BaseRecord qaArtifact = PbQaUtil.persistReport(user, g.getArtifactGroupPath(), rep, a);
@@ -1041,6 +1058,24 @@ public class PbNodeExecutor {
 			qa.byArtifact.put(oid, new VariantQa(rep, qaOid));
 		}
 		return qa;
+	}
+
+	/**
+	 * 224 b: {@link #qaAttempt}'s cancel check. When the owning run's cancel flag is up, throw
+	 * {@link PbStageCancelledException} with a message that states what this attempt leaves behind - the
+	 * {@code finals} recorded finals, which stay on the node, and the {@code qa.byArtifact.size()} reports already
+	 * persisted for earlier variants - and that no further report is written and the node is not completed.
+	 * A no-op without a run or with the flag down. Nothing here deletes: the finals are a selection chain
+	 * ({@code PbArtifactUtil.persistArtifact} - supersedes, selected) that the next attempt supersedes normally.
+	 */
+	private static void abandonQaIfCancelled(SceneGraph g, String sceneLabel, int finals, AttemptQa qa, String when) {
+		if(g == null || !g.isCancelRequested()) {
+			return;
+		}
+		int persisted = (qa != null ? qa.byArtifact.size() : 0);
+		throw new PbStageCancelledException("Cancelled visual QA of " + sceneLabel + " " + when + "; the attempt's " + finals
+			+ " recorded final(s) stay on the node, " + persisted + " of them judged with a report persisted before the cancel, "
+			+ "the rest unjudged; no further report written, no image flagged, node not completed");
 	}
 
 	/// 220 e / 224 a: the run's {@code chatConfig}, re-read in full as the user. The run projection carries the

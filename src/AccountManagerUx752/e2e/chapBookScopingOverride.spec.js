@@ -262,7 +262,13 @@ function stepsSpinner(card) {
 test.describe('C5 — per-scene SD-config override editor (UI)', () => {
     test.describe.configure({ timeout: 180000 });
 
-    test('override save persists (set badge + value), clear removes it', async ({ page }) => {
+    // Badges (since the 2026-11-10 "Chapbook patch", edf35b94): the toggle shows "unsaved" (cb-override-unsaved)
+    // while override edits are pending on the card and "overridden" (cb-override-saved) once an override is
+    // PERSISTED — the old single "set" badge, which this asserted until 2026-11-13, is gone.
+    function unsavedBadge(toggle) { return toggle.locator('[data-testid="cb-override-unsaved"]'); }
+    function savedBadge(toggle) { return toggle.locator('[data-testid="cb-override-saved"]'); }
+
+    test('override save persists (overridden badge + value), clear removes it', async ({ page }) => {
         await ensureSharedTestUser(page.request);
         await loginAsSharedUser(page);
 
@@ -284,8 +290,9 @@ test.describe('C5 — per-scene SD-config override editor (UI)', () => {
 
         const card = firstSceneCard(page);
         const firstToggle = card.locator('button:has-text("Image config overrides")');
-        // No override yet → no "set" badge, and no Clear button (it only renders when overridden).
-        await expect(firstToggle.getByText('set', { exact: true })).toHaveCount(0);
+        // No override yet → neither badge, and no Clear button (it only renders when overridden).
+        await expect(savedBadge(firstToggle)).toHaveCount(0);
+        await expect(unsavedBadge(firstToggle)).toHaveCount(0);
         await expect(card.locator('button[title*="Clear this page"]')).toHaveCount(0);
 
         // The card's single Save (D1) is disabled while the card is clean.
@@ -306,12 +313,15 @@ test.describe('C5 — per-scene SD-config override editor (UI)', () => {
 
         // Change the numeric "steps" field to a distinct value. SdConfigPanel.rangeInput writes it to
         // the override inst (inst.changes grows) and fires onChange → markSceneDirty(scene,'override'),
-        // so the card's Save flips to enabled and the toggle shows the "set" badge (unsaved edits count).
+        // so the card's Save flips to enabled and the toggle shows the "unsaved" badge (nothing persisted yet,
+        // so no "overridden").
         await stepsInput.fill(NEW_VAL);
         await expect(stepsInput).toHaveValue(NEW_VAL);
         await expect(saveBtn).toBeEnabled({ timeout: 10000 });
         await expect(saveBtn).toHaveText(/Save$/);
-        await expect(firstToggle.getByText('set', { exact: true })).toBeVisible();
+        await expect(unsavedBadge(firstToggle)).toBeVisible();
+        await expect(unsavedBadge(firstToggle)).toHaveText('unsaved');
+        await expect(savedBadge(firstToggle)).toHaveCount(0);
 
         // Save → the card's Save issues PUT /rest/olio/picture-book/scene/{oid}/config-override with
         // the SPARSE delta.
@@ -329,6 +339,9 @@ test.describe('C5 — per-scene SD-config override editor (UI)', () => {
             'sparse override must carry ONLY the edited field (no materialized defaults)').toEqual(['steps']);
         await expect(saveBtn, 'card Save must return to the clean/disabled state after a successful save')
             .toBeDisabled({ timeout: 10000 });
+        // Persisted → "unsaved" gives way to "overridden" on the same toggle.
+        await expect(unsavedBadge(firstToggle)).toHaveCount(0, { timeout: 10000 });
+        await expect(savedBadge(firstToggle)).toHaveText('overridden');
 
         // Reload the whole page (clears all in-memory JS state) then re-enter review — proves the
         // override was persisted server-side, not just held in the client.
@@ -336,10 +349,11 @@ test.describe('C5 — per-scene SD-config override editor (UI)', () => {
         await page.waitForFunction(() => document.querySelector('[role="main"]'), null, { timeout: 30000 });
         await gotoReview(page, bookObjectId);
 
-        // (a) "set" badge is present after reload.
+        // (a) "overridden" badge is present after reload (and no stale "unsaved").
         const cardAfter = firstSceneCard(page);
         const toggleAfter = cardAfter.locator('button:has-text("Image config overrides")');
-        await expect(toggleAfter.getByText('set', { exact: true })).toBeVisible({ timeout: 10000 });
+        await expect(savedBadge(toggleAfter)).toBeVisible({ timeout: 10000 });
+        await expect(unsavedBadge(toggleAfter)).toHaveCount(0);
 
         // (b) Persisted value reads back.
         await toggleAfter.click();
@@ -357,17 +371,19 @@ test.describe('C5 — per-scene SD-config override editor (UI)', () => {
         expect(clearResp.status(), 'PUT config-override (clear) must be 200').toBe(200);
         // Clear rebuilds the panel from the (now empty) override → badge and Clear button vanish, and
         // the steps spinner falls back to the shared default rather than the cleared value.
-        await expect(toggleAfter.getByText('set', { exact: true })).toHaveCount(0, { timeout: 10000 });
+        await expect(savedBadge(toggleAfter)).toHaveCount(0, { timeout: 10000 });
+        await expect(unsavedBadge(toggleAfter)).toHaveCount(0);
         await expect(cardAfter.locator('button[title*="Clear this page"]')).toHaveCount(0);
         await expect(stepsSpinner(cardAfter)).not.toHaveValue(NEW_VAL);
 
-        // Reload again → override removed server-side (no "set" badge, no Clear button).
+        // Reload again → override removed server-side (no badge, no Clear button).
         await page.reload({ timeout: 30000 });
         await page.waitForFunction(() => document.querySelector('[role="main"]'), null, { timeout: 30000 });
         await gotoReview(page, bookObjectId);
         const cardCleared = firstSceneCard(page);
         const toggleCleared = cardCleared.locator('button:has-text("Image config overrides")');
-        await expect(toggleCleared.getByText('set', { exact: true })).toHaveCount(0);
+        await expect(savedBadge(toggleCleared)).toHaveCount(0);
+        await expect(unsavedBadge(toggleCleared)).toHaveCount(0);
         await expect(cardCleared.locator('button[title*="Clear this page"]')).toHaveCount(0);
         await toggleCleared.click();
         await expect(stepsSpinner(cardCleared)).toBeVisible({ timeout: 10000 });

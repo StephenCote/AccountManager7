@@ -44,8 +44,9 @@ import {
     deriveStageList, runSummaryText, resolvePb2BookObjectId,
     migrateV1Book, normalizeMigration,
     getCovers, coverPageLayout, readerFrontPages,
-    getStyle, normalizeStyle
+    getStyle, normalizeStyle, carriedBookChatConfig
 } from '../workflows/pictureBookWorkflow.js';
+import { withChatConfig, resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { am7olio } from '../components/olio.js';
@@ -1285,6 +1286,35 @@ let pb2SceneDegradations = {};
 // P9-4 (V3 §40): the book's cover-art view (GET /{id}/covers, normalizeCoverView); null when not read or
 // the read failed. The reader's cover page shows the APPROVED COVER render when there is one, else page 1's image.
 let pb2Covers = null;
+// 226 a: the chat config {name, objectId} every render this reader submits sends by name (Render, Re-render,
+// Plan & generate, Render all) — the run's LLM steps use it. Seeded like the compose board: a ChapBook opens with
+// the config its own screens carry (carriedBookChatConfig), else the library default (contentAnalysis, then
+// generalChat) resolves once per book; a pick from the control wins and is never overwritten. null = no name
+// sent, the server default applies.
+let pb2ChatConfig = null;
+let pb2ChatConfigResolving = false;
+
+/** Library-only default resolution (no LLM call), as the compose board does; never overwrites a pick. */
+function pb2EnsureChatConfigDefault() {
+    if (pb2ChatConfig || pb2ChatConfigResolving) return;
+    pb2ChatConfigResolving = true;
+    let bookId = pb2BookObjectId;
+    (async function () {
+        let found = await resolveDefaultChatConfig();
+        pb2ChatConfigResolving = false;
+        if (found && !pb2ChatConfig && bookId === pb2BookObjectId) pb2ChatConfig = found;
+        m.redraw();
+    })();
+}
+
+/** The reader's "Chat Config" control (the compose board's, pbChatConfig.js); shown once a book is open. */
+function renderPb2ChatConfigControl() {
+    return renderChatConfigControl({
+        testid: 'pb2-chat-config', ref: pb2ChatConfig, resolving: pb2ChatConfigResolving,
+        title: 'The chat config every render from this reader sends to the LLM',
+        onPick: function (ref) { pb2ChatConfig = ref; m.redraw(); }
+    });
+}
 
 // P10-A 7: the pages before the scenes (readerFrontPages) - the cover page, preceded by a series-art page when the
 // chapter's series has approved SERIES_ART and the chapter its own approved COVER. Page numbers: 0 … front-1 are the
@@ -1420,7 +1450,8 @@ async function pb2WatchJob(submit, label) {
     let ctl = new AbortController();
     pb2RunAbort = ctl;
     pb2ResumeRun = null;
-    pb2Run = { jobId: jobId, runObjectId: submit.runObjectId || null, planned: submit.planned || [], job: null, label: label || 'Render', error: null };
+    // chatConfig: the {objectId, name} the server opened the run with (226 a), null when the request named none.
+    pb2Run = { jobId: jobId, runObjectId: submit.runObjectId || null, planned: submit.planned || [], job: null, label: label || 'Render', error: null, chatConfig: submit.chatConfig || null };
     let bookId = pb2BookObjectId;
     m.redraw();
     try {
@@ -1468,7 +1499,7 @@ async function pb2SubmitRenderAll() {
     m.redraw();
     let bookId = pb2BookObjectId;
     try {
-        let submit = await renderAll(bookId);
+        let submit = await renderAll(bookId, withChatConfig({}, pb2ChatConfig));
         if (submit.scenesWithoutNode.length) {
             page.toast('warning', submit.scenesWithoutNode.length + ' scene' + (submit.scenesWithoutNode.length !== 1 ? 's have' : ' has') + ' no graph node yet and will not render');
         }
@@ -1496,7 +1527,7 @@ async function pb2SubmitRenderScene(pg) {
     let bookId = pb2BookObjectId;
     let label = 'Render scene ' + (pg.sceneIndex != null ? pg.sceneIndex : '');
     try {
-        let submit = await renderScene(bookId, pg.objectId, { force: true });
+        let submit = await renderScene(bookId, pg.objectId, withChatConfig({ force: true }, pb2ChatConfig));
         pb2Submitting = false;
         pb2WatchJob(submit, label);
         return;
@@ -1518,7 +1549,7 @@ async function pb2SubmitRenderScene(pg) {
         m.redraw();
         try {
             await unpinNode(bookId, pg.sceneNodeObjectId);
-            let submit = await renderScene(bookId, pg.objectId, { force: true });
+            let submit = await renderScene(bookId, pg.objectId, withChatConfig({ force: true }, pb2ChatConfig));
             pb2Submitting = false;
             pb2WatchJob(submit, label);
         } catch (e2) {
@@ -1678,7 +1709,7 @@ async function pb2GenerateFromPlan() {
     pb2Plan.error = null;
     m.redraw();
     try {
-        let r = await renderPlanScene(bookId, pb2Plan.sceneOid);
+        let r = await renderPlanScene(bookId, pb2Plan.sceneOid, withChatConfig({}, pb2ChatConfig));
         pb2Plan.rendering = false;
         if (pb2Plan.open) Dialog.close();
         page.toast('success', 'Scene rendered' + (r && r.artifactObjectId ? ' (artifact ' + r.artifactObjectId + ')' : ''));
@@ -1806,6 +1837,11 @@ export function renderPb2RunProgress() {
             m('span', { class: 'font-semibold' }, pb2Run.label),
             m('span', { 'data-testid': 'pb2-run-counter', class: 'text-xs text-gray-500' },
                 terminal ? runSummaryText(job) : (current + ' of ' + total + (job && job.phase ? ' · ' + job.phase : ''))),
+            pb2Run.chatConfig && pb2Run.chatConfig.name ? m('span', {
+                'data-testid': 'pb2-run-chat-config',
+                class: 'text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300',
+                title: 'The chat config this run was opened with'
+            }, pb2Run.chatConfig.name) : null,
             m('span', { class: 'flex-1' }),
             !terminal && pb2Run.runObjectId ? m('button', {
                 'data-testid': 'pb2-run-cancel',
@@ -1837,7 +1873,7 @@ export function renderPb2RunProgress() {
 }
 
 export function __pb2V3StateForTest() {
-    return { pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations };
+    return { pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations, pb2ChatConfig, pb2ChatConfigResolving };
 }
 export function __setPb2V3StateForTest(patch) {
     patch = patch || {};
@@ -1852,6 +1888,8 @@ export function __setPb2V3StateForTest(patch) {
     if ('pb2BookName' in patch) pb2BookName = patch.pb2BookName;
     if ('pb2PollIntervalMs' in patch) pb2PollIntervalMs = patch.pb2PollIntervalMs;
     if ('pb2SceneDegradations' in patch) pb2SceneDegradations = patch.pb2SceneDegradations && typeof patch.pb2SceneDegradations === 'object' ? patch.pb2SceneDegradations : {};
+    if ('pb2ChatConfig' in patch) pb2ChatConfig = patch.pb2ChatConfig || null;
+    if ('pb2ChatConfigResolving' in patch) pb2ChatConfigResolving = !!patch.pb2ChatConfigResolving;
 }
 export { pb2SubmitRenderScene as __pb2SubmitRenderSceneForTest, pb2SubmitRenderAll as __pb2SubmitRenderAllForTest,
     pb2ResumeInterrupted as __pb2ResumeInterruptedForTest, pb2ReattachRun as __pb2ReattachRunForTest,
@@ -1965,6 +2003,11 @@ async function loadPb2Pages(pb2ObjId) {
     pb2Covers = null;
     pb2CurrentPage = 0;
     pb2BookName = pb2NameHint() || 'Loading...';
+    // 226 a: a ChapBook opens with the chat config its own screens carry (null for a PictureBook), else the
+    // library default resolves in the background — the same seeding as the compose board.
+    pb2ChatConfig = carriedBookChatConfig(pb2ObjId);
+    pb2ChatConfigResolving = false;
+    pb2EnsureChatConfigDefault();
     m.redraw();
     try {
         let bookFull = await loadPb2BookContext(pb2ObjId);
@@ -2313,7 +2356,8 @@ export function renderPb2Header() {
             onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
         }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right')),
 
-        // With a book id: auto-approve badge, Render (async run), Review queue link, the V3 tool routes.
+        // With a book id: chat config (226 a), auto-approve badge, Render (async run), Review queue link, the V3 tool routes.
+        v3 ? renderPb2ChatConfigControl() : null,
         v3 ? m('span', {
             'data-testid': 'pb2-auto-approve-badge',
             'data-on': pb2AutoApprove ? '1' : '0',

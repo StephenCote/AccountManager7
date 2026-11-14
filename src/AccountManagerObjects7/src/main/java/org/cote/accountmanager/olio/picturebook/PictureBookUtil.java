@@ -8675,18 +8675,48 @@ public class PictureBookUtil {
         List<Map<String, Object>> scenes = extractSingleShot(
                 (attemptVars) -> callLlm(user, cfg, "pictureBook.extract-scenes", attemptVars, promptTemplateOverride),
                 vars, "extract-scenes:" + workObjectId, failedExtractions, cancelToken);
-        // Normalize: LLM may return "summary" instead of "blurb"
-        for (Map<String, Object> scene : scenes) {
-            if (scene.get("blurb") == null && scene.get("summary") != null) {
-                scene.put("blurb", scene.get("summary"));
-            }
-            // Single-shot path: the whole (short) text is the one content block (see the chunked
-            // path's per-scene sourceText). Transient; stripped before persistence in createSceneNote.
-            scene.put("sourceText", text);
-        }
+        normalizeSingleShotScenes(scenes, text);
         PictureBookProgressNotifier.getInstance().notifyProgress(user, "", "");
         OllamaModelUtil.unloadAll();
         return new ScenesOnlyResult(scenes, false, failedExtractions);
+    }
+
+    /**
+     * Post-processing for the single-shot (short text) scene list — the counterpart of what
+     * {@link #mergeChunkResult} stamps on every scene the chunked path adds.
+     *
+     * <ul>
+     * <li>{@code blurb}: the model may answer {@code summary} instead; the scene keeps the text under
+     *     the key the rest of the pipeline reads.</li>
+     * <li>{@code sourceText}: the whole (short) text is the one content block. Transient; stripped
+     *     before persistence in {@code createSceneNote}.</li>
+     * <li>{@code sourceChunk}: {@code 0}. A text at or under {@link #MAX_EXTRACTION_TEXT_CHARS} is
+     *     exactly one {@link #chunkText} chunk, so the scene's provenance is chunk 0 of a one-chunk
+     *     list — the same index the chunked path would have stamped had the text been one character
+     *     longer. Until 2026-11-13 the single-shot path set only {@code sourceText}, so every scene of
+     *     a chapter short enough for this path persisted with NO {@code sourceChunk} even though
+     *     {@link #sceneNoteStore} documents it as the one durable scene → chunk → LLM-exchange link
+     *     (measured on Harlot's Eight chapter 21, 10 scenes, by
+     *     {@code pictureBookChapteredManuscriptEmulated.spec.js}). Every consumer already accepts it:
+     *     the resume / retry rehydration guards {@code 0 <= sci < chunks.size()}, and the retry prompt
+     *     window and re-ordering treat 0 as "before every later chunk".</li>
+     * </ul>
+     *
+     * <p>Package-private and static so the stamp is testable without a model server or a database.
+     *
+     * @param scenes the parsed single-shot reply, mutated in place (null entries are skipped)
+     * @param text   the whole text the single call covered
+     */
+    static void normalizeSingleShotScenes(List<Map<String, Object>> scenes, String text) {
+        if (scenes == null) return;
+        for (Map<String, Object> scene : scenes) {
+            if (scene == null) continue;
+            if (scene.get("blurb") == null && scene.get("summary") != null) {
+                scene.put("blurb", scene.get("summary"));
+            }
+            scene.put("sourceText", text);
+            scene.put("sourceChunk", 0);
+        }
     }
 
     /**

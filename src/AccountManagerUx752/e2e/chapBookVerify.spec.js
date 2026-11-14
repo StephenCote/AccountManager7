@@ -400,9 +400,20 @@ test.describe('ChapBook — UX verification', () => {
             'reader Analyze STILL present after clearing persistence (and no server-scoped poems) — not actually persistence-driven'
         ).toHaveCount(0, { timeout: 15000 });
         await expect(readerAnalyzeCfgBtn(page)).toHaveCount(0);
-        // The queue rows' per-poem Analyze buttons remain (they are poem-level, not reader-level).
-        expect(await page.locator('tbody tr button:has-text("Analyze")').count(),
-            'Poem-queue per-poem Analyze buttons unexpectedly absent').toBeGreaterThan(0);
+        // The queue rows' per-poem Analyze buttons remain (they are poem-level, not reader-level). Since
+        // P10-C 2 (§6.C 264) the poem queue is a collapsible sub-section that starts COLLAPSED on the reader
+        // (configQueueExpandedByMode.read = false), so its rows are not in the DOM until the queue is
+        // expanded: open the config panel and the queue first (both toggles only when they are closed).
+        const cfgToggle = page.getByTestId('cb-config-toggle');
+        await expect(cfgToggle).toBeVisible({ timeout: 15000 });
+        if (await page.getByTestId('cb-queue-toggle').count() === 0) await cfgToggle.click();
+        const queueToggle = page.getByTestId('cb-queue-toggle');
+        await expect(queueToggle).toBeVisible({ timeout: 10000 });
+        if ((await queueToggle.getAttribute('aria-expanded')) !== 'true') await queueToggle.click();
+        await expect(queueToggle).toHaveAttribute('aria-expanded', 'true');
+        await expect(page.locator('tbody tr button:has-text("Analyze")').first(),
+            'Poem-queue per-poem Analyze buttons unexpectedly absent').toBeVisible({ timeout: 15000 });
+        expect(await page.locator('tbody tr button:has-text("Analyze")').count()).toBeGreaterThan(0);
     });
 
     // ── #C (FIX C): Analyze available from SERVER-derived poems, with NO localStorage ────────────────

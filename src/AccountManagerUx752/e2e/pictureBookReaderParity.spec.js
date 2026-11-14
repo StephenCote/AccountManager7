@@ -34,9 +34,12 @@ async function seedFreshBook(request, slugPrefix) {
     return await createChapBook(request, slugPrefix + '-' + Date.now(), 'E2E Parity Book', [p1, p2], 4);
 }
 
-// Header chevrons are icon buttons whose only text is the material-symbol ligature.
-function prevChevron(page) { return page.locator('button:has(span:text-is("chevron_left"))'); }
-function nextChevron(page) { return page.locator('button:has(span:text-is("chevron_right"))'); }
+// Header chevrons are icon buttons whose only text is the material-symbol ligature, so their accessible
+// name is exactly the ligature. Matched by exact name rather than `button:has(span:text-is(...))`: since
+// P10-C 2 (§6.C 264) the reader also carries the collapsed poem-queue toggle (cb-queue-toggle), whose
+// first icon is a chevron_right too, and the `:has()` form resolved to both (strict-mode violation).
+function prevChevron(page) { return page.getByRole('button', { name: 'chevron_left', exact: true }); }
+function nextChevron(page) { return page.getByRole('button', { name: 'chevron_right', exact: true }); }
 
 async function openReader(page, request, slug) {
     const bookOid = await seedFreshBook(request, slug);

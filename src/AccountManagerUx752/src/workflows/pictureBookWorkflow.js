@@ -161,6 +161,15 @@ export async function regenerateNode(pb2BookObjectId, nodeObjectId) {
 // The server serializes with Include.NON_EMPTY, so absent lists and nulls vanish from the wire.
 // Every helper below normalizes those once here so views never test for a missing array.
 
+/**
+ * The chat config a render run carries (226 a): the server puts {objectId, name} on the submit DTO, the run DTO
+ * and each executeNodeRun when the request named one (chatConfigName); NON_EMPTY drops it otherwise → null here.
+ */
+function normalizeChatConfigRef(c) {
+    if (!c || typeof c !== 'object') return null;
+    return { objectId: c.objectId != null ? c.objectId : null, name: c.name != null ? String(c.name) : null };
+}
+
 function normalizeSubmit(r) {
     r = r || {};
     return Object.assign({}, r, {
@@ -171,7 +180,8 @@ function normalizeSubmit(r) {
         plannedNodeCount: r.plannedNodeCount != null ? r.plannedNodeCount : 0,
         reusedNodeCount: r.reusedNodeCount != null ? r.reusedNodeCount : 0,
         pinnedNodeCount: r.pinnedNodeCount != null ? r.pinnedNodeCount : 0,
-        scenesWithoutNode: Array.isArray(r.scenesWithoutNode) ? r.scenesWithoutNode : []
+        scenesWithoutNode: Array.isArray(r.scenesWithoutNode) ? r.scenesWithoutNode : [],
+        chatConfig: normalizeChatConfigRef(r.chatConfig)
     });
 }
 
@@ -187,8 +197,19 @@ export function normalizeRun(r) {
         requestedNodeIds: Array.isArray(r.requestedNodeIds) ? r.requestedNodeIds : [],
         executedNodeCount: r.executedNodeCount != null ? r.executedNodeCount : 0,
         failedNodeCount: r.failedNodeCount != null ? r.failedNodeCount : 0,
-        nodes: Array.isArray(r.nodes) ? r.nodes : []
+        nodes: Array.isArray(r.nodes) ? r.nodes : [],
+        chatConfig: normalizeChatConfigRef(r.chatConfig)
     });
+}
+
+/**
+ * The optional JSON body of the three render routes (226 a): {chatConfigName} when opts names a config (the
+ * pbChatConfig.withChatConfig convention — a trimmed, non-blank name), else undefined so the request stays
+ * body-less exactly as before; the server treats no body / {} as "no config" and a non-object body as 400.
+ */
+export function renderBody(opts) {
+    let name = opts && typeof opts.chatConfigName === 'string' ? opts.chatConfigName.trim() : '';
+    return name ? { chatConfigName: name } : undefined;
 }
 
 /**
@@ -405,21 +426,23 @@ export function normalizeAffected(r) {
 }
 
 /**
- * POST /{book}/scene/{scene}/render[?force=true] → 202 {sceneObjectId, sceneIndex, jobId, runObjectId, planned[], ...}
+ * POST /{book}/scene/{scene}/render[?force=true] {chatConfigName?} → 202 {sceneObjectId, sceneIndex, jobId,
+ * runObjectId, planned[], chatConfig?, ...}
  * opts.force re-rolls the scene's node even when it is current (an explicit per-scene re-render); without it
  * a current node is reused and the planner answers 409 "(1 reused, 0 pinned)". A pinned node is a 409 either
- * way — force never overrides a pin (isPinnedRefusal → the unpin confirmation).
+ * way — force never overrides a pin (isPinnedRefusal → the unpin confirmation). opts.chatConfigName (renderBody)
+ * names the chat config the run's LLM steps use; 404 "Chat config not found: <name>" after the scene gates.
  */
 export async function renderScene(pb2BookObjectId, sceneObjectId, opts) {
     let q = (opts && opts.force) ? '?force=true' : '';
     return normalizeSubmit(await wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/render' + q,
-        { method: 'POST' }, 'renderScene failed'));
+        { method: 'POST', body: renderBody(opts) }, 'renderScene failed'));
 }
 
-/** POST /{book}/render-all → 202 {sceneCount, scenesWithoutNode[], jobId, runObjectId, planned[], ...} */
-export async function renderAll(pb2BookObjectId) {
+/** POST /{book}/render-all {chatConfigName?} → 202 {sceneCount, scenesWithoutNode[], jobId, runObjectId, planned[], chatConfig?, ...} */
+export async function renderAll(pb2BookObjectId, opts) {
     return normalizeSubmit(await wfFetch('/' + pb2BookObjectId + '/render-all',
-        { method: 'POST' }, 'renderAll failed'));
+        { method: 'POST', body: renderBody(opts) }, 'renderAll failed'));
 }
 
 /**
@@ -1002,9 +1025,12 @@ export function planScene(pb2BookObjectId, sceneObjectId, body) {
     return wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/plan', { method: 'POST', body: body || {} }, 'Could not plan the scene');
 }
 
-/** POST /{book}/scene/{scene}/render-plan — synchronous: plan, verify the model, render. No body. */
-export function renderPlanScene(pb2BookObjectId, sceneObjectId) {
-    return wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/render-plan', { method: 'POST' }, 'Could not render the scene');
+/**
+ * POST /{book}/scene/{scene}/render-plan {chatConfigName?} — synchronous: plan, verify the model, render. Body-less
+ * unless opts names a chat config (renderBody); the response carries chatConfig {objectId, name} when one was named.
+ */
+export function renderPlanScene(pb2BookObjectId, sceneObjectId, opts) {
+    return wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/render-plan', { method: 'POST', body: renderBody(opts) }, 'Could not render the scene');
 }
 
 /** GET /{book}/artifact/{oid} → one artifact record (a renderPlan artifact carries the plan JSON in artifactText). */

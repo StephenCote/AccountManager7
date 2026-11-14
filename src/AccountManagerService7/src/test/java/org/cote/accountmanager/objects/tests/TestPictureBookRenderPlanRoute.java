@@ -112,7 +112,7 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 	}
 
 	private Response render(BaseRecord u, String bookOid, String sceneOid) {
-		return service.renderPlanScene(bookOid, sceneOid, requestAs(u), SD_CONTEXT);
+		return service.renderPlanScene(bookOid, sceneOid, null, requestAs(u), SD_CONTEXT);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -243,7 +243,7 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 	/// No principal is 401 before any lookup, on the real route.
 	@Test
 	public void TestAnonymousIs401() {
-		Response r = service.renderPlanScene(NIL_UUID, NIL_UUID, new HttpServletRequestMock(), SD_CONTEXT);
+		Response r = service.renderPlanScene(NIL_UUID, NIL_UUID, null, new HttpServletRequestMock(), SD_CONTEXT);
 		assertEquals("anonymous must be 401, body: " + r.getEntity(), 401, r.getStatus());
 	}
 
@@ -295,7 +295,7 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 		List<BaseRecord> scenes = new ArrayList<>();
 		try {
 			scenes.add(addScene(book, 0, SETTING));
-			Response r = service.renderPlanScene(oid(book), oid(scenes.get(0)), requestAs(owner), BAD_API_CONTEXT);
+			Response r = service.renderPlanScene(oid(book), oid(scenes.get(0)), null, requestAs(owner), BAD_API_CONTEXT);
 			assertEquals("SD server API type is not recognised", refusal(r, 500, "unrecognised API type"));
 			assertNoWorkflow(book, "the API-type 500");
 		}

@@ -21,8 +21,9 @@
  *   (fairies exist; no off-race labels; no ethnicity) and hold for the real model's output.
  *
  *   RECORDING GAPS (replay mode) — the manifest may declare `recordingGaps`: [{chapter (1-based),
- *   fromChunk (0-based), reason}]. The recording run lost chapter 2 from chunk 15 (Ollama stalled past
- *   the 905 s latch), and because each chunk's prompt carries the previous chunk's scene list, every
+ *   fromChunk (0-based), reason}]. The 2026-09-27 recording run lost chapter 2 from chunk 15 (Ollama
+ *   stalled past the 905 s latch; the 2026-11-13 re-recording under the §24 #3 chunk budget covered all
+ *   21 chapters with no gap), and because each chunk's prompt carries the previous chunk's scene list, every
  *   later chunk of that chapter builds a request the recording never saw — the synthesizer answers the
  *   rest of the chapter. So a scene is EXEMPT from the recorded-title check iff its chapter has a gap
  *   and its `sourceChunk` >= that gap's fromChunk, and the gap is PINNED: the emulator's per-kind
@@ -482,8 +483,17 @@ function wireCapture(page, cap) {
             cap.pbErrors.push(method + ' ' + resp.status() + ' ' + u + ' ' + body);
             console.log('[NETWORK ' + resp.status() + '] ' + method + ' ' + u + ' ' + body);
         }
+        // Any failing REST read is a defect, with ONE designed exception (the same one
+        // pictureBookChapteredManuscriptUx.spec.js carries, §6.C 285): the wizard's resume detection
+        // (tryResumeExistingBook → resolvePb2BookObjectId, P7-3 / P10-1) asks GET /rest/model/olio.pb.book/{id}
+        // for the id it was opened on and reads a 404 as "not a book, fresh source document" — the same
+        // family as its /pb2 and /scenes probes. Only that probe, only on this run's own manuscript id
+        // (cap.docObjectId, set once the upload returns), only a 404; a 404 on any chapter-book id, a /full
+        // read, or any other status still fails the run.
         if (u.includes('/rest/model/') && method === 'GET' && resp.status() >= 400) {
-            cap.failedReads.push(resp.status() + ' ' + u);
+            const designedProbe = cap.docObjectId && resp.status() === 404
+                && u.endsWith('/rest/model/olio.pb.book/' + cap.docObjectId);
+            if (!designedProbe) cap.failedReads.push(resp.status() + ' ' + u);
         }
         try {
             if (method === 'POST' && u.includes('/extract-scenes-only') && resp.ok()) {
@@ -498,7 +508,7 @@ function wireCapture(page, cap) {
 }
 
 function newCapture() {
-    return { pageErrors: [], consoleErrors: [], failedReads: [], pbErrors: [], jobs: [], jobPayloads: new Map() };
+    return { pageErrors: [], consoleErrors: [], failedReads: [], pbErrors: [], jobs: [], jobPayloads: new Map(), docObjectId: null };
 }
 
 async function installChapterTruncation(page, maxChapters) {
@@ -658,6 +668,7 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         const docName = 'HarlotsEight-EMU-' + Date.now().toString(36);
         const docFileName = docName + '.docx';
         const docObjectId = await uploadManuscript(request, docFileName);
+        cap.docObjectId = docObjectId;
         const ranges = await getJson(request, PB_REST + '/chapter/detect-boundaries?sourceDataObjectId='
             + encodeURIComponent(docObjectId));
         expect(Array.isArray(ranges), 'detect-boundaries returns an array').toBe(true);
@@ -934,9 +945,45 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
             const extractTally = kindTally['extract-chunk'] || { hit: 0, synth: 0 };
             const dockerUnavailable = dockerLogLines(runStartedIso, ['<docker logs unavailable']).length > 0;
             if (gapsProcessed.size === 0) {
-                // No gap declared for any processed chapter: the cache must have answered EVERYTHING.
-                expect(stats1.synth, 'replay mode with no declared recordingGaps in chapters 1..' + N
-                    + ': the emulator must synthesize nothing').toBe(0);
+                // No gap declared for any processed chapter: every prompt the recording CAN reproduce must
+                // have been answered from it. That is every chapter-local kind — a prompt that is a function
+                // of the chapter's own text and of earlier answers in the same chapter (extract-chunk chains
+                // on the previous chunk's scenes, reduce-character / guess-apparel on the chapter's passages
+                // and cast, extract-scenes on a whole short chapter). Two kinds embed SERIES-WIDE state read
+                // at call time and cannot be pinned to the recording: cluster-locations carries the world's
+                // known-locations list, and compose-scene (emulator kind `chat`) carries each cast member's
+                // pbDescription — a shared series character accumulates one pbDescription row per chapter
+                // (PictureBookUtil.persistCharacterSceneAttributes appends; createCharPerson returns the
+                // existing population record), AttributeUtil.getAttribute takes the first of equal-name rows
+                // (the attribute sub-select orders by name only), and a character with no row yet falls back
+                // to its random-baseline narrative. Which chapter's row a compose sees therefore depends on
+                // how the 2-wide async job pool interleaved the chapters, which differs run to run (measured
+                // 2026-11-13: the same chapter-6 scene carried chapter 5's description in the recording and
+                // chapter 6's in replay; §6.C 295). Those two are pinned by shape instead: no other kind
+                // synthesizes, each ran for every unit, each unit costs one call plus at most one corrective
+                // retry (one cluster-locations call per PbLocationUtil.PASS_CHUNK_SIZE = 40 scenes of a
+                // chapter; one compose per persisted scene), and every synthesized answer is theirs.
+                const CHAPTER_LOCAL = ['extract-chunk', 'extract-scenes', 'reduce-character', 'guess-apparel'];
+                const SHARED_STATE = ['cluster-locations', 'chat'];
+                expect(dockerUnavailable, 'docker logs are required to pin the per-kind replay tally (PB_EMU_CONTAINER=' + CONTAINER + ')').toBe(false);
+                const unexpectedKinds = Object.keys(kindTally).filter(k => !CHAPTER_LOCAL.includes(k) && !SHARED_STATE.includes(k));
+                expect(unexpectedKinds, 'emulator kinds outside the known pipeline — classify each as chapter-local or series-state deliberately').toEqual([]);
+                const localSynth = {};
+                for (const k of CHAPTER_LOCAL) localSynth[k] = (kindTally[k] || { synth: 0 }).synth;
+                expect(localSynth, 'replay mode with no declared recordingGaps in chapters 1..' + N
+                    + ': every chapter-local kind must be answered from the recording').toEqual({ 'extract-chunk': 0, 'extract-scenes': 0, 'reduce-character': 0, 'guess-apparel': 0 });
+                const LOCATION_PASS_CHUNK = 40; // PbLocationUtil.PASS_CHUNK_SIZE
+                const totalScenes = Object.values(sceneCounts1).reduce((a, b) => a + b, 0);
+                const locationPasses = Object.values(sceneCounts1).reduce((a, b) => a + Math.ceil(b / LOCATION_PASS_CHUNK), 0);
+                const cluster = kindTally['cluster-locations'] || { hit: 0, synth: 0 };
+                const compose = kindTally['chat'] || { hit: 0, synth: 0 };
+                console.log('[pb-emu] series-state kinds: cluster-locations ' + JSON.stringify(cluster) + ' over ' + locationPasses
+                    + ' passes; compose-scene ' + JSON.stringify(compose) + ' over ' + totalScenes + ' scenes');
+                expect(cluster.hit + cluster.synth, 'cluster-locations ran once per 40-scene pass (' + locationPasses + '), at most one retry each').toBeGreaterThanOrEqual(locationPasses);
+                expect(cluster.hit + cluster.synth, 'cluster-locations: at most one call + one retry per pass').toBeLessThanOrEqual(2 * locationPasses);
+                expect(compose.hit + compose.synth, 'compose-scene ran once per persisted scene (' + totalScenes + '), at most one retry each').toBeGreaterThanOrEqual(totalScenes);
+                expect(compose.hit + compose.synth, 'compose-scene: at most one call + one retry per persisted scene').toBeLessThanOrEqual(2 * totalScenes);
+                expect(stats1.synth, 'every synthesized answer belongs to the two series-state kinds').toBe(cluster.synth + compose.synth);
             } else {
                 // Each gap chapter loses chunks fromChunk..K-1 to the synthesizer (the lost chunk plus
                 // every chained chunk after it). Nothing else may be synthesized.
@@ -1077,6 +1124,7 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         const docName = 'HarlotsEight-EMUFAULT-' + Date.now().toString(36);
         const docFileName = docName + '.docx';
         const docObjectId = await uploadManuscript(request, docFileName);
+        cap.docObjectId = docObjectId;
         const ranges = await getJson(request, PB_REST + '/chapter/detect-boundaries?sourceDataObjectId='
             + encodeURIComponent(docObjectId));
         expect(Array.isArray(ranges) && ranges.length >= FAULT_CHAPTERS, 'manuscript detected as chaptered').toBe(true);
@@ -1161,6 +1209,7 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         const docName = 'HarlotsEight-EMUDOWN-' + Date.now().toString(36);
         const docFileName = docName + '.docx';
         const docObjectId = await uploadManuscript(request, docFileName);
+        cap.docObjectId = docObjectId;
         const ranges = await getJson(request, PB_REST + '/chapter/detect-boundaries?sourceDataObjectId='
             + encodeURIComponent(docObjectId));
         const N = Math.min(FAULT_CHAPTERS, ranges.length);
@@ -1246,6 +1295,7 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         test.skip(!rerun, 'first test did not complete; nothing to re-run against');
         const { docObjectId, docFileName, N, total, budgetMs, seriesOid, seriesBooks1, sceneCounts1 } = rerun;
         const cap = newCapture();
+        cap.docObjectId = docObjectId;
         wireCapture(page, cap);
         const runStartedIso = new Date().toISOString();
         test.setTimeout(budgetMs + 20 * 60 * 1000);

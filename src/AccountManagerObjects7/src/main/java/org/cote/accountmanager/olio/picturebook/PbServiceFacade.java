@@ -676,6 +676,19 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String sdApiType, String sdServer) {
+		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdApiType, sdServer, null);
+	}
+
+	/**
+	 * {@link #requestRenderPlanScene(BaseRecord, String, String, String, String)} with the {@code chatConfigName}
+	 * the run is opened with (§6.C 226 a; the {@code pbChatConfig.js} convention, 267): resolved as the caller
+	 * after the book and scene gates ({@code PbComposeJobUtil.resolveChatConfig}: null / blank = the user's
+	 * default analysis config, unknown = 404) and carried on {@link PbRenderPlanUtil.PlanOptions} to the run's
+	 * {@code chatConfig} FK, which the visual-QA hook reads (220 e). The response's {@code run.chatConfig}
+	 * ({@code {objectId, name}}) says which config the run got.
+	 */
+	public static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String sdApiType, String sdServer, String chatConfigName) {
 		if(user == null) {
 			throw new PictureBookException(401, "No authenticated principal");
 		}
@@ -691,16 +704,26 @@ public class PbServiceFacade {
 				throw new PictureBookException(500, "SD server API type is not recognised");
 			}
 		}
-		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu);
+		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu, chatConfigName);
 	}
 
 	/** {@link #requestRenderPlanScene} over an {@link org.cote.accountmanager.olio.sd.SDUtil} the caller built (test seam). */
 	static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			org.cote.accountmanager.olio.sd.SDUtil sdu) {
+		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu, null);
+	}
+
+	/** The test seam with {@code chatConfigName} (§6.C 226 a); gate order 404 book, 403 update, 404 scene, 404 config. */
+	static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			org.cote.accountmanager.olio.sd.SDUtil sdu, String chatConfigName) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		requireBookUpdate(user, book, "render a scene plan");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
-		return executePlanScene(user, book, scene, sdu, PbRenderPlanUtil.PlanOptions.NONE, null);
+		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
+		PbRenderPlanUtil.PlanOptions opts = (cfg != null
+			? new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg)
+			: PbRenderPlanUtil.PlanOptions.NONE);
+		return executePlanScene(user, book, scene, sdu, opts, null);
 	}
 
 	/**
@@ -776,9 +799,22 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String sdApiType, String sdServer, boolean force) {
+		return requestSceneRender(user, bookObjectId, sceneObjectId, sdApiType, sdServer, force, null);
+	}
+
+	/**
+	 * {@link #requestSceneRender(BaseRecord, String, String, String, String, boolean)} with the
+	 * {@code chatConfigName} the run is opened with (§6.C 226 a): resolved as the caller after the book and
+	 * scene gates (null / blank = the user's default analysis config, unknown = 404) and written to the run's
+	 * {@code chatConfig} FK by {@link PbRenderJobUtil#submit}; the visual-QA hook reads it (220 e). The
+	 * response and {@code GET /run/{id}} carry {@code chatConfig {objectId, name}}.
+	 */
+	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String sdApiType, String sdServer, boolean force, String chatConfigName) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		requireBookUpdate(user, book, "render a scene");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
 		/// After the gates: the workflow and the scene's terminal are created on first use (P10-B 1), as the
 		/// book's updater - the same pattern executePlanScene has always followed for Plan & generate.
 		BaseRecord workflow = ensureWorkflow(user, book);
@@ -793,7 +829,7 @@ public class PbServiceFacade {
 		}
 		Long nodeId = node.get(FieldNames.FIELD_ID);
 		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of(nodeId), sdApiType, sdServer,
-			PbRenderJobUtil.KIND_RENDER, force));
+			PbRenderJobUtil.KIND_RENDER, force, cfg));
 		return out;
 	}
 
@@ -885,12 +921,24 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestRenderAll(BaseRecord user, String bookObjectId, String sdApiType,
 			String sdServer) {
+		return requestRenderAll(user, bookObjectId, sdApiType, sdServer, null);
+	}
+
+	/**
+	 * {@link #requestRenderAll(BaseRecord, String, String, String)} with the {@code chatConfigName} the one run
+	 * is opened with (§6.C 226 a): resolved as the caller after the book gates and before any node is
+	 * materialized (null / blank = the user's default analysis config, unknown = 404), written to
+	 * {@code run.chatConfig} by {@link PbRenderJobUtil#submit} for the visual-QA hook (220 e).
+	 */
+	public static Map<String, Object> requestRenderAll(BaseRecord user, String bookObjectId, String sdApiType,
+			String sdServer, String chatConfigName) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		requireBookUpdate(user, book, "render the book");
 		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
 		if(scenes.isEmpty()) {
 			throw new PictureBookException(409, "This book has no scenes yet; extract or add scenes before rendering it");
 		}
+		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
 		BaseRecord workflow = ensureWorkflow(user, book);
 		List<Long> terminals = new ArrayList<>();
 		int materialized = 0;
@@ -907,7 +955,7 @@ public class PbServiceFacade {
 		out.put("scenesWithoutNode", new ArrayList<String>());
 		out.put("nodesMaterialized", Integer.valueOf(materialized));
 		out.putAll(PbRenderJobUtil.submit(user, book, workflow, terminals, sdApiType, sdServer,
-			PbRenderJobUtil.KIND_RENDER_ALL));
+			PbRenderJobUtil.KIND_RENDER_ALL, false, cfg));
 		return out;
 	}
 
@@ -1324,6 +1372,11 @@ public class PbServiceFacade {
 		out.put("inFlightInThisProcess", Boolean.valueOf(runOid != null && PbRunCancelRegistry.peek(runOid) != null));
 		out.put("jobId", (runOid != null ? PbRunCancelRegistry.jobIdOf(runOid) : null));
 		out.put("resumable", Boolean.valueOf(status == PbRunStatusEnumType.INTERRUPTED && !requested.isEmpty()));
+		/// §6.C 226 a: which chatConfig the run was opened with ({objectId, name}); absent when it names none.
+		Map<String, Object> cfgRef = PbGraphUtil.chatConfigRef(run);
+		if(cfgRef != null) {
+			out.put("chatConfig", cfgRef);
+		}
 		List<Map<String, Object>> nodes = new ArrayList<>();
 		Map<Long, BaseRecord> byId = PbGraphUtil.nodesById(user, workflow);
 		for(Long id : requested) {
