@@ -422,12 +422,20 @@ public class TestRenderPlan {
 
 	@Test
 	public void degradationCodesAreTheClosedSet() {
-		assertEquals(8, Degradation.CODES.size());
-		for(String code : new String[] {Degradation.ACTOR_TEXT_ONLY, Degradation.ACTOR_UNRESOLVED, Degradation.ACTOR_FAILED, Degradation.LOCATION_TEXT_ONLY,
-				Degradation.MODEL_SUBSTITUTED, Degradation.PROMPT_TRUNCATED, Degradation.QA_WARN, Degradation.COMPOSED_OUT_OF_ORDER}) {
+		/// The closed set: the P5 eight, then QA_FAIL + QA_UNAVAILABLE (P6), VARIANT_FAILED + VARIANT_SEED_UNKNOWN (P6-2),
+		/// UPSCALE_NOT_RENDERED (§24 I-3, 224 e) and TITLE_BAND_FAILED (§24 I-4, 236 i). A new code is added HERE too.
+		String[] closed = new String[] {Degradation.ACTOR_TEXT_ONLY, Degradation.ACTOR_UNRESOLVED, Degradation.ACTOR_FAILED, Degradation.LOCATION_TEXT_ONLY,
+				Degradation.MODEL_SUBSTITUTED, Degradation.PROMPT_TRUNCATED, Degradation.QA_WARN, Degradation.COMPOSED_OUT_OF_ORDER,
+				Degradation.QA_FAIL, Degradation.QA_UNAVAILABLE, Degradation.VARIANT_FAILED, Degradation.VARIANT_SEED_UNKNOWN,
+				Degradation.UPSCALE_NOT_RENDERED, Degradation.TITLE_BAND_FAILED};
+		assertEquals(14, closed.length);
+		assertEquals("every code in the set is listed here", closed.length, Degradation.CODES.size());
+		for(String code : closed) {
 			assertTrue(code, Degradation.CODES.contains(code));
 			assertTrue(code, Degradation.isKnownCode(code));
 		}
+		assertEquals("TITLE_BAND_FAILED", Degradation.TITLE_BAND_FAILED);
+		assertEquals("UPSCALE_NOT_RENDERED", Degradation.UPSCALE_NOT_RENDERED);
 		assertEquals("MODEL_SUBSTITUTED", Degradation.MODEL_SUBSTITUTED);
 		assertFalse(Degradation.isKnownCode(null));
 		assertFalse(Degradation.isKnownCode(""));

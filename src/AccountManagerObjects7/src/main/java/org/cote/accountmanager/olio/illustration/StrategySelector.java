@@ -102,10 +102,15 @@ public final class StrategySelector {
 		return pick != null && pick.isResolved();
 	}
 
-	/// BASE, plus UPSCALE when the preset asks for it.
+	/// BASE, then TITLE_BAND when the plan reserves a band (§24 I-4: the band's own masked pass, after the figure
+	/// stages - {@link #select} inserts ACTOR_REGION right after BASE, so the order is BASE, [ACTOR_REGION],
+	/// TITLE_BAND), plus UPSCALE when the preset asks for it.
 	static List<String> stagesFor(RenderPlan plan) {
 		List<String> stages = new ArrayList<>();
 		stages.add(RenderPlan.STAGE_BASE);
+		if(plan != null && plan.getReserved() != null && plan.getReserved().getH() > 0.0) {
+			stages.add(RenderPlan.STAGE_TITLE_BAND);
+		}
 		if(plan != null && plan.getPreset() != null && plan.getPreset().isUpscale()) {
 			stages.add(RenderPlan.STAGE_UPSCALE);
 		}

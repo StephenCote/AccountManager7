@@ -83,10 +83,11 @@ import org.junit.Test;
  * <li>{@link #canonicalWarnFlagsThenAutoApproves}: STANDARD, variant 0 WARNs -> flagged IN_REVIEW by the hook,
  *     then auto-approved ({@code QA_WARN} is accepted, 220 c): APPROVED by auto, selected, the report WARN.</li>
  * <li>{@link #allModeJudgesEveryVariantAndOrdersThem}: FINAL (variants 4, qa ALL) scripted WARN, PASS, FAIL, PASS
- *     -> four checks in variant order, {@code qaMode=ALL}, variants 0 and 2 IN_REVIEW, 1 and 3 GENERATED, four
- *     reports; auto-approve is vetoed by FINAL's unrendered UPSCALE pseudo-degradation (not by QA - the ordering
- *     produced a candidate), so the ordering is then shown directly: {@code autoApprove(..., QA_ALL)} over the
- *     persisted reports approves variant 1 (first PASS) and moves the selection off variant 0.</li>
+ *     -> four checks in variant order, {@code qaMode=ALL}, variants 0 and 2 IN_REVIEW, four reports; FINAL's
+ *     unrendered UPSCALE stage is the accepted {@code UPSCALE_NOT_RENDERED} degradation (224 e; before it the
+ *     free-form {@code "upscale: ..."} entry vetoed every FINAL attempt), so the ALL ordering approves variant 1
+ *     (first PASS) in the run and moves the selection off variant 0; {@code autoApprove(..., QA_ALL)} over the
+ *     persisted reports reaches the same candidate.</li>
  * <li>{@link #offModeNeverResolvesAProvider}: DRAFT (qa OFF) -> the backend's selector is never asked, no
  *     {@code qaMode} / {@code qa} keys, no {@code qa} artifact, the one variant auto-approved as before Phase 8.</li>
  * <li>{@link #providerErrorIsUnavailableAndTheAttemptStands}: the provider throws -> {@code QA_UNAVAILABLE}
@@ -790,35 +791,43 @@ public class TestPbQaHookOffline extends BaseTest {
 
 			List<Map<String, Object>> vs = variants(out, 4);
 			String[] expected = { QaReport.Result.WARN.name(), QaReport.Result.PASS.name(), QaReport.Result.FAIL.name(), QaReport.Result.PASS.name() };
-			String[] flags = { PbReviewStatusEnumType.IN_REVIEW.name(), PbReviewStatusEnumType.GENERATED.name(),
+			/// The hook's flags (0 and 2 IN_REVIEW, 1 and 3 GENERATED), then auto-approve pinned variant 1 (224 e, below).
+			String[] flags = { PbReviewStatusEnumType.IN_REVIEW.name(), PbReviewStatusEnumType.APPROVED.name(),
 				PbReviewStatusEnumType.IN_REVIEW.name(), PbReviewStatusEnumType.GENERATED.name() };
 			for(int i = 0; i < 4; i++) {
 				assertEquals("variantIndex", i, intOf(vs.get(i).get("variantIndex")));
 				assertEquals("variant " + i + " verdict", expected[i], qaOf(vs.get(i)).get("result"));
 				assertEquals("variant " + i + " reviewStatus", flags[i], vs.get(i).get("reviewStatus"));
+				assertEquals("variant " + i + " selected", Boolean.valueOf(i == 1), vs.get(i).get("selected"));
 			}
 			degradation(out, RenderPlan.Degradation.QA_WARN);
 			String fail = degradation(out, RenderPlan.Degradation.QA_FAIL);
 			assertTrue(fail, fail.startsWith(RenderPlan.Degradation.QA_FAIL + ": variant 2 ("));
 
-			/// FINAL plans UPSCALE, which Phase 2 does not render; that pseudo-entry vetoes auto-approve for every
-			/// FINAL attempt today (PbArtifactUtil.autoApprove javadoc). The ordering still ran and found a
-			/// candidate - the skip is the veto, not "all variants failed".
-			assertEquals(Boolean.FALSE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
-			String skipped = str(out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED));
-			assertNotNull(skipped);
-			assertTrue("vetoed by the unrendered UPSCALE stage: " + skipped, skipped.startsWith("degraded: upscale: "));
-			assertFalse("not the all-failed skip: " + skipped, skipped.contains(RenderPlan.Degradation.QA_FAIL));
+			/// FINAL plans UPSCALE, which Phase 2 does not render. Until 224 e the executor reported that as a free-form
+			/// "upscale: ..." entry, an unknown code that vetoed auto-approve for every FINAL attempt; it is now the
+			/// accepted UPSCALE_NOT_RENDERED code (every planned final rendered), so the ALL ordering decides: the first
+			/// PASS (variant 1) wins over the WARN on variant 0 and the approval moves the selection off variant 0.
+			String upscale = degradation(out, RenderPlan.Degradation.UPSCALE_NOT_RENDERED);
+			assertTrue(upscale, upscale.startsWith(RenderPlan.Degradation.UPSCALE_NOT_RENDERED + ": UPSCALE stage planned"));
+			for(String d : PbNodeExecutor.degradationsOf(out)) {
+				assertFalse("no pre-224 e lowercase pseudo-entry: " + d, d.startsWith("upscale:"));
+			}
+			assertEquals("auto-approved: " + out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED), Boolean.TRUE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			assertNull(out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED));
+			assertEquals("variant 1 approved", vs.get(1).get("artifactObjectId"), out.get(PbNodeExecutor.KEY_AUTO_APPROVED_ARTIFACT));
+			assertNotEquals("headline reviewStatus is variant 0's, not APPROVED", PbReviewStatusEnumType.APPROVED.name(), out.get("reviewStatus"));
 
 			List<BaseRecord> bases = baseArtifacts(f);
 			assertEquals(4, bases.size());
-			PbReviewStatusEnumType[] db = { PbReviewStatusEnumType.IN_REVIEW, PbReviewStatusEnumType.GENERATED,
+			PbReviewStatusEnumType[] db = { PbReviewStatusEnumType.IN_REVIEW, PbReviewStatusEnumType.APPROVED,
 				PbReviewStatusEnumType.IN_REVIEW, PbReviewStatusEnumType.GENERATED };
 			for(int i = 0; i < 4; i++) {
 				assertEquals("variant " + i, i, PbArtifactUtil.variantIndexOf(bases.get(i)));
 				assertEquals("variant " + i + " on the DB", db[i], PbArtifactUtil.reviewStatusOf(bases.get(i)));
+				assertEquals("variant " + i + " selected on the DB", i == 1, selected(bases.get(i)));
 			}
-			assertTrue("variant 0 still selected (nothing approved)", selected(bases.get(0)));
+			assertEquals(PbArtifactUtil.APPROVED_BY_AUTO, bases.get(1).get(OlioFieldNames.FIELD_PB_APPROVED_BY));
 			assertEquals("four reports", 4, qaArtifacts(f).size());
 			Map<String, QaReport> latest = PbQaUtil.latestReportsOf(f.owner, f.node);
 			assertEquals(4, latest.size());
@@ -833,11 +842,11 @@ public class TestPbQaHookOffline extends BaseTest {
 			assertEquals(QaReport.Result.FAIL, verdicts.get(oidOf(bases.get(2))));
 			assertEquals(QaReport.Result.PASS, verdicts.get(oidOf(bases.get(3))));
 
-			/// The ALL ordering over the persisted verdicts, without the veto: the first PASS (variant 1) wins over
-			/// the WARN on variant 0 and the approval moves the selection.
-			PbArtifactUtil.AutoApproveOutcome oc = PbArtifactUtil.autoApprove(f.owner, bases, verdicts, List.of(), QualityPresets.QA_ALL);
+			/// The ALL ordering over the persisted verdicts reaches the same candidate, and the existing-approved
+			/// guard does not fire on the candidate's own approval: variant 1 stays approved and selected.
+			PbArtifactUtil.AutoApproveOutcome oc = PbArtifactUtil.autoApprove(f.owner, bases, verdicts, List.of(upscale), QualityPresets.QA_ALL);
 			assertTrue("approved: " + oc.getSkipped(), oc.isApproved());
-			assertEquals("variant 1 approved", oidOf(bases.get(1)), oidOf(oc.getApproved()));
+			assertEquals("variant 1 is the candidate", oidOf(bases.get(1)), oidOf(oc.getApproved()));
 			List<BaseRecord> after = baseArtifacts(f);
 			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(after.get(1)));
 			assertEquals(PbArtifactUtil.APPROVED_BY_AUTO, after.get(1).get(OlioFieldNames.FIELD_PB_APPROVED_BY));

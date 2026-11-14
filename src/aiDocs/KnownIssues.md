@@ -4132,7 +4132,7 @@ of `type: deny` dumps beside `AUDIT PERMIT` lines does not chase a phantom autho
 
 ## Carried 2026-10-25 from archived docs (`archive/IssueLog-2026-08-25.md`, `archive/PictureBookWorkflowOverhaul.md`, `archive/PictureBookSdConfigRefactor.md`)
 
-### KI-89. `POST /olio/picture-book/create-from-scenes` without `pb2BookObjectId` still creates a group+meta-only (PB1) book that `/books`, `/pages`, `/workflow` and the `/v2` reader cannot see — OPEN, NEEDS DECISION (carried 2026-10-25 from `archive/IssueLog-2026-08-25.md` Issue 11)
+### KI-89. `POST /olio/picture-book/create-from-scenes` without `pb2BookObjectId` still creates a group+meta-only (PB1) book that `/books`, `/pages`, `/workflow` and the `/v2` reader cannot see — CLOSED 2026-11-14, option (b) (carried 2026-10-25 from `archive/IssueLog-2026-08-25.md` Issue 11)
 
 **Symptom:** a book made by the bare legacy call never appears in `GET /olio/picture-book/books`, and `GET /olio/picture-book/{bookObjectId}/pages` returns `{"error":"Book not found"}`, although its scenes render real images.
 **Cause:** `PictureBookUtil.createFromScenes` produces a directory group under `~/Data/PictureBooks/{name}` plus a `.pictureBookMeta` whose `bookObjectId` is the group objectId; it creates no `olio.pb.book` record and no Olio world. `/pages` → `PbServiceFacade.bookPageView` → `requireBook` → `PbBookUtil.readBook` queries `olio.pb.book` and 404s; `/books` lists `olio.pb.book` rows only.
@@ -4143,6 +4143,16 @@ id still writes the group + `.pictureBookMeta` and returns `composeJobSkipped: "
 (`PbServiceFacade.createFromScenesAndCompose`), a book no V3 surface lists. With no PB1 reader left, (b) is the only consistent option; it is
 Stephen's call and not done. The P10-5 cleanup (`-pbLegacyCleanup`) does not touch these groups or metas — it covers legacy graph rows,
 PB1 `book-sdConfig` / `book-compositeSdConfig` rows and `compositeMode='kontext'` configs only.
+**2026-11-14 CLOSED (§24 I-1, option (b) on Stephen's "the word is YES"):** the bookless import path is gone, not the route. `PictureBookUtil.createFromScenes` and
+`PbServiceFacade.createFromScenesAndCompose` now throw `PictureBookException(400, "pb2BookObjectId is required: …(KI-89)")` when the id is blank, so
+`POST /olio/picture-book/create-from-scenes` is a 400 without a bound `olio.pb.book` and never writes a group or a `.pictureBookMeta`; the
+`composeJobSkipped` key and the `POST /{workObjectId}/extract` route (the only other bookless writer) are deleted. The wizard (`sceneExtractor.js`)
+always passed the id, so the Ux752 path is unchanged. Proof: `TestPictureBookImportRoutes` 5/5 (Service7 H2, non-admin users: blank / empty /
+whitespace id → 400 naming KI-89 with nothing written; nil / random id → 404; a stranger 404, a Read-only grantee 403; no method carries
+`@Path(…/extract)`; `/books` and `/pages` still answer for the owner and refuse a stranger), `TestPictureBookNewBookRoutes` 8/8 +
+`TestChapBookRestContract` 9/9 + `TestPbRouteGateOrder` 5/5 green, and the live `pictureBookLive.spec.js` import + V3 reader run
+(`PictureBookV3Implementation.md` §6.C 297). Existing group+meta-only PB1 books on a
+deployment are not migrated or deleted (no reader lists them; `-pbLegacyCleanup` still leaves them) — that residue is KI-91 Q1's call.
 
 ### KI-90. A created book's `name` is `Book <slug>`, not the passed `title` — OPEN, minor, not re-verified (carried 2026-10-25 from `archive/IssueLog-2026-08-25.md` Issue 10)
 
@@ -4162,7 +4172,7 @@ Open questions from the 2026-09-19 workflow overhaul that nothing later answers 
 Default: leave all of them; they are listed so the questions are not lost with the archived doc.
 
 
-### KI-92. A shared series character's cast description depends on which chapter job wrote first — one `pbDescription` / `pbSceneRefs` attribute row per chapter, read first-of-ties. OPEN 2026-11-13 (UAT-1)
+### KI-92. A shared series character's cast description depends on which chapter job wrote first — one `pbDescription` / `pbSceneRefs` attribute row per chapter, read first-of-ties. CLOSED 2026-11-13 (UAT-1, option (a); ledger §6.C 296)
 
 **Found** by the whole-manuscript emulated spec's replay (`pictureBookChapteredManuscriptEmulated.spec.js`, ledger §6.C 295 b): the `pictureBook.compose-scene` prompts recorded on `.42` for Harlot's Eight missed in replay on a cast line that differed only in the character's description — ch6 "The Dragon's Wounds", Caleb MacKay carried ch5's description in the recording and ch6's in replay.
 
@@ -4171,3 +4181,5 @@ Default: leave all of them; they are listed so the questions are not lost with t
 **Effect.** Harmless to the pipeline (the description is one baseline line, every row is a real description of the same character) but non-deterministic across runs, and never the scene's own chapter by design; it is also why the emulated spec pins the `chat` kind by pipeline shape rather than to zero synth (the fixture set cannot be exact-key stable for that kind).
 
 **Options (Stephen's call, ledger §24 UAT-1):** (a) one attribute per chapter (`pbDescription:<chapterObjectId>`; readers pick the scene's chapter, fall back to any); (b) one row, updated in place (last chapter wins — deterministic only with one job); (c) leave it, the description is a baseline not a per-scene outfit. Default if nothing is said: (c), this entry stays OPEN. Nothing is built until answered.
+
+**Fix (2026-11-13, option (a), built under Stephen's "the word is YES, do it all" — ledger §6.C 296).** Each chapter now writes its own `pbDescription:<bookObjectId>` / `pbSceneRefs:<bookObjectId>` row (`PictureBookUtil.bookScopedAttributeName`, `ATTR_BOOK_SCOPE_SEPARATOR = ":"`), **upserted** on re-extraction (`persistCharacterAttribute`: an existing scoped row is rewritten in place, never appended), and the unscoped row is seeded once — by whichever chapter writes first — as the fallback for book-less readers and for data written before the per-book rows. `PictureBookUtil.readBookScopedAttribute(record, attr, bookObjectId)` is the one reader (scoped row when non-blank, else the unscoped row, else null); every production reader that knows the scene's book goes through it — `PbRenderPlanUtil.actorDescription(cp, bookOid)` / `physicalDescription` (the render plan's identity line, `actorsOf`), `PbComposeUtil.castBlock(cast, bookOid)` (compose-scene and cover prompts) and `collectCast` tier (b) (`pbSceneRefs`), `resolveSceneCharacter(…, bookOid)` (the portrait prompt, `PbNodeExecutor.executePortrait`); `mergeCharacters` unions the PB2 book's scoped `pbSceneRefs` row as well as the unscoped one. A book-less write keeps the pre-fix append shape. The chapter's book is the PB2 `olio.pb.book` (`pb2Book` at the write site), not the chapter record. **Also fixed on the way:** `PbWatchedFields.projection(olio.charPerson)` never requested `attributes`, so the declared watched `pbDescription` rendered as the null token forever and a description edit never staled a portrait; the projection now carries it, the canonical form renders the bare row then the scoped rows sorted by name (order-independent across the 2-wide chapter jobs), and `WATCHED_SET_VERSION` moved `watched/v4` → `watched/v5` — one one-time STALE wave over every stored refHash, by design. **Test:** `TestPbSharedCharacterChapterAttributes` 2/2 against am7db as `testUser1` (per-book rows in both write orders, re-extraction upsert, fallback for an unknown / blank book, the legacy direct-row shape, `actorDescription` / `castBlock` per book, refHash moves on a description write and is stable, scoped segment identical for A-then-B and B-then-A), regression `TestPbSeriesCast#testResolveSceneCharacterPrefersChapterShadow` 1/1, `TestPbComposeFallback` 14/14, `TestPbLocationSchema` 3/3, `TestPbV4Schema` 8/8, `TestPbWardrobe` 10/10 (36/36, ledger §6.C 296 c). The emulated spec's `chat` kind still pins by pipeline shape: the recorded fixtures carry the first-of-ties descriptions, so an exact-key pin would need a re-recording on `.42` (ledger §6.C 296).

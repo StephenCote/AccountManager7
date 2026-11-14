@@ -50,7 +50,7 @@ import { withChatConfig, resolveDefaultChatConfig, renderChatConfigControl } fro
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { am7olio } from '../components/olio.js';
-import { ReaderShell } from '../components/readerShell.js';
+import { ReaderShell, exportBook, escHtml } from '../components/readerShell.js';
 
 // ── Work Selector View ────────────────────────────────────────────────
 
@@ -1293,6 +1293,15 @@ let pb2Covers = null;
 // sent, the server default applies.
 let pb2ChatConfig = null;
 let pb2ChatConfigResolving = false;
+// UAT-2 (2026-11-13): fullscreen + whole-book HTML export, the two reader affordances the PB1 viewer and the ChapBook
+// reader get from ReaderShell. This reader keeps its own header (workflow controls the shell has no slots for), so it
+// reuses the shell's export ENGINE (exportBook) and mirrors its fullscreen contract (same icons and titles, Escape
+// exits). Fullscreen sits at z-30 — below the dialog stack (z-40+, dialogCore.getZIndex) and toasts (z-50) — because
+// this header opens dialogs (Render all, Plan & generate, Delete) that the shell's readers do not; and the route keeps
+// its layout wrapper in fullscreen (the overlay covers the chrome) so the mounted reader, and the run it is watching,
+// survive the toggle.
+let pb2Fullscreen = false;
+let pb2Exporting = false;
 
 /** Library-only default resolution (no LLM call), as the compose board does; never overwrites a pick. */
 function pb2EnsureChatConfigDefault() {
@@ -1873,7 +1882,7 @@ export function renderPb2RunProgress() {
 }
 
 export function __pb2V3StateForTest() {
-    return { pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations, pb2ChatConfig, pb2ChatConfigResolving };
+    return { pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations, pb2ChatConfig, pb2ChatConfigResolving, pb2Fullscreen, pb2Exporting };
 }
 export function __setPb2V3StateForTest(patch) {
     patch = patch || {};
@@ -1890,10 +1899,14 @@ export function __setPb2V3StateForTest(patch) {
     if ('pb2SceneDegradations' in patch) pb2SceneDegradations = patch.pb2SceneDegradations && typeof patch.pb2SceneDegradations === 'object' ? patch.pb2SceneDegradations : {};
     if ('pb2ChatConfig' in patch) pb2ChatConfig = patch.pb2ChatConfig || null;
     if ('pb2ChatConfigResolving' in patch) pb2ChatConfigResolving = !!patch.pb2ChatConfigResolving;
+    if ('pb2Fullscreen' in patch) pb2Fullscreen = !!patch.pb2Fullscreen;
+    if ('pb2Exporting' in patch) pb2Exporting = !!patch.pb2Exporting;
+    if ('pb2Covers' in patch) pb2Covers = patch.pb2Covers || null;
 }
 export { pb2SubmitRenderScene as __pb2SubmitRenderSceneForTest, pb2SubmitRenderAll as __pb2SubmitRenderAllForTest,
     pb2ResumeInterrupted as __pb2ResumeInterruptedForTest, pb2ReattachRun as __pb2ReattachRunForTest,
-    pb2ToggleAutoApprove as __pb2ToggleAutoApproveForTest, pb2StopWatching as __pb2StopWatchingForTest };
+    pb2ToggleAutoApprove as __pb2ToggleAutoApproveForTest, pb2StopWatching as __pb2StopWatchingForTest,
+    pb2OnKeyDown as __pb2OnKeyDownForTest, pb2ExportBook as __pb2ExportBookForTest, pb2PageReaderView as __pb2PageReaderViewForTest };
 
 // Pages that actually have a rendered composite image: /pages returns one entry per olio.pb.scene
 // row, and dataObjectId is null until a composite artifact exists for it (PbServiceFacade.bookPageView).
@@ -1952,6 +1965,52 @@ function pb2OnKeyDown(e) {
     else if (e.key === 'ArrowLeft' || e.key === 'Left') { e.preventDefault(); pb2GoToPage(pb2CurrentPage - 1); }
     else if (e.key === 'Home') { e.preventDefault(); pb2GoToPage(0); }
     else if (e.key === 'End') { e.preventDefault(); pb2GoToPage(pb2TotalPages() - 1); }
+    else if (e.key === 'Escape' && pb2Fullscreen) { e.preventDefault(); pb2Fullscreen = false; m.redraw(); }
+}
+
+// UAT-2: one exported scene page for the HTML export. Same text precedence as the on-screen page
+// (renderPb2ScenePage): poemStanza, then blurb, then summary. Everything passes through escHtml.
+export function pb2ExportPageHtml(s, i, imgB64, total) {
+    let text = s.poemStanza || s.blurb || s.summary || s.description || '';
+    let chars = Array.isArray(s.characters)
+        ? s.characters.map(c => typeof c === 'string' ? c : (c && c.name) || '').filter(Boolean).join(', ')
+        : '';
+    let out = '\n    <div class="scene">\n';
+    if (imgB64) out += '      <img src="' + imgB64 + '" alt="' + escHtml(s.title || '') + '" />\n';
+    out += '      <h2>' + escHtml(s.title || ('Scene ' + (i + 1))) + '</h2>\n';
+    out += '      <p class="blurb">' + escHtml(text) + '</p>\n';
+    if (chars) out += '      <div class="characters">' + escHtml(chars) + '</div>\n';
+    out += '      <div class="page-num">Page ' + (i + 1) + ' of ' + total + '</div>\n';
+    return out + '    </div>\n';
+}
+
+// UAT-2: whole-book HTML export through the shared ReaderShell engine (exportBook), with the same
+// parameters the PB1 viewer passes it, so the two picture-book exports are byte-compatible in shape.
+async function pb2ExportBook() {
+    if (pb2Exporting || !pb2Pages.length) return;
+    pb2Exporting = true;
+    m.redraw();
+    try {
+        await exportBook({
+            pages: pb2Pages,
+            title: pb2BookName,
+            imageUrlFor: pb2ImageUrl,
+            coverImageUrl: function () {
+                let ref = pb2CoverRef();
+                if (ref) return pb2ImageUrl(ref);
+                return pb2Pages[0] ? pb2ImageUrl(pb2Pages[0]) : null;
+            },
+            buildPageHtml: pb2ExportPageHtml,
+            countNoun: 'Scene',
+            titleSuffix: 'Picture Book',
+            nameFallback: 'picturebook',
+            nameSuffix: '-picturebook.html',
+            toast: 'Picture book exported'
+        });
+    } finally {
+        pb2Exporting = false;
+        m.redraw();
+    }
 }
 
 function pb2ImageUrl(page) {
@@ -2329,7 +2388,8 @@ export function renderPb2Header() {
     let v3 = !!pb2BookObjectId;
     let watching = !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error);
     return m('div', { class: 'flex items-center gap-3 mb-4' }, [
-        m('button', {
+        // Back is hidden in fullscreen, as in ReaderShell (Escape or the fullscreen toggle leaves it).
+        pb2Fullscreen ? null : m('button', {
             class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
             title: 'Back to book list',
             onclick: function () { m.route.set('/picture-book'); }
@@ -2415,6 +2475,21 @@ export function renderPb2Header() {
             title: 'Open Workflow Canvas',
             onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/workflow'); }
         }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')) : null,
+
+        // UAT-2: export + fullscreen, mirroring ReaderShell's header contract (same icons and titles).
+        m('button', {
+            'data-testid': 'pb2-export',
+            class: 'text-gray-500 hover:text-purple-600 disabled:opacity-30',
+            title: 'Export as HTML',
+            disabled: pb2Exporting || !pb2Pages.length,
+            onclick: pb2ExportBook
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, pb2Exporting ? 'hourglass_empty' : 'download')),
+        m('button', {
+            'data-testid': 'pb2-fullscreen',
+            class: 'text-gray-500 hover:text-purple-600',
+            title: pb2Fullscreen ? 'Exit fullscreen' : 'Fullscreen',
+            onclick: function () { pb2Fullscreen = !pb2Fullscreen; m.redraw(); }
+        }, m('span', { class: 'material-symbols-outlined text-lg' }, pb2Fullscreen ? 'fullscreen_exit' : 'fullscreen')),
 
         // Delete button — always available
         pb2BookObjectId ? m('button', {
@@ -2573,15 +2648,25 @@ var pb2PageReaderView = {
         // Leaving the page stops WATCHING the run; the server job continues and re-attaches on return.
         pb2StopWatching();
         pb2Run = null;
+        pb2Fullscreen = false;
     },
     view: function () {
         let emptyStale = pb2SceneTotal > 0 && summarizeHealth(pb2Health).hasStaleGraph;
         // flex-1: [role=main] is a flex row (router.js pageLayout), so without it this root sizes to its
         // max-w-3xl content and sits left-pinned instead of filling main (ledger §6.C 244 c).
-        return m('div', { class: 'flex-1 p-4 flex flex-col h-full' }, [
+        // UAT-2 fullscreen: a fixed overlay at z-30 covering the layout chrome (the route keeps its layout
+        // wrapper so this component is not remounted); dialogs (z-40+) and toasts (z-50) stay above it.
+        return m('div', {
+            'data-testid': 'pb2-reader',
+            'data-fullscreen': pb2Fullscreen ? '1' : '0',
+            class: pb2Fullscreen
+                ? 'fixed inset-0 z-30 bg-gray-900 text-white overflow-y-auto p-6 flex flex-col'
+                : 'flex-1 p-4 flex flex-col h-full'
+        }, [
             renderPb2Header(),
-            pb2PageLoading ? null : renderPb2HealthBanner(),
-            pb2PageLoading ? null : renderPb2ResumeBanner(),
+            // Banners are chrome: hidden in fullscreen, as ReaderShell hides its banner. Run progress stays.
+            (pb2PageLoading || pb2Fullscreen) ? null : renderPb2HealthBanner(),
+            (pb2PageLoading || pb2Fullscreen) ? null : renderPb2ResumeBanner(),
             renderPb2RunProgress(),
             pb2PageLoading
                 ? m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading scenes...')

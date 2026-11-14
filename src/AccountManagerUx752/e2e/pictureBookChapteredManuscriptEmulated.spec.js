@@ -502,13 +502,67 @@ function wireCapture(page, cap) {
             } else if (method === 'GET' && /\/rest\/job\/[^/?]+$/.test(u) && resp.ok()) {
                 const j = await resp.json();
                 if (j && j.jobId) cap.jobPayloads.set(j.jobId, j);
+            } else if (method === 'POST' && u.includes('/create-from-scenes') && resp.ok()) {
+                // createFromScenesAndCompose queues the chapter's pb.compose job and returns WITHOUT waiting
+                // for it (composeJob = the submit result, composeJobSkipped / composeJobError otherwise).
+                const j = await resp.json();
+                if (j && j.composeJob && j.composeJob.jobId) {
+                    cap.composeJobs.push({ jobId: j.composeJob.jobId, bookObjectId: j.pb2BookObjectId || null,
+                        submitted: j.composeJob.submitted, reused: j.composeJob.reused });
+                } else if (j) {
+                    cap.composeSkips.push({ bookObjectId: j.pb2BookObjectId || null, skipped: j.composeJobSkipped || null,
+                        error: j.composeJobError || null, reason: j.composeJob && j.composeJob.reason });
+                }
             }
         } catch (_) { /* non-JSON or already consumed */ }
     });
 }
 
 function newCapture() {
-    return { pageErrors: [], consoleErrors: [], failedReads: [], pbErrors: [], jobs: [], jobPayloads: new Map(), docObjectId: null };
+    return { pageErrors: [], consoleErrors: [], failedReads: [], pbErrors: [], jobs: [], jobPayloads: new Map(),
+        composeJobs: [], composeSkips: [], docObjectId: null };
+}
+
+/**
+ * The wizard lands on the workflow route the moment the last chapter's create-from-scenes returns, but that
+ * call only QUEUES the chapter's pb.compose job (PbServiceFacade.createFromScenesAndCompose), so the fan-out
+ * is still synthesizing compose-scene answers for a second or two after "landed". Measured 2026-11-13
+ * (§24 UAT-1 replay): the emulator counters were read 1.4 s before the last compose job's 19 answers were
+ * logged, so the REST counters and the docker-log tally disagreed by exactly those lines. Every read of the
+ * emulator counters after a run must wait here first. Polls GET /rest/job/{jobId} for every compose job the
+ * run queued; fails only on a job that ends other than completed, that vanished (404 = expired/unknown), or
+ * that makes no progress for a long time — never on how long a healthy job takes.
+ */
+async function awaitComposeJobs(request, cap, tag) {
+    const out = { count: cap.composeJobs.length, skipped: cap.composeSkips.length, statuses: {} };
+    const started = Date.now();
+    const noProgressCapMs = 30 * 60 * 1000;
+    for (const cj of cap.composeJobs) {
+        let lastSeen = Date.now(), lastState = '';
+        for (;;) {
+            const resp = await request.get(REST + '/job/' + cj.jobId, { headers: { Accept: 'application/json' } });
+            expect(resp.ok(), '[' + tag + '] GET /rest/job/' + cj.jobId + ' (compose job of book ' + cj.bookObjectId + ') -> '
+                + resp.status()).toBe(true);
+            const job = await resp.json();
+            const state = job.status + ':' + job.phase + ':' + job.current + '/' + job.total;
+            if (state !== lastState) { lastState = state; lastSeen = Date.now(); }
+            if (job.terminal) {
+                out.statuses[job.status] = (out.statuses[job.status] || 0) + 1;
+                expect(job.status, '[' + tag + '] compose job ' + cj.jobId + ' of book ' + cj.bookObjectId + ' ended '
+                    + job.status + (job.error ? ': ' + job.error : '')).toBe('completed');
+                break;
+            }
+            if (Date.now() - lastSeen > noProgressCapMs) {
+                throw new Error('[' + tag + '] compose job ' + cj.jobId + ' made no progress for ' + fmtMin(noProgressCapMs)
+                    + ' (last state ' + lastState + ')');
+            }
+            await new Promise(r => setTimeout(r, 500));
+        }
+    }
+    out.waitedMs = Date.now() - started;
+    console.log('[pb-emu:' + tag + '] compose jobs quiesced: ' + JSON.stringify(out)
+        + (cap.composeSkips.length ? ' skips=' + JSON.stringify(cap.composeSkips) : ''));
+    return out;
 }
 
 async function installChapterTruncation(page, maxChapters) {
@@ -762,10 +816,14 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         await screenshot(page, 'pb-emu-workflow-landing');
 
         // ── Emulator stats (assertion 8): configured, no misses, cache hit / synthesis by mode ──
-        // Read right after the run lands — nothing between here and the per-chapter checks calls the
-        // LLM — so a replay run that was answered entirely by the synthesizer fails HERE with the
-        // counters in the message, not 100 scene titles later in the parity block.
+        // Read right after the run lands AND its queued compose jobs have quiesced (awaitComposeJobs) —
+        // nothing between here and the per-chapter checks calls the LLM — so a replay run that was
+        // answered entirely by the synthesizer fails HERE with the counters in the message, not 100
+        // scene titles later in the parity block.
         await restLogin(request);
+        const composeRun1 = await awaitComposeJobs(request, cap, 'run1');
+        expect(composeRun1.count, 'one queued compose job per chapter handed to the wizard (skips: '
+            + JSON.stringify(cap.composeSkips) + ')').toBe(N);
         const stats1 = await emulatorStats(request, false);
         console.log('[pb-emu] emulator stats after run1: ' + JSON.stringify(stats1));
         const missLines = dockerLogLines(runStartedIso, ['LLM emulator MISS', 'LLM emulator: invalid emulator set',
@@ -1158,6 +1216,8 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         const jobs = summarizeJobs(cap);
         console.log('[pb-emu:faults] run: ' + JSON.stringify({ ...run, jobs }));
 
+        await restLogin(request);
+        await awaitComposeJobs(request, cap, 'faults');
         const stats1 = await emulatorStats(request, false);
         console.log('[pb-emu:faults] emulator stats: ' + JSON.stringify(stats1));
         const evidence = dockerLogLines(runStartedIso, ['LLM emulator FAULT fired', 'No LLM content for extract-scenes-chunk',
@@ -1312,6 +1372,7 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         console.log('[pb-emu] re-run 409s on POST /olio/picture-book/chapter: ' + chapter409s.length);
 
         await restLogin(request);
+        await awaitComposeJobs(request, cap, 'run2');
         const allBooks2 = await getJson(request, PB_REST + '/books');
         const mine2 = allBooks2.filter(b => b.seriesName === docFileName);
         const seriesOids2 = [...new Set(mine2.map(b => b.seriesObjectId))];

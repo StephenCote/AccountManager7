@@ -458,3 +458,176 @@ describe('auto-approve toggle', () => {
         expect(page.toast).toHaveBeenCalledWith('error', '(400) autoApprove must be a boolean');
     });
 });
+
+// ─────────────────────────────── UAT-2: fullscreen + HTML export ───────────────────────────────
+// The V3 reader keeps its own header, so it mirrors ReaderShell's fullscreen/export contract (same icons,
+// titles, Escape) and reuses the shell's export ENGINE (exportBook). Pinned here: the buttons, their states,
+// the exported page shape, the z-30 overlay (below dialogs z-40+ and toasts z-50) and the Escape exit.
+
+describe('UAT-2 pb2ExportPageHtml — exported scene section', () => {
+    it('uses the on-screen text precedence (poemStanza > blurb > summary) and escapes everything', () => {
+        let html = pbf.pb2ExportPageHtml({ title: 'A <b>Title</b>', poemStanza: 'stanza & co', blurb: 'blurb', summary: 'sum',
+            characters: ['Ann', { name: 'Bob <x>' }, null] }, 0, 'data:image/png;base64,AAA', 3);
+        expect(html).toContain('<h2>A &lt;b&gt;Title&lt;/b&gt;</h2>');
+        expect(html).toContain('<p class="blurb">stanza &amp; co</p>');
+        expect(html).toContain('<div class="characters">Ann, Bob &lt;x&gt;</div>');
+        expect(html).toContain('<img src="data:image/png;base64,AAA" alt="A &lt;b&gt;Title&lt;/b&gt;" />');
+        expect(html).toContain('<div class="page-num">Page 1 of 3</div>');
+        expect(pbf.pb2ExportPageHtml({ blurb: 'b', summary: 's' }, 1, null, 2)).toContain('<p class="blurb">b</p>');
+        expect(pbf.pb2ExportPageHtml({ summary: 's' }, 1, null, 2)).toContain('<p class="blurb">s</p>');
+    });
+    it('falls back to "Scene N", omits the image and character block when absent', () => {
+        let html = pbf.pb2ExportPageHtml({}, 4, null, 9);
+        expect(html).toContain('<h2>Scene 5</h2>');
+        expect(html).not.toContain('<img');
+        expect(html).not.toContain('class="characters"');
+        expect(html).toContain('Page 5 of 9');
+    });
+});
+
+describe('UAT-2 header — export and fullscreen buttons', () => {
+    function findButton(testid) {
+        let header = pbf.renderPb2Header();
+        return (header.children || []).find(c => c && c.attrs && c.attrs['data-testid'] === testid) || null;
+    }
+    it('Export: "Export as HTML", download icon, enabled only with pages, hourglass + disabled while exporting', () => {
+        let b = findButton('pb2-export');
+        expect(b).not.toBeNull();
+        expect(b.attrs.title).toBe('Export as HTML');
+        expect(b.attrs.disabled).toBe(false);
+        expect(JSON.stringify(b)).toContain('"download"');
+
+        pbf.__setPb2V3StateForTest({ pb2Pages: [] });
+        expect(findButton('pb2-export').attrs.disabled).toBe(true);
+
+        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, title: 'Arrival' }], pb2Exporting: true });
+        b = findButton('pb2-export');
+        expect(b.attrs.disabled).toBe(true);
+        expect(JSON.stringify(b)).toContain('"hourglass_empty"');
+        pbf.__setPb2V3StateForTest({ pb2Exporting: false });
+    });
+    it('Fullscreen: toggles title/icon (Fullscreen/fullscreen <-> Exit fullscreen/fullscreen_exit); Back hidden in fullscreen', () => {
+        pbf.__setPb2V3StateForTest({ pb2Fullscreen: false });
+        let b = findButton('pb2-fullscreen');
+        expect(b.attrs.title).toBe('Fullscreen');
+        expect(JSON.stringify(b)).toContain('"fullscreen"');
+        expect(JSON.stringify(pbf.renderPb2Header())).toContain('Back to book list');
+
+        b.attrs.onclick();
+        expect(pbf.__pb2V3StateForTest().pb2Fullscreen).toBe(true);
+        b = findButton('pb2-fullscreen');
+        expect(b.attrs.title).toBe('Exit fullscreen');
+        expect(JSON.stringify(b)).toContain('"fullscreen_exit"');
+        expect(JSON.stringify(pbf.renderPb2Header())).not.toContain('Back to book list');
+
+        b.attrs.onclick();
+        expect(pbf.__pb2V3StateForTest().pb2Fullscreen).toBe(false);
+    });
+    it('the tool routes, Characters, Canvas and Delete are still offered alongside (the V3 header contract)', () => {
+        let text = JSON.stringify(pbf.renderPb2Header());
+        ['pb2-render-all', 'pb2-review-link', 'pb2-style-link', 'pb2-locations-link', 'pb2-compose-link', 'pb2-cover-link',
+            'pb2-export', 'pb2-fullscreen'].forEach(id => expect(text).toContain('"data-testid":"' + id + '"'));
+        expect(text).toContain('Open Workflow Canvas');
+        expect(text).toContain('Delete picture book');
+        expect(text).not.toContain('Edit Book');
+    });
+});
+
+describe('UAT-2 view container + Escape', () => {
+    it('normal: flex root with data-fullscreen=0; fullscreen: fixed inset-0 z-30 overlay, banners hidden, run progress kept', () => {
+        pbf.__setPb2V3StateForTest({ pb2Fullscreen: false, pb2Run: null,
+            pb2ResumeRun: { runObjectId: 'R1', name: 'run-2', runStatus: 'INTERRUPTED', resumable: true, requestedNodeIds: [1, 2], executedNodeCount: 1, nodes: [] } });
+        let v = pbf.__pb2PageReaderViewForTest.view();
+        expect(v.attrs['data-testid']).toBe('pb2-reader');
+        expect(v.attrs['data-fullscreen']).toBe('0');
+        expect(v.attrs.className).toContain('flex-1 p-4');
+        expect(v.attrs.className).not.toContain('z-30');
+        expect(JSON.stringify(v)).toContain('"data-testid":"pb2-resume-banner"');
+
+        pbf.__setPb2V3StateForTest({ pb2Fullscreen: true });
+        v = pbf.__pb2PageReaderViewForTest.view();
+        expect(v.attrs['data-fullscreen']).toBe('1');
+        expect(v.attrs.className).toContain('fixed inset-0 z-30');
+        // Below the dialog stack (dialogCore.getZIndex(0) = 40) and the toast container (z-50).
+        expect(v.attrs.className).not.toMatch(/z-(40|50)/);
+        expect(JSON.stringify(v)).not.toContain('"data-testid":"pb2-resume-banner"');
+        // The page itself is still rendered inside the overlay.
+        expect(JSON.stringify(v)).toContain('Arrival');
+        pbf.__setPb2V3StateForTest({ pb2Fullscreen: false, pb2ResumeRun: null });
+    });
+    it('Escape leaves fullscreen (and is ignored otherwise); arrows still page', () => {
+        pbf.__setPb2V3StateForTest({ pb2Fullscreen: true, pb2CurrentPage: 1 });
+        let ev = { key: 'Escape', preventDefault: vi.fn() };
+        pbf.__pb2OnKeyDownForTest(ev);
+        expect(pbf.__pb2V3StateForTest().pb2Fullscreen).toBe(false);
+        expect(ev.preventDefault).toHaveBeenCalled();
+
+        ev = { key: 'Escape', preventDefault: vi.fn() };
+        pbf.__pb2OnKeyDownForTest(ev);
+        expect(ev.preventDefault).not.toHaveBeenCalled();
+
+        pbf.__pb2OnKeyDownForTest({ key: 'ArrowLeft', preventDefault: function () {} });
+        expect(pbf.__pb2V3StateForTest().pb2CurrentPage).toBe(0);
+    });
+    it('onremove resets fullscreen so the next book opens in the normal layout', () => {
+        pbf.__setPb2V3StateForTest({ pb2Fullscreen: true });
+        pbf.__pb2PageReaderViewForTest.onremove();
+        expect(pbf.__pb2V3StateForTest().pb2Fullscreen).toBe(false);
+    });
+});
+
+describe('UAT-2 pb2ExportBook — through the shared exportBook engine', () => {
+    let blobs, anchors, origBlob, origCreate, origRevoke, origClick;
+    beforeEach(() => {
+        blobs = []; anchors = [];
+        origBlob = global.Blob;
+        global.Blob = class { constructor(parts, opts) { blobs.push({ text: parts.join(''), type: opts && opts.type }); } };
+        origCreate = URL.createObjectURL; origRevoke = URL.revokeObjectURL;
+        URL.createObjectURL = () => 'blob:test'; URL.revokeObjectURL = () => {};
+        origClick = HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click = function () { anchors.push({ href: this.href, download: this.download }); };
+    });
+    afterEach(() => {
+        global.Blob = origBlob; URL.createObjectURL = origCreate; URL.revokeObjectURL = origRevoke;
+        HTMLAnchorElement.prototype.click = origClick;
+    });
+    it('downloads <title>-picturebook.html with the cover h1, the scene count and every scene, then toasts', async () => {
+        let fetches = [];
+        global.fetch = vi.fn(async (url) => { fetches.push(url); return { ok: false, status: 404 }; });
+        pbf.__setPb2V3StateForTest({ pb2BookName: 'Harlot\'s Eight', pb2Covers: null, pb2Pages: [
+            { objectId: 's1', sceneIndex: 1, title: 'Arrival', blurb: 'They arrive.', imageGroupPath: '/Harlot/Images', imageName: 'scene-1.png' },
+            { objectId: 's2', sceneIndex: 2, title: 'Departure', summary: 'They leave.' }
+        ] });
+        await pbf.__pb2ExportBookForTest();
+        expect(anchors.length).toBe(1);
+        expect(anchors[0].download).toBe('Harlot_s_Eight-picturebook.html');
+        expect(blobs.length).toBe(1);
+        let html = blobs[0].text;
+        expect(html).toMatch(/^<!DOCTYPE html>/);
+        expect(html).toContain("<title>Harlot's Eight — Picture Book</title>");
+        expect(html).toContain("<h1>Harlot's Eight</h1>");
+        expect(html).toContain('<p>2 Scenes</p>');
+        expect(html).toContain('<h2>Arrival</h2>');
+        expect(html).toContain('<p class="blurb">They arrive.</p>');
+        expect(html).toContain('<h2>Departure</h2>');
+        expect(html).toContain('<p class="blurb">They leave.</p>');
+        expect(html).toContain('Page 2 of 2');
+        expect(html).toMatch(/<\/html>$/);
+        // Scene 1 carries a MediaServlet image (cover fallback + the page); scene 2 has none, so no fetch for it.
+        expect(fetches.filter(u => /\/media\/Public\/data.data\/Harlot\/Images\/scene-1\.png$/.test(u)).length).toBe(2);
+        expect(fetches.length).toBe(2);
+        expect(page.toast).toHaveBeenCalledWith('success', 'Picture book exported');
+        expect(pbf.__pb2V3StateForTest().pb2Exporting).toBe(false);
+    });
+    it('no pages -> nothing is downloaded; a failing export still clears pb2Exporting', async () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [] });
+        await pbf.__pb2ExportBookForTest();
+        expect(anchors.length).toBe(0);
+        expect(page.toast).not.toHaveBeenCalled();
+
+        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', title: 'Arrival' }] });
+        global.Blob = class { constructor() { throw new Error('boom'); } };
+        await expect(pbf.__pb2ExportBookForTest()).rejects.toThrow('boom');
+        expect(pbf.__pb2V3StateForTest().pb2Exporting).toBe(false);
+    });
+});

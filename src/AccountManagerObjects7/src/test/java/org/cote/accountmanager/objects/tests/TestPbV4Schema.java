@@ -878,11 +878,11 @@ public class TestPbV4Schema extends BaseTest {
 		}
 	}
 
-	// ───────── 7: watched/v4 notices actor, element and item edits; ignores composition bookkeeping; FKs render by name ─────────
+	// ───────── 7: the watched set (v4 sets, v5 canonical form) notices actor, element and item edits; ignores composition bookkeeping; FKs render by name ─────────
 
 	@Test
 	public void case07_watchedSetDetectsTheEditsItDeclares() throws Exception {
-		assertEquals("watched/v4", PbWatchedFields.WATCHED_SET_VERSION);
+		assertEquals("watched/v5", PbWatchedFields.WATCHED_SET_VERSION);
 		for(String model : new String[] { OlioModelNames.MODEL_PB_COMPOSITION, OlioModelNames.MODEL_PB_SCENE_ACTOR,
 			OlioModelNames.MODEL_PB_SCENE_ELEMENT, OlioModelNames.MODEL_ITEM }) {
 			assertTrue(model + " must be watched", PbWatchedFields.watchedModels().contains(model));

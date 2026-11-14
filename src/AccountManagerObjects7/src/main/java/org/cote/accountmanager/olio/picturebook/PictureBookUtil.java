@@ -21,6 +21,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
@@ -206,6 +207,12 @@ public class PictureBookUtil {
     static final String META_NOTE_NAME = ".pictureBookMeta";
     public static final String ATTR_SCENE_REFS = "pbSceneRefs";
     public static final String ATTR_DESCRIPTION = "pbDescription";
+    /// UAT-1 / KI-92: a series shares ONE charPerson per cast member across its chapters, and every
+    /// chapter's extraction describes that person from ITS text. Both rows above are therefore written
+    /// once per BOOK as {@code <attr>:<book objectId>} ({@link #bookScopedAttributeName}) on a PB2 book,
+    /// and the scene readers resolve the SCENE's book first ({@link #readBookScopedAttribute}). The
+    /// unscoped row is seeded once (first writer) as the fallback for book-less readers and pre-fix data.
+    public static final String ATTR_BOOK_SCOPE_SEPARATOR = ":";
     // Text-stated appearance the charPerson has no field for (skin tone/complexion, distinguishing
     // marks), lifted from the reduce step's physical block. Folded into the record-derived narration so
     // the manuscript's own words for a character's skin reach the prompt — never a substituted race.
@@ -772,8 +779,8 @@ public class PictureBookUtil {
         /// user-writable path in the meta note - the same trusted derivation listCharacters uses,
         /// and for the same reason (a tampered meta would otherwise point this at another user's
         /// population group, and this path DELETES).
-        BaseRecord charsGroup = resolveTrustedCharsGroup(user,
-                metaPb2BookObjectId(user, bookGroupPath, bookObjectId), bookGroupPath, orgId);
+        String pb2BookObjectId = metaPb2BookObjectId(user, bookGroupPath, bookObjectId);
+        BaseRecord charsGroup = resolveTrustedCharsGroup(user, pb2BookObjectId, bookGroupPath, orgId);
         if (charsGroup == null) throw new PictureBookException(404, "Book characters not found");
         long charsGroupId = ((Number) charsGroup.get(FieldNames.FIELD_ID)).longValue();
 
@@ -832,8 +839,11 @@ public class PictureBookUtil {
         result.metaUpdated = repointMetaCharacters(user, bookGroupPath, dropOids, keepObjectId);
 
         /// 3. Union the scene references onto the keeper, so scene-tagged apparel selection still
-        /// sees every scene this person appears in.
-        unionSceneRefs(user, keep, drops);
+        /// sees every scene this person appears in - the unscoped row and this book's own row.
+        unionSceneRefs(user, keep, drops, ATTR_SCENE_REFS);
+        if (pb2BookObjectId != null && !pb2BookObjectId.isBlank()) {
+            unionSceneRefs(user, keep, drops, bookScopedAttributeName(ATTR_SCENE_REFS, pb2BookObjectId));
+        }
 
         /// 4. Only now delete the duplicates, with their own foreign sub-records (profile,
         /// narrative, statistics, store, instinct, personality, state), which live outside the
@@ -1139,37 +1149,39 @@ public class PictureBookUtil {
     }
 
     /**
-     * Make the keeper's {@link #ATTR_SCENE_REFS} the union of its own and the merged characters'
-     * scene indices, so {@code selectSceneApparel} still resolves for every scene the person is in.
+     * Make the keeper's scene-refs row named {@code attrName} (the unscoped {@link #ATTR_SCENE_REFS},
+     * or one book's {@code pbSceneRefs:<bookObjectId>} row) the union of its own and the merged
+     * characters' scene indices, so {@code selectSceneApparel} still resolves for every scene the
+     * person is in. A row absent from the keeper and every drop is left absent.
      *
      * <p>Mutates the EXISTING attribute record and persists THAT directly — an attribute is
      * {@code referenced} storage, not a column, so folding it into a parent patch produces either an
      * empty SQL {@code SET} clause or a silent no-op (.claude/rules/model-api.md).
      */
-    private static void unionSceneRefs(BaseRecord user, BaseRecord keep, List<BaseRecord> drops) {
+    private static void unionSceneRefs(BaseRecord user, BaseRecord keep, List<BaseRecord> drops, String attrName) {
         try {
             java.util.TreeSet<Integer> refs = new java.util.TreeSet<>();
-            refs.addAll(parseSceneRefs(AttributeUtil.getAttributeValue(keep, ATTR_SCENE_REFS, (String) null)));
+            refs.addAll(parseSceneRefs(AttributeUtil.getAttributeValue(keep, attrName, (String) null)));
             for (BaseRecord d : drops) {
-                refs.addAll(parseSceneRefs(AttributeUtil.getAttributeValue(d, ATTR_SCENE_REFS, (String) null)));
+                refs.addAll(parseSceneRefs(AttributeUtil.getAttributeValue(d, attrName, (String) null)));
             }
             if (refs.isEmpty()) return;
             String csv = refs.stream().map(String::valueOf)
                     .collect(java.util.stream.Collectors.joining(","));
-            BaseRecord existing = AttributeUtil.getAttribute(keep, ATTR_SCENE_REFS);
+            BaseRecord existing = AttributeUtil.getAttribute(keep, attrName);
             if (existing != null) {
                 setExistingAttributeValue(existing, csv);
                 if (!IOSystem.getActiveContext().getRecordUtil().updateRecord(existing)) {
-                    logger.warn("mergeCharacters: failed to update " + ATTR_SCENE_REFS + " on "
+                    logger.warn("mergeCharacters: failed to update " + attrName + " on "
                             + keep.get(FieldNames.FIELD_NAME));
                 }
             }
             else {
                 IOSystem.getActiveContext().getRecordUtil().createRecord(
-                        AttributeUtil.addAttribute(keep, ATTR_SCENE_REFS, csv));
+                        AttributeUtil.addAttribute(keep, attrName, csv));
             }
         } catch (Exception e) {
-            logger.warn("mergeCharacters: failed to union " + ATTR_SCENE_REFS + ": " + e.getMessage());
+            logger.warn("mergeCharacters: failed to union " + attrName + ": " + e.getMessage());
         }
     }
 
@@ -1467,22 +1479,114 @@ public class PictureBookUtil {
         }
     }
 
-    private static void persistCharacterSceneAttributes(BaseRecord user, BaseRecord charPerson,
-            List<Integer> sceneIndices, String description) {
+    /**
+     * The attribute name that scopes a per-character row to one book: {@code <attr>:<bookObjectId>}.
+     * A null/blank book gives the unscoped name back (the legacy, no-PB2-book shape).
+     */
+    public static String bookScopedAttributeName(String attr, String bookObjectId) {
+        if (bookObjectId == null || bookObjectId.isBlank()) return attr;
+        return attr + ATTR_BOOK_SCOPE_SEPARATOR + bookObjectId.trim();
+    }
+
+    /**
+     * Read a per-character attribute for a SCENE's book: the row scoped to {@code bookObjectId}
+     * ({@link #bookScopedAttributeName}) when the book is known and the row exists, else the unscoped
+     * row (a standalone/legacy book, or series data written before the per-book rows existed — in
+     * which case it is the first of the equal-name rows, as before), else null.
+     *
+     * <p>KI-92: a series shares one charPerson per cast member; before the per-book rows every
+     * chapter appended an unscoped {@code pbDescription}/{@code pbSceneRefs} and
+     * {@link AttributeUtil#getAttribute} returned whichever chapter's job had written first. The
+     * record must have been read with {@code attributes} projected (referenced storage is never
+     * populated by default).
+     */
+    public static String readBookScopedAttribute(BaseRecord record, String attr, String bookObjectId) throws ModelException {
+        if (record == null) return null;
+        if (bookObjectId != null && !bookObjectId.isBlank()) {
+            String scoped = AttributeUtil.getAttributeValue(record, bookScopedAttributeName(attr, bookObjectId), (String) null);
+            if (scoped != null && !scoped.isBlank()) return scoped;
+        }
+        return AttributeUtil.getAttributeValue(record, attr, (String) null);
+    }
+
+    /**
+     * Persist a character's scene references ({@link #ATTR_SCENE_REFS}, CSV of the scene indices it
+     * appears in) and condensed description ({@link #ATTR_DESCRIPTION}) via the referenced-attribute
+     * mechanism (the only pattern that actually persists an attribute — see
+     * {@link #tagApparelSceneIndex}). Best-effort: a failure here must not fail the whole book build.
+     *
+     * <p><b>Per-book rows (UAT-1 / KI-92).</b> With a {@code bookObjectId} each value is written to
+     * the book-scoped row {@code <attr>:<bookObjectId>} — created on the first extraction of that
+     * book and overwritten in place on a re-extraction — so a series character carries exactly one
+     * row per chapter, and the chapter's own readers ({@code PbRenderPlanUtil.actorDescription},
+     * the compose-scene cast line, {@code PbComposeUtil.collectCast} tier (b), the portrait prompt)
+     * find THEIR chapter's text whatever order the 2-wide chapter jobs ran in. The unscoped row is
+     * seeded only when the person has none yet (the fallback for book-less readers, test fixtures
+     * and data written before this), never appended a second time. The person's rows are re-read
+     * fresh here because the record in hand is the population-reuse projection, which carries no
+     * attributes. Without a book (the legacy, no-PB2-book path) the unscoped rows are appended
+     * exactly as before.
+     */
+    static void persistCharacterSceneAttributes(BaseRecord user, BaseRecord charPerson,
+            List<Integer> sceneIndices, String description, String bookObjectId) {
         try {
-            if (sceneIndices != null && !sceneIndices.isEmpty()) {
-                String csv = sceneIndices.stream().map(String::valueOf)
-                        .collect(java.util.stream.Collectors.joining(","));
-                IOSystem.getActiveContext().getRecordUtil().createRecord(
-                        AttributeUtil.addAttribute(charPerson, ATTR_SCENE_REFS, csv));
+            String csv = (sceneIndices != null && !sceneIndices.isEmpty())
+                    ? sceneIndices.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","))
+                    : null;
+            String desc = (description != null && !description.isBlank()) ? description.trim() : null;
+            if (csv == null && desc == null) return;
+            boolean scoped = bookObjectId != null && !bookObjectId.isBlank();
+            BaseRecord fresh = scoped ? readCharacterAttributeRows(user, charPerson) : null;
+            if (scoped && fresh == null) {
+                logger.warn("Could not re-read the attribute rows of " + charPerson.get(FieldNames.FIELD_NAME)
+                        + " — writing the book-scoped rows for " + bookObjectId + " without the unscoped seed");
             }
-            if (description != null && !description.isBlank()) {
-                IOSystem.getActiveContext().getRecordUtil().createRecord(
-                        AttributeUtil.addAttribute(charPerson, ATTR_DESCRIPTION, description.trim()));
-            }
+            if (csv != null) persistCharacterAttribute(charPerson, fresh, ATTR_SCENE_REFS, csv, scoped ? bookObjectId : null);
+            if (desc != null) persistCharacterAttribute(charPerson, fresh, ATTR_DESCRIPTION, desc, scoped ? bookObjectId : null);
         } catch (Exception e) {
             logger.warn("Failed to persist scene refs/description attributes for "
                     + charPerson.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+        }
+    }
+
+    /// Unscoped (no book): append, the pre-UAT-1 behaviour. Scoped: upsert the book's row; seed the
+    /// unscoped row only when the fresh read shows none (and only when the fresh read succeeded —
+    /// a failed re-read must not append a duplicate).
+    private static void persistCharacterAttribute(BaseRecord charPerson, BaseRecord fresh, String attr, String value,
+            String bookObjectId) throws Exception {
+        if (bookObjectId == null) {
+            IOSystem.getActiveContext().getRecordUtil().createRecord(AttributeUtil.addAttribute(charPerson, attr, value));
+            return;
+        }
+        String scopedName = bookScopedAttributeName(attr, bookObjectId);
+        BaseRecord existing = (fresh != null) ? AttributeUtil.getAttribute(fresh, scopedName) : null;
+        if (existing != null) {
+            setExistingAttributeValue(existing, value);
+            if (!IOSystem.getActiveContext().getRecordUtil().updateRecord(existing)) {
+                logger.warn("Failed to update " + scopedName + " on " + charPerson.get(FieldNames.FIELD_NAME));
+            }
+        } else {
+            IOSystem.getActiveContext().getRecordUtil().createRecord(AttributeUtil.addAttribute(charPerson, scopedName, value));
+        }
+        if (fresh != null && AttributeUtil.getAttribute(fresh, attr) == null) {
+            IOSystem.getActiveContext().getRecordUtil().createRecord(AttributeUtil.addAttribute(charPerson, attr, value));
+        }
+    }
+
+    /// The person re-read as the caller with its attribute rows projected and the query cache
+    /// bypassed (a cached projection would not show the row the previous chapter just wrote).
+    private static BaseRecord readCharacterAttributeRows(BaseRecord user, BaseRecord charPerson) {
+        try {
+            String oid = charPerson.get(FieldNames.FIELD_OBJECT_ID);
+            if (oid == null) return null;
+            Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, oid);
+            q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+            q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_ATTRIBUTES });
+            q.setCache(false);
+            return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+        } catch (Exception e) {
+            logger.warn("Failed to re-read attributes of " + charPerson.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+            return null;
         }
     }
 
@@ -1522,7 +1626,7 @@ public class PictureBookUtil {
          * once a book exists, the same failures are captured on .pictureBookMeta's failedExtractions
          * field instead. To investigate: inspect rawResponse, fix the JSON by hand, and re-drive the
          * normal entry point (e.g. patch the corrected scene into your own sceneList and call
-         * createFromScenes/extract again) — there is no separate "redo" API.
+         * createFromScenes again) — there is no separate "redo" API.
          */
         public final List<String> failedExtractions;
 
@@ -2917,6 +3021,16 @@ public class PictureBookUtil {
      */
     static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath,
             String bookSlug) {
+        return resolveSceneCharacter(user, charItem, sceneGroupPath, bookSlug, null);
+    }
+
+    /**
+     * @param bookObjectId the book whose own pbDescription row ({@code pbDescription:<bookObjectId>})
+     *                     is preferred over the shared unscoped row for a series character that several
+     *                     chapters extracted (UAT-1 / KI-92); null reads the unscoped row only.
+     */
+    static ResolvedCharacter resolveSceneCharacter(BaseRecord user, Object charItem, String sceneGroupPath,
+            String bookSlug, String bookObjectId) {
         String cname = null;
         String charOid = null;
         if (charItem instanceof Map) {
@@ -3016,10 +3130,11 @@ public class PictureBookUtil {
         }
         // Attribute 2 (ATTR_DESCRIPTION): the reduced, style/setting-free visual description condensed
         // from the character's OWN scenes (createFromScenes' reduce step) — PREFERRED for imaging.
-        // Read from the charPerson's attributes (FIELD_ATTRIBUTES requested in the query above).
+        // Read from the charPerson's attributes (FIELD_ATTRIBUTES requested in the query above);
+        // this book's own row first, then the shared unscoped row.
         String pbDescription = null;
         try {
-            String d = AttributeUtil.getAttributeValue(cp, ATTR_DESCRIPTION, (String) null);
+            String d = readBookScopedAttribute(cp, ATTR_DESCRIPTION, bookObjectId);
             if (d != null && !d.isBlank()) pbDescription = d.trim();
         } catch (Exception e) {
             logger.warn("Failed to read " + ATTR_DESCRIPTION + " attribute for " + cname + ": " + e.getMessage());
@@ -6813,8 +6928,8 @@ public class PictureBookUtil {
     /**
      * B7: extract a scene character's name from either persisted shape — a {@code {name:...}} map or
      * a bare name/objectId string (see buildSceneEntry) — tolerating any other element type by
-     * returning null instead of ClassCastException-ing. Harmonizes extract()'s character collection
-     * with createFromScenes()'s per-element {@code instanceof} guard.
+     * returning null instead of ClassCastException-ing. Mirrors createFromScenes()'s per-element
+     * {@code instanceof} guard.
      */
     @SuppressWarnings("unchecked")
     public static String extractCharName(Object sceneCharItem) {
@@ -6824,19 +6939,6 @@ public class PictureBookUtil {
         }
         if (sceneCharItem instanceof String) return (String) sceneCharItem;
         return null;
-    }
-
-    /**
-     * B7: return the character-data map for a scene character item — the map itself when it is a
-     * {@code {name:...}} object, or a fresh single-key {@code {name}} map when it is a bare string.
-     * Mirrors createFromScenes()'s synthetic-map handling so extract() tolerates both shapes.
-     */
-    @SuppressWarnings("unchecked")
-    private static Map<String, Object> sceneCharDataMap(Object sceneCharItem, String name) {
-        if (sceneCharItem instanceof Map) return (Map<String, Object>) sceneCharItem;
-        Map<String, Object> m = new LinkedHashMap<>();
-        if (name != null) m.put("name", name);
-        return m;
     }
 
     /**
@@ -9048,51 +9150,6 @@ public class PictureBookUtil {
     }
 
     /**
-     * Full extraction: scenes + characters + outfit + narrate. Returns .pictureBookMeta.
-     *
-     * @param dataPath the {@code datagen.path} init-param value, threaded down to
-     *   {@code createCharPerson} for KI-30's random-baseline-then-override character creation
-     *   (see {@code PictureBookService}, which reads it from the servlet context — mirrors
-     *   {@code GameService}'s identical use of the same init param).
-     */
-    public static BaseRecord extract(BaseRecord user, String workObjectId, int count, String chatConfigName,
-            String genre, String bookName, String dataPath) {
-        if (count > MAX_SCENES_DEFAULT) count = MAX_SCENES_DEFAULT;
-        // Legacy all-in-one endpoint, now implemented as the SAME two steps as the Ux flow so it shares
-        // ONE character-creation path — the block-scoped reduce (pictureBook.reduce-character over each
-        // character's OWN content blocks), the scene-ref (ATTR_SCENE_REFS) + condensed-description
-        // (ATTR_DESCRIPTION) attributes, and Attr2-driven imaging — instead of a divergent inline
-        // extract-character loop over the truncated work opening (which mis-described characters
-        // introduced later, e.g. 'Thug'). Step 1 extracts scenes (chunked for long works, so each scene
-        // carries its source content block); step 2 (createFromScenes) creates characters + scene notes
-        // + meta. extractScenesOnly's own scene-parse failures surface in its ScenesOnlyResult (as they
-        // do for the Ux flow); createFromScenes records its per-character reduce failures on the meta.
-        ScenesOnlyResult scenes = extractScenesOnly(user, workObjectId, count, chatConfigName, null);
-        return createFromScenes(user, workObjectId, chatConfigName, genre, bookName,
-                scenes.scenes, new ArrayList<>(), dataPath);
-    }
-
-    /**
-     * Takes user-curated scene list from Step 2, creates book group, scene notes, extracts +
-     * creates charPerson records, saves meta. Returns the .pictureBookMeta record.
-     * <p>
-     * W3 (§2.4): thin delegate to the single {@code pb2BookObjectId}-aware implementation below,
-     * passing {@code null} for the legacy (no-PB2-book) path. Collapsing the two near-identical
-     * overloads into one body means a fix applied to the extraction/character/scene flow (e.g.
-     * {@code canonicalizeSceneCharacterNames}) can never again reach one overload but not the other.
-     *
-     * @param dataPath the {@code datagen.path} init-param value, threaded down to
-     *   {@code createCharPerson} for KI-30's random-baseline-then-override character creation —
-     *   see {@link #extract} for the same parameter.
-     */
-    public static BaseRecord createFromScenes(BaseRecord user, String workObjectId, String chatConfigName,
-            String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataListIn,
-            String dataPath) {
-        return createFromScenes(user, workObjectId, chatConfigName, genre, bookName, sceneList, charDataListIn,
-                dataPath, null);
-    }
-
-    /**
      * The series slug for a chapter book: the NAME of the ONE world its series shares
      * ({@code book.world = series.universe}), whose world name IS the series slug - see
      * {@link PbOlioContextUtil#getCreateSeriesContext(BaseRecord, String, String)}, which creates the
@@ -9132,75 +9189,83 @@ public class PictureBookUtil {
     }
 
     /**
-     * Overload that accepts an optional PB2 book objectId.
+     * Takes the user-curated scene list from the wizard's review step and, for the {@code olio.pb.book}
+     * identified by {@code pb2BookObjectId}, creates the book's scene group + scene notes, extracts and
+     * creates the charPerson records (routed into the book's own Olio world groups) and saves the
+     * {@code .pictureBookMeta}. Returns the meta record, whose {@code bookObjectId} is overridden to the
+     * PB2 book's objectId.
      * <p>
-     * When {@code pb2BookObjectId} is non-null, the created characters' sub-records (narratives,
-     * statistics, etc.) are routed into the PB2 book's own Olio world groups rather than the
-     * legacy home-directory groups. The returned meta's {@code bookObjectId} field is also
-     * overridden to point at the PB2 book rather than the PB1 group.
+     * {@code pb2BookObjectId} is REQUIRED (I-1 / KI-89 (b), 2026-11-13). The former bookless import -
+     * the 8-arg overload and the all-in-one {@code extract} - wrote a {@code ~/Data/PictureBooks/<name>}
+     * group + meta that no V3 surface ({@code /books}, {@code /pages}, {@code /workflow}, the {@code /v2}
+     * reader) could list, and the PB1 reader that could was removed at Phase 10. A blank id is a 400,
+     * raised BEFORE anything is written.
+     *
+     * @param dataPath the {@code datagen.path} init-param value, threaded down to
+     *   {@code createCharPerson} for KI-30's random-baseline-then-override character creation
+     *   (see {@code PictureBookService}, which reads it from the servlet context - mirrors
+     *   {@code GameService}'s identical use of the same init param).
      */
     @SuppressWarnings("unchecked")
     public static BaseRecord createFromScenes(BaseRecord user, String workObjectId, String chatConfigName,
             String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataListIn,
             String dataPath, String pb2BookObjectId) {
-        // W3 (§2.4): single implementation for both overloads. When pb2BookObjectId is null/blank this
-        // is the legacy (no-PB2-book) path: skip the book/world resolution and leave pb2OlioCtx null, so
-        // every pb2OlioCtx-guarded block below (the prepareGroups context, the B4 population re-route,
-        // the gallery-path stamp, createCharPerson's octxHint, persistCharacterImageGalleryPath) and the
-        // pb2BookObjectId stamp all degrade to exactly the old 8-arg behaviour. When present, resolve the
-        // PB2 book's world context as before.
+        if (pb2BookObjectId == null || pb2BookObjectId.isBlank()) {
+            throw new PictureBookException(400, "pb2BookObjectId is required: every import must be bound to a"
+                    + " PictureBook (the bookless PB1 import was removed - KI-89)");
+        }
+        // The pb2OlioCtx-guarded blocks below (the prepareGroups context, the B4 population re-route,
+        // the gallery-path stamp, createCharPerson's octxHint, persistCharacterImageGalleryPath) still
+        // tolerate a null context: that is the degraded case where the book's Olio world could not be
+        // resolved (the OlioException branch below), not a bookless import.
         OlioContext pb2OlioCtx = null;
-        BaseRecord pb2Book = null;
-        String pb2GroupName = null;
         Integer chapterStart = null;
         Integer chapterEnd = null;
-        if (pb2BookObjectId != null && !pb2BookObjectId.isBlank()) {
-            long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-            pb2Book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
-            if (pb2Book == null) {
-                throw new PictureBookException(404, "PB2 book not found: " + pb2BookObjectId);
+        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
+        BaseRecord pb2Book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
+        if (pb2Book == null) {
+            throw new PictureBookException(404, "PB2 book not found: " + pb2BookObjectId);
+        }
+        String bookSlug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
+        if (bookSlug == null || bookSlug.isBlank()) {
+            throw new PictureBookException(500, "PB2 book has no slug — cannot resolve its Olio context");
+        }
+        // Chapter books are titled "Chapter N", so keying the scene group on the title would make every
+        // manuscript's chapter N share ~/Data/PictureBooks/Chapter N. The slug is unique per book.
+        String pb2GroupName = bookSlug;
+        // N-series (Q6): a chapter book does NOT own a per-chapter world. Its world FK (book.world)
+        // is the ONE world shared by the whole series (book.world = series.universe), whose world
+        // name is the SERIES slug, not this chapter's slug. Resolving the context by the chapter
+        // slug via getCreateBookContext would miss that shared world and mint a DUPLICATE
+        // per-chapter world — under the per-book role pair, not the series pair — so every chapter
+        // after the first would strand its cast/scenes in its own orphan world. Detect a chapter by
+        // its series FK and resolve the shared series world with the canonical series resolver,
+        // keyed on the series world's own name (= the series slug). Standalone books (no series FK)
+        // keep resolving by their own slug, exactly as before.
+        BaseRecord seriesRef = pb2Book.get(OlioFieldNames.FIELD_PB_SERIES);
+        boolean isChapter = seriesRef != null && seriesRef.get(FieldNames.FIELD_ID) != null
+            && ((Number) seriesRef.get(FieldNames.FIELD_ID)).longValue() > 0L;
+        if (isChapter) {
+            Integer[] range = readChapterSourceRange(pb2Book);
+            if (range != null) {
+                chapterStart = range[0];
+                chapterEnd = range[1];
             }
-            String bookSlug = pb2Book.get(OlioFieldNames.FIELD_PB_SLUG);
-            if (bookSlug == null || bookSlug.isBlank()) {
-                throw new PictureBookException(500, "PB2 book has no slug — cannot resolve its Olio context");
-            }
-            // Chapter books are titled "Chapter N", so keying the PB1 group on the title makes every
-            // manuscript's chapter N share ~/Data/PictureBooks/Chapter N. The slug is unique per book.
-            pb2GroupName = bookSlug;
-            // N-series (Q6): a chapter book does NOT own a per-chapter world. Its world FK (book.world)
-            // is the ONE world shared by the whole series (book.world = series.universe), whose world
-            // name is the SERIES slug, not this chapter's slug. Resolving the context by the chapter
-            // slug via getCreateBookContext would miss that shared world and mint a DUPLICATE
-            // per-chapter world — under the per-book role pair, not the series pair — so every chapter
-            // after the first would strand its cast/scenes in its own orphan world. Detect a chapter by
-            // its series FK and resolve the shared series world with the canonical series resolver,
-            // keyed on the series world's own name (= the series slug). Standalone books (no series FK)
-            // keep resolving by their own slug, exactly as before.
-            BaseRecord seriesRef = pb2Book.get(OlioFieldNames.FIELD_PB_SERIES);
-            boolean isChapter = seriesRef != null && seriesRef.get(FieldNames.FIELD_ID) != null
-                && ((Number) seriesRef.get(FieldNames.FIELD_ID)).longValue() > 0L;
+        }
+        try {
             if (isChapter) {
-                Integer[] range = readChapterSourceRange(pb2Book);
-                if (range != null) {
-                    chapterStart = range[0];
-                    chapterEnd = range[1];
+                String seriesSlug = resolveSeriesWorldSlug(pb2Book, orgId);
+                if (seriesSlug == null || seriesSlug.isBlank()) {
+                    throw new OlioException("Chapter book '" + bookSlug + "' references a series whose"
+                        + " shared world could not be resolved from its world FK");
                 }
+                pb2OlioCtx = PbOlioContextUtil.getCreateSeriesContext(user, dataPath, seriesSlug);
+            } else {
+                pb2OlioCtx = PbOlioContextUtil.getCreateBookContext(user, dataPath, bookSlug);
             }
-            try {
-                if (isChapter) {
-                    String seriesSlug = resolveSeriesWorldSlug(pb2Book, orgId);
-                    if (seriesSlug == null || seriesSlug.isBlank()) {
-                        throw new OlioException("Chapter book '" + bookSlug + "' references a series whose"
-                            + " shared world could not be resolved from its world FK");
-                    }
-                    pb2OlioCtx = PbOlioContextUtil.getCreateSeriesContext(user, dataPath, seriesSlug);
-                } else {
-                    pb2OlioCtx = PbOlioContextUtil.getCreateBookContext(user, dataPath, bookSlug);
-                }
-            } catch (OlioException e) {
-                logger.warn("createFromScenes(pb2): could not resolve Olio context for slug=" + bookSlug + ": " + e.getMessage()
-                    + " — falling back to legacy group routing");
-            }
+        } catch (OlioException e) {
+            logger.warn("createFromScenes(pb2): could not resolve Olio context for slug=" + bookSlug + ": " + e.getMessage()
+                + " — falling back to legacy group routing");
         }
 
         BaseRecord work = findWork(user, workObjectId);
@@ -9209,7 +9274,7 @@ public class PictureBookUtil {
 
         List<Map<String, Object>> charDataList = (charDataListIn != null) ? new ArrayList<>(charDataListIn) : new ArrayList<>();
         String effectiveBookName = (bookName != null && !bookName.isEmpty()) ? bookName : work.get(FieldNames.FIELD_NAME);
-        String groupName = (pb2GroupName != null) ? pb2GroupName : effectiveBookName;
+        String groupName = pb2GroupName;
         BaseRecord bookGroup = ensureBookGroup(user, groupName);
         if (bookGroup == null) throw new PictureBookException(500, "Failed to create book group");
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
@@ -9419,7 +9484,8 @@ public class PictureBookUtil {
             if (cp != null) {
                 charObjectIds.put(cname, cp.get(FieldNames.FIELD_OBJECT_ID));
                 persistCharacterSceneAttributes(user, cp, charSceneIndices.get(cname),
-                        imagingDescription(reducedDescription, charData));
+                        imagingDescription(reducedDescription, charData),
+                        (pb2Book != null ? (String) pb2Book.get(FieldNames.FIELD_OBJECT_ID) : null));
                 persistCharacterImageGalleryPath(cp, bookGalleryPath);
             } else {
                 logger.error("createCharPerson failed for '" + cname + "' during /create-from-scenes (pb2) — character will be absent from the book");
@@ -9634,7 +9700,7 @@ public class PictureBookUtil {
      * List a book's extracted characters (for the "Manage Characters" review/edit screen) —
      * objectId/name/gender/hasPortrait/apparelCount/per-apparel scene tags, plus failedApparel/
      * failedStatistics flags cross-referenced from the book's own meta (set during
-     * extract()/createFromScenes() when createCharPerson's best-effort steps fail).
+     * createFromScenes() when createCharPerson's best-effort steps fail).
      */
     /**
      * Resolve a book group from EITHER a {@code data.group} objectId or an {@code olio.pb.book}
@@ -10188,10 +10254,22 @@ public class PictureBookUtil {
      * Strictly scoped: only notes whose JSON {@code bookObjectId}/{@code workObjectId} equals
      * {@code bookObjectId} are deleted, so no other book's (or user's) meta is touched. Every failure is
      * swallowed and logged — this is a cleanup step, never a reason to fail the delete.
+     * <p>
+     * <b>A note that links to the book only through {@code pb2BookObjectId} and still sits in a live group is
+     * unlinked, not deleted (§24 I-5 / 218 d).</b> Since 218 d every imported PB1 book carries that back-link
+     * (and {@code /health} Repair always could set it), so for a PB1 source whose group name is not the slug -
+     * the tree step 4 of {@code deleteBookComplete} never reaches - a delete here would destroy the PB1 book's
+     * own meta note: unlistable in the legacy list, "No .pictureBookMeta note found" on re-import, which the
+     * import's own 409 ("delete or rename … before re-importing") tells the user to do. The PB1 source is not
+     * something the PB2 book created, so it is not part of its footprint: the {@code pb2BookObjectId} key is
+     * removed (as the caller, through {@code AccessPoint}, every other key intact) so no dead link remains for
+     * {@code resolveSceneGroupByMetaBookLink} or {@code PbDeleteUtil}'s legacy-id branch to follow. The delete
+     * stays for the documented orphan case (the note's group is already gone) and for a PB1-id match (the
+     * book being deleted IS the PB1 book). No slug rename exists, so there is no other live-group case.
      *
-     * @param user         the acting user (org-scoped search + authorized deletes)
+     * @param user         the acting user (org-scoped search + authorized deletes / unlinks)
      * @param bookObjectId the book objectId whose orphaned meta note(s) should be removed
-     * @return the number of orphaned meta notes deleted
+     * @return the number of orphaned meta notes deleted (unlinked notes are logged, not counted)
      */
     static int deleteOrphanedMetaNotes(BaseRecord user, String bookObjectId) {
         if (user == null || bookObjectId == null || bookObjectId.isBlank()) {
@@ -10220,40 +10298,82 @@ public class PictureBookUtil {
                 if (text == null || text.isBlank()) {
                     continue;
                 }
-                boolean matches = false;
+                boolean matchesPb1Id = false;
+                boolean matchesPb2Link = false;
+                Map<String, Object> m;
                 try {
-                    Map<String, Object> m = JSONUtil.getMap(text.getBytes(), String.class, Object.class);
+                    m = JSONUtil.getMap(text.getBytes(), String.class, Object.class);
                     if (m != null) {
                         // A meta note links to a book through any of these keys: the PB1 work/book id it
                         // was created against, or the PB2 row it was later linked to.
-                        for (String key : new String[]{ "bookObjectId", "workObjectId", "pb2BookObjectId" }) {
+                        for (String key : new String[]{ "bookObjectId", "workObjectId" }) {
                             Object v = m.get(key);
                             if (v instanceof String && bookObjectId.equals(v)) {
-                                matches = true;
+                                matchesPb1Id = true;
                                 break;
                             }
                         }
+                        Object pb2 = m.get("pb2BookObjectId");
+                        matchesPb2Link = pb2 instanceof String && bookObjectId.equals(pb2);
                     }
                 } catch (Exception ignore) {
                     // Not JSON / unparseable — cannot be the note we are looking for.
                     continue;
                 }
-                if (matches) {
+                if (!matchesPb1Id && !matchesPb2Link) {
+                    continue;
+                }
+                if (!matchesPb1Id && metaNoteGroupExists(note, orgId)) {
+                    // Linked only through pb2BookObjectId and its group is alive: an imported PB1 source (218 d),
+                    // not the book's footprint. Unlink, never delete.
                     try {
-                        if (deleteRecordExplained(user, note).deleted) {
-                            deleted++;
-                            logger.info("Deleted orphaned .pictureBookMeta note {} referencing gone book {}",
+                        m.remove("pb2BookObjectId");
+                        BaseRecord patch = PbGraphUtil.patchOf(note, ModelNames.MODEL_NOTE, FieldNames.FIELD_TEXT);
+                        patch.set(FieldNames.FIELD_TEXT, JSONUtil.exportObject(m));
+                        if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) != null) {
+                            logger.info("Unlinked .pictureBookMeta note {} (live PB1 group) from deleted book {}",
+                                note.get(FieldNames.FIELD_OBJECT_ID), bookObjectId);
+                        } else {
+                            logger.warn("Could not unlink .pictureBookMeta note {} from deleted book {} (update refused)",
                                 note.get(FieldNames.FIELD_OBJECT_ID), bookObjectId);
                         }
                     } catch (Exception e) {
-                        logger.warn("Failed to delete orphaned .pictureBookMeta note: " + e.getMessage());
+                        logger.warn("Failed to unlink .pictureBookMeta note from deleted book " + bookObjectId + ": " + e.getMessage());
                     }
+                    continue;
+                }
+                try {
+                    if (deleteRecordExplained(user, note).deleted) {
+                        deleted++;
+                        logger.info("Deleted orphaned .pictureBookMeta note {} referencing gone book {}",
+                            note.get(FieldNames.FIELD_OBJECT_ID), bookObjectId);
+                    }
+                } catch (Exception e) {
+                    logger.warn("Failed to delete orphaned .pictureBookMeta note: " + e.getMessage());
                 }
             }
         } catch (Exception e) {
             logger.warn("deleteOrphanedMetaNotes failed for " + bookObjectId + ": " + e.getMessage());
         }
         return deleted;
+    }
+
+    /** Whether the group a {@code .pictureBookMeta} note sits in still exists (the note is the caller's own, so its group is too). */
+    private static boolean metaNoteGroupExists(BaseRecord note, long orgId) {
+        Object gid = note.get(FieldNames.FIELD_GROUP_ID);
+        if (!(gid instanceof Number) || ((Number) gid).longValue() <= 0L) {
+            return false;
+        }
+        try {
+            Query gq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_ID, ((Number) gid).longValue());
+            gq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+            gq.setRequest(new String[]{ FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME });
+            gq.setCache(false);
+            return IOSystem.getActiveContext().getSearch().findRecord(gq) != null;
+        } catch (Exception e) {
+            logger.warn("metaNoteGroupExists: " + e.getMessage());
+            return false;
+        }
     }
 
     /**

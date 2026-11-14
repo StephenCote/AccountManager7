@@ -1,15 +1,20 @@
 package org.cote.accountmanager.olio.picturebook;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,10 +26,12 @@ import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.illustration.BandCanvas;
 import org.cote.accountmanager.olio.illustration.CancelToken;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.FixtureGraphClient;
 import org.cote.accountmanager.olio.illustration.Flux2Compiler;
+import org.cote.accountmanager.olio.illustration.GraphInputs;
 import org.cote.accountmanager.olio.illustration.MaskImage;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
 import org.cote.accountmanager.olio.illustration.QaProvider;
@@ -39,6 +46,7 @@ import org.cote.accountmanager.olio.illustration.StageRequest;
 import org.cote.accountmanager.olio.illustration.StageResult;
 import org.cote.accountmanager.olio.illustration.SwarmGraphClient;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
+import org.cote.accountmanager.olio.illustration.WorkflowCompiler;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
 import org.cote.accountmanager.olio.picturebook.PbCoverUtil.CoverResult;
 import org.cote.accountmanager.olio.picturebook.PbNodeExecutor.RenderBackend;
@@ -71,26 +79,47 @@ import org.junit.Test;
  * and rendered through {@code executeNodeRun} on the node {@code PbServiceFacade.ensureCompositionPlanNode}
  * materializes, with the scripted {@link RendererAdapter} / {@link QaProvider} of {@code TestPbQaHookOffline}
  * behind the {@link RenderBackend} seam.
+ * <p>
+ * §24 I-4 (ledger 236 i): the band is <b>enforced</b>, not asked for. A plan that reserves one renders its figure
+ * stages on the figure canvas ({@link BandCanvas}: W x (H - band rows), so no figure can occupy the band), then a
+ * TITLE_BAND pass paints the band on the full canvas through the family's masked init-image graph over the padded
+ * figure image. So the compiled BASE prompt no longer carries the clause - the TITLE_BAND compile does - and a run
+ * makes two renderer requests per variant.
  * <ol>
  * <li>{@link #topBandPlanClipsRowsAndBothCompilersSpeakIt}: TOP -> purpose {@code COVER}, {@code reserved} =
  *     (0,0,1,0.25), the actor box (y 0.05, h 0.4) reads (y 0.25, h 0.4) and the element (y 0.1, h 0.2) reads
- *     (y 0.25, h 0.2) on the plan while the stored rows keep their values; the compiled BASE prompt (FLUX2, the
- *     pinned checkpoint) and a direct {@link SdxlCompiler} compile both carry the "top quarter ... negative space"
- *     clause; {@code toJson} / {@code fromJson} round-trips the band.</li>
+ *     (y 0.25, h 0.2) on the plan while the stored rows keep their values; the stages are BASE, TITLE_BAND; the
+ *     compiled BASE prompt (FLUX2, the pinned checkpoint) carries the subject and NOT the "top quarter ... negative
+ *     space" clause, the compiled TITLE_BAND prompt carries the clause and the setting and none of the actor /
+ *     element text; a direct {@link Flux2Compiler} / {@link SdxlCompiler} compile of the banded plan still speaks the
+ *     clause (the compilers' own contract); {@code toJson} / {@code fromJson} round-trips the band.</li>
  * <li>{@link #bottomBandSlidesRowsUp}: BOTTOM -> {@code reserved} = (0,0.75,1,0.25); an actor ending at 0.9 is
- *     slid up to end at 0.75 keeping its height; the clause says "bottom quarter".</li>
- * <li>{@link #noBandReservesNothing}: NONE -> {@code getReserved()} null, rows unclipped, no clause in either
- *     compiler.</li>
+ *     slid up to end at 0.75 keeping its height; the TITLE_BAND clause says "bottom quarter", BASE says nothing.</li>
+ * <li>{@link #noBandReservesNothing}: NONE -> {@code getReserved()} null, rows unclipped, no TITLE_BAND stage, no
+ *     clause in either compiler.</li>
+ * <li>{@link #figureCanvasArithmetic}: {@code Box.inFigureCanvas} remaps a clipped box onto the figure canvas (top and
+ *     bottom bands); {@code BandCanvas.bandPixels} rounds to the 16-grain (768 -> 192, 1024 -> 256); {@code pad}
+ *     returns the full canvas with the figure rows intact and the band rows flat.</li>
  * <li>{@link #emptyCoverAndSceneCompositionAreRefused}: a MANUAL cover with no text is a 400 "has no description to
  *     render from"; a SCENE composition handed to {@code buildCompositionPlan} is a 400 "is not a cover-type
  *     composition".</li>
  * <li>{@link #executorRendersTheCoverThroughThePlanPath}: {@code ensureCompositionPlanNode} is idempotent (handle
- *     {@code compositionPlanHandle}, scope {@code composition}); a DRAFT run makes exactly one renderer request
- *     whose plan is the cover plan (purpose COVER, the clause in the prompt), records one BASE artifact stamped
- *     with the run, completes the node DONE_UNVERIFIED then auto-approves it, the DTO names
- *     {@code compositionObjectId} / {@code purpose} / {@code strategy TEXT_ONLY}, and nothing composed a scene
- *     (no SCENE composition, the cover's revision unchanged). A second STANDARD run on the same node renders the
- *     preset's two variants and the QA hook judges variant 0 under the cover plan.</li>
+ *     {@code compositionPlanHandle}, scope {@code composition}); a DRAFT run (the preset's 512x512 canvas, a 128-row
+ *     band) makes two renderer requests - BASE at 512x384 (the figure canvas) whose plan is the cover plan (purpose
+ *     COVER) and whose prompt carries the subject and no clause, then TITLE_BAND at 512x512, a compiled graph carrying
+ *     the padded figure as {@code init} and a mask covering exactly the band's rows, creativity 1.0 (the band is
+ *     painted, not a refinement of the padded fill), no grow, a one-grain feather, no references,
+ *     the clause in its prompt - records one {@code stage} artifact (the figure image) and one BASE artifact (the band
+ *     pass's output) stamped with the run,
+ *     completes the node DONE_UNVERIFIED then auto-approves it, the DTO names {@code compositionObjectId} /
+ *     {@code purpose} / {@code strategy TEXT_ONLY} / {@code stagesRendered [BASE, TITLE_BAND]}, and nothing composed a
+ *     scene (no SCENE composition, the cover's revision unchanged). A second STANDARD run on the same node (1024x1024,
+ *     a 256-row band) renders the preset's two variants (four requests) and the QA hook judges variant 0's band
+ *     output under the cover plan.</li>
+ * <li>{@link #bandPassFailureDegradesAndDeliversThePaddedCanvas}: the renderer refuses the TITLE_BAND pass: the node
+ *     still completes, the delivered image is the figure padded to the plan's 512x512 canvas (figure rows intact, the
+ *     band flat), the run carries a {@code TITLE_BAND_FAILED} degradation and a TITLE_BAND stage error, auto-approve is
+ *     vetoed, and the figure image is still the {@code stage} artifact the final chains to.</li>
  * <li>{@link #foreignCompositionIsNotFoundInThisBook}: a node whose {@code scopeRef} is another book's cover is a
  *     404 "not found in this book" and the run closes FAILED before anything renders.</li>
  * </ol>
@@ -100,8 +129,19 @@ public class TestPbCoverPlanOffline extends BaseTest {
 
 	private static final String MODEL = "flux2Klein_9b";
 	private static final String OFFLINE_SERVER = "http://127.0.0.1:9";
+	/// The images the scripted renderer answers with (decoupled from the request size, as the executor stores
+	/// whatever the renderer returned): a W x H "final" and a W x FIGURE_H "figure" (0.25 x 768 = 192 band rows).
 	private static final int W = 1024;
 	private static final int H = 768;
+	private static final int BAND_PX = 192;
+	private static final int FIGURE_H = H - BAND_PX;
+	/// The plan's canvas is the square default scaled by the preset (CanvasResolver.SQUARE_EDGE x
+	/// QualityPresets resolutionScale: DRAFT 0.5, STANDARD 1.0), and the band's rows are a quarter of it on the
+	/// 16-grain (§24 I-4, BandCanvas): the figure stages render on the canvas less those rows.
+	private static final int DRAFT_EDGE = 512;
+	private static final int DRAFT_BAND_PX = 128;
+	private static final int STANDARD_EDGE = 1024;
+	private static final int STANDARD_BAND_PX = 256;
 	private static final String STYLE_PATH = "~/p92styles";
 	private static final String COVER_SETTING = "a basalt headland above a grey sea at dusk, gulls wheeling";
 	private static final String COVER_ACTION = "a lone figure in a storm coat faces the sea";
@@ -239,12 +279,21 @@ public class TestPbCoverPlanOffline extends BaseTest {
 	}
 
 	private static StageResult ok(byte[] png, int seed, long durationMs) {
+		return ok(png, seed, durationMs, W, H);
+	}
+
+	private static StageResult ok(byte[] png, int seed, long durationMs, int width, int height) {
 		return StageResult.builder()
-			.image(new StageImage(png, seed, true, W, H))
+			.image(new StageImage(png, seed, true, width, height))
 			.durationMs(durationMs)
 			.requestJson("{\"offline\":true}")
 			.backendGraph("{\"stage\":\"offline\"}")
 			.build();
+	}
+
+	/// The scripted answer to a figure-canvas BASE request: a solid W x FIGURE_H image.
+	private static StageResult figureOk(int r, int g, int b, int seed, long durationMs) {
+		return ok(solidFigure(r, g, b), seed, durationMs, W, FIGURE_H);
 	}
 
 	private static final class ScriptedQa implements QaProvider {
@@ -542,6 +591,175 @@ public class TestPbCoverPlanOffline extends BaseTest {
 		return MaskImage.solid(W, H, new Color(r, g, b));
 	}
 
+	private static byte[] solidFigure(int r, int g, int b) {
+		return MaskImage.solid(W, FIGURE_H, new Color(r, g, b));
+	}
+
+	/// PNG bytes of a test image (the production encoder is package-private to the illustration package).
+	private static byte[] png(BufferedImage img) {
+		try {
+			ByteArrayOutputStream out = new ByteArrayOutputStream();
+			javax.imageio.ImageIO.write(img, "png", out);
+			return out.toByteArray();
+		}
+		catch(java.io.IOException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
+	/// A synthetic painted cover on the full canvas: the figure rows colour {@code a}, the band {@code a} less
+	/// {@code off}, and a linear ramp between them across the two feathers centred on the seam - what the feathered
+	/// composite leaves when the painted band is uniformly darker than the figure (the measured FLUX.2 defect).
+	private static byte[] seamedCover(RenderPlan.Box band, Color a, int[] off) {
+		int seam = (band.isTop() ? BAND_PX : H - BAND_PX);
+		BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
+		for(int y = 0; y < H; y++) {
+			int into = (band.isTop() ? seam - y : y - seam + 1);
+			double w = (into >= BandCanvas.FEATHER ? 1.0 : (into <= -BandCanvas.FEATHER ? 0.0 : (into + BandCanvas.FEATHER) / (2.0 * BandCanvas.FEATHER)));
+			int rgb = new Color((int) Math.round(a.getRed() - off[0] * w), (int) Math.round(a.getGreen() - off[1] * w), (int) Math.round(a.getBlue() - off[2] * w)).getRGB();
+			for(int x = 0; x < W; x++) {
+				img.setRGB(x, y, rgb);
+			}
+		}
+		return png(img);
+	}
+
+	/// The largest per-channel distance of any row's mean from {@code a}, and the largest per-channel step between
+	/// adjacent rows, over the whole image: {deviation, step}.
+	private static double[] rowProfile(BufferedImage img, Color a) {
+		double maxDev = 0.0;
+		double maxStep = 0.0;
+		double[] prev = null;
+		int[] ref = { a.getRed(), a.getGreen(), a.getBlue() };
+		for(int y = 0; y < img.getHeight(); y++) {
+			double[] row = new double[3];
+			for(int x = 0; x < img.getWidth(); x++) {
+				int rgb = img.getRGB(x, y);
+				row[0] += (rgb >> 16) & 0xFF;
+				row[1] += (rgb >> 8) & 0xFF;
+				row[2] += rgb & 0xFF;
+			}
+			for(int c = 0; c < 3; c++) {
+				row[c] /= img.getWidth();
+				maxDev = Math.max(maxDev, Math.abs(row[c] - ref[c]));
+				if(prev != null) {
+					maxStep = Math.max(maxStep, Math.abs(row[c] - prev[c]));
+				}
+			}
+			prev = row;
+		}
+		return new double[] { maxDev, maxStep };
+	}
+
+	/// The `stage` chain of the node (the figure image every TITLE_BAND pass painted over), fully read.
+	private static List<BaseRecord> stageArtifacts(Fixture f) {
+		List<BaseRecord> chain = PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_STAGE);
+		List<BaseRecord> fresh = new ArrayList<>();
+		for(BaseRecord a : chain) {
+			BaseRecord full = PbArtifactUtil.readArtifact(f.owner, oidOf(a), orgOf(f.owner));
+			assertNotNull("stage artifact " + oidOf(a), full);
+			fresh.add(full);
+		}
+		return fresh;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<String> stages(Map<String, Object> out, String key) {
+		Object v = out.get(key);
+		assertTrue(key + " is a list: " + v, v instanceof List);
+		return (List<String>) v;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> stageErrors(Map<String, Object> out) {
+		Object v = out.get(PbNodeExecutor.KEY_STAGE_ERRORS);
+		assertTrue("stageErrors is a list: " + v, v instanceof List);
+		return (List<Map<String, Object>>) v;
+	}
+
+	private static String degradation(Map<String, Object> out, String code) {
+		for(String d : PbNodeExecutor.degradationsOf(out)) {
+			if(d.startsWith(code + ":")) {
+				return d;
+			}
+		}
+		return null;
+	}
+
+	private static void assertSize(String what, byte[] png, int width, int height) {
+		java.awt.image.BufferedImage img = MaskImage.decode(png);
+		assertNotNull(what + " decodes", img);
+		assertEquals(what + " width", width, img.getWidth());
+		assertEquals(what + " height", height, img.getHeight());
+	}
+
+	/// The figure-canvas BASE request (§24 I-4): the plan's canvas is the preset's square ({@code edge} x
+	/// {@code edge}) but the request is {@code edge} x ({@code edge} - {@code bandPx}), and its prompt carries the
+	/// subject and no band clause (the band is enforced by the canvas, not asked for).
+	private static void assertFigurePass(StageRequest req, int edge, int bandPx) {
+		assertEquals("BASE stage", RenderPlan.STAGE_BASE, req.getStage());
+		assertNotNull("the request carries the plan", req.getPlan());
+		assertEquals("the plan is the cover plan", RenderPlan.PURPOSE_COVER, req.getPlan().getPurpose());
+		assertEquals("the plan's canvas width is the preset's", edge, req.getPlan().getCanvas().getWidth());
+		assertEquals("the plan's canvas height is the preset's", edge, req.getPlan().getCanvas().getHeight());
+		assertEquals("the band's rows on that canvas", bandPx, BandCanvas.bandPixels(edge, req.getPlan().getReserved()));
+		assertEquals("BASE width", edge, req.getWidth());
+		assertEquals("BASE renders on the figure canvas", edge - bandPx, req.getHeight());
+		assertEquals("the pinned checkpoint", MODEL, req.getModel());
+		assertNotNull("request prompt", req.getPrompt());
+		String prompt = req.getPrompt().getPrompt();
+		assertTrue("the BASE prompt carries the subject: " + prompt, lower(prompt).contains("basalt headland"));
+		assertFalse("the BASE prompt does not ask for the band: " + prompt, lower(prompt).contains(ANY_CLAUSE));
+		assertNull("BASE is the plain T2I request (TEXT_ONLY, no references): no graph", req.getGraph());
+	}
+
+	/// The TITLE_BAND request (§24 I-4): the full canvas ({@code edge} square), the BASE pick, a compiled graph whose
+	/// inputs are the padded figure (the full canvas) as `init` and a mask lit over exactly the band's {@code bandPx}
+	/// rows, and a prompt that speaks the clause and the setting but none of the actor / element text. The generator
+	/// params the fixture client saw for it carry the inpaint knobs at the family's creativity and no references.
+	private static void assertBandPass(StageRequest req, Map<String, Object> params, String clause, int edge, int bandPx) {
+		assertEquals("TITLE_BAND stage", RenderPlan.STAGE_TITLE_BAND, req.getStage());
+		assertEquals("TITLE_BAND width", edge, req.getWidth());
+		assertEquals("TITLE_BAND renders on the full canvas", edge, req.getHeight());
+		assertEquals("the BASE pick's model", MODEL, req.getModel());
+		assertNotNull("a compiled graph", req.getGraph());
+		GraphInputs inputs = req.getInputs();
+		assertNotNull("graph inputs", inputs);
+		assertNotNull("an init image: " + inputs.names(), inputs.image(WorkflowCompiler.TAG_INIT));
+		assertNotNull("a mask image: " + inputs.names(), inputs.image(WorkflowCompiler.TAG_MASK));
+		assertEquals("init and mask only (no references)", 2, inputs.imageCount());
+		assertSize("the init image is the padded figure", inputs.image(WorkflowCompiler.TAG_INIT), edge, edge);
+		assertSize("the mask", inputs.image(WorkflowCompiler.TAG_MASK), edge, edge);
+		double coverage = MaskImage.coverage(inputs.image(WorkflowCompiler.TAG_MASK));
+		assertEquals("the mask covers exactly the band's rows", bandPx / (double) edge, coverage, 1e-6);
+		assertNotNull("TITLE_BAND prompt", req.getPrompt());
+		String prompt = req.getPrompt().getPrompt();
+		assertTrue("the TITLE_BAND prompt carries the clause: " + prompt, lower(prompt).contains(clause));
+		assertTrue("the TITLE_BAND prompt carries the setting: " + prompt, lower(prompt).contains("basalt headland"));
+		assertFalse("no actor text in the TITLE_BAND prompt: " + prompt, lower(prompt).contains("hood up"));
+		assertFalse("no element text in the TITLE_BAND prompt: " + prompt, lower(prompt).contains("brass lantern"));
+		assertNotNull("generator params", params);
+		assertTrue("params carry initimage", params.containsKey("initimage"));
+		assertTrue("params carry maskimage", params.containsKey("maskimage"));
+		assertFalse("params carry no references", params.containsKey("promptimages"));
+		RendererCapabilities.InpaintParams family = RendererCapabilities.forModel(MODEL).getInpaint();
+		assertEquals("creativity 1.0: the band is painted from the first step", 1.0, ((Number) params.get("initimagecreativity")).doubleValue(), EPS);
+		assertEquals("params width", edge, ((Number) params.get("width")).intValue());
+		assertEquals("params height", edge, ((Number) params.get("height")).intValue());
+		assertEquals("the family's inpaint steps", family.getSteps(), ((Number) params.get("steps")).intValue());
+		assertEquals("the band's rows are exact: the mask is not grown", 0, ((Number) params.get("maskgrow")).intValue());
+		assertEquals("the mask is feathered one grain", BandCanvas.FEATHER, ((Number) params.get("maskblur")).intValue());
+		assertEquals("one grain", BandCanvas.GRAIN, BandCanvas.FEATHER);
+		assertEquals("params model", MODEL, params.get("model"));
+	}
+
+	/// The generator params of the i-th request the fixture client answered, in request order.
+	private static Map<String, Object> generatorParams(QaBackend backend, int index) {
+		List<Map<String, Object>> reqs = backend.client.requests();
+		assertTrue("generator request " + index + " of " + reqs.size(), index < reqs.size());
+		return reqs.get(index);
+	}
+
 	private RenderPlan plan(Fixture f) {
 		RenderPlan plan = PbRenderPlanUtil.buildCompositionPlan(f.owner, f.book, f.cover, f.node, PlanOptions.NONE,
 			f.sdu.getApiType(), f.sdu.getServer());
@@ -561,6 +779,14 @@ public class TestPbCoverPlanOffline extends BaseTest {
 		assertNotNull("a compiled BASE prompt", base);
 		assertNotNull("BASE prompt text", base.getPrompt());
 		return base.getPrompt();
+	}
+
+	/// The plan's compiled TITLE_BAND prompt (§24 I-4): the location-only band compile the executor's pass sends.
+	private static String bandPrompt(RenderPlan plan) {
+		CompiledPrompt band = plan.getCompiled().get(RenderPlan.STAGE_TITLE_BAND);
+		assertNotNull("a compiled TITLE_BAND prompt", band);
+		assertNotNull("TITLE_BAND prompt text", band.getPrompt());
+		return band.getPrompt();
 	}
 
 	private static String sdxlPrompt(RenderPlan plan) {
@@ -607,11 +833,22 @@ public class TestPbCoverPlanOffline extends BaseTest {
 			assertRow("actor after plan", PbComposeUtil.readActor(f.owner, oidOf(f.actorRow), orgId), 0.3, 0.05, 0.4, 0.4);
 			assertRow("element after plan", PbComposeUtil.readElement(f.owner, oidOf(f.elementRow), orgId), 0.1, 0.1, 0.2, 0.2);
 
-			/// Both compiler families speak the band; the plan's own BASE compile is FLUX2 (the pinned checkpoint).
+			/// §24 I-4: the band is enforced by the canvas, so the strategy plans BASE then TITLE_BAND; the plan's own
+			/// BASE compile (FLUX2, the pinned checkpoint) carries the subject and no clause, the TITLE_BAND compile
+			/// carries the clause and the setting and none of the actor / element text. Both compiler families still
+			/// speak the band when handed the banded plan directly (that is what the TITLE_BAND compile relies on).
+			assertEquals("stages", List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), plan.getStrategy().getStages());
 			String base = basePrompt(plan);
 			logger.info("[p92] BASE prompt: " + base);
-			assertTrue("compiled BASE carries the clause: " + base, lower(base).contains(TOP_CLAUSE));
-			assertTrue("the BASE prompt also carries the subject: " + base, lower(base).contains("basalt headland"));
+			assertFalse("compiled BASE does not ask for the band: " + base, lower(base).contains(ANY_CLAUSE));
+			assertTrue("the BASE prompt carries the subject: " + base, lower(base).contains("basalt headland"));
+			assertTrue("the BASE prompt carries the actor: " + base, lower(base).contains("hood up"));
+			String band = bandPrompt(plan);
+			logger.info("[p92] TITLE_BAND prompt: " + band);
+			assertTrue("compiled TITLE_BAND carries the clause: " + band, lower(band).contains(TOP_CLAUSE));
+			assertTrue("the TITLE_BAND prompt carries the setting: " + band, lower(band).contains("basalt headland"));
+			assertFalse("no actor text in TITLE_BAND: " + band, lower(band).contains("hood up"));
+			assertFalse("no element text in TITLE_BAND: " + band, lower(band).contains("brass lantern"));
 			String flux = flux2Prompt(plan);
 			assertTrue("FLUX2 carries the clause: " + flux, lower(flux).contains(TOP_CLAUSE));
 			String sdxl = sdxlPrompt(plan);
@@ -645,8 +882,11 @@ public class TestPbCoverPlanOffline extends BaseTest {
 			assertFalse("reserved is bottom", plan.getReserved().isTop());
 			assertBox("actor (slid up to end at the band)", plan.getActors().get(0).getBox(), 0.3, 0.35, 0.4, 0.4);
 			assertBox("element (slid up to end at the band)", plan.getElements().get(0).getBox(), 0.1, 0.55, 0.2, 0.2);
+			assertEquals("stages", List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), plan.getStrategy().getStages());
 			String base = basePrompt(plan);
-			assertTrue("compiled BASE says bottom: " + base, lower(base).contains(BOTTOM_CLAUSE));
+			assertFalse("compiled BASE does not ask for the band: " + base, lower(base).contains(ANY_CLAUSE));
+			String bandText = bandPrompt(plan);
+			assertTrue("compiled TITLE_BAND says bottom: " + bandText, lower(bandText).contains(BOTTOM_CLAUSE));
 			String sdxl = sdxlPrompt(plan);
 			assertTrue("SDXL says bottom: " + sdxl, lower(sdxl).contains(BOTTOM_CLAUSE));
 			assertBox("reserved after round-trip", RenderPlan.fromJson(plan.toJson()).getReserved(), 0.0, 1.0 - band, 1.0, band);
@@ -669,6 +909,9 @@ public class TestPbCoverPlanOffline extends BaseTest {
 			assertNull("NONE reserves nothing", plan.getReserved());
 			assertBox("actor unclipped", plan.getActors().get(0).getBox(), 0.3, 0.05, 0.4, 0.4);
 			assertBox("element unclipped", plan.getElements().get(0).getBox(), 0.1, 0.1, 0.2, 0.2);
+			assertEquals("BASE only: no TITLE_BAND stage without a band", List.of(RenderPlan.STAGE_BASE), plan.getStrategy().getStages());
+			assertNull("no TITLE_BAND compile without a band", plan.getCompiled().get(RenderPlan.STAGE_TITLE_BAND));
+			assertNull("the executor sees no band", PbNodeExecutor.titleBand(plan));
 			String base = basePrompt(plan);
 			assertFalse("no clause in BASE: " + base, lower(base).contains(ANY_CLAUSE));
 			assertFalse("no clause in FLUX2: " + base, lower(flux2Prompt(plan)).contains(ANY_CLAUSE));
@@ -738,34 +981,36 @@ public class TestPbCoverPlanOffline extends BaseTest {
 			int revisionBefore = intOf(f.cover.get(OlioFieldNames.FIELD_PB_REVISION));
 			assertTrue("no SCENE composition before", PbComposeUtil.listSceneCompositions(f.owner, f.book).isEmpty());
 
-			/// DRAFT: one final, QA off, auto-approved.
-			byte[] png = solid(90, 120, 60);
-			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(png, 9201, 800));
+			/// DRAFT: one variant = two renderer requests (the BASE figure pass on the figure canvas, then the
+			/// TITLE_BAND masked pass on the padded full canvas), QA off, auto-approved.
+			byte[] figurePng = solidFigure(90, 120, 60);
+			byte[] bandPng = solid(90, 120, 60);
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(figurePng, 9201, 800, W, FIGURE_H), ok(bandPng, 9202, 600));
 			ScriptedQa qa = new ScriptedQa();
 			QaBackend backend = backend(adapter, qa);
 			Map<String, Object> out = run(f, backend, PbQualityPresetEnumType.DRAFT);
 			String runOid = str(out.get("runObjectId"));
 
-			assertEquals("one renderer request", 1, adapter.requests.size());
+			assertEquals("two renderer requests per variant: BASE then TITLE_BAND", 2, adapter.requests.size());
 			StageRequest req = adapter.requests.get(0);
-			assertEquals("BASE stage", RenderPlan.STAGE_BASE, req.getStage());
-			assertNotNull("the request carries the plan", req.getPlan());
-			assertEquals("the plan is the cover plan", RenderPlan.PURPOSE_COVER, req.getPlan().getPurpose());
+			assertFigurePass(req, DRAFT_EDGE, DRAFT_BAND_PX);
 			assertBox("the plan's band", req.getPlan().getReserved(), 0.0, 0.0, 1.0, PbLayoutUtil.TITLE_SAFE_BAND_HEIGHT);
-			assertEquals("the pinned checkpoint", MODEL, req.getModel());
-			assertNotNull("request prompt", req.getPrompt());
-			String prompt = req.getPrompt().getPrompt();
-			logger.info("[p92] rendered prompt: " + prompt);
-			assertTrue("the rendered prompt carries the clause: " + prompt, lower(prompt).contains(TOP_CLAUSE));
-			assertTrue("the rendered prompt carries the subject: " + prompt, lower(prompt).contains("basalt headland"));
+			logger.info("[p92] BASE prompt: " + req.getPrompt().getPrompt());
+			StageRequest band = adapter.requests.get(1);
+			logger.info("[p92] TITLE_BAND prompt: " + band.getPrompt().getPrompt());
+			assertBandPass(band, generatorParams(backend, 0), TOP_CLAUSE, DRAFT_EDGE, DRAFT_BAND_PX);
 			assertEquals("the selector is never asked under DRAFT (QA off)", 0, backend.selections);
 
-			/// The DTO: the composition-plan shape plus the plan description.
+			/// The DTO: the composition-plan shape plus the plan description and the two stages.
 			assertEquals("compositionObjectId", f.coverOid, out.get("compositionObjectId"));
 			assertEquals("purpose", PbCompositionPurposeEnumType.COVER.name(), status(out.get("purpose")));
 			assertEquals("TEXT_ONLY (a described actor, no references)", PbStrategyEnumType.TEXT_ONLY.name(), out.get("strategy"));
 			assertNotNull("planContentHash", out.get("planContentHash"));
 			assertNotNull("planArtifactObjectId", out.get("planArtifactObjectId"));
+			assertEquals("stagesPlanned", List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), stages(out, "stagesPlanned"));
+			assertEquals("stagesRendered", List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), stages(out, "stagesRendered"));
+			assertTrue("no stage errors: " + stageErrors(out), stageErrors(out).isEmpty());
+			assertNull("no TITLE_BAND_FAILED degradation", degradation(out, RenderPlan.Degradation.TITLE_BAND_FAILED));
 			assertEquals("one final rendered", 1, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
 			assertNull("no sceneObjectId on a cover DTO", out.get("sceneObjectId"));
 			assertNull("no qaMode under DRAFT", out.get(PbNodeExecutor.KEY_QA_MODE));
@@ -775,8 +1020,9 @@ public class TestPbCoverPlanOffline extends BaseTest {
 			assertEquals(PbReviewStatusEnumType.APPROVED.name(), vs.get(0).get("reviewStatus"));
 			assertEquals("headline reviewStatus", PbReviewStatusEnumType.APPROVED.name(), out.get("reviewStatus"));
 
-			/// On the database: one BASE artifact of the run on the composition-plan node, approved and selected;
-			/// the node DONE_UNVERIFIED before the approval; nothing composed a scene.
+			/// On the database: one BASE artifact of the run on the composition-plan node, approved and selected,
+			/// holding the band pass's full-canvas output; one `stage` artifact holding the figure image it was
+			/// painted over; the node DONE_UNVERIFIED before the approval; nothing composed a scene.
 			List<BaseRecord> bases = baseArtifacts(f);
 			assertEquals("one base artifact", 1, bases.size());
 			BaseRecord a0 = bases.get(0);
@@ -785,6 +1031,14 @@ public class TestPbCoverPlanOffline extends BaseTest {
 			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(a0));
 			assertEquals(PbArtifactUtil.APPROVED_BY_AUTO, a0.get(OlioFieldNames.FIELD_PB_APPROVED_BY));
 			assertTrue("selected", selected(a0));
+			byte[] finalBytes = PbArtifactUtil.readArtifactBytes(f.owner, a0);
+			assertSize("the final is the band pass's full canvas", finalBytes, W, H);
+			assertTrue("the final is the band answer's bytes", Arrays.equals(bandPng, finalBytes));
+			List<BaseRecord> stagesOnDb = stageArtifacts(f);
+			assertEquals("one stage artifact (the figure image)", 1, stagesOnDb.size());
+			assertEquals("the stage artifact is stamped with the run", runOid, PbArtifactUtil.attemptOf(stagesOnDb.get(0)));
+			assertTrue("the stage artifact is the figure image the BASE pass answered",
+				Arrays.equals(figurePng, PbArtifactUtil.readArtifactBytes(f.owner, stagesOnDb.get(0))));
 			BaseRecord node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
 			String nodeStatus = status(node.get(OlioFieldNames.FIELD_PB_NODE_STATUS));
 			assertTrue("node status after the run: " + nodeStatus,
@@ -794,17 +1048,33 @@ public class TestPbCoverPlanOffline extends BaseTest {
 			assertEquals("the cover's revision is untouched", revisionBefore, intOf(coverAfter.get(OlioFieldNames.FIELD_PB_REVISION)));
 			assertEquals("the cover is still COVER", PbCompositionPurposeEnumType.COVER.name(), status(coverAfter.get(OlioFieldNames.FIELD_PB_PURPOSE)));
 
-			/// STANDARD on the same node: the preset's two variants, QA CANONICAL judges variant 0 under the cover plan.
-			ScriptedAdapter adapter2 = new ScriptedAdapter().answer(ok(solid(60, 90, 120), 9202, 700), ok(solid(120, 60, 90), 9203, 700));
+			/// STANDARD on the same node: the preset's two variants, each a BASE figure pass then a TITLE_BAND pass;
+			/// QA CANONICAL judges variant 0's full-canvas band output under the cover plan.
+			byte[] band0 = solid(60, 90, 120);
+			ScriptedAdapter adapter2 = new ScriptedAdapter().answer(
+				figureOk(60, 90, 120, 9301, 700), ok(band0, 9302, 500),
+				figureOk(120, 60, 90, 9303, 700), ok(solid(120, 60, 90), 9304, 500));
 			ScriptedQa qa2 = new ScriptedQa().verdicts(passReport());
 			QaBackend backend2 = backend(adapter2, qa2);
 			Map<String, Object> out2 = run(f, backend2, PbQualityPresetEnumType.STANDARD);
 			String runOid2 = str(out2.get("runObjectId"));
-			assertEquals("two finals", 2, adapter2.requests.size());
+			assertEquals("four requests: two variants of BASE + TITLE_BAND", 4, adapter2.requests.size());
+			List<String> stagesAsked = new ArrayList<>();
+			for(StageRequest r : adapter2.requests) {
+				stagesAsked.add(r.getStage());
+			}
+			assertEquals("stage order across the variants",
+				List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND, RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), stagesAsked);
+			assertFigurePass(adapter2.requests.get(2), STANDARD_EDGE, STANDARD_BAND_PX);
+			assertBandPass(adapter2.requests.get(3), generatorParams(backend2, 1), TOP_CLAUSE, STANDARD_EDGE, STANDARD_BAND_PX);
 			assertEquals("two finals rendered", 2, intOf(out2.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			assertEquals("stagesRendered", List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), stages(out2, "stagesRendered"));
+			assertTrue("no stage errors: " + stageErrors(out2), stageErrors(out2).isEmpty());
 			assertEquals("selector asked once", 1, backend2.selections);
 			assertEquals("handed the BASE checkpoint", MODEL, backend2.checkpoint);
 			assertEquals("variant 0 judged", 1, qa2.judged.size());
+			assertSize("QA judges the full canvas (the band pass's output)", qa2.judged.get(0), W, H);
+			assertTrue("QA judges variant 0's band output", Arrays.equals(band0, qa2.judged.get(0)));
 			assertEquals("judged under the cover plan", RenderPlan.PURPOSE_COVER, qa2.plans.get(0).getPurpose());
 			assertEquals("qaMode", QualityPresets.QA_CANONICAL, out2.get(PbNodeExecutor.KEY_QA_MODE));
 			List<Map<String, Object>> vs2 = variants(out2, 2);
@@ -832,10 +1102,192 @@ public class TestPbCoverPlanOffline extends BaseTest {
 			}
 			assertEquals("two of the second run", 2, ofRun2);
 			assertEquals("exactly one approved base", 1, approved);
+			List<BaseRecord> stagesAll = stageArtifacts(f);
+			assertEquals("three stage artifacts across the two attempts (one figure image per variant)", 3, stagesAll.size());
+			int stagesOfRun2 = 0;
+			for(BaseRecord a : stagesAll) {
+				if(runOid2.equals(PbArtifactUtil.attemptOf(a))) {
+					stagesOfRun2++;
+					assertSize("second-run figure image (the answered figure image)", PbArtifactUtil.readArtifactBytes(f.owner, a), W, FIGURE_H);
+				}
+			}
+			assertEquals("two figure images of the second run", 2, stagesOfRun2);
 		}
 		finally {
 			cleanup(f);
 		}
+	}
+
+	/**
+	 * The band pass fails (the renderer refuses it): the run still completes, the figure image is padded to the full
+	 * canvas with the band flat-filled and delivered as the final, the stage error and a TITLE_BAND_FAILED degradation
+	 * say so on the DTO, and the degradation vetoes auto-approve. The figure image is still persisted as the
+	 * {@code stage} artifact the final chains to.
+	 */
+	@Test
+	public void bandPassFailureDegradesAndDeliversThePaddedCanvas() throws Exception {
+		logger.info("bandPassFailureDegradesAndDeliversThePaddedCanvas");
+		Fixture f = null;
+		try {
+			f = bookWithCover("p92bf");
+			dressCover(f, "top", new double[] { 0.3, 0.05, 0.4, 0.4 }, new double[] { 0.1, 0.1, 0.2, 0.2 });
+			Color figureColor = new Color(40, 80, 160);
+			byte[] figurePng = solidFigure(40, 80, 160);
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(
+				ok(figurePng, 9401, 500, W, FIGURE_H),
+				StageResult.failed(RendererAdapter.ERROR_PREFIX_BACKEND + "band refused", 50L, "{\"offline\":true}"));
+			QaBackend backend = backend(adapter, new ScriptedQa());
+			Map<String, Object> out = run(f, backend, PbQualityPresetEnumType.DRAFT);
+			String runOid = str(out.get("runObjectId"));
+
+			assertEquals("BASE then the refused TITLE_BAND", 2, adapter.requests.size());
+			assertFigurePass(adapter.requests.get(0), DRAFT_EDGE, DRAFT_BAND_PX);
+			assertBandPass(adapter.requests.get(1), generatorParams(backend, 0), TOP_CLAUSE, DRAFT_EDGE, DRAFT_BAND_PX);
+
+			String degradation = degradation(out, RenderPlan.Degradation.TITLE_BAND_FAILED);
+			assertNotNull("TITLE_BAND_FAILED degradation: " + PbNodeExecutor.degradationsOf(out), degradation);
+			assertTrue("the degradation says the band is unpainted: " + degradation, degradation.contains("the band is delivered unpainted"));
+			List<Map<String, Object>> errors = stageErrors(out);
+			assertEquals("one stage error: " + errors, 1, errors.size());
+			assertEquals("the stage error is the band pass", RenderPlan.STAGE_TITLE_BAND, errors.get(0).get("stage"));
+			assertEquals("stagesRendered still lists both (the padded canvas stands in)",
+				List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), stages(out, "stagesRendered"));
+			assertEquals("one final rendered", 1, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			assertEquals("not auto-approved", Boolean.FALSE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			String skipped = str(out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED));
+			assertNotNull("skip reason", skipped);
+			assertTrue("vetoed by the degradation: " + skipped, skipped.startsWith("degraded:") && skipped.contains(RenderPlan.Degradation.TITLE_BAND_FAILED));
+
+			List<BaseRecord> bases = baseArtifacts(f);
+			assertEquals("one base artifact", 1, bases.size());
+			BaseRecord a0 = bases.get(0);
+			assertEquals("stamped with the run", runOid, PbArtifactUtil.attemptOf(a0));
+			assertEquals("left for review", PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(a0));
+			byte[] finalBytes = PbArtifactUtil.readArtifactBytes(f.owner, a0);
+			assertSize("the final is the figure padded to the plan's full canvas", finalBytes, DRAFT_EDGE, DRAFT_EDGE);
+			BufferedImage padded = MaskImage.decode(finalBytes);
+			assertEquals("the band rows are the figure's edge mean (a solid figure: its own colour)", figureColor, new Color(padded.getRGB(0, 0)));
+			assertEquals("the band's last row too", figureColor, new Color(padded.getRGB(DRAFT_EDGE - 1, DRAFT_BAND_PX - 1)));
+			assertEquals("the figure rows carry the figure", figureColor, new Color(padded.getRGB(0, DRAFT_EDGE - 1)));
+			assertEquals("the first figure row", figureColor, new Color(padded.getRGB(DRAFT_EDGE / 2, DRAFT_BAND_PX)));
+			List<BaseRecord> stagesOnDb = stageArtifacts(f);
+			assertEquals("the figure image is persisted as the stage artifact", 1, stagesOnDb.size());
+			assertTrue("the stage artifact is the figure image the BASE pass answered",
+				Arrays.equals(figurePng, PbArtifactUtil.readArtifactBytes(f.owner, stagesOnDb.get(0))));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// The figure-canvas arithmetic the executor and the compiler share: box remapping, band pixel rounding, the
+	/// band mask box and the padding - no fixture, no database.
+	@Test
+	public void figureCanvasArithmetic() {
+		logger.info("figureCanvasArithmetic");
+		RenderPlan.Box top = new RenderPlan.Box(0.0, 0.0, 1.0, 0.25);
+		RenderPlan.Box bottom = new RenderPlan.Box(0.0, 0.75, 1.0, 0.25);
+
+		/// Box.inFigureCanvas: clip to the band first, then stretch the remaining rows to the whole figure canvas.
+		assertBox("clipped actor under a top band", new RenderPlan.Box(0.3, 0.25, 0.4, 0.4).inFigureCanvas(top), 0.3, 0.0, 0.4, 0.4 / 0.75);
+		assertBox("an actor into the top band is clipped first", new RenderPlan.Box(0.3, 0.05, 0.4, 0.4).inFigureCanvas(top), 0.3, 0.0, 0.4, 0.4 / 0.75);
+		assertBox("an actor under a bottom band", new RenderPlan.Box(0.3, 0.35, 0.4, 0.4).inFigureCanvas(bottom), 0.3, 0.35 / 0.75, 0.4, 0.4 / 0.75);
+		RenderPlan.Box same = new RenderPlan.Box(0.3, 0.35, 0.4, 0.4);
+		assertSame("no band: the box itself", same, same.inFigureCanvas(null));
+
+		/// BandCanvas: the band's pixel height is a multiple of 16 of the canvas height.
+		assertEquals("768 x 0.25", 192, BandCanvas.bandPixels(768, top));
+		assertEquals("1024 x 0.25", 256, BandCanvas.bandPixels(1024, top));
+		assertEquals("no band", 0, BandCanvas.bandPixels(768, null));
+		assertEquals("figure height", 576, BandCanvas.figureHeight(768, top));
+		assertEquals("H is what the test uses", BAND_PX, BandCanvas.bandPixels(H, top));
+		assertArrayEquals("top band pixels", new int[] { 0, 0, 1024, 192 }, BandCanvas.bandPixelsBox(1024, 768, top));
+		assertArrayEquals("bottom band pixels", new int[] { 0, 576, 1024, 192 }, BandCanvas.bandPixelsBox(1024, 768, bottom));
+		assertArrayEquals("no band pixels", new int[] { 0, 0, 0, 0 }, BandCanvas.bandPixelsBox(1024, 768, null));
+		assertBox("top band box", BandCanvas.bandBox(1024, 768, top), 0.0, 0.0, 1.0, 0.25);
+		assertBox("bottom band box", BandCanvas.bandBox(1024, 768, bottom), 0.0, 0.75, 1.0, 0.25);
+		assertNull("no band box", BandCanvas.bandBox(1024, 768, null));
+		byte[] mask = MaskImage.rect(List.of(BandCanvas.bandBox(W, H, top)), W, H);
+		assertEquals("the band mask covers exactly the band rows", BAND_PX / (double) H, MaskImage.coverage(mask), 1e-6);
+
+		/// Padding: the figure image lands in the figure rows and the band is the edge mean of a solid figure.
+		Color c = new Color(200, 30, 90);
+		byte[] figure = solidFigure(200, 30, 90);
+		byte[] paddedTop = BandCanvas.pad(figure, W, H, top);
+		assertSize("padded to the full canvas", paddedTop, W, H);
+		BufferedImage pt = MaskImage.decode(paddedTop);
+		assertEquals("top band filled", c, new Color(pt.getRGB(0, 0)));
+		assertEquals("figure rows", c, new Color(pt.getRGB(0, H - 1)));
+		byte[] paddedBottom = BandCanvas.pad(figure, W, H, bottom);
+		assertSize("padded to the full canvas (bottom)", paddedBottom, W, H);
+		BufferedImage pb = MaskImage.decode(paddedBottom);
+		assertEquals("bottom band filled", c, new Color(pb.getRGB(W - 1, H - 1)));
+		assertEquals("figure rows (bottom band)", c, new Color(pb.getRGB(0, 0)));
+		assertNull("undecodable figure", BandCanvas.pad(null, W, H, top));
+		assertNull("no band", BandCanvas.pad(figure, W, H, null));
+
+		/// The band is each column's own edge extended, not one mean colour: a figure whose left half is one colour
+		/// and right half another pads to a band split the same way, continuous with the figure at the seam, and the
+		/// edge rows used are the GRAIN rows next to the band (a different colour deeper in the figure does not leak).
+		Color left = new Color(220, 40, 40);
+		Color right = new Color(40, 40, 220);
+		Color deep = new Color(10, 200, 10);
+		BufferedImage split = new BufferedImage(W, FIGURE_H, BufferedImage.TYPE_INT_RGB);
+		for(int y = 0; y < FIGURE_H; y++) {
+			for(int x = 0; x < W; x++) {
+				boolean edgeRows = (y < BandCanvas.GRAIN) || (y >= FIGURE_H - BandCanvas.GRAIN);
+				split.setRGB(x, y, (edgeRows ? (x < W / 2 ? left : right) : deep).getRGB());
+			}
+		}
+		byte[] splitPng = png(split);
+		BufferedImage ps = MaskImage.decode(BandCanvas.pad(splitPng, W, H, top));
+		assertEquals("top band, left column: the left edge colour", left, new Color(ps.getRGB(0, 0)));
+		assertEquals("top band, right column: the right edge colour", right, new Color(ps.getRGB(W - 1, 0)));
+		assertEquals("top band's last row, left", left, new Color(ps.getRGB(W / 4, BAND_PX - 1)));
+		assertEquals("top band's last row, right", right, new Color(ps.getRGB(3 * W / 4, BAND_PX - 1)));
+		assertEquals("the first figure row below the band is the figure's own edge", left, new Color(ps.getRGB(W / 4, BAND_PX)));
+		assertEquals("deeper figure rows untouched", deep, new Color(ps.getRGB(W / 4, BAND_PX + BandCanvas.GRAIN + 8)));
+		BufferedImage psb = MaskImage.decode(BandCanvas.pad(splitPng, W, H, bottom));
+		assertEquals("bottom band, left column", left, new Color(psb.getRGB(0, H - 1)));
+		assertEquals("bottom band, right column", right, new Color(psb.getRGB(W - 1, H - BAND_PX)));
+		assertEquals("bottom band's figure edge", right, new Color(psb.getRGB(3 * W / 4, H - BAND_PX - 1)));
+
+		/// Seam match: a painted band uniformly (12, 10, 8) darker than the figure, blended across the feather, is
+		/// lifted to the figure's level - every row within a level of it, no step between adjacent rows over a level,
+		/// the deep figure rows untouched - and the offset reported is the band's shortfall.
+		Color a = new Color(180, 190, 210);
+		int[] off = { 12, 10, 8 };
+		byte[] seamed = seamedCover(top, a, off);
+		BandCanvas.SeamMatch sm = BandCanvas.matchSeam(seamed, W, H, top);
+		assertTrue("applied: " + sm, sm.isApplied());
+		assertArrayEquals("the offset is the band's shortfall", new double[] { 12.0, 10.0, 8.0 }, sm.getOffset(), 0.01);
+		assertTrue("reported as applied with the offset: " + sm, sm.toString().startsWith("SeamMatch{applied r+12.0 g+10.0 b+8.0}"));
+		BufferedImage matched = MaskImage.decode(sm.getBytes());
+		assertSize("still the full canvas", sm.getBytes(), W, H);
+		double[] profile = rowProfile(matched, a);
+		assertTrue("every row within a level of the figure's colour (max " + profile[0] + ")", profile[0] <= 1.0);
+		assertTrue("no step between adjacent rows over a level (max " + profile[1] + ")", profile[1] <= 1.0);
+		assertEquals("the band's deep rows are the figure's colour exactly", a, new Color(matched.getRGB(W / 2, 0)));
+		assertEquals("the figure's deep rows are untouched", a, new Color(matched.getRGB(W / 2, H - 1)));
+		assertEquals("the unmatched cover shows the shortfall", new Color(168, 180, 202), new Color(MaskImage.decode(seamed).getRGB(W / 2, 0)));
+		byte[] seamedBottom = seamedCover(bottom, a, off);
+		BandCanvas.SeamMatch smb = BandCanvas.matchSeam(seamedBottom, W, H, bottom);
+		assertTrue("applied (bottom): " + smb, smb.isApplied());
+		BufferedImage matchedBottom = MaskImage.decode(smb.getBytes());
+		double[] profileBottom = rowProfile(matchedBottom, a);
+		assertTrue("every row within a level (bottom, max " + profileBottom[0] + ")", profileBottom[0] <= 1.0);
+		assertTrue("no step over a level (bottom, max " + profileBottom[1] + ")", profileBottom[1] <= 1.0);
+		assertEquals("the bottom band's deep rows are the figure's colour", a, new Color(matchedBottom.getRGB(W / 2, H - 1)));
+		assertEquals("the figure's top rows are untouched (bottom band)", a, new Color(matchedBottom.getRGB(W / 2, 0)));
+		/// Nothing to do: no band, not the canvas size, or a shortfall under half a level - the same bytes come back.
+		assertSame("no band: the bytes untouched", seamed, BandCanvas.matchSeam(seamed, W, H, null).getBytes());
+		assertSame("not the canvas size: the bytes untouched", figure, BandCanvas.matchSeam(figure, W, H, top).getBytes());
+		byte[] flat = seamedCover(top, a, new int[] { 0, 0, 0 });
+		BandCanvas.SeamMatch nil = BandCanvas.matchSeam(flat, W, H, top);
+		assertSame("no shortfall: the bytes untouched", flat, nil.getBytes());
+		assertFalse("nothing applied: " + nil, nil.isApplied());
+		assertNotNull("but measured", nil.getOffset());
+		assertEquals("SeamMatch{nil r+0.0 g+0.0 b+0.0}", nil.toString());
 	}
 
 	@Test

@@ -1964,7 +1964,8 @@ public class ChapBookUtil {
 	 *
 	 * @return the stored config after the write, re-read fresh
 	 * @throws PictureBookException 400 for missing args, 404 when the book is not readable, 403 when it is
-	 *         not a CHAPBOOK, 500 when a write fails
+	 *         not a CHAPBOOK or when the user may read but not update it (the {@code requireBookUpdate} gate
+	 *         inside {@code PbBookUtil.setBookSdConfig}, §24 I-5), 500 when a write fails
 	 */
 	public static BaseRecord setBookSdConfig(BaseRecord user, String bookObjectId, BaseRecord sparse) {
 		BaseRecord book = loadChapBookForConfig(user, bookObjectId);

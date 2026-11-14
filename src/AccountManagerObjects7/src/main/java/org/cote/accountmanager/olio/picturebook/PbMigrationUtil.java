@@ -37,14 +37,18 @@ import org.cote.accountmanager.util.JSONUtil;
  * {@code ~/Data/PictureBooks/}) into the PB2 schema
  * ({@code olio.pb.book}, {@code olio.pb.scene}, {@code olio.pb.workflow}).
  * <p>
- * <b>PB1 records are not modified.</b> Every read here is find-only against PB1 state. Scenes are
+ * <b>PB1 records are not modified, with one additive exception:</b> the {@code .pictureBookMeta} note
+ * receives the {@code pb2BookObjectId} back-link to the book just created ({@link #linkV1MetaToBook},
+ * §24 I-5 / 218 d - the same key {@code /health} Repair sets, written as the importing user through
+ * {@code AccessPoint}, a warning when refused). Every other access is find-only against PB1 state. Scenes are
  * imported as PB2 rows with their text fields (title, blurb, summary, setting, action, mood)
  * populated from the per-scene {@code data.note} JSON.  The workflow graph skeleton ({@code olio.pb.workflow},
  * {@code olio.pb.node}) is created by the normal {@code PbBookUtil.createBook} path — nodes will
  * be {@code PENDING} until the next pipeline run re-generates their artifacts.
  * <p>
- * <b>Exit criterion (Phase 6):</b> {@code TestPbMigration} passes on a real existing PB1 book;
- * the PB1 {@code auth.group} and {@code .pictureBookMeta} note are untouched afterward.
+ * <b>Exit criterion (Phase 6, amended §24 I-5):</b> {@code TestPbMigration} passes on a real existing PB1 book;
+ * the PB1 {@code auth.group} is untouched afterward and the {@code .pictureBookMeta} note differs only by the
+ * added {@code pb2BookObjectId} key.
  */
 public class PbMigrationUtil {
 	public static final Logger logger = LogManager.getLogger(PbMigrationUtil.class);
@@ -178,7 +182,9 @@ public class PbMigrationUtil {
 	 * Creates a PB2 {@code olio.pb.book} (and its Olio world, grants, and workflow) for the given
 	 * PB1 group, then creates one {@code olio.pb.scene} row per scene in the PB1
 	 * {@code .pictureBookMeta}, with text fields copied from the per-scene {@code data.note} JSON.
-	 * PB1 records ({@code auth.group}, {@code data.note}) are <b>not modified</b>.
+	 * PB1 records ({@code auth.group}, {@code data.note}) are <b>not modified</b>, except that the meta note
+	 * gains the {@code pb2BookObjectId} back-link ({@link #linkV1MetaToBook}; a warning on the result when it
+	 * cannot be written).
 	 *
 	 * @param user              the acting user (must have read access to the PB1 group)
 	 * @param dataPath          the Olio data path ({@code test.datagen.path} / deployment config)
@@ -206,7 +212,7 @@ public class PbMigrationUtil {
 				"Cannot derive a valid PB2 slug from PB1 book name '" + groupName + "'");
 		}
 
-		// 3. Load the PB1 meta note (read-only — PB1 is never written here)
+		// 3. Load the PB1 meta note (read here; its one write is the back-link in step 7b)
 		BaseRecord metaNote = loadV1MetaNote(user, groupPath, orgId);
 		if(metaNote == null) {
 			throw new PictureBookException(404,
@@ -236,19 +242,28 @@ public class PbMigrationUtil {
 		String workName = meta.get("workName");
 		String title = (workName != null && !workName.isBlank()) ? workName : groupName;
 
-		// 6. Guard against a duplicate slug before creating the world
+		// 6. Guard against a duplicate slug before creating the world. The caller's own same-slug book is the
+		// re-import case (delete or rename it); another user's is the 218 c case - the slug is organization-wide
+		// and the import can never take it, so say so (PbBookUtil.requireSlugFree) instead of letting createBook
+		// die on the unique index with a "concurrent creation" message.
 		if(PbBookUtil.findBookBySlug(user, slug, orgId) != null) {
 			throw new PictureBookException(409,
 				"A PB2 book with slug '" + slug + "' already exists."
 				+ " Delete or rename the existing book before re-importing.");
 		}
+		PbBookUtil.requireSlugFree(user, slug, orgId);
 
 		// 7. Create the PB2 book — world, grants, workflow group skeleton — via the canonical path
 		BaseRecord book = PbBookUtil.createBook(user, dataPath, slug, title);
 		String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
 
-		// 8. Patch compositionContext and sdConfig from the meta into the PB2 book
+		// 7b. The one PB1 write (§24 I-5 / 218 d): the meta note's pb2BookObjectId back-link to the book just
+		// created - the same key /health's META_LINK_BROKEN repair sets, written here so an imported book does not
+		// start life with that WARN. A warning, never a failure.
 		List<String> warnings = new ArrayList<>();
+		linkV1MetaToBook(user, metaNote, metaJson, bookObjectId, orgId, warnings);
+
+		// 8. Patch compositionContext and sdConfig from the meta into the PB2 book
 		patchBookMetaFields(user, book, meta, warnings);
 
 		// 9. Import scenes
@@ -318,6 +333,60 @@ public class PbMigrationUtil {
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
 		q.planMost(true);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
+
+	/**
+	 * Write the {@code pb2BookObjectId} back-link into the PB1 {@code .pictureBookMeta} note (§24 I-5 / 218 d).
+	 * <p>
+	 * This is the one PB1 write the import performs, and it is the same write {@code PbHealthUtil}'s
+	 * {@code META_LINK_BROKEN} repair performs: the note's JSON text is re-parsed as a map so every other key
+	 * survives untouched, {@code pb2BookObjectId} is set to the new book's objectId, and the note is patched
+	 * ({@code text} only) <b>as the importing user through {@code AccessPoint}</b> - never the admin or the olio
+	 * principal, so a user who may read but not update the note simply does not write it. The link is what
+	 * {@code PictureBookUtil.resolveBookGroupEither} needs when the PB1 group name does not equal the slug (the
+	 * slug-named lookup cannot find it), which is why {@code /health} flags its absence as a WARN.
+	 * <p>
+	 * Written when the key is missing, or when it names a book the importer can no longer read (a stale link
+	 * from a deleted earlier import). Left alone, with a warning, when it names a book the importer CAN still
+	 * read: that PB1 group is some other live book's scene group and the import must not steal it -
+	 * {@code /health} will report it and Repair, an explicit user action, may overwrite. Every refusal or
+	 * failure is a warning on the result, never a failure of the import (§28: non-destructive).
+	 */
+	private static void linkV1MetaToBook(BaseRecord user, BaseRecord metaNote, String metaJson, String bookObjectId,
+			long orgId, List<String> warnings) {
+		Map<String, Object> metaMap = null;
+		try {
+			metaMap = JSONUtil.getMap(metaJson.getBytes(), String.class, Object.class);
+		}
+		catch(Exception e) {
+			warnings.add("meta note pb2BookObjectId link not written: meta is not parseable as a map: " + e.getMessage());
+			return;
+		}
+		if(metaMap == null) {
+			metaMap = new LinkedHashMap<>();
+		}
+		Object link = metaMap.get("pb2BookObjectId");
+		if(link != null && !bookObjectId.equals(link.toString())) {
+			if(PbBookUtil.readBook(user, link.toString(), orgId) != null) {
+				warnings.add("meta note pb2BookObjectId left as '" + link + "' (a live book); /health reports it, Repair may overwrite");
+				return;
+			}
+			logger.info("PB1 migration: meta note pb2BookObjectId '{}' is stale (no such readable book); relinking to {}", link, bookObjectId);
+		}
+		metaMap.put("pb2BookObjectId", bookObjectId);
+		boolean ok;
+		try {
+			BaseRecord patch = PbGraphUtil.patchOf(metaNote, ModelNames.MODEL_NOTE, FieldNames.FIELD_TEXT);
+			patch.set(FieldNames.FIELD_TEXT, JSONUtil.exportObject(metaMap));
+			ok = IOSystem.getActiveContext().getAccessPoint().update(user, patch) != null;
+		}
+		catch(FieldException | ValueException | ModelNotFoundException | PictureBookException e) {
+			logger.warn("PB1 migration: meta note pb2BookObjectId patch error: {}", e.getMessage());
+			ok = false;
+		}
+		if(!ok) {
+			warnings.add("meta note pb2BookObjectId link was not persisted (the note was not updatable as the importing user); /health Repair can set it");
+		}
 	}
 
 	/**

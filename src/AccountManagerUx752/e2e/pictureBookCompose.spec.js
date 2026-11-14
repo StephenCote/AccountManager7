@@ -12,7 +12,8 @@
  * Tiers (a gated skip is a skip, never a pass):
  *   default            — compose on a scene-less book is a 200 no-op that
  *                        queues nothing; malformed body 400; unknown book 404; unknown scene 404; a create-from-scenes
- *                        import with no PictureBook bound answers composeJobSkipped. No LLM, no SD.
+ *                        import with no PictureBook bound is a 400 naming KI-89 that writes nothing, and the legacy
+ *                        POST /{work}/extract route is gone (I-1 / KI-89 b). No LLM, no SD.
  *   PB_LLM_TESTS=1     — a create-from-scenes import bound to a /chapter book dual-writes its olio.pb.scene rows and
  *                        queues the compose job itself (composeJob in the import result; polled to completion);
  *                        two scenes with settings → POST /compose (202 job; live LLM through the shared user's
@@ -31,7 +32,7 @@
  *     npx playwright test e2e/pictureBookCompose.spec.js --workers=1 --project=chromium --retries=0
  */
 import { test, expect, request as pwRequest } from '@playwright/test';
-import { ensureSharedTestUser, ensureChatConfig, ensurePath } from './helpers/api.js';
+import { ensureSharedTestUser, ensureChatConfig, ensurePath, findPath } from './helpers/api.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -231,7 +232,7 @@ test.describe('compose routes (default tier)', () => {
 // ────────────────────────────── create-from-scenes auto-submit (§9.1 "composed up front") ──────────────────────────────
 // The wizard's import is the one place a V3 book gets its scenes, so the compose job is queued from there.
 // Each test owns its book (POST /chapter) and its work note; the file's shared book above is never touched.
-test.describe('create-from-scenes queues the compose job (default tier: skipped reason; PB_LLM_TESTS=1: job to terminal)', () => {
+test.describe('create-from-scenes queues the compose job (default tier: unbound import refused; PB_LLM_TESTS=1: job to terminal)', () => {
 
     // Blurb-only scenes, no characters: the import makes no LLM call of its own (the sceneText spec's load-safe shape).
     const IMPORT_SCENES = [
@@ -317,23 +318,34 @@ test.describe('create-from-scenes queues the compose job (default tier: skipped 
         return book;
     }
 
-    test('an import with no PictureBook bound is a 200 that names why no compose job was queued', async () => {
+    // I-1 / KI-89 (b), 2026-11-13: the bookless (PB1) import is gone. An import with no pb2BookObjectId is a
+    // 400 that names the KI, raised before anything is written - no ~/Data/PictureBooks/<bookName> group, no
+    // scenes - and the all-in-one POST /{work}/extract route no longer exists at all.
+    test('an import with no PictureBook bound is a 400 naming KI-89 that writes nothing; /extract is gone', async () => {
         test.setTimeout(5 * 60 * 1000);
         const workObjectId = await createWorkNote('unbound');
+        const bookName = 'P4-4 Unbound Import ' + bookSlug;
         const r = await api.post(PB + '/' + workObjectId + '/create-from-scenes', {
-            data: { schema: 'olio.pictureBookRequest', sceneList: IMPORT_SCENES, bookName: 'P4-4 Unbound Import ' + bookSlug },
+            data: { schema: 'olio.pictureBookRequest', sceneList: IMPORT_SCENES, bookName },
             timeout: 240000
         });
-        const out = await expectStatus(r, 200, 'create-from-scenes (no pb2BookObjectId)');
-        console.log(TAG + ' create-from-scenes (unbound): ' + JSON.stringify(out).slice(0, 1200));
-        expect(out.composeJobSkipped, JSON.stringify(out).slice(0, 400)).toBe('no PictureBook was bound to the import');
-        expect(out.composeJob, 'nothing queued').toBeUndefined();
-        expect(out.composeJobError).toBeUndefined();
-        // The import's own result is returned unchanged around the compose fields.
-        expect(out.bookObjectId, 'import bookObjectId').toBeTruthy();
-        expect(Array.isArray(out.scenes) && out.scenes.length, 'persisted scenes: ' + JSON.stringify(out.scenes)).toBe(IMPORT_SCENES.length);
-        expect(out.scenes.map(s => s.title)).toEqual(IMPORT_SCENES.map(s => s.title));
-        for (const s of out.scenes) expect(s.objectId, 'scene note objectId: ' + JSON.stringify(s)).toBeTruthy();
+        const out = await expectStatus(r, 400, 'create-from-scenes (no pb2BookObjectId)');
+        console.log(TAG + ' create-from-scenes (unbound): ' + JSON.stringify(out).slice(0, 600));
+        expect(errMsg(out)).toMatch(/pb2BookObjectId is required/);
+        expect(errMsg(out)).toMatch(/KI-89/);
+        // Refused before the work was even looked up, and nothing was written: the PB1 group the bookless
+        // path used to create under ~/Data/PictureBooks/<bookName> must not exist.
+        expect(errMsg(out)).not.toMatch(/Work not found/);
+        const pb1Group = await findPath(api, 'auth.group', 'data', '~/Data/PictureBooks/' + bookName);
+        expect(pb1Group && pb1Group.objectId, 'a PB1 book group was created by a refused import: ' + JSON.stringify(pb1Group)).toBeFalsy();
+
+        // The legacy all-in-one import route (POST /{work}/extract) was deleted with the bookless path.
+        const gone = await api.post(PB + '/' + workObjectId + '/extract', {
+            data: { schema: 'olio.pictureBookRequest', bookName, sceneCount: 2 }, timeout: 60000
+        });
+        expect(gone.status(), 'POST /{work}/extract must be gone (KI-89 b), got ' + gone.status() + ' ' + (await gone.text()).slice(0, 200)).toBe(404);
+        const pb1GroupAfter = await findPath(api, 'auth.group', 'data', '~/Data/PictureBooks/' + bookName);
+        expect(pb1GroupAfter && pb1GroupAfter.objectId, 'a PB1 book group was created by the deleted /extract route').toBeFalsy();
     });
 
     test('an import bound to a V3 book writes its olio.pb.scene rows and queues the compose job to completion (PB_LLM_TESTS=1)', async ({ request }) => {

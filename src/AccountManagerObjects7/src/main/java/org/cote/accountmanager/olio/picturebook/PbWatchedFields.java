@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -50,8 +51,12 @@ public class PbWatchedFields {
 	 * Bumped when the watched sets or the canonical form below change. Folded into every
 	 * {@code refHash}, so a change here invalidates stored hashes <b>on purpose</b> and loudly, rather
 	 * than silently comparing hashes computed under two different policies.
+	 * <p>
+	 * {@code watched/v5} (2026-11-13, UAT-1 / KI-92): the {@code olio.charPerson} projection now loads the
+	 * attributes it declares as watched (they rendered as the null token before), and a watched attribute's
+	 * book-scoped rows ({@code @pbDescription:<bookObjectId>=...}) are rendered after the bare row, sorted.
 	 */
-	public static final String WATCHED_SET_VERSION = "watched/v4";
+	public static final String WATCHED_SET_VERSION = "watched/v5";
 
 	/**
 	 * {@code olio.charPerson}: identity and appearance, the fields a portrait or a character description
@@ -175,12 +180,21 @@ public class PbWatchedFields {
 
 	/**
 	 * Attributes watched on {@code olio.charPerson}. Attributes use <b>referenced</b> storage - a
-	 * separate table keyed by {@code referenceModel}/{@code referenceId} - so they are not fields and
-	 * cannot be projected; they are read through {@link AttributeUtil} after the record is loaded.
+	 * separate table keyed by {@code referenceModel}/{@code referenceId} - so they are not columns, but
+	 * the {@code attributes} list IS a projectable field: a {@code request} that names
+	 * {@code FieldNames.FIELD_ATTRIBUTES} loads the rows, and they are then read through
+	 * {@link AttributeUtil}. {@link #projection(String)} adds it whenever a model declares watched
+	 * attributes. Until 2026-11-13 it did not, so every watched attribute rendered as the null token and an
+	 * edit to {@code pbDescription} never changed a refHash (UAT-1 / KI-92); the first hash computed after
+	 * that fix differs from the stored one for every character that carries a pbDescription row - a one-time
+	 * STALE wave, which is the correct answer for a hash that was previously blind.
 	 * <p>
 	 * {@code pbDescription} ({@code PictureBookUtil.ATTR_DESCRIPTION}) is the hand-written or extracted
 	 * character description the portrait prompt is built from, so an edit to it must invalidate the
-	 * portrait.
+	 * portrait. A series character shared by several chapters also carries one book-scoped row per chapter
+	 * ({@code pbDescription:<bookObjectId>}, see {@code PictureBookUtil.bookScopedAttributeName}); those
+	 * are rendered too, sorted by name, so a chapter's own description edit is noticed and the hash does not
+	 * depend on the order the rows were written.
 	 */
 	private static final List<String> CHAR_PERSON_ATTRIBUTES = Collections.unmodifiableList(Arrays.asList(
 		PictureBookUtil.ATTR_DESCRIPTION
@@ -280,6 +294,10 @@ public class PbWatchedFields {
 				req.add(f);
 			}
 		}
+		if(!watchedAttributes(model).isEmpty() && !req.contains(FieldNames.FIELD_ATTRIBUTES)) {
+			/// referenced storage, loaded only when projected - without this every watched attribute is the null token
+			req.add(FieldNames.FIELD_ATTRIBUTES);
+		}
 		return req.toArray(new String[0]);
 	}
 
@@ -331,6 +349,10 @@ public class PbWatchedFields {
 		for(String a : watchedAttributes(model)) {
 			sb.append(PbConfigUtil.PAIR_SEPARATOR).append('@').append(a).append('=')
 				.append(PbConfigUtil.token(attribute(rec, a)));
+			for(Map.Entry<String, Object> scoped : scopedAttributes(rec, a).entrySet()) {
+				sb.append(PbConfigUtil.PAIR_SEPARATOR).append('@').append(scoped.getKey()).append('=')
+					.append(PbConfigUtil.token(scoped.getValue()));
+			}
 		}
 		if(OlioModelNames.MODEL_CHAR_PERSON.equals(model)) {
 			sb.append(PbConfigUtil.PAIR_SEPARATOR).append("store.apparel=").append(apparelToken(rec));
@@ -350,6 +372,39 @@ public class PbWatchedFields {
 			logger.warn("Failed to read attribute " + name + ": " + e.getMessage());
 			return null;
 		}
+	}
+
+	/**
+	 * The book-scoped rows of a watched attribute ({@code <name>:<bookObjectId>}), keyed by their full
+	 * attribute name in sorted order so the rendering is independent of the order the chapters wrote them.
+	 * Empty when the record carries no attributes or none are scoped.
+	 */
+	private static Map<String, Object> scopedAttributes(BaseRecord rec, String name) {
+		Map<String, Object> out = new TreeMap<>();
+		if(rec == null || !rec.hasField(FieldNames.FIELD_ATTRIBUTES)) {
+			return out;
+		}
+		String prefix = name + PictureBookUtil.ATTR_BOOK_SCOPE_SEPARATOR;
+		try {
+			List<BaseRecord> attrs = rec.get(FieldNames.FIELD_ATTRIBUTES);
+			if(attrs == null) {
+				return out;
+			}
+			for(BaseRecord attr : attrs) {
+				String an = (attr.hasField(FieldNames.FIELD_NAME) ? attr.get(FieldNames.FIELD_NAME) : null);
+				if(an == null || !an.startsWith(prefix) || an.length() == prefix.length()) {
+					continue;
+				}
+				/// first row wins for a duplicated scoped name, mirroring AttributeUtil.getAttribute
+				if(!out.containsKey(an)) {
+					out.put(an, attr.get(FieldNames.FIELD_VALUE));
+				}
+			}
+		}
+		catch(Exception e) {
+			logger.warn("Failed to read the scoped rows of attribute " + name + ": " + e.getMessage());
+		}
+		return out;
 	}
 
 	/**

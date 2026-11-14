@@ -666,7 +666,7 @@ public class PbCoverUtil {
 		vars.put("title", PbComposeUtil.orNone(PbLocationUtil.sanitizeForPrompt(
 			PbComposeUtil.str(ctx.book.get(FieldNames.FIELD_NAME)), PbComposeUtil.MAX_FIELD_CHARS)));
 		vars.put("summary", summaryText(ctx, series, aux));
-		vars.put("cast", PbComposeUtil.castBlock(cast));
+		vars.put("cast", PbComposeUtil.castBlock(cast, PbComposeUtil.bookObjectId(ctx)));
 		vars.put("locations", coverLocationsBlock(user, ctx, tally, aux));
 		return vars;
 	}

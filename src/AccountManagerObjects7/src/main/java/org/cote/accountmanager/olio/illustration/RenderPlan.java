@@ -43,6 +43,11 @@ public final class RenderPlan {
 	/// One actor's masked inpaint over the base (design §38.2); P5-1 runs it standalone, P5-2 wires it
 	/// into the executor.
 	public static final String STAGE_ACTOR_REGION = "ACTOR_REGION";
+	/// The reserved title band's own masked pass (V3 §40, §24 I-4 / 236 i): BASE and the ACTOR_REGION passes render
+	/// on the figure canvas (the canvas minus the band, so no figure can occupy it), then this pass paints the band
+	/// over the padded image from the band prompt ({@code compiled.get(STAGE_TITLE_BAND)}: the setting, the style
+	/// and the negative-space clause, no actors, no references). Planned only when the plan reserves a band.
+	public static final String STAGE_TITLE_BAND = "TITLE_BAND";
 
 	/// Actor roles. The five §12 roles (HERO, SUPPORTING, NAMED_BACKGROUND, EXTRA, CROWD) are the values
 	/// olio.pb.sceneActor.role carries; FOREGROUND / BACKGROUND are the pre-P4-7 aliases, kept so plans
@@ -286,6 +291,32 @@ public final class RenderPlan {
 		if(added != null) {
 			b.degradations.addAll(added);
 		}
+		return b.build();
+	}
+
+	/// Copy with the reserved band replaced (null drops it). The BASE prompt of a plan that reserves a band is
+	/// compiled on the {@code withReserved(null)} copy (§24 I-4): BASE renders on the figure canvas, where the band
+	/// does not exist, so the negative-space clause would only push the figure further down a frame it no longer
+	/// shares with the title. The plan itself keeps the band.
+	public RenderPlan withReserved(Box reserved) {
+		Builder b = toBuilder();
+		b.reserved = reserved;
+		return b.build();
+	}
+
+	/// Copy that describes only the reserved band's surroundings, for the TITLE_BAND prompt (§24 I-4): no actors,
+	/// no elements, the location by its text alone (its render reference is dropped - the pass sends no images but
+	/// the init image and the mask, so the prompt must not count one), and the band kept so the compilers speak the
+	/// negative-space clause. Strategy, picks, style, config, camera and intent are the plan's, so the pass compiles
+	/// with the family and negative BASE renders with.
+	public RenderPlan forReservedBand() {
+		Builder b = toBuilder();
+		b.actors = new ArrayList<>();
+		b.elements = new ArrayList<>();
+		if(location != null) {
+			b.location = new Location(location.getLocationId(), location.getVariantId(), location.getRevisionHash(), null, location.getDescription());
+		}
+		b.compiled = new LinkedHashMap<>();
 		return b.build();
 	}
 
@@ -807,6 +838,26 @@ public final class RenderPlan {
 			double ny = Math.max(0.0, bTop - h);
 			double nh = Math.max(0.0, bTop - ny);
 			return new Box(x, ny, w, nh);
+		}
+
+		/**
+		 * This full-frame box expressed in the figure canvas: the canvas with the full-width {@code band} removed
+		 * (§24 I-4). x and w are unchanged; y and h are rescaled by {@code 1 - band.h}, and for a top band y is first
+		 * moved up by the band's height. A box the band was already clipped out of ({@link #clip}) lands wholly inside
+		 * 0..1; one that still overlaps the band is clipped first. Returns {@code this} when the band is null, has no
+		 * height, or would leave no canvas.
+		 */
+		public Box inFigureCanvas(Box band) {
+			if(band == null || band.h <= 0.0 || band.h >= 1.0) {
+				return this;
+			}
+			Box c = clip(band);
+			double f = band.h;
+			double ny = (band.isTop() ? (c.y - f) : c.y) / (1.0 - f);
+			double nh = c.h / (1.0 - f);
+			ny = Math.max(0.0, Math.min(1.0, ny));
+			nh = Math.max(0.0, Math.min(1.0 - ny, nh));
+			return new Box(c.x, ny, c.w, nh);
 		}
 
 		Map<String, Object> toMap() {
@@ -1555,12 +1606,22 @@ public final class RenderPlan {
 		/// §23 (P6-2): the renderer reported no seed for variant 0, so the later variants rendered with random
 		/// seeds rather than seed0 + i; every planned final still rendered. Accepted by auto-approve.
 		public static final String VARIANT_SEED_UNKNOWN = "VARIANT_SEED_UNKNOWN";
+		/// §24 I-3 (224 e): the preset planned an UPSCALE stage that the executor does not render yet (Phase 2
+		/// renders BASE only), so the finals are at BASE resolution; every planned final still rendered. Accepted
+		/// by auto-approve. Until 2026-11-14 the executor emitted this as a free-form {@code "upscale: ..."} entry,
+		/// which the veto set treated as unknown and therefore vetoed every FINAL-preset attempt.
+		public static final String UPSCALE_NOT_RENDERED = "UPSCALE_NOT_RENDERED";
+		/// §24 I-4 (236 i): the plan reserved a title band but its TITLE_BAND pass did not run or failed (the family
+		/// takes no mask / init image, the graph did not compile, the renderer failed), so the delivered image carries
+		/// the band as the flat padding the pass would have painted over. The band is still clear of figures - BASE
+		/// rendered on the figure canvas - but the image is not finished: vetoes auto-approve.
+		public static final String TITLE_BAND_FAILED = "TITLE_BAND_FAILED";
 
 		/// Every code a plan can carry. Consumers that classify a degradation string by its prefix
 		/// (PbArtifactUtil.autoApprove) treat anything outside this set as free-form and do not waive it.
 		public static final Set<String> CODES = Set.of(ACTOR_TEXT_ONLY, ACTOR_UNRESOLVED, ACTOR_FAILED, LOCATION_TEXT_ONLY,
 			MODEL_SUBSTITUTED, PROMPT_TRUNCATED, QA_WARN, QA_FAIL, QA_UNAVAILABLE, COMPOSED_OUT_OF_ORDER, VARIANT_FAILED,
-			VARIANT_SEED_UNKNOWN);
+			VARIANT_SEED_UNKNOWN, UPSCALE_NOT_RENDERED, TITLE_BAND_FAILED);
 
 		public static boolean isKnownCode(String code) {
 			return code != null && CODES.contains(code);

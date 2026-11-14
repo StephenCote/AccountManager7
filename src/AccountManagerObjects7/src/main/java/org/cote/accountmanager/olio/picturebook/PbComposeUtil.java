@@ -50,7 +50,6 @@ import org.cote.accountmanager.schema.type.PbShotTypeEnumType;
 import org.cote.accountmanager.schema.type.PbTitleSafeBandEnumType;
 import org.cote.accountmanager.schema.type.PbViewpointEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
-import org.cote.accountmanager.util.AttributeUtil;
 
 /**
  * PictureBook V3 Phase 4 (design §9, §29): the compose step. Stages one scene as one illustration -
@@ -854,10 +853,13 @@ public class PbComposeUtil {
 			return cast;
 		}
 		List<BaseRecord> refs = new ArrayList<>();
+		/// pbSceneRefs is chapter-local, so for a shared series character read this book's own row
+		/// (pbSceneRefs:<bookObjectId>) before the unscoped one (UAT-1 / KI-92).
+		String bookOid = bookObjectId(ctx);
 		for(BaseRecord cp : population) {
 			String csv = null;
 			try {
-				csv = AttributeUtil.getAttributeValue(cp, PictureBookUtil.ATTR_SCENE_REFS, (String) null);
+				csv = PictureBookUtil.readBookScopedAttribute(cp, PictureBookUtil.ATTR_SCENE_REFS, bookOid);
 			}
 			catch(Exception e) {
 				logger.warn("Could not read " + PictureBookUtil.ATTR_SCENE_REFS + " of " + cp.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
@@ -988,10 +990,15 @@ public class PbComposeUtil {
 		vars.put("action", orNone(PbLocationUtil.sanitizeForPrompt(str(scene.get(OlioFieldNames.FIELD_PB_ACTION)), MAX_FIELD_CHARS)));
 		vars.put("mood", orNone(PbLocationUtil.sanitizeForPrompt(str(scene.get(OlioFieldNames.FIELD_PB_MOOD)), MAX_MOOD_CHARS)));
 		vars.put("sceneText", sceneText(ctx, result));
-		vars.put("cast", castBlock(cast));
+		vars.put("cast", castBlock(cast, bookObjectId(ctx)));
 		vars.put("locations", locationsBlock(user, ctx, result));
 		vars.put("items", itemsBlock(user, ctx, result));
 		return vars;
+	}
+
+	/// The context's book objectId, or null when the context carries no book record.
+	static String bookObjectId(Context ctx) {
+		return (ctx != null && ctx.book != null ? str(ctx.book.get(FieldNames.FIELD_OBJECT_ID)) : null);
 	}
 
 	static String styleName(BaseRecord user, Context ctx, ComposeResult result) {
@@ -1030,7 +1037,14 @@ public class PbComposeUtil {
 		return orNone(PbLocationUtil.sanitizeForPrompt(text, MAX_SCENE_TEXT_CHARS));
 	}
 
+	/// The cast block spoken from the unscoped pbDescription rows; callers with a book use the two-arg form.
 	static String castBlock(Cast cast) {
+		return castBlock(cast, null);
+	}
+
+	/// Each member's name and description, the description read from the book-scoped pbDescription row
+	/// when one exists for {@code bookObjectId} (UAT-1 / KI-92), else the shared unscoped row.
+	static String castBlock(Cast cast, String bookObjectId) {
 		if(cast.members.isEmpty()) {
 			return NONE;
 		}
@@ -1040,7 +1054,7 @@ public class PbComposeUtil {
 			if(!NarrativeUtil.isMeaningful(name)) {
 				continue;
 			}
-			String desc = PbLocationUtil.sanitizeForPrompt(PbRenderPlanUtil.actorDescription(cp), MAX_CAST_DESCRIPTION_CHARS);
+			String desc = PbLocationUtil.sanitizeForPrompt(PbRenderPlanUtil.actorDescription(cp, bookObjectId), MAX_CAST_DESCRIPTION_CHARS);
 			sb.append("- ").append(name.trim());
 			if(NarrativeUtil.isMeaningful(desc)) {
 				sb.append(": ").append(desc.trim());

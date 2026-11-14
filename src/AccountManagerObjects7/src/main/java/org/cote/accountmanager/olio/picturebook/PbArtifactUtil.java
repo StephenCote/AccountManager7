@@ -529,10 +529,12 @@ public class PbArtifactUtil {
 	 * <ol>
 	 * <li><b>degraded</b>: the executor reported a degradation that vetoes (P4-7). Each entry is read as
 	 * {@code "<CODE>: <detail>"}; an entry whose code is a known {@link RenderPlan.Degradation#CODES} code outside
-	 * {@link #AUTO_APPROVE_VETO_CODES} (an actor planned from text, a substituted model, a QA warning) is a
+	 * {@link #AUTO_APPROVE_VETO_CODES} (an actor planned from text, a substituted model, a QA warning, a planned
+	 * UPSCALE stage the executor does not render - {@link RenderPlan.Degradation#UPSCALE_NOT_RENDERED}, 224 e) is a
 	 * reported-and-accepted shortfall and does not veto. Every other entry does: a veto code, an unknown code,
-	 * or a free-form entry such as the executor's {@code "upscale: ..."} pseudo-entry. A render that did not
-	 * consume what the graph bound is not a result to pin.</li>
+	 * or a free-form entry (a lowercase {@code "upscale: ..."} prefix, which is what the executor emitted before
+	 * 2026-11-14 and why every FINAL-preset attempt was vetoed). A render that did not consume what the graph
+	 * bound is not a result to pin.</li>
 	 * <li><b>existing-approved</b>: another revision of the same {@code (node, role)} is APPROVED. The auto-approver
 	 * never replaces an approval, human or auto; {@link #approve} would demote it, so this is checked first.</li>
 	 * </ol>
@@ -717,10 +719,12 @@ public class PbArtifactUtil {
 	/**
 	 * The degradation codes that veto auto-approval (P4-7): a character that could not be read or rendered, a
 	 * setting rendered without its approved render, a prompt the compiler had to cut, and a composition written
-	 * out of order, and an attempt that produced fewer finals than its preset planned (§23, P6-2).
-	 * {@code ACTOR_TEXT_ONLY}, {@code MODEL_SUBSTITUTED}, {@code QA_WARN}, {@code QA_FAIL}, {@code QA_UNAVAILABLE}
-	 * and {@code VARIANT_SEED_UNKNOWN} are reported on the plan but accepted - a QA FAIL acts through the variant
-	 * ordering in {@link #autoApprove(BaseRecord, List, Map, List, String)} (220 c), not through this set.
+	 * out of order, an attempt that produced fewer finals than its preset planned (§23, P6-2), and a reserved title
+	 * band whose TITLE_BAND pass did not paint it (§24 I-4: the band is delivered as flat padding).
+	 * {@code ACTOR_TEXT_ONLY}, {@code MODEL_SUBSTITUTED}, {@code QA_WARN}, {@code QA_FAIL}, {@code QA_UNAVAILABLE},
+	 * {@code VARIANT_SEED_UNKNOWN} and {@code UPSCALE_NOT_RENDERED} (224 e) are reported on the plan but accepted -
+	 * a QA FAIL acts through the variant ordering in {@link #autoApprove(BaseRecord, List, Map, List, String)}
+	 * (220 c), not through this set.
 	 */
 	public static final Set<String> AUTO_APPROVE_VETO_CODES = Set.of(
 		RenderPlan.Degradation.ACTOR_UNRESOLVED,
@@ -728,7 +732,8 @@ public class PbArtifactUtil {
 		RenderPlan.Degradation.LOCATION_TEXT_ONLY,
 		RenderPlan.Degradation.PROMPT_TRUNCATED,
 		RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER,
-		RenderPlan.Degradation.VARIANT_FAILED);
+		RenderPlan.Degradation.VARIANT_FAILED,
+		RenderPlan.Degradation.TITLE_BAND_FAILED);
 
 	/// The entries of {@code degradations} that veto auto-approval, in order; empty when none (or null) do.
 	static List<String> vetoingDegradations(List<String> degradations) {

@@ -42,8 +42,10 @@ import org.cote.accountmanager.util.JSONUtil;
  * Footprint, in order: cast groups and graph rows referencing the book by FK (wherever they live);
  * per-book roles; the {@code <Worlds>/<slug>/{Book,Workflow,Artifacts}} groups, the world (unless it is a
  * series' shared world), the residual row and the cached context ({@link PictureBookUtil#teardownBookFootprintAsOlio});
- * the caller's {@code ~/Data/PictureBooks/<slug>} tree and any {@code .pictureBookMeta} note linked to the
- * book; the {@code olio.pb.sourceRange} row; extraction checkpoints for the source document when no other
+ * the caller's {@code ~/Data/PictureBooks/<slug>} tree and any orphaned {@code .pictureBookMeta} note linked to
+ * the book (a linked note still inside a live PB1 group - an imported source, §24 I-5 / 218 d - is unlinked,
+ * never deleted: {@link PictureBookUtil#deleteOrphanedMetaNotes}); the {@code olio.pb.sourceRange} row;
+ * extraction checkpoints for the source document when no other
  * book still references it; the book context cache; and finally the generic orphan sweep for
  * {@code olio.pb.book}.
  */
@@ -150,8 +152,10 @@ public class PbDeleteUtil {
 				deleteUxTree(user, uxGroup, res);
 			}
 		}
-		// Any meta note still linked to this book by its JSON (a tree under a different slug, or a note
-		// whose group was already gone) — this is what keeps a deleted book out of the legacy list.
+		// Any meta note still linked to this book by its JSON. A note whose group is already gone is deleted
+		// (this is what keeps a deleted book out of the legacy list); a note still inside a live group under a
+		// different name is a PB1 source the book was imported from, not something it created, and is only
+		// unlinked (§24 I-5 / 218 d).
 		int metaNotes = PictureBookUtil.deleteOrphanedMetaNotes(user, bookObjectId);
 		res.step("metaNotes", ModelNames.MODEL_NOTE, metaNotes, true, null);
 

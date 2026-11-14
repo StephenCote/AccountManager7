@@ -36,7 +36,6 @@ import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
 import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbReferencePolicyEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
-import org.cote.accountmanager.util.AttributeUtil;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -472,7 +471,11 @@ public final class PbRenderPlanUtil {
 	/// Strategy selection and per-stage compilation, identical for every purpose. The compiler is the
 	/// stage pick's family ({@link PromptCompilers#forPick}): FLUX2 picks compile as prose, everything else as SDXL.
 	/// ACTOR_REGION has no bare key: each ACTOR_REGION actor gets its own "ACTOR_REGION#actorId" prompt from
-	/// {@link InpaintRegionCompiler} (P5-2).
+	/// {@link InpaintRegionCompiler} (P5-2). A plan that reserves a title band (§24 I-4) compiles BASE on the
+	/// band-less copy of the plan (BASE renders on the figure canvas, where there is no band to keep clear) and
+	/// TITLE_BAND on the figure-less copy ({@link RenderPlan#forReservedBand}: setting, style and the negative-space
+	/// clause, no actors) - compiled as the family's BASE prompt, because both family compilers answer any other
+	/// stage with the cached BASE prompt, and stored under its own key.
 	private static RenderPlan finish(Scaffold s) {
 		RenderPlan plan = s.builder.build();
 		List<RenderPlan.Degradation> out = new ArrayList<>();
@@ -487,6 +490,7 @@ public final class PbRenderPlanUtil {
 		out = new ArrayList<>();
 		Map<String, CompiledPrompt> compiled = new LinkedHashMap<>();
 		InpaintRegionCompiler region = new InpaintRegionCompiler();
+		boolean banded = strategy.getStages().contains(RenderPlan.STAGE_TITLE_BAND);
 		for(String stage : strategy.getStages()) {
 			if(RenderPlan.STAGE_ACTOR_REGION.equals(stage)) {
 				for(RenderPlan.Actor a : plan.getActors()) {
@@ -496,7 +500,17 @@ public final class PbRenderPlanUtil {
 				}
 				continue;
 			}
-			compiled.put(stage, PromptCompilers.forPick(plan.pickForStage(stage)).compile(plan, stage, out));
+			if(RenderPlan.STAGE_TITLE_BAND.equals(stage)) {
+				List<RenderPlan.Degradation> bandOut = new ArrayList<>();
+				RenderPlan band = plan.forReservedBand();
+				compiled.put(stage, PromptCompilers.forPick(band.pickForStage(RenderPlan.STAGE_BASE)).compile(band, RenderPlan.STAGE_BASE, bandOut));
+				for(RenderPlan.Degradation d : bandOut) {
+					out.add(new RenderPlan.Degradation(d.getCode(), d.getMessage(), d.getActorId(), stage));
+				}
+				continue;
+			}
+			RenderPlan source = (banded && RenderPlan.STAGE_BASE.equals(stage) ? plan.withReserved(null) : plan);
+			compiled.put(stage, PromptCompilers.forPick(plan.pickForStage(stage)).compile(source, stage, out));
 		}
 		return plan.withCompiled(compiled, out);
 	}
@@ -908,7 +922,8 @@ public final class PbRenderPlanUtil {
 						}
 						outfit = new RenderPlan.Outfit(strField(ro.apparel, FieldNames.FIELD_OBJECT_ID), outfitText, null);
 					}
-					String identityText = (NarrativeUtil.isMeaningful(outfitText) ? physicalDescription(cp) : actorDescription(cp));
+					String bookOid = strField(book, FieldNames.FIELD_OBJECT_ID);
+					String identityText = (NarrativeUtil.isMeaningful(outfitText) ? physicalDescription(cp, bookOid) : actorDescription(cp, bookOid));
 					String portraitOid = null;
 					boolean portraitReadable = false;
 					if(!textOnly) {
@@ -1057,8 +1072,9 @@ public final class PbRenderPlanUtil {
 		return null;
 	}
 
-	/// The narrative's physical description alone (the outfit is spoken by the plan's Outfit), else actorDescription.
-	private static String physicalDescription(BaseRecord cp) {
+	/// The narrative's physical description alone (the outfit is spoken by the plan's Outfit), else actorDescription
+	/// for the given book (null = the unscoped row).
+	private static String physicalDescription(BaseRecord cp, String bookObjectId) {
 		BaseRecord narrative = (cp.hasField(OlioFieldNames.FIELD_NARRATIVE) ? cp.get(OlioFieldNames.FIELD_NARRATIVE) : null);
 		if(narrative != null) {
 			try {
@@ -1070,7 +1086,7 @@ public final class PbRenderPlanUtil {
 			String v = strField(narrative, "physicalDescription");
 			if(NarrativeUtil.isMeaningful(v)) return v.trim();
 		}
-		return actorDescription(cp);
+		return actorDescription(cp, bookObjectId);
 	}
 
 	/// The row's box when it has any extent, else null (an unset box reads back as four zeros); clipped out of
@@ -1119,9 +1135,18 @@ public final class PbRenderPlanUtil {
 
 	/// pbDescription attribute first, then the narrative's physical (+ outfit) description. The
 	/// narrative's own sdPrompt is deliberately NOT used: it is a portrait prompt, not a scene actor line.
+	/// Reads the unscoped pbDescription row only; callers that know the book use the two-arg form.
 	static String actorDescription(BaseRecord cp) {
+		return actorDescription(cp, null);
+	}
+
+	/// As {@link #actorDescription(BaseRecord)}, preferring the book-scoped pbDescription row
+	/// ({@code pbDescription:<bookObjectId>}) a series chapter wrote for this book over the shared
+	/// unscoped row (UAT-1 / KI-92: one charPerson is shared by every chapter of a series, and the
+	/// unscoped row is whichever chapter seeded it first). Null bookObjectId reads the unscoped row.
+	static String actorDescription(BaseRecord cp, String bookObjectId) {
 		try {
-			String d = AttributeUtil.getAttributeValue(cp, PictureBookUtil.ATTR_DESCRIPTION, (String) null);
+			String d = PictureBookUtil.readBookScopedAttribute(cp, PictureBookUtil.ATTR_DESCRIPTION, bookObjectId);
 			if(NarrativeUtil.isMeaningful(d)) return d.trim();
 		}
 		catch(Exception e) {

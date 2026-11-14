@@ -472,18 +472,24 @@ public class TestPictureBookRestContract extends BaseTest {
 	}
 
 	/**
-	 * The async render routes take no body and must not: the SD backend comes from the servlet context
-	 * (boot-pinned {@code sd.*} init-params), never from the caller, so a client cannot point a render at a
-	 * server of its choosing. Pinned here because the PB1 {@code /generate} that sat beside them until Phase 10
-	 * DID read a nested {@code sdConfig} override, and a copy-paste from history would carry that parameter across.
+	 * The async render routes cannot be pointed at an SD server or handed a config by the caller: the SD backend
+	 * comes from the servlet context (boot-pinned {@code sd.*} init-params, the {@code @Context ServletContext}
+	 * every rendering route must declare), never from the request. Pinned here because the PB1 {@code /generate}
+	 * that sat beside them until Phase 10 DID read a nested {@code sdConfig} override, and a copy-paste from
+	 * history would carry that parameter across.
 	 * <p>
-	 * The one admitted extra is a primitive-boolean {@code @QueryParam} ({@code renderScene}'s
-	 * {@code ?force=true}): a flag cannot name a server or carry a config. A String/record query parameter
-	 * is refused for the same reason a body is.
+	 * Admitted extras: a primitive-boolean {@code @QueryParam} ({@code renderScene}'s {@code ?force=true} - a flag
+	 * cannot name a server or carry a config), and - since §24 I-2 (§6.C 293, 2026-11-13) - ONE optional String
+	 * body on the two submitting routes ({@code renderScene}, {@code renderAll}) carrying {@code {chatConfigName}},
+	 * resolved as the caller after the gates ({@code TestPictureBookRenderChatConfigRoutes} pins what it may
+	 * name: a chat config the caller can read, never a server). A String/record query parameter is still refused,
+	 * a second body is, and {@code cancelRun} / {@code resumeRun} / {@code readRun} take no body at all.
 	 */
 	@Test
-	public void TestAsyncRenderRoutesTakeNoBody() {
+	public void TestAsyncRenderRoutesTakeNoCallerSuppliedSdConfig() {
 		boolean sawForce = false;
+		List<String> withBody = Arrays.asList("renderScene", "renderAll");
+		List<String> withSdContext = Arrays.asList("renderScene", "renderAll", "resumeRun");
 		for(String name : new String[] { "renderScene", "renderAll", "cancelRun", "resumeRun", "readRun" }) {
 			Method found = null;
 			for(Method m : PictureBookService.class.getDeclaredMethods()) {
@@ -493,20 +499,34 @@ public class TestPictureBookRestContract extends BaseTest {
 				}
 			}
 			assertNotNull(name + " must exist", found);
+			int bodies = 0;
+			boolean servletContext = false;
 			for(java.lang.reflect.Parameter p : found.getParameters()) {
 				jakarta.ws.rs.QueryParam qp = p.getAnnotation(jakarta.ws.rs.QueryParam.class);
 				boolean booleanFlag = qp != null && p.getType() == boolean.class;
+				assertFalse(name + " must not read a non-boolean @QueryParam (got '" + p.getName() + "' of "
+					+ p.getType().getSimpleName() + "): a String query parameter would let the caller supply the SD server or config",
+					qp != null && !booleanFlag);
 				if(booleanFlag && "force".equals(qp.value()) && "renderScene".equals(name)) {
 					sawForce = true;
+				}
+				if(p.getAnnotation(jakarta.ws.rs.core.Context.class) != null && p.getType() == jakarta.servlet.ServletContext.class) {
+					servletContext = true;
 				}
 				boolean injected = p.getAnnotation(jakarta.ws.rs.PathParam.class) != null
 					|| p.getAnnotation(jakarta.ws.rs.core.Context.class) != null
 					|| booleanFlag;
-				assertTrue(name + " must take only @PathParam/@Context parameters (or a primitive-boolean @QueryParam flag)"
-					+ " - a body or a String query parameter would let the caller supply the SD server or config (got '"
-					+ p.getName() + "' of " + p.getType().getSimpleName() + ")",
-					injected);
+				if(injected) {
+					continue;
+				}
+				bodies++;
+				assertTrue(name + " may take only the I-2 {chatConfigName} String body (got '" + p.getName() + "' of "
+					+ p.getType().getSimpleName() + ")", withBody.contains(name) && p.getType() == String.class);
 			}
+			assertTrue(name + " takes " + (withBody.contains(name) ? "at most one body" : "no body") + " (got " + bodies + ")",
+				bodies <= (withBody.contains(name) ? 1 : 0));
+			assertEquals(name + " must " + (withSdContext.contains(name) ? "" : "not ") + "declare the @Context ServletContext the SD server resolves from",
+				withSdContext.contains(name), servletContext);
 		}
 		assertTrue("renderScene must declare the @QueryParam(\"force\") boolean flag (explicit per-scene re-render)", sawForce);
 	}
@@ -890,11 +910,13 @@ public class TestPictureBookRestContract extends BaseTest {
 	/**
 	 * The plan executor (V3 §12, §16, §20; P2-5): {@code POST /{book}/scene/{scene}/render-plan} exists under
 	 * that name, produces JSON, carries {@code @RolesAllowed} with both roles, and takes exactly the two path
-	 * ids and the two injected contexts - no body (the scene's persisted text is the input) and never a query
-	 * parameter, so the SD server and the API type can only come from the deployment.
+	 * ids, the two injected contexts and - since §24 I-2 (§6.C 293, 2026-11-13) - ONE optional String body
+	 * carrying {@code {chatConfigName}} (the scene's persisted text is still the input; the body may name a chat
+	 * config the caller can read, nothing else). Never a query parameter, so the SD server and the API type can
+	 * only come from the deployment.
 	 */
 	@Test
-	public void TestRenderPlanRouteIsPostJsonWithRolesAllowedAndNoBody() {
+	public void TestRenderPlanRouteIsPostJsonWithRolesAllowedAndOneOptionalBody() {
 		Method m = null;
 		for(Method c : PictureBookService.class.getDeclaredMethods()) {
 			if(c.getName().equals("renderPlanScene")) {
@@ -916,6 +938,7 @@ public class TestPictureBookRestContract extends BaseTest {
 
 		int pathParams = 0;
 		int contexts = 0;
+		int bodies = 0;
 		for(java.lang.reflect.Parameter p : m.getParameters()) {
 			assertNull("renderPlanScene must not read a @QueryParam (got '" + p.getName() + "'): the SD server and API type"
 				+ " come from the deployment, never the caller", p.getAnnotation(jakarta.ws.rs.QueryParam.class));
@@ -926,10 +949,13 @@ public class TestPictureBookRestContract extends BaseTest {
 				contexts++;
 			}
 			else {
-				fail("renderPlanScene takes no body: unexpected parameter '" + p.getName() + "' of " + p.getType());
+				assertEquals("renderPlanScene's only un-annotated parameter is the I-2 {chatConfigName} String body (got '"
+					+ p.getName() + "')", String.class, p.getType());
+				bodies++;
 			}
 		}
 		assertEquals("bookObjectId + sceneObjectId", 2, pathParams);
 		assertEquals("HttpServletRequest + ServletContext", 2, contexts);
+		assertEquals("one optional {chatConfigName} body (I-2)", 1, bodies);
 	}
 }

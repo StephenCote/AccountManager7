@@ -18,6 +18,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.illustration.BandCanvas;
 import org.cote.accountmanager.olio.illustration.ComfyGraph;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
 import org.cote.accountmanager.olio.illustration.ConfigNotApplied;
@@ -1418,8 +1419,10 @@ public class PbNodeExecutor {
 	 * a planned stage not rendered) and vetoes auto-approve (§10 rule 5), whereas these are v1 knobs the
 	 * plan path governs by preset and style instead; every deployment-default {@code sd.config} carries
 	 * {@code hires} and a {@code style}, so counting them would leave auto-approve unreachable on the plan
-	 * path. A planned UPSCALE stage is a degradation: reported, not rendered (Phase 2 renders BASE only,
-	 * one image regardless of the preset's variants).
+	 * path. A planned UPSCALE stage is a degradation: reported as
+	 * {@link RenderPlan.Degradation#UPSCALE_NOT_RENDERED}, not rendered (Phase 2 renders BASE only, one image
+	 * regardless of the preset's variants). It is an accepted code: every planned final still rendered, so it
+	 * does not veto auto-approve (224 e).
 	 *
 	 * @param noTextMessage the 409 message when the compiled BASE prompt is blank; the plan artifact id is appended
 	 */
@@ -1570,7 +1573,7 @@ public class PbNodeExecutor {
 		}
 		List<String> stagesPlanned = plan.getStrategy().getStages();
 		if(stagesPlanned.contains(RenderPlan.STAGE_UPSCALE)) {
-			degradations.add("upscale: UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)");
+			degradations.add(RenderPlan.Degradation.UPSCALE_NOT_RENDERED + ": UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)");
 		}
 		Map<String, Object> cfg = plan.getConfig();
 		List<String> configNotApplied = new ArrayList<>();
@@ -1594,13 +1597,18 @@ public class PbNodeExecutor {
 
 		Object cfgVal = cfg.get("cfg");
 		double cfgScale = (cfgVal instanceof Number ? ((Number) cfgVal).doubleValue() : 7.0);
+		/// §24 I-4 (236 i): a plan that reserves a title band renders its figure stages (BASE and the ACTOR_REGION
+		/// passes) on the figure canvas - the canvas less the band's rows (BandCanvas) - so no figure can occupy
+		/// the band whatever the prompt said; renderStages' TITLE_BAND pass then paints the band on the full canvas.
+		RenderPlan.Box band = titleBand(plan);
+		int requestHeight = (band != null ? BandCanvas.figureHeight(plan.getCanvas().getHeight(), band) : plan.getCanvas().getHeight());
 		StageRequest req = StageRequest.builder()
 			.plan(plan)
 			.stage(RenderPlan.STAGE_BASE)
 			.prompt(compiled)
 			.model(pick.getModel())
 			.width(plan.getCanvas().getWidth())
-			.height(plan.getCanvas().getHeight())
+			.height(requestHeight)
 			.steps(plan.getPreset().getSteps())
 			.cfg(cfgScale)
 			.sampler((String) cfg.get("sampler"))
@@ -1851,6 +1859,9 @@ public class PbNodeExecutor {
 		WorkflowCompiler compiler = new WorkflowCompiler();
 		boolean allCalibrated = true;
 		int graphStages = 0;
+		/// the reserved title band when the strategy plans its pass (§24 I-4): BASE and the ACTOR_REGION passes
+		/// then render on the figure canvas the request carries, and every box they mask is remapped onto it
+		RenderPlan.Box band = titleBand(plan);
 
 		/// ─── BASE ───
 		List<RenderPlan.Actor> baseActors = new ArrayList<>();
@@ -1981,7 +1992,8 @@ public class PbNodeExecutor {
 				List<String> passRefIds = (png != null ? List.of(oid) : List.of());
 				WorkflowCompiler.CompiledGraph cg;
 				try {
-					WorkflowCompiler.ActorTarget target = new WorkflowCompiler.ActorTarget(a, lastGood.bytes, List.of(a.getBox()));
+					WorkflowCompiler.ActorTarget target = new WorkflowCompiler.ActorTarget(a, lastGood.bytes,
+						List.of(band != null ? a.getBox().inFigureCanvas(band) : a.getBox()));
 					/// the pass has its own pick (INPAINT, or BASE's as a fallback): built from the shared request's config
 					/// knobs, not from baseReq, so its family mapping follows that pick and not BASE's
 					StageRequest reqA = req.toBuilder().stage(RenderPlan.STAGE_ACTOR_REGION).prompt(cp).model(regionPick.getModel()).build();
@@ -2019,8 +2031,128 @@ public class PbNodeExecutor {
 				}
 			}
 		}
+
+		/// ─── TITLE_BAND pass (§24 I-4 / 236 i) ───
+		/// The figure stages rendered on the figure canvas; the band is painted now, on the full canvas, as a
+		/// masked init-image pass over the last good image padded back to canvas size (BandCanvas.pad): the
+		/// band's rows are the mask, the prompt is the plan's location-only TITLE_BAND compile (the reserved
+		/// clause included, no actors), creativity 1.0 so the band is painted from the latent's first step, no
+		/// references. The pass rides the BASE pick's family. When the family cannot paint a mask, or the pass
+		/// fails, the padded image (band filled flat) is delivered under a TITLE_BAND_FAILED degradation - the
+		/// node is not failed and auto-approve is vetoed (PbArtifactUtil.AUTO_APPROVE_VETO_CODES).
+		if(band != null) {
+			int fullW = plan.getCanvas().getWidth();
+			int fullH = plan.getCanvas().getHeight();
+			StageOutput lastGood = seq.outputs.get(seq.outputs.size() - 1);
+			byte[] padded = BandCanvas.pad(lastGood.bytes, fullW, fullH, band);
+			RenderPlan.Box maskBox = BandCanvas.bandBox(fullW, fullH, band);
+			CompiledPrompt bp = plan.getCompiled().get(RenderPlan.STAGE_TITLE_BAND);
+			RendererCapabilities.InpaintParams inpaint = (baseCaps != null ? baseCaps.getInpaint() : null);
+			String invalid = null;
+			if(padded == null || maskBox == null) {
+				invalid = "the figure image could not be padded to the " + fullW + "x" + fullH + " canvas";
+			}
+			else if(baseCaps == null) {
+				invalid = "renderer family of " + basePick.getModel() + " unknown";
+			}
+			else if(!baseCaps.isSupportsMasks() || !baseCaps.isSupportsInitImage() || inpaint == null) {
+				invalid = "renderer family " + baseCaps.getPattern() + " cannot paint a masked band";
+			}
+			else if(bp == null || bp.getPrompt() == null || bp.getPrompt().isBlank()) {
+				invalid = "no prompt compiled for " + RenderPlan.STAGE_TITLE_BAND;
+			}
+			if(invalid != null) {
+				bandFailed(seq, lastGood, padded, RendererAdapter.ERROR_GRAPH_INVALID + ": " + invalid, null);
+			}
+			else {
+				try {
+					WorkflowCompiler.ActorTarget target = new WorkflowCompiler.ActorTarget(null, padded, List.of(maskBox));
+					/// The family's inpaint steps at creativity 1.0 (the band is painted, not a refinement of the padded fill:
+					/// at the family's 0.6 the fill's structure survives as streaks and the tone shifts just the same,
+					/// TestPbCoverRenderLive run 77); the band's rows are exact so the mask is not grown, and it is feathered
+					/// one grain (BandCanvas.FEATHER). The tone step the pass leaves at the seam is aligned afterwards
+					/// (BandCanvas.matchSeam).
+					RendererCapabilities.InpaintParams bandParams = new RendererCapabilities.InpaintParams(
+						inpaint.getSteps(), 1.0, 0, BandCanvas.FEATHER);
+					StageRequest reqB = req.toBuilder().stage(RenderPlan.STAGE_TITLE_BAND).prompt(bp).model(basePick.getModel())
+						.width(fullW).height(fullH).build();
+					reqB = FamilyRequest.apply(reqB, baseCaps, plan.getConfig(), seq.configNotApplied);
+					WorkflowCompiler.CompiledGraph cg = compiler.compile(reqB, List.of(), target, bandParams, client);
+					reqB = reqB.toBuilder().graph(cg.getGraph()).inputs(cg.getInputs()).seed((int) cg.getSeed()).steps(cg.getSteps()).build();
+					StageResult res = adapter.execute(reqB, g::isCancelRequested);
+					if(!res.isOk()) {
+						String error = (res.getError() != null ? res.getError() : RendererAdapter.ERROR_NO_IMAGES);
+						if(RendererAdapter.ERROR_CANCELLED.equals(error) || g.isCancelRequested()) {
+							throw new PbStageCancelledException("Cancelled render of " + sceneLabel + " during " + RenderPlan.STAGE_TITLE_BAND + "; nothing recorded");
+						}
+						bandFailed(seq, lastGood, padded, error, res.getErrorDetail());
+					}
+					else if(g.isCancelRequested()) {
+						throw new PbStageCancelledException("Cancelled render of " + sceneLabel + " after " + RenderPlan.STAGE_TITLE_BAND + " answered; images discarded");
+					}
+					else {
+						StageImage img = res.getImages().get(0);
+						if(img.getBytes() == null || img.getBytes().length == 0) {
+							bandFailed(seq, lastGood, padded, RendererAdapter.ERROR_NO_IMAGES, null);
+						}
+						else {
+							Long seed = (img.isSeedReported() ? Long.valueOf(img.getSeed()) : Long.valueOf(cg.getSeed()));
+							/// The painted band's level aligned to the figure's at the seam; a matcher failure delivers the
+							/// pass's own bytes (the seam is cosmetic, the band is still enforced).
+							byte[] delivered = img.getBytes();
+							try {
+								BandCanvas.SeamMatch sm = BandCanvas.matchSeam(delivered, fullW, fullH, band);
+								delivered = sm.getBytes();
+								logger.info(RenderPlan.STAGE_TITLE_BAND + " of " + sceneLabel + ": " + sm);
+							}
+							catch(RuntimeException e) {
+								logger.warn(RenderPlan.STAGE_TITLE_BAND + " of " + sceneLabel + ": seam not matched: " + e.getMessage());
+							}
+							seq.outputs.add(new StageOutput(RenderPlan.STAGE_TITLE_BAND, delivered, seed, res.getRequestJson(), res.getDurationMs(),
+								res.getBackendGraph(), cg.getGraph(), List.of(), true));
+							seq.graphPath = true;
+							graphStages++;
+							allCalibrated &= PbCalibrationUtil.recordSample(user, sdu.getServer(), basePick.getFamily(), RenderPlan.STAGE_TITLE_BAND,
+								cg.getGraph().graphHash(), res.getDurationMs(), cg.getSteps() - cg.getStartAtStep(), fullW, fullH,
+								0, swarmVersion(seq, client));
+						}
+					}
+				}
+				catch(GraphCompileException | IllegalArgumentException e) {
+					bandFailed(seq, lastGood, padded, RendererAdapter.ERROR_GRAPH_INVALID + ": " + e.getMessage(), null);
+				}
+			}
+		}
 		seq.calibrationPersisted = (graphStages > 0 && allCalibrated);
 		return seq;
+	}
+
+	/// The reserved title band of a plan whose strategy planned the TITLE_BAND pass; null otherwise (no band
+	/// reserved, or a plan compiled before the pass existed, whose figure stages render on the full canvas).
+	static RenderPlan.Box titleBand(RenderPlan plan) {
+		if(plan == null || plan.getReserved() == null || plan.getReserved().getH() <= 0.0 || plan.getStrategy() == null
+				|| plan.getStrategy().getStages() == null || !plan.getStrategy().getStages().contains(RenderPlan.STAGE_TITLE_BAND)) {
+			return null;
+		}
+		return plan.getReserved();
+	}
+
+	/// A failed TITLE_BAND pass (§24 I-4): a TITLE_BAND_FAILED degradation and a stage error, and the padded image
+	/// - the figure image with the band filled flat - is appended as the pass's output so what is delivered is
+	/// still the full canvas (null when the padding itself failed: the figure-canvas image stands, and the
+	/// degradation says so). The sequence is marked as a graph path so the figure image it painted over is
+	/// still persisted as the `stage` artifact the final references. Never fails the node.
+	private static void bandFailed(StageSequence seq, StageOutput lastGood, byte[] padded, String error, String detail) {
+		String coded = codedError(error);
+		seq.stageErrors.add(stageError(RenderPlan.STAGE_TITLE_BAND, RendererAdapter.errorCode(error), coded, detail));
+		seq.added.add(new RenderPlan.Degradation(RenderPlan.Degradation.TITLE_BAND_FAILED,
+			"TITLE_BAND pass failed: " + coded + (padded != null ? "; the band is delivered unpainted" : "; the image is delivered without the band"),
+			null, RenderPlan.STAGE_TITLE_BAND));
+		if(padded != null) {
+			seq.outputs.add(new StageOutput(RenderPlan.STAGE_TITLE_BAND, padded, lastGood.seed, null, 0L, null, null, List.of(), true));
+			seq.graphPath = true;
+		}
+		logger.warn("{}: {}", RenderPlan.STAGE_TITLE_BAND, coded);
 	}
 
 	/// The renderer version for the sequence, asked of the graph client the first time a graph stage needs
@@ -2431,7 +2563,10 @@ public class PbNodeExecutor {
 		String slug = book.get(OlioFieldNames.FIELD_PB_SLUG);
 		String bookGroupPath = PbBookUtil.bookGroupPath(slug);
 
-		ResolvedCharacter rc = PictureBookUtil.resolveSceneCharacter(user, scopeRef, bookGroupPath, slug);
+		/// The book's own pbDescription row (pbDescription:<bookObjectId>) wins over the shared unscoped row
+		/// for a series character that several chapters extracted (UAT-1 / KI-92).
+		String bookOid = book.get(FieldNames.FIELD_OBJECT_ID);
+		ResolvedCharacter rc = PictureBookUtil.resolveSceneCharacter(user, scopeRef, bookGroupPath, slug, bookOid);
 		if(rc == null) {
 			throw new PictureBookException(404, "Character " + scopeRef + " not found or not readable");
 		}

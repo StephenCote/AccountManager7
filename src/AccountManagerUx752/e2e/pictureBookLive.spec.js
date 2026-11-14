@@ -7,17 +7,39 @@
  * Screenshots saved to e2e/screenshots/ as proof.
  *
  * Env gates (the default multi-worker suite must never fire LLM/SD work in parallel):
- *   PB_LLM_TESTS=1  — beforeAll runs the real LLM extraction (DGX at 192.168.1.42, --workers=1) and the
- *                     scene-dependent phases (D–I, H.1) get data. Without it the extraction is NOT run and
- *                     every scene-dependent test skips with NO_SCENES_REASON. B.1/B.2 (extract from the page)
- *                     are gated the same way. (B.4/B.5/E.3 — the PB1 scene render and what it produced —
- *                     went with POST /scene/{id}/generate at Phase 10 P10-1.)
+ *   PB_LLM_TESTS=1  — beforeAll runs the real LLM extraction + import on the V3 path the wizard uses
+ *                     (POST /chapter → extract-scenes-only?async=true → create-from-scenes bound to the
+ *                     PB2 book; --workers=1) and the scene-dependent phases (D–I, H.1) get data. The
+ *                     chatConfig comes from ensureChatConfig()/resolveChatRoute() ("[e2e-llm] route=…"),
+ *                     never a hard-coded server. Without the flag the extraction is NOT run and every
+ *                     scene-dependent test skips with NO_SCENES_REASON. B.1 (extract from the page) is
+ *                     gated the same way. (B.4/B.5/E.3 — the PB1 scene render and what it produced — went
+ *                     with POST /scene/{id}/generate at Phase 10 P10-1; B.2 — the bookless all-in-one
+ *                     POST /{work}/extract — went with I-1 / KI-89 (b), 2026-11-13.)
  * The selector/picker/wizard/reimage-dialog tests (C.*, L.*) make no LLM or SD call and always run.
+ *
+ * bookObjectId is still the book GROUP objectId (~/Data/PictureBooks/<slug>) — what /scenes, /reset and
+ * the #!/picture-book/{id} route take; pb2BookObjectId is the olio.pb.book the import is bound to. Since
+ * every import now carries a PB2 record, the viewer route replace-redirects to
+ * #!/picture-book/v2/{pb2BookObjectId} (loadViewer → resolvePb2BookObjectId, P7-3), so phases D–J exercise
+ * the hand-rolled V3 reader (features/pictureBook.js pb2PageReaderView), NOT components/readerShell.js:
+ *   root [data-testid="pb2-reader"][data-fullscreen="0|1"]; header [data-pb2-book-name] + 'Cover' /
+ *   'Page N of M', [data-testid="pb2-export"] + [data-testid="pb2-fullscreen"] (UAT-2, through the shared
+ *   exportBook engine); cover h1 = the book's NAME ("Book <slug>" — PbBookUtil.bookName; the human title
+ *   lives in description), [data-pb2-cover-count] "N rendered of M scenes", a rounded-full Begin button;
+ *   scene page h2 = scene.title, p.italic = poemStanza|blurb|summary, [data-testid="pb2-scene-image"] or
+ *   an 'image' placeholder, Compose / Render / Plan & generate controls, footer 'Page N of M'; page dots
+ *   button.w-2.5.rounded-full titled 'Cover' / 'Page N'. A fresh book has ONE front page (the cover), so
+ *   the dot count is scenes + 1 (the old `button.rounded-full` selector also caught Begin — "5 dots").
+ * Only an id with no V3 record (I.4, J.1, J.5, J.6) stays on the PB1 viewer, which is a ReaderShell.
+ * Every wait below is a condition on the reader's own DOM (Begin visible = /pages answered), never a
+ * fixed sleep: a key press that lands mid-load leaves the header on 'Page 1 of N' with the body still
+ * 'Loading scenes...' (the D.3 / E.1 cold-worker reds of run 60).
  */
 import { test as base, expect } from '@playwright/test';
 import { login } from './helpers/auth.js';
 import {
-    setupWorkflowTestData, apiLogin, apiLogout,
+    setupWorkflowTestData, apiLogin, apiLogout, ensureChatConfig,
     ensurePath, createNote, createObject
 } from './helpers/api.js';
 import fs from 'fs';
@@ -35,6 +57,24 @@ function saveScreenshot(pg, name) {
     return pg.screenshot({ path: path.join(SCREENSHOT_DIR, 'pb-' + name + '.png'), fullPage: true });
 }
 
+// Open the imported book in the V3 reader and wait for its COVER page: the PB1 route bridges to
+// /picture-book/v2/{pb2}, the reader mounts with 'Loading scenes...' and renders the cover (Begin) once
+// /pages and /scenes have answered. The timeouts are budgets for a small device, never pass/fail thresholds.
+const DOT_SELECTOR = 'button.w-2\\.5.rounded-full';
+async function openReaderAtCover(page) {
+    await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
+    await expect(page.locator('[data-testid="pb2-reader"]'), 'the V3 reader mounts for the imported book').toBeVisible({ timeout: 30000 });
+    await expect(page.locator('[data-pb2-cover-count]'), 'the cover page rendered (pages loaded)').toBeVisible({ timeout: 60000 });
+    await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible();
+}
+
+// The scene page the reader shows for 1-based scene number n, pinned to the imported scene.
+async function expectScenePage(page, n) {
+    await expect(page.locator('h2'), 'scene ' + n + ' title').toHaveText(extractedScenes[n - 1].title, { timeout: 10000 });
+    await expect(page.locator('[data-testid="pb2-reader"]')).toContainText('Page ' + n + ' of ' + extractedScenes.length);
+    await expect(page.locator('button', { hasText: 'Begin' })).toHaveCount(0);
+}
+
 const PB_LLM = !!process.env.PB_LLM_TESTS;
 const NO_SCENES_REASON = PB_LLM
     ? 'No scenes from extraction'
@@ -44,12 +84,14 @@ const NO_SCENES_REASON = PB_LLM
 let testInfo = {};
 let workObjectId = null;     // Source document objectId (for extract API)
 let bookObjectId = null;     // Book group objectId (for scenes/viewer/reset APIs)
+let pb2BookObjectId = null;  // olio.pb.book objectId the V3 import is bound to (I-1 / KI-89 b)
 let chatConfigName = null;
 let extractedScenes = [];  // populated by Phase B
 let pickNoteName = null;     // a second AIME note in ~/Notes, never extracted — what "Browse Notes" must list (C.2/C.3)
 let pickNoteObjectId = null;
 let apparelObj = null;       // olio.apparel owned by the test user (L.1); createObject returns identity only
 let apparelName = null;
+let exportedHtmlPath = null; // the HTML file I.2 downloaded in this worker; what I.3 validates
 
 const AIME_TEXT = `AIME
 
@@ -120,87 +162,92 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             console.log('=== Setup: apparel ' + (apparelObj && apparelObj.objectId ? apparelObj.objectId : 'FAILED') + ' ===');
         }
 
-        // Create chatConfig as test user (must be owned by requesting user for PBAC).
-        // olio.llm.chatConfig.serverUrl doesn't exist — URL goes on a system.connection FK.
-        {
-            let connName = 'PB-conn-' + ts;
-            let chatDir = await ensurePath(request, 'auth.group', 'data', '~/Chat');
-            if (chatDir && chatDir.id) {
-                let conn = await createObject(request, 'system.connection', {
-                    name: connName,
-                    groupId: chatDir.id,
-                    groupPath: chatDir.path,
-                    serverUrl: 'http://192.168.1.42:11434',
-                    requestTimeout: 300
-                });
-                if (conn && conn.id) {
-                    let cfgName = 'PB-cfg-' + ts;
-                    let cfg = await createObject(request, 'olio.llm.chatConfig', {
-                        name: cfgName,
-                        groupId: chatDir.id,
-                        groupPath: chatDir.path,
-                        serviceType: 'ollama',
-                        model: 'qwen3-vl:8b-instruct',
-                        analyzeModel: 'qwen3-vl:8b-instruct',
-                        connection: { schema: 'system.connection', id: conn.id, objectId: conn.objectId }
-                    });
-                    if (cfg && cfg.objectId) {
-                        chatConfigName = cfgName;
-                        console.log('=== Setup: chatConfig created: ' + cfgName + ' ===');
-                    } else {
-                        console.log('=== Setup: FAILED to create chatConfig ===');
-                    }
-                } else {
-                    console.log('=== Setup: FAILED to create system.connection ===');
-                }
-            }
-        }
-
-        // Run full extraction in beforeAll so all tests have scene data — only when PB_LLM_TESTS is set
-        // (real LLM call against the DGX; must be serial).
+        // chatConfig owned by the test user (PBAC), on whichever LLM tier resolveChatRoute() finds —
+        // the helper opens its own session as this user and prints "[e2e-llm] route=…". Never a
+        // hard-coded server/model: the model names belong to the resolved route (LiteLLM aliases when
+        // routed, real Ollama names otherwise).
         await apiLogout(request);
+        chatConfigName = await ensureChatConfig(request, null, {
+            user: testInfo.testUserName, password: testInfo.testPassword,
+            configName: 'PB-cfg-' + ts, connectionName: 'PB-conn-' + ts
+        });
+        console.log('=== Setup: chatConfig ' + (chatConfigName || 'FAILED') + ' ===');
+
+        // Run the extraction + import in beforeAll so all tests have scene data — only when PB_LLM_TESTS
+        // is set (real LLM call; must be serial). This is the V3 path the wizard (sceneExtractor.js)
+        // drives: the import must be bound to an olio.pb.book (I-1 / KI-89 b).
         if (!PB_LLM) {
             console.log('=== Setup: PB_LLM_TESTS not set — skipping LLM extraction; scene-dependent tests will skip ===');
         } else if (workObjectId && chatConfigName) {
             await apiLogin(request, { user: testInfo.testUserName, password: testInfo.testPassword });
-
-            // Reset any previous extraction (bookObjectId not yet known — reset by workObjectId if legacy)
-            if (bookObjectId) {
-                await request.fetch(REST + '/olio/picture-book/' + bookObjectId + '/reset', {
-                    method: 'DELETE'
-                }).catch(() => {});
-            }
-
-            // Full extract — creates ~/PictureBooks/{bookName}/ and returns bookObjectId
-            let extractResp = await request.post(REST + '/olio/picture-book/' + workObjectId + '/extract', {
-                data: {
-                    schema: 'olio.pictureBookRequest',
-                    count: 3,
-                    genre: 'contemporary',
-                    chatConfig: chatConfigName,
-                    bookName: 'AIME Test Book'
+            try {
+                let slug = 'aime-live-' + ts;
+                let bookName = 'AIME Test Book ' + ts;
+                let chapResp = await request.post(REST + '/olio/picture-book/chapter', { data: { slug, title: bookName }, timeout: 180000 });
+                let chap = null;
+                try { chap = await chapResp.json(); } catch (e) { chap = null; }
+                if (chapResp.status() !== 200 || !chap || !chap.bookObjectId) {
+                    throw new Error('beforeAll: POST /chapter failed: ' + chapResp.status() + ' ' + JSON.stringify(chap).substring(0, 300));
                 }
-            });
-            let extractBody;
-            try { extractBody = await extractResp.json(); } catch (e) { extractBody = null; }
-            if (extractBody && extractBody.bookObjectId) {
-                bookObjectId = extractBody.bookObjectId;
-                console.log('=== Setup: Book group created: bookObjectId=' + bookObjectId + ' ===');
-            }
-            if (extractBody && extractBody.scenes && extractBody.scenes.length > 0) {
-                extractedScenes = extractBody.scenes;
-                console.log('=== Setup: Extracted ' + extractedScenes.length + ' scenes ===');
-                extractedScenes.forEach((s, i) => {
-                    console.log('  ' + i + ': "' + (s.title || '') + '" oid=' + s.objectId);
-                });
-            } else {
-                console.log('=== Setup: Extraction returned no scenes ===');
-                if (extractBody) console.log('  Body: ' + JSON.stringify(extractBody).substring(0, 300));
-            }
+                pb2BookObjectId = chap.bookObjectId;
+                console.log('=== Setup: PB2 book created: pb2BookObjectId=' + pb2BookObjectId + ' slug=' + slug + ' ===');
 
-            await apiLogout(request);
-        } else {
-            await apiLogout(request);
+                let startResp = await request.post(REST + '/olio/picture-book/' + workObjectId + '/extract-scenes-only?async=true', {
+                    data: { schema: 'olio.pictureBookRequest', count: 3, genre: 'contemporary', chatConfig: chatConfigName },
+                    timeout: 60000
+                });
+                let started = null;
+                try { started = await startResp.json(); } catch (e) { started = null; }
+                if (startResp.status() !== 202 || !started || !started.jobId) {
+                    throw new Error('beforeAll: extract-scenes-only?async=true failed: ' + startResp.status() + ' ' + JSON.stringify(started).substring(0, 300));
+                }
+                // Poll to terminal (a budget for a small device, never a pass/fail timing threshold).
+                let job = null;
+                let t0 = Date.now();
+                let lastLine = '';
+                for (;;) {
+                    let jr = await request.get(REST + '/job/' + started.jobId, { timeout: 60000 });
+                    job = await jr.json();
+                    let line = job.status + ' phase=' + job.phase + ' ' + job.current + '/' + job.total + ' elapsed=' + job.elapsed + 's';
+                    if (line !== lastLine) { console.log('=== Setup: extract job ' + started.jobId + ': ' + line); lastLine = line; }
+                    if (job.terminal) break;
+                    if (Date.now() - t0 > 20 * 60 * 1000) throw new Error('beforeAll: extraction job still running after 20 minutes');
+                    await new Promise(r => setTimeout(r, 5000));
+                }
+                if (job.status === 'failed') {
+                    throw new Error('beforeAll: extraction job failed: ' + JSON.stringify(job).substring(0, 500));
+                }
+                let sceneList = Array.isArray(job.result) ? job.result : (job.result && Array.isArray(job.result.sceneList) ? job.result.sceneList : []);
+                console.log('=== Setup: extraction returned ' + sceneList.length + ' scene(s) ===');
+
+                let importResp = await request.post(REST + '/olio/picture-book/' + workObjectId + '/create-from-scenes', {
+                    data: { schema: 'olio.pictureBookRequest', sceneList, chatConfig: chatConfigName, bookName, pb2BookObjectId },
+                    timeout: 20 * 60 * 1000
+                });
+                let meta = null;
+                try { meta = await importResp.json(); } catch (e) { meta = null; }
+                if (importResp.status() !== 200 || !meta) {
+                    throw new Error('beforeAll: create-from-scenes failed: ' + importResp.status() + ' ' + JSON.stringify(meta).substring(0, 500));
+                }
+                // meta.bookObjectId = the book GROUP (what /scenes, /reset and the viewer route take);
+                // meta.pb2BookObjectId = the bound olio.pb.book.
+                if (meta.bookObjectId) {
+                    bookObjectId = meta.bookObjectId;
+                    console.log('=== Setup: Book group created: bookObjectId=' + bookObjectId + ' pb2BookObjectId=' + meta.pb2BookObjectId + ' ===');
+                }
+                if (meta.scenes && meta.scenes.length > 0) {
+                    extractedScenes = meta.scenes;
+                    console.log('=== Setup: Imported ' + extractedScenes.length + ' scenes ===');
+                    extractedScenes.forEach((s, i) => {
+                        console.log('  ' + i + ': "' + (s.title || '') + '" oid=' + s.objectId);
+                    });
+                } else {
+                    console.log('=== Setup: Import returned no scenes ===');
+                    console.log('  Body: ' + JSON.stringify(meta).substring(0, 300));
+                }
+            } finally {
+                await apiLogout(request);
+            }
         }
 
         if (!workObjectId) {
@@ -214,10 +261,10 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
         }
         if (PB_LLM && !extractedScenes.length) {
             throw new Error(
-                'beforeAll: LLM extraction returned no scenes. ' +
-                'Verify the LLM at 192.168.1.42:11434 is reachable from the stack under test ' +
-                '(the am7test Docker container CAN reach it — verified 2026-08-31) and that the ' +
-                'model on chatConfig=' + chatConfigName + ' is loaded.'
+                'beforeAll: LLM extraction + import returned no scenes. ' +
+                'Check the "[e2e-llm] route=" line above for the tier the chatConfig=' + chatConfigName +
+                ' points at (LiteLLM over the container Ollama first; Langfuse :3001 / docker logs ' +
+                'am7test-litellm-1 for the trace) and that its models are loaded.'
             );
         }
     });
@@ -263,100 +310,12 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             }
         });
 
-        test('B.2 Full extraction (reset + extract)', async ({ page }) => {
-            test.setTimeout(600000);
-            test.skip(!PB_LLM, NO_SCENES_REASON);
-            test.skip(!workObjectId, 'No work created');
-
-            await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
-
-            let result = await page.evaluate(async (args) => {
-                let { applicationPath } = await import('/src/core/config.js');
-                let log = [];
-
-                // Reset first (use bookObjectId if available, otherwise skip)
-                if (args.bookObjectId) {
-                    let resetResp = await fetch(applicationPath + '/rest/olio/picture-book/' + args.bookObjectId + '/reset', {
-                        method: 'DELETE', credentials: 'include'
-                    }).catch(() => ({ status: 0 }));
-                    log.push('Reset: ' + (resetResp.status || 'error'));
-                }
-
-                // Full extract — creates ~/PictureBooks/{bookName}/ and returns bookObjectId
-                let resp = await fetch(applicationPath + '/rest/olio/picture-book/' + args.workObjectId + '/extract', {
-                    method: 'POST', credentials: 'include',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ schema: 'olio.pictureBookRequest', count: 3, genre: 'contemporary', chatConfig: args.chatConfigName, bookName: 'AIME Test Book' })
-                });
-                log.push('Extract status: ' + resp.status);
-
-                if (!resp.ok) {
-                    let errText = await resp.text().catch(() => '');
-                    log.push('Error: ' + errText.substring(0, 500));
-                    return { status: resp.status, meta: null, scenesFromGet: 0, log };
-                }
-
-                let rawText = await resp.text();
-                log.push('Raw body (first 500): ' + rawText.substring(0, 500));
-                let meta = null;
-                try { meta = JSON.parse(rawText); } catch (e) { log.push('JSON parse error: ' + e.message); }
-                if (meta) {
-                    log.push('sceneCount: ' + meta.sceneCount + ' (type=' + typeof meta.sceneCount + ')');
-                    if (meta.scenes) {
-                        log.push('scenes array length: ' + meta.scenes.length);
-                        meta.scenes.forEach((s, i) => {
-                            log.push('  ' + i + ': "' + (s.title || '') + '" oid=' + s.objectId + ' desc=' + (s.description || '').substring(0, 50));
-                        });
-                    }
-                }
-
-                // Capture bookObjectId from extract response
-                let newBookObjectId = meta ? meta.bookObjectId : null;
-                log.push('bookObjectId: ' + newBookObjectId);
-
-                // Verify via GET /scenes using bookObjectId
-                let scenesId = newBookObjectId || args.bookObjectId || args.workObjectId;
-                let scenesResp = await fetch(applicationPath + '/rest/olio/picture-book/' + scenesId + '/scenes', {
-                    credentials: 'include'
-                });
-                let scenes = await scenesResp.json().catch(() => []);
-                log.push('GET /scenes: ' + (Array.isArray(scenes) ? scenes.length : 'N/A'));
-
-                return {
-                    status: resp.status,
-                    meta,
-                    bookObjectId: newBookObjectId,
-                    scenes: Array.isArray(scenes) ? scenes : [],
-                    scenesFromGet: Array.isArray(scenes) ? scenes.length : 0,
-                    log
-                };
-            }, { workObjectId, bookObjectId, chatConfigName, userName: testInfo.testUserName });
-
-            console.log('=== B.2 Full Extraction ===');
-            result.log.forEach(l => console.log('  ' + l));
-            await saveScreenshot(page, 'B2-fullExtract');
-
-            expect(result.status).toBe(200);
-            expect(result.meta).toBeTruthy();
-            let sc = result.meta.sceneCount;
-            console.log('  sceneCount=' + sc + ' scenesArray=' + (result.meta.scenes ? result.meta.scenes.length : 'null'));
-            expect(typeof sc).toBe('number');
-            expect(sc).toBeGreaterThan(0);
-            for (let s of result.meta.scenes) {
-                expect(s.objectId).toBeTruthy();
-                expect(s.title).toBeTruthy();
-            }
-
-            // Capture bookObjectId from extract response
-            if (result.bookObjectId) bookObjectId = result.bookObjectId;
-
-            // Save for later tests. GET /scenes MUST agree with the extract response — a 0 here
-            // while the extract reported scenes is the exact silent-tolerance defect the gap
-            // analysis flags, so assert it rather than logging a WARNING and moving on.
-            extractedScenes = result.scenes.length ? result.scenes : (result.meta.scenes || []);
-            expect(result.scenesFromGet, 'GET /scenes must return the scenes the extract created').toBe(result.meta.scenes.length);
-            console.log('VERIFIED: ' + sc + ' scenes extracted, ' + extractedScenes.length + ' available, bookObjectId=' + bookObjectId);
-        });
+        /* B.2 'Full extraction (reset + extract)' deleted with its subject (I-1 / KI-89 b, 2026-11-13): it
+           drove the bookless all-in-one POST /{work}/extract, which no longer exists
+           (PictureBookService.java had @Path("/{workObjectId}/extract") at :601 in HEAD d6c3ad41; the working
+           tree has none). The import now runs in beforeAll on the V3 path the wizard uses - /chapter +
+           extract-scenes-only?async=true + create-from-scenes bound to pb2BookObjectId - and B.3 pins that
+           GET /scenes agrees with what it created. */
 
         test('B.3 GET /scenes returns valid data', async ({ page }) => {
             test.setTimeout(30000);
@@ -689,35 +648,40 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
             await saveScreenshot(page, 'D1-cover');
 
-            let state = await page.evaluate(() => {
+            let state = await page.evaluate((dotSel) => {
                 let h1 = document.querySelector('h1');
-                let dots = document.querySelectorAll('button.rounded-full');
-                let noBook = document.body.innerText.includes('No picture book');
-                let beginBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.includes('Begin'));
-                let sceneText = document.body.innerText.match(/(\d+)\s+Scene/);
+                let dots = document.querySelectorAll(dotSel);
+                let count = document.querySelector('[data-pb2-cover-count]');
+                let name = document.querySelector('[data-pb2-book-name]');
                 return {
-                    coverTitle: h1 ? h1.textContent : null,
+                    coverTitle: h1 ? h1.textContent.trim() : null,
+                    headerName: name ? name.textContent.trim() : null,
                     dotCount: dots.length,
-                    hasNoBook: noBook,
-                    hasBegin: !!beginBtn,
-                    sceneCountText: sceneText ? sceneText[0] : null
+                    dotTitles: Array.from(dots).map(d => d.title),
+                    hasNoBook: document.body.innerText.includes('No picture book'),
+                    coverCount: count ? count.textContent.trim() : null
                 };
-            });
+            }, DOT_SELECTOR);
 
             console.log('=== D.1 Cover Page ===');
-            console.log('  Title: ' + state.coverTitle);
-            console.log('  Dots: ' + state.dotCount);
-            console.log('  Begin: ' + state.hasBegin);
-            console.log('  Scene text: ' + state.sceneCountText);
+            console.log('  Title: ' + state.coverTitle + ' (header: ' + state.headerName + ')');
+            console.log('  Dots: ' + state.dotCount + ' ' + JSON.stringify(state.dotTitles));
+            console.log('  Cover count: ' + state.coverCount);
 
             expect(state.hasNoBook).toBe(false);
+            // The cover h1 is the BOOK's name — "Book <slug>" (PbBookUtil.bookName); the human title the
+            // import was given ("AIME Test Book <ts>") lives in the book's description, not its name.
             expect(state.coverTitle).toBeTruthy();
-            expect(state.dotCount).toBeGreaterThanOrEqual(2);
-            expect(state.hasBegin).toBe(true);
+            expect(state.coverTitle).toBe(state.headerName);
+            expect(state.coverTitle).toMatch(/^Book aime-live-[a-z0-9]+$/);
+            // One front page (the cover) + one dot per imported scene; titled Cover, Page 1..N.
+            expect(state.dotCount).toBe(extractedScenes.length + 1);
+            expect(state.dotTitles).toEqual(['Cover'].concat(extractedScenes.map((s, i) => 'Page ' + (i + 1))));
+            // Nothing is rendered yet: "0 rendered of N scenes".
+            expect(state.coverCount).toBe('0 rendered of ' + extractedScenes.length + ' scene' + (extractedScenes.length !== 1 ? 's' : ''));
         });
 
         test('D.2 Scene count text visible', async ({ page }) => {
@@ -727,17 +691,19 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            let text = await page.evaluate(() => document.body.innerText);
-            let match = text.match(/(\d+)\s+Scene/);
+            // The V3 cover says "N rendered of M scenes" ([data-pb2-cover-count]); M = GET /{book}/scenes
+            // (max'd with /pages), which for an imported book is exactly the imported scene count.
+            let text = await page.locator('[data-pb2-cover-count]').textContent();
+            let match = (text || '').trim().match(/^(\d+) rendered of (\d+) scenes?$/);
 
             console.log('=== D.2 Scene Count ===');
-            console.log('  Match: ' + (match ? match[0] : 'NONE'));
+            console.log('  Match: ' + (match ? match[0] : 'NONE (text was: ' + text + ')'));
 
             expect(match).toBeTruthy();
-            expect(parseInt(match[1])).toBeGreaterThan(0);
+            expect(parseInt(match[2])).toBe(extractedScenes.length);
+            expect(parseInt(match[1])).toBeLessThanOrEqual(parseInt(match[2]));
         });
 
         test('D.3 Begin advances to page 1', async ({ page }) => {
@@ -747,36 +713,28 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            // Click Begin
-            await page.evaluate(() => {
-                let btns = Array.from(document.querySelectorAll('button'));
-                let begin = btns.find(b => b.textContent.includes('Begin'));
-                if (begin) begin.click();
-            });
-            await page.waitForTimeout(1000);
+            // Begin → pb2GoToPage(front count) = scene 1: h2 is the first imported scene's title, the
+            // header and footer say 'Page 1 of N', and the cover's Begin button is gone.
+            await page.locator('button', { hasText: 'Begin' }).click();
+            await expectScenePage(page, 1);
             await saveScreenshot(page, 'D3-beginClicked');
 
             let state = await page.evaluate(() => {
                 let h2 = document.querySelector('h2');
-                let text = document.body.innerText;
                 return {
-                    sceneTitle: h2 ? h2.textContent : null,
-                    hasPage1: text.includes('Page 1'),
-                    hasBegin: text.includes('Begin')
+                    sceneTitle: h2 ? h2.textContent.trim() : null,
+                    pageLabels: (document.body.innerText.match(/Page 1 of \d+/g) || []).length
                 };
             });
 
             console.log('=== D.3 Begin ===');
             console.log('  Scene title: ' + state.sceneTitle);
-            console.log('  Has Page 1: ' + state.hasPage1);
+            console.log('  "Page 1 of N" occurrences (header + footer): ' + state.pageLabels);
 
-            expect(state.sceneTitle).toBeTruthy();
-            expect(state.hasPage1).toBe(true);
-            // Begin text should not be visible on scene page
-            // (but the button text might still exist in DOM, check visible text)
+            expect(state.sceneTitle).toBe(extractedScenes[0].title);
+            expect(state.pageLabels).toBe(2);
         });
     });
 
@@ -793,61 +751,85 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            // Go to page 1
+            // ArrowRight from the cover → scene 1 (pb2OnKeyDown).
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(1000);
+            await expectScenePage(page, 1);
             await saveScreenshot(page, 'E1-scene1');
 
             let state = await page.evaluate(() => {
                 let h2 = document.querySelector('h2');
-                let blurb = document.querySelector('p.italic');
+                let blurb = document.querySelector('[data-testid="pb2-reader"] p.italic');
+                let img = document.querySelector('[data-testid="pb2-scene-image"]');
                 let text = document.body.innerText;
                 let pageMatch = text.match(/Page 1 of (\d+)/);
                 return {
                     title: h2 ? h2.textContent.trim() : null,
                     blurbText: blurb ? blurb.textContent.trim() : null,
-                    hasNoBlurb: text.includes('No blurb yet'),
-                    pageInfo: pageMatch ? pageMatch[0] : null
+                    hasImage: !!img,
+                    pageInfo: pageMatch ? pageMatch[0] : null,
+                    pageTotal: pageMatch ? parseInt(pageMatch[1]) : null
                 };
             });
 
             console.log('=== E.1 Scene Page ===');
             console.log('  Title: ' + state.title);
             console.log('  Blurb: ' + (state.blurbText || '').substring(0, 100));
+            console.log('  Image: ' + state.hasImage + ' (unrendered import → placeholder expected)');
             console.log('  Page: ' + state.pageInfo);
 
-            expect(state.title).toBeTruthy();
-            expect(state.title).not.toBe('');
-            if (state.hasNoBlurb) {
-                console.log('  NOTE: Scene shows "No blurb yet" — fallback scenes may lack blurb data');
-            }
-            expect(state.pageInfo).toBeTruthy();
+            expect(state.title).toBe(extractedScenes[0].title);
+            // p.italic = poemStanza || blurb || summary; an imported scene always has a blurb.
+            expect(state.blurbText).toBeTruthy();
+            expect(state.blurbText).not.toBe('No text yet.');
+            expect(state.pageInfo).toBe('Page 1 of ' + extractedScenes.length);
+            expect(state.pageTotal).toBe(extractedScenes.length);
         });
 
-        test('E.2 Character badges', async ({ page }) => {
+        // The PB1 viewer drew a rounded-full/text-xs badge per scene character (pictureBook.js:955); the V3
+        // scene page has NO character badges — characters live in the Characters dialog behind
+        // button[title="Manage characters"] (pbCharacterList.spec.js pins the list itself). The old
+        // '.rounded-full.text-xs' "badge" scan was catching the header's auto-approve badge and asserting
+        // nothing. What the V3 scene page does carry is pinned here.
+        test('E.2 Scene page controls — V3 has no character badges', async ({ page }) => {
             test.setTimeout(60000);
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(1000);
+            await expectScenePage(page, 1);
 
-            let badges = await page.evaluate(() => {
-                let pills = document.querySelectorAll('.rounded-full.text-xs');
-                return Array.from(pills).map(p => p.textContent.trim()).filter(t => t.length > 0 && !t.match(/^\d/));
-            });
+            let reader = page.locator('[data-testid="pb2-reader"]');
+            let pills = await reader.locator('.rounded-full.text-xs').evaluateAll(els => els.map(e => ({
+                id: e.getAttribute('data-testid') || '', text: e.textContent.trim()
+            })));
+            console.log('=== E.2 Scene Page Pills ===');
+            pills.forEach(p => console.log('    [' + p.id + '] ' + p.text));
 
-            console.log('=== E.2 Character Badges ===');
-            console.log('  Badges: ' + badges.length);
-            badges.forEach(b => console.log('    ' + b));
-            // Characters are optional — just log, don't fail
+            // Every pill on the V3 reader is a known, test-id'd chip; none is an anonymous character badge.
+            const KNOWN_PILLS = ['pb2-auto-approve-badge', 'pb2-scene-chip', 'pb2-page-location',
+                'pb2-scene-degradations', 'pb2-scene-degradations-error', 'pb2-run-chat-config'];
+            for (let p of pills) {
+                expect(KNOWN_PILLS, 'pill "' + p.text + '" must be a known V3 chip, not a character badge').toContain(p.id);
+            }
+            let names = (extractedScenes[0].characters || []).map(c => typeof c === 'string' ? c : (c && c.name)).filter(Boolean);
+            for (let p of pills) expect(names, 'no pill is a character name').not.toContain(p.text);
+            await expect(reader.locator('[data-testid="pb2-auto-approve-badge"]')).toHaveText(/^Auto-approve: (ON|OFF)$/);
+
+            // The scene page's own controls and image slot.
+            // Each button's textContent is '<icon name>' + label ('brushRender'), so pin the label's end.
+            await expect(reader.locator('[data-testid="pb2-scene-compose"]')).toHaveText(/Compose$/);
+            await expect(reader.locator('[data-testid="pb2-scene-render"]')).toHaveText(/(Render|Re-render)$/);
+            await expect(reader.locator('[data-testid="pb2-plan-render"]')).toHaveText(/Plan & generate$/);
+            let imgs = await reader.locator('[data-testid="pb2-scene-image"]').count();
+            let placeholders = await reader.locator('span.material-symbols-outlined', { hasText: /^image$/ }).count();
+            console.log('  scene image: ' + imgs + ', placeholder: ' + placeholders);
+            expect(imgs + placeholders, 'an image or the image placeholder').toBeGreaterThan(0);
+            await expect(reader.locator('button[title="Manage characters"]'), 'characters are managed from the header dialog').toBeVisible();
         });
 
         test('E.4 Navigate ALL pages with screenshots', async ({ page }) => {
@@ -857,36 +839,41 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            let totalDots = await page.evaluate(() => document.querySelectorAll('button.rounded-full').length);
+            let totalDots = await page.locator(DOT_SELECTOR).count();
             console.log('=== E.4 Navigate All Pages ===');
             console.log('  Total dots: ' + totalDots);
+            expect(totalDots, 'cover + one dot per imported scene').toBe(extractedScenes.length + 1);
 
             for (let i = 0; i < totalDots; i++) {
                 if (i > 0) {
                     await page.keyboard.press('ArrowRight');
-                    await page.waitForTimeout(800);
+                    await expectScenePage(page, i);
                 }
                 await saveScreenshot(page, 'E4-page-' + i);
 
-                let info = await page.evaluate(() => {
+                let info = await page.evaluate((dotSel) => {
                     let h1 = document.querySelector('h1');
                     let h2 = document.querySelector('h2');
                     let text = document.body.innerText;
+                    let active = Array.from(document.querySelectorAll(dotSel)).findIndex(d => d.className.includes('bg-purple-500'));
                     return {
-                        title: h2 ? h2.textContent : (h1 ? h1.textContent : ''),
-                        isCover: text.includes('Begin'),
-                        pageNum: text.match(/Page (\d+)/)?.[1] || null
+                        title: h2 ? h2.textContent.trim() : (h1 ? h1.textContent.trim() : ''),
+                        isCover: !!document.querySelector('[data-pb2-cover-count]'),
+                        pageNum: text.match(/Page (\d+) of (\d+)/)?.[1] || null,
+                        activeDot: active
                     };
-                });
+                }, DOT_SELECTOR);
 
-                console.log('  Page ' + i + ': ' + (info.isCover ? 'COVER' : '"' + info.title + '" (Page ' + info.pageNum + ')'));
-
-                if (i > 0 && !info.isCover) {
-                    expect(info.title).toBeTruthy();
-                    expect(parseInt(info.pageNum)).toBeGreaterThan(0);
+                console.log('  Page ' + i + ': ' + (info.isCover ? 'COVER' : '"' + info.title + '" (Page ' + info.pageNum + ')') + ' active dot=' + info.activeDot);
+                expect(info.activeDot, 'the active dot follows the page').toBe(i);
+                if (i === 0) {
+                    expect(info.isCover).toBe(true);
+                } else {
+                    expect(info.isCover).toBe(false);
+                    expect(info.title).toBe(extractedScenes[i - 1].title);
+                    expect(parseInt(info.pageNum)).toBe(i);
                 }
             }
             console.log('VERIFIED: All ' + totalDots + ' pages navigated and screenshotted');
@@ -899,18 +886,18 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            let totalDots = await page.evaluate(() => document.querySelectorAll('button.rounded-full').length);
+            let totalDots = await page.locator(DOT_SELECTOR).count();
+            expect(totalDots).toBe(extractedScenes.length + 1);
             let blurbs = [];
 
             for (let i = 1; i < totalDots; i++) {
                 await page.keyboard.press('ArrowRight');
-                await page.waitForTimeout(600);
+                await expectScenePage(page, i);
 
                 let blurb = await page.evaluate(() => {
-                    let p = document.querySelector('p.italic');
+                    let p = document.querySelector('[data-testid="pb2-reader"] p.italic');
                     return p ? p.textContent.trim() : '';
                 });
                 blurbs.push(blurb);
@@ -918,8 +905,11 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             }
 
             console.log('=== E.5 Blurb Content ===');
+            expect(blurbs.length).toBe(extractedScenes.length);
             for (let i = 0; i < blurbs.length; i++) {
-                expect(blurbs[i].length).toBeGreaterThan(0);
+                // p.italic = poemStanza || blurb || summary, else the 'No text yet.' placeholder.
+                expect(blurbs[i].length, 'scene ' + (i + 1) + ' has text').toBeGreaterThan(0);
+                expect(blurbs[i], 'scene ' + (i + 1) + ' is not the empty placeholder').not.toBe('No text yet.');
             }
             console.log('VERIFIED: All ' + blurbs.length + ' scenes have blurb text');
         });
@@ -938,24 +928,16 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
-
-            // On cover
-            let cover = await page.evaluate(() => document.body.innerText.includes('Begin'));
-            expect(cover).toBe(true);
+            await openReaderAtCover(page);
 
             // ArrowRight → page 1
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(800);
-            let page1 = await page.evaluate(() => document.body.innerText.includes('Page 1'));
-            expect(page1).toBe(true);
+            await expectScenePage(page, 1);
 
             // ArrowLeft → back to cover
             await page.keyboard.press('ArrowLeft');
-            await page.waitForTimeout(800);
-            let backToCover = await page.evaluate(() => document.body.innerText.includes('Begin'));
-            expect(backToCover).toBe(true);
+            await expect(page.locator('[data-pb2-cover-count]')).toBeVisible({ timeout: 10000 });
+            await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible();
 
             console.log('VERIFIED: ArrowRight/ArrowLeft navigation works');
         });
@@ -967,26 +949,24 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
             // End → last page
             await page.keyboard.press('End');
-            await page.waitForTimeout(800);
+            await expectScenePage(page, extractedScenes.length);
             let lastPageNum = await page.evaluate(() => {
                 let match = document.body.innerText.match(/Page (\d+) of (\d+)/);
                 return match ? { page: parseInt(match[1]), total: parseInt(match[2]) } : null;
             });
             console.log('  End: page ' + (lastPageNum ? lastPageNum.page : '?') + ' of ' + (lastPageNum ? lastPageNum.total : '?'));
-            if (lastPageNum) {
-                expect(lastPageNum.page).toBe(lastPageNum.total);
-            }
+            expect(lastPageNum).toBeTruthy();
+            expect(lastPageNum.page).toBe(lastPageNum.total);
+            expect(lastPageNum.total).toBe(extractedScenes.length);
 
             // Home → cover
             await page.keyboard.press('Home');
-            await page.waitForTimeout(800);
-            let atCover = await page.evaluate(() => document.body.innerText.includes('Begin'));
-            expect(atCover).toBe(true);
+            await expect(page.locator('[data-pb2-cover-count]')).toBeVisible({ timeout: 10000 });
+            await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible();
 
             console.log('VERIFIED: Home/End navigation works');
         });
@@ -998,28 +978,18 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            let totalDots = await page.evaluate(() => document.querySelectorAll('button.rounded-full').length);
-            if (totalDots >= 3) {
-                // Click 3rd dot (index 2 = page 2)
-                await page.evaluate(() => {
-                    let dots = document.querySelectorAll('button.rounded-full');
-                    if (dots[2]) dots[2].click();
-                });
-                await page.waitForTimeout(800);
+            let dots = page.locator(DOT_SELECTOR);
+            let totalDots = await dots.count();
+            expect(totalDots, 'cover + one dot per imported scene').toBe(extractedScenes.length + 1);
+            expect(totalDots, 'the import asks for 3 scenes, so a 3rd dot (page 2) exists').toBeGreaterThanOrEqual(3);
 
-                // Verify a page change occurred (not on cover anymore)
-                let pageChanged = await page.evaluate(() => {
-                    let text = document.body.innerText;
-                    return text.includes('Page ') && !text.includes('Begin');
-                });
-                expect(pageChanged).toBe(true);
-                console.log('VERIFIED: Dot click changed page');
-            } else {
-                console.log('  Only ' + totalDots + ' dots — skipping 3rd dot test');
-            }
+            // Click the 3rd dot (index 2 = 'Page 2') → scene 2.
+            await expect(dots.nth(2)).toHaveAttribute('title', 'Page 2');
+            await dots.nth(2).click();
+            await expectScenePage(page, 2);
+            console.log('VERIFIED: Dot click changed page to 2 of ' + extractedScenes.length);
         });
 
         test('F.4 Boundary — left on cover', async ({ page }) => {
@@ -1032,14 +1002,13 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             let errors = [];
             page.on('pageerror', err => errors.push(err.message));
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
             await page.keyboard.press('ArrowLeft');
             await page.waitForTimeout(500);
 
-            let stillCover = await page.evaluate(() => document.body.innerText.includes('Begin'));
-            expect(stillCover).toBe(true);
+            await expect(page.locator('[data-pb2-cover-count]')).toBeVisible();
+            await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible();
             expect(errors).toHaveLength(0);
             console.log('VERIFIED: Left on cover stays on cover, no errors');
         });
@@ -1054,11 +1023,10 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             let errors = [];
             page.on('pageerror', err => errors.push(err.message));
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
             await page.keyboard.press('End');
-            await page.waitForTimeout(500);
+            await expectScenePage(page, extractedScenes.length);
 
             let beforeText = await page.evaluate(() => document.body.innerText.substring(0, 500));
             await page.keyboard.press('ArrowRight');
@@ -1085,25 +1053,29 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            // Click fullscreen
-            await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let fs = icons.find(i => i.textContent.trim() === 'fullscreen');
-                if (fs) fs.closest('button').click();
-            });
-            await page.waitForTimeout(1000);
+            // UAT-2: the V3 header's fullscreen toggle. On, the reader root becomes a fixed z-30 overlay
+            // (dialogs z-40+ and toasts z-50 stay above it), the toggle flips to 'Exit fullscreen' /
+            // fullscreen_exit, and the Back button is hidden as in ReaderShell.
+            let reader = page.locator('[data-testid="pb2-reader"]');
+            let toggle = page.locator('[data-testid="pb2-fullscreen"]');
+            await expect(reader).toHaveAttribute('data-fullscreen', '0');
+            await expect(toggle).toHaveAttribute('title', 'Fullscreen');
+            await expect(toggle.locator('.material-symbols-outlined')).toHaveText('fullscreen');
+            await expect(page.locator('button[title="Back to book list"]')).toBeVisible();
+
+            await toggle.click();
+            await expect(reader).toHaveAttribute('data-fullscreen', '1');
             await saveScreenshot(page, 'G1-fullscreen');
 
-            // Check for fullscreen: the icon changes to 'fullscreen_exit' when active
-            let isFs = await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                return icons.some(i => i.textContent.trim() === 'fullscreen_exit');
-            });
-            expect(isFs).toBe(true);
-            console.log('VERIFIED: Fullscreen toggle ON');
+            await expect(reader).toHaveClass(/fixed inset-0 z-30/);
+            await expect(toggle).toHaveAttribute('title', 'Exit fullscreen');
+            await expect(toggle.locator('.material-symbols-outlined')).toHaveText('fullscreen_exit');
+            await expect(page.locator('button[title="Back to book list"]')).toHaveCount(0);
+            // Still the cover: fullscreen never moves the page.
+            await expect(page.locator('[data-pb2-cover-count]')).toBeVisible();
+            console.log('VERIFIED: Fullscreen toggle ON (data-fullscreen=1, z-30 overlay, Back hidden)');
         });
 
         test('G.2 Escape exits fullscreen', async ({ page }) => {
@@ -1113,24 +1085,24 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
+
+            let reader = page.locator('[data-testid="pb2-reader"]');
+            let toggle = page.locator('[data-testid="pb2-fullscreen"]');
 
             // Enter fullscreen
-            await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let fs = icons.find(i => i.textContent.trim() === 'fullscreen');
-                if (fs) fs.closest('button').click();
-            });
-            await page.waitForTimeout(500);
+            await toggle.click();
+            await expect(reader).toHaveAttribute('data-fullscreen', '1');
+            await expect(reader).toHaveClass(/fixed inset-0 z-30/);
 
-            // Escape
+            // Escape (pb2OnKeyDown) → back to the in-layout reader; Back is offered again.
             await page.keyboard.press('Escape');
-            await page.waitForTimeout(500);
-
-            let isFs = await page.evaluate(() => !!document.querySelector('div[class*="fixed"][class*="inset-0"][class*="z-50"]'));
-            expect(isFs).toBe(false);
-            console.log('VERIFIED: Escape exits fullscreen');
+            await expect(reader).toHaveAttribute('data-fullscreen', '0');
+            await expect(reader).not.toHaveClass(/fixed inset-0/);
+            await expect(toggle).toHaveAttribute('title', 'Fullscreen');
+            await expect(page.locator('button[title="Back to book list"]')).toBeVisible();
+            await expect(page.locator('[data-pb2-cover-count]')).toBeVisible();
+            console.log('VERIFIED: Escape exits fullscreen (data-fullscreen=0, Back visible)');
         });
 
         test('G.3 Navigate in fullscreen', async ({ page }) => {
@@ -1140,158 +1112,69 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
+
+            let reader = page.locator('[data-testid="pb2-reader"]');
 
             // Enter fullscreen
-            await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let fs = icons.find(i => i.textContent.trim() === 'fullscreen');
-                if (fs) fs.closest('button').click();
-            });
-            await page.waitForTimeout(500);
+            await page.locator('[data-testid="pb2-fullscreen"]').click();
+            await expect(reader).toHaveAttribute('data-fullscreen', '1');
 
-            // Navigate
+            // Navigate: ArrowRight → scene 1, still fullscreen (the route keeps its layout wrapper, so the
+            // reader is not remounted and the keydown listener survives the toggle).
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(800);
-
-            let state = await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let isFs = icons.some(i => i.textContent.trim() === 'fullscreen_exit');
-                let text = document.body.innerText;
-                return { isFs, hasPage1: text.includes('Page 1') };
-            });
-
-            expect(state.isFs).toBe(true);
-            expect(state.hasPage1).toBe(true);
+            await expectScenePage(page, 1);
+            await expect(reader).toHaveAttribute('data-fullscreen', '1');
+            await expect(page.locator('[data-testid="pb2-fullscreen"] .material-symbols-outlined')).toHaveText('fullscreen_exit');
+            await saveScreenshot(page, 'G3-fullscreen-page1');
             console.log('VERIFIED: Navigation works in fullscreen');
         });
     });
 
     // ══════════════════════════════════════════════════════════════════════
-    // PHASE H — Blurb Editing
+    // PHASE H — Reader header contract (was "Blurb Editing")
     // ══════════════════════════════════════════════════════════════════════
 
-    test.describe('H. Blurb Editing', () => {
+    test.describe('H. Reader header contract', () => {
 
-        // Blurb editing was removed from the viewer (features/pictureBook.js:866 — "viewer is read-only; use
-        // 'Edit Book' to reopen wizard"). The viewer's edit affordance is now `button[title="Edit Book"]`
-        // (:1030-1037, rendered once scenes are loaded), which reopens the wizard on the existing book:
-        // tryResumeExistingBook (workflows/pictureBook.js:2737-2789) lands on step 4 "Image Generation"
-        // (:2148-2152) listing every scene, until all images are accepted/skipped.
-        test('H.1 Edit Book reopens the wizard on the existing book', async ({ page }) => {
-            test.setTimeout(120000);
-            test.skip(!workObjectId, 'No work created');
-            test.skip(!extractedScenes.length, NO_SCENES_REASON);
-            await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
-
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            let editBtn = page.locator('button[title="Edit Book"]');
-            await expect(editBtn, 'Edit Book renders once the viewer has scenes').toBeVisible({ timeout: 30000 });
-            await editBtn.click();
-
-            let dialog = page.locator('[role="dialog"]').filter({ hasText: 'Picture Book — ' });
-            await expect(dialog, 'Edit Book must open the wizard dialog').toBeVisible({ timeout: 30000 });
-            await expect(dialog.locator('h3', { hasText: 'Image Generation' }), 'resumed book opens at step 4').toBeVisible({ timeout: 30000 });
-            for (let s of extractedScenes) {
-                await expect(dialog.locator('div.font-medium.text-sm.truncate', { hasText: s.title }),
-                    'step 4 must list scene "' + s.title + '"').toBeVisible({ timeout: 10000 });
-            }
-            await saveScreenshot(page, 'H1-editBookWizard');
-
-            // Cancel closes the wizard without generating anything; the viewer is still underneath.
-            await dialog.locator('.am7-dialog-footer button', { hasText: 'Cancel' }).click();
-            await expect(dialog).not.toBeVisible({ timeout: 5000 });
-            await expect(editBtn).toBeVisible();
-            console.log('VERIFIED: Edit Book reopened the wizard at Image Generation with ' + extractedScenes.length + ' scenes');
-        });
-
-        test('H.2 Cancel reverts', async ({ page }) => {
+        // Inline blurb editing and "Regenerate via AI" were removed from the viewer long ago (pictureBook.js
+        // "renderBlurbDisplay and renderBlurbEditor removed — viewer is read-only", ledger archive 122 e);
+        // H.2 / H.3 drove a textarea and a Regenerate button that no reader has, and passed only because
+        // every click was `if (found)`. The PB1 viewer's `button[title="Edit Book"]` (pictureBook.js
+        // pictureBookView, :1159-1163) is not offered by the V3 reader either: its header deliberately has
+        // no Edit pencil — "the wizard would only hand straight back to this reader" (renderPb2Header,
+        // P7-3 / P10-1, archive 217 d). H.1 now pins that header: every V3 tool entry is present and no
+        // Edit affordance is.
+        test('H.1 V3 reader header — tool entries present, no Edit affordance', async ({ page }) => {
             test.setTimeout(60000);
             test.skip(!workObjectId, 'No work created');
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-            test.skip(!extractedScenes.length, NO_SCENES_REASON);
+            await openReaderAtCover(page);
+            let reader = page.locator('[data-testid="pb2-reader"]');
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
-            await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(1000);
+            await expect(reader.locator('button[title="Edit Book"]'), 'no Edit Book on the V3 reader').toHaveCount(0);
+            await expect(reader.locator('button[title="Edit"]'), 'no Edit pencil on the V3 reader').toHaveCount(0);
+            await expect(reader.locator('textarea'), 'no inline blurb editor').toHaveCount(0);
 
-            // Get original blurb
-            let originalBlurb = await page.evaluate(() => {
-                let p = document.querySelector('p.italic');
-                return p ? p.textContent.trim() : '';
-            });
-
-            // Click edit
-            await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let edit = icons.find(i => i.textContent.trim() === 'edit');
-                if (edit) edit.closest('button').click();
-            });
-            await page.waitForTimeout(500);
-
-            // Click Cancel
-            await page.evaluate(() => {
-                let btns = Array.from(document.querySelectorAll('button'));
-                let cancel = btns.find(b => b.textContent.includes('Cancel'));
-                if (cancel) cancel.click();
-            });
-            await page.waitForTimeout(500);
-
-            let hasTextarea = await page.evaluate(() => !!document.querySelector('textarea'));
-            let currentBlurb = await page.evaluate(() => {
-                let p = document.querySelector('p.italic');
-                return p ? p.textContent.trim() : '';
-            });
-
-            expect(hasTextarea).toBe(false);
-            expect(currentBlurb).toBe(originalBlurb);
-            console.log('VERIFIED: Cancel reverts blurb edit');
-        });
-
-        test('H.3 Regenerate via AI', async ({ page }) => {
-            test.setTimeout(120000);
-            test.skip(!workObjectId, 'No work created');
-            await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
-
-            test.skip(!extractedScenes.length, NO_SCENES_REASON);
-
-            let errors = [];
-            page.on('pageerror', err => errors.push(err.message));
-
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
-            await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(1000);
-
-            // Click edit
-            await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let edit = icons.find(i => i.textContent.trim() === 'edit');
-                if (edit) edit.closest('button').click();
-            });
-            await page.waitForTimeout(500);
-
-            // Click "Regenerate via AI"
-            await page.evaluate(() => {
-                let btns = Array.from(document.querySelectorAll('button'));
-                let regen = btns.find(b => b.textContent.includes('Regenerate'));
-                if (regen) regen.click();
-            });
-
-            // Wait for response (up to 60s)
-            await page.waitForTimeout(10000);
-
-            let jsErrors = errors.filter(e => !e.includes('ResizeObserver'));
-            console.log('=== H.3 Regenerate ===');
-            console.log('  JS errors: ' + jsErrors.length);
-            jsErrors.forEach(e => console.log('    ' + e));
-
-            // No JS crash is the main pass criterion
-            expect(jsErrors).toHaveLength(0);
-            console.log('VERIFIED: Regenerate via AI did not crash');
+            await expect(reader.locator('button[title="Back to book list"]')).toBeVisible();
+            await expect(reader.locator('[data-pb2-book-name]')).toHaveText(/^Book aime-live-[a-z0-9]+$/);
+            await expect(reader.locator('[data-testid="pb2-chat-config"]')).toBeVisible();
+            await expect(reader.locator('[data-testid="pb2-auto-approve-badge"]')).toHaveText(/^Auto-approve: (ON|OFF)$/);
+            await expect(reader.locator('[data-testid="pb2-render-all"]')).toHaveAttribute('title', 'Render all scenes');
+            await expect(reader.locator('[data-testid="pb2-review-link"]')).toHaveAttribute('title', 'Review queue');
+            await expect(reader.locator('[data-testid="pb2-style-link"]')).toBeVisible();
+            await expect(reader.locator('[data-testid="pb2-locations-link"]')).toBeVisible();
+            await expect(reader.locator('[data-testid="pb2-compose-link"]')).toBeVisible();
+            await expect(reader.locator('[data-testid="pb2-cover-link"]')).toBeVisible();
+            await expect(reader.locator('button[title="Manage characters"]')).toHaveAttribute('data-pb2-characters', pb2BookObjectId);
+            await expect(reader.locator('button[title="Open Workflow Canvas"]')).toBeVisible();
+            await expect(reader.locator('[data-testid="pb2-export"]')).toHaveAttribute('title', 'Export as HTML');
+            await expect(reader.locator('[data-testid="pb2-fullscreen"]')).toHaveAttribute('title', 'Fullscreen');
+            await expect(reader.locator('button[title="Delete picture book"]')).toBeVisible();
+            await saveScreenshot(page, 'H1-readerHeader');
+            console.log('VERIFIED: V3 reader header carries every tool entry and no Edit affordance');
         });
     });
 
@@ -1308,19 +1191,14 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            let btnState = await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let dl = icons.find(i => i.textContent.trim() === 'download');
-                if (!dl) return { found: false };
-                let btn = dl.closest('button');
-                return { found: true, disabled: btn.disabled };
-            });
-
-            expect(btnState.found).toBe(true);
-            expect(btnState.disabled).toBe(false);
+            // UAT-2: the V3 header's export button, enabled as soon as the book has pages.
+            let btn = page.locator('[data-testid="pb2-export"]');
+            await expect(btn).toBeVisible();
+            await expect(btn).toHaveAttribute('title', 'Export as HTML');
+            await expect(btn).toBeEnabled();
+            await expect(btn.locator('.material-symbols-outlined')).toHaveText('download');
             console.log('VERIFIED: Export button enabled');
         });
 
@@ -1331,57 +1209,59 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
-            let downloadPromise = page.waitForEvent('download', { timeout: 30000 }).catch(() => null);
-
-            await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let dl = icons.find(i => i.textContent.trim() === 'download');
-                if (dl) { let btn = dl.closest('button'); if (btn && !btn.disabled) btn.click(); }
-            });
-
+            // The download event is REQUIRED (the old `.catch(() => null)` made this test pass on no
+            // download at all). The filename comes from exportBook: the book name with every non
+            // [a-zA-Z0-9_-] replaced by '_' + '-picturebook.html' → 'Book_aime-live-<ts>-picturebook.html'.
+            let downloadPromise = page.waitForEvent('download', { timeout: 60000 });
+            await page.locator('[data-testid="pb2-export"]').click();
             let download = await downloadPromise;
-            if (download) {
-                let filename = download.suggestedFilename();
-                let exportPath = path.join(SCREENSHOT_DIR, filename);
-                await download.saveAs(exportPath);
-                let size = fs.statSync(exportPath).size;
 
-                console.log('=== I.2 Export ===');
-                console.log('  File: ' + filename + ' (' + size + ' bytes)');
-                expect(filename).toContain('picturebook.html');
-                expect(size).toBeGreaterThan(100);
-                console.log('VERIFIED: Export downloaded');
-            } else {
-                console.log('  WARNING: No download event received');
-                await saveScreenshot(page, 'I2-export-attempt');
-            }
+            let filename = download.suggestedFilename();
+            let exportPath = path.join(SCREENSHOT_DIR, filename);
+            fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+            await download.saveAs(exportPath);
+            let size = fs.statSync(exportPath).size;
+            exportedHtmlPath = exportPath;
+
+            console.log('=== I.2 Export ===');
+            console.log('  File: ' + filename + ' (' + size + ' bytes)');
+            expect(filename).toMatch(/^Book_aime-live-[a-z0-9]+-picturebook\.html$/);
+            expect(size).toBeGreaterThan(100);
+            await expect(page.getByText('Picture book exported')).toBeVisible({ timeout: 10000 });
+            await expect(page.locator('[data-testid="pb2-export"]')).toBeEnabled();
+            console.log('VERIFIED: Export downloaded');
         });
 
         test('I.3 HTML content valid', async () => {
-            // Check the exported HTML file
-            let files = [];
-            try {
-                files = fs.readdirSync(SCREENSHOT_DIR).filter(f => f.endsWith('picturebook.html'));
-            } catch (e) {}
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);
+            // The file I.2 just exported in THIS worker — never "any *picturebook.html lying in the
+            // screenshots dir" (a stale export from another run would validate a different book).
+            expect(exportedHtmlPath, 'I.2 must have exported in this worker').toBeTruthy();
 
-            test.skip(files.length === 0, 'No exported HTML file found');
-
-            let htmlPath = path.join(SCREENSHOT_DIR, files[0]);
-            let html = fs.readFileSync(htmlPath, 'utf-8');
+            let html = fs.readFileSync(exportedHtmlPath, 'utf-8');
             let size = html.length;
+            let bookName = path.basename(exportedHtmlPath).replace(/-picturebook\.html$/, '').replace(/_/g, ' ');
 
             console.log('=== I.3 HTML Validation ===');
-            console.log('  File: ' + files[0] + ' (' + size + ' chars)');
-            console.log('  Has <h1>: ' + html.includes('<h1>'));
-            console.log('  Has <h2>: ' + html.includes('<h2>'));
-            console.log('  Has </html>: ' + html.includes('</html>'));
+            console.log('  File: ' + path.basename(exportedHtmlPath) + ' (' + size + ' chars)');
+            console.log('  Book name (from filename): ' + bookName);
 
-            expect(html).toContain('<h1>');
-            expect(html).toContain('<h2>');
-            expect(html).toContain('</html>');
+            // exportBook's document shape (components/readerShell.js) with the V3 page builder
+            // (pb2ExportPageHtml): title + cover block, one .scene per imported page, page numbers.
+            expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
+            expect(html).toContain('<title>' + bookName + ' — Picture Book</title>');
+            expect(html).toContain('<h1>' + bookName + '</h1>');
+            expect(html).toContain('<p>' + extractedScenes.length + ' Scene' + (extractedScenes.length !== 1 ? 's' : '') + '</p>');
+            expect((html.match(/<div class="scene">/g) || []).length).toBe(extractedScenes.length);
+            for (let i = 0; i < extractedScenes.length; i++) {
+                let t = extractedScenes[i].title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                expect(html, 'scene ' + (i + 1) + ' heading').toContain('<h2>' + t + '</h2>');
+                expect(html, 'scene ' + (i + 1) + ' page number').toContain('<div class="page-num">Page ' + (i + 1) + ' of ' + extractedScenes.length + '</div>');
+            }
+            expect(html).toContain('<p class="blurb">');
+            expect(html.endsWith('</body>\n</html>')).toBe(true);
             expect(size).toBeGreaterThan(500);
             console.log('VERIFIED: Exported HTML is valid');
         });
@@ -1389,25 +1269,23 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
         test('I.4 Export disabled on empty viewer', async ({ page }) => {
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
+            // An id with no V3 record stays on the PB1 viewer (loadViewer), which is a ReaderShell: its
+            // header always renders button[title="Export as HTML"], disabled while there are no pages, over
+            // the renderViewerEmpty body. The old `if (found)` let a page with no button at all pass.
             await page.evaluate(() => {
                 window.location.hash = '#!/picture-book/nonexistent-objectid-12345';
             });
-            await page.waitForTimeout(5000);
+            await expect(page.getByText('No picture book has been generated for this document yet.')).toBeVisible({ timeout: 30000 });
+            await expect(page.locator('[data-testid="pb2-reader"]'), 'not the V3 reader').toHaveCount(0);
 
-            let btnState = await page.evaluate(() => {
-                let icons = Array.from(document.querySelectorAll('.material-symbols-outlined'));
-                let dl = icons.find(i => i.textContent.trim() === 'download');
-                if (!dl) return { found: false };
-                let btn = dl.closest('button');
-                return { found: true, disabled: btn.disabled };
-            });
+            let btn = page.locator('button[title="Export as HTML"]');
+            await expect(btn, 'the ReaderShell header renders Export').toHaveCount(1);
+            await expect(btn).toBeDisabled();
+            await expect(btn.locator('.material-symbols-outlined')).toHaveText('download');
+            await expect(page.locator('button[title="Fullscreen"]')).toBeVisible();
 
             console.log('=== I.4 Export on empty ===');
-            console.log('  Found: ' + btnState.found + ', Disabled: ' + (btnState.disabled || 'N/A'));
-
-            if (btnState.found) {
-                expect(btnState.disabled).toBe(true);
-            }
+            console.log('  Found: true, Disabled: true');
             console.log('VERIFIED: Export disabled on empty viewer');
         });
     });
@@ -1451,15 +1329,14 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await page.evaluate(() => { window.location.hash = '#!/picture-book'; });
             await page.waitForTimeout(3000);
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
 
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(500);
+            await expectScenePage(page, 1);
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(500);
+            await expectScenePage(page, Math.min(2, extractedScenes.length));
             await page.keyboard.press('Home');
-            await page.waitForTimeout(500);
+            await expect(page.locator('[data-pb2-cover-count]')).toBeVisible({ timeout: 10000 });
 
             let mediaUrlErrors = errors.filter(e => e.includes('mediaUrl') || e.includes('is not a function'));
             console.log('=== J.2 mediaUrl Errors ===');
@@ -1485,10 +1362,9 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             await page.evaluate(() => { window.location.hash = '#!/picture-book'; });
             await page.waitForTimeout(3000);
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(500);
+            await expectScenePage(page, 1);
 
             console.log('=== J.3 [object Object] URLs ===');
             console.log('  Bad URLs: ' + badUrls.length);
@@ -1510,21 +1386,29 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
                 }
             });
 
-            await page.evaluate((wid) => { window.location.hash = '#!/picture-book/' + wid; }, bookObjectId || workObjectId);
-            await page.waitForTimeout(5000);
+            await openReaderAtCover(page);
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(500);
+            await expectScenePage(page, 1);
             await page.keyboard.press('ArrowRight');
-            await page.waitForTimeout(500);
+            await expectScenePage(page, Math.min(2, extractedScenes.length));
             await page.keyboard.press('Home');
-            await page.waitForTimeout(500);
+            await expect(page.locator('[data-pb2-cover-count]')).toBeVisible({ timeout: 10000 });
+
+            // The ONE designed 404: the PB1 route's bridge probes GET /rest/model/olio.pb.book/{routeId}
+            // first (workflows/pictureBookWorkflow.js resolvePb2BookObjectId step 1) and the route id here
+            // is the book GROUP objectId, so that probe misses by design before the group → book lookup
+            // succeeds. Nothing else may fail.
+            let routeId = bookObjectId || workObjectId;
+            let designedProbe = httpErrors.filter(e => e.startsWith('404 ') && e.endsWith('/rest/model/olio.pb.book/' + routeId));
+            let unexpected = httpErrors.filter(e => !designedProbe.includes(e));
 
             console.log('=== J.4 HTTP Errors ===');
-            console.log('  Errors: ' + httpErrors.length);
+            console.log('  Errors: ' + httpErrors.length + ' (designed bridge probe 404s: ' + designedProbe.length + ')');
             httpErrors.forEach(e => console.log('    ' + e));
 
-            expect(httpErrors).toHaveLength(0);
-            console.log('VERIFIED: Zero 4xx/5xx during normal flow');
+            expect(designedProbe.length).toBeLessThanOrEqual(1);
+            expect(unexpected).toHaveLength(0);
+            console.log('VERIFIED: Zero unexpected 4xx/5xx during normal flow');
         });
 
         test('J.5 Keyboard on empty viewer', async ({ page }) => {

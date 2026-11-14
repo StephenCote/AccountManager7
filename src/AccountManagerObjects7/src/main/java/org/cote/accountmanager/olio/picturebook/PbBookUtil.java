@@ -123,9 +123,7 @@ public class PbBookUtil {
 		/// failure. It is NOT the serialization point - the unique index is - and this method does not
 		/// pretend otherwise: the create below is still checked, and a racer who slips through the window
 		/// between this read and that write is refused there.
-		if(findBookBySlug(user, slug, orgId) != null) {
-			throw new PictureBookException(409, "A book with slug '" + slug + "' already exists in this organization");
-		}
+		requireSlugFree(user, slug, orgId);
 
 		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
 		if(olioUser == null) {
@@ -344,9 +342,7 @@ public class PbBookUtil {
 				+ " is not entitled to series '" + seriesSlug + "'");
 		}
 
-		if(findBookBySlug(user, slug, orgId) != null) {
-			throw new PictureBookException(409, "A book with slug '" + slug + "' already exists in this organization");
-		}
+		requireSlugFree(user, slug, orgId);
 
 		BaseRecord olioUser = ioContext.getFactory().findUser(OlioContext.OLIO_USER_NAME, orgId);
 		if(olioUser == null) {
@@ -609,6 +605,51 @@ public class PbBookUtil {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SLUG, slug);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 		return populateBookLinkage(authorizedFind(user, q));
+	}
+
+	/**
+	 * Whether ANY book in the organization carries {@code slug}, whoever can read it (§24 I-5 / 218 c).
+	 * <p>
+	 * The slug index is per organization but {@link #findBookBySlug} is per caller: a book another user created
+	 * and never shared reads as absent, so a pre-check as the caller passed and the create then died on the
+	 * index with the "concurrent creation" message - wrong twice over. Every book row is owned by the
+	 * organization's olio principal (uniform olioUser ownership), so a read AS THAT PRINCIPAL - still through
+	 * {@code AccessPoint}, nothing bypassed - sees every book in the organization. The principal does not exist
+	 * before the first Olio context in an organization, and then there are no books either.
+	 */
+	public static boolean isSlugTaken(String slug, long organizationId) {
+		if(slug == null) {
+			return false;
+		}
+		BaseRecord olio = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, organizationId);
+		if(olio == null) {
+			return false;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_SLUG, slug);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, OlioFieldNames.FIELD_PB_SLUG});
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(olio, q) != null;
+	}
+
+	/**
+	 * The slug pre-flight every book creation and rename runs (§24 I-5 / 218 c): a 409 naming the book when the
+	 * caller can read the one that holds the slug, and a 409 saying the slug is held by a book the caller cannot
+	 * see when it is another user's ({@link #isSlugTaken}). The second message discloses nothing the unique
+	 * index would not - the create was always going to be refused - it only says why, instead of blaming a
+	 * concurrent creation that never happened. Not the serialization point: the index is, and every caller's
+	 * create is still checked.
+	 *
+	 * @throws PictureBookException 409 when the slug is taken
+	 */
+	public static void requireSlugFree(BaseRecord user, String slug, long organizationId) {
+		if(findBookBySlug(user, slug, organizationId) != null) {
+			throw new PictureBookException(409, "A book with slug '" + slug + "' already exists in this organization");
+		}
+		if(isSlugTaken(slug, organizationId)) {
+			throw new PictureBookException(409, "Slug '" + slug + "' is already taken in this organization by a book you cannot see"
+				+ " (another user's). Choose a different slug.");
+		}
 	}
 
 	/**
@@ -1419,10 +1460,19 @@ public class PbBookUtil {
 	 * {@code AccessPoint} as {@code user}; every result is asserted
 	 * and a failure is a 500, never a WARN.
 	 *
-	 * @param book   an {@code olio.pb.book} read with at least {@link PbConfigUtil#requestFields()}
+	 * The write is gated on the <b>persisted</b> book through {@link #requireBookUpdate} (§24 I-5 / 216 d): the
+	 * book is re-read as {@code user} and UPDATE on it is required, like every other write into a book's graph, so
+	 * a user who may read the book but not update it (Read on the book group, a series Reader) is refused with a
+	 * 403 before anything is written, and a stranger with a 404. Before the gate the refusal came late, from the
+	 * config row's own create/update returning null, as a 500 - and only because the row's group happened to deny
+	 * it, not because anything had checked the book.
+	 *
+	 * @param book   an {@code olio.pb.book} carrying at least {@code objectId} + {@code organizationId}; the gate
+	 *               re-reads it, so the caller's projection and FKs are never what authorizes the write
 	 * @param sparse the client's partial {@code olio.sd.config}; only fields present on it are written
 	 * @return the stored config after the write, re-read fresh (uncached, fully projected)
-	 * @throws PictureBookException 400 on missing args, 500 when any write fails
+	 * @throws PictureBookException 400 on missing args, 404 when the user cannot read the book, 403 when the user
+	 *         may read but not update it, 500 when any write fails
 	 */
 	public static BaseRecord setBookSdConfig(BaseRecord user, BaseRecord book, BaseRecord sparse) {
 		if(user == null || book == null) {
@@ -1434,6 +1484,9 @@ public class PbBookUtil {
 		if(sparse.getSchema() != null && !OlioModelNames.MODEL_SD_CONFIG.equals(sparse.getSchema())) {
 			throw new PictureBookException(400, "sdConfig must be " + OlioModelNames.MODEL_SD_CONFIG + ", got " + sparse.getSchema());
 		}
+		/// The gate: the stored book, as the user, with Update required. The record it returns carries the full
+		/// bookRequest() shape (sdConfig projected), so everything below reads from it and never from the caller's.
+		book = requireBookUpdate(user, book, "change the settings");
 		long orgId = PbGraphUtil.orgId(book);
 		Long groupIdVal = book.get(FieldNames.FIELD_GROUP_ID);
 		if(groupIdVal == null || groupIdVal <= 0L) {

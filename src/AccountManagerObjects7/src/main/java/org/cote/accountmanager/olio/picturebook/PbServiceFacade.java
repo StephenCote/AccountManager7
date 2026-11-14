@@ -1589,9 +1589,7 @@ public class PbServiceFacade {
 				? requireBook(user, fromBookObjectId) : null;
 		String fromSlug = (fromBook != null ? (String) fromBook.get(OlioFieldNames.FIELD_PB_SLUG) : null);
 
-		if(PbBookUtil.findBookBySlug(user, toSlug, orgId) != null) {
-			throw new PictureBookException(409, "A book with slug '" + toSlug + "' already exists");
-		}
+		PbBookUtil.requireSlugFree(user, toSlug, orgId);
 
 		/// The manuscript this chapter is cut from, when given. Read as the acting user so canRead applies -
 		/// linking a chapter to a document the caller cannot read is a 404, not a silent FK.
@@ -3953,13 +3951,19 @@ public class PbServiceFacade {
 	}
 
 	/**
-	 * Import extracted scenes into a work and, when the import was bound to a V3 book, submit its compose
+	 * Import extracted scenes into the V3 book identified by {@code pb2BookObjectId} and submit its compose
 	 * job (V3 §9.1 "composed up front", P4-4). The import's own result ({@code pictureBookMeta}, with the
 	 * top-level {@code bookObjectId} / {@code pb2BookObjectId} / {@code scenes} the client reads) is returned
-	 * unchanged with {@code composeJob} (the submit result), {@code composeJobSkipped} (a reason: no PB2 book,
-	 * or the book is not on the V3 path) or {@code composeJobError} ({@code status}, {@code message}) added.
-	 * A compose that cannot be queued never fails the import - the scenes are saved; the client can submit
-	 * the compose again from the book.
+	 * unchanged with {@code composeJob} (the submit result) or {@code composeJobError} ({@code status},
+	 * {@code message}) added. A compose that cannot be queued never fails the import - the scenes are saved;
+	 * the client can submit the compose again from the book.
+	 * <p>
+	 * Every import is bound to a book (I-1 / KI-89 (b), 2026-11-13): a blank {@code pb2BookObjectId} is a 400,
+	 * an unknown or unreadable book a 404 and a book the caller may not update a 403 - all raised BEFORE
+	 * {@code PictureBookUtil.createFromScenes} writes anything, in the facade's usual
+	 * {@code requireBook} -> {@code requireBookUpdate} order. The former bookless import (group + meta only,
+	 * {@code composeJobSkipped: "no PictureBook was bound to the import"}) is gone with the PB1 reader that
+	 * was the only surface able to show it.
 	 * <p>
 	 * The book's graph is built here too (P10-B 1): the workflow and one RENDER_PLAN node per imported scene,
 	 * created as the book's updater after the same gates, so the reader and the workflow canvas show a graph
@@ -3971,6 +3975,12 @@ public class PbServiceFacade {
 	public static Map<String, Object> createFromScenesAndCompose(BaseRecord user, String workObjectId, String chatConfigName,
 			String genre, String bookName, List<Map<String, Object>> sceneList, List<Map<String, Object>> charDataList,
 			String dataPath, String pb2BookObjectId) {
+		if(pb2BookObjectId == null || pb2BookObjectId.isBlank()) {
+			throw new PictureBookException(400, "pb2BookObjectId is required: every import must be bound to a PictureBook"
+				+ " (the bookless PB1 import was removed - KI-89)");
+		}
+		BaseRecord book = requireBook(user, pb2BookObjectId);
+		requireBookUpdate(user, book, "import scenes");
 		BaseRecord meta = PictureBookUtil.createFromScenes(user, workObjectId, chatConfigName, genre, bookName, sceneList,
 			charDataList, dataPath, pb2BookObjectId);
 		Map<String, Object> out = new LinkedHashMap<>();
@@ -3980,13 +3990,7 @@ public class PbServiceFacade {
 				out.putAll(m);
 			}
 		}
-		if(pb2BookObjectId == null || pb2BookObjectId.isBlank()) {
-			out.put("composeJobSkipped", "no PictureBook was bound to the import");
-			return out;
-		}
 		try {
-			BaseRecord book = requireBook(user, pb2BookObjectId);
-			requireBookUpdate(user, book, "compose scenes");
 			try {
 				out.put("graph", buildSceneGraph(user, book));
 			}

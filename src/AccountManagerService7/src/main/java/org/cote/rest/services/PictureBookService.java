@@ -67,7 +67,6 @@ import jakarta.ws.rs.core.Response;
  * from {@code GroupExportUtil}.
  *
  * Endpoints under /olio/picture-book:
- *   POST /{workObjectId}/extract              — Full LLM extraction: scenes + characters → creates ~/PictureBooks/{bookName}/
  *   POST /{workObjectId}/extract-scenes-only  — Scene extraction only (no character creation)
  *   GET  /extract-checkpoints                 — The caller's unfinished extractions (checkpoint notes with no book yet)
  *   GET  /{workObjectId}/extract-checkpoints  — One document's checkpoints (whole-document + chapter ranges)
@@ -592,56 +591,12 @@ public class PictureBookService {
     }
 
     /**
-     * POST /{workObjectId}/extract
-     * Full extraction: scenes + characters + outfit + narrate.
-     * Returns .pictureBookMeta JSON.
-     */
-    @RolesAllowed({"admin", "user"})
-    @POST
-    @Path("/{workObjectId:[0-9A-Za-z\\-]+}/extract")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    public Response extract(@PathParam("workObjectId") String workObjectId,
-            String json, @Context HttpServletRequest request, @Context ServletContext context) {
-        BaseRecord user = ServiceUtil.getPrincipalUser(request);
-
-        int count = PictureBookUtil.MAX_SCENES_DEFAULT;
-        String chatConfigName = null;
-        String genre = null;
-        String bookName = null;
-        BaseRecord params = parseParams(json);
-        if (params != null) {
-            /// See extractScenesOnly()'s identical guard: params.get("count") returns 0 (the int
-            /// field's unset primitive default) when the client never sent "count" at all, which
-            /// silently asked the LLM for the 0 most notable scenes instead of falling back to
-            /// MAX_SCENES_DEFAULT.
-            if (params.hasField("count")) {
-                Object countObj = params.get("count");
-                if (countObj instanceof Number) count = ((Number) countObj).intValue();
-            }
-            chatConfigName = params.get("chatConfig");
-            genre = params.get("genre");
-            bookName = params.get("bookName");
-        }
-
-        // KI-30: threaded down to createCharPerson so it can obtain an OlioContext for
-        // CharacterUtil.randomPerson() — same init param GameService already reads for the same
-        // purpose (OlioContextUtil.getOlioContext(user, ...)).
-        String dataPath = context.getInitParameter("datagen.path");
-
-        try {
-            BaseRecord meta = PictureBookUtil.extract(user, workObjectId, count, chatConfigName, genre, bookName, dataPath);
-            return Response.status(200).entity(toJson(meta)).build();
-        } catch (PictureBookException e) {
-            return handlePictureBookException(e);
-        }
-    }
-
-    /**
      * POST /{workObjectId}/create-from-scenes
-     * Takes user-curated scene list from Step 2, creates book group, scene notes,
-     * extracts + creates charPerson records, saves meta. Returns bookObjectId.
-     * Body: { bookName, chatConfig, genre, sceneList: [...], characters: [...] }
+     * Takes the user-curated scene list from Step 2 and imports it into the V3 book named by
+     * {@code pb2BookObjectId} (REQUIRED - 400 when blank, 404 unknown book, 403 not the book's updater,
+     * all before anything is written; I-1 / KI-89 (b)): creates the scene group + scene notes, extracts +
+     * creates charPerson records, saves meta, builds the graph and queues the compose job.
+     * Body: { pb2BookObjectId, bookName, chatConfig, genre, sceneList: [...], characters: [...] }
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -678,12 +633,14 @@ public class PictureBookService {
             }
         }
 
-        // KI-30: see extract()'s identical use of this init param.
+        // KI-30: threaded down to createCharPerson so it can obtain an OlioContext for
+        // CharacterUtil.randomPerson() - same init param GameService already reads for the same
+        // purpose (OlioContextUtil.getOlioContext(user, ...)).
         String dataPath = context.getInitParameter("datagen.path");
 
         try {
-            // V3 §9.1 / P4-4: the import result plus composeJob | composeJobSkipped | composeJobError; the
-            // facade never fails the import because the compose job could not be queued.
+            // V3 §9.1 / P4-4: the import result plus composeJob | composeJobError; the facade never fails
+            // the import because the compose job could not be queued.
             Map<String, Object> out = PbServiceFacade.createFromScenesAndCompose(user, workObjectId, chatConfigName, genre,
                     bookName, sceneList, charDataList, dataPath, pb2BookObjectId);
             return Response.status(200).entity(JSONUtil.exportObject(out)).build();

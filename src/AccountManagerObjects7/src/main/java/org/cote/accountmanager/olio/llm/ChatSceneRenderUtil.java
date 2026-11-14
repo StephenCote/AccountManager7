@@ -321,7 +321,7 @@ public final class ChatSceneRenderUtil {
 			degradations.add(d.getCode() + ": " + d.getMessage());
 		}
 		if(plan.getStrategy().getStages().contains(RenderPlan.STAGE_UPSCALE)) {
-			degradations.add("upscale: UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)");
+			degradations.add(RenderPlan.Degradation.UPSCALE_NOT_RENDERED + ": UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)");
 		}
 		Map<String, Object> cfg = plan.getConfig();
 		List<String> configNotApplied = configNotApplied(cfg, compiled, plan.getStrategy().getName().name());

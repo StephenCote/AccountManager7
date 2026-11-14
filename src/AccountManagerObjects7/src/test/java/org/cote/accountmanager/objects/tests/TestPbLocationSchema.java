@@ -359,7 +359,7 @@ public class TestPbLocationSchema extends BaseTest {
 		String groupPath = locationsPath(u, bk);
 		String tag = shortId();
 
-		assertEquals("watched/v4", PbWatchedFields.WATCHED_SET_VERSION);
+		assertEquals("watched/v5", PbWatchedFields.WATCHED_SET_VERSION);
 		assertTrue(PbWatchedFields.watchedModels().contains(OlioModelNames.MODEL_PB_LOCATION));
 		assertTrue(PbWatchedFields.watchedModels().contains(OlioModelNames.MODEL_PB_LOCATION_VARIANT));
 		assertEquals(Arrays.asList(FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, OlioFieldNames.FIELD_PB_KIND,

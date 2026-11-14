@@ -319,16 +319,17 @@ public class TestPbAutoApprove extends BaseTest {
 	// ─────────────────────────────── P4-7: the veto set over the plan's degradation codes ───────────────────────────────
 
 	/**
-	 * P4-7: the plan degradations an attempt carries are classified by their {@code CODE: message} prefix. The six
+	 * P4-7: the plan degradations an attempt carries are classified by their {@code CODE: message} prefix. The seven
 	 * accepted codes never veto (§23 added {@code VARIANT_SEED_UNKNOWN}: every planned variant still rendered; §17 /
-	 * P8-1 added {@code QA_FAIL} and {@code QA_UNAVAILABLE}: QA orders the variants, it never blocks the attempt), each
-	 * of the six {@link PbArtifactUtil#AUTO_APPROVE_VETO_CODES} does (§23 added {@code VARIANT_FAILED}: a planned
-	 * variant is missing), the executor's {@code upscale:} pseudo-entry and any free-form entry veto (they are not
-	 * known codes), and a mixed list is reduced to exactly its vetoing entries, in order. Pure classification: no
-	 * artifact, no DB write.
+	 * P8-1 added {@code QA_FAIL} and {@code QA_UNAVAILABLE}: QA orders the variants, it never blocks the attempt;
+	 * §24 I-3 / 224 e added {@code UPSCALE_NOT_RENDERED}: the preset planned an UPSCALE stage the executor does not
+	 * render, every planned final still rendered), each of the six {@link PbArtifactUtil#AUTO_APPROVE_VETO_CODES} does
+	 * (§23 added {@code VARIANT_FAILED}: a planned variant is missing), the pre-224 e lowercase {@code upscale:}
+	 * pseudo-entry and any free-form entry veto (they are not known codes), and a mixed list is reduced to exactly its
+	 * vetoing entries, in order. Pure classification: no artifact, no DB write.
 	 */
 	@Test
-	public void case08_vetoSetIsTheSixCodesPlusAnythingUnknown() {
+	public void case08_vetoSetIsTheSevenCodesPlusAnythingUnknown() {
 		assertTrue(PbArtifactUtil.vetoingDegradations(null).isEmpty());
 		assertTrue(PbArtifactUtil.vetoingDegradations(List.of()).isEmpty());
 
@@ -338,23 +339,29 @@ public class TestPbAutoApprove extends BaseTest {
 		String qaFail = RenderPlan.Degradation.QA_FAIL + ": variant 0 (x) failed visual QA";
 		String qaUnavailable = RenderPlan.Degradation.QA_UNAVAILABLE + ": vision model unreachable";
 		String seedUnknown = RenderPlan.Degradation.VARIANT_SEED_UNKNOWN + ": variant 1 rendered with a random seed: the renderer reported no seed for variant 0";
-		assertTrue("the six accepted codes never veto",
-			PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn, qaFail, qaUnavailable, seedUnknown)).isEmpty());
+		String upscaleNotRendered = RenderPlan.Degradation.UPSCALE_NOT_RENDERED + ": UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)";
+		assertTrue("the seven accepted codes never veto",
+			PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn, qaFail, qaUnavailable, seedUnknown, upscaleNotRendered)).isEmpty());
 		for(String code : new String[] { RenderPlan.Degradation.ACTOR_TEXT_ONLY, RenderPlan.Degradation.MODEL_SUBSTITUTED, RenderPlan.Degradation.QA_WARN,
-				RenderPlan.Degradation.QA_FAIL, RenderPlan.Degradation.QA_UNAVAILABLE, RenderPlan.Degradation.VARIANT_SEED_UNKNOWN }) {
+				RenderPlan.Degradation.QA_FAIL, RenderPlan.Degradation.QA_UNAVAILABLE, RenderPlan.Degradation.VARIANT_SEED_UNKNOWN,
+				RenderPlan.Degradation.UPSCALE_NOT_RENDERED }) {
 			assertTrue(code + " is a known code", RenderPlan.Degradation.isKnownCode(code));
 			assertFalse(code + " is not in the veto set", PbArtifactUtil.AUTO_APPROVE_VETO_CODES.contains(code));
 			assertTrue("a bare code with no message is still accepted", PbArtifactUtil.vetoingDegradations(List.of(code)).isEmpty());
 		}
 
-		assertEquals(6, PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size());
+		/// The six P6-era vetoes plus TITLE_BAND_FAILED (§24 I-4, 236 i: the band pass failed, the band is delivered
+		/// unpainted - the figure is sound but the image is not finished, so it must not be approved unseen).
+		assertEquals(7, PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size());
 		String[] vetoes = new String[] {
 			RenderPlan.Degradation.ACTOR_UNRESOLVED + ": Old Bes rendered from the row's text (character abc could not be read)",
 			RenderPlan.Degradation.ACTOR_FAILED + ": Jideon reference could not be bound",
 			RenderPlan.Degradation.LOCATION_TEXT_ONLY + ": the tavern rendered from text (no approved render)",
 			RenderPlan.Degradation.PROMPT_TRUNCATED + ": ELEM_LOW dropped: gulls (12 tokens over budget 512)",
 			RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": composed lazily by the render",
-			RenderPlan.Degradation.VARIANT_FAILED + ": variant 2 not rendered: Swarm returned no image" };
+			RenderPlan.Degradation.VARIANT_FAILED + ": variant 2 not rendered: Swarm returned no image",
+			RenderPlan.Degradation.TITLE_BAND_FAILED + ": TITLE_BAND pass failed: RENDERER_ERROR: band refused; the band is delivered unpainted" };
+		assertEquals("every veto code is exercised", PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size(), vetoes.length);
 		for(String entry : vetoes) {
 			String code = entry.substring(0, entry.indexOf(':'));
 			assertTrue(code + " is a known code", RenderPlan.Degradation.isKnownCode(code));
@@ -363,8 +370,10 @@ public class TestPbAutoApprove extends BaseTest {
 			assertEquals("a bare veto code vetoes too", List.of(code), PbArtifactUtil.vetoingDegradations(List.of(code)));
 		}
 
+		// 224 e: the executor now emits UPSCALE_NOT_RENDERED (accepted, above); the lowercase pre-224 e form is
+		// still just a free-form entry with an unknown code, and still vetoes.
 		String upscale = "upscale: UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)";
-		assertEquals("the executor's upscale pseudo-entry is not a known code and vetoes", List.of(upscale), PbArtifactUtil.vetoingDegradations(List.of(upscale)));
+		assertEquals("the pre-224 e lowercase upscale pseudo-entry is not a known code and vetoes", List.of(upscale), PbArtifactUtil.vetoingDegradations(List.of(upscale)));
 		String freeForm = PbPipelineUtil.ROLE_PORTRAIT_1 + ": no selected artifact";
 		assertEquals("a free-form executor entry vetoes", List.of(freeForm), PbArtifactUtil.vetoingDegradations(List.of(freeForm)));
 		assertEquals("no colon at all: the whole entry is the code", List.of("something went sideways"),
@@ -379,6 +388,7 @@ public class TestPbAutoApprove extends BaseTest {
 		mixed.add(null);
 		mixed.add(substituted);
 		mixed.add(upscale);
+		mixed.add(upscaleNotRendered);
 		mixed.add(qaWarn);
 		mixed.add(vetoes[0]);
 		assertEquals("only the vetoing entries, in list order, nulls skipped", List.of(vetoes[3], upscale, vetoes[0]), PbArtifactUtil.vetoingDegradations(mixed));

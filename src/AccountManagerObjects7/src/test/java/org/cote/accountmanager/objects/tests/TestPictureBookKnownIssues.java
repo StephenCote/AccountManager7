@@ -27,6 +27,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
+import org.cote.accountmanager.olio.picturebook.PbBookUtil;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil;
 import org.cote.accountmanager.olio.rules.BookWorldInitializationRule;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -266,6 +267,13 @@ public class TestPictureBookKnownIssues extends BaseTest {
 	 *
 	 * <p>Uses pre-built character stubs carrying {@code appearance}, which skips the per-character
 	 * reduce-character LLM call, so the only LLM traffic is whatever createCharPerson itself needs.
+	 *
+	 * <p>Since I-1 / KI-89 (b) (2026-11-13) every import is bound to an {@code olio.pb.book}: the
+	 * bookless 8-arg overload is gone, so this creates the book first ({@code PbBookUtil.createBook},
+	 * the same call the {@code POST /picturebook/book} route makes) and imports into it. The
+	 * home-group assertions below are unchanged - the sub-records are routed into the BOOK's world
+	 * groups exactly as the old dataPath-threaded context routed them into the default world's, and
+	 * {@code CharPersonFactory}'s placeholders are still instantiated against {@code ~/{schemaGroup}}.
 	 */
 	@Test
 	public void TestKi42CreateFromScenesCreatesEveryCharacterForANewUser() throws Exception {
@@ -273,6 +281,15 @@ public class TestPictureBookKnownIssues extends BaseTest {
 			+ "duplicate-key abort on a user whose sub-model groups don't exist yet");
 		BaseRecord user = newVirginUser("ki42b");
 		String chatConfigName = ensureChatConfig(user);
+		String dataPath = testProperties.getProperty("test.datagen.path");
+
+		/// The PB2 book the import is bound to (I-1 / KI-89 b). Slug per PbOlioContextUtil.BOOK_SLUG_PATTERN.
+		String slug = "ki42b-" + Long.toString(System.currentTimeMillis(), 36);
+		String bookTitle = "KI42 Book " + slug;
+		BaseRecord book = PbBookUtil.createBook(user, dataPath, slug, bookTitle);
+		assertNotNull("PbBookUtil.createBook must return the book every import is now bound to", book);
+		String bookObjectId = book.get(FieldNames.FIELD_OBJECT_ID);
+		assertNotNull("the created book must carry an objectId", bookObjectId);
 
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, "KI42 Source " + System.currentTimeMillis());
@@ -302,17 +319,27 @@ public class TestPictureBookKnownIssues extends BaseTest {
 		List<String> dupes;
 		try (LogCapture capture = new LogCapture()) {
 			meta = PictureBookUtil.createFromScenes(user, createdWork.get(FieldNames.FIELD_OBJECT_ID),
-				chatConfigName, null, "KI42 Book " + System.currentTimeMillis(), sceneList, charDataList,
-				testProperties.getProperty("test.datagen.path"));
+				chatConfigName, null, bookTitle, sceneList, charDataList, dataPath, bookObjectId);
 			dupes = capture.matching("duplicate key");
 		}
 		assertNotNull("createFromScenes must return meta", meta);
+		/// meta.pb2BookObjectId is the PB2 book the import was bound to; meta.bookObjectId stays the book
+		/// GROUP's objectId (~/Data/PictureBooks/<slug>, used by delete/reset) - PictureBookUtil:9541-9545.
+		String metaPb2 = meta.get("pb2BookObjectId");
+		assertEquals("meta.pb2BookObjectId is the PB2 book the import was bound to", bookObjectId, metaPb2);
+		BaseRecord bookGroup = IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_GROUP,
+			"~/Data/PictureBooks/" + slug, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		assertNotNull("the import must have routed into the book's slug group ~/Data/PictureBooks/" + slug, bookGroup);
+		String bookGroupOid = bookGroup.get(FieldNames.FIELD_OBJECT_ID);
+		String metaBookOid = meta.get("bookObjectId");
+		assertEquals("meta.bookObjectId is the book GROUP's objectId (the slug group), not the PB2 book",
+			bookGroupOid, metaBookOid);
 
 		List<Object> failed = meta.get("failedCharacters");
 		assertTrue("No character may be lost. failedCharacters=" + failed, failed == null || failed.isEmpty());
 		assertTrue("No group insert may violate the unique constraint. Offending lines: " + dupes, dupes.isEmpty());
 
-		List<Map<String, Object>> listed = PictureBookUtil.listCharacters(user, meta.get("bookObjectId"));
+		List<Map<String, Object>> listed = PictureBookUtil.listCharacters(user, bookObjectId);
 		assertEquals("All three characters must exist in the book", 3, listed.size());
 
 		// UPDATED 2026-08-18, and the update is the point rather than an accommodation.
@@ -376,79 +403,16 @@ public class TestPictureBookKnownIssues extends BaseTest {
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}
 
-	/**
-	 * KI-42's original property, preserved on the path that still uses the home directory: with <b>no</b>
-	 * {@code dataPath} there is no {@code OlioContext}, so {@code PbSubRecordUtil} falls back to
-	 * {@code ~/{schemaGroup}} — and a 3-character book must still produce exactly <b>one</b> group per
-	 * sub-model there, never two, and must not lose a character to a duplicate-key abort.
-	 *
-	 * <p>Split out when the sibling case above moved to asserting zero home groups. Without this leg the
-	 * suite would no longer cover the get-or-create race KI-42 is actually about, since the context-bearing
-	 * path no longer touches the home at all.
-	 *
-	 * <p>All seven home groups are asserted to hold exactly one group AND at least one record. With no
-	 * context nothing is detached, so {@code CharPersonFactory}'s placeholders are auto-created in the home
-	 * by {@code DBWriter.applyAutoCreateList} — which is what the pre-phase-3 behaviour was, and is what
-	 * this leg exists to keep asserting.
+	/*
+	 * TestKi42ContextlessCreateFromScenesUsesTheHomeAndDoesNotDuplicate was deleted with its subject
+	 * (I-1 / KI-89 b, 2026-11-13): it drove the bookless 8-arg createFromScenes with a null dataPath so
+	 * that NO OlioContext existed and the home was the sub-record destination. That overload is gone -
+	 * every import is bound to an olio.pb.book whose world supplies the context - so the "no context"
+	 * state is no longer a designed path (only the OlioException fallback inside createFromScenes can
+	 * reach it, and that is a degraded case, not a destination). The get-or-create race KI-42 is about
+	 * is still pinned by TestKi42ForeignSubModelGroupsResolveOncePerRequest and
+	 * TestKi42MakePathNeverReturnsAGroupThatIsNotInTheDatabase above, which do not depend on the import.
 	 */
-	@Test
-	public void TestKi42ContextlessCreateFromScenesUsesTheHomeAndDoesNotDuplicate() throws Exception {
-		logger.info("KI-42 contextless: with no dataPath the sub-record destination is ~/{schemaGroup}, "
-			+ "and a 3-character book must create exactly one such group per model");
-		BaseRecord user = newVirginUser("ki42c");
-		String chatConfigName = ensureChatConfig(user);
-
-		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
-		plist.parameter(FieldNames.FIELD_NAME, "KI42C Source " + System.currentTimeMillis());
-		BaseRecord work = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, user, null, plist);
-		work.set("text", "Jideon de Rosa walked the harbour road at dusk. Duna de Rosa followed, "
-			+ "carrying a lantern. Francois Touvier waited at the pier with the boat.");
-		BaseRecord createdWork = IOSystem.getActiveContext().getAccessPoint().create(user, work);
-		assertNotNull(createdWork);
-
-		List<Map<String, Object>> sceneList = new ArrayList<>();
-		Map<String, Object> scene0 = new LinkedHashMap<>();
-		scene0.put("title", "The Harbour Road");
-		scene0.put("blurb", "Three travellers meet at the pier.");
-		scene0.put("setting", "a stone harbour at dusk");
-		scene0.put("action", "walking toward the pier");
-		scene0.put("mood", "quiet");
-		sceneList.add(scene0);
-
-		List<Map<String, Object>> charDataList = new ArrayList<>();
-		charDataList.add(charStub("Jideon de Rosa", "MALE", "a lean man in a salt-stained coat"));
-		charDataList.add(charStub("Duna de Rosa", "FEMALE", "a young woman carrying a brass lantern"));
-		charDataList.add(charStub("Francois Touvier", "MALE", "a heavyset boatman with a grey beard"));
-
-		BaseRecord meta;
-		List<String> dupes;
-		try (LogCapture capture = new LogCapture()) {
-			/// null dataPath is the whole point: no context ⇒ the legacy home destination.
-			meta = PictureBookUtil.createFromScenes(user, createdWork.get(FieldNames.FIELD_OBJECT_ID),
-				chatConfigName, null, "KI42C Book " + System.currentTimeMillis(), sceneList, charDataList,
-				null);
-			dupes = capture.matching("duplicate key");
-		}
-		assertNotNull("createFromScenes must return meta", meta);
-		List<Object> failed = meta.get("failedCharacters");
-		assertTrue("No character may be lost on the contextless path either. failedCharacters=" + failed,
-			failed == null || failed.isEmpty());
-		assertTrue("No group insert may violate the unique constraint. Offending lines: " + dupes, dupes.isEmpty());
-		assertEquals("All three characters must exist in the book", 3,
-			PictureBookUtil.listCharacters(user, meta.get("bookObjectId")).size());
-
-		/// Exactly one group per sub-model, and it is actually USED — KI-42's original property, on the one
-		/// path that still writes into the acting user's home.
-		for (String model : FOREIGN_SUB_MODELS) {
-			String grp = RecordFactory.getSchema(model).getGroup();
-			assertEquals("Exactly one '" + grp + "' group under the user's home after a 3-character"
-				+ " contextless book — two would be KI-42's duplicate-key race", 1,
-				countHomeGroups(user, grp));
-			assertTrue("With no OlioContext the home IS the destination, so '" + grp + "' must actually hold"
-				+ " " + model + " records — a 0 here means this leg is no longer covering the contextless"
-				+ " path it was written for", countRecordsInHomeGroup(user, model, grp) > 0);
-		}
-	}
 
 	private Map<String, Object> charStub(String name, String gender, String appearance) {
 		Map<String, Object> m = new LinkedHashMap<>();

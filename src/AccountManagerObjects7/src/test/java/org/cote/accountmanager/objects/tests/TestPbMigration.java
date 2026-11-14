@@ -11,7 +11,9 @@ import static org.junit.Assume.assumeTrue;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import javax.imageio.ImageIO;
@@ -47,6 +49,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -429,7 +432,8 @@ public class TestPbMigration extends BaseTest {
 			metaQ.setCache(false);
 			BaseRecord metaAfter = IOSystem.getActiveContext().getAccessPoint().find(user, metaQ);
 			assertNotNull("PB1 meta note must still exist", metaAfter);
-			assertEquals("PB1 meta note text unchanged", metaJson, (String) metaAfter.get("text"));
+			// §24 I-5 / 218 d: the import's one PB1 write is the pb2BookObjectId back-link; nothing else may change.
+			assertMetaDiffersOnlyByLink("landscape fixture", metaJson, metaAfter.get("text"), bookOid);
 		}
 		finally {
 			if(bookOid != null) {
@@ -534,12 +538,13 @@ public class TestPbMigration extends BaseTest {
 
 		// If the PB2 book already exists (idempotent re-run), verify it rather than re-importing
 		BaseRecord pb2Book = PbBookUtil.findBookBySlug(user, expectedSlug, orgId);
+		ImportResult result = null;
 		if (pb2Book != null) {
 			logger.info("PB2 book '{}' already exists — verifying existing import", expectedSlug);
 		}
 		else {
 			// Run the migration
-			ImportResult result = PbMigrationUtil.importV1Book(user, dataPath(), bookGroupObjectId);
+			result = PbMigrationUtil.importV1Book(user, dataPath(), bookGroupObjectId);
 			assertNotNull("importV1Book must return a result", result);
 			logger.info("Migration result: {}", result);
 
@@ -593,17 +598,82 @@ public class TestPbMigration extends BaseTest {
 		assertEquals("PB1 group name must be unchanged", groupName,
 			(String) pb1GroupAfter.get(FieldNames.FIELD_NAME));
 
-		// PB1 meta note must still exist and its text must be identical
+		// PB1 meta note must still exist. §24 I-5 / 218 d: a fresh import performs exactly one PB1 write - the
+		// pb2BookObjectId back-link into this note - so on the import branch the text differs only by that key;
+		// on the already-migrated branch nothing ran this run and the text is identical.
 		Query postMigQ = QueryUtil.createQuery(ModelNames.MODEL_NOTE,
 			FieldNames.FIELD_GROUP_ID, pbDir.get(FieldNames.FIELD_ID));
 		postMigQ.field(FieldNames.FIELD_NAME, V1_META_NOTE_NAME);
 		postMigQ.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
 		postMigQ.planMost(true);
+		postMigQ.setCache(false);
 		BaseRecord metaNoteAfter = IOSystem.getActiveContext().getAccessPoint().find(user, postMigQ);
 		assertNotNull("PB1 meta note must still exist after migration", metaNoteAfter);
 		String metaTextAfter = metaNoteAfter.get("text");
-		assertEquals("PB1 meta note text must be unchanged after migration",
-			metaTextBefore, metaTextAfter);
+		if (result == null) {
+			assertEquals("PB1 meta note text must be unchanged when nothing was imported this run",
+				metaTextBefore, metaTextAfter);
+		}
+		else {
+			boolean leftAlone = false;
+			for (String w : result.warnings) {
+				if (w.contains("pb2BookObjectId left as")) {
+					leftAlone = true; // the PB1 meta already named another live book; the import must not overwrite it
+				}
+			}
+			if (leftAlone) {
+				assertEquals("PB1 meta note text must be unchanged when its link names a live book",
+					metaTextBefore, metaTextAfter);
+			}
+			else {
+				assertMetaDiffersOnlyByLink("real PB1 book", metaTextBefore, metaTextAfter, result.bookObjectId);
+			}
+		}
+	}
+
+	/**
+	 * §24 I-5 / 218 d pin: {@code after} parses to {@code before} plus exactly {@code pb2BookObjectId = bookOid}.
+	 * The link is written by re-serialising the parsed meta map through {@code JSONUtil.exportObject}, which is
+	 * {@code Include.NON_EMPTY} and pretty-prints, so the comparison is on parsed maps with empty values stripped
+	 * from both sides - never on the raw text.
+	 */
+	private static void assertMetaDiffersOnlyByLink(String label, String before, String after, String bookOid) {
+		assertNotNull(label + ": meta text after import", after);
+		Map<String, Object> beforeMap = JSONUtil.getMap(before.getBytes(), String.class, Object.class);
+		Map<String, Object> afterMap = JSONUtil.getMap(after.getBytes(), String.class, Object.class);
+		assertNotNull(label + ": meta before parses", beforeMap);
+		assertNotNull(label + ": meta after parses", afterMap);
+		assertEquals(label + ": pb2BookObjectId is the imported book", bookOid, afterMap.get("pb2BookObjectId"));
+		Map<String, Object> beforeMinusLink = new LinkedHashMap<>(beforeMap);
+		beforeMinusLink.remove("pb2BookObjectId");
+		Map<String, Object> afterMinusLink = new LinkedHashMap<>(afterMap);
+		afterMinusLink.remove("pb2BookObjectId");
+		assertEquals(label + ": every other meta key is unchanged by the import", stripEmpty(beforeMinusLink), stripEmpty(afterMinusLink));
+	}
+
+	/** Deep copy with null / empty-string / empty-map / empty-list values removed - what the NON_EMPTY exporter drops. */
+	@SuppressWarnings("unchecked")
+	private static Object stripEmpty(Object o) {
+		if (o instanceof Map) {
+			Map<String, Object> out = new LinkedHashMap<>();
+			for (Map.Entry<String, Object> e : ((Map<String, Object>) o).entrySet()) {
+				Object v = stripEmpty(e.getValue());
+				if (v == null || (v instanceof String && ((String) v).isEmpty())
+					|| (v instanceof Map && ((Map<?, ?>) v).isEmpty()) || (v instanceof List && ((List<?>) v).isEmpty())) {
+					continue;
+				}
+				out.put(e.getKey(), v);
+			}
+			return out;
+		}
+		if (o instanceof List) {
+			List<Object> out = new ArrayList<>();
+			for (Object v : (List<Object>) o) {
+				out.add(stripEmpty(v));
+			}
+			return out;
+		}
+		return o;
 	}
 
 	@Test

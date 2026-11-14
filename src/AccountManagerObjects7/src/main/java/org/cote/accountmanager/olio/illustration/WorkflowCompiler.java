@@ -189,7 +189,10 @@ public final class WorkflowCompiler {
 		if(refs.size() > REFERENCE_COLOURS.length) {
 			throw new GraphCompileException("At most " + REFERENCE_COLOURS.length + " references can be placed; " + refs.size() + " given");
 		}
-		String stage = (target == null ? RenderPlan.STAGE_BASE : RenderPlan.STAGE_ACTOR_REGION);
+		/// The graph's shape names the stage - a plain T2I graph is BASE, a masked init-image graph is ACTOR_REGION -
+		/// except the reserved band's pass, which is the same masked shape under its own stage name (§24 I-4).
+		String stage = (target == null ? RenderPlan.STAGE_BASE
+			: (RenderPlan.STAGE_TITLE_BAND.equals(request.getStage()) ? RenderPlan.STAGE_TITLE_BAND : RenderPlan.STAGE_ACTOR_REGION));
 		int width = request.getWidth();
 		int height = request.getHeight();
 		int steps = (inpaint != null ? inpaint.getSteps() : request.getSteps());

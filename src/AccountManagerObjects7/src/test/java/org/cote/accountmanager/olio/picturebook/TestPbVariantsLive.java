@@ -360,7 +360,7 @@ public class TestPbVariantsLive extends BaseTest {
 			List<String> finDeg = PbNodeExecutor.degradationsOf(fin);
 			boolean upscaleReported = false;
 			for(String d : (finDeg != null ? finDeg : List.<String>of())) {
-				upscaleReported |= d.startsWith("upscale: ");
+				upscaleReported |= d.startsWith(RenderPlan.Degradation.UPSCALE_NOT_RENDERED + ": ");
 			}
 			assertTrue("FINAL reports its planned UPSCALE stage as a degradation: " + finDeg, upscaleReported);
 			assertEquals("FINAL's only degradation is the upscale report: " + finDeg, 1, finDeg.size());

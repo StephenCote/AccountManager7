@@ -30,12 +30,16 @@ import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.illustration.BandCanvas;
 import org.cote.accountmanager.olio.illustration.CompiledPrompt;
+import org.cote.accountmanager.olio.illustration.GraphInputs;
 import org.cote.accountmanager.olio.illustration.ImageDims;
 import org.cote.accountmanager.olio.illustration.ModelTaskKeys;
 import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
+import org.cote.accountmanager.olio.illustration.SwarmGraphClient;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
+import org.cote.accountmanager.olio.illustration.SwarmQaProvider;
 import org.cote.accountmanager.olio.picturebook.PbCoverUtil.CoverResult;
 import org.cote.accountmanager.olio.picturebook.PbRenderPlanUtil.PlanOptions;
 import org.cote.accountmanager.olio.picturebook.PictureBookUtil.DeleteResult;
@@ -70,13 +74,19 @@ import org.junit.Test;
  * PORTRAIT artifact, and placed as the HERO actor of a MANUAL {@code COVER} composition with a TOP title-safe band.
  * <p>
  * {@link #coverRenderedFromReferencedActorWithTopTitleBand}: the plan marks the actor {@code referenced} in BASE
- * (strategy {@code DIRECT_REFERENCE}), reserves the top quarter and clips the actor box below it; a STANDARD run
- * on {@code .39} renders the preset's two finals under the pinned FLUX.2 checkpoint, each a real PNG whose
- * sanitized generator request names the portrait artifact as its reference; QA CANONICAL judges variant 0 through
- * whatever provider production selects (a model result, logged, never asserted); the auto-approve outcome obeys the
- * invariant (approved => the approved artifact is one of this run's finals and reads APPROVED; otherwise a skip
- * reason is present); the node reads DONE / DONE_UNVERIFIED; nothing composed a scene and the cover's revision is
- * untouched. Both PNGs are written under {@code target/TestPbCoverRenderLive/} to be looked at.
+ * (strategy {@code DIRECT_REFERENCE}), reserves the top quarter and clips the actor box below it, and plans the
+ * stages BASE then TITLE_BAND (§24 I-4, 236 i: the band is enforced by the canvas, not asked of the prompt - BASE
+ * renders the figure on the canvas less the band's rows and no longer speaks the clause; the TITLE_BAND pass paints
+ * the band, masked, from the location-only compile that does). A STANDARD run on {@code .39} renders the preset's
+ * two finals under the pinned FLUX.2 checkpoint: per variant one {@code stage} artifact (the figure canvas, rendered
+ * from the portrait reference) and one BASE final (the full canvas, referencing that stage artifact - the chain
+ * retention walks), each a real PNG with a sanitized generator request; no stage error and no TITLE_BAND_FAILED;
+ * the production face detector, posted by the test on each final, finds no face centred in the band; QA CANONICAL
+ * judges variant 0 through whatever provider production selects (a model result, logged, never asserted); the
+ * auto-approve outcome obeys the invariant (approved => the approved artifact is one of this run's finals and
+ * reads APPROVED; otherwise a skip reason is present); the node reads DONE / DONE_UNVERIFIED; nothing composed a
+ * scene and the cover's revision is untouched. The four PNGs ({@code figure-v*}, {@code cover-v*}) are written
+ * under {@code target/TestPbCoverRenderLive/} to be looked at.
  * <p>
  * Gated like every {@code .39} test ({@code PB_SD_TESTS=1} / {@code -Dpb.sd.tests=1}); a skip is not a pass. No
  * LLM is required: the run carries no chatConfig, so the QA hook falls back the way production does. Timings are
@@ -148,11 +158,14 @@ public class TestPbCoverRenderLive extends BaseTest {
 		try {
 			f = fixture("cov");
 
-			/// The plan before the run: COVER, the top quarter reserved, the one actor is the book-58 cast member,
-			/// referenced in BASE through the approved portrait, its box pushed below the band.
-			RenderPlan plan = PbRenderPlanUtil.buildCompositionPlan(owner, f.book, f.cover, f.node, PlanOptions.NONE, sdu.getApiType(), sdu.getServer());
+			/// The plan before the run (the STANDARD preset the run uses, so its canvas is the run's): COVER, the top
+			/// quarter reserved, the one actor is the book-58 cast member, referenced in BASE through the approved
+			/// portrait, its box pushed below the band.
+			PlanOptions standard = new PlanOptions(null, false, PbQualityPresetEnumType.STANDARD, null);
+			RenderPlan plan = PbRenderPlanUtil.buildCompositionPlan(owner, f.book, f.cover, f.node, standard, sdu.getApiType(), sdu.getServer());
 			assertNotNull("plan", plan);
 			log("plan: purpose=" + plan.getPurpose() + " reserved=" + boxText(plan.getReserved()) + " actors=" + plan.getActors().size()
+				+ " canvas=" + plan.getCanvas().getWidth() + "x" + plan.getCanvas().getHeight() + " stages=" + plan.getStrategy().getStages()
 				+ " strategy=" + plan.getStrategy().getName() + " (" + plan.getStrategy().getReason() + ") degradations=" + degradationText(plan));
 			assertEquals("purpose", RenderPlan.PURPOSE_COVER, plan.getPurpose());
 			assertBox("reserved", plan.getReserved(), 0.0, 0.0, 1.0, PbLayoutUtil.TITLE_SAFE_BAND_HEIGHT);
@@ -166,11 +179,28 @@ public class TestPbCoverRenderLive extends BaseTest {
 			assertEquals("the identity is the approved portrait", f.portraitOid, actor.getIdentity().getPortraitArtifactId());
 			assertBox("actor (pushed below the band, height clipped to the canvas)", actor.getBox(), 0.3, 0.25, 0.4, 0.75);
 			assertEquals("strategy", PbStrategyEnumType.DIRECT_REFERENCE, plan.getStrategy().getName());
+			/// §24 I-4 (236 i): the band is enforced, not asked for. BASE renders the figure on the canvas with the
+			/// band's rows removed and its prompt no longer speaks the clause; the TITLE_BAND pass paints the band
+			/// itself, masked, from the location-only compile that does.
+			assertEquals("stages: BASE then the band pass", List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), plan.getStrategy().getStages());
 			CompiledPrompt base = plan.getCompiled().get(RenderPlan.STAGE_BASE);
 			assertNotNull("compiled BASE", base);
 			log("BASE prompt: " + base.getPrompt());
-			assertTrue("the BASE prompt carries the band clause: " + base.getPrompt(), lower(base.getPrompt()).contains(TOP_CLAUSE));
+			assertFalse("the BASE prompt no longer carries the band clause (the band is enforced by the canvas): " + base.getPrompt(),
+				lower(base.getPrompt()).contains(TOP_CLAUSE));
 			assertTrue("the BASE prompt carries the subject: " + base.getPrompt(), lower(base.getPrompt()).contains("basalt headland"));
+			CompiledPrompt bandPrompt = plan.getCompiled().get(RenderPlan.STAGE_TITLE_BAND);
+			assertNotNull("compiled TITLE_BAND", bandPrompt);
+			log("TITLE_BAND prompt: " + bandPrompt.getPrompt());
+			assertTrue("the TITLE_BAND prompt carries the band clause: " + bandPrompt.getPrompt(), lower(bandPrompt.getPrompt()).contains(TOP_CLAUSE));
+			assertTrue("the TITLE_BAND prompt carries the setting: " + bandPrompt.getPrompt(), lower(bandPrompt.getPrompt()).contains("basalt headland"));
+			int fullW = plan.getCanvas().getWidth();
+			int fullH = plan.getCanvas().getHeight();
+			int bandPx = BandCanvas.bandPixels(fullH, plan.getReserved());
+			int figureH = BandCanvas.figureHeight(fullH, plan.getReserved());
+			log("canvas " + fullW + "x" + fullH + " band " + bandPx + " px (top), figure canvas " + fullW + "x" + figureH);
+			assertTrue("the band is a real slice of the canvas: " + bandPx + " of " + fullH, bandPx >= BandCanvas.GRAIN && bandPx < fullH);
+			assertEquals("band rows are the reserved quarter, to the grain", Math.round(fullH * PbLayoutUtil.TITLE_SAFE_BAND_HEIGHT), bandPx, (double) BandCanvas.GRAIN);
 			RenderPlan.ModelPick pick = plan.pickForStage(RenderPlan.STAGE_BASE);
 			assertNotNull("BASE pick", pick);
 			/// The pin is the bare name; the plan resolves it to the name the server lists (with its extension).
@@ -201,15 +231,46 @@ public class TestPbCoverRenderLive extends BaseTest {
 			assertNull("no sceneObjectId on a cover DTO", out.get("sceneObjectId"));
 			assertEquals("two finals rendered", 2, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
 			assertEquals("qaMode", QualityPresets.QA_CANONICAL, out.get(PbNodeExecutor.KEY_QA_MODE));
+			/// §24 I-4: both passes planned and rendered, and the band pass answered - a TITLE_BAND_FAILED here is
+			/// the renderer refusing the masked band pass, a product red, never softened.
+			assertEquals("stages planned", List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), out.get("stagesPlanned"));
+			assertEquals("stages rendered (variant 0)", List.of(RenderPlan.STAGE_BASE, RenderPlan.STAGE_TITLE_BAND), out.get("stagesRendered"));
+			List<String> degradations = PbNodeExecutor.degradationsOf(out);
+			for(String d : degradations) {
+				assertFalse("the band pass did not fail: " + d + " (stageErrors=" + out.get(PbNodeExecutor.KEY_STAGE_ERRORS) + ")",
+					d.startsWith(RenderPlan.Degradation.TITLE_BAND_FAILED));
+			}
+			assertTrue("no stage errors: " + out.get(PbNodeExecutor.KEY_STAGE_ERRORS), ((List<?>) out.get(PbNodeExecutor.KEY_STAGE_ERRORS)).isEmpty());
 			List<Map<String, Object>> vs = variants(out, 2);
 			Map<?, ?> qa0 = (Map<?, ?>) vs.get(0).get(PbNodeExecutor.KEY_VARIANT_QA);
 			log("QA of variant 0 (CANONICAL): " + qa0 + "; variant 1: " + vs.get(1).get(PbNodeExecutor.KEY_VARIANT_QA));
 
-			/// The finals on the database: two BASE artifacts of this run, each a real PNG rendered from the portrait
-			/// reference under the pinned checkpoint, with a sanitized generator request.
+			/// The figure images on the database: one `stage` artifact per variant of this run, the BASE pass on
+			/// the figure canvas (the band's rows removed), rendered from the portrait reference.
+			List<BaseRecord> figures = runArtifacts(f, runOid, PbPipelineUtil.ROLE_STAGE);
+			assertEquals("two stage artifacts of the run (the figure passes)", 2, figures.size());
+			for(int i = 0; i < figures.size(); i++) {
+				BaseRecord a = figures.get(i);
+				assertEquals("figure variant index " + i, i, PbArtifactUtil.variantIndexOf(a));
+				byte[] png = artifactPng(f, a, "figure-v" + i);
+				int[] dims = ImageDims.decode(png);
+				assertEquals("figure " + i + " width", fullW, dims[0]);
+				assertEquals("figure " + i + " height is the canvas less the band", figureH, dims[1]);
+				List<String> refs = PbArtifactUtil.referenceArtifactIdsOf(a);
+				log("figure " + i + " references=" + refs);
+				assertTrue("figure " + i + " was rendered from the portrait artifact " + f.portraitOid + ": " + refs, refs.contains(f.portraitOid));
+				String req = a.get(OlioFieldNames.FIELD_PB_GENERATOR_REQUEST);
+				assertNotNull("figure " + i + " generator request", req);
+				assertTrue("figure " + i + " generator request is sanitized", PbArtifactUtil.isSanitized(req));
+			}
+
+			/// The finals on the database: two BASE artifacts of this run, each the band pass's full-canvas PNG painted
+			/// over its variant's figure image (the final references that stage artifact, which references the
+			/// portrait - the chain PbRetentionSelector walks), under the pinned checkpoint, with a sanitized request.
 			List<BaseRecord> finals = runFinals(f, runOid);
 			assertEquals("two base artifacts of the run", 2, finals.size());
 			List<Long> seeds = new ArrayList<>();
+			List<byte[]> finalPngs = new ArrayList<>();
 			for(int i = 0; i < finals.size(); i++) {
 				BaseRecord a = finals.get(i);
 				assertEquals("variant index " + i, i, PbArtifactUtil.variantIndexOf(a));
@@ -218,8 +279,10 @@ public class TestPbCoverRenderLive extends BaseTest {
 				assertTrue("variant " + i + " seed is a real seed, got " + seed, seed > 0L);
 				seeds.add(Long.valueOf(seed));
 				byte[] png = artifactPng(f, a, "cover-v" + i);
+				finalPngs.add(png);
 				int[] dims = ImageDims.decode(png);
-				assertTrue("variant " + i + " has dimensions", dims[0] > 0 && dims[1] > 0);
+				assertEquals("variant " + i + " width is the full canvas", fullW, dims[0]);
+				assertEquals("variant " + i + " height is the full canvas (band painted back)", fullH, dims[1]);
 				String req = a.get(OlioFieldNames.FIELD_PB_GENERATOR_REQUEST);
 				assertNotNull("variant " + i + " generator request", req);
 				assertTrue("variant " + i + " generator request is sanitized", PbArtifactUtil.isSanitized(req));
@@ -227,12 +290,19 @@ public class TestPbCoverRenderLive extends BaseTest {
 				assertFalse("variant " + i + " generator request carries no session id", lower(req).contains("session_id"));
 				List<String> refs = PbArtifactUtil.referenceArtifactIdsOf(a);
 				log("variant " + i + " references=" + refs);
-				assertTrue("variant " + i + " was rendered from the portrait artifact " + f.portraitOid + ": " + refs, refs.contains(f.portraitOid));
+				assertEquals("variant " + i + " was painted over its figure image " + oidOf(figures.get(i)) + ": " + refs,
+					List.of(oidOf(figures.get(i))), refs);
 				String graph = a.get(OlioFieldNames.FIELD_PB_BACKEND_GRAPH);
 				assertTrue("variant " + i + " names the pinned checkpoint in its request or backend graph",
 					req.contains(flux2Model) || (graph != null && graph.contains(flux2Model)));
 			}
 			assertEquals("seeds are distinct: " + seeds, 2, new java.util.HashSet<>(seeds).size());
+
+			/// The band itself, measured: the production face detector (the QA provider's own graph, posted by the
+			/// test) finds no face centred in the band on either final - the figure cannot be there by construction,
+			/// and the band pass painted none in. Positions are logged with the images to be looked at. Detector not
+			/// installed = measured as such and reported, not a pass.
+			facesClearOfBand(pick.getModel(), plan.getReserved(), finalPngs);
 
 			/// Auto-approve: a QA verdict on a real image is a model result, so only the invariant is asserted.
 			Boolean autoApproved = (Boolean) out.get(PbNodeExecutor.KEY_AUTO_APPROVED);
@@ -542,17 +612,54 @@ public class TestPbCoverRenderLive extends BaseTest {
 
 	/// The run's BASE artifacts on the composition-plan node, re-read in full, in variant order.
 	private List<BaseRecord> runFinals(Fixture f, String runOid) {
-		List<BaseRecord> chain = PbArtifactUtil.listChain(owner, f.node, PbPipelineUtil.ROLE_BASE);
-		List<BaseRecord> finals = new ArrayList<>();
+		return runArtifacts(f, runOid, PbPipelineUtil.ROLE_BASE);
+	}
+
+	/// The run's artifacts of one role on the composition-plan node, re-read in full, in variant order.
+	private List<BaseRecord> runArtifacts(Fixture f, String runOid, String role) {
+		List<BaseRecord> chain = PbArtifactUtil.listChain(owner, f.node, role);
+		List<BaseRecord> mine = new ArrayList<>();
 		for(BaseRecord a : chain) {
 			BaseRecord full = PbArtifactUtil.readArtifact(owner, oidOf(a), orgId);
 			assertNotNull("artifact " + oidOf(a), full);
 			if(runOid.equals(PbArtifactUtil.attemptOf(full))) {
-				finals.add(full);
+				mine.add(full);
 			}
 		}
-		finals.sort(Comparator.comparingInt(PbArtifactUtil::variantIndexOf));
-		return finals;
+		mine.sort(Comparator.comparingInt(PbArtifactUtil::variantIndexOf));
+		return mine;
+	}
+
+	/// Test-only (§24 I-4): each final through the production detector graph ({@link SwarmQaProvider#qaGraph}, the
+	/// same four nodes the QA hook posts), asserting no face is centred in the reserved band. The detector's
+	/// absence from the server is measured and logged - the images are still written to be looked at - and the
+	/// hand-back says which it was. Never a timing threshold.
+	private void facesClearOfBand(String model, RenderPlan.Box band, List<byte[]> pngs) {
+		SwarmGraphClient client = new SwarmGraphClient(sdu);
+		SwarmQaProvider provider = new SwarmQaProvider(client, model);
+		if(!provider.isAvailable()) {
+			log("MEASURED: face check NOT RUN - " + provider.availabilityNote());
+			return;
+		}
+		for(int i = 0; i < pngs.size(); i++) {
+			String label = "variant " + i;
+			long t0 = System.currentTimeMillis();
+			SwarmGraphClient.RawResponse resp = client.generateRaw(SwarmQaProvider.qaGraph(),
+				new GraphInputs().image(SwarmQaProvider.INPUT_PAGE, pngs.get(i)), model, 1, null, true);
+			assertNotNull(label + " detector response", resp);
+			assertFalse(label + " detector unreachable: " + server, resp.isUnreachable());
+			assertNull(label + " detector error", resp.getError());
+			assertFalse(label + " detector returned a mask", resp.getImagePaths().isEmpty());
+			byte[] mask = client.fetchImage(resp.getImagePaths().get(0));
+			assertTrue(label + " mask bytes", mask != null && mask.length > 0);
+			List<SwarmQaProvider.Face> faces = SwarmQaProvider.faces(mask);
+			assertNotNull(label + " mask decodes", faces);
+			log("MEASURED: " + label + " faces=" + faces.size() + " at " + faces + " (centroid x,y as canvas fractions; band y<" + (band.getY() + band.getH())
+				+ ") in " + (System.currentTimeMillis() - t0) + " ms");
+			for(SwarmQaProvider.Face face : faces) {
+				assertFalse(label + ": a face is centred in the reserved band at " + face + " (band " + boxText(band) + ")", face.centroidIn(band));
+			}
+		}
 	}
 
 	/// The artifact's bytes, read fresh from its data.data; asserts a real PNG and writes it under target/ to be looked at.
