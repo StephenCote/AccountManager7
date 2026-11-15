@@ -82,8 +82,9 @@ function currentHash(page) {
     return page.evaluate(() => window.location.hash);
 }
 
-// What the V3 reader header shows: the olio.pb.book `name`, which PbBookUtil.bookName() derives as
-// "Book <slug>" (the typed title is the DTO's `title`). Same contract pictureBookNavigation.spec.js asserts.
+// What the V3 reader header shows: the olio.pb.book `name`, which PbBookUtil.bookName() sets to the typed
+// title since KI-90 (§24 I-9, 2026-11-14; "Book <slug>" only when no title was passed). Same contract
+// pictureBookNavigation.spec.js asserts.
 function displayName(b) { return (b && (b.name || b.title || b.slug)) || 'Untitled'; }
 
 async function findBook(request, oid) {

@@ -18,7 +18,6 @@ import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.junit.Test;
 
@@ -164,11 +163,13 @@ public class TestPbSeriesChapterScenesResolve extends BaseTest {
 		assertEquals("same (empty) cast via both handles — castless scene", castViaGroup.size(), castViaBook.size());
 		assertTrue("castless scene => zero characters", castViaBook.isEmpty());
 
-		// ── PROOF (settings): /settings must accept the SAME two handles as /scenes and /characters.
-		// Measured live 2026-09-30: getBookSdConfig/setBookSdConfig resolved only the scene-GROUP objectId
-		// and 404'd on the pb.book objectId, so the wizard's resume path silently dropped the saved config.
-		// The series-chapter case exercises the meta-link (name-independent) branch of resolveBookGroupEither
-		// specifically — the slug-named lookup cannot resolve this book (bookName != slug, asserted above). ──
+		// ── PROOF (settings): GET /settings must accept the SAME two handles as /scenes and /characters.
+		// Measured live 2026-09-30: getBookSdConfig resolved only the scene-GROUP objectId and 404'd on the
+		// pb.book objectId, so the wizard's resume path silently dropped the saved config. The series-chapter
+		// case exercises the meta-link (name-independent) branch of resolveBookGroupEither specifically — the
+		// slug-named lookup cannot resolve this book (bookName != slug, asserted above). The PB1 writer
+		// (PictureBookUtil.setBookSdConfig) was deleted 2026-11-14 (§24 C-1), so the pin is read-side only:
+		// both handles RESOLVE (null, not 404). ──
 		assertNull("fresh chapter: no sdConfig via the scene-group objectId",
 			PictureBookUtil.getBookSdConfig(testUser, sceneGroupObjectId));
 		try {
@@ -178,19 +179,6 @@ public class TestPbSeriesChapterScenesResolve extends BaseTest {
 			fail("getBookSdConfig(series-chapter pb.book objectId) must resolve like /scenes does; got HTTP "
 				+ e.getStatus() + " " + e.getMessage());
 		}
-		String expectedStyle = "photograph";
-		BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		sdConfig.set("style", expectedStyle);
-		BaseRecord stored = PictureBookUtil.setBookSdConfig(testUser, bookOid, sdConfig, null);
-		assertNotNull("setBookSdConfig(pb.book objectId) must store and return the common config", stored);
-		BaseRecord settingsViaGroup = PictureBookUtil.getBookSdConfig(testUser, sceneGroupObjectId);
-		BaseRecord settingsViaBook = PictureBookUtil.getBookSdConfig(testUser, bookOid);
-		assertNotNull("settings via the scene-group objectId", settingsViaGroup);
-		assertNotNull("settings via the series-chapter pb.book objectId (was 404 before the fix)", settingsViaBook);
-		assertEquals("same style via both handles", expectedStyle, settingsViaGroup.get("style"));
-		assertEquals("same style via both handles", expectedStyle, settingsViaBook.get("style"));
-		assertEquals("identical serialized settings via both handles",
-			settingsViaGroup.toFullString(), settingsViaBook.toFullString());
 
 		System.out.println("=== SERIES-CHAPTER /scenes + /characters RESOLUTION PROOF ===");
 		System.out.println("  chapter slug=" + slug + "  bookName=" + bookName + "  (deliberately different)");
@@ -199,6 +187,6 @@ public class TestPbSeriesChapterScenesResolve extends BaseTest {
 		System.out.println("  listScenes(groupOid)  size=" + scenesViaGroup.size());
 		System.out.println("  listScenes(bookOid)   size=" + scenesViaBook.size() + "  <= the fix (was 404)");
 		System.out.println("  listCharacters(bookOid) resolved (size=" + castViaBook.size() + ", was 404)");
-		System.out.println("  getBookSdConfig(bookOid).style = " + settingsViaBook.get("style") + "  <= settings fix (was 404)");
+		System.out.println("  getBookSdConfig(bookOid) resolved (null, not 404)  <= settings fix (was 404)");
 	}
 }

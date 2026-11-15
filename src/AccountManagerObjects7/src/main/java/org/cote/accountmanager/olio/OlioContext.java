@@ -160,7 +160,8 @@ public class OlioContext {
 	 * {@link #userRole}/{@link #adminRole} to the ORG-WIDE {@code ~/Roles/Olio User} /
 	 * {@code ~/Roles/Olio Admin} unconditionally, before {@code initialize()} ever reaches the
 	 * role-parameterised grant calls. Without this indirection every role-less entry point
-	 * ({@code enroleReader}, {@code enroleAdmin}, {@code scanNestedGroups}) would silently act on the
+	 * ({@code enroleReader}, {@code scanNestedGroups}; {@code enroleAdmin} until its deletion
+	 * 2026-11-14, §24 C-1) would silently act on the
 	 * org-wide tier even on a context configured with its own roles - granting in the
 	 * isolation-losing direction, and doing it quietly.
 	 * <p>
@@ -191,15 +192,6 @@ public class OlioContext {
 		return enrole(user, effectiveUserRole());
 	}
 
-	/**
-	 * @deprecated Enrols an ARBITRARY user with NO authorization check on the caller. Use
-	 *             {@link #registerUser(BaseRecord, BaseRecord, boolean)}, which authorizes the actor
-	 *             and writes an audit record.
-	 */
-	@Deprecated
-	public boolean enroleAdmin(BaseRecord user) {
-		return enrole(user, effectiveAdminRole());
-	}
 	protected boolean enrole(BaseRecord user, BaseRecord role) {
 		boolean enabled = false;
 		if(!IOSystem.getActiveContext().getMemberUtil().isMember(user, role,  null)) {
@@ -214,8 +206,9 @@ public class OlioContext {
 
 	/**
 	 * Enrol {@code user} in this context's user or admin role, as an explicitly authorized and
-	 * audited operation. This is the supported replacement for {@link #enroleReader(BaseRecord)} /
-	 * {@link #enroleAdmin(BaseRecord)}, which take an arbitrary user and check nothing.
+	 * audited operation. This is the supported replacement for {@link #enroleReader(BaseRecord)}
+	 * (and for {@code enroleAdmin}, deleted 2026-11-14, §24 C-1), which take an arbitrary user and
+	 * check nothing.
 	 * <p>
 	 * The target role is this context's effective pair - the per-context roles from
 	 * {@code OlioContextConfiguration} when set, otherwise the org-wide {@code ~/Roles/Olio *} pair.

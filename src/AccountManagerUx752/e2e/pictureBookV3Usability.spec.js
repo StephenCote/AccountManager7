@@ -1162,8 +1162,21 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const data = await jsonOf(await request.post(REST + '/model', { data: { schema: 'data.data', name: dataName, groupId: dataDir.id, groupPath: dataDir.path, contentType: DOCX_MIME, dataBytesStore: fs.readFileSync(docPath).toString('base64') } }));
             expect(data && data.objectId, 'ChapBook source upload').toBeTruthy();
             await page.goto('/#!/chap-book', { timeout: T.ui });
+            // §24 U-4 run 29 (§6.C 315): the chap-book feature chunk is a lazy import, so a hash goto resolves before the
+            // panel exists; an unwaited isVisible() then read "collapsed", and cb-config-toggle is a TOGGLE — the panel mounts
+            // expanded (chapBook.js:741) and the click collapsed it after toBeVisible had passed in the 8 ms before the RAF
+            // redraw (trace). Wait for the panel, then read each toggle's own state (chevron_right = collapsed) before clicking.
+            const panel = page.locator('[data-testid="cb-config-panel"]');
+            await expect(panel).toBeVisible({ timeout: T.ui });
+            const configToggle = panel.locator('[data-testid="cb-config-toggle"]');
+            const configIcon = configToggle.locator('span.material-symbols-outlined').first();
+            if (((await configIcon.textContent()) || '').trim() === 'chevron_right') await configToggle.click();
+            await expect(configIcon, 'ChapBook configuration panel expanded').toHaveText('expand_more', { timeout: T.ui });
+            const queueToggle = panel.locator('[data-testid="cb-queue-toggle"]');
+            await expect(queueToggle).toBeVisible({ timeout: T.ui });
+            if ((await queueToggle.getAttribute('aria-expanded')) !== 'true') await queueToggle.click();
+            await expect(queueToggle, 'Poem queue sub-section expanded').toHaveAttribute('aria-expanded', 'true', { timeout: T.ui });
             const addFromData = page.locator('button', { hasText: 'Add from Data' });
-            if (!(await addFromData.isVisible().catch(() => false))) await page.locator('[data-testid="cb-config-toggle"]').click();
             await expect(addFromData).toBeVisible({ timeout: T.ui });
             await addFromData.click();
             const overlay = page.locator('.am7-picker-overlay');

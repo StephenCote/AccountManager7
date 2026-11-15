@@ -172,6 +172,16 @@ describe('renderPb2ScenePage — chip, stale overlay, per-scene Render button', 
         pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'STALE' }] });
         expect(JSON.stringify(pbf.renderPb2ScenePage())).toContain('Needs render');
     });
+    it('§24 I-8: "Regenerate background" is drawn only when the scene has an image, and is disabled while a run is watched', () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'READY' }] });
+        expect(JSON.stringify(pbf.renderPb2ScenePage())).not.toContain('pb2-scene-regen-background');
+        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED' }] });
+        let text = JSON.stringify(pbf.renderPb2ScenePage());
+        expect(text).toContain('"data-testid":"pb2-scene-regen-background"');
+        expect(text).toMatch(/"data-testid":"pb2-scene-regen-background".*"disabled":false.*Regenerate background/);
+        pbf.__setPb2V3StateForTest({ pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1'], job: { terminal: false }, label: 'Render scene 1', error: null } });
+        expect(JSON.stringify(pbf.renderPb2ScenePage())).toMatch(/"data-testid":"pb2-scene-regen-background".*"disabled":true/);
+    });
 });
 
 describe('renderPb2RunProgress / renderPb2ResumeBanner', () => {
@@ -233,6 +243,10 @@ function mockRenderStack(opts) {
         if (/\/B1\/scene\/s1\/render(\?force=true)?$/.test(url)) {
             if (o.sceneRender) return o.sceneRender(calls);
             return jsonResponse(202, { jobId: 'J1', jobStatus: 'pending', kind: 'pb.render', runObjectId: 'R1', runStatus: 'RUNNING', plannedNodeCount: 1, planned: ['scene-1'], reusedNodeCount: 0, pinnedNodeCount: 0 });
+        }
+        if (/\/B1\/scene\/s1\/regenerate-background$/.test(url)) {
+            if (o.regen) return o.regen(calls);
+            return jsonResponse(202, { jobId: 'J1', jobStatus: 'pending', kind: 'pb.regenerateBackground', runObjectId: 'R1', runStatus: 'RUNNING', plannedNodeCount: 1, planned: ['scene-1'], reusedNodeCount: 0, pinnedNodeCount: 0, regenerate: 'background' });
         }
         if (/\/B1\/render-all$/.test(url)) {
             if (o.renderAll) return o.renderAll(calls);
@@ -351,6 +365,105 @@ describe('per-scene render → 202 → job polling → terminal refresh', () => 
         await pbf.__pb2SubmitRenderSceneForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
         expect(confirm).not.toHaveBeenCalled();
         expect(page.toast).toHaveBeenCalledWith('error', expect.stringContaining('(409) Nothing to render'));
+    });
+});
+
+describe('§24 I-8 regenerate background → 202 → job polling → terminal refresh', () => {
+    const PAGE_WITH_IMAGE = { objectId: 's1', sceneIndex: 1, title: 'Arrival', sceneNodeObjectId: 'n1', nodeStatus: 'DONE', pinned: false,
+        dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED' };
+
+    it('POSTs /scene/{id}/regenerate-background with no body and no force flag, polls /rest/job/{jobId}, then reloads pages', async () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [PAGE_WITH_IMAGE] });
+        let calls = mockRenderStack();
+        await pbf.__pb2SubmitRegenBackgroundForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
+        let st = await waitForTerminal();
+        expect(st.pb2Run.jobId).toBe('J1');
+        expect(st.pb2Run.planned).toEqual(['scene-1']);
+        expect(st.pb2Run.label).toBe('Regenerate background 1');
+        await flushPromises(); await flushPromises(); await flushPromises();
+        let seq = calls.map(c => c.method + ' ' + c.url.replace(/^.*\/rest\//, '/rest/'));
+        expect(seq[0]).toBe('POST /rest/olio/picture-book/B1/scene/s1/regenerate-background');
+        expect(calls[0].body).toBeUndefined();   // the route takes no force / variants: one fresh BASE, actors keep their seed
+        expect(seq.filter(s => s === 'GET /rest/job/J1').length).toBe(2);
+        expect(seq).toContain('GET /rest/olio/picture-book/B1/pages');
+        expect(am7client.clearCache).toHaveBeenCalledWith('olio.pb.scene', true);
+        expect(page.toast).toHaveBeenCalledWith('success', 'Render complete: 1 rendered');
+    });
+
+    it('a picked chat config travels as {chatConfigName} and nothing else', async () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [PAGE_WITH_IMAGE], pb2ChatConfig: { name: 'qa-cfg', objectId: 'c1' } });
+        let calls = mockRenderStack();
+        try {
+            await pbf.__pb2SubmitRegenBackgroundForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
+            await waitForTerminal();
+            expect(JSON.parse(calls[0].body)).toEqual({ chatConfigName: 'qa-cfg' });
+        }
+        finally {
+            pbf.__setPb2V3StateForTest({ pb2ChatConfig: null });
+        }
+    });
+
+    it('"render it first" 409 and the LANDSCAPE 409 are toasted verbatim: no confirmation, no pin call', async () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [PAGE_WITH_IMAGE] });
+        let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
+        let calls = mockRenderStack({ regen: () => jsonResponse(409, { error: 'Scene has no selected render to regenerate the background of; render it first' }) });
+        await pbf.__pb2SubmitRegenBackgroundForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
+        expect(page.toast).toHaveBeenCalledWith('error', '(409) Scene has no selected render to regenerate the background of; render it first');
+        expect(confirm).not.toHaveBeenCalled();
+        expect(calls.some(c => /\/pin$/.test(c.url))).toBe(false);
+        expect(pbf.__pb2V3StateForTest().pb2Run).toBeNull();
+        expect(pbf.__pb2V3StateForTest().pb2Submitting).toBe(false);
+
+        calls.length = 0;
+        mockRenderStack({ regen: () => jsonResponse(409, { error: 'Scene node landscape@s1 is a LANDSCAPE, not a RENDER_PLAN node: it has no actor passes to keep. Render the scene instead.' }) });
+        await pbf.__pb2SubmitRegenBackgroundForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
+        expect(page.toast).toHaveBeenCalledWith('error', expect.stringContaining('(409) Scene node landscape@s1 is a LANDSCAPE'));
+        expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('pinned 409: the confirmation offers "Unpin and regenerate"; declining sends nothing more', async () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [PAGE_WITH_IMAGE] });
+        let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(false);
+        let calls = mockRenderStack({ regen: () => jsonResponse(409, { error: 'Node render_plan@s1 is pinned. Unpin it first - a pinned scene is never re-rendered' }) });
+        await pbf.__pb2SubmitRegenBackgroundForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
+        expect(confirm).toHaveBeenCalledTimes(1);
+        let cfg = confirm.mock.calls[0][0];
+        expect(cfg.confirmLabel).toBe('Unpin and regenerate');
+        expect(cfg.message).toContain('(409) Node render_plan@s1 is pinned');
+        expect(calls.length).toBe(1);
+        expect(page.toast).not.toHaveBeenCalledWith('error', expect.anything());
+        expect(pbf.__pb2V3StateForTest().pb2Submitting).toBe(false);
+    });
+
+    it('pinned 409: accepting sends pin {pinned:false} to the scene node, then re-submits and watches', async () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [PAGE_WITH_IMAGE] });
+        vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
+        let attempt = 0;
+        let calls = mockRenderStack({ regen: () => {
+            attempt++;
+            if (attempt === 1) return jsonResponse(409, { error: 'Node render_plan@s1 is pinned. Unpin it first - a pinned scene is never re-rendered' });
+            return jsonResponse(202, { jobId: 'J1', kind: 'pb.regenerateBackground', runObjectId: 'R1', runStatus: 'RUNNING', planned: ['scene-1'], regenerate: 'background' });
+        } });
+        await pbf.__pb2SubmitRegenBackgroundForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
+        let st = await waitForTerminal();
+        expect(st.pb2Run.jobId).toBe('J1');
+        let seq = calls.map(c => c.method + ' ' + c.url.replace(/^.*\/rest\//, '/rest/'));
+        expect(seq.slice(0, 3)).toEqual([
+            'POST /rest/olio/picture-book/B1/scene/s1/regenerate-background',
+            'POST /rest/olio/picture-book/B1/node/n1/pin',
+            'POST /rest/olio/picture-book/B1/scene/s1/regenerate-background'
+        ]);
+        expect(JSON.parse(calls[1].body)).toEqual({ pinned: false });
+        expect(page.toast).not.toHaveBeenCalledWith('error', expect.anything());
+    });
+
+    it('pinned 409 on a page with no sceneNodeObjectId: toasted, no confirmation (nothing to unpin)', async () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [Object.assign({}, PAGE_WITH_IMAGE, { sceneNodeObjectId: undefined })] });
+        let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(true);
+        mockRenderStack({ regen: () => jsonResponse(409, { error: 'Node render_plan@s1 is pinned. Unpin it first - a pinned scene is never re-rendered' }) });
+        await pbf.__pb2SubmitRegenBackgroundForTest(pbf.__pb2V3StateForTest().pb2Pages[0]);
+        expect(confirm).not.toHaveBeenCalled();
+        expect(page.toast).toHaveBeenCalledWith('error', expect.stringContaining('(409) Node render_plan@s1 is pinned'));
     });
 });
 

@@ -41,6 +41,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
@@ -380,8 +381,22 @@ public class OlioTestUtil {
 	}
 	
 	public static BaseRecord getRandmChatConfig(OlioContext octx, BaseRecord user, BaseRecord per1, BaseRecord per2) {
-		octx.enroleAdmin(user);
-		
+		/// Enrol the test user in the context's admin role as an authorized, audited operation. The
+		/// organization admin is the actor only (the enrolment authority), never the test subject.
+		/// Replaces the unauthorized OlioContext.enroleAdmin(user), deleted 2026-11-14 (§24 C-1).
+		OrganizationContext orgCtx = IOSystem.getActiveContext().findOrganizationContext(user);
+		if(orgCtx == null) {
+			throw new IllegalStateException("No organization context for " + user.get(FieldNames.FIELD_NAME));
+		}
+		try {
+			if(!octx.registerUser(orgCtx.getAdminUser(), user, true)) {
+				throw new IllegalStateException("registerUser(admin) returned false for " + user.get(FieldNames.FIELD_NAME));
+			}
+		}
+		catch(OlioException e) {
+			throw new IllegalStateException("Failed to register " + user.get(FieldNames.FIELD_NAME) + " in the Olio admin role", e);
+		}
+
 		BaseRecord cfg = ChatUtil.getCreateChatConfig(user, "Chat - " + UUID.randomUUID().toString());
 		
 		try {

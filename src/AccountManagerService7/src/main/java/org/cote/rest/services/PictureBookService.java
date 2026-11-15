@@ -145,7 +145,7 @@ public class PictureBookService {
 
     /*
      * KI-10 cancellation registry: MOVED to Objects7's {@link PictureBookCancelRegistry}
-     * (2026-08-14) as part of fixing the authorization defect described in PictureBook2Plan.md
+     * (2026-08-14) as part of fixing the authorization defect described in archive/PictureBook2Plan.md
      * §5.6. It used to be a static flat map here keyed only by the client-supplied
      * workObjectId/bookObjectId path param, with the cancel endpoint discarding its principal —
      * so any authenticated user could cancel any other user's in-flight extraction. The registry
@@ -925,9 +925,9 @@ public class PictureBookService {
 
     /**
      * GET /{bookObjectId}/settings
-     * Returns the last-used image generation settings for this book (auto-captured on every
-     * scene generation — see PictureBookUtil.persistBookSdConfig), or {} if none have been
-     * saved yet (a fresh book that hasn't generated an image). bookObjectId is EITHER the PB1
+     * Returns the image generation settings stored on this book's meta ({@code sdConfig} key — the
+     * PB1 writer was deleted 2026-11-14, §24 C-1, so only a book whose meta predates that has one;
+     * see PictureBookUtil.getBookSdConfig), or {} if none. bookObjectId is EITHER the PB1
      * book-group objectId OR the olio.pb.book objectId, exactly as /scenes and /characters accept
      * (PictureBookUtil.resolveBookGroupEither) — the wizard's resume path holds the pb.book objectId
      * when opened from a PB2 surface.
@@ -1231,7 +1231,11 @@ public class PictureBookService {
      * Body (optional, §6.C 226 a): {@code { chatConfigName }} - the {@code olio.llm.chatConfig} the run is
      * opened with (the visual-QA hook routes the vision model through its connection); absent = the
      * user's default analysis config, unknown name = 404, malformed JSON = 400. The response and
-     * {@code GET /run/{id}} carry {@code chatConfig {objectId, name}} when one was set.
+     * {@code GET /run/{id}} carry {@code chatConfig {objectId, name}} when one was set. {@code variants}
+     * (§24 I-6, optional): the finals to render per attempt instead of the preset's count - an integer from 1
+     * to the preset's {@code maxVariants}, else 400 with the range in the message (never clamped); echoed as
+     * {@code variantsOverride}. A current node whose previous attempt left a {@code VARIANT_FAILED} hole is
+     * filled on a {@code force} re-render rather than re-rolled ({@code resumedAttempt} on the node result).
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -1242,6 +1246,8 @@ public class PictureBookService {
             @QueryParam("force") @DefaultValue("false") boolean force, String json,
             @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        /// Principal first (the affectedByRecord order): the body-shape 400s below never answer an anonymous caller.
+        if (user == null) return errorResponse(401, "Unauthorized");
         Map<String, Object> body = bodyMap(json);
         if (body == null) {
             return malformedBody();
@@ -1249,7 +1255,42 @@ public class PictureBookService {
         try {
             return Response.status(202)
                 .entity(JSONUtil.exportObject(PbServiceFacade.requestSceneRender(user, bookObjectId, sceneObjectId,
-                    resolveSdApiType(context), resolveSdServer(context), force, chatConfigNameOf(body))))
+                    resolveSdApiType(context), resolveSdServer(context), force, chatConfigNameOf(body), variantsOf(body))))
+                .build();
+        } catch (PictureBookException e) {
+            return handlePictureBookException(e);
+        }
+    }
+
+    /**
+     * POST /{bookObjectId}/scene/{sceneObjectId}/regenerate-background
+     * Background-only regenerate of one scene (design §22, §24 I-8): re-executes the scene's RENDER_PLAN node,
+     * forced, rendering a new BASE with a new seed and re-running each actor's ACTOR_REGION pass with the seed it
+     * had on the scene's selected final, so the background changes and the actors come back as they were. 202 with
+     * the same body as {@code /render} plus {@code regenerate: "background"}; poll the job. Gates in the scene
+     * render's order (401, 404 book / scene, 403 update, config 404, 409 pinned), then 409 when the scene's node is
+     * not a V3 RENDER_PLAN node or has no selected render yet ("render it first"). One variant, always.
+     * <p>
+     * Body (optional): {@code { chatConfigName }} as for {@code /render}; malformed JSON = 400. No {@code variants}
+     * and no {@code force}: a regenerate is always one forced variant.
+     */
+    @RolesAllowed({"admin", "user"})
+    @POST
+    @Path("/{bookObjectId:[0-9A-Za-z\\-]+}/scene/{sceneObjectId:[0-9A-Za-z\\-]+}/regenerate-background")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response regenerateSceneBackground(@PathParam("bookObjectId") String bookObjectId,
+            @PathParam("sceneObjectId") String sceneObjectId, String json,
+            @Context HttpServletRequest request, @Context ServletContext context) {
+        BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
+        Map<String, Object> body = bodyMap(json);
+        if (body == null) {
+            return malformedBody();
+        }
+        try {
+            return Response.status(202)
+                .entity(JSONUtil.exportObject(PbServiceFacade.requestRegenerateBackground(user, bookObjectId, sceneObjectId,
+                    resolveSdApiType(context), resolveSdServer(context), chatConfigNameOf(body))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
@@ -1264,6 +1305,32 @@ public class PictureBookService {
     private static String chatConfigNameOf(Map<String, Object> body) {
         String s = (body != null ? bodyString(body, "chatConfigName") : null);
         return (s != null && !s.isBlank() ? s.trim() : null);
+    }
+
+    /**
+     * {@code body.variants} (§24 I-6, {@code olio.pictureBookRequest.variants}): the per-request override of the
+     * preset's variant count, or null when absent / null. Transport-level shape check only - a JSON number that is
+     * not an integer, or anything that is not a number (a numeric string is accepted), is a 400 here; the range
+     * (1 to the preset's {@code maxVariants}) is the facade's ({@code PbServiceFacade.validateVariants}), which
+     * knows the preset the attempt will render with.
+     */
+    private static Integer variantsOf(Map<String, Object> body) {
+        Object v = (body != null ? body.get("variants") : null);
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number) {
+            Number n = (Number) v;
+            double d = n.doubleValue();
+            if (d != Math.rint(d) || d < Integer.MIN_VALUE || d > Integer.MAX_VALUE) {
+                throw new PictureBookException(400, "variants must be an integer; got " + v);
+            }
+            return Integer.valueOf(n.intValue());
+        }
+        if (v instanceof String && ((String) v).trim().matches("-?\\d{1,9}")) {
+            return Integer.valueOf(((String) v).trim());
+        }
+        throw new PictureBookException(400, "variants must be an integer; got " + v);
     }
 
     /**
@@ -1310,7 +1377,8 @@ public class PictureBookService {
      * is sent, the BASE stage goes through the renderer adapter (TEXT_ONLY; one image) and the image is
      * recorded as the node's {@code base} artifact. Body (optional, §6.C 226 a): {@code { chatConfigName }} -
      * the {@code olio.llm.chatConfig} the run is opened with (absent = the user's default analysis config,
-     * unknown = 404, malformed = 400). 200 with the executor's artifact DTO plus
+     * unknown = 404, malformed = 400) and {@code variants} (§24 I-6: the finals to render on the node's own run,
+     * 1 to the preset's {@code maxVariants}, else 400). 200 with the executor's artifact DTO plus
      * {@code planArtifactObjectId} / {@code planContentHash} / {@code strategy} / {@code stagesPlanned} /
      * {@code stagesRendered} (and {@code chatConfig {objectId, name}} when one was set); 401 anonymous, 404
      * book/scene, 403 not the book's updater, 409 v1 book / pinned / in flight / no text / no installed model
@@ -1326,6 +1394,7 @@ public class PictureBookService {
             @PathParam("sceneObjectId") String sceneObjectId, String json,
             @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
         Map<String, Object> body = bodyMap(json);
         if (body == null) {
             return malformedBody();
@@ -1333,7 +1402,7 @@ public class PictureBookService {
         try {
             return Response.status(200)
                 .entity(JSONUtil.exportObject(PbServiceFacade.requestRenderPlanScene(user, bookObjectId, sceneObjectId,
-                    resolveSdApiType(context), resolveSdServer(context), chatConfigNameOf(body))))
+                    resolveSdApiType(context), resolveSdServer(context), chatConfigNameOf(body), variantsOf(body))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);
@@ -1369,7 +1438,8 @@ public class PictureBookService {
      * (shared upstream nodes are rendered once). Same semantics and status codes as /scene/{id}/render;
      * a scene without a graph node gets its RENDER_PLAN node created on first use ({@code nodesMaterialized}),
      * so {@code scenesWithoutNode} is always empty and 409 "no graph node" is gone. Body (optional, §6.C
-     * 226 a): {@code { chatConfigName }} as on /scene/{id}/render - the one run is opened with that config.
+     * 226 a): {@code { chatConfigName }} as on /scene/{id}/render - the one run is opened with that config -
+     * and {@code variants} (§24 I-6) as there, validated against the book's preset before the run is opened.
      */
     @RolesAllowed({"admin", "user"})
     @POST
@@ -1378,6 +1448,7 @@ public class PictureBookService {
     public Response renderAll(@PathParam("bookObjectId") String bookObjectId, String json,
             @Context HttpServletRequest request, @Context ServletContext context) {
         BaseRecord user = ServiceUtil.getPrincipalUser(request);
+        if (user == null) return errorResponse(401, "Unauthorized");
         Map<String, Object> body = bodyMap(json);
         if (body == null) {
             return malformedBody();
@@ -1385,7 +1456,7 @@ public class PictureBookService {
         try {
             return Response.status(202)
                 .entity(JSONUtil.exportObject(PbServiceFacade.requestRenderAll(user, bookObjectId,
-                    resolveSdApiType(context), resolveSdServer(context), chatConfigNameOf(body))))
+                    resolveSdApiType(context), resolveSdServer(context), chatConfigNameOf(body), variantsOf(body))))
                 .build();
         } catch (PictureBookException e) {
             return handlePictureBookException(e);

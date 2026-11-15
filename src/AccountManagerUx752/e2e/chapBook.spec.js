@@ -124,7 +124,7 @@ let notesGroupId = null;
 let testNoteObjectId = null;
 
 test.describe('ChapBook — UI', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         // Ensure shared test user exists
@@ -786,7 +786,10 @@ async function restLoginShared(request) {
 }
 
 test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
-    test.describe.configure({ timeout: 180000 });
+    // 900 s: 6D creates a 45-scene book (10 winter poems × maxLinesPerPage 8) and POST /olio/chap-book/create runs one
+    // synchronous LLM landscape prompt per scene against the live library contentAnalysis — 6.4 min for the 45 scenes
+    // measured uncontended on 2026-11-15 (§24 U-2), so a 300 s budget cut the create off. Timings are budgets, never thresholds.
+    test.describe.configure({ timeout: 900000 });
 
     let readerOrgId = null;
     let dataGroupId = null;
@@ -1342,7 +1345,7 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
 // selects only this block. Uses ensureSharedTestUser (e2etest_shared) — never admin.
 // ════════════════════════════════════════════════════════════════════════════
 test.describe('ChapBook — delete regressions', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     let delOrgId = null;
     let delPoemsGroupId = null;
@@ -1447,7 +1450,7 @@ test.describe('ChapBook — delete regressions', () => {
         const bookOid = created && (created.bookObjectId || created.objectId);
         expect(bookOid, 'no bookObjectId from create').toBeTruthy();
         // The "My ChapBooks" row shows `b.name || b.slug || b.objectId` (chapBook.js:1156). ChapBookUtil
-        // sets the book's `name` to "Book <slug>" (the title we passed lands in `description`), so we must
+        // sets the book's `name` to the title we passed (KI-90, §24 I-9; "Book <slug>" only without one), so we must
         // locate by the actual persisted name, not the title.
         const bookName = (created && created.name) || ('Book ' + slug);
         await request.get(REST + '/logout');
@@ -1616,7 +1619,7 @@ test.describe('ChapBook — delete regressions', () => {
 // Uses ensureSharedTestUser (e2etest_shared) — never admin.
 // ════════════════════════════════════════════════════════════════════════════
 test.describe('ChapBook — fixed page height clamp (workstream C)', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     let fphOrgId = null;
     let fphPoemsGroupId = null;

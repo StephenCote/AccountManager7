@@ -137,7 +137,7 @@ function readerAnalyzeBtn(page) { return page.locator('button[title="' + READER_
 function readerAnalyzeCfgBtn(page) { return page.locator('button[title="' + READER_ANALYZE_CFG_TITLE + '"]'); }
 
 test.describe('ChapBook — UX verification', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);

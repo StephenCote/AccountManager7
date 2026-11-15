@@ -12,7 +12,10 @@
     "                   variant i seeded seed0 + i from the renderer's reported seed for variant 0, and persists",
     "                   N artifacts sharing `attempt` with variantIndex 0..N-1 (only index 0 is auto-selected).",
     "                   It is NOT images-per-stage: each StageRequest still asks for 1 image. The count comes",
-    "                   from this preset only; no per-request override exists yet (Implementation section 6.C 212 c).",
+    "                   from this preset unless the request carries olio.pictureBookRequest.variants (section 24 I-6,",
+    "                   built 2026-11-14): that override is validated against maxVariants below and never clamped.",
+    "  maxVariants      the largest `variants` a request may ask for under this preset (1 <= variants <= maxVariants);",
+    "                   out of range is a 400 from the render / render-plan / render-all routes. Must be >= variants.",
     "  upscale          whether the plan appends an UPSCALE stage.",
     "  qa               OFF | CANONICAL (the canonical variant only) | ALL.",
     "",
@@ -38,6 +41,7 @@
       "resolutionScale": 0.5,
       "stepsMode": "low",
       "variants": 1,
+      "maxVariants": 4,
       "upscale": false,
       "qa": "OFF"
     },
@@ -45,6 +49,7 @@
       "resolutionScale": 1.0,
       "stepsMode": "default",
       "variants": 2,
+      "maxVariants": 6,
       "upscale": false,
       "qa": "CANONICAL"
     },
@@ -52,6 +57,7 @@
       "resolutionScale": 1.0,
       "stepsMode": "high",
       "variants": 4,
+      "maxVariants": 8,
       "upscale": true,
       "qa": "ALL"
     }

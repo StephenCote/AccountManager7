@@ -936,6 +936,12 @@ test.describe('location library Ux (default tier)', () => {
         await getLocation(lighthouse.objectId);
 
         await page.goto('/#!/chap-book/review/' + bookObjectId, { timeout: 30000 });
+        // §24 U-3 (§6.C 312): a fresh load of the master/detail review selects page 1, so the seeded page's
+        // chip is only on screen once its row is selected again — exactly as on the first visit above. The
+        // omission was invisible while this spec ran with the gated tiers skipped (scene 201 was page 1).
+        await expect(pageItem).toBeVisible({ timeout: 30000 });
+        await pageItem.click();
+        await expect(pageItem).toHaveAttribute('data-page-selected', '1');
         await expect(chip).toBeVisible({ timeout: 30000 });
         await expect(chip).toHaveAttribute('data-location-id', lighthouse.objectId);
         await expect(chip).toContainText('located: ' + lighthouse.name + ' / ' + lighthouseVariant.name);

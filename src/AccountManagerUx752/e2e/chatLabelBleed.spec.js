@@ -156,6 +156,17 @@ test.describe('Chat conversation labels do not bleed between sessions', () => {
             sessB = await createSession(ctx, chatReqDir.id, chatReqDir.path, sessBName, cfgB, promptCfg);
             expect(sessA && sessA.objectId, 'sessA created').toBeTruthy();
             expect(sessB && sessB.objectId, 'sessB created').toBeTruthy();
+
+            // The sessions sidebar (ConversationManager.loadSessions) is GET /rest/list/olio.llm.chatRequest/...,
+            // which the server answers from CacheDBSearch for up to maximumCacheAgeMS (6 min). The product's
+            // own create/delete path busts that (ConversationManager.refresh -> am7client.clearCache(type, false)
+            // -> GET /cache/clear/olio.llm.chatRequest); a session created over REST, as above, does not —
+            // so when another chat spec warmed the shared user's list inside that window the just-created
+            // SessA_<nonce> was absent from the sidebar and clickSession timed out (§24 U-6 full gate RUN 2,
+            // 107-u6-verify2.phases.log:403/:416; solo it passed, 107-u6-run2reds-solo.log:11). Do what the
+            // product's create path does.
+            let cc = await ctx.get(REST + '/cache/clear/olio.llm.chatRequest');
+            expect(cc.ok(), 'GET /cache/clear/olio.llm.chatRequest -> ' + cc.status()).toBe(true);
             console.log('SETUP COMPLETE:',
                 'sessA=' + sessAName, sessA.objectId,
                 'sessB=' + sessBName, sessB.objectId,

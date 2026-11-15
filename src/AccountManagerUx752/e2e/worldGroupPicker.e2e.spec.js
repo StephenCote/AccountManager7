@@ -37,7 +37,11 @@ test.describe('KI-35 world-group picker (real backend)', () => {
     });
 
     test('Apparel.wearables picker lands on the world Wearables group, not the user path', async ({ page }) => {
-        test.setTimeout(120000);
+        // Discovery below probes one world per distinct fixture world the acting user's books share (69 in
+        // the §24 U-6 full gate, 107-u6-verify2.phases.log:2954) — 31 s alone, over 120 s with the other
+        // gate worker driving the same stack (:2951 x, :2963 ok). Timing is never a pass/fail threshold;
+        // give it the config budget (playwright.config.js timeout: 300000) instead of a tighter local one.
+        test.setTimeout(300000);
         page.on('pageerror', err => console.log('  [pageerror] ' + err.message));
 
         // login() establishes the session via the REST API on the page's own request context, stubs the
@@ -89,7 +93,11 @@ test.describe('KI-35 world-group picker (real backend)', () => {
             bq.sort('id');
             bq.order('descending');
             bq.cache(false);
-            bq.range(0, 50);
+            // All of the user's books, not the newest 50: the fixture books the §24 suites create share a
+            // handful of worlds (the full gate's 50 newest resolved to three worlds, none holding apparel —
+            // 107-u6-verify.phases.clean.log:3564) while the manuscript-imported books with a cast sit
+            // further down the id order. Discovery only; the assertions below are unchanged.
+            bq.range(0, 1000);
             const bqr = await page.search(bq);
             const books = (bqr && bqr.results) ? bqr.results.filter(b => b.world && b.world.objectId) : [];
             log.push('olio.pb.book created by the acting user (with a world): ' + books.length);

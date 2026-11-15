@@ -221,17 +221,27 @@ test.describe('List View Navigation', () => {
         console.log('Carousel counter on open:', JSON.stringify(start));
         expect(start, 'viewer shows an "N / M" counter').not.toBeNull();
         expect(start.idx).toBe(1);
-        expect(start.total).toBe(initialRows);
+        // The counter's total is a FLOOR, not the table's page: opening the carousel switches the list to
+        // gridMode 1, which re-queries at the icon page size (list.js:87 defaultIconRecordCount = 40,
+        // :1359) — so the viewer holds the table's 10-row page only until that re-query lands, then all
+        // 25 fixture notes. `toBe(initialRows)` pinned the first of those two states and passed only while
+        // the stack was slow enough (U-2 run: 5.3 s pass; U-6 full gate: "Expected: 10 Received: 25" in
+        // 1.3 s, both attempts). Same correction as listControl.spec.js (§6.C 310).
+        expect(start.total).toBeGreaterThanOrEqual(initialRows);
         await page.screenshot({ path: 'e2e/screenshots/listnav-05-carousel.png' });
 
-        // Navigate right past the end of page 1 — nav() past the last loaded item calls onLoadMore
-        // (imageViewer.js:188-190 -> pagination.loadNextPage) so the total must grow.
+        // Navigate right past the end of the table's page 1. If the carousel still held only that page,
+        // nav() past its last item calls onLoadMore (imageViewer.js:188-190 -> pagination.loadNextPage);
+        // if the icon-size re-query already loaded everything, the items are simply there. Either way
+        // the carousel must end up holding more than the table's page — that is what is asserted; the
+        // page-boundary load itself is only observable when the icon page size is smaller than the
+        // fixture (40 vs 25 here: it is not), so it is not pinned.
         for (let i = 0; i < initialRows + 2; i++) {
             await page.keyboard.press('ArrowRight');
             await page.waitForTimeout(300);
         }
         await expect.poll(async () => (await readCounter(page) || {}).total, {
-            message: 'crossing the page boundary must load the next page into the carousel',
+            message: 'after navigating past the table\'s page the carousel must hold more than that page',
             timeout: 30000
         }).toBeGreaterThan(initialRows);
         let after = await readCounter(page);

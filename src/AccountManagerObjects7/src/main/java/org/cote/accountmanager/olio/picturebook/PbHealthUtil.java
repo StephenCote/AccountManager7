@@ -922,10 +922,11 @@ public class PbHealthUtil {
 			BaseRecord patch = PbGraphUtil.patchOf(a.metaRec, ModelNames.MODEL_NOTE, FieldNames.FIELD_TEXT);
 			boolean ok;
 			try {
-				patch.set(FieldNames.FIELD_TEXT, JSONUtil.exportObject(a.metaMap));
+				// Every other key of the PB1 note kept as-is (PbMigrationUtil.exportMetaMap, §24 UAT-3)
+				patch.set(FieldNames.FIELD_TEXT, PbMigrationUtil.exportMetaMap(a.metaMap));
 				ok = ioContext.getAccessPoint().update(a.user, patch) != null;
 			}
-			catch(FieldException | ValueException | ModelNotFoundException ex) {
+			catch(FieldException | ValueException | ModelNotFoundException | PictureBookException ex) {
 				ok = false;
 			}
 			if(ok) {

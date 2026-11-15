@@ -38,10 +38,19 @@ test.describe('Chat message delete E2E', () => {
         await newBtn.first().click();
         let dialog = page.locator('text=New Chat Session');
         await expect(dialog).toBeVisible({ timeout: 10000 });
-        await page.waitForTimeout(2000);
+        // The dialog opens empty and then runs loadNewSessionDefaults() + updateNewSessionDefaultName()
+        // (features/chat.js:1239-1248 / :1092-1128): up to six REST calls, after which it assigns the
+        // auto-generated default name unconditionally. A name typed before that chain settles is
+        // overwritten (KI-98) — under the 2-worker gate it took longer than the fixed 2 s wait that
+        // used to be here and POST /rest/chat/new created the default name instead of DelE2E-<ts>
+        // (§24 U-6 full gate RUN 3, 107-u6-verify3.phases.log:2271; retry ok :2300). Wait for the
+        // default name to appear — what a user sees before typing — then replace it.
+        let nameInput = page.locator('input[placeholder="Session name"]');
+        await expect(nameInput, 'default session name populated').not.toHaveValue('', { timeout: 30000 });
         let ts = Date.now().toString(36);
         let sessionName = 'DelE2E-' + ts;
-        await page.locator('input[placeholder="Session name"]').fill(sessionName);
+        await nameInput.fill(sessionName);
+        await expect(nameInput).toHaveValue(sessionName);
         await page.locator('button:has-text("Create")').click();
         await page.waitForTimeout(3000);
 
@@ -101,8 +110,11 @@ test.describe('Chat message delete E2E', () => {
             await filterInput.fill(sessionName);
             await page.waitForTimeout(500);
         }
-        // Click the session item
-        let sessionItem = page.locator('div').filter({ hasText: sessionName }).last();
+        // Click the session item - the sidebar row (ConversationManager.sessionItemView: div.cursor-pointer.group,
+        // onclick selectSession), not the last div containing the name, which is the main pane's title container
+        // once the new session is active: clicking that issues no request, so the injected history is never
+        // reloaded (archive §4.6 run-2 triage, §6.C 145 (c)(1); applied §24 U-6).
+        let sessionItem = page.locator('div.cursor-pointer.group').filter({ hasText: sessionName }).first();
         await expect(sessionItem).toBeVisible({ timeout: 5000 });
         // Double-click to ensure selection (single click may not trigger if already selected)
         await sessionItem.click();

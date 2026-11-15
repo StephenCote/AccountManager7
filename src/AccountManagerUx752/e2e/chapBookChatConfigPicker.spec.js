@@ -129,7 +129,7 @@ async function interceptAnalyze(page) {
 }
 
 test.describe('ChapBook — Issue 2 chat-config default + selection (LLM-free, route-intercepted)', () => {
-    test.describe.configure({ timeout: 120000, mode: 'serial' });
+    test.describe.configure({ timeout: 300000, mode: 'serial' });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);

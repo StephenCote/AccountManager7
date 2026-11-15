@@ -19,10 +19,12 @@
  *      (dialog stays open, no toast), the plan artifact id in that message resolves through
  *      GET /{book}/artifact/{oid} to a renderPlan artifact whose artifactText is the plan, and the
  *      workflow now has one RENDER_PLAN node scoped to the scene. Skipped when the inventory answers.
- *   3. [needs 2] the canvas: select that node → "View plan" → the inspector with `rev 1 · <oid>`.
- *   4. [SD] (PB_SD_TESTS=1 and the inventory available) Generate succeeds: dialog closes, toast
+ *   3. [SD] (PB_SD_TESTS=1 and the inventory available) Generate succeeds: dialog closes, toast
  *      'Scene rendered (artifact …)', the page image appears; the review page lists the node and its
  *      "Plan" control shows the inspector.
+ *   4. [needs 2 or 3] the canvas: select that node → "View plan" → the inspector with `rev 1 · <oid>`
+ *      (the 503 tier names the artifact) or `rev N · <uuid>` (after the render). Reordered §24 U-3 (§6.C 312)
+ *      so the canvas toggle is exercised when the inventory is available, not only on the 503 tier.
  *
  * Run:
  *   cd src/AccountManagerUx752
@@ -319,30 +321,7 @@ test.describe('PictureBook V3 P2-9 — Plan & generate dialog, estimate, plan in
         await request.get(REST + '/logout');
     });
 
-    test('3. the canvas node detail: "View plan" on the RENDER_PLAN node shows the same inspector with its revision', async ({ page }) => {
-        test.skip(!fx.nodeOid, 'needs the RENDER_PLAN node from test 2');
-        await loginAsSharedUser(page);
-        await page.goto('/#!/picture-book/' + bookObjectId + '/workflow', { timeout: 30000 });
-        const node = page.locator('[data-node-id="' + fx.nodeOid + '"]');
-        await expect(node).toBeVisible({ timeout: 60000 });
-        await node.click();
-        const toggle = page.getByTestId('pbwf-node-plan-toggle');
-        await expect(toggle).toBeVisible({ timeout: 30000 });
-        await expect(toggle).toHaveText('View plan');
-        await toggle.click();
-        await expect(toggle).toHaveText('Hide plan', { timeout: 30000 });
-        const holder = page.getByTestId('pbwf-node-plan');
-        await expect(holder).toContainText('rev 1 · ' + fx.planArtifactOid);
-        await expect(holder.getByTestId('pb2-plan-inspector')).toBeVisible();
-        await expect(holder.locator('[data-testid="pb2-plan-stage"][data-stage="BASE"]')).toHaveCount(1);
-        await expect(page.getByTestId('pbwf-node-plan-error')).toHaveCount(0);
-        await page.screenshot({ path: OUT_DIR + '/03-canvas-plan.png', fullPage: true });
-        await toggle.click();
-        await expect(toggle).toHaveText('View plan');
-        await expect(holder.getByTestId('pb2-plan-inspector')).toHaveCount(0);
-    });
-
-    test('4. [SD] Generate renders the scene; the review page lists the node and "Plan" shows its inspector', async ({ page, request }) => {
+    test('3. [SD] Generate renders the scene; the review page lists the node and "Plan" shows its inspector', async ({ page, request }) => {
         test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — skips the live SD render');
         test.skip(fx.inventoryUnavailable, 'the renderer inventory is unavailable (' + JSON.stringify(fx.inventoryError) + ') — nothing can render');
         await loginAsSharedUser(page);
@@ -354,15 +333,18 @@ test.describe('PictureBook V3 P2-9 — Plan & generate dialog, estimate, plan in
         await expect(page.getByTestId('pb2-plan-rendering')).toBeVisible();
         const toast = page.locator('.toast-text', { hasText: /^Scene rendered \(artifact [0-9a-f-]{36}\)$/ });
         await expect(toast).toBeVisible({ timeout: 900000 });
-        console.log('[p29-plan-4] rendered in ' + (Date.now() - t0) + ' ms: ' + (await toast.textContent()));
+        console.log('[p29-plan-3] rendered in ' + (Date.now() - t0) + ' ms: ' + (await toast.textContent()));
         await expect(page.getByTestId('pb2-plan-dialog')).toHaveCount(0);
         await expect(page.getByTestId('pb2-scene-image')).toBeVisible({ timeout: 60000 });
-        await page.screenshot({ path: OUT_DIR + '/04-rendered.png', fullPage: true });
+        await page.screenshot({ path: OUT_DIR + '/03-rendered.png', fullPage: true });
 
         await login(request);
         const wf = await (await request.get(PB_ROOT + '/' + bookObjectId + '/workflow')).json();
         const planNode = (wf.nodes || []).find(n => upper(n.nodeType) === 'RENDER_PLAN' && n.scopeRef === fx.scene.objectId);
         expect(planNode, 'RENDER_PLAN node for the scene').toBeTruthy();
+        // The canvas test (4) takes the node from here when the inventory was available (test 2 skipped).
+        if (!fx.nodeOid) fx.nodeOid = planNode.objectId;
+        else expect(planNode.objectId, 'the same RENDER_PLAN node test 2 found').toBe(fx.nodeOid);
         await request.get(REST + '/logout');
 
         await page.goto('/#!/picture-book/' + bookObjectId + '/review', { timeout: 30000 });
@@ -374,6 +356,44 @@ test.describe('PictureBook V3 P2-9 — Plan & generate dialog, estimate, plan in
         await expect(planToggle).toHaveText('Hide plan', { timeout: 30000 });
         await expect(row.getByTestId('pb2-review-plan').getByTestId('pb2-plan-inspector')).toBeVisible();
         await expect(row.getByTestId('pb2-review-plan-error')).toHaveCount(0);
-        await page.screenshot({ path: OUT_DIR + '/04-review-plan.png', fullPage: true });
+        await page.screenshot({ path: OUT_DIR + '/03-review-plan.png', fullPage: true });
+    });
+
+    // §24 U-3 (§6.C 312): until then this was test 3 and ran only after the [inventory unavailable] tier, so
+    // with the inventory available (the normal case) the canvas "View plan" toggle was never exercised. It now
+    // follows the render and takes the RENDER_PLAN node from whichever of tests 2 / 3 ran. Only the 503 path
+    // knows the plan artifact's oid (the 503 message names it, revision 1); after a render the holder is
+    // pinned to the `rev N · <oid>` shape.
+    test('4. [needs 2 or 3] the canvas node detail: "View plan" on the RENDER_PLAN node shows the same inspector with its revision', async ({ page }) => {
+        test.skip(!fx.nodeOid, 'needs the RENDER_PLAN node from test 2 (503 tier) or test 3 (SD render)');
+        await loginAsSharedUser(page);
+        await page.goto('/#!/picture-book/' + bookObjectId + '/workflow', { timeout: 30000 });
+        const node = page.locator('[data-node-id="' + fx.nodeOid + '"]');
+        await expect(node).toBeVisible({ timeout: 60000 });
+        // Click the card's header handle, not the card's centre: the centre of a thumb-less card is its actions
+        // row, whose buttons (📍 / ▶ Test / 🔄) stopPropagation() so the card-level onclick → selectNode never
+        // runs - the first live run of this path (§24 U-3, §6.C 312) hit 🔄 and marked the node stale instead.
+        const handle = node.locator('span', { hasText: /^render_plan@/ });
+        await expect(handle).toHaveCount(1);
+        await handle.click();
+        // The detail panel's artifact history appears once nodeView has loaded (any artifact role); the plan
+        // toggle needs the renderPlan role specifically - two assertions so a miss says which one failed.
+        await expect(page.getByTestId('pbwf-art-history'), 'node detail loaded').toBeVisible({ timeout: 30000 });
+        const toggle = page.getByTestId('pbwf-node-plan-toggle');
+        await expect(toggle).toBeVisible({ timeout: 30000 });
+        await expect(toggle).toHaveText('View plan');
+        await toggle.click();
+        await expect(toggle).toHaveText('Hide plan', { timeout: 30000 });
+        const holder = page.getByTestId('pbwf-node-plan');
+        if (fx.planArtifactOid) await expect(holder).toContainText('rev 1 · ' + fx.planArtifactOid);
+        else await expect(holder).toContainText(/rev \d+ · [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/);
+        console.log('[p29-plan-4] canvas plan holder: ' + ((await holder.textContent()) || '').replace(/\s+/g, ' ').slice(0, 200));
+        await expect(holder.getByTestId('pb2-plan-inspector')).toBeVisible();
+        await expect(holder.locator('[data-testid="pb2-plan-stage"][data-stage="BASE"]')).toHaveCount(1);
+        await expect(page.getByTestId('pbwf-node-plan-error')).toHaveCount(0);
+        await page.screenshot({ path: OUT_DIR + '/04-canvas-plan.png', fullPage: true });
+        await toggle.click();
+        await expect(toggle).toHaveText('View plan');
+        await expect(holder.getByTestId('pb2-plan-inspector')).toHaveCount(0);
     });
 });

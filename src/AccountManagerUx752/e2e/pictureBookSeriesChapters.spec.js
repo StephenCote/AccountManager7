@@ -97,7 +97,7 @@ let manuscriptObjectId = null;
 let orgId = null;
 
 test.describe('PictureBook Series/Chapters (N3 + N4)', () => {
-    test.describe.configure({ timeout: 180000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);

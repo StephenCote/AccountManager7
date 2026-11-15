@@ -689,6 +689,17 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String sdApiType, String sdServer, String chatConfigName) {
+		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdApiType, sdServer, chatConfigName, null);
+	}
+
+	/**
+	 * {@link #requestRenderPlanScene(BaseRecord, String, String, String, String, String)} with the request's
+	 * {@code variants} override (§24 I-6, 212 c): null = the effective preset's own count; otherwise validated by
+	 * {@link #validateVariants} after the book / update / scene gates and before any node or run is written -
+	 * out of range is a 400 naming the range and the preset, never a silent clamp.
+	 */
+	public static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String sdApiType, String sdServer, String chatConfigName, Integer variants) {
 		if(user == null) {
 			throw new PictureBookException(401, "No authenticated principal");
 		}
@@ -704,26 +715,55 @@ public class PbServiceFacade {
 				throw new PictureBookException(500, "SD server API type is not recognised");
 			}
 		}
-		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu, chatConfigName);
+		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu, chatConfigName, variants);
 	}
 
 	/** {@link #requestRenderPlanScene} over an {@link org.cote.accountmanager.olio.sd.SDUtil} the caller built (test seam). */
 	static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			org.cote.accountmanager.olio.sd.SDUtil sdu) {
-		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu, null);
+		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu, null, null);
 	}
 
 	/** The test seam with {@code chatConfigName} (§6.C 226 a); gate order 404 book, 403 update, 404 scene, 404 config. */
 	static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
 			org.cote.accountmanager.olio.sd.SDUtil sdu, String chatConfigName) {
+		return requestRenderPlanScene(user, bookObjectId, sceneObjectId, sdu, chatConfigName, null);
+	}
+
+	/** The test seam with {@code variants} (§24 I-6); gate order 404 book, 403 update, 404 scene, 404 config, 400 variants. */
+	static Map<String, Object> requestRenderPlanScene(BaseRecord user, String bookObjectId, String sceneObjectId,
+			org.cote.accountmanager.olio.sd.SDUtil sdu, String chatConfigName, Integer variants) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		requireBookUpdate(user, book, "render a scene plan");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
 		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
-		PbRenderPlanUtil.PlanOptions opts = (cfg != null
-			? new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg)
-			: PbRenderPlanUtil.PlanOptions.NONE);
+		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg,
+			validateVariants(user, book, null, variants));
 		return executePlanScene(user, book, scene, sdu, opts, null);
+	}
+
+	/**
+	 * The request's {@code variants} override checked against the preset the attempt will render with (§24 I-6,
+	 * 212 c): null is "no override" and returns null; otherwise the value must be an integer from 1 to the
+	 * preset's declared {@code maxVariants} ({@code qualityPresets.json}), else a 400 whose message names the
+	 * range, the preset and the value - the count is never clamped silently. The preset is the one
+	 * {@link PbRenderPlanUtil#effectivePreset} resolves for the book (its style chain, or {@code presetOverride}
+	 * when the caller names one), so the ceiling checked here is the ceiling the plan is built under. Runs after
+	 * the caller has authorized the book, and before anything is written.
+	 */
+	static Integer validateVariants(BaseRecord user, BaseRecord book, PbQualityPresetEnumType presetOverride, Integer variants) {
+		if(variants == null) {
+			return null;
+		}
+		org.cote.accountmanager.olio.illustration.QualityPresets.Preset preset = PbRenderPlanUtil.effectivePreset(user, book,
+			new PbRenderPlanUtil.PlanOptions(null, false, presetOverride, null));
+		int max = preset.getMaxVariants();
+		int n = variants.intValue();
+		if(n < 1 || n > max) {
+			throw new PictureBookException(400, "variants must be an integer from 1 to " + max + " for preset "
+				+ preset.getName().name() + "; got " + n);
+		}
+		return Integer.valueOf(n);
 	}
 
 	/**
@@ -811,10 +851,23 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
 			String sdApiType, String sdServer, boolean force, String chatConfigName) {
+		return requestSceneRender(user, bookObjectId, sceneObjectId, sdApiType, sdServer, force, chatConfigName, null);
+	}
+
+	/**
+	 * {@link #requestSceneRender(BaseRecord, String, String, String, String, boolean, String)} with the request's
+	 * {@code variants} override (§24 I-6): validated by {@link #validateVariants} after the book / update / scene
+	 * / config gates and before the workflow or node is materialized, then carried to the job on
+	 * {@link PbRenderPlanUtil.PlanOptions} so every node graph the run opens plans that count.
+	 */
+	public static Map<String, Object> requestSceneRender(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String sdApiType, String sdServer, boolean force, String chatConfigName, Integer variants) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		requireBookUpdate(user, book, "render a scene");
 		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
 		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
+		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg,
+			validateVariants(user, book, null, variants));
 		/// After the gates: the workflow and the scene's terminal are created on first use (P10-B 1), as the
 		/// book's updater - the same pattern executePlanScene has always followed for Plan & generate.
 		BaseRecord workflow = ensureWorkflow(user, book);
@@ -829,7 +882,57 @@ public class PbServiceFacade {
 		}
 		Long nodeId = node.get(FieldNames.FIELD_ID);
 		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of(nodeId), sdApiType, sdServer,
-			PbRenderJobUtil.KIND_RENDER, force, cfg));
+			PbRenderJobUtil.KIND_RENDER, force, opts));
+		return out;
+	}
+
+	/**
+	 * Submit a background-only regenerate of one scene (design §22, §24 I-8): the scene's RENDER_PLAN node is
+	 * re-executed, forced, with {@link PbRenderPlanUtil.PlanOptions#withBackgroundRegen} set, so the executor
+	 * renders a new BASE (new seed) and re-runs each actor's ACTOR_REGION pass with the seed it had on the scene's
+	 * selected final ({@link PbNodeExecutor#findBackgroundRegen}); the new final supersedes the selected one and
+	 * takes the selection like any single-scene re-render. One variant, whatever the preset says.
+	 * <p>
+	 * Gate order, the same as {@link #requestSceneRender} up to the pin: 404 book / scene, 403 unless the caller
+	 * may update the book, config 404, then the workflow and terminal are resolved, 409 pinned, then two
+	 * refusals of this route's own: 409 when the scene's node is not a V3 RENDER_PLAN node (a PB1 COMPOSITE /
+	 * ChapBook LANDSCAPE linked through {@code sceneNode} has no actor passes to keep - render it with the scene
+	 * route), and 409 when that node has no selected {@code base} final yet (nothing to regenerate the background
+	 * of - render first). The executor repeats the last check at run time (the selection may have been deleted
+	 * between submit and execute) and the job then fails with the same message.
+	 *
+	 * @return as {@link #requestSceneRender}, plus {@code regenerate: "background"}
+	 */
+	public static Map<String, Object> requestRegenerateBackground(BaseRecord user, String bookObjectId, String sceneObjectId,
+			String sdApiType, String sdServer, String chatConfigName) {
+		BaseRecord book = requireBook(user, bookObjectId);
+		requireBookUpdate(user, book, "regenerate a scene background");
+		BaseRecord scene = requireSceneOfBook(user, book, sceneObjectId);
+		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
+		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg, null)
+			.withBackgroundRegen(true);
+		BaseRecord workflow = ensureWorkflow(user, book);
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
+		out.put("sceneIndex", scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX));
+		BaseRecord node = sceneTerminal(user, book, workflow, scene, out);
+		Boolean pinned = node.get(OlioFieldNames.FIELD_PB_PINNED);
+		if(pinned != null && pinned.booleanValue()) {
+			throw new PictureBookException(409, "Node " + node.get(OlioFieldNames.FIELD_PB_HANDLE)
+				+ " is pinned. Unpin it first - pinning means do not replace this artifact.");
+		}
+		PbNodeTypeEnumType nodeType = (node.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE) ? node.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE) : null);
+		if(nodeType != PbNodeTypeEnumType.RENDER_PLAN) {
+			throw new PictureBookException(409, "Scene node " + node.get(OlioFieldNames.FIELD_PB_HANDLE) + " is a "
+				+ (nodeType != null ? nodeType.name() : "node of unknown type") + ", not a RENDER_PLAN node: it has no actor passes to keep. Render the scene instead.");
+		}
+		if(PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_BASE) == null) {
+			throw new PictureBookException(409, "Scene has no selected render to regenerate the background of; render it first");
+		}
+		Long nodeId = node.get(FieldNames.FIELD_ID);
+		out.putAll(PbRenderJobUtil.submit(user, book, workflow, List.of(nodeId), sdApiType, sdServer,
+			PbRenderJobUtil.KIND_REGENERATE_BACKGROUND, true, opts));
+		out.put(PbNodeExecutor.KEY_REGENERATE, PbNodeExecutor.REGENERATE_BACKGROUND);
 		return out;
 	}
 
@@ -932,6 +1035,16 @@ public class PbServiceFacade {
 	 */
 	public static Map<String, Object> requestRenderAll(BaseRecord user, String bookObjectId, String sdApiType,
 			String sdServer, String chatConfigName) {
+		return requestRenderAll(user, bookObjectId, sdApiType, sdServer, chatConfigName, null);
+	}
+
+	/**
+	 * {@link #requestRenderAll(BaseRecord, String, String, String, String)} with the request's {@code variants}
+	 * override (§24 I-6): one count for every scene of the run, validated by {@link #validateVariants} after the
+	 * book gates and before any node is materialized.
+	 */
+	public static Map<String, Object> requestRenderAll(BaseRecord user, String bookObjectId, String sdApiType,
+			String sdServer, String chatConfigName, Integer variants) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		requireBookUpdate(user, book, "render the book");
 		List<BaseRecord> scenes = PbBookUtil.listScenes(user, book);
@@ -939,6 +1052,8 @@ public class PbServiceFacade {
 			throw new PictureBookException(409, "This book has no scenes yet; extract or add scenes before rendering it");
 		}
 		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
+		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg,
+			validateVariants(user, book, null, variants));
 		BaseRecord workflow = ensureWorkflow(user, book);
 		List<Long> terminals = new ArrayList<>();
 		int materialized = 0;
@@ -955,7 +1070,7 @@ public class PbServiceFacade {
 		out.put("scenesWithoutNode", new ArrayList<String>());
 		out.put("nodesMaterialized", Integer.valueOf(materialized));
 		out.putAll(PbRenderJobUtil.submit(user, book, workflow, terminals, sdApiType, sdServer,
-			PbRenderJobUtil.KIND_RENDER_ALL, false, cfg));
+			PbRenderJobUtil.KIND_RENDER_ALL, false, opts));
 		return out;
 	}
 

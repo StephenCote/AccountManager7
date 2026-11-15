@@ -113,7 +113,7 @@ Dry damp clothes and warm cold bones.`;
 test.use({ launchOptions: { args: ['--host-resolver-rules=MAP localhost 127.0.0.1'] } });
 
 test.describe('ChapBook/PictureBook — Issues 1, 3, 4, 8, 9, 12', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);

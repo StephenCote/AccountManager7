@@ -87,8 +87,15 @@ test.describe('ChapBook Review — master/detail page list', () => {
 
         // 3. An unsaved edit on page 2 is flagged in the list and survives switching away and back.
         await item(oids[1]).click();
+        // Wait for the card swap before typing (as step 2 does): the click only schedules Mithril's redraw for
+        // the next animation frame, so a fill issued at once focuses page n's still-mounted title input and its
+        // text is lost when that card is replaced — the fill "succeeds", nothing is marked unsaved (seen once in
+        // the §24 U-2 serial run, 2026-11-15). The value check below proves the text landed on page 2's input.
+        await expect(pageHeader(page)).toHaveText('Page 2 of ' + n);
         const NEW_TITLE = 'E2E MD Title ' + Date.now();
-        await cards.first().locator('input[type="text"]').first().fill(NEW_TITLE);
+        const titleInput = cards.first().locator('input[type="text"]').first();
+        await titleInput.fill(NEW_TITLE);
+        await expect(titleInput).toHaveValue(NEW_TITLE);
         await expect(item(oids[1]).locator('[data-page-badge="unsaved"]')).toBeVisible();
         await expect(cards.first().locator('button[title="Save unsaved changes on this page"]')).toBeVisible();
         await item(oids[0]).click();

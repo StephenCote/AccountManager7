@@ -1873,7 +1873,7 @@ Related: KI-63 and KI-34/KI-61 — where a character's images *should* live is e
 question those entries are about, so fixing the empty-gallery default probably wants to wait on the
 storage-location decision rather than hardcode another path.
 
-### KI-63. PictureBook character images are created under Olio and are not compartmentalized to the book — OPEN (2026-08-10, Stephen)
+### KI-63. PictureBook character images are created under Olio and are not compartmentalized to the book — CLOSED 2026-11-14 by construction (§24 I-9, ledger §6.C 305; opened 2026-08-10, Stephen)
 
 Character images generated for a picture book land in the **Olio world's** storage
 (`{world.gallery.path}/Characters/{name}` — see `SDUtil.resolveCharacterImagePath`), not under the
@@ -1910,6 +1910,19 @@ verify, do not assume); whether the shared colour/word libraries stay on the uni
 reason apparel is Olio-owned in the first place); and what happens to books that already exist.
 
 Related: KI-34, KI-61, KI-32, KI-60, KI-62.
+
+**2026-11-14 CLOSED by construction (§24 I-9, ledger §6.C 305).** Stephen's world-per-book direction above is what PictureBook 2/V3
+built: every `olio.pb.book` owns a world at `/Olio/Universes/Books/Worlds/<slug>` (`PbOlioContextUtil`, slug pattern
+`^[a-z0-9][a-z0-9._-]{0,63}$`), so a book's characters, gallery and narratives land under that world and two books never share
+storage — the collision-free, principal-matching location KI-34 / KI-61 asked for, with no PictureBook-specific path handling.
+`SDUtil.resolveCharacterImagePath` prefers the character's `imageGalleryPath` attribute (`SDUtil.ATTR_IMAGE_GALLERY_PATH`) and only
+then the context world's gallery. Re-verified today: `TestPictureBookImageGalleryPath` (Objects7, am7db) creates two same-named
+"Kestrel Vane" characters in two books and resolves them to two distinct per-book galleries
+(`…/Worlds/issue4-imgpath-a-…/Gallery/Characters/Kestrel Vane` vs `…/issue4-imgpath-b-…/…`, even through the wrong context):
+`Tests run: 1, Failures: 0, Errors: 0` (`scratch/post10-3/98-i9-ki63-gallery.log:131`, galleries at `:120` / `:125`). Of the open
+questions above: the per-book world shares the org's `Books` universe, so the seed is paid once per organization, not per book; the
+colour/word libraries stay on the universe; pre-world (PB1) books are KI-91 Q1's call. Ad-hoc (non-book) reimages are KI-80, which
+stays open.
 
 ### KI-61. I broke character reimage by "fixing" KI-34 — REVERTED ✅ (2026-08-10, Stephen)
 
@@ -3186,8 +3199,8 @@ day this is fixed, which is the point.
 `AccessPoint.find` of the book (§5.6b's root-reference principle: authorize the root by identity, then
 list inside its compartment), and phase 4's endpoints take a **book objectId**, `find` it, and delegate to
 the Objects7 utility. Phase 4 must not expose the generic `/rest/model/search` over `olio.pb.*` and must
-not list on a caller-supplied `groupId`/`organizationId`. Full reasoning in `PictureBook2Plan.md`
-Appendix D.
+not list on a caller-supplied `groupId`/`organizationId`. Full reasoning in `archive/PictureBook2Plan.md`
+Appendix D (archived 2026-11-14).
 
 **CORRECTION 2026-08-17 (Stephen) — the cost argument against fixing `list` was WRONG, and it was the
 load-bearing one.** The disposition originally claimed that per-record filtering means an
@@ -3263,6 +3276,13 @@ continuing to hold.
 Related: `.claude/rules/model-api.md` ("`AccessPoint.list` is NOT a per-record authorization boundary",
 added in phase 2c — **now stale; it describes the pre-fix behaviour and needs updating**), KI-63
 (PictureBook images not compartmentalized).
+
+**2026-11-14 (§24 I-9, ledger §6.C 305) — won't fix / platform.** The three residues above (0: no record-level isolation inside a
+group; 1: `count` is unfiltered and remains an enumeration oracle; 2: the readable filter runs after `LIMIT`/`OFFSET`, so a paged
+list can return a short page against an unfiltered `totalCount`) all have the same clean fix — a SQL-level group/parent predicate
+inside the generated query, which is a change to `StatementUtil`/`DBSearch` and to the PBAC query-authorization contract, not a
+PictureBook slice. Nothing in V3 depends on them: the PB utilities and `PbServiceFacade` constrain by `groupId`/book deliberately.
+Left as a platform item for Stephen; no test or code changed.
 
 ---
 
@@ -3374,7 +3394,7 @@ artifacts) rather than improvement. The test is the only authoritative answer; t
 prior, not a result. Re-run when the SD server is available.
 
 Related: KI-59 (honest verification of an image pipeline), KI-66 (include/exclude landscape as a Ux
-option), `PictureBook2Plan.md` §2.4 (the deliberate `steps:4` vs `FALLBACK_STEPS=24` split).
+option), `archive/PictureBook2Plan.md` §2.4 (the deliberate `steps:4` vs `FALLBACK_STEPS=24` split).
 
 ---
 
@@ -3941,6 +3961,13 @@ cancel/resume tests: `Tests run: 32, Failures: 0, Errors: 0`. REST: `pictureBook
 report `extractionComplete=false`) — `1 passed`, `A4 cancel -> terminal after 3019ms`, server log
 `stopping with 5 scenes and the checkpoint at 1/2` → `checkpoint kept for resume` → `Async job CANCELLED`.
 
+**2026-11-14 re-verified (§24 I-9, ledger §6.C 305):** `TestPbCancelAbortsLlm` 2/2 against LiteLLM over the container Ollama
+(`[LLM-GATE] route=litellm tier=local analysis=qwen3:8b-ctr`), `chat()` returned 4 ms after the cancel
+(`scratch/post10-3/98-i9-ki74-cancel.log:97`, `:99` `Tests run: 2, Failures: 0, Errors: 0`). The cancel fix holds; nothing else
+changed. The remaining item — whether `abort-all` and `GET /rest/chat/llm/active` stay reachable by every `user` or move behind
+an admin-only gate — is a question for Stephen, recorded here with its default: **leave the gating as it is** until he says
+otherwise (it is not a defect; it is an entitlement choice).
+
 ### KI-75. `GET /rest/model/{type}/{oid}/full` 404s when a nested foreign model has more than 49 fields — PostgreSQL's 100-argument function limit — **FIXED 2026-10-07** — moved 2026-10-25 to `archive/KnownIssues-closed.md`
 
 ### KI-76. Same-named users in different organizations were served as whichever one Service7 cached first — `UserPrincipal` identity was name-only — **FIXED 2026-10-07** (found 2026-10-05) — moved 2026-10-25 to `archive/KnownIssues-closed.md`
@@ -4029,6 +4056,16 @@ the book flow, not to ad-hoc reimages.
 of `reimage`, or move ad-hoc reimages into the acting user's own gallery. Not changed — it is an
 entitlement-model decision.
 
+**2026-11-14 (§24 I-9, ledger §6.C 305) — decision still needed; not changed.** Re-read at HEAD (`OlioService.java:240-280`, last
+touched 2026-10-14 `11edfb7b0`): `reimageWithConfig` resolves the owning book context (`PbOlioContextUtil.resolveOwningBookContext`)
+and, after generation, runs `genCtx.scanNestedGroups(genCtx.getWorld(), FIELD_GALLERY, true)`, which applies the book's role pair
+beneath the world gallery — so a user who holds a role on the owning book CAN read a reimaged portrait back through the book flow.
+The residue is exactly the ad-hoc case: a reimage of a character whose resolved world the acting user holds no role on (no book, or
+a book they are not a member of). That is the entitlement-model choice named above — grant the acting user (or the world's reader
+role) read on the gallery group as part of `reimage`, or generate ad-hoc reimages into the acting user's own gallery — and it is
+Stephen's. Default until he answers: **leave**; nothing built. Not re-measured live today (it would need an SD run, and the answer
+does not depend on the measurement).
+
 ### KI-81. `Auto1111Util.newTxt2Img` ignores the `olio.sd.config` it is handed except for the prompt — OPEN (legacy path)
 `Auto1111Util.java:16-38` hardcodes 512×512, Karras, sampler `DPM++ 2M`, cfg 8 and takes only the prompt
 text from the config, so every width/height/steps/cfg/sampler/model value on the record is dropped on the
@@ -4078,13 +4115,31 @@ tracked here or in the V3 docs. Each bullet is copied verbatim from that section
 heading is this doc pass's reading of the current tree, not a test result — three (KI-84/85/86) have fixes present in code that this
 pass did not re-run. Numbering continues from KI-82.
 
-### KI-83. Nested-path `request` projection on a foreign `MODEL` field is rejected server-side and `/rest/model/search` answers 200 with an EMPTY body — OPEN, not re-verified (carried 2026-10-23)
+### KI-83. Nested-path `request` projection on a foreign `MODEL` field is rejected server-side and `/rest/model/search` answers 200 with an EMPTY body — CLOSED 2026-11-14 (§24 I-9, ledger §6.C 305; carried 2026-10-23)
 - A **nested-path `request` projection** (`"connection.serverUrl"` on `olio.llm.chatConfig`) is
   rejected server-side (`FieldException: Field 'connection.serverUrl' was not found on model
   olio.llm.chatConfig`, `DBSearch`/`AccessPoint` ERROR lines) and **`/rest/model/search` answers 200
   with an EMPTY body**, which reads exactly like "no such record". `model-api.md` documents nested path
   syntax as supported (`profile.portrait`); at least for this foreign `MODEL` field it is not. Work
   around by projecting the foreign record and resolving its fields with a second search.
+
+**2026-11-14 CLOSED (§24 I-9, ledger §6.C 305).** Two halves. The valid nested path has worked at the Objects7 layer since
+`Query.expandRequestPaths` (2026-10-08, `TestQueryNestedPathProjection`): `"connection.serverUrl"` on `olio.llm.chatConfig` answers
+200 with the nested `system.connection` object (`serverUrl` + identity) projected, so the workaround above is no longer needed and
+`model-api.md`'s nested-path syntax is correct as documented. What remained was the silent half: a projection the model cannot
+honour — an unknown top-level field, an unknown leaf, or a dotted path through a non-model field — reached
+`StatementUtil.getSelectTemplate` as a `FieldException`, which `DBSearch.find` wrapped in a `ReaderException` and
+`AccessPoint.search` (`AccessPoint.java:617-629`) swallowed into a null result, so `ModelService.search` answered 200 with an empty
+body. Now `Query.invalidRequestFields()` (Objects7) runs the same expansion and returns the request entries the schema cannot
+resolve, and `ModelService.search` / `searchCount` reject them pre-flight with `400 {"error":"Field '<path>' was not found on model
+<type>; a dotted request path must name a foreign model field at every segment but the last"}`
+(`ModelService.rejectInvalidRequestFields`, WARN-logged). Proof: `TestModelServiceSearchProjection` (Service7, H2, non-admin
+`mssOwner`) 6/6 — valid nested path 200 with the nested value; no projection 200; unknown leaf / non-model segment / unknown
+top-level field 400 naming path + model; `/search/count` 400 for the bad path and 1 for the valid one
+(`scratch/post10-3/98-i9-ki83-s7.log:844` `Tests run: 6, Failures: 0, Errors: 0`); live on the Docker stack as `e2etest_shared`
+after the redeploy: bad leaf 400, valid path 200 with the nested object, count 400 (`98-i9-ki83-live-probe.log`). Residue (not
+changed; Stephen's call, default leave): other `ReaderException`s inside `AccessPoint.search` still surface as 200/empty, and an
+unknown `type` is not turned into a 400 — this fix covers the projection only.
 
 ### KI-84. `GET /rest/olio/picture-book/{oid}/settings` 404s (`Book not found`) for a series-chapter `olio.pb.book` objectId — CLOSED 2026-11-12: re-verified live; `pictureBookChapteredManuscriptUx.spec.js:510-514` now pins `/settings` on every chapter id that just answered `/scenes`, and it answered 200 on all four chapters of the 4-chapter browser run (`scratch/post10-1/10-e2e-chaptered-4ch-rerun.log:81` ok, `:85 1 passed`, `:86 EXIT=0`; ledger §6.C 285). Fix is `PictureBookService.java:980` (`/{bookObjectId}/settings`) → `PictureBookUtil.getBookSdConfig:2030`, which resolves the id through `resolveBookGroupEither` (`:2032`), the same either-id resolution `/scenes` uses
 - `GET /rest/olio/picture-book/{oid}/settings` **404s (`Book not found`) for a series-chapter
@@ -4154,9 +4209,27 @@ whitespace id → 400 naming KI-89 with nothing written; nil / random id → 404
 (`PictureBookV3Implementation.md` §6.C 297). Existing group+meta-only PB1 books on a
 deployment are not migrated or deleted (no reader lists them; `-pbLegacyCleanup` still leaves them) — that residue is KI-91 Q1's call.
 
-### KI-90. A created book's `name` is `Book <slug>`, not the passed `title` — OPEN, minor, not re-verified (carried 2026-10-25 from `archive/IssueLog-2026-08-25.md` Issue 10)
+### KI-90. A created book's `name` is `Book <slug>`, not the passed `title` — CLOSED 2026-11-14 (§24 I-9, ledger §6.C 305; carried 2026-10-25 from `archive/IssueLog-2026-08-25.md` Issue 10)
 
 Noted during the Issue 10 (`/full` 404) audit on 2026-10-07 as "still open from this entry"; which create path exhibits it was not recorded. Not re-verified on 2026-10-25. Default: leave until it is hit again in the UI, then record the path and fix.
+
+**2026-11-14 CLOSED (§24 I-9, ledger §6.C 305).** Every create path exhibited it: `PbBookUtil.writeBookRow` named every book row
+`"Book " + slug` through `bookName(slug, title)` and put the title in `description` only, so the reader header (`pictureBook.js`
+`data-pb2-book-name` shows `book.name`), the cover and every list showed the slug (ledger 217 g had recorded the header as "by
+design"; it now shows the title). `bookName` returns the trimmed title when one is given and `Book <slug>` only when none is;
+`ChapBookUtil` and `PbServiceFacade.createBook` both flow through `writeBookRow`, so series chapters, the wizard and the REST create
+are all covered. Shared titles are safe: each book row lives in its own group (`/Olio/Universes/Books/Worlds/<slug>/Book`), so the
+`(name, groupId, organizationId)` unique index and the urn (which carries the group path) cannot collide. The name is cut to
+`PbBookUtil.MAX_BOOK_NAME_LENGTH` (96): the binding limit is not `common.name`'s 256 but the `urn` column's 255, because
+`UrnProvider` appends the normalized name after `am6:olio.pb.book:<org path>:olio.universes.books.worlds.<slug>.book:` (116 +
+org-path characters at the longest slug) — a 256-character name was refused by Postgres with "value too long for type character
+varying(255)" on the first run (`scratch/post10-3/98-i9-ki90-o7.log:474`). `description` (cap 512) still carries the full title, so
+the DTO `title` is unchanged. Proof: `TestPbNewBookRender.case00_createdBookNameIsThePassedTitle` (Objects7, am7db, non-admin
+owner) — name = the passed title, description = title, a twin book with the same title creates with a distinct oid and group, an
+untitled book is `Book <slug>`, a 300-character title lands cut to 96 with the full title in description: `Tests run: 1, Failures: 0,
+Errors: 0` (`scratch/post10-3/98-i9-ki90-o7-2.log:394`). `pictureBookV3SeriesArt.spec.js:591` now asserts the chapter cover shows
+the typed title; `pictureBookV3Handoff.spec.js:85`, `pictureBookLive.spec.js:28/:675` and `chapBook.spec.js:1450` comments updated.
+Existing rows keep their `Book <slug>` name — no migration; renaming them is a `PATCH` on `name` if Stephen wants it.
 
 ### KI-91. PictureBook — leftovers carried from `archive/PictureBookWorkflowOverhaul.md` §7/§8 and `archive/PictureBookSdConfigRefactor.md` "Outstanding" — OPEN (carried 2026-10-25)
 
@@ -4171,6 +4244,15 @@ Open questions from the 2026-09-19 workflow overhaul that nothing later answers 
 
 Default: leave all of them; they are listed so the questions are not lost with the archived doc.
 
+**2026-11-14 (§24 I-9, ledger §6.C 305):** re-read as the last PB slice. Q1, Q3, Q5, Q10, the write-volume caveat and the
+SdConfigRefactor tidy-ups are all still questions, not defects — none has a default that is not "leave", so nothing was built and
+each is restated with its default: Q1 delete the `<book>/Characters` fallback and the group+meta-only PB1 books (default: leave both);
+Q3 graph backfill for pre-graph books (default: no backfill — re-render to get a graph); Q5 keep the 889-line canvas as a provenance
+surface (default: keep as is, no menu entry); Q10 standalone books as implicit one-chapter series (default: stay outside the series
+model); write volume on a 41-scene book (default: not measured); the five SdConfigRefactor items (default: leave; of the two
+wizard specs, `sdConfigFlow` is ungated and runs in the §24 U-2 default suite, `pictureBookWizardUx` is gated on `PB_ASYNC_TESTS=1`
+and runs in U-3 — their results land in the ledger, not here). Q4 is done (2026-11-13). KI-87 was not touched.
+
 
 ### KI-92. A shared series character's cast description depends on which chapter job wrote first — one `pbDescription` / `pbSceneRefs` attribute row per chapter, read first-of-ties. CLOSED 2026-11-13 (UAT-1, option (a); ledger §6.C 296)
 
@@ -4183,3 +4265,60 @@ Default: leave all of them; they are listed so the questions are not lost with t
 **Options (Stephen's call, ledger §24 UAT-1):** (a) one attribute per chapter (`pbDescription:<chapterObjectId>`; readers pick the scene's chapter, fall back to any); (b) one row, updated in place (last chapter wins — deterministic only with one job); (c) leave it, the description is a baseline not a per-scene outfit. Default if nothing is said: (c), this entry stays OPEN. Nothing is built until answered.
 
 **Fix (2026-11-13, option (a), built under Stephen's "the word is YES, do it all" — ledger §6.C 296).** Each chapter now writes its own `pbDescription:<bookObjectId>` / `pbSceneRefs:<bookObjectId>` row (`PictureBookUtil.bookScopedAttributeName`, `ATTR_BOOK_SCOPE_SEPARATOR = ":"`), **upserted** on re-extraction (`persistCharacterAttribute`: an existing scoped row is rewritten in place, never appended), and the unscoped row is seeded once — by whichever chapter writes first — as the fallback for book-less readers and for data written before the per-book rows. `PictureBookUtil.readBookScopedAttribute(record, attr, bookObjectId)` is the one reader (scoped row when non-blank, else the unscoped row, else null); every production reader that knows the scene's book goes through it — `PbRenderPlanUtil.actorDescription(cp, bookOid)` / `physicalDescription` (the render plan's identity line, `actorsOf`), `PbComposeUtil.castBlock(cast, bookOid)` (compose-scene and cover prompts) and `collectCast` tier (b) (`pbSceneRefs`), `resolveSceneCharacter(…, bookOid)` (the portrait prompt, `PbNodeExecutor.executePortrait`); `mergeCharacters` unions the PB2 book's scoped `pbSceneRefs` row as well as the unscoped one. A book-less write keeps the pre-fix append shape. The chapter's book is the PB2 `olio.pb.book` (`pb2Book` at the write site), not the chapter record. **Also fixed on the way:** `PbWatchedFields.projection(olio.charPerson)` never requested `attributes`, so the declared watched `pbDescription` rendered as the null token forever and a description edit never staled a portrait; the projection now carries it, the canonical form renders the bare row then the scoped rows sorted by name (order-independent across the 2-wide chapter jobs), and `WATCHED_SET_VERSION` moved `watched/v4` → `watched/v5` — one one-time STALE wave over every stored refHash, by design. **Test:** `TestPbSharedCharacterChapterAttributes` 2/2 against am7db as `testUser1` (per-book rows in both write orders, re-extraction upsert, fallback for an unknown / blank book, the legacy direct-row shape, `actorDescription` / `castBlock` per book, refHash moves on a description write and is stable, scoped segment identical for A-then-B and B-then-A), regression `TestPbSeriesCast#testResolveSceneCharacterPrefersChapterShadow` 1/1, `TestPbComposeFallback` 14/14, `TestPbLocationSchema` 3/3, `TestPbV4Schema` 8/8, `TestPbWardrobe` 10/10 (36/36, ledger §6.C 296 c). The emulated spec's `chat` kind still pins by pipeline shape: the recorded fixtures carry the first-of-ties descriptions, so an exact-key pin would need a re-recording on `.42` (ledger §6.C 296).
+
+
+### KI-93. Every `ObjectPicker` can hide a record created a moment ago for up to 6 minutes — the server search cache is cleared on UPDATE / DELETE only, never on CREATE, and the pickers opened with `cache:true`. CLOSED (client half) 2026-11-15 (UAT-4; ledger §6.C 312) — server half is Stephen's
+
+**Found** by §24 U-3's `pb-litellm` set: `pictureBookFanOut409Reuse.spec.js` stayed red after its fixture names were changed to sort first (`000-…`, `105-u3-pb-litellm-rerun.log:15`) — the wizard's "Browse Documents" picker did not list the `.txt` the spec had just uploaded to `~/Data`. The retained trace shows the picker's `search/count` = 120 while its page-1 `/rest/model/search` (`cache:true`, sort `name` asc, 10 rows) answered `totalCount` 119 without the doc; the identical body replayed with curl as `e2etest_shared` after the entry aged out returned the doc at row 1 (`scratch/post10-3/105-u3-tracefanout/`, deleted at the U-3 hand-back). Layer isolated per `troubleshooting.md`: the raw API was serving a stale cached page, the UI query was correct.
+
+**Cause.** `CacheDBSearch` (`io/db/cache/CacheDBSearch.java`) serves any query sent with `cache:true` from its map for up to `maximumCacheAgeMS` = 360000 (`:30`, `:78`), keyed per actor + type + sort + order + range + request projection + conditions (`QueryUtil.key`, `:79-118`). `DBWriter.write` clears the cache on `RecordOperation.UPDATE` (`:171-173`) and on delete (`:105`) and on nothing else — a CREATE leaves every cached page of that type intact, although a new row changes every list page of its group. On the client, `am7client.create` clears only the in-browser cache (`am7client.js:269-275`); the server round-trip `am7client.clearCache(type, false)` (`GET …/cache/clear/{type}`, `:149-177`) is called by the object editor after its saves (`object.js:280/294/311/519/576`) but not by `fileUpload.js` / `dnd.js uploadFiles`, nor by anything that creates through `POST /rest/model` from a test or a script. The list view already survives this: its `oninit` sets the one-shot `pagination.pages().noCache = true` (Issue 4, `list.js:1382-1385`), which `pagination.getSearchQuery` turns into `am7client.clearCache(type, true)` (in-browser only) + `cache:false` in the request body on the first load (`pagination.js:88-91`, cleared at `:157-158`). `listPage.openForPicker` and `pickerNavigateTo` (`list.js`) called `pagination.new()` without it, so a picker whose page-1 key had been warmed by an earlier open in the same session (the same user's own "Browse Documents" click a minute before) was served that earlier page.
+
+**Effect.** Every `ObjectPicker` (the PictureBook wizard's "Browse Documents" / "Select Chat Config", the ChapBook pickers, the olio pickers) can omit a record created since the previous open of the same picker by the same user, for up to 6 minutes, and `search/count` disagrees with the page — the symptom reads as "my upload is missing". Per-actor key, so one user's stale page is never served to another.
+
+**Fix (client half, 2026-11-15, ledger §6.C 312).** The same one-shot `pagination.pages().noCache = true` after `pagination.new()` in both picker entry points, `openForPicker` and `pickerNavigateTo` (`src/views/list.js`), so every picker open and every source switch inside it clears the in-browser cache for its type and reads page 1 with `cache:false`, which bypasses the server's result cache (`CacheDBSearch.getCache` serves only `query.isCache()`); later pages inside the same open stay cached as before. U-1: `npx vite build` `109-uat4-vite-build.log` EXIT=0 (deployed `dist/assets/index-Bkv3S91j.js`), `npx vitest run` `109-uat4-vitest.log:16-17` 114 files / 1701 tests passed. Regression pin: `pictureBookFanOut409Reuse.spec.js` now sends the picker's exact page-1 query (`pickerPage1Names`, same key) with `cache:true` BEFORE the upload, so the picker it opens afterwards must survive a warmed stale page; it logs the post-upload `cache:true` re-read as an observation (whether the server still serves the stale page is the server half, not pinned). Evidence: rerun 2 on the deployed dist (`105-u3-pb-litellm-rerun2.log:12-22`) listed the just-uploaded `.txt` and the just-created chat config in both pickers and went on to extract both chapters — its red was at the fan-out wait (`:23`, `:30`, `:62`, `:64`), the spec's own clean-run-only landing assertion against the route's declined passages, not the pickers; rerun 3 with the corrected wait loop and the helper reading the `io.queryResult` envelope (`105-u3-pb-litellm-rerun3.log:7-9`; its own red is at the fan-out — the route declined every chapter-2 passage, a product red → UAT-5 / KI-94) logged the warm-up `10 rows` and the post-upload `cache:true` re-read as `NO (stale page served)` — the stale server page is real — and the picker found the doc.
+
+**Server half — Stephen's call, not built (⚠ default: leave).** (a) `DBWriter.write` could call `CacheDBSearch.clearCacheByModel` (`:166-168`) on CREATE as it does on UPDATE / DELETE — one line, but it widens cache churn on every bulk write (Olio seeding, PB extraction fan-out) and is a persistence-layer policy; (b) `fileUpload.js` / `dnd.js uploadFiles` could call `am7client.clearCache(type, false)` after a successful upload as `object.js` does. With the client bust in the list view (Issue 4) and the pickers (this entry) every Ux752 surface that lists a type re-reads fresh on open, so neither is needed for the UI; a script or test that creates through REST and then searches with `cache:true` still sees the stale page for up to 6 minutes — send `cache:false` or call `GET /rest/cache/clear/{type}`.
+
+### KI-94. A completion the model server's content filter withheld (`finish_reason=content_filter`) was reported as "the model did not finish within the request timeout", or silently "recovered" as a successful 0-scene passage — never as a decline the user could retry. CLOSED 2026-11-15 (UAT-5; ledger §6.C 313).
+
+**Found** by §24 U-3's `pb-litellm` set, rerun 3 (`105-u3-pb-litellm-rerun3.log`): `pictureBookFanOut409Reuse.spec.js` drove the wizard's chapter fan-out through chat config `000-litellm-azure` (LiteLLM → a reasoning model). Chapter 2 came back with no scenes; the wizard said "the model did not finish within the request timeout" for one passage and nothing at all for two others, which it had counted as successful. The Langfuse observations for those calls, and a `stream:false` replay of the identical body through LiteLLM, showed the same thing each time: the stream ended with `finish_reason: content_filter`, the content was empty, `{"` (2 chars) or a 24-char fragment, and usage billed the full generation — the model wrote the extraction and the completion-side filter withheld it. (The upstream hostname seen in those observations is never written into any tracked file.)
+
+**Cause.** `Chat.processStreamChunk` logged a WARN on the non-`stop` finish reason but recorded it nowhere a caller could read. `PictureBookUtil.callLlmInternal` therefore saw a null or empty message like any other infrastructure failure: `attemptChunk` logged "No LLM content for … — no reason reported" (`PictureBookUtil.java:5919`), and because the call had taken longer than `LLM_INFRA_FAILURE_MS` (5000 ms, `:5913`) `slowFailure` labelled it "timed out … NOT retrying" — the wizard's "the model did not finish within the request timeout". A 2- or 24-char fragment never reached that branch: `parseLlmJsonObject` "recovered" it into 0 top-level keys (`:3846`) and the passage counted as a SUCCESS with no scenes. Three of the four declines in rerun 3 were never recorded as failed passages and could not be retried.
+
+**Effect.** Any extraction (chapter fan-out, single-book extract, `guess-apparel` and every other `callLlmInternal` prompt) through a model server that filters completions reported the wrong reason, or no reason, for passages it silently lost. The user was told to wait longer, or shown a chapter with fewer scenes than the text holds and no problem at all; retryFailedChunks had nothing to retry.
+
+**Fix (2026-11-15, ledger §6.C 313).** `Chat` now carries the choice's `finish_reason` in a per-call holder (`finishReasonOut`) written by `processStreamChunk` and published into the ThreadLocal `LAST_CALL_FINISH_REASON` by the CALLING thread after the buffer latch, in both post-latch branches — the same hand-off `sawTerminator` / `runawayFired` already use — with `getLastCallFinishReason()` / `isLastCallContentFiltered()`, reset per call. `callLlmInternal` treats a content-filtered completion as a soft decline: WARN "LLM completion content-filtered for prompt '…' — discarding the N-char fragment" (the filtered request is logged for the operator), `LAST_REFUSAL` set, null returned, so `attemptChunk` records `KIND_REFUSAL` — "the model declined the passage after Nms — NOT retrying with the same model" — and the wizard shows "the model declined to process this passage (content policy) — retry it with a different model", retryable. `LlmEmulator` gained a `content_filter` fault mode and, more importantly, now completes every emulated response asynchronously (a 25 ms delayed executor, mirroring the HttpClient worker production uses): the FIRST version of this fix set the ThreadLocal inside `processStreamChunk`, passed its JUnit 4/0/0 because the emulator completed inline so the consumer ran on the caller, and never fired in Tomcat — rerun 4 was green by the spec's tolerance while the app log still said "no reason reported". `TestPbContentFilterDecline` (4 tests) now asserts the consumer thread differs from the caller and went red (`110-uat5-junit-red.log:481`, 4 failures) → green (`110-uat5-junit2.log:444`) on the holder fix; rerun 5 proved the fix fires on `am7-asyncjob-1` and on the HTTP thread; rerun 6 green (`105-u3-pb-litellm-rerun6.log:36`).
+
+**Left (⚠ default: leave).** `GET /olio/picture-book/{oid}/scenes` answers 404 "Book not found" for an EXISTING `olio.pb.book` that has no scene group linked yet (`PictureBookUtil.listScenes` → `resolveBookGroupEither`) — the state of a chapter whose every passage was declined. The spec accepts 404-or-empty for such a chapter; whether the route should answer 200 + [] for a book that exists is Stephen's call. **2026-11-15: built as §24 UAT-6 / KI-95 (ledger §6.C 316) — the route answers 200 + `[]` for a readable V3-only book; the U-6 re-runs showed the same 404 broke the Manage Characters dialog for every unextracted chapter, so it was a product defect, not a question.**
+
+### KI-95. `GET /olio/picture-book/{id}/scenes` and `/characters` answered 404 "Book not found" for an EXISTING V3-only book the caller owns, and the Manage Characters dialog hung on it with an unhandled rejection — CLOSED 2026-11-15 (§24 UAT-6; ledger §6.C 316; closes KI-94 "Left")
+
+**Found** by §24 U-6's solo re-run of `pictureBookNavigation.spec.js` (`scratch/post10-3/107-u6-pbnav-rerun3.log:18-19`): the PB2 reader test failed on the ./helpers/fixtures.js console capture — `[pageerror] List characters failed: 404` — after clicking the list row's Characters button on a fixture book.
+
+**Cause.** Both PB1 read routes resolved the book through its PB1 scene `data.group` only (`PictureBookUtil.resolveBookGroupEither`), so a V3-only `olio.pb.book` — every `POST /chapter` fixture (there is no `POST /books` route) and any product-created chapter whose extraction has not run yet — was "not found" although `PbBookUtil.readBook` answers it for its owner. The client half: `features/pictureBook.js` `renderPb2CharactersButton` → `openCharacterManager` → `pictureBookCharacters.js` `refreshList` awaited `listCharacters` with no catch, so the dialog stayed on "Loading characters…" and the rejection escaped to the page.
+
+**Effect.** Every chapter created in the wizard and not yet extracted (and every e2e fixture) showed a dialog that never settled; the REST routes could not be used to ask "what does this book have" without a PB1 scene group.
+
+**Fix (2026-11-15, ledger §6.C 316).** Objects7: `PictureBookUtil.isReadableV3OnlyBook(user, bookObjectId, orgId)` = `PbBookUtil.readBook(...) != null` — through `AccessPoint` as the CALLER, never the olio principal, so an id that is absent-to-me stays 404 (the same "absent-to-me ≠ absent" rule the security-reviewer's finding 1 established for `PbBookUtil.bookExists`, which is write-path only). `listScenes` answers `[]`, `listCharacters` / `resolveTrustedCharsGroup` answer the world-population cast or `[]`; absent id and another user's book still 404. Ux752: `refreshList` try/catch → `listError` rendered inline (`data-testid="pb-chars-error"`) plus `page.toast('error', 'Could not load characters: …')`; empty state `data-testid="pb-chars-empty"`. Tests: `TestPbV3OnlyBookLegacyReads` on am7db as two non-admin users (`111-uat6-junit.log:174`, `:11987`, `:12101` `Tests run: 1, Failures: 0`, `:12108` `BUILD SUCCESS`); new `e2e/pictureBookV3OnlyBookCharacters.spec.js` (`ensureSharedTestUser`; REST 200/200 + absent 404/404; row → dialog empty state with no pageerror; stubbed 500 → inline error + toast) `111-uat6-e2e.log:12` `3 passed`; `pictureBookNavigation.spec.js` solo `107-u6-pbnav-rerun4.log:16` `6 passed`. Jar `3610f91f45de975cc5b9c8fcb480a288` + dist `index-DIlPVJHL.js` live on the stack 16:42:52Z.
+
+### KI-96. `GET /olio/picture-book/books` enumerates at most 400 candidate rows (`PbServiceFacade.LIST_BOOKS_CANDIDATE_CAP`, name-sorted ascending) with no paging and no "more" indicator — a user with more than 400 non-ChapBook books silently loses the ones that sort last — OPEN (⚠ Stephen's call; default: leave)
+
+**Found** 2026-11-15 by §24 U-6's solo re-run of `pictureBookChapteredManuscriptEmulated.spec.js` (`scratch/post10-3/107-u6-chaptered-rerun.log:165-166`, test 4 `Expected 10 Received 9`): weeks of emulator fixtures (62 series / 404 chapters created by earlier runs and never deleted — my spec defect, fixed the same day: precondition `< 400` + `afterAll` series delete, and the backlog deleted through the API, `107-u6-emu-cleanup.log:68`) pushed the shared test user over the cap, so one chapter of the newest series fell off the end of the name-sorted candidate set and the selector listed 9 of 10.
+
+**Why it is a product question, not a test one.** `listBooks` (`PbServiceFacade.java:2339-2403`) enumerates `createdByObjectId + organizationId` candidates with `setRequestRange(0, 400)` and then reads each as the acting user — the bound exists so the per-row `readBook` cost stays finite, and it is sorted by `name` so the cut is deterministic, but nothing tells the client the list is truncated: `GET /books` returns a plain array and the PB2 selector (`features/pictureBook.js`) renders what it gets. Options: (a) leave — 400 story books per user is far above any real library, and the ChapBook exclusion is already a condition of the candidate query so ChapBooks cannot consume the budget (the P3-8 run-5 lesson); (b) add `startRecord`/`recordCount` paging + a `truncated` flag the selector shows; (c) sort newest-first so the cut hides the oldest, not the alphabetically last. Default (a).
+
+### KI-97. Chat v1 Scene Gallery → Generate: the per-chat `olio.sd.config` (`sdcfg-chat-<chatConfigObjectId>`) is silently NOT saved when the button is clicked before `doPeek()` has resolved the session's chatConfig — OPEN (⚠ Stephen's call; default: leave)
+
+**Found** 2026-11-15 by §24 U-6's full Ux752 gate RUN 3 (`scratch/post10-3/107-u6-verify3.phases.log:2050`, `x 620 [chromium-vite] bugfix3-live.spec.js:459 … (13.0s)`; passed on retry `:2058`; passed in runs 1 and 2 — a flake of the 2-worker gate, not of the spec's logic). The spec's assertion that failed is its last one — `Generate must persist sdcfg-chat-<chatConfigObjectId> in ~/Data/.preferences … Expected: true Received: false`. The trace's REST timeline shows what happened: fixture `POST /rest/model` 18:41:02.863Z → the page's two `GET /rest/model/olio.llm.chatConfig/…/full` at 18:41:06.420 and 18:41:06.953 → `GET /rest/olio/randomImageConfig` 18:41:07.023 → the config searches 18:41:07.938 / 18:41:08.310 → `POST /rest/chat/…/generateScene` 18:41:09.035 (intercepted 204) → the spec's own search 18:41:09.607 — and **no create or PATCH of an `olio.sd.config` between the gallery's lookup and the generate call**: the per-chat save was skipped, not failed.
+
+**Cause.** `features/chat.js:95-107` `doPeek()` sets `chatCfg.chat = fullCc` only after an async `am7client.getFull("olio.llm.chatConfig", …)`; the toolbar's Scene Gallery button (`features/chat.js:936`) passes `chatCfg` to `SceneGenerator.openSceneGallery(...)`, which reads `chatCfg.chat.objectId` **at click time** (`chat/SceneGenerator.js:405`). When the click lands before that fetch resolves, `_chatConfigObjectId` is null, `perChatConfigName()` (`:32`) returns null, and `persistConfig()` (`:160-172`) saves the per-chat record only `if (name)` (`:168`) — its `false` return is discarded at `:243` (`await persistConfig();`), so the generate proceeds with the dialog's config and nothing is persisted, with no message. A user who opens the gallery quickly on a fresh session gets a scene with the settings they chose and, the next time, the defaults again.
+
+**Why a KI and not a §24 UAT item.** Chat v1 scene generation, pre-§24, outside PictureBook V3's scope and outside the §24 diff (`bugfix3-live.spec.js` is commit `7d7ae48f6`, untouched; the spec's assertion is right and a spec-side wait would mask the race). Options: (a) leave; (b) `openSceneGallery` resolves the chatConfig id itself (`inst.api.chatConfig()` is synchronous — `features/chat.js:99`) instead of reading `chatCfg.chat`, so the per-chat name never depends on `doPeek()`'s timing; (c) honour `persistConfig()`'s return and tell the user the config was not saved. Default (a).
+
+### KI-98. Chat v1 "New Chat Session" dialog: a name the user types while the defaults are still loading is overwritten by the auto-generated default name — OPEN (⚠ Stephen's call; default: leave)
+
+**Found** 2026-11-15 by §24 U-6's full Ux752 gate RUN 3 (`scratch/post10-3/107-u6-verify3.phases.log:2271`, `x 659 [chromium-vite] chatDeleteE2E.spec.js:14 … (17.0s)`; passed on retry `:2300`; red twice in RUN 1 and once in `107-u6-vite-rerun1.log`, green solo `107-u6-chatdel-rerun.log:13`). The failing assertion was `expect(result.error).toBeUndefined()` with `"Not found"`: the spec had filled `input[placeholder="Session name"]` with `DelE2E-<ts>` 2 s after the dialog appeared and clicked Create, but the trace's `POST /rest/chat/new` response (18:44:14.874Z) carries `name: "scratchy skinny turtle - chapBook.landscape-prompt"` — the auto-generated default — so the session the spec then looked for by name did not exist (the sidebar list it searched, 280 rows at 18:44:18.437Z, was fresh: the product's create path and the spec's `CM.refresh()` both cleared the server cache first).
+
+**Cause.** Both New-session entry points (`features/chat.js:1239-1248` the "New Session" button, `:1368-1377` `ConversationManager.onNewSession`) reset `newSessionName = ""`, open the dialog, then `await loadNewSessionDefaults()` (`:1038` — up to five REST calls: library group + `olio.llm.chatConfig` list, library group + `olio.llm.promptTemplate` list, then the `olio.llm.promptConfig` fallback) and `await updateNewSessionDefaultName()` (`:1092` — one more `GET …/chatConfig/…/full`, then `newSessionName = name` at `:1128` **unconditionally**). The input is bound `value: newSessionName` (`:1177`), so anything the user typed before that chain settles is replaced. Solo, the chain settles inside the spec's 2 s wait; under the 2-worker gate it took longer and the overwrite landed after the fill.
+
+**Spec correction (mine, 2026-11-15, §6.C 317).** `chatDeleteE2E.spec.js` is in the §24 diff (the §6.C 145 (c)(1) locator correction), so its red is my defect to correct: the spec now waits for the dialog to populate its default name (`expect(nameInput).not.toHaveValue("")`) before replacing it — what a user sees before typing — and keeps every assertion; solo `--retries=0` re-run quoted in §6.C 317. **Product question, not fixed:** `updateNewSessionDefaultName()` should not replace a name the user has already typed (set the default only while `newSessionName === ""` or still equals the previous default) — chat v1, pre-§24, outside PictureBook V3's scope. Default: leave.

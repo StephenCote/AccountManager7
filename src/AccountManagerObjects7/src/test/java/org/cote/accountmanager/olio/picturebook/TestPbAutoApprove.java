@@ -329,7 +329,7 @@ public class TestPbAutoApprove extends BaseTest {
 	 * vetoing entries, in order. Pure classification: no artifact, no DB write.
 	 */
 	@Test
-	public void case08_vetoSetIsTheSevenCodesPlusAnythingUnknown() {
+	public void case08_vetoSetIsTheClosedSetPlusAnythingUnknown() {
 		assertTrue(PbArtifactUtil.vetoingDegradations(null).isEmpty());
 		assertTrue(PbArtifactUtil.vetoingDegradations(List.of()).isEmpty());
 
@@ -340,19 +340,23 @@ public class TestPbAutoApprove extends BaseTest {
 		String qaUnavailable = RenderPlan.Degradation.QA_UNAVAILABLE + ": vision model unreachable";
 		String seedUnknown = RenderPlan.Degradation.VARIANT_SEED_UNKNOWN + ": variant 1 rendered with a random seed: the renderer reported no seed for variant 0";
 		String upscaleNotRendered = RenderPlan.Degradation.UPSCALE_NOT_RENDERED + ": UPSCALE stage planned by the preset but not rendered (Phase 2 renders BASE only)";
-		assertTrue("the seven accepted codes never veto",
-			PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn, qaFail, qaUnavailable, seedUnknown, upscaleNotRendered)).isEmpty());
+		String actorSeedNew = RenderPlan.Degradation.ACTOR_SEED_NEW + ": Mara's ACTOR_REGION pass rendered with a fresh seed (no reusable seed on the selected final)";
+		assertTrue("the eight accepted codes never veto",
+			PbArtifactUtil.vetoingDegradations(List.of(textOnly, substituted, qaWarn, qaFail, qaUnavailable, seedUnknown, upscaleNotRendered, actorSeedNew)).isEmpty());
 		for(String code : new String[] { RenderPlan.Degradation.ACTOR_TEXT_ONLY, RenderPlan.Degradation.MODEL_SUBSTITUTED, RenderPlan.Degradation.QA_WARN,
 				RenderPlan.Degradation.QA_FAIL, RenderPlan.Degradation.QA_UNAVAILABLE, RenderPlan.Degradation.VARIANT_SEED_UNKNOWN,
-				RenderPlan.Degradation.UPSCALE_NOT_RENDERED }) {
+				RenderPlan.Degradation.UPSCALE_NOT_RENDERED, RenderPlan.Degradation.ACTOR_SEED_NEW }) {
 			assertTrue(code + " is a known code", RenderPlan.Degradation.isKnownCode(code));
 			assertFalse(code + " is not in the veto set", PbArtifactUtil.AUTO_APPROVE_VETO_CODES.contains(code));
 			assertTrue("a bare code with no message is still accepted", PbArtifactUtil.vetoingDegradations(List.of(code)).isEmpty());
 		}
 
 		/// The six P6-era vetoes plus TITLE_BAND_FAILED (§24 I-4, 236 i: the band pass failed, the band is delivered
-		/// unpainted - the figure is sound but the image is not finished, so it must not be approved unseen).
-		assertEquals(7, PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size());
+		/// unpainted - the figure is sound but the image is not finished, so it must not be approved unseen) and
+		/// BACKGROUND_REGEN_NO_REGIONS (§24 I-8: a background-only regenerate re-rendered the actors too - the user asked
+		/// for one thing and got another, and must look). ACTOR_SEED_NEW (I-8) is accepted, above. A new veto is added
+		/// HERE too - this pin was missed twice (§6.C 300, §6.C 316).
+		assertEquals(8, PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size());
 		String[] vetoes = new String[] {
 			RenderPlan.Degradation.ACTOR_UNRESOLVED + ": Old Bes rendered from the row's text (character abc could not be read)",
 			RenderPlan.Degradation.ACTOR_FAILED + ": Jideon reference could not be bound",
@@ -360,7 +364,8 @@ public class TestPbAutoApprove extends BaseTest {
 			RenderPlan.Degradation.PROMPT_TRUNCATED + ": ELEM_LOW dropped: gulls (12 tokens over budget 512)",
 			RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER + ": composed lazily by the render",
 			RenderPlan.Degradation.VARIANT_FAILED + ": variant 2 not rendered: Swarm returned no image",
-			RenderPlan.Degradation.TITLE_BAND_FAILED + ": TITLE_BAND pass failed: RENDERER_ERROR: band refused; the band is delivered unpainted" };
+			RenderPlan.Degradation.TITLE_BAND_FAILED + ": TITLE_BAND pass failed: RENDERER_ERROR: band refused; the band is delivered unpainted",
+			RenderPlan.Degradation.BACKGROUND_REGEN_NO_REGIONS + ": background-only regenerate re-rendered the whole scene: the plan runs no ACTOR_REGION pass" };
 		assertEquals("every veto code is exercised", PbArtifactUtil.AUTO_APPROVE_VETO_CODES.size(), vetoes.length);
 		for(String entry : vetoes) {
 			String code = entry.substring(0, entry.indexOf(':'));

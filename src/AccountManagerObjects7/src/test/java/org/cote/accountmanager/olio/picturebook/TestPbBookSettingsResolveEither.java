@@ -17,22 +17,27 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.junit.Test;
 
-/// Regression proof for {@code GET/PUT /rest/picturebook/{id}/settings} accepting the SAME two handles
-/// as {@code /scenes} and {@code /characters}: a PB1 scene-group ({@code data.group}) objectId OR an
+/// Regression proof for {@code GET /rest/picturebook/{id}/settings} accepting the SAME two handles as
+/// {@code /scenes} and {@code /characters}: a PB1 scene-group ({@code data.group}) objectId OR an
 /// {@code olio.pb.book} objectId.
 ///
 /// Measured live 2026-09-30 as {@code e2etest_shared}: {@code /scenes} and {@code /characters} resolved a
 /// PB2 book objectId, but {@code /settings} returned 404 "Book not found" for it, because
-/// {@link PictureBookUtil#getBookSdConfig} / {@link PictureBookUtil#setBookSdConfig} resolved the book
-/// only through {@code findBookGroup} (a {@code data.group} objectId lookup). The Ux wizard's resume
-/// path ({@code tryResumeExistingBook}) swallows that 404, so opening the editor from a PB2 surface
-/// silently dropped the book's saved SD config. The fix routes both through
+/// {@link PictureBookUtil#getBookSdConfig} (and the since-deleted PB1 writer {@code setBookSdConfig})
+/// resolved the book only through {@code findBookGroup} (a {@code data.group} objectId lookup). The Ux
+/// wizard's resume path ({@code tryResumeExistingBook}) swallows that 404, so opening the editor from a
+/// PB2 surface silently dropped the book's saved SD config. The fix routes the lookup through
 /// {@code resolveBookGroupEither}, the resolver the sibling read endpoints already use.
+///
+/// 2026-11-14 (§24 C-1): the PB1 writer {@code PictureBookUtil.setBookSdConfig} (route retired 216 d,
+/// no main-code caller) was deleted, so this class pins the READ side only — both handles resolve
+/// (null, not 404) for the owner, and a second non-admin user in the same org is refused 404 through
+/// both. The V3 settings write path is {@code PbBookUtil.setBookSdConfig}, pinned by
+/// {@link TestPbBookSettingsAuthz}.
 ///
 /// Setup mirrors {@link TestPbCreateFromScenesRerun}: a standalone PB2 book via {@code PbBookUtil
 /// .createBook}, then the production {@link PictureBookUtil#createFromScenes} with ONE castless scene and
@@ -115,56 +120,15 @@ public class TestPbBookSettingsResolveEither extends BaseTest {
 				+ e.getStatus() + " " + e.getMessage());
 		}
 
-		// ── SAVE by the pb.book objectId (the handle the Ux holds when opened from a PB2 surface). ──
-		String expectedStyle = "photograph";
-		BaseRecord sdConfig = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		sdConfig.set("style", expectedStyle);
-		BaseRecord stored;
-		try {
-			stored = PictureBookUtil.setBookSdConfig(testUser, pb2BookOid, sdConfig, null);
-		} catch (PictureBookException e) {
-			fail("setBookSdConfig(pb.book objectId) must resolve like /scenes does; got HTTP "
-				+ e.getStatus() + " " + e.getMessage());
-			return;
-		}
-		assertNotNull("setBookSdConfig must return the stored common config", stored);
-		assertEquals("stored style", expectedStyle, stored.get("style"));
-
-		// ── READ BACK by BOTH handles: same settings. ──
-		BaseRecord viaGroup = PictureBookUtil.getBookSdConfig(testUser, sceneGroupOid);
-		BaseRecord viaBook = PictureBookUtil.getBookSdConfig(testUser, pb2BookOid);
-		assertNotNull("settings via the scene-group objectId", viaGroup);
-		assertNotNull("settings via the pb.book objectId (was 404 before the fix)", viaBook);
-		assertEquals("same style via both handles", expectedStyle, viaGroup.get("style"));
-		assertEquals("same style via both handles", expectedStyle, viaBook.get("style"));
-		assertEquals("identical serialized settings via both handles",
-			viaGroup.toFullString(), viaBook.toFullString());
-
-		// ── And the reverse direction: save by the GROUP handle, read by the BOOK handle. ──
-		// (Both styles come from olio.sd.config's style limit list — an out-of-list value would still
-		// land in the meta note but fail validation on the best-effort FK row.)
-		// Expect ONE "SdConfigUtil - Failed to create olio.sd.config (name=book-sdConfig)" ERROR line here:
-		// persistBookSdConfigFk names every fresh config "book-sdConfig" and createOrUpdateConfig does a raw
-		// create when the config has no objectId, so a SECOND save on the same book hits the (name, groupId,
-		// organizationId) unique key. That best-effort FK path pre-dates this test and is independent of the
-		// either-id resolution under test; the meta note (what /settings reads) is written regardless.
-		String secondStyle = "anime";
-		BaseRecord sdConfig2 = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		sdConfig2.set("style", secondStyle);
-		BaseRecord stored2 = PictureBookUtil.setBookSdConfig(testUser, sceneGroupOid, sdConfig2, null);
-		assertNotNull(stored2);
-		assertEquals(secondStyle, stored2.get("style"));
-		BaseRecord viaBook2 = PictureBookUtil.getBookSdConfig(testUser, pb2BookOid);
-		assertNotNull(viaBook2);
-		assertEquals("a config saved by the group handle reads back by the book handle",
-			secondStyle, viaBook2.get("style"));
-
+		// The write side of this contract (save by one handle, read back by the other) was pinned here
+		// against PictureBookUtil.setBookSdConfig until that PB1 writer was deleted 2026-11-14 (§24 C-1);
+		// nothing writes the meta sdConfig key any more, so the read-side resolution above is the whole pin.
 		System.out.println("=== /settings EITHER-ID RESOLUTION PROOF (standalone PB2) ===");
 		System.out.println("  slug=" + slug);
 		System.out.println("  scene GROUP objectId = " + sceneGroupOid);
 		System.out.println("  pb.book   objectId   = " + pb2BookOid);
-		System.out.println("  getBookSdConfig(groupOid).style = " + viaGroup.get("style"));
-		System.out.println("  getBookSdConfig(bookOid).style  = " + viaBook.get("style") + "  <= the fix (was 404)");
+		System.out.println("  getBookSdConfig(groupOid) resolved (null, not 404)");
+		System.out.println("  getBookSdConfig(bookOid)  resolved (null, not 404)  <= the fix (was 404)");
 	}
 
 	@FunctionalInterface
@@ -174,7 +138,7 @@ public class TestPbBookSettingsResolveEither extends BaseTest {
 
 	/// Runs a settings call that MUST be refused, and pins the refusal shape: {@code resolveBookGroupEither}
 	/// returns null for absent-or-denied (AccessPoint.find returns null on a PBAC deny, it does not throw),
-	/// and both {@code getBookSdConfig}/{@code setBookSdConfig} turn that null into
+	/// and {@code getBookSdConfig} turns that null into
 	/// {@code PictureBookException(404, "Book not found")}. A non-null return is a disclosure and fails here.
 	private static void assertRefused404(String what, SettingsCall call) {
 		BaseRecord leaked;
@@ -190,9 +154,9 @@ public class TestPbBookSettingsResolveEither extends BaseTest {
 			+ (leaked == null ? "null" : leaked.toFullString()));
 	}
 
-	/// Negative (cross-user) case for the either-id resolver behind {@code /settings}: a SECOND non-admin
-	/// user in the SAME organization must not be able to read OR overwrite another user's book SD config
-	/// through EITHER handle (PB2 {@code olio.pb.book} objectId or PB1 scene-group objectId).
+	/// Negative (cross-user) case for the either-id resolver behind {@code GET /settings}: a SECOND non-admin
+	/// user in the SAME organization must not be able to read another user's book SD config (or learn that
+	/// the book exists) through EITHER handle (PB2 {@code olio.pb.book} objectId or PB1 scene-group objectId).
 	///
 	/// Expected refusal path, traced through {@link PictureBookUtil#resolveBookGroupEither}:
 	/// - by pb.book objectId: {@code findBookGroup} misses (not a group id), then {@code AccessPoint.find}
@@ -233,62 +197,31 @@ public class TestPbBookSettingsResolveEither extends BaseTest {
 		assertNotNull("meta.bookObjectId (PB1 scene GROUP objectId)", sceneGroupOid);
 		assertNotEquals("the two handles differ", pb2BookOid, sceneGroupOid);
 
-		// ── A saves a config by the pb.book handle and reads it back by both handles (baseline). ──
-		String aStyle = "photograph";
-		int aSteps = 27;
-		BaseRecord aCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		aCfg.set("style", aStyle);
-		aCfg.set("steps", aSteps);
-		BaseRecord stored = PictureBookUtil.setBookSdConfig(ownerA, pb2BookOid, aCfg, null);
-		assertNotNull("A: setBookSdConfig(pb.book objectId)", stored);
-		assertEquals(aStyle, stored.get("style"));
-		assertEquals(aSteps, (int) stored.get("steps"));
-		BaseRecord aViaBook = PictureBookUtil.getBookSdConfig(ownerA, pb2BookOid);
-		BaseRecord aViaGroup = PictureBookUtil.getBookSdConfig(ownerA, sceneGroupOid);
-		assertNotNull("A reads own settings via pb.book objectId", aViaBook);
-		assertNotNull("A reads own settings via scene-group objectId", aViaGroup);
-		assertEquals(aStyle, aViaBook.get("style"));
-		assertEquals(aStyle, aViaGroup.get("style"));
+		// ── A (the owner) RESOLVES both handles (baseline: no config stored => null, never 404). ──
+		try {
+			assertNull("A: fresh book has no sdConfig via the pb.book objectId",
+				PictureBookUtil.getBookSdConfig(ownerA, pb2BookOid));
+			assertNull("A: fresh book has no sdConfig via the scene-group objectId",
+				PictureBookUtil.getBookSdConfig(ownerA, sceneGroupOid));
+		} catch (PictureBookException e) {
+			fail("owner A must resolve own book through both handles; got HTTP " + e.getStatus() + " " + e.getMessage());
+		}
 
-		// ── B (same org, not the owner, not admin) must be refused on READ via BOTH handles. ──
+		// ── B (same org, not the owner, not admin) must be refused on READ via BOTH handles — and the
+		// refusal must be indistinguishable from "no such book" (404, not the owner's null). ──
 		assertRefused404("B getBookSdConfig(pb.book objectId)",
 			() -> PictureBookUtil.getBookSdConfig(otherB, pb2BookOid));
 		assertRefused404("B getBookSdConfig(scene-group objectId)",
 			() -> PictureBookUtil.getBookSdConfig(otherB, sceneGroupOid));
 
-		// ── B must be refused on WRITE via BOTH handles, with values distinguishable from A's. ──
-		String bStyle = "anime";
-		int bSteps = 93;
-		assertNotEquals(aStyle, bStyle);
-		assertNotEquals(aSteps, bSteps);
-		BaseRecord bCfg = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		bCfg.set("style", bStyle);
-		bCfg.set("steps", bSteps);
-		assertRefused404("B setBookSdConfig(pb.book objectId)",
-			() -> PictureBookUtil.setBookSdConfig(otherB, pb2BookOid, bCfg, null));
-		BaseRecord bCfg2 = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
-		bCfg2.set("style", bStyle);
-		bCfg2.set("steps", bSteps);
-		assertRefused404("B setBookSdConfig(scene-group objectId)",
-			() -> PictureBookUtil.setBookSdConfig(otherB, sceneGroupOid, bCfg2, null));
-
-		// ── A re-reads with A's own user via BOTH handles: config unchanged by B's attempts. ──
-		BaseRecord afterViaBook = PictureBookUtil.getBookSdConfig(ownerA, pb2BookOid);
-		BaseRecord afterViaGroup = PictureBookUtil.getBookSdConfig(ownerA, sceneGroupOid);
-		assertNotNull("A still reads own settings via pb.book objectId", afterViaBook);
-		assertNotNull("A still reads own settings via scene-group objectId", afterViaGroup);
-		assertEquals("A's style unchanged after B's write attempts", aStyle, afterViaBook.get("style"));
-		assertEquals("A's steps unchanged after B's write attempts", aSteps, (int) afterViaBook.get("steps"));
-		assertEquals("A's style unchanged (group handle)", aStyle, afterViaGroup.get("style"));
-		assertEquals("A's steps unchanged (group handle)", aSteps, (int) afterViaGroup.get("steps"));
-		assertNotEquals("B's style did not land", bStyle, afterViaBook.get("style"));
-		assertNotEquals("B's steps did not land", bSteps, (int) afterViaBook.get("steps"));
+		// ── A still resolves after B's attempts. ──
+		assertNull("A still resolves via pb.book objectId", PictureBookUtil.getBookSdConfig(ownerA, pb2BookOid));
+		assertNull("A still resolves via scene-group objectId", PictureBookUtil.getBookSdConfig(ownerA, sceneGroupOid));
 
 		System.out.println("=== /settings CROSS-USER REFUSAL PROOF (same org, non-admin B) ===");
 		System.out.println("  owner A id=" + ownerA.get(FieldNames.FIELD_ID) + "  other B id=" + otherB.get(FieldNames.FIELD_ID)
 			+ "  org=" + ownerA.get(FieldNames.FIELD_ORGANIZATION_ID));
-		System.out.println("  pb.book objectId     = " + pb2BookOid + "  -> B read/write: 404 Book not found");
-		System.out.println("  scene GROUP objectId = " + sceneGroupOid + "  -> B read/write: 404 Book not found");
-		System.out.println("  A's config after B's attempts: style=" + afterViaBook.get("style") + " steps=" + afterViaBook.get("steps"));
+		System.out.println("  pb.book objectId     = " + pb2BookOid + "  -> A: null (resolved); B read: 404 Book not found");
+		System.out.println("  scene GROUP objectId = " + sceneGroupOid + "  -> A: null (resolved); B read: 404 Book not found");
 	}
 }

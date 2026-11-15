@@ -90,7 +90,7 @@ let bookSlug = null;
 let createResponseJson = null;
 
 test.describe.serial('PictureBook PB2 — creation & reader (load-safe)', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     // Create the book once for the whole (serial) group. Because the group is serial, any retry
     // re-runs beforeAll and rebuilds this state — so no test ever sees a null bookObjectId.

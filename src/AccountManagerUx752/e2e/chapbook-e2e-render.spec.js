@@ -100,7 +100,7 @@ let chapbookObjectId = null;
 let orgId = null;
 
 test.describe('ChapBook E2E Render — SD + LLM (CHAPBOOK_RENDER_TEST=1)', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         if (!RENDER_TEST_ENABLED) {

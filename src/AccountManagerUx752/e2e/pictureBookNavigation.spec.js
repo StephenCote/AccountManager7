@@ -112,11 +112,13 @@ async function closeTopDialog(page, buttonLabel) {
 // ── Dynamic fixtures (chosen from the shared user's real books) ───────────────────────────────────
 let books = [];
 let unrendered = null;   // sceneCount > 0, /workflow 404 "no workflow yet", /pages empty
-let rendered = null;     // /workflow 200 with seriesObjectId (a real graph, in a series)
-let sibling = null;      // another chapter of `rendered`'s series
+let rendered = null;     // /workflow 200 with nodes AND at least one /pages entry carrying a dataObjectId
+let seriesBook = null;   // /workflow 200 with seriesObjectId (a real graph, in a series) — need not be rendered
+let sibling = null;      // another chapter of `seriesBook`'s series
 let charBook = null;     // a book whose /characters is non-empty
 let character = null;    // { objectId, name } from charBook
-let renderedSceneTotal = null;    // GET /{rendered}/scenes length — the M in "N rendered of M scenes"
+let renderedSceneTotal = null;    // GET /{rendered}/scenes length, or null when /scenes is not 200 — feeds the M in "N rendered of M scenes"
+let renderedPages = null;         // GET /{rendered}/pages — N = entries with a dataObjectId; M falls back to its length
 let unrenderedSceneTotal = null;  // GET /{unrendered}/scenes length — the canvas scene-list length
 
 // A control that used to open the wizard lands on the V3 reader for `book`, with no wizard dialog.
@@ -141,7 +143,7 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
 
         const withScenes = books.filter((b) => (b.sceneCount || 0) > 0);
         for (const b of withScenes) {
-            if (unrendered && rendered) break;
+            if (unrendered && rendered && seriesBook) break;
             const wf = await request.get(PB_REST + '/' + b.objectId + '/workflow');
             if (wf.status() === 404) {
                 const txt = (await wf.text().catch(() => '')).toLowerCase();
@@ -150,11 +152,41 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
                     const pj = pages.ok() ? await pages.json().catch(() => []) : [];
                     if (Array.isArray(pj) && pj.length === 0) unrendered = b;
                 }
-            } else if (wf.ok() && !rendered) {
+            } else if (wf.ok() && (!rendered || !seriesBook)) {
                 const graph = await wf.json().catch(() => null);
-                if (graph && graph.seriesObjectId && Array.isArray(graph.nodes) && graph.nodes.length > 0) {
+                if (!(graph && Array.isArray(graph.nodes) && graph.nodes.length > 0)) continue;
+                // Two independent roles, decoupled in §24 U-6. Until then one `rendered` book served
+                // both tests 3 and 6a/6b and was chosen by "a graph in a series with a sibling" — which a
+                // freshly built, never-rendered series chapter also satisfies, so the full gate picked one
+                // and test 3 read "0 rendered of 8 scenes" (107-u6-verify.phases.clean.log:3122) against
+                // its own `n > 0`. Test 3 needs a RENDERED page (the reader's cover count,
+                // pictureBook.js pb2RenderedCount, counts /pages entries carrying a dataObjectId) and
+                // no sibling; 6a/6b need a series sibling and no rendered page; the shared user's books
+                // never carry both at once (107-u6-pbnav-probe.log), so the roles are picked separately,
+                // each precondition matching the assertion it feeds — mirroring the /pages check the
+                // `unrendered` branch already makes.
+                if (!rendered) {
+                    const pages = await request.get(PB_REST + '/' + b.objectId + '/pages');
+                    const pj = pages.ok() ? await pages.json().catch(() => []) : [];
+                    if (Array.isArray(pj) && pj.some((p) => p && p.dataObjectId)) {
+                        // Test 3 also clicks the header's Characters, which lists GET /characters. That
+                        // route (and /scenes) resolves the PB1 scene data.group
+                        // (PictureBookUtil.resolveBookGroupEither) and answers 404 "Book not found" for
+                        // a V3-only book — every POST /chapter fixture and any product-created chapter
+                        // not yet extracted (107-u6-scenes-probe3.log). The product does not catch it
+                        // (pictureBookCharacters.js refreshList → initCharacterManager → openCharacterManager,
+                        // no catch: the dialog stays loading and the page logs an unhandled rejection,
+                        // 107-u6-pbnav-rerun3.log:18-19), which is the §24 UAT-6 item, not something
+                        // this test can assert around. So the book test 3 clicks Characters on must be
+                        // one whose /characters answers — a precondition for the dialog assertion, not a
+                        // relaxation of it; the rendered-of-total assertion below is unchanged.
+                        const ch = await request.get(PB_REST + '/' + b.objectId + '/characters');
+                        if (ch.ok()) rendered = b;
+                    }
+                }
+                if (!seriesBook && graph.seriesObjectId) {
                     const sibs = books.filter((x) => x.seriesObjectId === graph.seriesObjectId && x.objectId !== b.objectId);
-                    if (sibs.length) { rendered = b; sibling = sibs[0]; }
+                    if (sibs.length) { seriesBook = b; sibling = sibs[0]; }
                 }
             }
         }
@@ -163,6 +195,9 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
             const sc = await request.get(PB_REST + '/' + rendered.objectId + '/scenes');
             const sj = sc.ok() ? await sc.json().catch(() => null) : null;
             renderedSceneTotal = Array.isArray(sj) ? sj.length : null;
+            const pg = await request.get(PB_REST + '/' + rendered.objectId + '/pages');
+            const pj = pg.ok() ? await pg.json().catch(() => null) : null;
+            renderedPages = Array.isArray(pj) ? pj : null;
         }
         if (unrendered) {
             const sc = await request.get(PB_REST + '/' + unrendered.objectId + '/scenes');
@@ -170,7 +205,7 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
             unrenderedSceneTotal = Array.isArray(sj) ? sj.length : null;
         }
 
-        for (const b of [rendered, unrendered].concat(withScenes)) {
+        for (const b of [rendered, seriesBook, unrendered].concat(withScenes)) {
             if (!b) continue;
             const ch = await request.get(PB_REST + '/' + b.objectId + '/characters');
             const cj = ch.ok() ? await ch.json().catch(() => []) : [];
@@ -179,7 +214,7 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         }
 
         console.log('[pb-nav] unrendered=' + (unrendered && unrendered.objectId) + ' rendered=' + (rendered && rendered.objectId)
-            + ' sibling=' + (sibling && sibling.objectId) + ' charBook=' + (charBook && charBook.objectId)
+            + ' seriesBook=' + (seriesBook && seriesBook.objectId) + ' sibling=' + (sibling && sibling.objectId) + ' charBook=' + (charBook && charBook.objectId)
             + ' character=' + (character && character.objectId + ' "' + character.name + '"'));
     });
 
@@ -218,7 +253,7 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
     // 3. Reader header carries Characters and no Edit (P7-3: the wizard would only hand straight back
     //    here); cover says "N rendered of M scenes", not a page title.
     test('PB2 reader header has Characters, no Edit, and the cover reports rendered-of-total', async ({ page }) => {
-        test.skip(!rendered, 'no rendered PB2 book (graph + series) available to the shared user');
+        test.skip(!rendered, 'no PB2 book with a graph and a rendered page available to the shared user');
         await loginAsSharedUser(page);
         await gotoHash(page, '!/picture-book/v2/' + rendered.objectId);
 
@@ -235,9 +270,18 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         const n = parseInt(mt[1], 10), total = parseInt(mt[2], 10);
         expect(n).toBeGreaterThan(0);
         expect(total).toBeGreaterThanOrEqual(n);
-        // M is the /scenes total for this book, not the page count.
-        expect(renderedSceneTotal, '/scenes for the rendered book was not readable').not.toBeNull();
-        expect(total).toBe(Math.max(renderedSceneTotal, n));
+        // N and M are the reader's own formula (pictureBook.js pb2RenderedCount / pb2CoverCountLabel),
+        // recomputed here from the same two REST reads: N = /pages entries carrying a dataObjectId; M =
+        // max(/scenes length, /pages length) when /scenes answers 200, else the /pages length. The
+        // fallback branch is real product behaviour, not a loophole: a V3-only book (olio.pb.scene rows,
+        // no PB1 scene group / .pictureBookMeta — every JUnit-created fixture book, e.g. "Book i2-cfg-*")
+        // gets 404 "Book not found" from /scenes (PictureBookUtil.listScenes resolves the PB1 group)
+        // while /pages is 200, and the reader shows "N rendered of <pages> scenes" for it. Until §24 U-6
+        // this asserted M = max(/scenes, N) and REQUIRED /scenes to be readable, which was both wrong
+        // (N ≤ pages.length) and unmet by the first rendered book the picker finds (107-u6-pbnav-rerun2.log).
+        expect(renderedPages, '/pages for the rendered book was not readable').not.toBeNull();
+        expect(n).toBe(renderedPages.filter((p) => p && p.dataObjectId).length);
+        expect(total).toBe(renderedSceneTotal != null ? Math.max(renderedSceneTotal, renderedPages.length) : renderedPages.length);
 
         // Header Characters opens the manager.
         await page.locator('[data-pb2-characters="' + rendered.objectId + '"]').click();
@@ -300,12 +344,12 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
     // 6a. Same-route canvas navigation: a series chapter tile issues a NEW /workflow request and the
     //     toolbar header changes to the sibling chapter.
     test('series chapter tile re-inits the canvas for the sibling chapter', async ({ page }) => {
-        test.skip(!rendered || !sibling, 'no rendered PB2 book with a sibling chapter available to the shared user');
+        test.skip(!seriesBook || !sibling, 'no PB2 book with a graph and a sibling chapter available to the shared user');
         await loginAsSharedUser(page);
-        await gotoHash(page, '!/picture-book/' + rendered.objectId + '/workflow');
+        await gotoHash(page, '!/picture-book/' + seriesBook.objectId + '/workflow');
 
         const title = page.locator('[data-wf-title]');
-        await expect(title).toHaveText(displayName(rendered) + ' — Workflow', { timeout: 45000 });
+        await expect(title).toHaveText(displayName(seriesBook) + ' — Workflow', { timeout: 45000 });
         await expect(page.locator('[data-node-count]')).toBeVisible({ timeout: 30000 });
         const nodeLabel = (await page.locator('[data-node-count]').textContent()).trim();
         expect(nodeLabel, 'header must count the returned nodes, not the stored 0').not.toBe('0 nodes');
@@ -324,10 +368,10 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
 
     // 6b. Reader chapter <select> switches chapters in place (same route component).
     test('reader chapter select switches to the sibling chapter', async ({ page }) => {
-        test.skip(!rendered || !sibling, 'no rendered PB2 book with a sibling chapter available to the shared user');
+        test.skip(!seriesBook || !sibling, 'no PB2 book with a graph and a sibling chapter available to the shared user');
         await loginAsSharedUser(page);
-        await gotoHash(page, '!/picture-book/v2/' + rendered.objectId);
-        await expect(page.locator('[data-pb2-book-name]')).toHaveText(displayName(rendered), { timeout: 30000 });
+        await gotoHash(page, '!/picture-book/v2/' + seriesBook.objectId);
+        await expect(page.locator('[data-pb2-book-name]')).toHaveText(displayName(seriesBook), { timeout: 30000 });
 
         const sel = page.locator('[data-pb2-chapter-select]');
         await expect(sel).toBeVisible({ timeout: 30000 });

@@ -26,6 +26,21 @@
  *     e2etest_shared's own 'contentAnalysis' (another spec's fixture) points at the REAL LLM and is
  *     never touched.
  *
+ * The degraded condition must ALSO hold at CREATE time (§24 U-2, 2026-11-15). POST /olio/chap-book/create
+ * resolves a chat config for every create — the body's `chatConfig` by name, else the org default
+ * (ChapBookService.createChapBook → ChapBookUtil.resolveDefaultChatConfig: the shared LIBRARY
+ * 'contentAnalysis' first, before any user-owned config) — and runs one synchronous landscape-prompt
+ * LLM call per scene (ChapBookUtil.createChapBookScene → generateLandscapePrompt). While the stack's
+ * library config 401'd (pre §6.C 292) every create stored the no-LLM "landscape, " fallback and a fresh
+ * scene was un-prompted; now the library LLM answers, a fresh scene carries a GENUINE prompt, the review
+ * card shows no Regenerate (isSceneUnprompted), and resolveScenePrompt renders the stored prompt without
+ * ever calling the LLM — so no test here could reach the degraded path. createFreshBook therefore names
+ * the unreachable config on the create body: generateLandscapePrompt hard-fails, the fallback is stored
+ * (ChapBookUtil.createChapBookScene, the "landscape, " discriminator), the scene is un-prompted exactly
+ * as these tests were written against, and the create is LLM-free. As e2etest_pbdown the name is its
+ * own 'contentAnalysis' (ChatUtil.resolveConfig consults the caller's ~/Chat first); as e2etest_shared
+ * it is the throw-away config, created BEFORE the book and deleted in `finally`.
+ *
  * These tests prove the CLIENT surfaces a DISTINCT, user-visible signal for that hard LLM/config
  * fault — clearly different from a benign "run Analyze" skip and from plain success:
  *   - per-scene (Review → Regenerate): a distinct WARNING toast ("Rendered using the stored prompt …")
@@ -111,7 +126,14 @@ async function findInChat(request, type, name, orgId, chatGroupId) {
 }
 
 // Seed a poem (idempotent by name) and create a FRESH ChapBook from it; returns its bookObjectId.
-async function createFreshBook(request, poemsGroupId, orgId, tag) {
+// `chatConfigName` is sent as the create body's `chatConfig` (resolved BY NAME for the logged-in user,
+// ChapBookService.createChapBook) and must name a config that can never answer, so the create's
+// per-scene landscape-prompt step hard-fails and the "landscape, " fallback is stored — the un-prompted
+// fresh scene every test here depends on (see the file header). It is required, never defaulted:
+// omitting it would resolve the LIVE library 'contentAnalysis' and store a genuine prompt.
+async function createFreshBook(request, poemsGroupId, orgId, tag, chatConfigName) {
+    expect(typeof chatConfigName === 'string' && chatConfigName.length > 0,
+        'createFreshBook needs the unreachable chat config name for the create body').toBe(true);
     const poemName = 'cb-llmunavail-' + tag;
     const search = await request.post(REST + '/model/search', {
         data: {
@@ -140,13 +162,86 @@ async function createFreshBook(request, poemsGroupId, orgId, tag) {
 
     const slug = 'cb-llmunavail-' + tag + '-' + Date.now().toString(36);
     const createResp = await request.post(CB_REST + '/create', {
-        data: { slug, title: 'LLM-Unavailable ' + tag, poemObjectIds: [poemOid], maxLinesPerPage: 20 }
+        data: { slug, title: 'LLM-Unavailable ' + tag, poemObjectIds: [poemOid], maxLinesPerPage: 20, chatConfig: chatConfigName }
     });
     expect(createResp.ok(), 'create ChapBook failed: ' + createResp.status() + ' ' + await createResp.text()).toBe(true);
     const created = await createResp.json();
     const bookOid = created && (created.bookObjectId || created.objectId);
     expect(bookOid, 'no bookObjectId in create response').toBeTruthy();
     return bookOid;
+}
+
+// The book's first scene, and the proof the create stored the no-LLM fallback (the "landscape, " shape,
+// unlocked) rather than a genuine prompt: the precondition every degraded-path assertion below rests on
+// (isSceneUnprompted on the review card; resolveScenePrompt's recovery branch on render). /pages projects
+// neither field, so the scene is read the way the review page reads it (loadSceneOverrides: a search
+// scoped by organizationId, cache:false). Returns the first scene's objectId.
+async function expectFirstSceneUnprompted(request, bookOid, orgId, label) {
+    const pagesResp = await request.get(REST + '/olio/picture-book/' + bookOid + '/pages');
+    expect(pagesResp.ok(), label + ': pages fetch failed: ' + pagesResp.status()).toBe(true);
+    const pages = await pagesResp.json();
+    expect(Array.isArray(pages) && pages.length, label + ': book has no scenes').toBeTruthy();
+    const sceneOid = pages[0].objectId;
+    const sResp = await request.post(REST + '/model/search', {
+        data: {
+            schema: 'io.query', type: 'olio.pb.scene', cache: false, recordCount: 1,
+            request: ['id', 'objectId', 'sdPrompt', 'promptLocked'],
+            fields: [
+                { name: 'objectId', comparator: 'equals', value: sceneOid },
+                { name: 'organizationId', comparator: 'equals', value: Number(orgId) }
+            ]
+        }
+    });
+    const sBody = await sResp.json().catch(() => null);
+    const scene = (sBody && sBody.results && sBody.results.length) ? sBody.results[0] : null;
+    expect(scene && scene.objectId, label + ': scene ' + sceneOid + ' not readable: ' + sResp.status()).toBeTruthy();
+    const prompt = (scene.sdPrompt || '');
+    console.log('[llmUnavail] ' + label + ' first scene ' + sceneOid + ' sdPrompt=' + JSON.stringify(prompt)
+        + ' promptLocked=' + JSON.stringify(scene.promptLocked));
+    expect(prompt === '' || prompt.startsWith('landscape, '),
+        label + ': create stored a genuine LLM prompt instead of the fallback — the unreachable config did not reach the create: ' + prompt).toBe(true);
+    expect(!!scene.promptLocked, label + ': fresh scene must not be prompt-locked').toBe(false);
+    return sceneOid;
+}
+
+// Create the throw-away unreachable fixture in the logged-in shared user's ~/Chat (never admin) and
+// prove it is there; returns the config record. Paired with deleteThrowawayFixture in `finally`.
+async function createThrowawayFixture(request, orgId, chatGroupId, label) {
+    const cfgName = await ensureChatConfig(request, orgId, {
+        configName: THROWAWAY_CFG, connectionName: THROWAWAY_CONN,
+        serverUrl: THROWAWAY_URL, dialect: 'ollama', upstream: 'ollama', requestTimeout: 30
+    });
+    expect(cfgName, 'throw-away unreachable chatConfig was not created').toBe(THROWAWAY_CFG);
+    const cfgRec = await findInChat(request, 'olio.llm.chatConfig', THROWAWAY_CFG, orgId, chatGroupId);
+    expect(cfgRec && cfgRec.objectId, 'throw-away chatConfig not found in ~/Chat after create').toBeTruthy();
+    console.log('[llmUnavail] ' + label + ' fixture: chatConfig ' + THROWAWAY_CFG + ' id=' + cfgRec.id + ' -> ' + THROWAWAY_URL);
+    return cfgRec;
+}
+
+// Remove the throw-away fixture (config first — it holds the FK — then its connection), as the shared
+// user, and prove both are gone. Throws on any failure; callers record it and assert after `finally`.
+async function deleteThrowawayFixture(request, orgId, chatGroupId) {
+    await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
+    for (const [type, name] of [['olio.llm.chatConfig', THROWAWAY_CFG], ['system.connection', THROWAWAY_CONN]]) {
+        const rec = await findInChat(request, type, name, orgId, chatGroupId);
+        if (rec && rec.objectId) {
+            await deleteObject(request, type, rec.objectId);
+            const after = await findInChat(request, type, name, orgId, chatGroupId);
+            if (after) throw new Error(type + ' ' + name + ' (id=' + rec.id + ') still present after DELETE');
+            console.log('[llmUnavail] cleanup: deleted ' + type + ' ' + name + ' id=' + rec.id);
+        } else {
+            console.log('[llmUnavail] cleanup: ' + type + ' ' + name + ' not present (nothing to delete)');
+        }
+    }
+    await request.get(REST + '/logout');
+}
+
+// The logged-in shared user's ~/Chat group id (the throw-away fixture lives there).
+async function ensureSharedChatGroupId(request) {
+    const chatDirResp = await request.get(REST + '/path/make/auth.group/data/' + encodePath('~/Chat'));
+    const chatDir = await chatDirResp.json().catch(() => null);
+    expect(chatDir && chatDir.id, 'could not ensure ~/Chat for ' + SHARED_USER).toBeTruthy();
+    return chatDir.id;
 }
 
 // Log in via REST (page.request shares the browser context's cookies) + stub the WebSocket (Docker
@@ -214,7 +309,7 @@ function captureGeneratePosts(page) {
 }
 
 test.describe('ChapBook — LLM-unavailable client signal', () => {
-    test.describe.configure({ timeout: 180000 });
+    test.describe.configure({ timeout: 300000 });
 
     let orgId = null;
     let poemsGroupId = null;
@@ -229,24 +324,31 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
     });
 
     // ── Layer-isolation gate: prove the DEPLOYED backend returns the new fields ──────────────────
-    test('REST: per-scene generate returns llmUnavailable on the Docker backend (LLM unreachable)', async ({ request }) => {
+    // The degraded condition is the test's own: the throw-away unreachable config, named on the create
+    // (so the scene is un-prompted) AND on the generate (so the recovery LLM step hard-fails). Until
+    // §6.C 292 this test relied on the stack's library LLM being unreachable, which it no longer is.
+    test('REST: per-scene generate returns llmUnavailable on the Docker backend (throw-away unreachable chat config)', async ({ request }) => {
         await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
-        const bookOid = await createFreshBook(request, poemsGroupId, orgId, 'rest');
-        const pagesResp = await request.get(REST + '/olio/picture-book/' + bookOid + '/pages');
-        expect(pagesResp.ok(), 'pages fetch failed: ' + pagesResp.status()).toBe(true);
-        const pages = await pagesResp.json();
-        expect(Array.isArray(pages) && pages.length, 'book has no scenes').toBeTruthy();
-        const sceneOid = pages[0].objectId;
+        const chatGroupId = await ensureSharedChatGroupId(request);
+        let cleanupError = null;
+        try {
+            await createThrowawayFixture(request, orgId, chatGroupId, 'rest');
+            const bookOid = await createFreshBook(request, poemsGroupId, orgId, 'rest', THROWAWAY_CFG);
+            const sceneOid = await expectFirstSceneUnprompted(request, bookOid, orgId, 'rest');
 
-        const gResp = await request.post(CB_REST + '/scene/' + sceneOid + '/generate', {
-            data: { schema: 'olio.pictureBookRequest' }
-        });
-        expect(gResp.ok(), 'generate failed: ' + gResp.status()).toBe(true);
-        const body = await gResp.json();
-        console.log('[llmUnavail] REST generate response:', JSON.stringify(body));
-        // The whole point of the fix: the field exists on the wire and is TRUE when the LLM step
-        // could not run (here: LLM unreachable from Docker). A normal soft refusal would NOT set it.
-        expect(body.llmUnavailable, 'backend did not report llmUnavailable — is the fix deployed?').toBe(true);
+            const gResp = await request.post(CB_REST + '/scene/' + sceneOid + '/generate', {
+                data: { schema: 'olio.pictureBookRequest', chatConfig: THROWAWAY_CFG }
+            });
+            expect(gResp.ok(), 'generate failed: ' + gResp.status()).toBe(true);
+            const body = await gResp.json();
+            console.log('[llmUnavail] REST generate response:', JSON.stringify(body));
+            // The whole point of the fix: the field exists on the wire and is TRUE when the LLM step
+            // could not run (here: the named config's host refuses). A normal soft refusal would NOT set it.
+            expect(body.llmUnavailable, 'backend did not report llmUnavailable — is the fix deployed?').toBe(true);
+        } finally {
+            try { await deleteThrowawayFixture(request, orgId, chatGroupId); } catch (e) { cleanupError = e; }
+        }
+        expect(cleanupError, 'throw-away fixture cleanup failed: ' + (cleanupError && cleanupError.message)).toBeNull();
     });
 
     // ── Per-scene distinct signal: Review → Regenerate raises the DEGRADED warning toast ─────────
@@ -263,7 +365,10 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
 
         await restLoginAs(request, UNREACHABLE_LLM_USER, UNREACHABLE_LLM_PASSWORD);
         const poems = await ensurePoemsGroup(request);
-        const bookOid = await createFreshBook(request, poems.id, poems.organizationId, 'review');
+        // Named on the create so it resolves to THIS user's own unreachable 'contentAnalysis' (the
+        // unnamed default would be the live LIBRARY one and the scene would carry a genuine prompt).
+        const bookOid = await createFreshBook(request, poems.id, poems.organizationId, 'review', 'contentAnalysis');
+        await expectFirstSceneUnprompted(request, bookOid, poems.organizationId, 'review');
         await request.get(REST + '/logout');
 
         await loginAsUser(page, UNREACHABLE_LLM_USER, UNREACHABLE_LLM_PASSWORD);
@@ -316,23 +421,13 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
         test.setTimeout(300000);
 
         await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
-        const chatDirResp = await request.get(REST + '/path/make/auth.group/data/' + encodePath('~/Chat'));
-        const chatDir = await chatDirResp.json().catch(() => null);
-        expect(chatDir && chatDir.id, 'could not ensure ~/Chat for ' + SHARED_USER).toBeTruthy();
-        const chatGroupId = chatDir.id;
+        const chatGroupId = await ensureSharedChatGroupId(request);
 
         let cleanupError = null;
         try {
-            const cfgName = await ensureChatConfig(request, orgId, {
-                configName: THROWAWAY_CFG, connectionName: THROWAWAY_CONN,
-                serverUrl: THROWAWAY_URL, dialect: 'ollama', upstream: 'ollama', requestTimeout: 30
-            });
-            expect(cfgName, 'throw-away unreachable chatConfig was not created').toBe(THROWAWAY_CFG);
-            const cfgRec = await findInChat(request, 'olio.llm.chatConfig', THROWAWAY_CFG, orgId, chatGroupId);
-            expect(cfgRec && cfgRec.objectId, 'throw-away chatConfig not found in ~/Chat after create').toBeTruthy();
-            console.log('[llmUnavail] pick fixture: chatConfig ' + THROWAWAY_CFG + ' id=' + cfgRec.id + ' -> ' + THROWAWAY_URL);
-
-            const bookOid = await createFreshBook(request, poemsGroupId, orgId, 'pick');
+            await createThrowawayFixture(request, orgId, chatGroupId, 'pick');
+            const bookOid = await createFreshBook(request, poemsGroupId, orgId, 'pick', THROWAWAY_CFG);
+            await expectFirstSceneUnprompted(request, bookOid, orgId, 'pick');
             await request.get(REST + '/logout');
 
             await loginAsUser(page, SHARED_USER, SHARED_PASSWORD);
@@ -377,23 +472,7 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
             fs.mkdirSync(OUT_DIR, { recursive: true });
             await page.screenshot({ path: path.join(OUT_DIR, 'llmUnavail-perscene-picked-config.png'), fullPage: true });
         } finally {
-            try {
-                await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
-                for (const [type, name] of [['olio.llm.chatConfig', THROWAWAY_CFG], ['system.connection', THROWAWAY_CONN]]) {
-                    const rec = await findInChat(request, type, name, orgId, chatGroupId);
-                    if (rec && rec.objectId) {
-                        await deleteObject(request, type, rec.objectId);
-                        const after = await findInChat(request, type, name, orgId, chatGroupId);
-                        if (after) throw new Error(type + ' ' + name + ' (id=' + rec.id + ') still present after DELETE');
-                        console.log('[llmUnavail] cleanup: deleted ' + type + ' ' + name + ' id=' + rec.id);
-                    } else {
-                        console.log('[llmUnavail] cleanup: ' + type + ' ' + name + ' not present (nothing to delete)');
-                    }
-                }
-                await request.get(REST + '/logout');
-            } catch (e) {
-                cleanupError = e;
-            }
+            try { await deleteThrowawayFixture(request, orgId, chatGroupId); } catch (e) { cleanupError = e; }
         }
         expect(cleanupError, 'throw-away fixture cleanup failed: ' + (cleanupError && cleanupError.message)).toBeNull();
     });
@@ -403,29 +482,16 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
         test.setTimeout(420000);
 
         await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
-        const chatDirResp = await request.get(REST + '/path/make/auth.group/data/' + encodePath('~/Chat'));
-        const chatDir = await chatDirResp.json().catch(() => null);
-        expect(chatDir && chatDir.id, 'could not ensure ~/Chat for ' + SHARED_USER).toBeTruthy();
-        const chatGroupId = chatDir.id;
+        const chatGroupId = await ensureSharedChatGroupId(request);
 
         let cleanupError = null;
         try {
             // Degraded condition: a THROW-AWAY chatConfig in the shared user's ~/Chat whose connection
-            // points at a port nothing listens on. Created in the shared user's own session (never admin).
-            const cfgName = await ensureChatConfig(request, orgId, {
-                configName: THROWAWAY_CFG, connectionName: THROWAWAY_CONN,
-                serverUrl: THROWAWAY_URL, dialect: 'ollama', upstream: 'ollama', requestTimeout: 30
-            });
-            expect(cfgName, 'throw-away unreachable chatConfig was not created').toBe(THROWAWAY_CFG);
-            const cfgRec = await findInChat(request, 'olio.llm.chatConfig', THROWAWAY_CFG, orgId, chatGroupId);
-            expect(cfgRec && cfgRec.objectId, 'throw-away chatConfig not found in ~/Chat after create').toBeTruthy();
-            console.log('[llmUnavail] bulk fixture: chatConfig ' + THROWAWAY_CFG + ' id=' + cfgRec.id + ' -> ' + THROWAWAY_URL);
-
-            const bookOid = await createFreshBook(request, poemsGroupId, orgId, 'reader');
-            // Confirm the reader will have at least one scene to render.
-            const pagesResp = await request.get(REST + '/olio/picture-book/' + bookOid + '/pages');
-            const pages = await pagesResp.json();
-            expect(Array.isArray(pages) && pages.length, 'reader book has no scenes').toBeTruthy();
+            // points at a port nothing listens on. Created in the shared user's own session (never admin),
+            // and named on the create so the reader has an un-prompted scene to render degraded.
+            await createThrowawayFixture(request, orgId, chatGroupId, 'bulk');
+            const bookOid = await createFreshBook(request, poemsGroupId, orgId, 'reader', THROWAWAY_CFG);
+            await expectFirstSceneUnprompted(request, bookOid, orgId, 'bulk');
             await request.get(REST + '/logout');
 
             await loginAsUser(page, SHARED_USER, SHARED_PASSWORD);
@@ -495,25 +561,7 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
             fs.mkdirSync(OUT_DIR, { recursive: true });
             await page.screenshot({ path: path.join(OUT_DIR, 'llmUnavail-bulk-error-summary.png'), fullPage: true });
         } finally {
-            // Remove the throw-away fixture (config first — it holds the FK — then its connection), as
-            // the shared user, and prove both are gone.
-            try {
-                await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
-                for (const [type, name] of [['olio.llm.chatConfig', THROWAWAY_CFG], ['system.connection', THROWAWAY_CONN]]) {
-                    const rec = await findInChat(request, type, name, orgId, chatGroupId);
-                    if (rec && rec.objectId) {
-                        await deleteObject(request, type, rec.objectId);
-                        const after = await findInChat(request, type, name, orgId, chatGroupId);
-                        if (after) throw new Error(type + ' ' + name + ' (id=' + rec.id + ') still present after DELETE');
-                        console.log('[llmUnavail] cleanup: deleted ' + type + ' ' + name + ' id=' + rec.id);
-                    } else {
-                        console.log('[llmUnavail] cleanup: ' + type + ' ' + name + ' not present (nothing to delete)');
-                    }
-                }
-                await request.get(REST + '/logout');
-            } catch (e) {
-                cleanupError = e;
-            }
+            try { await deleteThrowawayFixture(request, orgId, chatGroupId); } catch (e) { cleanupError = e; }
         }
         expect(cleanupError, 'throw-away fixture cleanup failed: ' + (cleanupError && cleanupError.message)).toBeNull();
     });

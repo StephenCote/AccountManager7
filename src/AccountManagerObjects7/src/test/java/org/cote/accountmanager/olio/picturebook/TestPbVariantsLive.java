@@ -23,7 +23,10 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.BaseTest;
 import org.cote.accountmanager.objects.tests.SdTestGate;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioContextUtil;
+import org.cote.accountmanager.olio.illustration.QaReport;
+import org.cote.accountmanager.olio.illustration.QualityPresets;
 import org.cote.accountmanager.olio.illustration.RenderPlan;
 import org.cote.accountmanager.olio.illustration.SwarmModelInventory;
 import org.cote.accountmanager.olio.picturebook.PbComposeUtil.ComposeResult;
@@ -36,6 +39,8 @@ import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ConnectionDialectEnumType;
+import org.cote.accountmanager.schema.type.ConnectionUpstreamEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
@@ -133,6 +138,11 @@ public class TestPbVariantsLive extends BaseTest {
 	/// A V3 book with one scene carrying its own text, a user-edited MIGRATED composition (so the run never
 	/// calls the LLM and never reports COMPOSED_OUT_OF_ORDER), its RENDER_PLAN node, autoApprove off.
 	private Fixture fixture(String prefix) throws Exception {
+		return fixture(prefix, false);
+	}
+
+	/// {@link #fixture(String)} with the book's {@code autoApprove} switch set as asked (§24 I-6: scenario G runs it ON).
+	private Fixture fixture(String prefix, boolean autoApprove) throws Exception {
 		Fixture f = new Fixture();
 		f.owner = getCreateUser("pbPlanOwner");
 		assertNotNull("owner", f.owner);
@@ -174,11 +184,16 @@ public class TestPbVariantsLive extends BaseTest {
 		BaseRecord comp = PbComposeUtil.readComposition(f.owner, oidOf(cr.composition), orgId);
 		assertNotNull("composition", comp);
 		assertNotNull("composition marked user-edited", PbComposeUtil.touchEdited(f.owner, comp, null));
-		assertTrue("autoApprove off", PbBookUtil.setAutoApprove(f.owner, book, false));
+		assertTrue("autoApprove " + (autoApprove ? "on" : "off"), PbBookUtil.setAutoApprove(f.owner, book, autoApprove));
 		CacheUtil.clearCache();
 		f.book = PbBookUtil.readBook(f.owner, f.bookOid, orgId);
 		assertNotNull("book re-read", f.book);
-		assertNotEquals("autoApprove read back off", Boolean.TRUE, f.book.get(OlioFieldNames.FIELD_PB_AUTO_APPROVE));
+		if(autoApprove) {
+			assertEquals("autoApprove read back on", Boolean.TRUE, f.book.get(OlioFieldNames.FIELD_PB_AUTO_APPROVE));
+		}
+		else {
+			assertNotEquals("autoApprove read back off", Boolean.TRUE, f.book.get(OlioFieldNames.FIELD_PB_AUTO_APPROVE));
+		}
 		f.node = PbGraphUtil.readNode(f.owner, oidOf(n), orgId);
 		assertNotNull("re-read node", f.node);
 		f.sdu = new SDUtil(SDAPIEnumType.SWARM, server);
@@ -260,15 +275,31 @@ public class TestPbVariantsLive extends BaseTest {
 	/// One production run of the node under {@code preset} against the live node; the node is re-read first
 	/// (its status moved on the previous attempt) and the DTO's headline counts are asserted here.
 	private Map<String, Object> run(Fixture f, PbQualityPresetEnumType preset, String installed, int expectVariants) {
+		return run(f, preset, installed, expectVariants, null, null, false);
+	}
+
+	/// {@link #run(Fixture, PbQualityPresetEnumType, String, int)} with a request {@code variants} override (§24 I-6;
+	/// null = the preset's own count), the run's chat config (the visual-QA route; null = the user's default) and
+	/// whether the book's autoApprove is ON - when it is, the DTO's {@code selected} flags follow the approved variant,
+	/// not variant 0, so that check and the "nothing auto-approved" check are the caller's.
+	private Map<String, Object> run(Fixture f, PbQualityPresetEnumType preset, String installed, int expectVariants,
+			Integer variantsOverride, BaseRecord chatConfig, boolean autoApproveOn) {
+		return run(f, new PlanOptions(null, false, preset, installed, chatConfig, variantsOverride), preset.name(), expectVariants, autoApproveOn);
+	}
+
+	/// The core of {@link #run}: one production run of the node under {@code opts} (§24 I-8 passes
+	/// {@code withBackgroundRegen(true)} here), logged and asserted under {@code label}.
+	private Map<String, Object> run(Fixture f, PlanOptions opts, String preset, int expectVariants, boolean autoApproveOn) {
 		f.node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgOf(f.owner));
 		assertNotNull("node before " + preset, f.node);
 		long started = System.currentTimeMillis();
-		Map<String, Object> out = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, f.node, f.sdu,
-			new PlanOptions(null, false, preset, installed), null);
+		Map<String, Object> out = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, f.node, f.sdu, opts, null);
 		assertNotNull(preset + " run DTO", out);
-		logger.info("MEASURED: " + preset + " run on " + server + " model=" + installed + " status=" + out.get("runStatus")
+		logger.info("MEASURED: " + preset + " run on " + server + " model=" + opts.getModelOverride() + " variantsOverride=" + opts.getVariantsOverride()
+			+ " backgroundRegen=" + opts.isBackgroundRegen() + " status=" + out.get("runStatus")
 			+ " strategy=" + out.get("strategy") + " planned=" + out.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)
 			+ " rendered=" + out.get(PbNodeExecutor.KEY_VARIANTS_RENDERED) + " degradations=" + PbNodeExecutor.degradationsOf(out)
+			+ " qaMode=" + out.get(PbNodeExecutor.KEY_QA_MODE) + " autoApproved=" + out.get(PbNodeExecutor.KEY_AUTO_APPROVED)
 			+ " wallMs=" + (System.currentTimeMillis() - started) + " (informational, never a threshold)");
 		assertEquals(preset + " run status", PbRunStatusEnumType.COMPLETED.toString(), status(out.get("runStatus")));
 		assertNotNull(preset + " run objectId", out.get("runObjectId"));
@@ -283,18 +314,29 @@ public class TestPbVariantsLive extends BaseTest {
 		for(int i = 0; i < variants.size(); i++) {
 			Map<?, ?> d = (Map<?, ?>) variants.get(i);
 			assertEquals(preset + " DTO variantIndex", i, intOf(d.get("variantIndex")));
-			assertEquals(preset + " DTO selected only for variant 0", Boolean.valueOf(i == 0), d.get("selected"));
+			if(!autoApproveOn) {
+				assertEquals(preset + " DTO selected only for variant 0", Boolean.valueOf(i == 0), d.get("selected"));
+			}
 			artifactOids.add(d.get("artifactObjectId"));
 		}
 		assertEquals(preset + " distinct artifacts on the DTO", expectVariants, artifactOids.size());
 		assertEquals(preset + " variant 0 is the DTO's artifact", out.get("artifactObjectId"), ((Map<?, ?>) variants.get(0)).get("artifactObjectId"));
-		assertNotEquals(preset + " nothing auto-approved with autoApprove off", Boolean.TRUE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+		if(!autoApproveOn) {
+			assertNotEquals(preset + " nothing auto-approved with autoApprove off", Boolean.TRUE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+		}
 		return out;
 	}
 
 	/// The attempt's finals on the database: {@code n} base artifacts under {@code runOid}, variantIndex 0..n-1,
 	/// real distinct PNGs, seeds reported and derived from variant 0, only variant 0 selected, all GENERATED.
 	private List<BaseRecord> assertAttempt(Fixture f, String label, String runOid, int n, List<String> degradations) throws Exception {
+		return assertAttempt(f, label, runOid, n, degradations, null);
+	}
+
+	/// {@link #assertAttempt(Fixture, String, String, int, List)} for an attempt auto-approve acted on: {@code approvedOid}
+	/// (null = nothing approved, the plain shape) is the one selected and APPROVED, every sibling is neither selected nor
+	/// APPROVED (GENERATED, or IN_REVIEW when visual QA flagged it - §17, 220 d).
+	private List<BaseRecord> assertAttempt(Fixture f, String label, String runOid, int n, List<String> degradations, String approvedOid) throws Exception {
 		List<BaseRecord> finals = attemptFinals(f, runOid);
 		assertEquals(label + " finals of attempt " + runOid, n, finals.size());
 		boolean seedUnknown = false;
@@ -310,8 +352,21 @@ public class TestPbVariantsLive extends BaseTest {
 			BaseRecord a = finals.get(i);
 			assertEquals(label + " variantIndex", i, PbArtifactUtil.variantIndexOf(a));
 			assertEquals(label + " attempt", runOid, PbArtifactUtil.attemptOf(a));
-			assertEquals(label + " selected only for variant 0", i == 0, selected(a));
-			assertEquals(label + " variant " + i + " GENERATED", PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(a));
+			if(approvedOid == null) {
+				assertEquals(label + " selected only for variant 0", i == 0, selected(a));
+				assertEquals(label + " variant " + i + " GENERATED", PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(a));
+			}
+			else if(approvedOid.equals(oidOf(a))) {
+				assertTrue(label + " the auto-approved variant " + i + " is selected", selected(a));
+				assertEquals(label + " variant " + i + " APPROVED", PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(a));
+				assertEquals(label + " approvedBy is the auto-approver", PbArtifactUtil.APPROVED_BY_AUTO, a.get(OlioFieldNames.FIELD_PB_APPROVED_BY));
+			}
+			else {
+				assertFalse(label + " variant " + i + " is not selected (variant " + approvedOid + " was approved)", selected(a));
+				PbReviewStatusEnumType rs = PbArtifactUtil.reviewStatusOf(a);
+				assertTrue(label + " variant " + i + " is GENERATED or IN_REVIEW, got " + rs,
+					rs == PbReviewStatusEnumType.GENERATED || rs == PbReviewStatusEnumType.IN_REVIEW);
+			}
 			long seed = seedOf(a);
 			assertTrue(label + " variant " + i + " seed is a real seed, got " + seed, seed > 0L);
 			assertEquals(label + " variant " + i + " seed derives from variant 0's reported seed", (long) PbNodeExecutor.variantSeed(seed0, i), seed);
@@ -438,6 +493,264 @@ public class TestPbVariantsLive extends BaseTest {
 			Map<String, Object> again = PbRetentionUtil.applyBook(f.owner, f.book, f.workflow, policy);
 			assertEquals("second apply archives nothing", 0, intOf(again.get("archived")));
 			assertEquals("second apply deletes nothing", 0, intOf(again.get("bytesDeleted")));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/* ------------------------------------------------------------------------------------------------ */
+	/* Scenario G (§24 I-6): request variants override + auto-approve ON under FINAL                     */
+	/* ------------------------------------------------------------------------------------------------ */
+
+	private static final String G_CHAT_CONFIG_NAME = "p66 vlm qa";
+	private static final int G_CHAT_TIMEOUT_S = 300;
+	/// Fewer than FINAL's own 4 (and more than 1), so a planned count of 3 can only have come from the override.
+	private static final int G_VARIANTS = 3;
+
+	/// The run's chat config for the visual-QA route (220 e): a direct OLLAMA record on {@code test.llm.ollama.server}
+	/// as {@link LlmTestGate} resolved it (pin {@code -Dtest.llm.ollama.server=<url>} to a node that lists the
+	/// qualityPresets.json {@code qaModel}, else the VLM probe reports it unavailable and the TEXT_ONLY plan has nothing
+	/// the Swarm face detector can judge - the run still completes, with no QA). Null when the key is blank.
+	private BaseRecord qaChatConfig(BaseRecord owner) {
+		String llmServer = testProperties.getProperty("test.llm.ollama.server", "").trim();
+		if(llmServer.isEmpty()) {
+			logger.warn("[p66] test.llm.ollama.server is blank: the run uses the owner's default analysis config for visual QA");
+			return null;
+		}
+		BaseRecord cfg = OlioTestUtil.getCreateChatConfig(owner, G_CHAT_CONFIG_NAME,
+			new OlioTestUtil.ConnectionTarget(llmServer, null, ConnectionDialectEnumType.OLLAMA, ConnectionUpstreamEnumType.OLLAMA, G_CHAT_TIMEOUT_S),
+			testProperties.getProperty("test.llm.ollama.model", "qwen3:8b"), G_CHAT_TIMEOUT_S, false);
+		assertNotNull("chatConfig " + G_CHAT_CONFIG_NAME, cfg);
+		VlmQaProvider probe = new VlmQaProvider(owner, cfg);
+		boolean up = probe.isAvailable();
+		logger.info("[p66] visual-QA route: direct OLLAMA " + llmServer + " (gate tier=" + testProperties.getProperty("test.llm.resolvedTier", "?")
+			+ " route=" + testProperties.getProperty("test.llm.route", "?") + ") qaModel=" + QualityPresets.qaModel()
+			+ " vlmAvailable=" + up + (up ? "" : " (" + probe.availabilityNote() + ")"));
+		return cfg;
+	}
+
+	/// The variant the ALL ordering (220 c) picks from the DTO's own verdicts: PASS before WARN before unchecked /
+	/// UNAVAILABLE, FAIL never, ties to the lowest variantIndex; under OFF (no {@code qaMode} on the DTO) variant 0.
+	private static String expectedCandidate(Map<String, Object> out) {
+		Object mode = out.get(PbNodeExecutor.KEY_QA_MODE);
+		List<?> variants = (List<?>) out.get(PbNodeExecutor.KEY_VARIANTS);
+		if(mode == null || !QualityPresets.QA_ALL.equals(mode.toString())) {
+			return (String) ((Map<?, ?>) variants.get(0)).get("artifactObjectId");
+		}
+		String best = null;
+		int bestRank = Integer.MAX_VALUE;
+		for(Object o : variants) {
+			Map<?, ?> v = (Map<?, ?>) o;
+			Map<?, ?> q = (Map<?, ?>) v.get(PbNodeExecutor.KEY_VARIANT_QA);
+			String r = (q != null && q.get("result") != null ? q.get("result").toString() : null);
+			int rank;
+			if(r == null || QaReport.Result.UNAVAILABLE.name().equals(r)) {
+				rank = 2;
+			}
+			else if(QaReport.Result.PASS.name().equals(r)) {
+				rank = 0;
+			}
+			else if(QaReport.Result.WARN.name().equals(r)) {
+				rank = 1;
+			}
+			else {
+				rank = Integer.MAX_VALUE;
+			}
+			if(rank < bestRank) {
+				bestRank = rank;
+				best = (String) v.get("artifactObjectId");
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * §24 I-6, the live leg carried from I-3: FINAL with a request {@code variants} override of {@value #G_VARIANTS}
+	 * (the preset says 4) on a book whose {@code autoApprove} is ON. The attempt renders exactly the override, the
+	 * FINAL preset's planned UPSCALE stage is reported ({@code UPSCALE_NOT_RENDERED}) and - since 224 e - does NOT veto,
+	 * so auto-approve approves exactly the variant the attempt's own QA verdicts order first (220 c; variant 0 when the
+	 * route judged nothing), selects it, stamps {@code approvedBy} with the auto-approver and pins the node. Three live
+	 * renders on the GPU plus up to three vision-model calls; the timeout is a hang guard, never a threshold. PNGs go to
+	 * {@code target/p65-g-*.png}.
+	 */
+	@Test(timeout = SCENARIO_TIMEOUT_MS)
+	public void scenarioG_finalVariantsOverrideAutoApproveOnPicksQaOrderedCandidate() throws Exception {
+		logger.info("scenarioG_finalVariantsOverrideAutoApproveOnPicksQaOrderedCandidate");
+		BaseRecord renderCfg = SdTestGate.requireRenderConfig(testProperties, server, "Scenario G variants override + auto-approve");
+		String installed = renderCfg.get(OlioFieldNames.FIELD_SD_MODEL);
+		Fixture f = null;
+		try {
+			f = fixture("p66g", true);
+			long orgId = orgOf(f.owner);
+			BaseRecord cfg = qaChatConfig(f.owner);
+			assertNotEquals("the override is a different count from FINAL's own", QualityPresets.resolve(PbQualityPresetEnumType.FINAL).getVariants(), G_VARIANTS);
+			assertTrue("the override is within FINAL's maxVariants", G_VARIANTS <= QualityPresets.resolve(PbQualityPresetEnumType.FINAL).getMaxVariants());
+
+			Map<String, Object> out = run(f, PbQualityPresetEnumType.FINAL, installed, G_VARIANTS, Integer.valueOf(G_VARIANTS), cfg, true);
+			String runOid = (String) out.get("runObjectId");
+			List<String> deg = PbNodeExecutor.degradationsOf(out);
+			boolean upscaleReported = false;
+			for(String d : (deg != null ? deg : List.<String>of())) {
+				upscaleReported |= d.startsWith(RenderPlan.Degradation.UPSCALE_NOT_RENDERED + ": ");
+			}
+			assertTrue("FINAL reports its planned UPSCALE stage as a degradation: " + deg, upscaleReported);
+			assertEquals("nothing on the attempt vetoes auto-approve (UPSCALE_NOT_RENDERED and the QA codes are accepted): " + deg,
+				List.of(), PbArtifactUtil.vetoingDegradations(deg));
+
+			/// What the hook judged, in words, before the ordering is asserted.
+			List<?> variants = (List<?>) out.get(PbNodeExecutor.KEY_VARIANTS);
+			Object qaMode = out.get(PbNodeExecutor.KEY_QA_MODE);
+			int judged = 0;
+			String provider = null;
+			for(Object o : variants) {
+				Map<?, ?> v = (Map<?, ?>) o;
+				Map<?, ?> q = (Map<?, ?>) v.get(PbNodeExecutor.KEY_VARIANT_QA);
+				if(q != null) {
+					judged++;
+					provider = String.valueOf(q.get("provider"));
+				}
+				logger.info("MEASURED: scenario G variant " + v.get("variantIndex") + " qa=" + (q != null ? q.get("result") + " via " + q.get("provider") : "not judged")
+					+ " reviewStatus=" + v.get("reviewStatus") + " selected=" + v.get("selected"));
+			}
+			logger.info("MEASURED: scenario G qaMode=" + qaMode + " judged=" + judged + "/" + variants.size() + (provider != null ? " via " + provider : "")
+				+ " autoApproved=" + out.get(PbNodeExecutor.KEY_AUTO_APPROVED) + " skipped=" + out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED)
+				+ " approved=" + out.get(PbNodeExecutor.KEY_AUTO_APPROVED_ARTIFACT));
+			if(qaMode != null) {
+				assertEquals("FINAL judges under ALL", QualityPresets.QA_ALL, qaMode.toString());
+				assertEquals("ALL judged every rendered variant", variants.size(), judged);
+			}
+
+			/// Auto-approve ON: approved, and exactly the QA-ordered candidate.
+			assertEquals("auto-approved (skipped=" + out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED) + ")", Boolean.TRUE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			assertNull("no skip reason when approved", out.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED));
+			String approvedOid = (String) out.get(PbNodeExecutor.KEY_AUTO_APPROVED_ARTIFACT);
+			assertNotNull("the approved variant is named on the DTO", approvedOid);
+			String expected = expectedCandidate(out);
+			assertNotNull("the verdicts leave a candidate", expected);
+			assertEquals("auto-approve picked the QA-ordered candidate", expected, approvedOid);
+			int approvedIndex = -1;
+			for(Object o : variants) {
+				Map<?, ?> v = (Map<?, ?>) o;
+				boolean isApproved = approvedOid.equals(v.get("artifactObjectId"));
+				assertEquals("DTO selected follows the approval for variant " + v.get("variantIndex"), Boolean.valueOf(isApproved), v.get("selected"));
+				if(isApproved) {
+					approvedIndex = intOf(v.get("variantIndex"));
+					assertEquals("DTO reviewStatus of the approved variant", PbReviewStatusEnumType.APPROVED.name(), v.get("reviewStatus"));
+				}
+			}
+			assertTrue("the approved variant is one of the attempt's", approvedIndex >= 0);
+			assertEquals("the DTO's primary artifact is variant 0", ((Map<?, ?>) variants.get(0)).get("artifactObjectId"), out.get("artifactObjectId"));
+			if(approvedIndex == 0) {
+				assertEquals("top-level reviewStatus follows the primary's approval", PbReviewStatusEnumType.APPROVED.name(), out.get("reviewStatus"));
+			}
+			else {
+				assertNull("top-level reviewStatus is only set when the primary (variant 0) is the one approved", out.get("reviewStatus"));
+			}
+
+			/// The database agrees: three finals under the one attempt, the approved one selected + APPROVED by the
+			/// auto-approver, the siblings neither; distinct real PNGs; the node pinned by the approval.
+			List<BaseRecord> finals = assertAttempt(f, "g-final", runOid, G_VARIANTS, deg, approvedOid);
+			artifactPng(f, finals.get(approvedIndex), "g-approved-v" + approvedIndex);
+			BaseRecord pinned = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
+			assertEquals("node pinned by the auto-approval", Boolean.TRUE, pinned.get(OlioFieldNames.FIELD_PB_PINNED));
+			if(qaMode != null) {
+				Map<String, QaReport> persisted = PbQaUtil.latestReportsOf(f.owner, pinned);
+				for(Object o : variants) {
+					Map<?, ?> v = (Map<?, ?>) o;
+					String oid = (String) v.get("artifactObjectId");
+					Map<?, ?> q = (Map<?, ?>) v.get(PbNodeExecutor.KEY_VARIANT_QA);
+					QaReport rep = persisted.get(oid);
+					assertNotNull("a qa report persisted for variant " + v.get("variantIndex") + ": " + persisted.keySet(), rep);
+					assertEquals("persisted verdict matches the DTO for variant " + v.get("variantIndex"), String.valueOf(q.get("result")), rep.getResult().name());
+				}
+			}
+			assertEquals("three base artifacts on the node", G_VARIANTS, artifactsByVariant(f, PbPipelineUtil.ROLE_BASE).size());
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/* ------------------------------------------------------------------------------------------------ */
+	/* Scenario H (§24 I-8, design §22): background-only regenerate of a text-only scene                 */
+	/* ------------------------------------------------------------------------------------------------ */
+
+	/**
+	 * Design §22 / §24 I-8 against the live node: a DRAFT render of the text-only scene, then the same node run
+	 * again with {@code PlanOptions.withBackgroundRegen(true)} - the production path behind
+	 * {@code POST /{book}/scene/{scene}/regenerate-background} and the {@code pb.regenerateBackground} job.
+	 * Two GPU renders. Asserted: the regenerate is one attempt of exactly one fresh BASE (the preset's count and
+	 * gap-fill are overridden), the DTO names what it regenerated from, and - because a TEXT_ONLY plan has no
+	 * ACTOR_REGION pass to replay - it reports {@code BACKGROUND_REGEN_NO_REGIONS} (the actors, had there been any,
+	 * were re-rendered with the background) and does not auto-approve. On the database the new final has a real,
+	 * different seed, supersedes the first and - nothing being APPROVED - takes the selection from it (V3 §10 rule 1
+	 * only protects an APPROVED selection; the job-path case in {@code TestPbRenderStagesOffline} covers that branch).
+	 * The ACTOR_REGION seed-reuse branch itself needs a referenced cast on a FLUX.2 node and is asserted offline
+	 * ({@code backgroundRegenReusesActorRegionSeed}), not here. Both PNGs are written under {@code target/p65-h-*.png}.
+	 */
+	@Test(timeout = SCENARIO_TIMEOUT_MS)
+	public void scenarioH_regenerateBackgroundOfTextOnlySceneRendersOneFreshBase() throws Exception {
+		logger.info("scenarioH_regenerateBackgroundOfTextOnlySceneRendersOneFreshBase");
+		BaseRecord renderCfg = SdTestGate.requireRenderConfig(testProperties, server, "Scenario H background regenerate");
+		String installed = renderCfg.get(OlioFieldNames.FIELD_SD_MODEL);
+		Fixture f = null;
+		try {
+			f = fixture("p67h");
+			long orgId = orgOf(f.owner);
+
+			/// (1) DRAFT: one final, selected, GENERATED, nothing approved (autoApprove off).
+			Map<String, Object> first = run(f, PbQualityPresetEnumType.DRAFT, installed, 1);
+			String firstRun = (String) first.get("runObjectId");
+			assertNull("a plain run is not a regenerate", first.get(PbNodeExecutor.KEY_REGENERATE));
+			List<BaseRecord> firstFinals = assertAttempt(f, "h-first", firstRun, 1, PbNodeExecutor.degradationsOf(first));
+			BaseRecord firstFinal = firstFinals.get(0);
+			String firstOid = oidOf(firstFinal);
+			long firstSeed = seedOf(firstFinal);
+			byte[] firstPng = artifactPng(f, firstFinal, "h-first");
+
+			/// (2) Regenerate the background: one fresh BASE on a second attempt of the same node.
+			Map<String, Object> regen = run(f, new PlanOptions(null, false, PbQualityPresetEnumType.DRAFT, installed, null, null).withBackgroundRegen(true),
+				"DRAFT regenerate-background", 1, false);
+			String regenRun = (String) regen.get("runObjectId");
+			assertNotEquals("the regenerate is its own attempt", firstRun, regenRun);
+			assertEquals("the DTO says what it did", PbNodeExecutor.REGENERATE_BACKGROUND, regen.get(PbNodeExecutor.KEY_REGENERATE));
+			assertEquals("the DTO names the final it regenerated from", firstOid, regen.get(PbNodeExecutor.KEY_REGENERATED_FROM));
+			assertEquals("no actor seed reused on a text-only scene", List.of(), regen.get(PbNodeExecutor.KEY_ACTOR_SEEDS_REUSED));
+			assertEquals("no actor seed new on a text-only scene", List.of(), regen.get(PbNodeExecutor.KEY_ACTOR_SEEDS_NEW));
+			List<String> deg = PbNodeExecutor.degradationsOf(regen);
+			boolean noRegions = false;
+			for(String d : (deg != null ? deg : List.<String>of())) {
+				noRegions |= d.startsWith(RenderPlan.Degradation.BACKGROUND_REGEN_NO_REGIONS + ": ");
+			}
+			assertTrue("a TEXT_ONLY plan has no ACTOR_REGION pass, and the result says so: " + deg, noRegions);
+			assertTrue("BACKGROUND_REGEN_NO_REGIONS vetoes auto-approve: " + deg,
+				PbArtifactUtil.vetoingDegradations(deg).stream().anyMatch(d -> d.startsWith(RenderPlan.Degradation.BACKGROUND_REGEN_NO_REGIONS)));
+			assertNotEquals("not auto-approved", Boolean.TRUE, regen.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			logger.info("MEASURED: scenario H regenerate from=" + regen.get(PbNodeExecutor.KEY_REGENERATED_FROM)
+				+ " degradations=" + deg + " autoApproveSkipped=" + regen.get(PbNodeExecutor.KEY_AUTO_APPROVE_SKIPPED));
+
+			/// (3) The database: a second final with a real, different seed, superseding the first and - nothing
+			/// APPROVED - now the selection; the first stays GENERATED and loses the selection; the node is not pinned.
+			List<BaseRecord> regenFinals = assertAttempt(f, "h-regen", regenRun, 1, deg);
+			BaseRecord regenFinal = regenFinals.get(0);
+			long regenSeed = seedOf(regenFinal);
+			assertTrue("the regenerate's seed is a real seed, got " + regenSeed, regenSeed > 0L);
+			assertNotEquals("the BASE re-rolled its seed", firstSeed, regenSeed);
+			BaseRecord sup = regenFinal.get(OlioFieldNames.FIELD_PB_SUPERSEDES);
+			assertNotNull("the regenerate supersedes the first final", sup);
+			assertEquals(firstOid, sup.get(FieldNames.FIELD_OBJECT_ID));
+			assertTrue("the regenerate's final is selected (nothing was APPROVED)", selected(regenFinal));
+			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(regenFinal));
+			BaseRecord firstAfter = PbArtifactUtil.readArtifact(f.owner, firstOid, orgId);
+			assertFalse("the first final lost the selection", selected(firstAfter));
+			assertEquals("the first final is still GENERATED", PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(firstAfter));
+			assertEquals("findSelected answers the regenerate", oidOf(regenFinal), oidOf(PbArtifactUtil.findSelected(f.owner, f.node, PbPipelineUtil.ROLE_BASE)));
+			assertEquals("two base artifacts on the node", 2, artifactsByVariant(f, PbPipelineUtil.ROLE_BASE).size());
+			BaseRecord node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
+			assertNotEquals("a regenerate that was not approved does not pin", Boolean.TRUE, node.get(OlioFieldNames.FIELD_PB_PINNED));
+			byte[] regenPng = artifactPng(f, regenFinal, "h-regen");
+			assertFalse("the regenerate's bytes differ from the first final's", Arrays.equals(firstPng, regenPng));
 		}
 		finally {
 			cleanup(f);

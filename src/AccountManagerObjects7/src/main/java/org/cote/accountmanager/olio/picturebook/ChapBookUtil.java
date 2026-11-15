@@ -1269,8 +1269,8 @@ public class ChapBookUtil {
 	// ─────────────────────────────── scene review edits ───────────────────────────────
 
 	/**
-	 * Resolve the parent {@code olio.pb.book} of a scene from the scene's {@code book} FK, projected with
-	 * {@link PbBookUtil#bookRequest()} so the resolved book carries {@code bookType} (for the CHAPBOOK
+	 * Resolve the parent {@code olio.pb.book} of a scene from the scene's {@code book} FK, returned in the
+	 * {@link PbBookUtil#bookRequest()} shape so the resolved book carries {@code bookType} (for the CHAPBOOK
 	 * guard) plus the {@code id}/{@code organizationId} that {@link PbBookUtil#listScenes} and
 	 * {@link PbBookUtil#reorderScenes} require.
 	 * <p>
@@ -1278,10 +1278,17 @@ public class ChapBookUtil {
 	 * {@code objectId} (see model-api.md): prefer {@code objectId} when present, otherwise resolve by the
 	 * FK's {@code id}, so this cannot throw a spurious 404 for a book that exists. Mirrors the resolution
 	 * in {@link #renderChapBookScene}. All reads are performed AS THE ACTING USER through AccessPoint.
+	 * <p>
+	 * Both branches authorize on {@link PbBookUtil#bookAuthorizingRequest()} (the book row and its own-group
+	 * config) and populate the {@link PbBookUtil#BOOK_LINKAGE_FIELDS} raw afterwards, via
+	 * {@link PbBookUtil#readBook} / {@link PbBookUtil#readBookById} - so a reader entitled to the book row
+	 * (a series Writer, a direct-grant reader of the chapter group) is not refused for lacking Read over the
+	 * series row, the shared world or the author's manuscript the chapter merely points at. Until Implementation
+	 * §6.C 303 the by-id branch authorized on the full {@code bookRequest()} projection (§6.C 286 f).
 	 *
 	 * @throws PictureBookException 404 when the scene has no book FK or the book is not readable by {@code user}
 	 */
-	private static BaseRecord resolveSceneBook(BaseRecord user, BaseRecord scene, long orgId) {
+	static BaseRecord resolveSceneBook(BaseRecord user, BaseRecord scene, long orgId) {
 		BaseRecord bookFk = scene.get(OlioFieldNames.FIELD_PB_BOOK);
 		if (bookFk == null) {
 			throw new PictureBookException(404, "Book not found for scene: " + scene.get(FieldNames.FIELD_OBJECT_ID));
@@ -1296,11 +1303,7 @@ public class ChapBookUtil {
 			if (bookId <= 0) {
 				throw new PictureBookException(404, "Book not found for scene: " + scene.get(FieldNames.FIELD_OBJECT_ID));
 			}
-			Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ID, bookId);
-			bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-			bq.setRequest(PbBookUtil.bookRequest());
-			bq.setCache(false);
-			book = IOSystem.getActiveContext().getAccessPoint().find(user, bq);
+			book = PbBookUtil.readBookById(user, bookId, orgId);
 		}
 		if (book == null) {
 			throw new PictureBookException(404, "Book not found for scene: " + scene.get(FieldNames.FIELD_OBJECT_ID));

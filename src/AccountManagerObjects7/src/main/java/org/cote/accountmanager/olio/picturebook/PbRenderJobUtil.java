@@ -102,6 +102,12 @@ public final class PbRenderJobUtil {
 	public static final String KIND_PROPOSE_LOCATIONS = "pb.proposeLocations";
 	/** Job kind for one wardrobe entry's mannequin reference images (V3 §6.2), run by {@link PbComposeJobUtil}; keyed by the apparel. */
 	public static final String KIND_APPAREL_REFERENCE = "pb.apparelReference";
+	/**
+	 * Job kind for one scene's background-only regenerate (design §22, §24 I-8): the same single terminal as
+	 * {@link #KIND_RENDER}, forced, with {@link PbRenderPlanUtil.PlanOptions#isBackgroundRegen()} set so the executor
+	 * re-renders the BASE with a new seed and re-runs each actor's pass with the seed it had on the selected final.
+	 */
+	public static final String KIND_REGENERATE_BACKGROUND = "pb.regenerateBackground";
 
 	private static final Set<PbNodeStatusEnumType> EXECUTE_WHEN = Collections.unmodifiableSet(new HashSet<>(List.of(
 		PbNodeStatusEnumType.PENDING, PbNodeStatusEnumType.READY, PbNodeStatusEnumType.STALE,
@@ -144,7 +150,7 @@ public final class PbRenderJobUtil {
 	 */
 	public static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
 			Collection<Long> terminals, String sdApiType, String sdServer, String kind, boolean force) {
-		return submit(user, book, workflow, terminals, sdApiType, sdServer, kind, force, null);
+		return submit(user, book, workflow, terminals, sdApiType, sdServer, kind, force, PbRenderPlanUtil.PlanOptions.NONE);
 	}
 
 	/**
@@ -158,8 +164,23 @@ public final class PbRenderJobUtil {
 	 */
 	public static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
 			Collection<Long> terminals, String sdApiType, String sdServer, String kind, boolean force, BaseRecord chatConfig) {
+		return submit(user, book, workflow, terminals, sdApiType, sdServer, kind, force,
+			PbRenderPlanUtil.PlanOptions.NONE.withChatConfig(chatConfig));
+	}
+
+	/**
+	 * {@link #submit(BaseRecord, BaseRecord, BaseRecord, Collection, String, String, String, boolean, BaseRecord)}
+	 * with the whole per-request option set (§24 I-6): {@code options.chatConfig} is written to the run as before,
+	 * and the options themselves ride on every node graph the job opens ({@code SceneGraph.setPlanOptions}), so a
+	 * {@code variantsOverride} reaches {@code PbRenderPlanUtil.buildScenePlan} exactly as it does on the
+	 * synchronous {@code executeNodeRun} path. Until this overload the job path dropped every option but the
+	 * chat config. The caller has validated {@code variantsOverride} ({@code PbServiceFacade.validateVariants}).
+	 */
+	public static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
+			Collection<Long> terminals, String sdApiType, String sdServer, String kind, boolean force,
+			PbRenderPlanUtil.PlanOptions options) {
 		return submit(user, book, workflow, terminals, PbNodeExecutor.toSdUtil(sdApiType, sdServer), sdServer, kind, force,
-			PbNodeExecutor.RenderBackend.SWARM, chatConfig);
+			PbNodeExecutor.RenderBackend.SWARM, options);
 	}
 
 	/**
@@ -185,13 +206,18 @@ public final class PbRenderJobUtil {
 	 */
 	static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
 			Collection<Long> terminals, SDUtil sdu, String sdServer, String kind, boolean force, PbNodeExecutor.RenderBackend backend) {
-		return submit(user, book, workflow, terminals, sdu, sdServer, kind, force, backend, null);
+		return submit(user, book, workflow, terminals, sdu, sdServer, kind, force, backend, PbRenderPlanUtil.PlanOptions.NONE);
 	}
 
-	/** The body; {@code chatConfig} as on the public nine-argument overload (§6.C 226 a). */
+	/**
+	 * The body; {@code options} as on the public {@code PlanOptions} overload (§24 I-6) - its {@code chatConfig}
+	 * is the run's (§6.C 226 a), the rest rides on each node graph.
+	 */
 	static Map<String, Object> submit(BaseRecord user, BaseRecord book, BaseRecord workflow,
 			Collection<Long> terminals, SDUtil sdu, String sdServer, String kind, boolean force, PbNodeExecutor.RenderBackend backend,
-			BaseRecord chatConfig) {
+			PbRenderPlanUtil.PlanOptions options) {
+		PbRenderPlanUtil.PlanOptions opts = (options != null ? options : PbRenderPlanUtil.PlanOptions.NONE);
+		BaseRecord chatConfig = opts.getChatConfig();
 		if(user == null || book == null || workflow == null) {
 			throw new PictureBookException(400, "A user, book and workflow are required");
 		}
@@ -251,7 +277,7 @@ public final class PbRenderJobUtil {
 			throw new PictureBookException(409, msg);
 		}
 
-		Work work = new Work(user, book, workflow, run, plan, sdu, sdServer, backend);
+		Work work = new Work(user, book, workflow, run, plan, sdu, sdServer, backend, opts);
 		AsyncJob job;
 		try {
 			job = AsyncJobRegistry.submit(user, useKind, runOid, work);
@@ -305,6 +331,9 @@ public final class PbRenderJobUtil {
 		Map<String, Object> cfgRef = PbGraphUtil.chatConfigRef(run);
 		if(cfgRef != null) {
 			out.put("chatConfig", cfgRef);
+		}
+		if(opts.getVariantsOverride() != null) {
+			out.put(PbNodeExecutor.KEY_VARIANTS_OVERRIDE, opts.getVariantsOverride());
 		}
 		return out;
 	}
@@ -579,11 +608,14 @@ public final class PbRenderJobUtil {
 		private final SDUtil sdu;
 		private final String sdServer;
 		private final PbNodeExecutor.RenderBackend backend;
+		/// The request's per-run options (§24 I-6): set on every node graph this job opens, so the plan each
+		/// stage builds sees the same {@code variantsOverride} the synchronous path would.
+		private final PbRenderPlanUtil.PlanOptions options;
 		private final String runOid;
 		private final List<Long> claimed;
 
 		Work(BaseRecord user, BaseRecord book, BaseRecord workflow, BaseRecord run, Plan plan, SDUtil sdu, String sdServer,
-				PbNodeExecutor.RenderBackend backend) {
+				PbNodeExecutor.RenderBackend backend, PbRenderPlanUtil.PlanOptions options) {
 			this.user = user;
 			this.book = book;
 			this.workflow = workflow;
@@ -592,6 +624,7 @@ public final class PbRenderJobUtil {
 			this.sdu = sdu;
 			this.sdServer = sdServer;
 			this.backend = (backend != null ? backend : PbNodeExecutor.RenderBackend.SWARM);
+			this.options = (options != null ? options : PbRenderPlanUtil.PlanOptions.NONE);
 			this.runOid = run.get(FieldNames.FIELD_OBJECT_ID);
 			this.claimed = new ArrayList<>();
 			for(BaseRecord n : plan.execute) {
@@ -713,6 +746,7 @@ public final class PbRenderJobUtil {
 						}
 						SceneGraph g = PbPipelineUtil.openNodeGraph(user, book, workflow, node, run, progress);
 						g.setRenderBackend(backend);
+						g.setPlanOptions(options);
 						Map<String, Object> out = PbNodeExecutor.executeStage(g, node, sdu);
 						PbNodeExecutor.applyAutoApprove(g, out);
 						executed++;
@@ -734,6 +768,15 @@ public final class PbRenderJobUtil {
 						/// V3 §23 (P6-2): the attempt's finals, so a job result says which variants a node produced
 						if(out.get(PbNodeExecutor.KEY_VARIANTS) != null) {
 							outcome.put(PbNodeExecutor.KEY_VARIANTS, out.get(PbNodeExecutor.KEY_VARIANTS));
+						}
+						/// §24 I-8: a regenerate job's outcome says what it regenerated from and which actors kept their
+						/// seed; the planned/rendered counts travel with it so a reader sees "1 of 1" without the run.
+						for(String key : new String[] {PbNodeExecutor.KEY_VARIANTS_PLANNED, PbNodeExecutor.KEY_VARIANTS_RENDERED,
+							PbNodeExecutor.KEY_REGENERATE, PbNodeExecutor.KEY_REGENERATED_FROM,
+							PbNodeExecutor.KEY_ACTOR_SEEDS_REUSED, PbNodeExecutor.KEY_ACTOR_SEEDS_NEW}) {
+							if(out.get(key) != null) {
+								outcome.put(key, out.get(key));
+							}
 						}
 					}
 					catch(PbStageCancelledException e) {

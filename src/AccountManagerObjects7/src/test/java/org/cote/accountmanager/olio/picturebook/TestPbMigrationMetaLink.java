@@ -8,9 +8,11 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.cote.accountmanager.io.IOSystem;
@@ -43,8 +45,11 @@ import org.junit.Test;
  * already resolves it; before 218 d {@code /health} reported {@code META_LINK_BROKEN} "missing"), and
  * <b>B</b> whose name is NOT the slug (before 218 d nothing resolved the group at all: {@code META_MISSING}).
  * For each: the meta note after import parses to the meta before plus exactly the {@code pb2BookObjectId} key
- * (the exporter drops empty values, so the comparison strips empties from the before map - the fixtures carry
- * none); {@code resolveBookGroupEither} returns the fixture group; {@code checkBook} reports neither
+ * - an exact comparison, and the fixtures carry empty values ({@code ""}, {@code null}, {@code []}) on purpose:
+ * until §24 UAT-3 (2026-11-15) the writers re-serialised through the {@code NON_EMPTY} {@code JSONUtil} mapper
+ * and dropped them, and this pin was loosened to match ({@code stripEmpty}); now {@code PbMigrationUtil.exportMetaMap}
+ * keeps every entry and the pin is exact, here and for the {@code META_LINK_BROKEN} Repair (step 5b) and the
+ * delete-side unlink (step 6); {@code resolveBookGroupEither} returns the fixture group; {@code checkBook} reports neither
  * {@code META_LINK_BROKEN} nor {@code META_MISSING}. Then the book is deleted: the link must not turn the PB1
  * source into collateral of the PB2 delete, so B's meta note (live group, linked only through the key) survives
  * {@code deleteBookComplete} with exactly {@code pb2BookObjectId} removed ({@code deleteOrphanedMetaNotes}'
@@ -89,6 +94,133 @@ public class TestPbMigrationMetaLink extends BaseTest {
 		runFixture("B (name != slug)", nameB, dataPath);
 	}
 
+	/**
+	 * §24 U-6 (security review of I-5): a PB1 meta note that already carries a {@code pb2BookObjectId} is relinked
+	 * only when that id names NO book in the organization. "Absent to the importer" is not "absent": a book another
+	 * user owns reads as null through {@code readBook} as the importer, and before U-6 the import treated that as
+	 * stale and overwrote the other user's link. Three link states, each its own fixture group + import:
+	 * (1) another user's book - left, warned "cannot see"; (2) a live book of the importer's own - left, warned
+	 * "a live book" (the I-5 branch, unchanged); (3) a random id that is no book - relinked, no warning.
+	 */
+	@Test
+	public void importLeavesLinkToBookItCannotSee() throws Exception {
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		assertNotNull("test.datagen.path must be set", dataPath);
+		String nonce = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+
+		BaseRecord otherUser = IOSystem.getActiveContext().getFactory().getCreateUser(ctx.getAdminUser(), TEST_USER + "Other", orgId);
+		assertNotNull("second test user", otherUser);
+		assertNotEquals("two distinct users", ((Number) user.get(FieldNames.FIELD_ID)).longValue(), ((Number) otherUser.get(FieldNames.FIELD_ID)).longValue());
+
+		String otherOid = null;
+		String ownOid = null;
+		try {
+			BaseRecord otherBook = PbBookUtil.createBook(otherUser, dataPath, "u6other" + nonce, "U-6 other user's book " + nonce);
+			assertNotNull("the other user's book", otherBook);
+			otherOid = otherBook.get(FieldNames.FIELD_OBJECT_ID);
+			BaseRecord ownBook = PbBookUtil.createBook(user, dataPath, "u6own" + nonce, "U-6 own live book " + nonce);
+			assertNotNull("the importer's own book", ownBook);
+			ownOid = ownBook.get(FieldNames.FIELD_OBJECT_ID);
+
+			// The premise the fix rests on: as the importer the other user's book reads as absent, yet it exists.
+			assertNull("the other user's book is invisible to the importer", PbBookUtil.readBook(user, otherOid, orgId));
+			assertTrue("...but bookExists sees it", PbBookUtil.bookExists(otherOid, orgId));
+			assertNotNull("the importer's own book reads", PbBookUtil.readBook(user, ownOid, orgId));
+			String staleOid = UUID.randomUUID().toString();
+			assertFalse("a random id is no book", PbBookUtil.bookExists(staleOid, orgId));
+
+			runLinkedFixture("(1) another user's book", "migrationlinkother" + nonce, dataPath, otherOid, otherOid, "a book you cannot see");
+			runLinkedFixture("(2) own live book", "migrationlinkown" + nonce, dataPath, ownOid, ownOid, "a live book");
+			runLinkedFixture("(3) stale id", "migrationlinkstale" + nonce, dataPath, staleOid, null, null);
+		}
+		finally {
+			cleanupBook(otherUser, otherOid);
+			cleanupBook(user, ownOid);
+		}
+	}
+
+	/**
+	 * Import a PB1 fixture whose meta note already links to {@code preLink}; afterwards the note must carry
+	 * {@code expectLink} (null = the imported book's own objectId) and the result must warn with
+	 * {@code expectWarning} (null = no pb2BookObjectId warning at all).
+	 */
+	private void runLinkedFixture(String label, String groupName, String dataPath, String preLink, String expectLink, String expectWarning) throws Exception {
+		String fixturePath = PICTURE_BOOKS_PATH + "/" + groupName;
+		List<BaseRecord> fixtures = new ArrayList<>();
+		BaseRecord fixtureGroup = null;
+		String bookOid = null;
+		try {
+			fixtureGroup = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP,
+				fixturePath, GroupEnumType.DATA.toString(), orgId);
+			assertNotNull(label + ": fixture group", fixtureGroup);
+			String fixtureOid = fixtureGroup.get(FieldNames.FIELD_OBJECT_ID);
+			long fixtureId = ((Number) fixtureGroup.get(FieldNames.FIELD_ID)).longValue();
+			BaseRecord sceneNote = createNote(fixturePath, ".scene0",
+				"{\"title\":\"Link scene\",\"summary\":\"A room.\",\"setting\":\"A quiet room.\",\"action\":\"Nothing moves.\",\"mood\":\"Still\",\"blurb\":\"Scene 0.\"}");
+			fixtures.add(sceneNote);
+			String metaBefore = "{\"schema\":\"olio.pictureBookMeta\",\"workName\":\"Meta Link " + groupName + "\",\"pb2BookObjectId\":\"" + preLink + "\","
+				+ "\"scenes\":[{\"schema\":\"olio.pictureBookScene\",\"objectId\":\"" + sceneNote.get(FieldNames.FIELD_OBJECT_ID) + "\",\"blurb\":\"\",\"characters\":[]}]}";
+			fixtures.add(createNote(fixturePath, PbMigrationUtil.V1_META_NOTE_NAME, metaBefore));
+
+			ImportResult result = PbMigrationUtil.importV1Book(user, dataPath, fixtureOid);
+			assertNotNull(label + ": import result", result);
+			bookOid = result.bookObjectId;
+			assertNotNull(label + ": a book was imported", bookOid);
+			assertEquals(label + ": scenesImported", 1, result.scenesImported);
+			logger.info("[u6-metalink] {} imported book {} warnings={}", label, bookOid, result.warnings);
+			List<String> linkWarnings = new ArrayList<>();
+			for(String w : result.warnings) {
+				if(w.contains("pb2BookObjectId")) {
+					linkWarnings.add(w);
+				}
+			}
+			if(expectWarning == null) {
+				assertTrue(label + ": no link warning: " + linkWarnings, linkWarnings.isEmpty());
+			}
+			else {
+				assertEquals(label + ": exactly one link warning: " + linkWarnings, 1, linkWarnings.size());
+				assertTrue(label + ": the warning names the case: " + linkWarnings.get(0), linkWarnings.get(0).contains(expectWarning));
+				assertTrue(label + ": the warning names the link left in place", linkWarnings.get(0).contains(preLink));
+			}
+
+			Query mq = QueryUtil.createQuery(ModelNames.MODEL_NOTE, FieldNames.FIELD_GROUP_ID, fixtureId);
+			mq.field(FieldNames.FIELD_NAME, PbMigrationUtil.V1_META_NOTE_NAME);
+			mq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+			mq.planMost(true);
+			mq.setCache(false);
+			BaseRecord metaAfterRec = IOSystem.getActiveContext().getAccessPoint().find(user, mq);
+			assertNotNull(label + ": meta note still exists", metaAfterRec);
+			String metaAfterText = metaAfterRec.get("text");
+			assertNotNull(metaAfterText);
+			Map<String, Object> after = JSONUtil.getMap(metaAfterText.getBytes(), String.class, Object.class);
+			assertNotNull(label + ": meta after import parses", after);
+			String expected = (expectLink != null) ? expectLink : bookOid;
+			assertEquals(label + ": pb2BookObjectId after import", expected, after.get("pb2BookObjectId"));
+			System.out.println("=== U-6 METALINK PROOF " + label + ": preLink=" + preLink + " book=" + bookOid
+				+ " meta.pb2BookObjectId=" + after.get("pb2BookObjectId") + " warnings=" + linkWarnings);
+		}
+		finally {
+			cleanupBook(user, bookOid);
+			for(int i = fixtures.size() - 1; i >= 0; i--) {
+				deleteQuietly(fixtures.get(i));
+			}
+			deleteQuietly(fixtureGroup);
+		}
+	}
+
+	private void cleanupBook(BaseRecord owner, String oid) {
+		if(oid == null) {
+			return;
+		}
+		try {
+			DeleteResult del = PbDeleteUtil.deleteBookComplete(owner, oid);
+			logger.info("[u6-metalink] cleanup book {}: deleted={} reason={}", oid, del.deleted, del.reason);
+		}
+		catch(Exception e) {
+			logger.error("[u6-metalink] cleanup book " + oid + ": " + e.getMessage());
+		}
+	}
+
 	private void runFixture(String label, String groupName, String dataPath) throws Exception {
 		String fixturePath = PICTURE_BOOKS_PATH + "/" + groupName;
 		List<BaseRecord> fixtures = new ArrayList<>();
@@ -108,8 +240,12 @@ public class TestPbMigrationMetaLink extends BaseTest {
 			BaseRecord sceneNote = createNote(fixturePath, ".scene0",
 				"{\"title\":\"Link scene\",\"summary\":\"A room.\",\"setting\":\"A quiet room.\",\"action\":\"Nothing moves.\",\"mood\":\"Still\",\"blurb\":\"Scene 0.\"}");
 			fixtures.add(sceneNote);
+			// Empty-valued keys on purpose (§24 UAT-3): JSONUtil.exportObject is Include.NON_EMPTY and dropped every
+			// null / "" / [] value of the PB1 note on re-serialisation; the pins below are exact, not empties-stripped.
 			String metaBefore = "{\"schema\":\"olio.pictureBookMeta\",\"workName\":\"Meta Link " + groupName + "\","
-				+ "\"scenes\":[{\"schema\":\"olio.pictureBookScene\",\"objectId\":\"" + sceneNote.get(FieldNames.FIELD_OBJECT_ID) + "\"}]}";
+				+ "\"compositionContext\":\"\",\"sdConfig\":null,\"failedExtractions\":[],\"characterStyles\":[],"
+				+ "\"scenes\":[{\"schema\":\"olio.pictureBookScene\",\"objectId\":\"" + sceneNote.get(FieldNames.FIELD_OBJECT_ID) + "\","
+				+ "\"blurb\":\"\",\"characters\":[]}]}";
 			BaseRecord metaNote = createNote(fixturePath, PbMigrationUtil.V1_META_NOTE_NAME, metaBefore);
 			fixtures.add(metaNote);
 			Map<String, Object> before = JSONUtil.getMap(metaBefore.getBytes(), String.class, Object.class);
@@ -145,7 +281,7 @@ public class TestPbMigrationMetaLink extends BaseTest {
 			assertEquals(label + ": pb2BookObjectId is the imported book", bookOid, after.get("pb2BookObjectId"));
 			Map<String, Object> afterMinusLink = new LinkedHashMap<>(after);
 			afterMinusLink.remove("pb2BookObjectId");
-			assertEquals(label + ": every other key survives unchanged", stripEmpty(before), stripEmpty(afterMinusLink));
+			assertEquals(label + ": every other key survives unchanged (empties included)", before, afterMinusLink);
 
 			// 4. The link resolves the PB1 group for the book - name-independent.
 			BaseRecord resolved = PictureBookUtil.resolveBookGroupEither(user, bookOid, orgId);
@@ -158,6 +294,35 @@ public class TestPbMigrationMetaLink extends BaseTest {
 			logger.info("[i5-218d] {} /health codes: {}", label, codes);
 			assertFalse(label + ": no META_LINK_BROKEN after import: " + codes, codes.contains(PbHealthUtil.META_LINK_BROKEN));
 			assertFalse(label + ": no META_MISSING after import: " + codes, codes.contains(PbHealthUtil.META_MISSING));
+
+			// 5b. The META_LINK_BROKEN repair is the second writer of the same note (§24 UAT-3): put the fixture's
+			// original text back (the link gone, the empties present), confirm /health reports the broken link,
+			// repair it, and the note must again be before + exactly the key - nothing dropped. Only reachable for
+			// A: with the link gone, B's group (name != slug) resolves to nothing and auditMeta reports META_MISSING,
+			// not META_LINK_BROKEN - the very gap 218 d closed (header). B's third writer is step 6's unlink.
+			if(groupName.equals(expectedSlug)) {
+				BaseRecord unlinkPatch = metaAfterRec.copyRecord(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, "text" });
+				unlinkPatch.set("text", metaBefore);
+				assertNotNull(label + ": the fixture text could be put back on the note", IOSystem.getActiveContext().getAccessPoint().update(user, unlinkPatch));
+				List<String> brokenCodes = findingCodes(PbHealthUtil.checkBook(user, bookOid));
+				assertTrue(label + ": /health reports META_LINK_BROKEN once the link is gone: " + brokenCodes, brokenCodes.contains(PbHealthUtil.META_LINK_BROKEN));
+				Set<String> only = new HashSet<>();
+				only.add(PbHealthUtil.META_LINK_BROKEN);
+				Map<String, Object> healReport = PbHealthUtil.healBook(user, dataPath, bookOid, only);
+				assertTrue(label + ": Repair healed META_LINK_BROKEN: " + healedCodes(healReport), healedCodes(healReport).contains(PbHealthUtil.META_LINK_BROKEN));
+				mq.setCache(false);
+				BaseRecord metaAfterRepair = IOSystem.getActiveContext().getAccessPoint().find(user, mq);
+				assertNotNull(label + ": meta note still exists after Repair", metaAfterRepair);
+				String repairedText = metaAfterRepair.get("text");
+				assertNotNull(repairedText);
+				Map<String, Object> repaired = JSONUtil.getMap(repairedText.getBytes(), String.class, Object.class);
+				assertNotNull(label + ": meta after Repair parses", repaired);
+				assertEquals(label + ": Repair set pb2BookObjectId to the book", bookOid, repaired.get("pb2BookObjectId"));
+				Map<String, Object> repairedMinusLink = new LinkedHashMap<>(repaired);
+				repairedMinusLink.remove("pb2BookObjectId");
+				assertEquals(label + ": every other key survives the Repair (empties included)", before, repairedMinusLink);
+				assertFalse(label + ": /health clean again after Repair", findingCodes(PbHealthUtil.checkBook(user, bookOid)).contains(PbHealthUtil.META_LINK_BROKEN));
+			}
 
 			// 6. Delete the imported book. The PB1 source is not something the book created, so it must outlive
 			// the book: B's meta note (a live group the book's slug does not name, linked only through
@@ -195,7 +360,7 @@ public class TestPbMigrationMetaLink extends BaseTest {
 				Map<String, Object> unlinked = JSONUtil.getMap(unlinkedText.getBytes(), String.class, Object.class);
 				assertNotNull(label + ": meta after delete parses", unlinked);
 				assertFalse(label + ": pb2BookObjectId is removed by the delete, not left pointing at " + deletedOid, unlinked.containsKey("pb2BookObjectId"));
-				assertEquals(label + ": every other key survives the unlink", stripEmpty(before), stripEmpty(unlinked));
+				assertEquals(label + ": every other key survives the unlink (empties included)", before, unlinked);
 				afterDelete = "unlinked";
 			}
 
@@ -232,28 +397,17 @@ public class TestPbMigrationMetaLink extends BaseTest {
 		return created;
 	}
 
-	/** Deep copy with null / empty-string / empty-collection values removed - what {@code JSONUtil.exportObject} (NON_EMPTY) drops. */
+	/** The codes of a heal report's {@code healed} entries. */
 	@SuppressWarnings("unchecked")
-	private static Object stripEmpty(Object o) {
-		if(o instanceof Map) {
-			Map<String, Object> out = new LinkedHashMap<>();
-			for(Map.Entry<String, Object> e : ((Map<String, Object>) o).entrySet()) {
-				Object v = stripEmpty(e.getValue());
-				if(v == null || (v instanceof String && ((String) v).isEmpty()) || (v instanceof Map && ((Map<?, ?>) v).isEmpty()) || (v instanceof List && ((List<?>) v).isEmpty())) {
-					continue;
-				}
-				out.put(e.getKey(), v);
+	private static Set<String> healedCodes(Map<String, Object> report) {
+		Set<String> codes = new HashSet<>();
+		Object healed = report == null ? null : report.get("healed");
+		if(healed instanceof List) {
+			for(Map<String, Object> h : (List<Map<String, Object>>) healed) {
+				codes.add((String) h.get("code"));
 			}
-			return out;
 		}
-		if(o instanceof List) {
-			List<Object> out = new ArrayList<>();
-			for(Object v : (List<Object>) o) {
-				out.add(stripEmpty(v));
-			}
-			return out;
-		}
-		return o;
+		return codes;
 	}
 
 	@SuppressWarnings("unchecked")

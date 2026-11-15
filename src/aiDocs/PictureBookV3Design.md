@@ -16,7 +16,7 @@ as proxy (§38)**, **auto-approve is one general switch (§10)**, **VLM QA defau
 (§34 item 15)**, **Q14 source (b) seeded by (a) (ratified 2026-10-24 with P5-0)**. Open: §34 items 3
 (default value only), 7, 8 — none blocks Phase 0–2; the design records a default for each.
 **Inputs:** `archive/PictureBookV3Notes.md` (target architecture), `archive/PictureBookImageGenerationDesign.md`
-(current behaviour and gaps G-1…G-36; archived 2026-11-13, its banner maps each G-id to where it landed), `PictureBook2Plan.md` (workflow graph, §6 ComfyUI),
+(current behaviour and gaps G-1…G-36; archived 2026-11-13, its banner maps each G-id to where it landed), `archive/PictureBook2Plan.md` (workflow graph, §6 ComfyUI; archived 2026-11-14, its banner maps each section to where it landed),
 `archive/PictureBookWorkflowOverhaul.md`, `PictureBookAsyncJobDesign.md`, `archive/PictureBookSdConfigRefactor.md`.
 **Not available:** the SequenceDev document that the notes refer to is not in the repository.
 Where this design relies on SequenceDev (location library, background-first and sequential
@@ -1025,7 +1025,7 @@ behind it. `PbNodeExecutor` constructs `new SDUtil(SDAPIEnumType.SWARM, swarmSer
 `:188`, `:473`, `:563` and never references `SWUtil`; that constructor call is the seam
 `SwarmRendererAdapter` replaces.
 
-`PictureBook2Plan.md` §6's standalone Comfy client is not needed: Comfy is already reached through
+`archive/PictureBook2Plan.md` §6's standalone Comfy client is not needed: Comfy is already reached through
 Swarm.
 
 **Byte handling:** adapters return bytes. Persistence goes through `PbPipelineUtil.persistBytes` /
@@ -1302,6 +1302,25 @@ active jobs per principal **[verified 2026-10-09: `AsyncJobRegistry.java` `MAX_C
 - **Whether inpainting over a FLUX.2 output with an SDXL inpaint model keeps the style is unproven.**
   It is a Phase 5 spike with visual inspection (`feedback-visual-inspection-required`).
 
+**As built — "Regenerate background" (§24 I-8, 2026-11-14, implementation §6.C 304).** One node kind:
+the action re-runs the scene's existing RENDER_PLAN node (no new `PbNodeTypeEnumType`) as a
+`pb.regenerateBackground` job (`PbRenderJobUtil.KIND_REGENERATE_BACKGROUND`, forced, one variant, no gap
+fill, `PlanOptions.withBackgroundRegen(true)`), submitted by `PbServiceFacade.requestRegenerateBackground`
+→ `POST /{book}/scene/{scene}/regenerate-background` (202; the reader's "Regenerate background" button).
+The row's "LOCATION (new render)" is **not chained**: the location render + approve flow already exists
+and the scene re-render picks up whatever location is approved. "Actor regions re-run on the new base"
+is **seed reuse, not pixel copy**: `PbNodeExecutor.findBackgroundRegen` reads the node's selected
+`base` final and the `ACTOR_REGION#<actorId>` seeds of that attempt's stage artifacts; the ACTOR_REGION
+pass of the new attempt reuses each seed (`actorSeedsReused`; `actorSeedsNew` when an actor has none),
+while BASE stays `SEED_RANDOM`. A plan with no ACTOR_REGION pass (TEXT_ONLY / plain T2I BASE) still
+re-renders, reports `BACKGROUND_REGEN_NO_REGIONS` ("the actors were re-rendered with the background, not
+kept") and that degradation vetoes auto-approve. Refusals: no selected base → 409 "render it first";
+pinned node → 409 "Unpin it first" (the reader offers "Unpin and regenerate"); a non-RENDER_PLAN scene
+node → 409. Selection follows §10 rule 1 / rule 5: the new base arrives GENERATED (IN_REVIEW after a QA
+flag) and `selected` only when the previous selection was not APPROVED; over an APPROVED base it is
+written unselected for review and never displaces the approval. The outcome names
+`regeneratedFromArtifactObjectId`, `variantsPlanned`/`variantsRendered` (1) and `regenerate: "background"`.
+
 ### 23. Variants and retention
 
 - Variants are N artifacts on the terminal node from one attempt. They share `artifact.attempt`
@@ -1318,7 +1337,17 @@ active jobs per principal **[verified 2026-10-09: `AsyncJobRegistry.java` `MAX_C
   carries `VARIANT_SEED_UNKNOWN` (accepted by auto-approve). A later variant's failure does not fail
   the node: what rendered stands, the index gaps, and `VARIANT_FAILED` vetoes auto-approve. Only
   `variantIndex 0` is auto-selected (rule 1). ChapBook pages and LOCATION renders stay at 1 variant.
-  Implementation §6.C 212 (a)–(e).]**
+  Implementation §6.C 212 (a)–(e).]** **[2026-11-14 (§24 I-6), as built: the per-request override
+  exists — `olio.pictureBookRequest.variants` (integer) on `/scene/{id}/render`, `/scene/{id}/plan/render`
+  and `/render-all`, validated by `PbServiceFacade.validateVariants` to 1..the preset's `maxVariants`
+  (`qualityPresets.json`: DRAFT 4, STANDARD 6, FINAL 8) and refused with a 400 naming the range, never
+  clamped; the attempt DTO echoes it as `variantsOverride`. A `VARIANT_FAILED` hole no longer forces a
+  re-roll: a `force` re-run of a current (DONE / DONE_UNVERIFIED) node whose newest plan carries
+  `VARIANT_FAILED` keeps that attempt's surviving finals and renders only the missing `variantIndex`es
+  on the same attempt id (`PbNodeExecutor.findGapFill`; `resumedAttempt` / `filledVariantIndexes` on the
+  node result), seeded from variant 0's recorded seed; a differing override, a STALE / FAILED node or a
+  missing variant 0 starts a fresh attempt. Since §6.C 224 e `UPSCALE_NOT_RENDERED` is reported but does
+  not veto auto-approve. Implementation §6.C 302.]**
 - The variant strip shows the current attempt plus the approved artifact. Older attempts sit behind
   "History". **[2026-10-29 (P6-4), as built: the node detail panel's "Artifact Revisions" strip
   groups each role's chain by `attempt`, newest attempt first (by its highest revision), tiles
@@ -2659,7 +2688,7 @@ are as of 2026-10-09.
 | `e2e/pictureBookScenePromptUx.spec.js:18`; comments in `chat/SceneGenerator.js` :49-50, `workflows/pictureBook.js` :225-230, :2700, `workflows/sceneExtractor.js` :357, :364, :496 and their tests | comments | Reword |
 
 **Docs** mentioning Kontext (counts of lines): `KnownIssues.md` 34, this design 17,
-`archive/PictureBookSdConfigRefactor.md` 14, `PictureBook2Plan.md` 8, `PictureBookImageGenerationDesign.md`
+`archive/PictureBookSdConfigRefactor.md` 14, `archive/PictureBook2Plan.md` 8, `PictureBookImageGenerationDesign.md`
 5. History stays as history; only forward-looking text (§14, §16, G-21 in the gap doc) needs a
 "retired" note at the Disable stage.
 

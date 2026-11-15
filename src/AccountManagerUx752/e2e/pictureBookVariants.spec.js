@@ -124,7 +124,7 @@ async function findOrCreatePoem(request, orgId, poemsGroupId, name, title, text)
 }
 
 test.describe('PictureBook Variants — strip + retention (V3 P6-4)', () => {
-    test.describe.configure({ timeout: 150000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);

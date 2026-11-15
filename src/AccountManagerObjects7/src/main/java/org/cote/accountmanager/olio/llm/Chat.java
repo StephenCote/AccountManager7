@@ -224,6 +224,30 @@ public class Chat {
 	private static final ThreadLocal<Boolean> LAST_CALL_RUNAWAY = new ThreadLocal<>();
 
 	/**
+	 * The {@code finish_reason} the model server put on the LAST streamed choice of the most recent
+	 * buffer-mode call on THIS thread ({@code stop}, {@code length}, {@code content_filter}, ...), or
+	 * null when the stream ended without one (Ollama's native format, a torn-down exchange, or a call
+	 * that never got past the preamble). {@link #processStreamChunk} runs on the HttpClient worker that
+	 * completes the stream future — NOT on the calling thread — so it writes the reason into a per-call
+	 * holder ({@code finishReasonOut}) and {@link #chatInternal} publishes that into this ThreadLocal on
+	 * the calling thread after the buffer latch, next to {@code LAST_CALL_STALLED} / {@code LAST_CALL_RUNAWAY}
+	 * (the same hand-off {@code sawTerminator} / {@code runawayFired} use). The first UAT-5 fix set the
+	 * ThreadLocal inside the consumer; it passed under an emulator that completed inline and never fired
+	 * in Tomcat (ledger §6.C 313). Cleared at the start of every {@link #chatInternal}.
+	 *
+	 * <p>Why it exists (UAT-5, measured 2026-11-15 on the fan-out set through LiteLLM → Azure): the
+	 * provider's completion-side content filter withholds a completion the model already wrote — the
+	 * stream ends {@code finish_reason: content_filter} with the content empty or a {@code {"} fragment
+	 * while usage bills the full generation (1204 completion tokens). Before this field the only
+	 * evidence was the absence of content, which {@code PictureBookUtil.callLlmInternal} classified as
+	 * an infrastructure failure ("Null LLM response" → "the model did not finish within the request
+	 * timeout") or, for the fragment, as a successful reply with no scenes. Neither is what happened:
+	 * the model answered and the route declined to deliver it, which is a refusal — retryable with a
+	 * different model, never with the same one.
+	 */
+	private static final ThreadLocal<String> LAST_CALL_FINISH_REASON = new ThreadLocal<>();
+
+	/**
 	 * The reason the last buffer-mode call on this thread returned null — or, when the runaway
 	 * detector cut the reply short, why the returned content was truncated. Null if unknown.
 	 */
@@ -246,12 +270,23 @@ public class Chat {
 		return Boolean.TRUE.equals(LAST_CALL_STALLED.get());
 	}
 
+	/** The {@code finish_reason} of the last buffer-mode call on this thread, or null (see {@link #LAST_CALL_FINISH_REASON}). */
+	public static String getLastCallFinishReason() {
+		return LAST_CALL_FINISH_REASON.get();
+	}
+
+	/** True when the last buffer-mode call on this thread ended {@code finish_reason: content_filter} — the provider withheld the completion (see {@link #LAST_CALL_FINISH_REASON}). */
+	public static boolean isLastCallContentFiltered() {
+		return "content_filter".equalsIgnoreCase(LAST_CALL_FINISH_REASON.get());
+	}
+
 	/** Clear before issuing a call, so a stale reason from earlier work on a pooled thread is never read back. */
 	public static void clearLastCallError() {
 		LAST_CALL_ERROR.remove();
 		LAST_CALL_UNREACHABLE.remove();
 		LAST_CALL_STALLED.remove();
 		LAST_CALL_RUNAWAY.remove();
+		LAST_CALL_FINISH_REASON.remove();
 	}
 
 	/**
@@ -4322,6 +4357,8 @@ public class Chat {
 		lastMidStreamCheckLength = 0;
 		midStreamViolation = null;
 		thinkBlockOpen = false;
+		/// This call's finish_reason only — never a stale one from earlier work on a pooled thread.
+		LAST_CALL_FINISH_REASON.remove();
 
 		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);
 		String tokField = ChatUtil.getMaxTokenField(chatConfig, serviceType);
@@ -4595,6 +4632,9 @@ public class Chat {
 		/// reason so the completion stage can report it without recomputing anything.
 		final boolean[] runawayFired = new boolean[] { false };
 		final String[] runawayMsg = new String[] { null };
+		/// finish_reason of the last streamed choice, written by the consumer (worker thread) and
+		/// published into LAST_CALL_FINISH_REASON by THIS thread after the latch — see that field.
+		final String[] finishReasonOut = new String[] { null };
 		final long callStartMs = System.currentTimeMillis();
 		logger.info(ser);
 		/// Tier B (LiteLLM/Langfuse) tracing — per-call header-injection hook (Guardrail 1).
@@ -4788,7 +4828,7 @@ public class Chat {
 						String line = streamIt.next();
 						lineCount++;
 						streamIdleWatchdog.touch(streamId);
-						boolean done = processStreamChunk(line, req, aresp, forwardToClient);
+						boolean done = processStreamChunk(line, req, aresp, forwardToClient, finishReasonOut);
 						if (done) { sawTerminator[0] = true; break; }
 						if (runaway != null) {
 							BaseRecord rmsg = aresp.get("message");
@@ -4970,6 +5010,7 @@ public class Chat {
 				LAST_CALL_UNREACHABLE.set(bufferUnreachable[0]);
 				LAST_CALL_STALLED.set(idleFired[0] || runawayFired[0]);
 				LAST_CALL_RUNAWAY.set(runawayFired[0]);
+				LAST_CALL_FINISH_REASON.set(finishReasonOut[0]);
 				if (listener != null) {
 					listener.onerror(user, req, aresp, bufferError[0]);
 				}
@@ -4985,6 +5026,7 @@ public class Chat {
 			boolean truncated = bufferResult[0] != null && !sawTerminator[0] && !stoppedByListener[0];
 			LAST_CALL_STALLED.set(truncated);
 			LAST_CALL_RUNAWAY.set(runawayFired[0]);
+			LAST_CALL_FINISH_REASON.set(finishReasonOut[0]);
 			if (runawayFired[0]) {
 				setLastCallError(runawayMsg[0]);
 			}
@@ -4994,7 +5036,8 @@ public class Chat {
 					+ (runawayFired[0] ? " (runaway detector fired)" : ""));
 			}
 			logger.info("[DIAG] chat() buffer mode: returning result=" + (bufferResult[0] != null ? "present" : "null")
-				+ " message=" + (bufMsg != null ? "present" : "null"));
+				+ " message=" + (bufMsg != null ? "present" : "null")
+				+ " finishReason=" + (finishReasonOut[0] != null ? finishReasonOut[0] : "none"));
 			/// Emulator RECORDER (fixture capture). Only when the deployment set llm.emulator.recordDir,
 			/// and never for the emulator's own answers (replaying a synthesized answer into a fixture
 			/// would launder it into "recorded truth"). The content captured is the RAW assistant text
@@ -5031,7 +5074,9 @@ public class Chat {
 		}
 	}
 
-	private boolean processStreamChunk(String line, OpenAIRequest req, OpenAIResponse aresp, boolean forwardToClient) {
+	/// finishReasonOut: per-call holder for the choice's finish_reason (this runs on the stream worker,
+	/// so a ThreadLocal write here would be invisible to the caller — see LAST_CALL_FINISH_REASON).
+	private boolean processStreamChunk(String line, OpenAIRequest req, OpenAIResponse aresp, boolean forwardToClient, String[] finishReasonOut) {
 		if (line == null || line.isEmpty()) {
 			return false;
 		}
@@ -5128,6 +5173,17 @@ public class Chat {
 				}
 				String finishReason = choice.get("finish_reason");
 				if (finishReason != null && !finishReason.isEmpty()) {
+					if (finishReasonOut != null) {
+						finishReasonOut[0] = finishReason;
+					}
+					if (!"stop".equalsIgnoreCase(finishReason)) {
+						BaseRecord amsg = aresp.get("message");
+						String got = (amsg != null) ? amsg.get("content") : null;
+						int gotLen = (got != null) ? got.length() : 0;
+						/// UAT-5: a non-stop finish is the only evidence the stream carries that the content is
+						/// not the model's answer (content_filter: withheld; length: cut at max_tokens). Name it.
+						logger.warn("Stream finished with finish_reason=" + finishReason + " (" + gotLen + " chars of content received)");
+					}
 					return true;
 				}
 			}

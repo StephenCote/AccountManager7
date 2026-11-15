@@ -633,6 +633,31 @@ public class PbBookUtil {
 	}
 
 	/**
+	 * Whether ANY book in the organization has {@code objectId}, whoever can read it (§24 U-6, security review of
+	 * I-5): the existence half of {@link #isSlugTaken}, same shape - a read AS THE OLIO PRINCIPAL, still through
+	 * {@code AccessPoint}, identity fields only, boolean out.
+	 * <p>
+	 * Write-path only. {@link PbMigrationUtil#linkV1MetaToBook} uses it to tell a PB1 meta note whose
+	 * {@code pb2BookObjectId} names a book the importer merely cannot see (another user's: leave it, warn) from one
+	 * naming no book at all (relink). It discloses nothing the relink would not: the caller already holds the
+	 * objectId and learns only that it is, or is not, a book in the organization.
+	 */
+	public static boolean bookExists(String objectId, long organizationId) {
+		if(objectId == null) {
+			return false;
+		}
+		BaseRecord olio = IOSystem.getActiveContext().getFactory().findUser(OlioContext.OLIO_USER_NAME, organizationId);
+		if(olio == null) {
+			return false;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID});
+		q.setCache(false);
+		return IOSystem.getActiveContext().getAccessPoint().find(olio, q) != null;
+	}
+
+	/**
 	 * The slug pre-flight every book creation and rename runs (§24 I-5 / 218 c): a 409 naming the book when the
 	 * caller can read the one that holds the slug, and a 409 saying the slug is held by a book the caller cannot
 	 * see when it is another user's ({@link #isSlugTaken}). The second message discloses nothing the unique
@@ -672,6 +697,23 @@ public class PbBookUtil {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 		return authorizedFind(user, q);
+	}
+
+	/**
+	 * {@link #readBook} keyed by the book's numeric {@code id} instead of its {@code objectId}: the same
+	 * authorizing read ({@link #bookAuthorizingRequest()} projection, uncached, through {@code AccessPoint})
+	 * followed by the same raw linkage population. For callers holding a bare FK that carries {@code id} but
+	 * not {@code objectId} (a scene's {@code book} FK as a default projection materialises it - see
+	 * {@code ChapBookUtil.resolveSceneBook}). Returns null when there is no such book in the organization or
+	 * {@code user} may not read its row.
+	 */
+	public static BaseRecord readBookById(BaseRecord user, long id, long organizationId) {
+		if(user == null || id <= 0L) {
+			return null;
+		}
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_ID, id);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+		return populateBookLinkage(authorizedFind(user, q));
 	}
 
 	/** Uncached {@code AccessPoint.find} of ONE book with the authorizing projection. */
@@ -1393,8 +1435,8 @@ public class PbBookUtil {
 
 	/**
 	 * Name of the {@code olio.sd.config} row that backs {@code olio.pb.book.sdConfig}. One row per book,
-	 * in the book group. Same literal PB1's {@code PictureBookUtil.persistBookSdConfigFk} writes, so a
-	 * PB1-saved config and a V3-saved one are the same row.
+	 * in the book group. Same literal PB1's {@code PictureBookUtil.persistBookSdConfigFk} wrote (deleted
+	 * 2026-11-14, §24 C-1), so a PB1-saved config and a V3-saved one are the same row.
 	 */
 	public static final String BOOK_SD_CONFIG_NAME = "book-sdConfig";
 
@@ -1633,12 +1675,32 @@ public class PbBookUtil {
 	}
 
 	/**
-	 * The book record's derived name. Includes the slug, which is unique per organization, so the unique
-	 * {@code (name, groupId, organizationId)} index cannot be tripped by two books sharing a title.
+	 * The book record's name: the title the caller passed, trimmed, or {@code Book <slug>} when no title was
+	 * given (KI-90, §24 I-9, 2026-11-14 - until then the name was always {@code Book <slug>} and the title
+	 * lived only in {@code description}, so every reader header and cover showed the slug). Two books sharing
+	 * a title cannot trip the unique {@code (name, groupId, organizationId)} index because each book row lives
+	 * in its own group, {@link #bookGroupPath(String)} ({@code .../Worlds/<slug>/Book}); the urn is unique for
+	 * the same reason (it carries the group path). The title is still copied to {@code description} by
+	 * {@code writeBookRow}, so the DTO's {@code title} is unchanged. A title longer than
+	 * {@link #MAX_BOOK_NAME_LENGTH} is cut to fit rather than failing the write (the full title still lands
+	 * in {@code description}, whose cap is 512): the binding limit is not {@code common.name}'s 256 but the
+	 * {@code urn} column's 255, because {@code UrnProvider} appends the normalized name to
+	 * {@code am6:olio.pb.book:<org path>:olio.universes.books.worlds.<slug>.book:} - 17 + org path + 1 + 28
+	 * + slug (at most 64, {@code BOOK_SLUG_PATTERN}) + 5 + 1 = 116 + org path characters before the name -
+	 * so 96 leaves room for an organization path of up to 43 characters at the longest slug. Measured
+	 * 2026-11-14: a 256-character name was refused by Postgres with "value too long for type character
+	 * varying(255)" on the urn (TestPbNewBookRender.case00).
 	 */
 	public static String bookName(String slug, String title) {
+		if(title != null && !title.isBlank()) {
+			String t = title.trim();
+			return (t.length() > MAX_BOOK_NAME_LENGTH ? t.substring(0, MAX_BOOK_NAME_LENGTH).trim() : t);
+		}
 		return "Book " + slug;
 	}
+
+	/// The longest title bookName() keeps as the record name; see its javadoc for the urn arithmetic.
+	public static final int MAX_BOOK_NAME_LENGTH = 96;
 
 	/** {@code Scene <slug> <index>} - unique within the book group. */
 	public static String sceneName(BaseRecord book, int sceneIndex) {

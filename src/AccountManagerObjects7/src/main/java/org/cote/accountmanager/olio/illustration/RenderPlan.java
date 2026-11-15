@@ -175,6 +175,13 @@ public final class RenderPlan {
 		return stage + "#" + actorId;
 	}
 
+	/// The prefix every per-actor key of a stage shares ("ACTOR_REGION#"); the actor id is what follows it.
+	/// §24 I-8: the one place the separator lives, so a seed lookup that strips the prefix from a stage
+	/// label recovers the bare actor id (`actorStageKey(stage, "")` returns the stage alone, without `#`).
+	public static String actorStagePrefix(String stage) {
+		return stage + "#";
+	}
+
 	/// The prompt compiled for one actor's pass of a stage (P5-2: ACTOR_REGION#<actorId>), or null when
 	/// none was compiled for that actor.
 	public CompiledPrompt compiledForActor(String stage, String actorId) {
@@ -1616,12 +1623,22 @@ public final class RenderPlan {
 		/// the band as the flat padding the pass would have painted over. The band is still clear of figures - BASE
 		/// rendered on the figure canvas - but the image is not finished: vetoes auto-approve.
 		public static final String TITLE_BAND_FAILED = "TITLE_BAND_FAILED";
+		/// §22 (§24 I-8): a background-only regenerate was asked for, but the plan runs no ACTOR_REGION pass (the
+		/// strategy has none, or the scene has no region actors), so "keep the actors" could not be honoured: the
+		/// whole scene re-rendered with a new seed, actors included. Vetoes auto-approve - the user asked for one
+		/// thing and got another, and must look.
+		public static final String BACKGROUND_REGEN_NO_REGIONS = "BACKGROUND_REGEN_NO_REGIONS";
+		/// §22 (§24 I-8): during a background-only regenerate, this actor's ACTOR_REGION pass rendered with a fresh
+		/// seed because the selected final (or its stage artifacts) carried no reusable seed for the actor - a
+		/// pre-I-8 render with no stage labels, or an actor added to the scene since. The actor still renders from
+		/// its portrait reference on the new base; it is the same character, not the same pixels. Accepted.
+		public static final String ACTOR_SEED_NEW = "ACTOR_SEED_NEW";
 
 		/// Every code a plan can carry. Consumers that classify a degradation string by its prefix
 		/// (PbArtifactUtil.autoApprove) treat anything outside this set as free-form and do not waive it.
 		public static final Set<String> CODES = Set.of(ACTOR_TEXT_ONLY, ACTOR_UNRESOLVED, ACTOR_FAILED, LOCATION_TEXT_ONLY,
 			MODEL_SUBSTITUTED, PROMPT_TRUNCATED, QA_WARN, QA_FAIL, QA_UNAVAILABLE, COMPOSED_OUT_OF_ORDER, VARIANT_FAILED,
-			VARIANT_SEED_UNKNOWN, UPSCALE_NOT_RENDERED, TITLE_BAND_FAILED);
+			VARIANT_SEED_UNKNOWN, UPSCALE_NOT_RENDERED, TITLE_BAND_FAILED, BACKGROUND_REGEN_NO_REGIONS, ACTOR_SEED_NEW);
 
 		public static boolean isKnownCode(String code) {
 			return code != null && CODES.contains(code);

@@ -113,7 +113,7 @@ public class OlioContextConfiguration {
 	 * Optional per-context user role. When BOTH this and {@link #getAuthorizationAdminRole()} are
 	 * non-null, {@code OlioContext.initialize()} grants against this pair instead of the org-wide
 	 * {@code ~/Roles/Olio User} / {@code ~/Roles/Olio Admin} pair, and the role-less entry points
-	 * ({@code enroleReader}, {@code enroleAdmin}, {@code scanNestedGroups}) resolve this pair first.
+	 * ({@code enroleReader}, {@code scanNestedGroups}) resolve this pair first.
 	 * Null (the default) reproduces today's org-wide behaviour exactly.
 	 */
 	public BaseRecord getAuthorizationUserRole() {
@@ -156,7 +156,7 @@ public class OlioContextConfiguration {
 	 * {@code initialize()} throws instead.
 	 * <p>
 	 * <b>This pair is never a fallback for the world tier.</b> {@code OlioContext}'s role-less entry
-	 * points ({@code enroleReader}, {@code enroleAdmin}, {@code scanNestedGroups}) resolve the WORLD pair
+	 * points ({@code enroleReader}, {@code scanNestedGroups}) resolve the WORLD pair
 	 * only. A universe role must never end up holding CRUD on a book's own groups.
 	 */
 	public BaseRecord getUniverseAuthorizationUserRole() {

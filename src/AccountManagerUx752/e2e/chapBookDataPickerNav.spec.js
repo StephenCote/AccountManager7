@@ -52,7 +52,7 @@ function sharedLoginBody() {
 }
 
 test.describe('ChapBook "Add from Data" sub-group nav + bg opacity', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);

@@ -38,7 +38,7 @@ import {
     bookHealth, healBook, orgHealth, healOrg, summarizeHealth,
     listOrphans, purgeOrphans, countOrphans,
     workflowView, nodeView, loadNodePlan, degradationSummary,
-    renderScene, renderAll, getRun, resumeRun, cancelRun,
+    renderScene, regenerateSceneBackground, renderAll, getRun, resumeRun, cancelRun,
     getAutoApprove, setAutoApprove, unpinNode, isPinnedRefusal,
     planScene, renderPlanScene, normalizePlan, STYLE_QUALITY_PRESETS,
     deriveStageList, runSummaryText, resolvePb2BookObjectId,
@@ -1569,6 +1569,54 @@ async function pb2SubmitRenderScene(pg) {
     }
 }
 
+/**
+ * §24 I-8 (design §22): background-only regenerate of one scene. The scene's selected image is re-rendered
+ * with a new background while each actor's region pass re-runs with the seed it had, so the actors come
+ * back as they were (one variant, always forced — there is no force flag to send). Same refusal handling
+ * as a per-scene render: a pinned 409 is shown verbatim with an explicit "Unpin and regenerate" (only that
+ * confirmation sends pin {pinned:false} and re-submits); the route's own 409s ("render it first", "not a
+ * RENDER_PLAN node") and every other non-2xx are toasted verbatim. Never silently unpins.
+ */
+async function pb2SubmitRegenBackground(pg) {
+    if (!pb2BookObjectId || !pg || !pg.objectId || pb2Submitting) return;
+    pb2Submitting = true;
+    m.redraw();
+    let bookId = pb2BookObjectId;
+    let label = 'Regenerate background ' + (pg.sceneIndex != null ? pg.sceneIndex : '');
+    try {
+        let submit = await regenerateSceneBackground(bookId, pg.objectId, withChatConfig({}, pb2ChatConfig));
+        pb2Submitting = false;
+        pb2WatchJob(submit, label);
+        return;
+    } catch (e) {
+        pb2Submitting = false;
+        if (!(isPinnedRefusal(e) && pg.sceneNodeObjectId)) {
+            page.toast('error', (e && e.message) || 'Regenerate failed');
+            m.redraw();
+            return;
+        }
+        m.redraw();
+        let ok = await Dialog.confirm({
+            title: 'Scene is pinned',
+            message: (e.message || '') + ' — Unpin this scene\'s node and regenerate its background? The pinned image stays in the artifact history.',
+            confirmLabel: 'Unpin and regenerate', confirmIcon: 'push_pin'
+        });
+        if (!ok || bookId !== pb2BookObjectId) return;
+        pb2Submitting = true;
+        m.redraw();
+        try {
+            await unpinNode(bookId, pg.sceneNodeObjectId);
+            let submit = await regenerateSceneBackground(bookId, pg.objectId, withChatConfig({}, pb2ChatConfig));
+            pb2Submitting = false;
+            pb2WatchJob(submit, label);
+        } catch (e2) {
+            pb2Submitting = false;
+            page.toast('error', (e2 && e2.message) || 'Regenerate failed');
+            m.redraw();
+        }
+    }
+}
+
 async function pb2ResumeInterrupted() {
     let run = pb2ResumeRun;
     if (!pb2BookObjectId || !run || !run.runObjectId || pb2Submitting) return;
@@ -1903,7 +1951,8 @@ export function __setPb2V3StateForTest(patch) {
     if ('pb2Exporting' in patch) pb2Exporting = !!patch.pb2Exporting;
     if ('pb2Covers' in patch) pb2Covers = patch.pb2Covers || null;
 }
-export { pb2SubmitRenderScene as __pb2SubmitRenderSceneForTest, pb2SubmitRenderAll as __pb2SubmitRenderAllForTest,
+export { pb2SubmitRenderScene as __pb2SubmitRenderSceneForTest, pb2SubmitRegenBackground as __pb2SubmitRegenBackgroundForTest,
+    pb2SubmitRenderAll as __pb2SubmitRenderAllForTest,
     pb2ResumeInterrupted as __pb2ResumeInterruptedForTest, pb2ReattachRun as __pb2ReattachRunForTest,
     pb2ToggleAutoApprove as __pb2ToggleAutoApproveForTest, pb2StopWatching as __pb2StopWatchingForTest,
     pb2OnKeyDown as __pb2OnKeyDownForTest, pb2ExportBook as __pb2ExportBookForTest, pb2PageReaderView as __pb2PageReaderViewForTest };
@@ -2350,6 +2399,15 @@ export function renderPb2ScenePage() {
                 title: watching ? 'A render is already running' : (chip === 'stale' ? 'Re-render this scene' : 'Render this scene'),
                 onclick: function () { pb2SubmitRenderScene(scene); }
             }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'brush'), chip === 'stale' || imgUrl ? 'Re-render' : 'Render']),
+            // §24 I-8: background-only regenerate — only offered when the scene has an image to regenerate the background of
+            // (the server's 409 "render it first" is the gate for an unrendered scene; the button simply is not drawn).
+            imgUrl ? m('button', {
+                'data-testid': 'pb2-scene-regen-background',
+                class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
+                disabled: pb2Submitting || watching,
+                title: watching ? 'A render is already running' : 'Re-render the background only; each actor keeps the seed it was rendered with',
+                onclick: function () { pb2SubmitRegenBackground(scene); }
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'landscape'), 'Regenerate background']) : null,
             m('button', {
                 'data-testid': 'pb2-plan-render',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',

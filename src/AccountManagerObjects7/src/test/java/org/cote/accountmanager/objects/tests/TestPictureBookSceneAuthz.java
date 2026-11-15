@@ -31,7 +31,7 @@ import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 /**
- * Coverage for the two live PictureBook authorization defects hoisted out of PictureBook2Plan.md
+ * Coverage for the two live PictureBook authorization defects hoisted out of archive/PictureBook2Plan.md
  * phase 4 (plan §5.6, Appendix A "Hoist out of phase 4"):
  *
  * <ol>

@@ -93,7 +93,7 @@ async function loginAsSharedUser(page) {
 }
 
 test.describe('ChapBook — per-scene landscape-prompt review', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     let orgId = null;
     let poemsGroupId = null;

@@ -54,6 +54,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbModelTaskEnumType;
+import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbQualityPresetEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
@@ -112,6 +113,16 @@ import org.junit.Test;
  *     book's style on STANDARD -> the job's node outcome carries {@code variants[]} and both artifacts
  *     share the job's run as their attempt.</li>
  * </ol>
+ * <p>
+ * §24 I-6 (212 e): the {@code variants} override and the gap fill - {@link #runHonoursVariantsOverride},
+ * {@link #variantsOverrideOutOfRangeIs400}, {@link #runFillsVariantFailedGapOnSameAttempt},
+ * {@link #differingVariantsOverrideStartsFreshAttemptNotFill}.
+ * <p>
+ * §24 I-8 (design §22, 219 e): the background-only regenerate - {@link #backgroundRegenReusesActorRegionSeed}
+ * (SEQUENTIAL_INPAINT: fresh BASE, actor pass re-run on the recorded seed, new final supersedes the old),
+ * {@link #backgroundRegenWithoutSelectedRenderIs409}, {@link #backgroundRegenPreI8FinalReportsActorSeedNew}
+ * (no label on record -> {@code ACTOR_SEED_NEW}, accepted) and {@link #jobRegeneratesBackgroundOfTextOnlyScene}
+ * (the {@code pb.regenerateBackground} job on a plain T2I node -> {@code BACKGROUND_REGEN_NO_REGIONS}, auto-approve vetoed).
  */
 public class TestPbRenderStagesOffline extends BaseTest {
 
@@ -173,6 +184,12 @@ public class TestPbRenderStagesOffline extends BaseTest {
 	private static int intOf(Object v) {
 		assertTrue("a number, got " + v, v instanceof Number);
 		return ((Number) v).intValue();
+	}
+
+	/// A list that is empty on the wire: JSONUtil.exportObject (Include.NON_EMPTY) drops empty lists, so a
+	/// wire-read map has the key absent (null) or, when a serializer kept it, an empty list.
+	private static boolean emptyOnTheWire(Object v) {
+		return v == null || (v instanceof List && ((List<?>) v).isEmpty());
 	}
 
 	// ─────────────────────────────── scripted renderer ───────────────────────────────
@@ -1071,6 +1088,560 @@ public class TestPbRenderStagesOffline extends BaseTest {
 			assertFalse("variant 1 not selected", selected(bases.get(1)));
 			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(bases.get(0)));
 			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(bases.get(1)));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	// ─────────────────────────────── §24 I-6: variants override + gap resume ───────────────────────────────
+
+	/// §24 I-6 (212 c): a request `variants` of 3 over STANDARD (whose own count is 2) renders three finals of one
+	/// attempt - the override replaces the preset's count on the plan, and the later variants still derive their
+	/// seeds from variant 0's reported seed.
+	@Test
+	public void runHonoursVariantsOverride() throws Exception {
+		logger.info("runHonoursVariantsOverride");
+		Fixture f = null;
+		try {
+			f = fixture("p66ov");
+			prepareRun(f, "ovr", null);
+			byte[] png0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] png1 = MaskImage.solid(W, H, new Color(60, 90, 120));
+			byte[] png2 = MaskImage.solid(W, H, new Color(120, 60, 90));
+			ScriptedAdapter adapter = new ScriptedAdapter().answer(ok(png0, 7101, 800), ok(png1, 7102, 700), ok(png2, 7103, 650));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+
+			Map<String, Object> out = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, f.node, f.sdu,
+				new PlanOptions(null, false, PbQualityPresetEnumType.STANDARD, null, null, Integer.valueOf(3)), null, backend(adapter, client));
+			assertNotNull("run DTO", out);
+			assertEquals("run status", PbRunStatusEnumType.COMPLETED.toString(), status(out.get("runStatus")));
+			String runOid = (String) out.get("runObjectId");
+			assertNotNull("run objectId", runOid);
+			assertEquals("the override replaces STANDARD's 2", 3, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)));
+			assertEquals(3, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			assertNull("an ordinary attempt resumes nothing", out.get(PbNodeExecutor.KEY_RESUMED_ATTEMPT));
+			assertEquals("requests sent", 3, adapter.requests.size());
+			assertEquals(StageRequest.SEED_RANDOM, adapter.requests.get(0).getSeed());
+			assertEquals(PbNodeExecutor.variantSeed(7101, 1), adapter.requests.get(1).getSeed());
+			assertEquals(PbNodeExecutor.variantSeed(7101, 2), adapter.requests.get(2).getSeed());
+
+			/// The persisted plan carries the overridden count, so a later gap fill knows what this attempt planned.
+			List<BaseRecord> plans = PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_PLAN);
+			assertEquals("plan artifacts", 1, plans.size());
+			RenderPlan persisted = PbRenderPlanUtil.readPlanArtifact(PbArtifactUtil.readArtifact(f.owner, oidOf(plans.get(0)), orgOf(f.owner)));
+			assertNotNull("persisted plan", persisted);
+			assertEquals("plan preset variants", 3, persisted.getPreset().getVariants());
+
+			List<?> variants = (List<?>) out.get(PbNodeExecutor.KEY_VARIANTS);
+			assertEquals("variants", 3, variants.size());
+			List<BaseRecord> bases = baseArtifacts(f);
+			assertEquals("base artifacts", 3, bases.size());
+			for(int i = 0; i < 3; i++) {
+				assertEquals(i, PbArtifactUtil.variantIndexOf(bases.get(i)));
+				assertEquals("variant " + i + " attempt is the run", runOid, PbArtifactUtil.attemptOf(bases.get(i)));
+				assertEquals("only variant 0 selected", i == 0, selected(bases.get(i)));
+			}
+			assertEquals(Boolean.TRUE, out.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(bases.get(0)));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// §24 I-6 (212 c): the facade's range check - 1..maxVariants of the preset the attempt renders with, else a
+	/// 400 naming the range, the preset and the value; never clamped. The ceilings are qualityPresets.json's
+	/// (DRAFT 4, STANDARD 6, FINAL 8); null is "no override".
+	@Test
+	public void variantsOverrideOutOfRangeIs400() throws Exception {
+		logger.info("variantsOverrideOutOfRangeIs400");
+		Fixture f = null;
+		try {
+			f = fixture("p66rg");
+			BaseRecord book = PbBookUtil.readBook(f.owner, f.bookOid, orgOf(f.owner));
+			assertNotNull("book", book);
+			assertNull("null is no override", PbServiceFacade.validateVariants(f.owner, book, PbQualityPresetEnumType.STANDARD, null));
+			assertEquals(Integer.valueOf(1), PbServiceFacade.validateVariants(f.owner, book, PbQualityPresetEnumType.STANDARD, Integer.valueOf(1)));
+			assertEquals(Integer.valueOf(6), PbServiceFacade.validateVariants(f.owner, book, PbQualityPresetEnumType.STANDARD, Integer.valueOf(6)));
+			assertEquals(Integer.valueOf(8), PbServiceFacade.validateVariants(f.owner, book, PbQualityPresetEnumType.FINAL, Integer.valueOf(8)));
+			assertEquals(Integer.valueOf(4), PbServiceFacade.validateVariants(f.owner, book, PbQualityPresetEnumType.DRAFT, Integer.valueOf(4)));
+			assertVariants400(book, f.owner, PbQualityPresetEnumType.STANDARD, 7, "variants must be an integer from 1 to 6 for preset STANDARD; got 7");
+			assertVariants400(book, f.owner, PbQualityPresetEnumType.STANDARD, 0, "variants must be an integer from 1 to 6 for preset STANDARD; got 0");
+			assertVariants400(book, f.owner, PbQualityPresetEnumType.STANDARD, -2, "variants must be an integer from 1 to 6 for preset STANDARD; got -2");
+			assertVariants400(book, f.owner, PbQualityPresetEnumType.FINAL, 9, "variants must be an integer from 1 to 8 for preset FINAL; got 9");
+			assertVariants400(book, f.owner, PbQualityPresetEnumType.DRAFT, 5, "variants must be an integer from 1 to 4 for preset DRAFT; got 5");
+			/// No preset override: the book's own effective preset (no style here, so the default) still bounds it.
+			QualityPresets.Preset effective = PbRenderPlanUtil.effectivePreset(f.owner, book, PlanOptions.NONE);
+			assertNotNull("effective preset", effective);
+			assertVariants400(book, f.owner, null, effective.getMaxVariants() + 1, "variants must be an integer from 1 to "
+				+ effective.getMaxVariants() + " for preset " + effective.getName().name() + "; got " + (effective.getMaxVariants() + 1));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	private static void assertVariants400(BaseRecord book, BaseRecord owner, PbQualityPresetEnumType preset, int variants, String message) {
+		try {
+			Integer v = PbServiceFacade.validateVariants(owner, book, preset, Integer.valueOf(variants));
+			fail("variants " + variants + " over " + preset + " must be refused, got " + v);
+		}
+		catch(PictureBookException e) {
+			assertEquals("status for variants " + variants, 400, e.getStatus());
+			assertEquals("message for variants " + variants, message, e.getMessage());
+		}
+	}
+
+	/// §24 I-6 (212 e): an attempt of 3 whose middle variant failed leaves variantIndex 1 empty and VARIANT_FAILED
+	/// vetoing auto-approve. The next run of the same (still current, unpinned) node fills exactly that index under
+	/// the SAME attempt with the seed the attempt would have used, keeps the two surviving finals, reports the whole
+	/// attempt (kept + filled) and - the fill's plan carrying no VARIANT_FAILED - auto-approves variant 0. A third
+	/// run finds no gap and starts a fresh attempt.
+	@Test
+	public void runFillsVariantFailedGapOnSameAttempt() throws Exception {
+		logger.info("runFillsVariantFailedGapOnSameAttempt");
+		Fixture f = null;
+		try {
+			f = fixture("p66gf");
+			prepareRun(f, "gap", null);
+			long orgId = orgOf(f.owner);
+			PlanOptions three = new PlanOptions(null, false, PbQualityPresetEnumType.STANDARD, null, null, Integer.valueOf(3));
+			byte[] png0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] png2 = MaskImage.solid(W, H, new Color(120, 60, 90));
+			ScriptedAdapter first = new ScriptedAdapter().answer(ok(png0, 7201, 800),
+				StageResult.failed(RendererAdapter.ERROR_UNREACHABLE, 5, "{\"offline\":true}"), ok(png2, 7203, 650));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+
+			/// Attempt 1: 3 planned, variant 1 fails, 2 kept, auto-approve vetoed, node current (DONE_UNVERIFIED).
+			Map<String, Object> out1 = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, f.node, f.sdu, three, null, backend(first, client));
+			assertEquals("run 1 status", PbRunStatusEnumType.COMPLETED.toString(), status(out1.get("runStatus")));
+			String attempt1 = (String) out1.get("runObjectId");
+			assertNotNull("run 1 objectId", attempt1);
+			assertEquals("requests sent by run 1", 3, first.requests.size());
+			assertEquals(3, intOf(out1.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)));
+			assertEquals(2, intOf(out1.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			assertNull("run 1 is not a fill", out1.get(PbNodeExecutor.KEY_RESUMED_ATTEMPT));
+			assertFalse("VARIANT_FAILED vetoes auto-approve on run 1",
+				PbArtifactUtil.vetoingDegradations(PbNodeExecutor.degradationsOf(out1)).isEmpty());
+			assertNotEquals("run 1 is not auto-approved", Boolean.TRUE, out1.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			List<BaseRecord> bases1 = baseArtifacts(f);
+			assertEquals("base artifacts after run 1", 2, bases1.size());
+			assertEquals(0, PbArtifactUtil.variantIndexOf(bases1.get(0)));
+			assertEquals("the gap is kept, not renumbered", 2, PbArtifactUtil.variantIndexOf(bases1.get(1)));
+			assertEquals(Long.valueOf(7201), bases1.get(0).get(OlioFieldNames.FIELD_PB_SEED));
+			assertTrue("variant 0 selected", selected(bases1.get(0)));
+			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(bases1.get(0)));
+			String v0Oid = oidOf(bases1.get(0));
+			String v2Oid = oidOf(bases1.get(1));
+			BaseRecord node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
+			assertEquals("node current after run 1", PbNodeStatusEnumType.DONE_UNVERIFIED, node.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS));
+			assertNotEquals("run 1 did not pin the node", Boolean.TRUE, node.get(OlioFieldNames.FIELD_PB_PINNED));
+
+			/// Attempt 1 resumed: the same options on the re-read node render exactly variant 1 with attempt 1's seed.
+			byte[] png1 = MaskImage.solid(W, H, new Color(60, 90, 120));
+			ScriptedAdapter second = new ScriptedAdapter().answer(ok(png1, 7202, 700));
+			Map<String, Object> out2 = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, node, f.sdu, three, null, backend(second, client));
+			assertEquals("run 2 status", PbRunStatusEnumType.COMPLETED.toString(), status(out2.get("runStatus")));
+			String run2 = (String) out2.get("runObjectId");
+			assertNotNull("run 2 objectId", run2);
+			assertNotEquals("run 2 is its own run", attempt1, run2);
+			assertEquals("exactly the gap is rendered", 1, second.requests.size());
+			assertEquals("the fill takes attempt 1's derived seed", PbNodeExecutor.variantSeed(7201, 1), second.requests.get(0).getSeed());
+			assertEquals("the fill resumes attempt 1", attempt1, out2.get(PbNodeExecutor.KEY_RESUMED_ATTEMPT));
+			assertEquals("filled indexes", List.of(Integer.valueOf(1)), out2.get(PbNodeExecutor.KEY_FILLED_VARIANT_INDEXES));
+			assertEquals("planned is what attempt 1 planned", 3, intOf(out2.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)));
+			assertEquals("rendered is the whole attempt", 3, intOf(out2.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			List<String> deg2 = PbNodeExecutor.degradationsOf(out2);
+			assertTrue("the fill's plan carries no VARIANT_FAILED: " + deg2, PbArtifactUtil.vetoingDegradations(deg2).isEmpty());
+			assertFalse("CANONICAL judges nothing on a fill, so no QA_UNAVAILABLE either: " + deg2,
+				String.join("|", deg2).contains(RenderPlan.Degradation.QA_UNAVAILABLE));
+			assertEquals("the mode still orders the kept verdicts", QualityPresets.QA_CANONICAL, out2.get(PbNodeExecutor.KEY_QA_MODE));
+
+			/// The DTO describes attempt 1 as a whole: kept 0 and 2 around the filled 1, headline = kept variant 0.
+			List<?> variants = (List<?>) out2.get(PbNodeExecutor.KEY_VARIANTS);
+			assertEquals("variants", 3, variants.size());
+			Map<?, ?> d0 = (Map<?, ?>) variants.get(0);
+			Map<?, ?> d1 = (Map<?, ?>) variants.get(1);
+			Map<?, ?> d2 = (Map<?, ?>) variants.get(2);
+			assertEquals(0, intOf(d0.get("variantIndex")));
+			assertEquals(1, intOf(d1.get("variantIndex")));
+			assertEquals(2, intOf(d2.get("variantIndex")));
+			assertEquals(Boolean.TRUE, d0.get("kept"));
+			assertEquals(Boolean.FALSE, d1.get("kept"));
+			assertEquals(Boolean.TRUE, d2.get("kept"));
+			assertEquals("kept variant 0 is attempt 1's", v0Oid, d0.get("artifactObjectId"));
+			assertEquals("kept variant 2 is attempt 1's", v2Oid, d2.get("artifactObjectId"));
+			assertEquals("the DTO's artifact is the kept variant 0", v0Oid, out2.get("artifactObjectId"));
+			assertEquals(Boolean.TRUE, d0.get("selected"));
+			assertEquals(Boolean.FALSE, d1.get("selected"));
+			assertEquals(Boolean.FALSE, d2.get("selected"));
+
+			/// On the database: three finals of attempt 1, the fill at index 1 under attempt 1 (not run 2), unselected,
+			/// and variant 0 now auto-approved by the fill's clean attempt.
+			List<BaseRecord> bases2 = baseArtifacts(f);
+			assertEquals("base artifacts after the fill", 3, bases2.size());
+			for(int i = 0; i < 3; i++) {
+				assertEquals(i, PbArtifactUtil.variantIndexOf(bases2.get(i)));
+				assertEquals("variant " + i + " belongs to attempt 1", attempt1, PbArtifactUtil.attemptOf(bases2.get(i)));
+				assertEquals("only variant 0 selected", i == 0, selected(bases2.get(i)));
+			}
+			assertEquals("kept variant 0 is the same row", v0Oid, oidOf(bases2.get(0)));
+			assertEquals("kept variant 2 is the same row", v2Oid, oidOf(bases2.get(2)));
+			assertEquals("the fill's artifact is what the DTO names", oidOf(bases2.get(1)), d1.get("artifactObjectId"));
+			assertEquals(Long.valueOf(7202), bases2.get(1).get(OlioFieldNames.FIELD_PB_SEED));
+			assertNull("the fill supersedes what attempt 1 superseded (nothing), not its own variant 0",
+				bases2.get(1).get(OlioFieldNames.FIELD_PB_SUPERSEDES));
+			assertEquals(Boolean.TRUE, out2.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+			assertEquals("auto-approve picks the kept variant 0", v0Oid, out2.get(PbNodeExecutor.KEY_AUTO_APPROVED_ARTIFACT));
+			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(bases2.get(0)));
+			assertEquals(PbArtifactUtil.APPROVED_BY_AUTO, bases2.get(0).get(OlioFieldNames.FIELD_PB_APPROVED_BY));
+			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(bases2.get(1)));
+			assertEquals(PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(bases2.get(2)));
+			List<BaseRecord> plans = PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_PLAN);
+			assertEquals("the fill persists its own plan artifact", 2, plans.size());
+			RenderPlan fillPlan = PbRenderPlanUtil.readPlanArtifact(PbArtifactUtil.readArtifact(f.owner, oidOf(plans.get(1)), orgId));
+			assertEquals("the fill's plan still says 3", 3, fillPlan.getPreset().getVariants());
+			for(RenderPlan.Degradation d : fillPlan.getDegradations()) {
+				assertNotEquals("the fill's plan records no VARIANT_FAILED", RenderPlan.Degradation.VARIANT_FAILED, d.getCode());
+			}
+
+			/// Attempt 2: the node is now pinned by auto-approve (a facade 409); the executor itself, handed the
+			/// re-read node, finds no gap (attempt 1 is complete) and starts a fresh attempt of 3.
+			node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
+			assertEquals("auto-approve pinned the node", Boolean.TRUE, node.get(OlioFieldNames.FIELD_PB_PINNED));
+			assertNull("no gap left on attempt 1", PbNodeExecutor.findGapFill(
+				PbPipelineUtil.openNodeGraph(f.owner, f.book, f.workflow, node, true, null), node));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// §24 I-6 (212 e): a `variants` override that differs from what the gapped attempt planned is a different
+	/// attempt - the executor starts fresh (4 renders, new attempt) instead of filling the hole.
+	@Test
+	public void differingVariantsOverrideStartsFreshAttemptNotFill() throws Exception {
+		logger.info("differingVariantsOverrideStartsFreshAttemptNotFill");
+		Fixture f = null;
+		try {
+			f = fixture("p66df");
+			prepareRun(f, "dif", null);
+			long orgId = orgOf(f.owner);
+			byte[] png0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] png2 = MaskImage.solid(W, H, new Color(120, 60, 90));
+			ScriptedAdapter first = new ScriptedAdapter().answer(ok(png0, 7301, 800),
+				StageResult.failed(RendererAdapter.ERROR_UNREACHABLE, 5, "{\"offline\":true}"), ok(png2, 7303, 650));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+			Map<String, Object> out1 = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, f.node, f.sdu,
+				new PlanOptions(null, false, PbQualityPresetEnumType.STANDARD, null, null, Integer.valueOf(3)), null, backend(first, client));
+			String attempt1 = (String) out1.get("runObjectId");
+			assertEquals("base artifacts after run 1", 2, baseArtifacts(f).size());
+			BaseRecord node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
+
+			ScriptedAdapter second = new ScriptedAdapter().answer(ok(png0, 7401, 800), ok(png2, 7402, 700),
+				ok(png0, 7403, 650), ok(png2, 7404, 600));
+			Map<String, Object> out2 = PbNodeExecutor.executeNodeRun(f.owner, f.book, f.workflow, node, f.sdu,
+				new PlanOptions(null, false, PbQualityPresetEnumType.STANDARD, null, null, Integer.valueOf(4)), null, backend(second, client));
+			String run2 = (String) out2.get("runObjectId");
+			assertEquals("run 2 status", PbRunStatusEnumType.COMPLETED.toString(), status(out2.get("runStatus")));
+			assertEquals("a fresh attempt renders all four", 4, second.requests.size());
+			assertEquals(StageRequest.SEED_RANDOM, second.requests.get(0).getSeed());
+			assertNull("not a fill", out2.get(PbNodeExecutor.KEY_RESUMED_ATTEMPT));
+			assertEquals(4, intOf(out2.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)));
+			assertEquals(4, intOf(out2.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			List<BaseRecord> bases = baseArtifacts(f);
+			assertEquals("attempt 1's two plus attempt 2's four", 6, bases.size());
+			int ofRun2 = 0;
+			for(BaseRecord a : bases) {
+				if(run2.equals(PbArtifactUtil.attemptOf(a))) {
+					ofRun2++;
+				}
+				else {
+					assertEquals("every other final is attempt 1's", attempt1, PbArtifactUtil.attemptOf(a));
+				}
+			}
+			assertEquals("four finals of attempt 2", 4, ofRun2);
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// §24 I-8: record {@code pr}'s final the way {@code executeRenderPlan} does on the non-run path (single variant,
+	/// no attempt; it supersedes the role's current selection and takes it), re-read in full.
+	private static BaseRecord recordFinal(Fixture f, PlannedRender pr, String requestJson) {
+		BaseRecord a = PbPipelineUtil.recordImage(f.graph, f.node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
+			pr.data, pr.bytes, "image/png", pr.seed, pr.frozen, requestJson, pr.referenceArtifactObjectIds, f.sdu.getApiType(),
+			pr.durationMs, pr.backendGraph, (String) null);
+		assertNotNull("final recorded", a);
+		BaseRecord full = PbArtifactUtil.readArtifact(f.owner, oidOf(a), orgOf(f.owner));
+		assertNotNull("final re-read", full);
+		return full;
+	}
+
+	/// §24 I-8 (design §22): SEQUENTIAL_INPAINT rendered once and recorded; then the same plan under
+	/// {@code PlanOptions.backgroundRegen} -> a fresh BASE draw, actor B's ACTOR_REGION pass re-run with the seed the
+	/// recorded final carries (found through its {@code stageLabel}), one variant, the DTO naming the final it
+	/// regenerated from and the actor that kept its seed, and the new final superseding the old selection.
+	@Test
+	public void backgroundRegenReusesActorRegionSeed() throws Exception {
+		logger.info("backgroundRegenReusesActorRegionSeed");
+		Fixture f = null;
+		try {
+			f = fixture("p68bg");
+			long orgId = orgOf(f.owner);
+			String passLabel = RenderPlan.actorStageKey(RenderPlan.STAGE_ACTOR_REGION, ACTOR_B);
+			byte[] basePng = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] passPng = MaskImage.solid(W, H, new Color(160, 100, 30));
+			ScriptedAdapter first = new ScriptedAdapter().answer(ok(basePng, 11, 1200), ok(passPng, 12, 900));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+			RenderPlan plan = plan(f, PbStrategyEnumType.SEQUENTIAL_INPAINT, RenderPlan.STAGE_BASE, RenderPlan.STAGE_ACTOR_REGION);
+
+			/// Render 1, the ordinary path; the final recorded the way executeRenderPlan records it.
+			PlannedRender pr1 = render(f, plan, backend(first, client));
+			assertNull("an ordinary render is no regenerate", pr1.bg);
+			BaseRecord final1 = recordFinal(f, pr1, pr1.requestJson);
+			String final1Oid = oidOf(final1);
+			assertTrue("final 1 selected", selected(final1));
+			assertEquals("the final carries its last stage's label", passLabel, PbArtifactUtil.stageLabelOf(final1));
+			assertEquals(Long.valueOf(12), final1.get(OlioFieldNames.FIELD_PB_SEED));
+			List<BaseRecord> stages1 = artifactsByVariant(f, PbPipelineUtil.ROLE_STAGE);
+			assertEquals("stage artifacts after render 1", 1, stages1.size());
+			assertEquals("the stage artifact carries BASE", RenderPlan.STAGE_BASE, PbArtifactUtil.stageLabelOf(stages1.get(0)));
+
+			/// Render 2, the regenerate: BASE is a fresh draw, actor B's pass is re-run on the seed final 1 carries.
+			byte[] base2Png = MaskImage.solid(W, H, new Color(40, 70, 140));
+			byte[] pass2Png = MaskImage.solid(W, H, new Color(200, 140, 40));
+			ScriptedAdapter second = new ScriptedAdapter().answer(ok(base2Png, 31, 1000), ok(pass2Png, 12, 800));
+			f.graph.setPlanOptions(PlanOptions.NONE.withBackgroundRegen(true));
+			PlannedRender pr2 = render(f, plan, backend(second, client));
+
+			assertEquals("requests sent by the regenerate", 2, second.requests.size());
+			StageRequest base2 = second.requests.get(0);
+			StageRequest pass2 = second.requests.get(1);
+			assertEquals(RenderPlan.STAGE_BASE, base2.getStage());
+			assertNotEquals("BASE is a fresh draw, not the actor seed", 12, base2.getSeed());
+			assertEquals(RenderPlan.STAGE_ACTOR_REGION, pass2.getStage());
+			assertEquals("the pass reuses actor B's recorded seed", 12, pass2.getSeed());
+			assertArrayEquals("the pass paints over the NEW base", base2Png, pass2.getInputs().image("init"));
+			assertNotNull("regenerate", pr2.bg);
+			assertEquals(final1Oid, pr2.bg.fromArtifactObjectId);
+			assertEquals(List.of(ACTOR_B), pr2.bg.reused);
+			assertTrue("no fresh actor seed: " + pr2.bg.fresh, pr2.bg.fresh.isEmpty());
+			assertEquals(1, pr2.variantsPlanned);
+			assertEquals(1, pr2.variants.size());
+			assertEquals(List.of(RenderPlan.STAGE_BASE, passLabel), pr2.stagesRendered);
+			String joined = String.join("|", pr2.degradations);
+			assertFalse("no ACTOR_SEED_NEW: " + joined, joined.contains(RenderPlan.Degradation.ACTOR_SEED_NEW));
+			assertFalse("no BACKGROUND_REGEN_NO_REGIONS: " + joined, joined.contains(RenderPlan.Degradation.BACKGROUND_REGEN_NO_REGIONS));
+			Map<String, Object> out = new LinkedHashMap<>();
+			pr2.describe(out);
+			assertEquals(PbNodeExecutor.REGENERATE_BACKGROUND, out.get(PbNodeExecutor.KEY_REGENERATE));
+			assertEquals(final1Oid, out.get(PbNodeExecutor.KEY_REGENERATED_FROM));
+			assertEquals(List.of(ACTOR_B), out.get(PbNodeExecutor.KEY_ACTOR_SEEDS_REUSED));
+			assertEquals(List.of(), out.get(PbNodeExecutor.KEY_ACTOR_SEEDS_NEW));
+			assertEquals(1, intOf(out.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)));
+
+			/// Persisted: a second plan artifact, a second BASE stage artifact, and the regenerated final takes the
+			/// selection from final 1 (superseding it; final 1 stays).
+			assertEquals("plan artifacts", 2, PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_PLAN).size());
+			assertEquals("stage artifacts after the regenerate", 2, PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_STAGE).size());
+			BaseRecord final2 = recordFinal(f, pr2, pr2.requestJson);
+			assertTrue("final 2 selected", selected(final2));
+			assertEquals(passLabel, PbArtifactUtil.stageLabelOf(final2));
+			BaseRecord sup = final2.get(OlioFieldNames.FIELD_PB_SUPERSEDES);
+			assertNotNull("final 2 supersedes final 1", sup);
+			assertEquals(final1Oid, sup.get(FieldNames.FIELD_OBJECT_ID));
+			final1 = PbArtifactUtil.readArtifact(f.owner, final1Oid, orgId);
+			assertNotNull("final 1 is kept", final1);
+			assertFalse("final 1 no longer selected", selected(final1));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// §24 I-8: a regenerate on a node with no selected {@code base} final is a 409 before anything is persisted -
+	/// no plan artifact, no request to the renderer.
+	@Test
+	public void backgroundRegenWithoutSelectedRenderIs409() throws Exception {
+		logger.info("backgroundRegenWithoutSelectedRenderIs409");
+		Fixture f = null;
+		try {
+			f = fixture("p68nr");
+			ScriptedAdapter adapter = new ScriptedAdapter();
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+			RenderPlan plan = plan(f, PbStrategyEnumType.SEQUENTIAL_INPAINT, RenderPlan.STAGE_BASE, RenderPlan.STAGE_ACTOR_REGION);
+			f.graph.setPlanOptions(PlanOptions.NONE.withBackgroundRegen(true));
+			try {
+				render(f, plan, backend(adapter, client));
+				fail("a regenerate with nothing to regenerate from must be refused");
+			}
+			catch(PictureBookException e) {
+				assertEquals("status (" + e.getMessage() + ")", 409, e.getStatus());
+				assertEquals("Scene has no selected render to regenerate the background of; render it first", e.getMessage());
+			}
+			assertEquals("no request reached the renderer", 0, adapter.requests.size());
+			assertTrue("no plan artifact persisted", PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_RENDER_PLAN).isEmpty());
+			assertTrue("no stage artifact persisted", PbArtifactUtil.listChain(f.owner, f.node, PbPipelineUtil.ROLE_STAGE).isEmpty());
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// §24 I-8: a selected final recorded before I-8 carries no stage label, so no ACTOR_REGION seed is on record for
+	/// actor B - the regenerate still runs, the pass draws a fresh seed, and the result says so ({@code ACTOR_SEED_NEW},
+	/// accepted: same character, not the same pixels) without claiming the actors were re-rendered with the background.
+	@Test
+	public void backgroundRegenPreI8FinalReportsActorSeedNew() throws Exception {
+		logger.info("backgroundRegenPreI8FinalReportsActorSeedNew");
+		Fixture f = null;
+		try {
+			f = fixture("p68pi");
+			byte[] basePng = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] passPng = MaskImage.solid(W, H, new Color(160, 100, 30));
+			ScriptedAdapter first = new ScriptedAdapter().answer(ok(basePng, 11, 1200), ok(passPng, 12, 900));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+			RenderPlan plan = plan(f, PbStrategyEnumType.SEQUENTIAL_INPAINT, RenderPlan.STAGE_BASE, RenderPlan.STAGE_ACTOR_REGION);
+			PlannedRender pr1 = render(f, plan, backend(first, client));
+			/// recorded with the raw adapter request: no stageLabel, as every final written before I-8
+			BaseRecord final1 = recordFinal(f, pr1, "{\"offline\":true}");
+			String final1Oid = oidOf(final1);
+			assertNull("a pre-I-8 final carries no label", PbArtifactUtil.stageLabelOf(final1));
+
+			ScriptedAdapter second = new ScriptedAdapter().answer(ok(basePng, 31, 1000), ok(passPng, 32, 800));
+			f.graph.setPlanOptions(PlanOptions.NONE.withBackgroundRegen(true));
+			PlannedRender pr2 = render(f, plan, backend(second, client));
+
+			assertEquals("requests sent by the regenerate", 2, second.requests.size());
+			StageRequest pass2 = second.requests.get(1);
+			assertEquals(RenderPlan.STAGE_ACTOR_REGION, pass2.getStage());
+			assertNotEquals("no seed on record: the pass is a fresh draw", 12, pass2.getSeed());
+			assertNotNull("regenerate", pr2.bg);
+			assertEquals(final1Oid, pr2.bg.fromArtifactObjectId);
+			assertTrue("no actor kept its seed: " + pr2.bg.reused, pr2.bg.reused.isEmpty());
+			assertEquals(List.of(ACTOR_B), pr2.bg.fresh);
+			String joined = String.join("|", pr2.degradations);
+			assertTrue("ACTOR_SEED_NEW for actor B: " + joined,
+				joined.contains(RenderPlan.Degradation.ACTOR_SEED_NEW + ": actor " + ACTOR_B + " re-rendered with a new seed"));
+			assertFalse("the pass still ran, so no BACKGROUND_REGEN_NO_REGIONS: " + joined, joined.contains(RenderPlan.Degradation.BACKGROUND_REGEN_NO_REGIONS));
+			assertTrue("ACTOR_SEED_NEW is accepted by auto-approve: " + joined, PbArtifactUtil.vetoingDegradations(pr2.degradations).isEmpty());
+			Map<String, Object> out = new LinkedHashMap<>();
+			pr2.describe(out);
+			assertEquals(List.of(), out.get(PbNodeExecutor.KEY_ACTOR_SEEDS_REUSED));
+			assertEquals(List.of(ACTOR_B), out.get(PbNodeExecutor.KEY_ACTOR_SEEDS_NEW));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// §24 I-8 through the job: a text-only scene rendered by a STANDARD job (two variants, auto-approved, which pins
+	/// the node) is unpinned and regenerated by a {@code pb.regenerateBackground} job -> one fresh BASE, one final that
+	/// supersedes the approved one, {@code regenerate=background} on the node outcome naming the final it came from, and
+	/// - the plan having no ACTOR_REGION pass - {@code BACKGROUND_REGEN_NO_REGIONS}, which vetoes auto-approve.
+	@Test
+	public void jobRegeneratesBackgroundOfTextOnlyScene() throws Exception {
+		logger.info("jobRegeneratesBackgroundOfTextOnlyScene");
+		Fixture f = null;
+		try {
+			f = fixture("p68jb");
+			prepareRun(f, "bgjob", PbQualityPresetEnumType.STANDARD);
+			long orgId = orgOf(f.owner);
+			long nodeId = Long.valueOf(idOf(f.node));
+			byte[] png0 = MaskImage.solid(W, H, new Color(90, 120, 60));
+			byte[] png1 = MaskImage.solid(W, H, new Color(60, 90, 120));
+			ScriptedAdapter first = new ScriptedAdapter().answer(ok(png0, 9101, 800), ok(png1, 9102, 700));
+			FixtureGraphClient client = new FixtureGraphClient().pruneUnusedLoaders();
+
+			Map<String, Object> dto1 = PbRenderJobUtil.submit(f.owner, f.book, f.workflow, List.of(Long.valueOf(nodeId)), f.sdu, OFFLINE_SERVER,
+				PbRenderJobUtil.KIND_RENDER, true, backend(first, client));
+			AsyncJob job1 = awaitTerminal(f.owner, (String) dto1.get("jobId"), JOB_TIMEOUT_MS);
+			assertEquals("job 1 status (" + job1.getResult() + ")", AsyncJob.Status.COMPLETED, job1.getStatus());
+			String run1 = (String) dto1.get("runObjectId");
+			List<BaseRecord> bases1 = baseArtifacts(f);
+			assertEquals("base artifacts after job 1", 2, bases1.size());
+			assertTrue("variant 0 selected", selected(bases1.get(0)));
+			assertEquals(PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(bases1.get(0)));
+			String approvedOid = oidOf(bases1.get(0));
+			BaseRecord node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
+			assertEquals("auto-approve pinned the node", Boolean.TRUE, node.get(OlioFieldNames.FIELD_PB_PINNED));
+
+			/// A pinned node is never re-rendered (the facade 409s before submit); the user unpins it first.
+			assertTrue("unpin", PbGraphUtil.setPinned(f.owner, node, false));
+			CacheUtil.clearCache();
+			node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
+			assertNotEquals("unpinned", Boolean.TRUE, node.get(OlioFieldNames.FIELD_PB_PINNED));
+
+			byte[] png2 = MaskImage.solid(W, H, new Color(140, 40, 70));
+			ScriptedAdapter second = new ScriptedAdapter().answer(ok(png2, 9201, 650));
+			Map<String, Object> dto2 = PbRenderJobUtil.submit(f.owner, f.book, f.workflow, List.of(Long.valueOf(nodeId)), f.sdu, OFFLINE_SERVER,
+				PbRenderJobUtil.KIND_REGENERATE_BACKGROUND, true, backend(second, client), PlanOptions.NONE.withBackgroundRegen(true));
+			assertEquals(PbRenderJobUtil.KIND_REGENERATE_BACKGROUND, dto2.get("kind"));
+			assertEquals("one node planned", 1, intOf(dto2.get("plannedNodeCount")));
+			String run2 = (String) dto2.get("runObjectId");
+			assertNotNull("run 2", run2);
+			assertNotEquals("run 2 is its own run", run1, run2);
+			AsyncJob job2 = awaitTerminal(f.owner, (String) dto2.get("jobId"), JOB_TIMEOUT_MS);
+			assertEquals("job 2 status (" + job2.getResult() + ")", AsyncJob.Status.COMPLETED, job2.getStatus());
+
+			/// The preset says 2; the regenerate renders exactly one fresh BASE.
+			assertEquals("requests sent by the regenerate", 1, second.requests.size());
+			assertEquals(RenderPlan.STAGE_BASE, second.requests.get(0).getStage());
+			assertEquals("BASE is a fresh draw", StageRequest.SEED_RANDOM, second.requests.get(0).getSeed());
+
+			Map<?, ?> result = JSONUtil.importObject(job2.getResult(), Map.class);
+			assertNotNull("job 2 result", result);
+			List<?> nodes = (List<?>) result.get("nodes");
+			assertEquals("one node outcome", 1, nodes.size());
+			Map<?, ?> outcome = (Map<?, ?>) nodes.get(0);
+			assertEquals(PbNodeExecutor.REGENERATE_BACKGROUND, outcome.get(PbNodeExecutor.KEY_REGENERATE));
+			assertEquals("regenerated from the approved final", approvedOid, outcome.get(PbNodeExecutor.KEY_REGENERATED_FROM));
+			assertEquals(1, intOf(outcome.get(PbNodeExecutor.KEY_VARIANTS_PLANNED)));
+			assertEquals(1, intOf(outcome.get(PbNodeExecutor.KEY_VARIANTS_RENDERED)));
+			assertEquals("one variant on the outcome", 1, ((List<?>) outcome.get(PbNodeExecutor.KEY_VARIANTS)).size());
+			/// The job result is the wire (JSONUtil.exportObject, Include.NON_EMPTY): an empty list is dropped, so "no actor
+			/// kept or lost its seed" reads as the key absent or empty - never a non-empty list.
+			assertTrue("no actor seed reused on the wire: " + outcome.get(PbNodeExecutor.KEY_ACTOR_SEEDS_REUSED),
+				emptyOnTheWire(outcome.get(PbNodeExecutor.KEY_ACTOR_SEEDS_REUSED)));
+			assertTrue("no actor seed new on the wire: " + outcome.get(PbNodeExecutor.KEY_ACTOR_SEEDS_NEW),
+				emptyOnTheWire(outcome.get(PbNodeExecutor.KEY_ACTOR_SEEDS_NEW)));
+			String joined = String.valueOf(outcome.get("degradations"));
+			assertTrue("no region pass, so the result says so: " + joined, joined.contains(RenderPlan.Degradation.BACKGROUND_REGEN_NO_REGIONS));
+			assertNotEquals("BACKGROUND_REGEN_NO_REGIONS vetoes auto-approve", Boolean.TRUE, outcome.get(PbNodeExecutor.KEY_AUTO_APPROVED));
+
+			/// On the database: the regenerated final supersedes the approved one but arrives UNSELECTED - V3 §10 rule 1
+			/// (an attempt never displaces an APPROVED selection) and rule 5 ("a stale approved node is re-rendered only on
+			/// request, and the new result goes to review"); the approved final stays selected and approved, as it was.
+			List<BaseRecord> bases2 = baseArtifacts(f);
+			assertEquals("base artifacts after the regenerate", 3, bases2.size());
+			BaseRecord fresh = null;
+			for(BaseRecord a : bases2) {
+				if(run2.equals(PbArtifactUtil.attemptOf(a))) {
+					assertNull("one final of the regenerate", fresh);
+					fresh = a;
+				}
+				else {
+					assertEquals("every other final is job 1's", run1, PbArtifactUtil.attemptOf(a));
+				}
+			}
+			assertNotNull("the regenerate's final", fresh);
+			assertEquals(0, PbArtifactUtil.variantIndexOf(fresh));
+			assertEquals(Long.valueOf(9201), fresh.get(OlioFieldNames.FIELD_PB_SEED));
+			assertFalse("rule 1: the regenerate's final does not displace the APPROVED selection", selected(fresh));
+			assertEquals("it goes to review", PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(fresh));
+			BaseRecord sup = fresh.get(OlioFieldNames.FIELD_PB_SUPERSEDES);
+			assertNotNull("it supersedes the approved final", sup);
+			assertEquals(approvedOid, sup.get(FieldNames.FIELD_OBJECT_ID));
+			BaseRecord approved = PbArtifactUtil.readArtifact(f.owner, approvedOid, orgId);
+			assertTrue("the approved final stays selected", selected(approved));
+			assertEquals("the approved final keeps its review", PbReviewStatusEnumType.APPROVED, PbArtifactUtil.reviewStatusOf(approved));
+			assertEquals("findSelected keeps answering the approved final", approvedOid,
+				oidOf(PbArtifactUtil.findSelected(f.owner, node, PbPipelineUtil.ROLE_BASE)));
+			node = PbGraphUtil.readNode(f.owner, oidOf(f.node), orgId);
+			assertNotEquals("a vetoed regenerate does not pin", Boolean.TRUE, node.get(OlioFieldNames.FIELD_PB_PINNED));
 		}
 		finally {
 			cleanup(f);

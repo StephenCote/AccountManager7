@@ -169,15 +169,18 @@ test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM end-
         console.log('[setup] shared user =', sharedCreds.testUserName, '| chatConfig =', chatConfigName);
     });
 
-    // The canvas's own empty-state titles (src/features/pictureBookWorkflow.js). A PB2 book that has
-    // scenes but was never rendered has no olio.pb.workflow row, so the view renders
-    // noWorkflowYetState() -> "No workflow graph yet" (:236-245, used at :282/:300/:321). The other three
-    // are the legacy no-scenes state (:305), the zero-node workflow row (:334) and the not-recorded
-    // banner. Which one appears is reported; the assertion is "one of the UI's own empty states, and
-    // zero node cards".
+    // The canvas's own empty-state titles (src/features/pictureBookWorkflow.js): noWorkflowYetState()
+    // "No workflow graph yet", the legacy no-scenes state, the zero-node workflow row and the
+    // not-recorded banner. §24 U-3 (§6.C 312): until P10-B this test asserted that a book with scenes
+    // but never rendered has NO olio.pb.workflow row, zero node cards and one of these titles. P10-B
+    // (§6.C 260, Stephen's UAT blocker 2026-11-04) made createFromScenesAndCompose build the graph at
+    // import, so an un-rendered book now has a workflow (GET /workflow 200) and the canvas shows one
+    // READY render_plan terminal per scene with nothing rendered; the empty states are reached only by a
+    // scene-less POST /chapter book (pictureBookNewBookRender.spec.js step 5). Asserted here: the honest
+    // un-rendered state is "one READY node per scene, none DONE, no empty-state title".
     const EMPTY_STATES = ['No workflow graph yet', 'Nothing rendered yet', 'Workflow was not recorded', 'No workflow graph for this book'];
 
-    test('W5: a freshly-created, un-rendered book shows an honest empty state', async ({ page }) => {
+    test('W5: a freshly-created, un-rendered book shows one READY render_plan node per scene and no rendered artifact (P10-B builds the graph at import)', async ({ page }) => {
         test.skip(!LLM_ENABLED, 'PB_SD_TESTS!=1 and PB_LLM_TESTS!=1 — skips the live LLM extraction behind W5');
         test.setTimeout(30 * 60 * 1000); // one LLM extraction (budget, not a threshold)
         const testStart = Date.now();
@@ -209,31 +212,45 @@ test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM end-
         const meta = await cfsResp.json();
         console.log('[W5] book =', pb2Empty, '| persisted scenes =', (meta.scenes || []).length);
 
-        // REST view of the same fact: no workflow row exists until first render (404 + error text).
+        // REST view of the same fact (P10-B): the graph exists from import — one RENDER_PLAN terminal per
+        // scene, each READY (never run), none DONE.
         const wfResp = await page.request.get(PB + '/' + pb2Empty + '/workflow', { timeout: 60000 });
         const wfText = await wfResp.text();
         console.log('[W5] GET /workflow ->', wfResp.status(), wfText.substring(0, 200));
+        expect(wfResp.status(), 'P10-B: GET /workflow is 200 on an un-rendered book (graph built at import)').toBe(200);
+        const wf = JSON.parse(wfText);
+        const wfNodes = wf.nodes || [];
+        const persisted = (meta.scenes || []).length;
+        const wfSummary = wfNodes.map((n) => (n.nodeType || '?') + ':' + (n.status || '?'));
+        console.log('[W5] GET /workflow nodes =', JSON.stringify(wfSummary));
+        expect(wfNodes.length, 'one node per persisted scene: ' + JSON.stringify(wfSummary)).toBe(persisted);
+        expect(wfNodes.filter((n) => String(n.nodeType).toUpperCase() !== 'RENDER_PLAN').map((n) => n.handle), 'every node is a RENDER_PLAN terminal').toEqual([]);
+        expect(wfNodes.filter((n) => String(n.status).toUpperCase() !== 'READY').map((n) => n.handle + ':' + n.status), 'every node is READY (un-run)').toEqual([]);
 
-        // Navigate to the canvas of the un-rendered book. It must NOT show node cards; it must show
-        // one of the canvas's honest empty-state titles. Report whichever legitimately appears.
+        // Navigate to the canvas of the un-rendered book: one node card per scene, every badge READY,
+        // no empty-state title (those belong to a book with no graph).
         await page.goto('/#!/picture-book/' + pb2Empty + '/workflow', { timeout: 45000 });
-        // Wait for the route to settle: either an empty-state title or (unexpectedly) a node card.
+        // Wait for the route to settle: either an empty-state title or a node card.
         // waitForFunction(fn, arg, options) — the timeout goes in the THIRD argument.
         await page.waitForFunction((states) => {
             const t = document.body.innerText || '';
             return states.some((s) => t.includes(s)) || document.querySelector('[data-node-id]') !== null;
         }, EMPTY_STATES, { timeout: 120000 });
+        await expect(page.locator('[data-node-id]')).toHaveCount(persisted, { timeout: 60000 });
 
         const nodeCards = await page.locator('[data-node-id]').count();
+        const cards = await page.locator('[data-node-id]').evaluateAll((els) => els.map((e) => ({
+            type: e.getAttribute('data-node-type') || '', badge: ((e.querySelector('span') || {}).textContent || '').trim()
+        })));
         const bodyText = await page.evaluate(() => document.body.innerText || '');
         const shown = EMPTY_STATES.find((s) => bodyText.includes(s)) || null;
-        console.log('[W5] un-rendered book: nodeCards =', nodeCards, '| empty-state shown =', JSON.stringify(shown));
+        console.log('[W5] un-rendered book: nodeCards =', nodeCards, '| cards =', JSON.stringify(cards), '| empty-state shown =', JSON.stringify(shown));
         await page.screenshot({ path: shot('pb-overhaul-W5-empty-state'), fullPage: true });
         console.log('[W5] screenshot ->', shot('pb-overhaul-W5-empty-state'));
 
-        expect(nodeCards, 'W5: un-rendered book shows NO node cards').toBe(0);
-        expect(shown, 'W5: one of the canvas empty-state titles ' + JSON.stringify(EMPTY_STATES)
-            + ' is shown for an un-rendered book; body was: ' + bodyText.substring(0, 400)).toBeTruthy();
+        expect(nodeCards, 'W5: the canvas shows one node card per scene of the un-rendered book').toBe(persisted);
+        expect(cards.filter((c) => c.type !== 'render_plan' || c.badge !== 'READY'), 'W5: every card is a READY render_plan').toEqual([]);
+        expect(shown, 'W5: no empty-state title on a book that has a graph; body was: ' + bodyText.substring(0, 400)).toBeNull();
         console.log('[W5] durationMs =', fmtMs(Date.now() - testStart));
     });
 });

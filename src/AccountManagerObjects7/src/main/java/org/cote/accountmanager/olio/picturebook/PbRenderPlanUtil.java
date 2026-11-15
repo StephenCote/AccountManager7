@@ -82,6 +82,8 @@ public final class PbRenderPlanUtil {
 		private final PbQualityPresetEnumType presetOverride;
 		private final String modelOverride;
 		private final BaseRecord chatConfig;
+		private final Integer variantsOverride;
+		private final boolean backgroundRegen;
 
 		public PlanOptions(String promptOverride, boolean raw, PbQualityPresetEnumType presetOverride, String modelOverride) {
 			this(promptOverride, raw, presetOverride, modelOverride, null);
@@ -91,11 +93,31 @@ public final class PbRenderPlanUtil {
 		/// hook routes the vision model through its connection (220 e). Null = the user's default analysis config.
 		public PlanOptions(String promptOverride, boolean raw, PbQualityPresetEnumType presetOverride, String modelOverride,
 				BaseRecord chatConfig) {
+			this(promptOverride, raw, presetOverride, modelOverride, chatConfig, null);
+		}
+
+		/// {@code variantsOverride} (§24 I-6, 212 c) replaces the effective preset's {@code variants} on the plan's
+		/// {@code PresetValues}; null = the preset's own count. The facade validates it against the preset's
+		/// {@code maxVariants} before any run is opened ({@code PbServiceFacade.validateVariants}); this layer
+		/// trusts the value it is handed, so an in-process caller that skips the facade owns the range.
+		public PlanOptions(String promptOverride, boolean raw, PbQualityPresetEnumType presetOverride, String modelOverride,
+				BaseRecord chatConfig, Integer variantsOverride) {
+			this(promptOverride, raw, presetOverride, modelOverride, chatConfig, variantsOverride, false);
+		}
+
+		/// {@code backgroundRegen} (design §22, §24 I-8): the scene's BASE re-renders with a new seed while every
+		/// ACTOR_REGION pass reuses the seed it rendered with on the scene's currently selected final, so the actors
+		/// come back as they were on a new background. Forces one variant and no gap-fill; the executor refuses
+		/// (409) when the scene has no selected render to regenerate from.
+		public PlanOptions(String promptOverride, boolean raw, PbQualityPresetEnumType presetOverride, String modelOverride,
+				BaseRecord chatConfig, Integer variantsOverride, boolean backgroundRegen) {
 			this.promptOverride = promptOverride;
 			this.raw = raw;
 			this.presetOverride = presetOverride;
 			this.modelOverride = modelOverride;
 			this.chatConfig = chatConfig;
+			this.variantsOverride = variantsOverride;
+			this.backgroundRegen = backgroundRegen;
 		}
 
 		public String getPromptOverride() { return promptOverride; }
@@ -103,6 +125,31 @@ public final class PbRenderPlanUtil {
 		public PbQualityPresetEnumType getPresetOverride() { return presetOverride; }
 		public String getModelOverride() { return modelOverride; }
 		public BaseRecord getChatConfig() { return chatConfig; }
+		public Integer getVariantsOverride() { return variantsOverride; }
+		public boolean isBackgroundRegen() { return backgroundRegen; }
+
+		/// These options with {@code variantsOverride} replaced; everything else carried.
+		public PlanOptions withVariants(Integer variants) {
+			return new PlanOptions(promptOverride, raw, presetOverride, modelOverride, chatConfig, variants, backgroundRegen);
+		}
+
+		/// These options with {@code chatConfig} replaced; everything else carried.
+		public PlanOptions withChatConfig(BaseRecord cfg) {
+			return new PlanOptions(promptOverride, raw, presetOverride, modelOverride, cfg, variantsOverride, backgroundRegen);
+		}
+
+		/// These options with {@code backgroundRegen} replaced; everything else carried.
+		public PlanOptions withBackgroundRegen(boolean regen) {
+			return new PlanOptions(promptOverride, raw, presetOverride, modelOverride, chatConfig, variantsOverride, regen);
+		}
+
+		/// The variant count this plan renders: the override when present, else {@code preset}'s own.
+		public int variantsFor(QualityPresets.Preset preset) {
+			if(variantsOverride != null) {
+				return variantsOverride.intValue();
+			}
+			return (preset != null ? preset.getVariants() : 1);
+		}
 	}
 
 	/**
@@ -399,6 +446,22 @@ public final class PbRenderPlanUtil {
 		}
 	}
 
+	/// The quality preset an attempt under {@code opts} renders with: the request's preset override when it names
+	/// one, else the resolved style's. Pure over the resolved style; the plan's own resolution and the facade's
+	/// {@code variants} validation (§24 I-6) both go through here so they cannot disagree.
+	public static QualityPresets.Preset effectivePreset(PbStyleResolver.EffectiveStyle style, PlanOptions options) {
+		PlanOptions opts = (options != null ? options : PlanOptions.NONE);
+		PbQualityPresetEnumType key = (opts.getPresetOverride() != null && opts.getPresetOverride() != PbQualityPresetEnumType.UNKNOWN
+			? opts.getPresetOverride() : (style != null ? style.qualityPreset() : null));
+		return QualityPresets.resolve(key);
+	}
+
+	/// {@link #effectivePreset(PbStyleResolver.EffectiveStyle, PlanOptions)} with the style chain resolved for
+	/// {@code book} as {@code user} (a partial chain still yields its default preset; the plan itself 409s later).
+	public static QualityPresets.Preset effectivePreset(BaseRecord user, BaseRecord book, PlanOptions options) {
+		return effectivePreset(PbStyleResolver.resolve(user, book), options);
+	}
+
 	/// Style chain -> effective config snapshot -> model policy -> preset -> canvas -> style, with the
 	/// resolver's degradations already on the builder. {@code subject} names the plan in the 409 message.
 	private static Scaffold scaffold(BaseRecord user, BaseRecord book, BaseRecord node, PlanOptions opts,
@@ -430,14 +493,14 @@ public final class PbRenderPlanUtil {
 		RenderPlan.ModelPick inpaintPick = ModelResolver.pickOf(inpaintRes);
 		ModelResolver.addDegradation(locRes, degradations);
 
-		QualityPresets.Preset preset = QualityPresets.resolve(
-			opts.getPresetOverride() != null && opts.getPresetOverride() != PbQualityPresetEnumType.UNKNOWN
-				? opts.getPresetOverride() : style.qualityPreset());
+		QualityPresets.Preset preset = effectivePreset(style, opts);
 		RendererCapabilities caps = (locRes.getCapabilities() != null ? locRes.getCapabilities() : RendererCapabilities.forModel(locRes.getModel()));
 		int steps = (caps != null ? caps.recommendedSteps(preset.getStepsMode()) : intOf(effective, OlioFieldNames.FIELD_SD_STEPS, 20));
 		/// Reference strategies render BASE with the SCENE_DIRECT pick, so its family decides the slots and masks
 		RendererCapabilities strategyCaps = (directRes.isResolved() && directRes.getCapabilities() != null ? directRes.getCapabilities() : caps);
-		RenderPlan.PresetValues presetValues = new RenderPlan.PresetValues(preset.getName().name(), steps, preset.getVariants(),
+		/// The variant count is the request's override when it carries one (§24 I-6), else the preset's own; the
+		/// persisted plan artifact therefore records the count the attempt actually renders.
+		RenderPlan.PresetValues presetValues = new RenderPlan.PresetValues(preset.getName().name(), steps, opts.variantsFor(preset),
 			preset.isUpscale(), preset.getQa());
 
 		RenderPlan.Canvas canvas = CanvasResolver.resolve(style.pageFormat(),

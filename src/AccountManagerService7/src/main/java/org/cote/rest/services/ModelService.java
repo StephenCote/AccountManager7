@@ -361,6 +361,10 @@ public class ModelService {
 			return Response.status(404).entity(null).build();
 		}
 		Query query = new Query(imp);
+		Response bad = rejectInvalidRequestFields(query);
+		if(bad != null) {
+			return bad;
+		}
 		enforceContextOrganization(user, query);
 
 		QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, query);
@@ -369,6 +373,22 @@ public class ModelService {
 			ops = qr.toFullString();
 		}
 		return Response.status(200).entity(ops).build();
+	}
+
+	/// KI-83: a `request` entry the model cannot project (an unknown field, or a dotted path whose segments
+	/// do not all resolve to a plannable foreign model field) used to reach StatementUtil as a FieldException,
+	/// which DBSearch/AccessPoint swallow into a null result - so /rest/model/search answered 200 with an
+	/// EMPTY body, indistinguishable from "no such record". Reject it up front with the same message the
+	/// select template would have logged. Null when every request entry resolves.
+	private static Response rejectInvalidRequestFields(Query query) {
+		List<String> invalid = query.invalidRequestFields();
+		if(invalid.isEmpty()) {
+			return null;
+		}
+		String msg = (invalid.size() == 1 ? "Field '" + invalid.get(0) + "' was not found" : "Fields " + invalid + " were not found")
+			+ " on model " + query.getType() + "; a dotted request path must name a foreign model field at every segment but the last";
+		logger.warn("Rejecting search projection: " + msg);
+		return Response.status(400).entity(errorBody(msg)).build();
 	}
 	
 	@RolesAllowed({"user"})
@@ -383,6 +403,10 @@ public class ModelService {
 			return Response.status(404).entity(null).build();
 		}
 		Query query = new Query(imp);
+		Response bad = rejectInvalidRequestFields(query);
+		if(bad != null) {
+			return bad;
+		}
 		enforceContextOrganization(user, query);
 
 		int count = IOSystem.getActiveContext().getAccessPoint().count(user, query);

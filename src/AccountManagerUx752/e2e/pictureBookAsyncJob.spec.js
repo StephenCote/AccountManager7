@@ -35,7 +35,7 @@ const SPEC_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ASYNC_ENABLED = process.env.PB_ASYNC_TESTS === '1';
 
 /**
- * media/AIME.pdf is ~2500 words (aiDocs/PictureBookDesign.md:5) — comfortably over
+ * media/AIME.pdf is ~2500 words (aiDocs/archive/PictureBookDesign.md:5) — comfortably over
  * MAX_EXTRACTION_TEXT_CHARS = 8000, so it takes the CHUNKED branch with no configuration changes.
  * Do NOT substitute the abridged 2,254-char AIME_TEXT constant from pbCharacterList.spec.js: that
  * one is below the threshold and exercises the single-shot path instead.

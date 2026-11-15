@@ -42,8 +42,11 @@ const SPEC_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ENABLED = process.env.PB_LITELLM_TESTS === '1' && !!process.env.LITELLM_MASTER_KEY;
 const SKIP_REASON = 'set PB_LITELLM_TESTS=1 and LITELLM_MASTER_KEY to run the live LiteLLM→Azure fan-out';
 
-const CONFIG_NAME = 'e2e-litellm-azure';
-const CONNECTION_NAME = 'e2e-litellm-azure-conn';
+// Picked through the ObjectPicker, which lists ~/Chat ten rows a page sorted by name; the '000-' prefix
+// keeps the fixture on the first page (the pictureBookNewBookRender convention). The API-only
+// pictureBookLiteLlmAzure spec keeps its own 'e2e-litellm-azure' pair.
+const CONFIG_NAME = '000-litellm-azure';
+const CONNECTION_NAME = '000-litellm-azure-conn';
 const SERVER_URL = process.env.LITELLM_SERVER_URL || 'http://litellm:4000';
 const MODEL = process.env.LITELLM_MODEL || 'gpt-5.6-terra';
 
@@ -78,8 +81,40 @@ async function makeDataDir(ctx) {
     return dir;
 }
 
+// §24 UAT-4: the Select Document picker's own page-1 query for ~/Data (ObjectPicker → list.openForPicker →
+// pagination.getSearchQuery), verbatim from the retained trace of the first U-3 run — same conditions, sort,
+// page size and request projection, so it lands on the SAME server-side cache key (QueryUtil.key: actor,
+// type, sort, order, range, request list, conditions). Sent once BEFORE the upload with cache:true to warm the
+// server cache the way a previous picker open does, so the picker opened later would be served the stale
+// (doc-less) page unless it busts the cache (the UAT-4 fix). Returns the page's names.
+async function pickerPage1Names(ctx, dir) {
+    const resp = await ctx.post(REST + '/model/search', {
+        data: {
+            schema: 'io.query', type: 'data.data',
+            fields: [
+                { comparator: 'equals', name: 'organizationId', value: dir.organizationId },
+                { comparator: 'equals', name: 'groupId', value: dir.id }
+            ],
+            order: 'ascending', comparator: 'group_and', recordCount: 10, startRecord: 0, sortField: 'name',
+            cache: true,
+            request: ['contentType', 'organizationId', 'groupId', 'groupPath', 'organizationId', 'groupId', 'name',
+                'id', 'urn', 'objectId', 'ownerId', 'id', 'objectId', 'ownerId', 'organizationId', 'organizationId',
+                'organizationPath', 'createdDate', 'modifiedDate', 'groupPath', 'groupId', 'description', 'tags']
+        }
+    });
+    expect(resp.ok(), 'picker page-1 search failed: ' + resp.status()).toBe(true);
+    // /rest/model/search answers an io.queryResult envelope {schema, count, queryHash, queryKey, results}, not a
+    // bare array (U-3 rerun 2 read "0 rows" from the misparsed envelope).
+    const qr = await resp.json();
+    const rows = Array.isArray(qr) ? qr : (qr && qr.results) || [];
+    return rows.map(r => r.name);
+}
+
 async function uploadFixture(ctx, name) {
     const dir = await makeDataDir(ctx);
+    expect(dir.organizationId, '~/Data must carry organizationId').toBeTruthy();
+    const warm = await pickerPage1Names(ctx, dir);
+    console.log('[fanout409] warmed the picker page-1 cache for ~/Data (' + warm.length + ' rows, first: ' + warm[0] + ')');
     const text = fs.readFileSync(FIXTURE_PATH, 'utf8');
     const resp = await ctx.post(REST + '/model', {
         data: {
@@ -94,6 +129,11 @@ async function uploadFixture(ctx, name) {
     expect(resp.ok(), 'manuscript upload failed: ' + resp.status()).toBe(true);
     const rec = await resp.json();
     expect(rec && rec.objectId, 'upload returned no objectId').toBeTruthy();
+    // Observation only (not asserted — the server-side cache policy is not what this spec pins): with the
+    // page warmed above, a cache:true re-read after the create still omits the new record until the entry
+    // ages out (CacheDBSearch.maximumCacheAgeMS) — the condition the picker must survive.
+    const after = await pickerPage1Names(ctx, dir);
+    console.log('[fanout409] cache:true page-1 re-read after upload lists the doc: ' + (after.includes(name) ? 'yes' : 'NO (stale page served)'));
     return { objectId: rec.objectId, chars: text.length };
 }
 
@@ -236,7 +276,10 @@ test.describe('PictureBook fan-out re-run reuses existing chapter books on 409 (
 
             // A unique record name => unique series slug => a FRESH series per run, so the collision
             // this test manufactures is the only thing GET /series/{id}/books can be reporting on.
-            docName = 'harlots-eight-ch1-2-' + Date.now().toString(36) + '.txt';
+            // '000-' because the Select Document picker pages ~/Data ten rows a page sorted by name and
+            // ~/Data accumulates every spec's uploads (the first §24 U-3 run found it on page 1 of 7
+            // behind the '6a-winter-import-*' fixtures and timed out).
+            docName = '000-harlots-eight-ch1-2-' + Date.now().toString(36) + '.txt';
             doc = await uploadFixture(ctx, docName);
             console.log('[fanout409] uploaded ' + docName + ' (' + doc.chars + ' chars) as ' + doc.objectId);
 
@@ -313,22 +356,35 @@ test.describe('PictureBook fan-out re-run reuses existing chapter books on 409 (
             await expect(extractBtn).toBeEnabled({ timeout: 10000 });
             await extractBtn.click();
 
-            // Wait for the fan-out to finish: SUCCESS lands on the first chapter book's workflow route;
-            // the pre-fix FAILURE is the red "No chapters were saved. ... 409" banner inside the wizard.
+            // Wait for the fan-out to finish. Two product outcomes are a finished fan-out:
+            //   (a) a clean run lands on the first chapter book's workflow route (the series canvas);
+            //   (b) a run in which the model declined passages stays in the wizard with the per-chapter report
+            //       (`renderChapterSummary`, data-pb-chapter-summary) whose "Open series" button leads to (a).
+            // The pre-fix FAILURE this spec pins is neither: the red "No chapters were saved. ... 409" banner, or a
+            // report whose problems say a chapter's book could not be created / its scenes could not be saved.
+            // §24 U-3 READ (2026-11-15): asserted — only (a); product now — (b) since 2026-09-24 (a transient toast +
+            // navigate is how a nine-hour run lost half its chapters); why — azure/gpt-5.6-terra via LiteLLM answered
+            // three of Harlot's Eight's seven passages with a 0-/1-token completion (HTTP 200; the same chapter's
+            // location pass got an explicit ContentPolicyViolationError 400), which is the route's content filter,
+            // not the product. The 409-reuse property is asserted in BOTH outcomes; the declined passages are logged,
+            // never a threshold.
             const firstChapterOid = preCreated[0].objectId;
             const landing = new RegExp('#!/picture-book/' + firstChapterOid + '/workflow');
             const errorBanner = dialog.locator('div.text-red-500');
+            const summary = dialog.locator('[data-pb-chapter-summary]');
             const deadline = Date.now() + LLM_TEST_TIMEOUT_MS - 3 * 60 * 1000;
             let lastProgress = null;
+            let landedVia = null;
             for (;;) {
-                if (landing.test(page.url())) break;
+                if (landing.test(page.url())) { landedVia = 'route'; break; }
                 if (await errorBanner.isVisible().catch(() => false)) {
-                    const msg = (await errorBanner.textContent()) || '';
+                    const msg = (await errorBanner.textContent({ timeout: 1000 }).catch(() => '')) || '';
                     if (/No chapters were saved|could not create its book|Extraction failed|failed/i.test(msg)) {
                         throw new Error('wizard reported an extraction failure: ' + msg);
                     }
                 }
-                const progress = await dialog.locator('text=/Chapter \\d+\\/\\d+/').first().textContent().catch(() => null);
+                if (await summary.isVisible().catch(() => false)) { landedVia = 'report'; break; }
+                const progress = await dialog.locator('text=/Chapter \\d+\\/\\d+/').first().textContent({ timeout: 1000 }).catch(() => null);
                 if (progress && progress !== lastProgress) {
                     console.log('[fanout409] ' + progress.trim());
                     lastProgress = progress;
@@ -336,7 +392,58 @@ test.describe('PictureBook fan-out re-run reuses existing chapter books on 409 (
                 expect(Date.now() < deadline, 'fan-out did not finish within the budget (last URL ' + page.url() + ')').toBe(true);
                 await page.waitForTimeout(3000);
             }
-            console.log('[fanout409] landed on ' + page.url());
+            // Chapters the report says received no scenes (1-based chapter numbers). Filled from the report;
+            // a clean run (route landing) has none.
+            const missingChapters = new Set();
+            if (landedVia === 'report') {
+                const headline = ((await summary.locator('[data-pb-chapter-summary-headline]').textContent({ timeout: 5000 })) || '').trim();
+                const problems = (await summary.locator('[data-pb-chapter-problem]').allTextContents()).map(s => s.trim());
+                console.log('[fanout409] wizard report: ' + headline);
+                for (const p of problems) console.log('[fanout409]   problem: ' + p);
+                // The pre-fix 409 fork signature must not be among the problems — that is the property under test.
+                for (const p of problems) {
+                    expect(p, 'report must not carry a chapter-book create / save failure').not.toMatch(/could not create its book|\b409\b|could not be saved|createChapter/i);
+                }
+                // §24 UAT-5 READ (2026-11-15, rerun 3): asserted — "N of N chapters saved" (every chapter persisted);
+                // product now — a chapter whose every passage the route's content filter withheld has nothing to
+                // persist, and the report says so: "Chapter k (…): no scenes were extracted." plus one
+                // "Passage i of n — the model declined to process this passage …" line per withheld passage, and
+                // the headline counts it as missing; why — the route (azure/gpt-5.6-terra via LiteLLM) declines
+                // Harlot's Eight passages at its own discretion, so which chapters land is not the product's
+                // doing and a missing chapter is evidence of nothing — PROVIDED the report attributes it to
+                // declined passages. Before UAT-5 the same withheld completion was mislabelled "did not finish
+                // within the request timeout" (an infrastructure failure, retried nowhere) or counted as a
+                // successful reply with no scenes; that mislabel is what this block now pins.
+                const saved = /(\d+) of (\d+) chapters saved/.exec(headline);
+                expect(saved, 'report headline must state how many chapters were saved: ' + headline).toBeTruthy();
+                expect(Number(saved[2]), 'the report must cover every pre-created chapter').toBe(preCreated.length);
+                const declinedLine = /Passage \d+ of \d+ — the model declined to process this passage/i;
+                const chapterOf = (p) => { const mt = /^Chapter (\d+) \(/.exec(p); return mt ? Number(mt[1]) : 0; };
+                for (const p of problems) {
+                    if (/no scenes were extracted/i.test(p)) { missingChapters.add(chapterOf(p)); continue; }
+                    expect(p, 'a remaining problem must be passage-level, not a chapter failure').toMatch(/Passage \d+ of \d+ — /);
+                }
+                for (const num of missingChapters) {
+                    const range = ranges[num - 1];
+                    if (!range || range.title == null) continue; // the untitled front-matter range legitimately yields no scenes
+                    const passageLines = problems.filter(p => chapterOf(p) === num && /Passage \d+ of \d+ — /.test(p));
+                    expect(passageLines.length, 'chapter ' + num + ' received no scenes but the report names no failed passage — nothing attributes the loss').toBeGreaterThan(0);
+                    for (const p of passageLines) {
+                        // A withheld completion is a DECLINE. Any other label on a passage of a chapter that
+                        // received nothing — "did not finish within the request timeout", "did not respond",
+                        // "empty reply", "no JSON" — is the pre-UAT-5 mislabel (or a real failure to READ), never
+                        // an accepted way to lose a chapter.
+                        expect(p, 'a missing chapter may only be attributed to passages the model declined').toMatch(declinedLine);
+                    }
+                }
+                expect(Number(saved[1]) + missingChapters.size, 'headline saved count must agree with the per-chapter "no scenes" lines: ' + headline).toBe(Number(saved[2]));
+                expect(Number(saved[1]), 'the route declined every passage of every chapter — the run produced no evidence of the 409-reuse save path; rerun (' + headline + ')').toBeGreaterThanOrEqual(1);
+                console.log('[fanout409] chapters saved=' + saved[1] + '/' + saved[2] + ' missing (attributed to declines)=' + JSON.stringify([...missingChapters]));
+                // The report's own way to the series canvas is the same route a clean run lands on.
+                await summary.locator('[data-pb-open-series]').click();
+                await expect.poll(() => page.url(), { timeout: 20000 }).toMatch(landing);
+            }
+            console.log('[fanout409] landed on ' + page.url() + ' via ' + landedVia);
 
             // ── The 409s were REUSED, not forked: same series, same slugs, same objectIds, no extras.
             await apiLogin(request, { user: SHARED_USER, password: SHARED_PASSWORD });
@@ -352,16 +459,39 @@ test.describe('PictureBook fan-out re-run reuses existing chapter books on 409 (
             expect(books.some(b => /-ch\d+-[0-9a-z]{4}$/.test(b.slug)), 'no suffixed fork slugs may appear').toBe(false);
 
             // ── Scenes were persisted into the reused REAL chapter books (titled ranges). The
-            //    leading front-matter range ("Harlot's Eight") legitimately yields no scenes.
+            //    leading front-matter range ("Harlot's Eight") legitimately yields no scenes, and so does a
+            //    chapter the report attributed to declined passages (UAT-5) — asserted empty, logged, never
+            //    a threshold. Every other titled chapter must carry scenes in its REUSED book.
+            //    READ (U-3 pb-litellm rerun 5, 2026-11-15): asserted — every chapter book answers 200 on
+            //    /scenes. Product — `PictureBookUtil.listScenes` resolves a pb.book to its linked scene group
+            //    and throws 404 "Book not found" when none was ever linked, which is exactly the state of a
+            //    chapter whose every passage the route declined (no createFromScenes ran). Rerun 3's READ had
+            //    already recorded "<ch2>/scenes → 404 Book not found = nothing linked". So a DECLINED chapter
+            //    may answer 404 (nothing linked) or 200 + []; a SAVED chapter must answer 200 with scenes.
             const realChapters = preCreated.filter(c => ranges[c.chapNum - 1].title != null);
             expect(realChapters.length, 'fixture must carry >= 2 titled chapters').toBeGreaterThanOrEqual(2);
+            let savedWithScenes = 0;
             for (const c of realChapters) {
                 const scResp = await request.get(PB + '/' + c.objectId + '/scenes');
-                expect(scResp.ok(), 'GET /' + c.objectId + '/scenes failed: ' + scResp.status()).toBe(true);
+                const declined = missingChapters.has(c.chapNum);
+                if (declined && scResp.status() === 404) {
+                    console.log('[fanout409] ' + c.slug + ' (' + c.title + ') persisted scenes=0'
+                        + ' [report: no scenes — passages declined; /scenes → 404 (nothing linked)]');
+                    continue;
+                }
+                expect(scResp.ok(), 'GET /' + c.objectId + '/scenes failed: ' + scResp.status()
+                    + (declined ? ' (declined chapter: only 404 = nothing linked, or 200 + [], is acceptable)' : '')).toBe(true);
                 const scenes = await scResp.json();
                 console.log('[fanout409] ' + c.slug + ' (' + c.title + ') persisted scenes=' + scenes.length
+                    + (declined ? ' [report: no scenes — passages declined]' : '')
                     + (scenes.length ? ': ' + scenes.map(s => s.title).slice(0, 8).join(' | ') : ''));
-                expect(scenes.length, 'reused chapter book ' + c.slug + ' must have persisted scenes').toBeGreaterThan(0);
+                if (declined) {
+                    expect(scenes.length, 'chapter ' + c.slug + ' was reported as receiving no scenes, yet its reused book holds some — report and book disagree').toBe(0);
+                } else {
+                    expect(scenes.length, 'reused chapter book ' + c.slug + ' must have persisted scenes').toBeGreaterThan(0);
+                    savedWithScenes++;
+                }
             }
+            expect(savedWithScenes, 'at least one reused chapter book must hold the scenes the run saved').toBeGreaterThanOrEqual(1);
         });
 });

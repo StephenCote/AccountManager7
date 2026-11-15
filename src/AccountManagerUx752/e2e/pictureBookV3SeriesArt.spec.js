@@ -587,8 +587,9 @@ test.describe('PictureBook V3 P10-A 7 — SERIES_ART: created from chapter A, sh
         await expect(coverRootB).toHaveAttribute('data-pb2-cover-band', 'TOP');
         await expect(coverRootB).toHaveClass(/justify-start/);
         await expect(page.locator('[data-pb2-series-art]')).toHaveCount(0);
-        // The reader's title is the book's name ("Book <slug>", PbBookUtil.bookName), not the request title.
-        await expect(coverRootB).toContainText('Book ' + fx.b.slug);
+        // The reader's title is the book's name, which since KI-90 (§24 I-9, 2026-11-14) IS the title the
+        // chapter was created with (PbBookUtil.bookName; "Book <slug>" only when no title was passed).
+        await expect(coverRootB).toContainText(fx.b.title);
         const imgB = page.locator('[data-pb2-cover-image]');
         await expect(imgB).toHaveCount(1);
         await expect(imgB).toHaveClass(/opacity-100/);

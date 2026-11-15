@@ -1515,6 +1515,7 @@ function newListControl() {
         listContainerId = containerId;
         // breadcrumb clears via navigation component
         pagination.new();
+        pagination.pages().noCache = true; // §24 UAT-4: same one-shot bust as openForPicker for each source switch
         let fakeVnode = { attrs: { type: pickerType, objectId: containerId } };
         initParams(fakeVnode);
         update(fakeVnode);
@@ -1543,6 +1544,12 @@ function newListControl() {
 
         pagination.new();
         pagination.setEmbeddedMode(true);
+        // §24 UAT-4: the picker must see a record created a moment ago. The server's search cache is
+        // cleared on UPDATE / DELETE only (DBWriter), never on CREATE, and the REST / drag-drop upload
+        // paths do not clear it from the client, so a picker opened with cache:true can be served a
+        // page up to CacheDBSearch.maximumCacheAgeMS (6 min) old that omits the new record — the
+        // list view already busts it on remount (Issue 4, oninit above); the picker did not.
+        pagination.pages().noCache = true;
 
         let fakeVnode = { attrs: { type: opts.type, objectId: opts.containerId } };
         initParams(fakeVnode);

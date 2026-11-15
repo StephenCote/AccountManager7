@@ -633,9 +633,10 @@ public class TestPbMigration extends BaseTest {
 
 	/**
 	 * §24 I-5 / 218 d pin: {@code after} parses to {@code before} plus exactly {@code pb2BookObjectId = bookOid}.
-	 * The link is written by re-serialising the parsed meta map through {@code JSONUtil.exportObject}, which is
-	 * {@code Include.NON_EMPTY} and pretty-prints, so the comparison is on parsed maps with empty values stripped
-	 * from both sides - never on the raw text.
+	 * The link is written by re-serialising the parsed meta map through {@code PbMigrationUtil.exportMetaMap}
+	 * (§24 UAT-3, 2026-11-15: {@code Include.ALWAYS}; the {@code NON_EMPTY} {@code JSONUtil} mapper used before dropped
+	 * every empty value and this pin was loosened to match), so the comparison is exact on the parsed maps - every
+	 * key, empties included - never on the raw text, which is pretty-printed.
 	 */
 	private static void assertMetaDiffersOnlyByLink(String label, String before, String after, String bookOid) {
 		assertNotNull(label + ": meta text after import", after);
@@ -648,32 +649,7 @@ public class TestPbMigration extends BaseTest {
 		beforeMinusLink.remove("pb2BookObjectId");
 		Map<String, Object> afterMinusLink = new LinkedHashMap<>(afterMap);
 		afterMinusLink.remove("pb2BookObjectId");
-		assertEquals(label + ": every other meta key is unchanged by the import", stripEmpty(beforeMinusLink), stripEmpty(afterMinusLink));
-	}
-
-	/** Deep copy with null / empty-string / empty-map / empty-list values removed - what the NON_EMPTY exporter drops. */
-	@SuppressWarnings("unchecked")
-	private static Object stripEmpty(Object o) {
-		if (o instanceof Map) {
-			Map<String, Object> out = new LinkedHashMap<>();
-			for (Map.Entry<String, Object> e : ((Map<String, Object>) o).entrySet()) {
-				Object v = stripEmpty(e.getValue());
-				if (v == null || (v instanceof String && ((String) v).isEmpty())
-					|| (v instanceof Map && ((Map<?, ?>) v).isEmpty()) || (v instanceof List && ((List<?>) v).isEmpty())) {
-					continue;
-				}
-				out.put(e.getKey(), v);
-			}
-			return out;
-		}
-		if (o instanceof List) {
-			List<Object> out = new ArrayList<>();
-			for (Object v : (List<Object>) o) {
-				out.add(stripEmpty(v));
-			}
-			return out;
-		}
-		return o;
+		assertEquals(label + ": every other meta key is unchanged by the import (empties included)", beforeMinusLink, afterMinusLink);
 	}
 
 	@Test

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -747,15 +748,24 @@ public class PbNodeExecutor {
 		/// attempt, captured here before anything renders, so the second final never supersedes the first
 		/// and only variant 0 takes the selection (PbPipelineUtil.recordImage, batch overload).
 		BaseRecord preBatch = PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_BASE);
-		String attempt = attemptOf(g);
+		/// §24 I-6 (212 e): a current node whose previous attempt left a VARIANT_FAILED hole is filled, not re-rolled -
+		/// the fills are recorded under THAT attempt with their real variantIndex (> 0, so never selected) and the
+		/// whole attempt, kept finals included, is what QA-ordered auto-approve ranks below.
+		GapFill fill = findGapFill(g, node);
+		String attempt = (fill != null ? fill.attempt : attemptOf(g));
+		if(fill != null) {
+			/// the fills sit beside their kept siblings: same `supersedes` (what stood before THAT attempt), never
+			/// the attempt's own variant 0, which is what findSelected answers now
+			preBatch = fill.kept.get(0).get(OlioFieldNames.FIELD_PB_SUPERSEDES);
+		}
 
 		PlannedRender r = renderPlannedScene(g, node, scene, sceneLabel, sdu,
 			"render_plan_" + (sceneIndex != null ? sceneIndex : "x"),
-			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt", true);
+			"Scene " + (sceneIndex != null ? sceneIndex : scopeRef) + " has no text to render: set its setting/action or sdPrompt", true, fill);
 		List<BaseRecord> artifacts = new ArrayList<>();
 		for(PlannedRender.Variant v : r.variants) {
 			BaseRecord a;
-			if(r.variants.size() > 1) {
+			if(r.fill != null || r.variants.size() > 1) {
 				a = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.IMAGE,
 					v.data, v.bytes, "image/png", v.seed, r.frozen, v.requestJson, v.referenceArtifactObjectIds, sdu.getApiType(), v.durationMs,
 					v.backendGraph, preBatch, v.variantIndex, attempt);
@@ -768,24 +778,87 @@ public class PbNodeExecutor {
 			artifacts.add(a);
 		}
 		/// §17 (P8-4): judge the recorded finals before the node completes; a FAIL / WARN flags its image for
-		/// review and the verdicts order auto-approve. The images stand whatever QA says (220 g).
+		/// review and the verdicts order auto-approve. The images stand whatever QA says (220 g). On a gap fill the
+		/// fills are judged under the preset's mode exactly as the attempt's later variants would have been:
+		/// CANONICAL judged variant 0 when it was rendered and judges nothing now; ALL judges every fill.
 		AttemptQa qa = qaAttempt(g, sdu, r, artifacts, sceneLabel);
 		if(qa != null) {
 			r.degradations.addAll(qa.degradations);
 		}
-		BaseRecord artifact = artifacts.get(0);
 		bindSceneLocation(g, node, r.plan, r.degradations);
 
 		List<BaseRecord> downstream = PbGraphUtil.downstreamOf(user, g.getWorkflow(), node);
 		PbPipelineUtil.completeNode(g, node, PbNodeStatusEnumType.DONE_UNVERIFIED);
 
+		List<Map<String, Object>> variantsDto;
+		BaseRecord artifact;
+		if(r.fill != null) {
+			/// The DTO describes the whole attempt: `artifactObjectId` / `reviewStatus` are the kept variant 0's (what
+			/// the attempt's own run reported), and `variants[]` is kept + filled in variantIndex order, the kept
+			/// entries carrying the verdicts their own run persisted (PbQaUtil.latestReportsOf) so auto-approve
+			/// ranks every variant of the attempt, not only the fills.
+			artifact = r.fill.kept.get(0);
+			variantsDto = attemptDto(user, node, r.fill, artifacts, r.variants, qa);
+		}
+		else {
+			artifact = artifacts.get(0);
+			variantsDto = variantsDto(artifacts, r.variants, qa);
+		}
 		Map<String, Object> out = artifactDto(node, "DONE_UNVERIFIED", artifact, Long.valueOf(r.bytes.length), downstream, r.degradations);
 		r.describe(out);
-		out.put(KEY_VARIANTS, variantsDto(artifacts, r.variants, qa));
+		out.put(KEY_VARIANTS, variantsDto);
 		if(qa != null) {
 			out.put(KEY_QA_MODE, qa.mode);
 		}
+		else if(r.fill != null) {
+			/// no new verdict this run, but the kept entries carry theirs: the mode still orders them
+			String mode = PbQaUtil.qaModeOf(r.plan);
+			if(!QualityPresets.QA_OFF.equals(mode)) {
+				out.put(KEY_QA_MODE, mode);
+			}
+		}
 		return out;
+	}
+
+	/**
+	 * §24 I-6: {@link #KEY_VARIANTS} for a gap-filled attempt - the kept finals ({@link GapFill#kept}, each with the
+	 * newest {@code qa} report its own run persisted, when any) and the fills ({@link #variantsDto}), merged in
+	 * {@code variantIndex} order. The kept entries' {@code reviewStatus} / {@code selected} are re-read now
+	 * ({@link PbArtifactUtil#artifactRequest()} projection), so an APPROVED variant 0 reads APPROVED here.
+	 */
+	private static List<Map<String, Object>> attemptDto(BaseRecord user, BaseRecord node, GapFill fill, List<BaseRecord> artifacts,
+			List<PlannedRender.Variant> variants, AttemptQa qa) {
+		Map<String, QaReport> reports = PbQaUtil.latestReportsOf(user, node);
+		Map<Integer, Map<String, Object>> byIndex = new TreeMap<>();
+		for(BaseRecord a : fill.kept) {
+			Map<String, Object> m = new LinkedHashMap<>();
+			String oid = a.get(FieldNames.FIELD_OBJECT_ID);
+			int vi = PbArtifactUtil.variantIndexOf(a);
+			m.put("artifactObjectId", oid);
+			m.put("variantIndex", Integer.valueOf(vi));
+			m.put("seed", (a.hasField(OlioFieldNames.FIELD_PB_SEED) ? a.get(OlioFieldNames.FIELD_PB_SEED) : null));
+			m.put("artifactRevision", a.get(OlioFieldNames.FIELD_PB_REVISION));
+			Boolean sel = a.get(OlioFieldNames.FIELD_PB_SELECTED);
+			m.put("selected", Boolean.valueOf(sel != null && sel.booleanValue()));
+			m.put("reviewStatus", PbArtifactUtil.reviewStatusOf(a).name());
+			m.put("kept", Boolean.TRUE);
+			QaReport rep = (oid != null ? reports.get(oid) : null);
+			if(rep != null) {
+				Map<String, Object> q = new LinkedHashMap<>();
+				q.put("result", rep.getResult().name());
+				q.put("provider", rep.getProvider());
+				if(rep.getNote() != null) {
+					q.put("note", rep.getNote());
+				}
+				m.put(KEY_VARIANT_QA, q);
+			}
+			byIndex.put(Integer.valueOf(vi), m);
+		}
+		for(Map<String, Object> m : variantsDto(artifacts, variants, qa)) {
+			m.put("kept", Boolean.FALSE);
+			byIndex.put((Integer) m.get("variantIndex"), m);
+		}
+		return new ArrayList<>(byIndex.values());
 	}
 
 	/**
@@ -884,6 +957,238 @@ public class PbNodeExecutor {
 		return (g != null && g.getRun() != null ? g.getRun().get(FieldNames.FIELD_OBJECT_ID) : null);
 	}
 
+	/**
+	 * §24 I-6 (212 e): the hole a previous attempt left in a scene node's {@code variantIndex} sequence, to be
+	 * filled by the next run of the node instead of a fresh attempt. Found by {@link #findGapFill}; consumed by
+	 * {@link #renderPlanned(SceneGraph, BaseRecord, RenderPlan, String, SDUtil, String, String, int, GapFill)},
+	 * which renders exactly {@link #indices} under {@link #attempt} with the seeds that attempt would have used
+	 * ({@link #variantSeed}({@link #baseSeed}, i)), and by {@link #executeRenderPlan}, which reports the whole
+	 * attempt - {@link #kept} plus the fills - so auto-approve ranks every variant of it.
+	 */
+	static final class GapFill {
+		/// The attempt (run objectId) being filled - the one whose plan artifact carries VARIANT_FAILED.
+		final String attempt;
+		/// How many finals that attempt planned (its plan artifact's preset values).
+		final int planned;
+		/// The variantIndex values that attempt has no surviving final for, ascending; never contains 0.
+		final List<Integer> indices;
+		/// The seed of the kept variant 0 (what the attempt's later variants derive from), or null when the renderer
+		/// reported none - the fills are then random and say so (VARIANT_SEED_UNKNOWN).
+		final Long baseSeed;
+		/// The attempt's surviving finals in variantIndex order (ARCHIVED rows excluded), read with
+		/// {@link PbArtifactUtil#artifactRequest()}; always holds variant 0.
+		final List<BaseRecord> kept;
+
+		GapFill(String attempt, int planned, List<Integer> indices, Long baseSeed, List<BaseRecord> kept) {
+			this.attempt = attempt;
+			this.planned = planned;
+			this.indices = Collections.unmodifiableList(new ArrayList<>(indices));
+			this.baseSeed = baseSeed;
+			this.kept = Collections.unmodifiableList(new ArrayList<>(kept));
+		}
+
+		/// The kept finals' variantIndex values, ascending.
+		List<Integer> keptIndices() {
+			List<Integer> out = new ArrayList<>();
+			for(BaseRecord a : kept) {
+				out.add(Integer.valueOf(PbArtifactUtil.variantIndexOf(a)));
+			}
+			return out;
+		}
+	}
+
+	/**
+	 * §24 I-6 (212 e): whether this run of a scene's RENDER_PLAN node should fill the previous attempt's
+	 * {@code VARIANT_FAILED} gap rather than start a new attempt. Every condition must hold, and each is a reason a
+	 * fresh attempt is the right answer when it does not:
+	 * <ol>
+	 * <li>the graph belongs to a run (Test mode renders one variant and stamps no attempt);</li>
+	 * <li>the node is current: its stored status is DONE / DONE_UNVERIFIED and {@link PbGraphUtil#recomputeStatus}
+	 * agrees (a STALE, READY or FAILED node re-renders from scratch - its inputs changed, or it never completed);</li>
+	 * <li>the node's newest {@code renderPlan} artifact carries a {@code VARIANT_FAILED} degradation and planned at
+	 * least two finals;</li>
+	 * <li>the request's {@code variants} override, when present, equals what that attempt planned (asking for a
+	 * different count is asking for a different attempt);</li>
+	 * <li>the newest {@code base} artifact's attempt still has its variant 0 (unarchived) and at least one index in
+	 * {@code 0..planned-1} with no surviving final.</li>
+	 * </ol>
+	 * The node's in-memory {@code nodeStatus} is the one read before the RUNNING stamp ({@link PbGraphUtil#persistStatus}
+	 * patches a copy), so this is safe to call from inside the run. Reads only; never throws for a missing field.
+	 */
+	static GapFill findGapFill(SceneGraph g, BaseRecord node) {
+		if(g == null || g.getRun() == null || node == null) {
+			return null;
+		}
+		if(g.getPlanOptions().isBackgroundRegen()) {
+			/// §22 (I-8): a background-only regenerate is a new single-variant attempt by definition; it never fills
+			return null;
+		}
+		BaseRecord user = g.getUser();
+		PbNodeStatusEnumType stored = (node.hasField(OlioFieldNames.FIELD_PB_NODE_STATUS)
+			? node.getEnum(OlioFieldNames.FIELD_PB_NODE_STATUS) : null);
+		if(stored != PbNodeStatusEnumType.DONE && stored != PbNodeStatusEnumType.DONE_UNVERIFIED) {
+			return null;
+		}
+		PbNodeStatusEnumType current = PbGraphUtil.recomputeStatus(user, node, g.getBook());
+		if(current != PbNodeStatusEnumType.DONE && current != PbNodeStatusEnumType.DONE_UNVERIFIED) {
+			return null;
+		}
+		List<BaseRecord> plans = PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_RENDER_PLAN);
+		if(plans.isEmpty()) {
+			return null;
+		}
+		RenderPlan last;
+		try {
+			last = PbRenderPlanUtil.readPlanArtifact(plans.get(plans.size() - 1));
+		}
+		catch(RuntimeException e) {
+			logger.warn("findGapFill: the newest plan artifact of node " + node.get(FieldNames.FIELD_NAME) + " did not parse: " + e.getMessage());
+			return null;
+		}
+		if(last == null || last.getPreset() == null) {
+			return null;
+		}
+		boolean variantFailed = false;
+		for(RenderPlan.Degradation d : last.getDegradations()) {
+			if(RenderPlan.Degradation.VARIANT_FAILED.equals(d.getCode())) {
+				variantFailed = true;
+				break;
+			}
+		}
+		int planned = last.getPreset().getVariants();
+		if(!variantFailed || planned < 2) {
+			return null;
+		}
+		Integer override = g.getPlanOptions().getVariantsOverride();
+		if(override != null && override.intValue() != planned) {
+			return null;
+		}
+		List<BaseRecord> bases = PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_BASE);
+		String attempt = null;
+		for(int i = bases.size() - 1; i >= 0 && attempt == null; i--) {
+			attempt = PbArtifactUtil.attemptOf(bases.get(i));
+		}
+		if(attempt == null) {
+			return null;
+		}
+		Map<Integer, BaseRecord> kept = new TreeMap<>();
+		for(BaseRecord a : bases) {
+			if(!attempt.equals(PbArtifactUtil.attemptOf(a)) || PbArtifactUtil.reviewStatusOf(a) == PbReviewStatusEnumType.ARCHIVED) {
+				continue;
+			}
+			kept.put(Integer.valueOf(PbArtifactUtil.variantIndexOf(a)), a);
+		}
+		BaseRecord v0 = kept.get(Integer.valueOf(0));
+		if(v0 == null) {
+			return null;
+		}
+		List<Integer> gaps = new ArrayList<>();
+		for(int i = 1; i < planned; i++) {
+			if(!kept.containsKey(Integer.valueOf(i))) {
+				gaps.add(Integer.valueOf(i));
+			}
+		}
+		if(gaps.isEmpty()) {
+			return null;
+		}
+		Long baseSeed = (v0.hasField(OlioFieldNames.FIELD_PB_SEED) ? v0.get(OlioFieldNames.FIELD_PB_SEED) : null);
+		if(baseSeed != null && baseSeed.longValue() == 0L) {
+			/// the column's DDL default: the renderer reported no seed for variant 0 (recordImageMetrics writes none)
+			baseSeed = null;
+		}
+		logger.info("findGapFill: node " + node.get(FieldNames.FIELD_NAME) + " attempt " + attempt + " planned " + planned
+			+ ", kept " + kept.keySet() + ", filling " + gaps + (baseSeed != null ? " from seed " + baseSeed : " with random seeds"));
+		return new GapFill(attempt, planned, gaps, baseSeed, new ArrayList<>(kept.values()));
+	}
+
+	/**
+	 * Design §22 (§24 I-8): what a background-only regenerate of a scene keeps - the ACTOR_REGION seed each actor
+	 * rendered with on the scene's currently selected final - so the re-render's BASE takes a new seed while every
+	 * actor pass re-runs its own seed over the new base and comes back as it was. Found by {@link #findBackgroundRegen};
+	 * consumed by {@link #renderStages}, which seeds each pass from {@link #seedFor} and reports the actors it could
+	 * not seed ({@link RenderPlan.Degradation#ACTOR_SEED_NEW}); reported by {@link PlannedRender#describe}.
+	 * <p>
+	 * "Keeping actors" is seed reuse, not pixel copy: the pass prompts, portraits and boxes are the current plan's,
+	 * so an actor whose description or portrait changed since the selected final comes back changed, and an actor
+	 * added since is new ({@code ACTOR_SEED_NEW}). The seeds are read from the stage labels I-8 records on every
+	 * artifact's {@code generatorRequest} ({@link PbArtifactUtil#STAGE_LABEL_KEY}); a final rendered before I-8
+	 * carries none, so its first background regenerate reports every actor {@code ACTOR_SEED_NEW} and the next one
+	 * keeps them.
+	 */
+	static final class BackgroundRegen {
+		/// The selected {@code base} final the background is regenerated from.
+		final String fromArtifactObjectId;
+		/// That final's attempt (run objectId), or null for a Test-mode / pre-Phase-6 final.
+		final String attempt;
+		/// actorId -> the ACTOR_REGION seed that actor rendered with on {@link #fromArtifactObjectId}'s attempt and variant.
+		final Map<String, Long> seedsByActor;
+		/// The actors whose pass reused its seed (filled by renderStages, in pass order).
+		final List<String> reused = new ArrayList<>();
+		/// The actors whose pass rendered with a fresh seed (filled by renderStages, in pass order).
+		final List<String> fresh = new ArrayList<>();
+
+		BackgroundRegen(String fromArtifactObjectId, String attempt, Map<String, Long> seedsByActor) {
+			this.fromArtifactObjectId = fromArtifactObjectId;
+			this.attempt = attempt;
+			this.seedsByActor = Collections.unmodifiableMap(new LinkedHashMap<>(seedsByActor));
+		}
+
+		/// The seed to reuse for {@code actorId}'s ACTOR_REGION pass, or null when the selected final has none for it.
+		Long seedFor(String actorId) {
+			return (actorId != null ? seedsByActor.get(actorId) : null);
+		}
+	}
+
+	/**
+	 * §22 (I-8): the {@link BackgroundRegen} for this execution, or null when the graph's {@link PlanOptions} do not
+	 * ask for one. Refuses (409) when the node has no selected {@code base} final - there is nothing to regenerate
+	 * the background <em>of</em>; render the scene first. The seeds come from the artifacts of the selected final's
+	 * attempt and variant: its {@code stage} siblings and the final itself, each keyed by the stage label on its
+	 * sanitized {@code generatorRequest}; a final with no attempt (Test mode) is matched by variant index alone,
+	 * which is exact for a single-variant node and the best available otherwise. Reads only, as the user.
+	 */
+	static BackgroundRegen findBackgroundRegen(SceneGraph g, BaseRecord node) {
+		if(g == null || node == null || !g.getPlanOptions().isBackgroundRegen()) {
+			return null;
+		}
+		BaseRecord user = g.getUser();
+		BaseRecord from = PbArtifactUtil.findSelected(user, node, PbPipelineUtil.ROLE_BASE);
+		if(from == null) {
+			throw new PictureBookException(409, "Scene has no selected render to regenerate the background of; render it first");
+		}
+		String fromOid = from.get(FieldNames.FIELD_OBJECT_ID);
+		String attempt = PbArtifactUtil.attemptOf(from);
+		int variant = PbArtifactUtil.variantIndexOf(from);
+		List<BaseRecord> candidates = new ArrayList<>();
+		for(BaseRecord s : PbArtifactUtil.listChain(user, node, PbPipelineUtil.ROLE_STAGE)) {
+			if(attempt != null && !attempt.equals(PbArtifactUtil.attemptOf(s))) {
+				continue;
+			}
+			if(PbArtifactUtil.variantIndexOf(s) != variant) {
+				continue;
+			}
+			candidates.add(s);
+		}
+		candidates.add(from);
+		String prefix = RenderPlan.actorStagePrefix(RenderPlan.STAGE_ACTOR_REGION);
+		Map<String, Long> seeds = new LinkedHashMap<>();
+		for(BaseRecord c : candidates) {
+			String label = PbArtifactUtil.stageLabelOf(c);
+			if(label == null || !label.startsWith(prefix) || label.length() <= prefix.length()) {
+				continue;
+			}
+			Long seed = (c.hasField(OlioFieldNames.FIELD_PB_SEED) ? c.get(OlioFieldNames.FIELD_PB_SEED) : null);
+			if(seed == null || seed.longValue() == 0L) {
+				/// the column's DDL default: no seed was reported for the pass
+				continue;
+			}
+			seeds.put(label.substring(prefix.length()), seed);
+		}
+		logger.info("findBackgroundRegen: node " + node.get(FieldNames.FIELD_NAME) + " from " + fromOid
+			+ (attempt != null ? " attempt " + attempt : " (no attempt)") + " variant " + variant + ", actor seeds " + seeds);
+		return new BackgroundRegen(fromOid, attempt, seeds);
+	}
+
 	/// {@link #KEY_VARIANTS}: one entry per recorded final, in variant order; {@code reviewStatus} is the
 	/// artifact's as recorded (IN_REVIEW after a QA flag), and {@link #KEY_VARIANT_QA} is present on every
 	/// variant the hook judged ({@code {result, artifactObjectId, provider, note}}, the report's).
@@ -976,6 +1281,13 @@ public class PbNodeExecutor {
 	static AttemptQa qaAttempt(SceneGraph g, SDUtil sdu, PlannedRender r, List<BaseRecord> artifacts, String sceneLabel) {
 		String mode = PbQaUtil.qaModeOf(r.plan);
 		if(QualityPresets.QA_OFF.equals(mode) || artifacts == null || artifacts.isEmpty()) {
+			return null;
+		}
+		if(r.fill != null && QualityPresets.QA_CANONICAL.equals(mode)) {
+			/// §24 I-6: a gap fill renders variantIndex > 0 only; CANONICAL judged the kept variant 0 on its own run
+			/// (its report is what attemptDto re-reads), so there is nothing to judge now.
+			logger.info("Visual QA of " + sceneLabel + " (" + mode + ") skipped on the gap fill of attempt " + r.fill.attempt
+				+ ": variant 0 was judged by its own run");
 			return null;
 		}
 		AttemptQa qa = new AttemptQa(mode);
@@ -1271,12 +1583,19 @@ public class PbNodeExecutor {
 		/// the scalar fields above describe; a single-variant render has exactly one entry.
 		final List<Variant> variants;
 		/// How many finals this render was asked for - the preset's count on the run path, 1 on every
-		/// single-variant path (LOCATION, the non-run scene render) whatever the preset says.
+		/// single-variant path (LOCATION, the non-run scene render) whatever the preset says. On a gap fill
+		/// (§24 I-6) it is what the FILLED attempt planned, and {@code variants} holds the fills only.
 		final int variantsPlanned;
+		/// §24 I-6: the gap this render filled, or null for an ordinary attempt. When set, {@code variants} are
+		/// the fills (every variantIndex > 0, none selected) and the caller reports them with {@link GapFill#kept}.
+		final GapFill fill;
+		/// §24 I-8 (design §22): the background regenerate this render was, or null for an ordinary render. When set,
+		/// exactly one variant was rendered with a new BASE seed and the actor passes seeded from {@code bg.seedsByActor}.
+		final BackgroundRegen bg;
 
 		private PlannedRender(RenderPlan plan, String planOid, CompiledPrompt compiled, BaseRecord frozen,
 				List<String> degradations, List<String> configNotApplied, List<Map<String, Object>> stageErrors,
-				boolean calibrationPersisted, List<Variant> variants, int variantsPlanned) {
+				boolean calibrationPersisted, List<Variant> variants, int variantsPlanned, GapFill fill, BackgroundRegen bg) {
 			Variant v0 = variants.get(0);
 			this.plan = plan;
 			this.planOid = planOid;
@@ -1296,6 +1615,8 @@ public class PbNodeExecutor {
 			this.calibrationPersisted = calibrationPersisted;
 			this.variants = variants;
 			this.variantsPlanned = variantsPlanned;
+			this.fill = fill;
+			this.bg = bg;
 		}
 
 		/// One final of the attempt (V3 §23): the last stage's image of its own BASE → ACTOR_REGION sequence,
@@ -1342,9 +1663,44 @@ public class PbNodeExecutor {
 			out.put("planSummary", plan.actorSummary() + "; strategy " + strategy);
 			out.put(KEY_CONFIG_NOT_APPLIED, configNotApplied);
 			out.put(KEY_VARIANTS_PLANNED, Integer.valueOf(variantsPlanned));
-			out.put(KEY_VARIANTS_RENDERED, Integer.valueOf(variants.size()));
+			if(fill != null) {
+				/// §24 I-6: rendered = the whole attempt's surviving finals, kept plus filled
+				out.put(KEY_VARIANTS_RENDERED, Integer.valueOf(fill.kept.size() + variants.size()));
+				out.put(KEY_RESUMED_ATTEMPT, fill.attempt);
+				List<Integer> filled = new ArrayList<>();
+				for(Variant v : variants) {
+					filled.add(Integer.valueOf(v.variantIndex));
+				}
+				out.put(KEY_FILLED_VARIANT_INDEXES, filled);
+			}
+			else {
+				out.put(KEY_VARIANTS_RENDERED, Integer.valueOf(variants.size()));
+			}
+			if(bg != null) {
+				/// §24 I-8: which final the background was regenerated from, and which actors kept their seed
+				out.put(KEY_REGENERATE, REGENERATE_BACKGROUND);
+				out.put(KEY_REGENERATED_FROM, bg.fromArtifactObjectId);
+				out.put(KEY_ACTOR_SEEDS_REUSED, new ArrayList<>(bg.reused));
+				out.put(KEY_ACTOR_SEEDS_NEW, new ArrayList<>(bg.fresh));
+			}
 		}
 	}
+
+	/// DTO key (§24 I-8, design §22): present when this execution was a targeted regenerate; the only value so far
+	/// is {@link #REGENERATE_BACKGROUND}.
+	public static final String KEY_REGENERATE = "regenerate";
+	/// {@link #KEY_REGENERATE} value: the scene's BASE re-rendered with a new seed, the actor passes re-run with their
+	/// previous seeds over it.
+	public static final String REGENERATE_BACKGROUND = "background";
+	/// DTO key (§24 I-8): the objectId of the selected {@code base} final the background was regenerated from (the
+	/// one the new final supersedes).
+	public static final String KEY_REGENERATED_FROM = "regeneratedFromArtifactObjectId";
+	/// DTO key (§24 I-8): the actorIds whose ACTOR_REGION pass re-ran with the seed it had on the regenerated-from final.
+	public static final String KEY_ACTOR_SEEDS_REUSED = "actorSeedsReused";
+	/// DTO key (§24 I-8): the actorIds whose pass rendered with a new seed because the regenerated-from final carried
+	/// none for them (a final rendered before I-8, or an actor added since) - each also an
+	/// {@link RenderPlan.Degradation#ACTOR_SEED_NEW} degradation.
+	public static final String KEY_ACTOR_SEEDS_NEW = "actorSeedsNew";
 
 	/// DTO key (V3 §23, P6-2): how many finals this attempt was asked for - the preset's count on the run path,
 	/// 1 on the single-variant paths (a LOCATION render, a scene rendered outside a run) whatever the preset says.
@@ -1355,6 +1711,15 @@ public class PbNodeExecutor {
 	/// DTO key (V3 §23, P6-2): the attempt's finals in variant order, each
 	/// {@code {artifactObjectId, variantIndex, seed, byteLength, artifactRevision, selected}}.
 	public static final String KEY_VARIANTS = "variants";
+	/// DTO key (§24 I-6): the request's validated {@code variants} override, echoed by the submit / run result
+	/// when the body carried one; absent means the preset's own count.
+	public static final String KEY_VARIANTS_OVERRIDE = "variantsOverride";
+	/// DTO key (§24 I-6, 212 e): present when this execution was a gap fill - the previous attempt on the node had
+	/// a {@code VARIANT_FAILED} hole in {@code variantIndex}, and only the missing indices were rendered, under the
+	/// previous attempt's id, with the seeds that attempt would have used. Value: the attempt (run objectId) filled.
+	public static final String KEY_RESUMED_ATTEMPT = "resumedAttempt";
+	/// DTO key (§24 I-6): the {@code variantIndex} values a gap fill rendered, in order.
+	public static final String KEY_FILLED_VARIANT_INDEXES = "filledVariantIndexes";
 
 	/// DTO key: one entry per stage that failed (P5-2 §6), each {@code {stage, code, message, detail}};
 	/// {@code detail} is the adapter's {@link StageResult#getErrorDetail()} when it carried one.
@@ -1440,6 +1805,18 @@ public class PbNodeExecutor {
 	 */
 	static PlannedRender renderPlannedScene(SceneGraph g, BaseRecord node, BaseRecord scene, String sceneLabel, SDUtil sdu,
 			String imageNamePrefix, String noTextMessage, boolean multiVariant) {
+		return renderPlannedScene(g, node, scene, sceneLabel, sdu, imageNamePrefix, noTextMessage, multiVariant, null);
+	}
+
+	/**
+	 * {@link #renderPlannedScene(SceneGraph, BaseRecord, BaseRecord, String, SDUtil, String, String, boolean)} that,
+	 * when {@code fill} is set (§24 I-6, {@link #findGapFill}), renders only the previous attempt's missing variants
+	 * under that attempt - provided the plan built now still asks for the count that attempt planned; a plan that
+	 * now says otherwise (the style's preset changed under an unchanged input hash) drops the fill and starts a
+	 * fresh attempt, logged.
+	 */
+	static PlannedRender renderPlannedScene(SceneGraph g, BaseRecord node, BaseRecord scene, String sceneLabel, SDUtil sdu,
+			String imageNamePrefix, String noTextMessage, boolean multiVariant, GapFill fill) {
 		/// V3 §9.1 (P4-4): a scene rendered before the compose job reached it is composed here, by itself,
 		/// as the request user, and the plan says so. A ChapBook page has no SCENE composition (P4-8), and the
 		/// preview path (PbServiceFacade.planScene) never comes through here, so a read stays a read.
@@ -1465,7 +1842,18 @@ public class PbNodeExecutor {
 		if(multiVariant && g.getRun() != null && plan.getPreset() != null) {
 			variants = Math.max(1, plan.getPreset().getVariants());
 		}
-		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage, variants);
+		if(g.getPlanOptions().isBackgroundRegen()) {
+			/// §22 (I-8): a background regenerate replaces the one selected final with one new final, whatever the
+			/// preset's variant count, and never fills a gap (findGapFill already answers null for it).
+			variants = 1;
+			fill = null;
+		}
+		if(fill != null && (!multiVariant || g.getRun() == null || variants != fill.planned)) {
+			logger.warn("renderPlannedScene: " + sceneLabel + " plans " + variants + " variant(s) now but attempt " + fill.attempt
+				+ " planned " + fill.planned + "; starting a fresh attempt instead of filling " + fill.indices);
+			fill = null;
+		}
+		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage, variants, fill);
 	}
 
 	/**
@@ -1552,9 +1940,37 @@ public class PbNodeExecutor {
 	 */
 	static PlannedRender renderPlanned(SceneGraph g, BaseRecord node, RenderPlan plan, String sceneLabel, SDUtil sdu,
 			String imageNamePrefix, String noTextMessage, int variants) {
+		return renderPlanned(g, node, plan, sceneLabel, sdu, imageNamePrefix, noTextMessage, variants, null);
+	}
+
+	/**
+	 * {@link #renderPlanned(SceneGraph, BaseRecord, RenderPlan, String, SDUtil, String, String, int)} that, when
+	 * {@code fill} is set (§24 I-6, 212 e), renders ONLY {@link GapFill#indices} - the previous attempt's missing
+	 * variants - and persists them under that attempt ({@link GapFill#attempt}), each seeded
+	 * {@link #variantSeed}({@link GapFill#baseSeed}, i) exactly as the attempt would have seeded it (random, with a
+	 * {@code VARIANT_SEED_UNKNOWN} degradation, when the kept variant 0 reported no seed). Nothing about the kept
+	 * finals changes: every fill has {@code variantIndex > 0}, so none takes the selection, and they are written
+	 * against the role's current pre-batch selection like any later variant. A fill whose BASE fails is reported
+	 * exactly as a later variant's failure in a fresh attempt ({@code VARIANT_FAILED} + stage error, the gap kept);
+	 * a fill in which nothing rendered fails the node, as a variant-0 failure would. The plan built for the fill is
+	 * persisted as a new {@code renderPlan} artifact like any render (§12 rule 1), so the node's newest plan says
+	 * whether a gap remains; {@code variants} is read as the count the attempt planned.
+	 */
+	static PlannedRender renderPlanned(SceneGraph g, BaseRecord node, RenderPlan plan, String sceneLabel, SDUtil sdu,
+			String imageNamePrefix, String noTextMessage, int variants, GapFill fill) {
 		BaseRecord user = g.getUser();
 		RenderBackend backend = g.getRenderBackend();
 		int variantCount = Math.max(1, variants);
+		if(fill != null) {
+			variantCount = Math.max(variantCount, fill.planned);
+		}
+		/// §22 (I-8): resolved before the plan artifact is persisted, so a refusal (no selected final to regenerate
+		/// the background of) leaves no renderPlan revision behind. One final, no fill, whatever the caller asked.
+		BackgroundRegen bg = findBackgroundRegen(g, node);
+		if(bg != null) {
+			variantCount = 1;
+			fill = null;
+		}
 		BaseRecord planArtifact = PbRenderPlanUtil.persistPlanArtifact(user, node, g.getArtifactGroupPath(), plan);
 		String planOid = planArtifact.get(FieldNames.FIELD_OBJECT_ID);
 
@@ -1631,8 +2047,20 @@ public class PbNodeExecutor {
 		List<Map<String, Object>> stageErrors = new ArrayList<>();
 		boolean allCalibrated = true;
 		boolean anyGraph = false;
+		/// §24 I-6: a gap fill renders the missing indices only, from the kept variant 0's seed; an ordinary attempt
+		/// renders 0..N-1, variant 0 random and the rest from its reported seed
+		List<Integer> toRender = new ArrayList<>();
 		Long seed0 = null;
-		for(int v = 0; v < variantCount; v++) {
+		if(fill != null) {
+			toRender.addAll(fill.indices);
+			seed0 = fill.baseSeed;
+		}
+		else {
+			for(int v = 0; v < variantCount; v++) {
+				toRender.add(Integer.valueOf(v));
+			}
+		}
+		for(int v : toRender) {
 			StageRequest vReq = req;
 			String vLabel = sceneLabel;
 			if(v > 0) {
@@ -1649,7 +2077,7 @@ public class PbNodeExecutor {
 			}
 			StageSequence seq;
 			try {
-				seq = renderStages(g, node, plan, planOid, vLabel, sdu, vReq, pick, backend);
+				seq = renderStages(g, node, plan, planOid, vLabel, sdu, vReq, pick, backend, bg);
 			}
 			catch(PbStageFailedException e) {
 				if(v == 0) {
@@ -1693,14 +2121,40 @@ public class PbNodeExecutor {
 			anyGraph |= seq.graphPath;
 			allCalibrated &= (!seq.graphPath || seq.calibrationPersisted);
 		}
+		if(bg != null && !sequences.isEmpty()) {
+			/// §22 (I-8): "keep the actors" is only honoured by an ACTOR_REGION pass per actor; a plan whose strategy
+			/// has no region stage (plain T2I, or FLUX2_COMPOSITE with no referenced actor) re-rendered the actors with
+			/// the background, so the result says so and auto-approve is vetoed (the user must look).
+			String regionPrefix = RenderPlan.actorStagePrefix(RenderPlan.STAGE_ACTOR_REGION);
+			boolean anyRegion = sequences.get(0).labels().stream().anyMatch(l -> l != null && l.startsWith(regionPrefix));
+			if(!anyRegion) {
+				added.add(new RenderPlan.Degradation(RenderPlan.Degradation.BACKGROUND_REGEN_NO_REGIONS,
+					"no ACTOR_REGION pass rendered (strategy " + plan.getStrategy().getName().name() + ", stages "
+					+ sequences.get(0).labels() + "): the actors were re-rendered with the background, not kept",
+					null, RenderPlan.STAGE_BASE));
+			}
+		}
 		for(RenderPlan.Degradation d : added) {
 			degradations.add(d.getCode() + ": " + d.getMessage());
 		}
 		if(!added.isEmpty()) {
 			plan = recordExecutorDegradations(user, planArtifact, plan, added);
 		}
+		if(sequences.isEmpty()) {
+			/// only a gap fill gets here (an ordinary attempt rethrows variant 0's failure): every missing index
+			/// failed again, so this execution has nothing to persist and fails the node the way a variant-0 failure
+			/// does. The fill's plan artifact already carries the VARIANT_FAILED entries (recorded just above), and the
+			/// previous attempt's kept finals and selection are untouched.
+			Map<String, Object> lastErr = (stageErrors.isEmpty() ? null : stageErrors.get(stageErrors.size() - 1));
+			String code = (lastErr != null && lastErr.get("code") != null ? lastErr.get("code").toString() : RendererAdapter.CODE_RENDERER_ERROR);
+			int status = (RendererAdapter.CODE_UNREACHABLE.equals(code) ? 503 : 500);
+			throw new PbStageFailedException(status, "Gap fill of " + sceneLabel + " failed: none of variants " + toRender
+				+ " of attempt " + (fill != null ? fill.attempt : "?") + " rendered"
+				+ (lastErr != null && lastErr.get("message") != null ? ": " + lastErr.get("message") : "")
+				+ " (plan artifact " + planOid + ")", stageErrors);
+		}
 		BaseRecord frozen = frozenConfig(plan, pick, compiled);
-		String attempt = attemptOf(g);
+		String attempt = (fill != null ? fill.attempt : attemptOf(g));
 		/// The `stage` images of every variant of this attempt are written against the role's pre-batch
 		/// selection (the same rule as the finals - PbPipelineUtil.recordImage's batch overload), so variant 1's
 		/// passes never supersede variant 0's. Consequence, deliberate (P6 verifier, 2026-10-29): the two paths
@@ -1745,14 +2199,17 @@ public class PbNodeExecutor {
 						refs.add(prevStageOid);
 					}
 					BaseRecord stageArtifact;
+					/// §24 I-8: the stage label travels on the artifact's generatorRequest so a later background
+					/// regenerate can find each actor's pass (and its seed) among the attempt's stage artifacts
+					String stageReq = PbArtifactUtil.withStageLabel(so.requestJson, so.label);
 					if(variantCount > 1) {
 						stageArtifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_STAGE, PbArtifactTypeEnumType.IMAGE,
-							stageData, so.bytes, "image/png", so.seed, frozen, so.requestJson, refs, sdu.getApiType(), so.durationMs, so.backendGraph,
+							stageData, so.bytes, "image/png", so.seed, frozen, stageReq, refs, sdu.getApiType(), so.durationMs, so.backendGraph,
 							preStage, v, attempt);
 					}
 					else {
 						stageArtifact = PbPipelineUtil.recordImage(g, node, PbPipelineUtil.ROLE_STAGE, PbArtifactTypeEnumType.IMAGE,
-							stageData, so.bytes, "image/png", so.seed, frozen, so.requestJson, refs, sdu.getApiType(), so.durationMs, so.backendGraph,
+							stageData, so.bytes, "image/png", so.seed, frozen, stageReq, refs, sdu.getApiType(), so.durationMs, so.backendGraph,
 							attempt);
 					}
 					so.artifactOid = (stageArtifact != null ? stageArtifact.get(FieldNames.FIELD_OBJECT_ID) : null);
@@ -1772,11 +2229,13 @@ public class PbNodeExecutor {
 					finalRefs.add(prior);
 				}
 			}
-			finals.add(new PlannedRender.Variant(v, last.bytes, data, last.seed, last.requestJson, last.durationMs, finalRefs,
-				last.backendGraph, seq.labels()));
+			/// §24 I-8: the final carries its own stage label too (BASE on a plain render, the last actor's pass on a
+			/// chained one), so the seed of the last actor is found on the final, not on a stage artifact
+			finals.add(new PlannedRender.Variant(v, last.bytes, data, last.seed, PbArtifactUtil.withStageLabel(last.requestJson, last.label),
+				last.durationMs, finalRefs, last.backendGraph, seq.labels()));
 		}
 		return new PlannedRender(plan, planOid, compiled, frozen, degradations, configNotApplied, stageErrors,
-			(anyGraph && allCalibrated), finals, variantCount);
+			(anyGraph && allCalibrated), finals, variantCount, fill, bg);
 	}
 
 	/// One stage's output, held in memory until the sequence ends (P5-2 §2.4 step 5).
@@ -1848,9 +2307,16 @@ public class PbNodeExecutor {
 	 * (§4); the T2I path keeps calibrating in-process only (§10 row 6). Every call to the renderer goes
 	 * through {@code backend} - the adapter for the stages, the client for generated workflows and the
 	 * server version - so a test backend makes this method run with no server at all.
+	 * <p>
+	 * §22 (§24 I-8): on a background regenerate ({@code bg} set) the BASE request is whatever the caller built
+	 * (a new random seed), and each actor's pass is seeded from {@link BackgroundRegen#seedFor} - the seed that
+	 * actor's pass rendered with on the regenerated-from final - so the same character comes back over the new
+	 * background; an actor with no reusable seed renders fresh and is reported
+	 * ({@link RenderPlan.Degradation#ACTOR_SEED_NEW}, {@link BackgroundRegen#fresh}).
 	 */
 	private static StageSequence renderStages(SceneGraph g, BaseRecord node, RenderPlan plan, String planOid,
-			String sceneLabel, SDUtil sdu, StageRequest req, RenderPlan.ModelPick basePick, RenderBackend backend) {
+			String sceneLabel, SDUtil sdu, StageRequest req, RenderPlan.ModelPick basePick, RenderBackend backend,
+			BackgroundRegen bg) {
 		BaseRecord user = g.getUser();
 		long orgId = PbGraphUtil.orgId(node);
 		StageSequence seq = new StageSequence();
@@ -1998,6 +2464,23 @@ public class PbNodeExecutor {
 					/// knobs, not from baseReq, so its family mapping follows that pick and not BASE's
 					StageRequest reqA = req.toBuilder().stage(RenderPlan.STAGE_ACTOR_REGION).prompt(cp).model(regionPick.getModel()).build();
 					reqA = FamilyRequest.apply(reqA, caps, plan.getConfig(), seq.configNotApplied);
+					if(bg != null) {
+						/// §22 (I-8): re-run this actor's pass with the seed it rendered with on the regenerated-from final;
+						/// the compiler honours a non-random seed on the request (WorkflowCompiler.compileActorRegion), so
+						/// the pass is the same draw over the new base. No seed on record: a fresh draw, and the result
+						/// says so (ACTOR_SEED_NEW - accepted by auto-approve: same character, not the same pixels).
+						Long reuse = bg.seedFor(a.getActorId());
+						if(reuse != null) {
+							reqA = reqA.toBuilder().seed(variantSeed(reuse.longValue(), 0)).build();
+							bg.reused.add(a.getActorId());
+						}
+						else {
+							bg.fresh.add(a.getActorId());
+							seq.added.add(new RenderPlan.Degradation(RenderPlan.Degradation.ACTOR_SEED_NEW,
+								"actor " + a.getActorId() + " re-rendered with a new seed: no ACTOR_REGION seed on record for it on "
+								+ bg.fromArtifactObjectId, a.getActorId(), RenderPlan.STAGE_ACTOR_REGION));
+						}
+					}
 					cg = compiler.compileActorRegion(reqA, passRefs, target, inpaint, client);
 					reqA = reqA.toBuilder().graph(cg.getGraph()).inputs(cg.getInputs()).seed((int) cg.getSeed()).steps(cg.getSteps()).build();
 					StageResult res = adapter.execute(reqA, g::isCancelRequested);

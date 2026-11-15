@@ -54,7 +54,7 @@ import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
  * {@code referenceStrip} role ({@link PbPipelineUtil#ROLE_REFERENCE_STRIP}) whose producer is not a
  * legacy node, under the same reference rules.</li>
  * <li><b>{@code PB1_SETTINGS_ROW}</b> - an {@code olio.sd.config} named {@code book-sdConfig} or
- * {@code book-compositeSdConfig}: {@code PictureBookUtil.persistBookSdConfigFk} wrote one per book
+ * {@code book-compositeSdConfig}: PB1's {@code PictureBookUtil.persistBookSdConfigFk} (deleted 2026-11-14, §24 C-1) wrote one per book
  * <i>before</i> checking for an {@code olio.pb.book} row and returned early for PB1 books, so PB1 books
  * left settings rows nothing references. Deletable only when no {@code olio.pb.book.sdConfig} /
  * {@code compositeSdConfig} and no {@code olio.pb.style.sdConfig} points at it <i>and</i> its group holds
@@ -99,7 +99,7 @@ public class PbLegacyCleanupUtil {
 		PbNodeTypeEnumType.REFERENCE_STRIP, PbNodeTypeEnumType.COMPOSITE
 	};
 
-	/** The names {@code PictureBookUtil.setBookSdConfig} gives a book's persisted settings rows. */
+	/** The names PB1's {@code PictureBookUtil.setBookSdConfig} (deleted 2026-11-14, §24 C-1) gave a book's persisted settings rows; {@link PbBookUtil#BOOK_SD_CONFIG_NAME} keeps the first. */
 	public static final String[] SETTINGS_ROW_NAMES = new String[] {"book-sdConfig", "book-compositeSdConfig"};
 
 	/** The retired {@code compositeMode} literal (design §37.3; unsupported since P10-3). */

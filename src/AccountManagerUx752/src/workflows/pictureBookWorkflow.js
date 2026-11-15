@@ -439,6 +439,20 @@ export async function renderScene(pb2BookObjectId, sceneObjectId, opts) {
         { method: 'POST', body: renderBody(opts) }, 'renderScene failed'));
 }
 
+/**
+ * §24 I-8 (design §22): POST /{book}/scene/{scene}/regenerate-background {chatConfigName?} → 202, the same body
+ * as /render plus `regenerate: "background"`. The scene's RENDER_PLAN node is re-executed, forced, rendering a
+ * new background (new BASE seed) and re-running each actor's ACTOR_REGION pass with the seed it had on the
+ * scene's selected final, so the actors come back as they were; one variant, always. No force / variants
+ * options: a regenerate is always one forced variant. Gates as /render up to the pin (401, 404, 403, 409
+ * pinned — isPinnedRefusal → the unpin confirmation), then 409 when the scene's node is not a RENDER_PLAN
+ * node or has no selected render yet ("render it first") — both toasted verbatim.
+ */
+export async function regenerateSceneBackground(pb2BookObjectId, sceneObjectId, opts) {
+    return normalizeSubmit(await wfFetch('/' + pb2BookObjectId + '/scene/' + sceneObjectId + '/regenerate-background',
+        { method: 'POST', body: renderBody(opts) }, 'regenerateSceneBackground failed'));
+}
+
 /** POST /{book}/render-all {chatConfigName?} → 202 {sceneCount, scenesWithoutNode[], jobId, runObjectId, planned[], chatConfig?, ...} */
 export async function renderAll(pb2BookObjectId, opts) {
     return normalizeSubmit(await wfFetch('/' + pb2BookObjectId + '/render-all',

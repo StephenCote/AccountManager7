@@ -102,6 +102,15 @@ public class PbArtifactUtil {
 	/** Where the replaced reference objectIds are recorded instead. */
 	public static final String REFERENCE_ARTIFACTS_KEY = "referenceArtifactObjectIds";
 
+	/**
+	 * V3 §22 (§24 I-8): the stage label ({@code BASE}, {@code ACTOR_REGION#<actorId>}, {@code TITLE_BAND}, ...)
+	 * an artifact's request rendered, recorded on its sanitized {@code generatorRequest}. The artifact name
+	 * carries the role and revision only, so without this key a ROLE_STAGE row cannot say which stage it
+	 * is, and a BASE final cannot say which stage it ended on - which the background-only regenerate needs
+	 * to find the ACTOR_REGION seed it must keep. Absent on every artifact written before I-8.
+	 */
+	public static final String STAGE_LABEL_KEY = "stageLabel";
+
 	private PbArtifactUtil() {
 		/// static utility
 	}
@@ -719,12 +728,13 @@ public class PbArtifactUtil {
 	/**
 	 * The degradation codes that veto auto-approval (P4-7): a character that could not be read or rendered, a
 	 * setting rendered without its approved render, a prompt the compiler had to cut, and a composition written
-	 * out of order, an attempt that produced fewer finals than its preset planned (§23, P6-2), and a reserved title
-	 * band whose TITLE_BAND pass did not paint it (§24 I-4: the band is delivered as flat padding).
+	 * out of order, an attempt that produced fewer finals than its preset planned (§23, P6-2), a reserved title
+	 * band whose TITLE_BAND pass did not paint it (§24 I-4: the band is delivered as flat padding), and a
+	 * background-only regenerate that could not keep the actors because no ACTOR_REGION pass ran (§22, §24 I-8).
 	 * {@code ACTOR_TEXT_ONLY}, {@code MODEL_SUBSTITUTED}, {@code QA_WARN}, {@code QA_FAIL}, {@code QA_UNAVAILABLE},
-	 * {@code VARIANT_SEED_UNKNOWN} and {@code UPSCALE_NOT_RENDERED} (224 e) are reported on the plan but accepted -
-	 * a QA FAIL acts through the variant ordering in {@link #autoApprove(BaseRecord, List, Map, List, String)}
-	 * (220 c), not through this set.
+	 * {@code VARIANT_SEED_UNKNOWN}, {@code UPSCALE_NOT_RENDERED} (224 e) and {@code ACTOR_SEED_NEW} (I-8) are
+	 * reported on the plan but accepted - a QA FAIL acts through the variant ordering in
+	 * {@link #autoApprove(BaseRecord, List, Map, List, String)} (220 c), not through this set.
 	 */
 	public static final Set<String> AUTO_APPROVE_VETO_CODES = Set.of(
 		RenderPlan.Degradation.ACTOR_UNRESOLVED,
@@ -733,7 +743,8 @@ public class PbArtifactUtil {
 		RenderPlan.Degradation.PROMPT_TRUNCATED,
 		RenderPlan.Degradation.COMPOSED_OUT_OF_ORDER,
 		RenderPlan.Degradation.VARIANT_FAILED,
-		RenderPlan.Degradation.TITLE_BAND_FAILED);
+		RenderPlan.Degradation.TITLE_BAND_FAILED,
+		RenderPlan.Degradation.BACKGROUND_REGEN_NO_REGIONS);
 
 	/// The entries of {@code degradations} that veto auto-approval, in order; empty when none (or null) do.
 	static List<String> vetoingDegradations(List<String> degradations) {
@@ -1233,6 +1244,56 @@ public class PbArtifactUtil {
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * V3 §22 (§24 I-8): return {@code requestJson} with {@link #STAGE_LABEL_KEY} set to {@code label}, so the
+	 * stage an artifact rendered survives {@link #sanitizeGeneratorRequest} (which keeps every key it does
+	 * not strip). Null/blank/unparseable requests and a null/blank label come back unchanged - a request
+	 * that cannot be parsed is not persisted anyway, and the label is provenance, never a reason to fail
+	 * the render.
+	 */
+	public static String withStageLabel(String requestJson, String label) {
+		if(requestJson == null || requestJson.trim().length() == 0 || label == null || label.trim().length() == 0) {
+			return requestJson;
+		}
+		Map<String, Object> parsed = null;
+		try {
+			parsed = JSONUtil.getMap(requestJson.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+		}
+		catch(Exception e) {
+			logger.warn("Stage label " + label + " not recorded on an unparseable generator request: " + e.getMessage());
+		}
+		if(parsed == null) {
+			return requestJson;
+		}
+		Map<String, Object> out = new LinkedHashMap<>(parsed);
+		out.put(STAGE_LABEL_KEY, label);
+		return JSONUtil.exportObject(out);
+	}
+
+	/**
+	 * The stage label an artifact's request rendered ({@link #STAGE_LABEL_KEY}, written by
+	 * {@link #withStageLabel}); null for an artifact with no request, an unparseable one, or one written
+	 * before I-8 recorded labels.
+	 */
+	public static String stageLabelOf(BaseRecord artifact) {
+		if(artifact == null || !artifact.hasField(OlioFieldNames.FIELD_PB_GENERATOR_REQUEST)) {
+			return null;
+		}
+		String json = artifact.get(OlioFieldNames.FIELD_PB_GENERATOR_REQUEST);
+		if(json == null || json.trim().length() == 0) {
+			return null;
+		}
+		Map<String, Object> parsed = null;
+		try {
+			parsed = JSONUtil.getMap(json.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
+		}
+		catch(Exception e) {
+			logger.warn("Unparseable generatorRequest on " + artifact.get(FieldNames.FIELD_NAME) + ": " + e.getMessage());
+		}
+		Object label = (parsed != null ? parsed.get(STAGE_LABEL_KEY) : null);
+		return (label != null && label.toString().trim().length() > 0 ? label.toString() : null);
 	}
 
 	/** Deserialize a persisted {@code sdConfigSnapshot} string. Only needed when it arrives as text. */

@@ -235,13 +235,17 @@ test.describe('List control — Phase 4 behavioral tests', () => {
         // The portal div focuses itself on create and handles ArrowRight -> onIndexChange(idx+1)
         await page.keyboard.press('ArrowRight');
 
-        // Viewer stays open and the counter advances by one
+        // Viewer stays open and the counter advances by one. The counter's total is the number of items
+        // LOADED so far (list.js feeds the viewer pagination.allResults() and the gallery mode loads the
+        // next page by infinite scroll), so with 15 notes and a 10-row page it can read "1 / 10" when the
+        // viewer opens and "2 / 15" a moment later — the index is the assertion; the total may only grow
+        // (asserted "2 / 10" until the §24 U-2 serial run of 2026-11-15 read the growth as a red).
         await expect(viewer).toBeVisible({ timeout: 5000 });
         await expect(viewer.locator('div').filter({ hasText: /^\s*\d+ \/ \d+/ }).first())
-            .toHaveText(new RegExp('^\\s*' + (before.index + 1) + ' / ' + before.total), { timeout: 5000 });
+            .toHaveText(new RegExp('^\\s*' + (before.index + 1) + ' / \\d+'), { timeout: 5000 });
         let after = await viewerCounter(page);
         expect(after.index).toBe(before.index + 1);
-        expect(after.total).toBe(before.total);
+        expect(after.total).toBeGreaterThanOrEqual(before.total);
         await screenshot(page, 'lc4-carousel-arrow');
     });
 

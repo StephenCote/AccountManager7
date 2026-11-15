@@ -504,6 +504,10 @@ test.describe('PictureBook V3 P1-10 — Phase 1 exit criteria through the reader
         await expect(renderBtn).toBeEnabled();
 
         // 2. Click Re-render: the request carries ?force=true and the planner re-executes L only (P reused).
+        //    §24 I-2 (§6.C 293, 226 a): the reader sends the per-run chat config on the wire — the body is
+        //    `{chatConfigName}` (pictureBook.js withChatConfig → pictureBookWorkflow.js renderBody) and `force`
+        //    stays on the query string, never in the body. Until §24 U-3 (§6.C 312) this pinned the pre-I-2
+        //    "no body at all" shape.
         const t0 = Date.now();
         const forcedPromise = page.waitForResponse(isRender, { timeout: 60000 });
         await renderBtn.click();
@@ -511,9 +515,14 @@ test.describe('PictureBook V3 P1-10 — Phase 1 exit criteria through the reader
         const forcedText = await forcedResp.text();
         console.log('[p110-c1b-forced] ' + forcedResp.url() + ' HTTP ' + forcedResp.status() + ' ' + forcedText.slice(0, 600));
         expect(new URL(forcedResp.url()).searchParams.get('force'), 'the reader\'s per-scene render passes force').toBe('true');
-        expect(forcedResp.request().postData(), 'force travels as the query flag, never a body').toBeNull();
+        const forcedBody = forcedResp.request().postDataJSON();
+        console.log('[p110-c1b-forced-body] ' + JSON.stringify(forcedBody));
+        expect(forcedBody, 'I-2: the body is the per-run chat-config reference').toEqual({ chatConfigName: expect.any(String) });
+        expect(forcedBody.chatConfigName.trim().length, 'chatConfigName is a non-blank name').toBeGreaterThan(0);
+        expect(Object.prototype.hasOwnProperty.call(forcedBody, 'force'), 'force travels as the query flag, never in the body').toBe(false);
         expect(forcedResp.status(), 'forced render of a current scene is accepted: ' + forcedText.slice(0, 400)).toBe(202);
         const dto = JSON.parse(forcedText);
+        expect(dto.chatConfig && dto.chatConfig.name, 'I-2: the 202 echoes the resolved chat config by name').toBe(forcedBody.chatConfigName);
         expect(dto.sceneObjectId).toBe(fx.scene.objectId);
         expect(dto.sceneIndex).toBe(fx.sceneIndex);
         expect(dto.jobId, 'jobId').toBeTruthy();
@@ -982,7 +991,11 @@ test.describe('PictureBook V3 P1-10 — criterion 4: ChapBook per-page Re-render
         console.log('[p110-c4-render] generate HTTP ' + r3.status() + ' after ' + renderMs + 'ms: ' + r3Text.slice(0, 600));
         expect([200, 202].includes(r3.status()), 'render after unpin: HTTP ' + r3.status() + ' ' + r3Text).toBe(true);
         const r3Body = JSON.parse(r3Text);
-        expect(r3Body.renderPath, 'v3 render path').toBe('v3');
+        // Phase 10 P10-1 / P10-2 removed the direct-SD (v1) ChapBook path and with it the `renderPath`
+        // discriminator from the per-page generate DTO (ChapBookUtil javadoc): every page is V3, and the
+        // DTO proves it with the LANDSCAPE node's identity + status below. Until §24 U-3 (§6.C 312) this
+        // pinned the pre-P10-1 `renderPath === 'v3'` key.
+        expect(r3Body.renderPath, 'P10-1: no render-path discriminator remains - every page is V3').toBeUndefined();
         expect(r3Body.nodeObjectId, 'the page node').toBe(c4.node.objectId);
         if (r3.status() === 200) {
             expect(r3Body.rendered, 'rendered: ' + r3Text).toBe(true);

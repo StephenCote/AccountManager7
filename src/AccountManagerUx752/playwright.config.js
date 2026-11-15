@@ -48,7 +48,10 @@ const VITE_URL = process.env.PLAYWRIGHT_VITE_URL
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 60000,
+  // 300 s, not 60 s: POST /olio/chap-book/create runs one synchronous LLM landscape prompt per scene against the
+  // live library contentAnalysis (~9 s each, ~90 s for a 10-scene book, double that with 2 workers), and a client
+  // that gives up leaves the server generating, which slows the next create. Timings are budgets, never thresholds.
+  timeout: 300000,
   expect: { timeout: 10000 },
   workers: WORKERS,
   retries: 1,

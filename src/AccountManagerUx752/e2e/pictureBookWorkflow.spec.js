@@ -104,7 +104,7 @@ async function navigateToWorkflow(page, bookObjectId) {
 }
 
 test.describe('PictureBook Workflow Graph', () => {
-    test.describe.configure({ timeout: 150000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);
@@ -232,7 +232,7 @@ test.describe('PictureBook Workflow Graph', () => {
 // ── Phase 5b: PB2 page reader (/picture-book/v2/:pb2BookObjectId) ─────
 
 test.describe('PictureBook PB2 Page Reader (Phase 5b)', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);
@@ -394,7 +394,7 @@ Descending upon snow canvassed green
 To silver veins of icy sheens.`;
 
 test.describe('Workflow Canvas — real PB2 book', () => {
-    test.describe.configure({ timeout: 150000 });
+    test.describe.configure({ timeout: 300000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);
@@ -696,7 +696,7 @@ test.describe('Workflow Canvas — real PB2 book', () => {
 
     test('PUT /artifact/{id}/select|approve|reject and GET /review-queue drive the §10 review state machine', async ({ request }) => {
         test.skip(!wfPb2BookObjectId, 'wfPb2BookObjectId not seeded');
-        test.setTimeout(120000);
+        test.setTimeout(300000);
 
         const loginResp = await request.post(REST + '/login', {
             data: {
@@ -901,7 +901,7 @@ test.describe('Workflow Canvas — real PB2 book', () => {
 
     test('GET/PUT /settings/auto-approve, then /regenerate auto-approves and pins a prompt node', async ({ request }) => {
         test.skip(!wfPb2BookObjectId, 'wfPb2BookObjectId not seeded');
-        test.setTimeout(120000);
+        test.setTimeout(300000);
 
         const loginResp = await request.post(REST + '/login', {
             data: {

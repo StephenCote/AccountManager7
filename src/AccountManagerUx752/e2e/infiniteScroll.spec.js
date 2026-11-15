@@ -197,7 +197,11 @@ test.describe('Infinite scroll — icon view with 500 items', () => {
 
             let currentCount = await page.locator('[data-grid-thumb]').count();
             if (currentCount > lastCount) {
-                pagesLoaded++;
+                // Pages, not loop iterations: the fit-to-screen auto-loader (list.js grid onupdate) can
+                // have fetched several 40-item pages before this loop's first count — 121 thumbnails
+                // were already present and pagesLoaded read 1 (§24 U-6 full gate RUN 2,
+                // 107-u6-verify2.phases.log:504/:514, deterministic solo: 107-u6-run2reds-solo.log:14).
+                pagesLoaded += Math.ceil((currentCount - lastCount) / 40);
                 lastCount = currentCount;
             }
 

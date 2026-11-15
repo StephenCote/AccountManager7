@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Dialog } from '../components/dialogCore.js';
 import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
+import { LLMConnector } from '../chat/LLMConnector.js';
 import {
     bookHealth, healBook, orgHealth, healOrg, summarizeHealth,
     listOrphans, purgeOrphans, countOrphans,
@@ -236,12 +237,17 @@ describe('renderPb2HealthBanner', () => {
     });
 
     // loadPb2Pages reads the book/world context through am7client.search (XHR), not fetch.
+    // It also seeds the reader's chat config in the BACKGROUND (pb2EnsureChatConfigDefault → resolveDefaultChatConfig
+    // → LLMConnector.resolveConfig, an unawaited m.request). Left live, that XHR fails on Mithril's timeout after the
+    // test has finished and console.warns; when the warn lands during worker teardown Vitest reports
+    // "EnvironmentTeardownError: Closing rpc while onUserConsoleLog was pending" (§24 U-6, 2026-11-15). Stub it.
     function stubBookContextSearch() {
         vi.spyOn(am7client, 'newQuery').mockImplementation(() => ({
             entity: { request: [] }, cache() {}, field() {}, range() {}
         }));
         vi.spyOn(am7client, 'search').mockResolvedValue({ results: [] });
         vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
+        vi.spyOn(LLMConnector, 'resolveConfig').mockResolvedValue(null);
     }
 
     it('repairPb2Book: confirm → POST /{id}/health/heal → toast → pages reloaded', async () => {

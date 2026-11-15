@@ -36,9 +36,9 @@ public final class QualityPresets {
 	private static final Map<PbQualityPresetEnumType, Preset> FALLBACK;
 	static {
 		Map<PbQualityPresetEnumType, Preset> m = new LinkedHashMap<>();
-		m.put(PbQualityPresetEnumType.DRAFT, new Preset(PbQualityPresetEnumType.DRAFT, 0.5, STEPS_LOW, 1, false, QA_OFF));
-		m.put(PbQualityPresetEnumType.STANDARD, new Preset(PbQualityPresetEnumType.STANDARD, 1.0, STEPS_DEFAULT, 2, false, QA_CANONICAL));
-		m.put(PbQualityPresetEnumType.FINAL, new Preset(PbQualityPresetEnumType.FINAL, 1.0, STEPS_HIGH, 4, true, QA_ALL));
+		m.put(PbQualityPresetEnumType.DRAFT, new Preset(PbQualityPresetEnumType.DRAFT, 0.5, STEPS_LOW, 1, 4, false, QA_OFF));
+		m.put(PbQualityPresetEnumType.STANDARD, new Preset(PbQualityPresetEnumType.STANDARD, 1.0, STEPS_DEFAULT, 2, 6, false, QA_CANONICAL));
+		m.put(PbQualityPresetEnumType.FINAL, new Preset(PbQualityPresetEnumType.FINAL, 1.0, STEPS_HIGH, 4, 8, true, QA_ALL));
 		FALLBACK = Collections.unmodifiableMap(m);
 	}
 
@@ -53,14 +53,18 @@ public final class QualityPresets {
 		private final double resolutionScale;
 		private final String stepsMode;
 		private final int variants;
+		private final int maxVariants;
 		private final boolean upscale;
 		private final String qa;
 
-		Preset(PbQualityPresetEnumType name, double resolutionScale, String stepsMode, int variants, boolean upscale, String qa) {
+		Preset(PbQualityPresetEnumType name, double resolutionScale, String stepsMode, int variants, int maxVariants, boolean upscale, String qa) {
 			this.name = name;
 			this.resolutionScale = resolutionScale;
 			this.stepsMode = stepsMode;
 			this.variants = variants;
+			/// A resource that declares a max below its own default is a tuning error, not a reason to refuse
+			/// the default: the ceiling is never lower than the count the preset renders unasked.
+			this.maxVariants = Math.max(maxVariants, variants);
 			this.upscale = upscale;
 			this.qa = qa;
 		}
@@ -70,6 +74,8 @@ public final class QualityPresets {
 		/// "low" | "default" | "high" - resolved against RendererCapabilities.recommendedSteps by the caller.
 		public String getStepsMode() { return stepsMode; }
 		public int getVariants() { return variants; }
+		/// The largest per-request `variants` override this preset accepts (§24 I-6); always >= getVariants().
+		public int getMaxVariants() { return maxVariants; }
 		public boolean isUpscale() { return upscale; }
 		/// OFF | CANONICAL | ALL
 		public String getQa() { return qa; }
@@ -77,7 +83,7 @@ public final class QualityPresets {
 		@Override
 		public String toString() {
 			return name + "{resolutionScale=" + resolutionScale + ", stepsMode=" + stepsMode + ", variants=" + variants
-				+ ", upscale=" + upscale + ", qa=" + qa + "}";
+				+ ", maxVariants=" + maxVariants + ", upscale=" + upscale + ", qa=" + qa + "}";
 		}
 	}
 
@@ -171,9 +177,10 @@ public final class QualityPresets {
 		double scale = (e.get("resolutionScale") instanceof Number) ? ((Number) e.get("resolutionScale")).doubleValue() : (fb != null ? fb.resolutionScale : 1.0);
 		String stepsMode = (e.get("stepsMode") instanceof String && !((String) e.get("stepsMode")).isBlank()) ? (String) e.get("stepsMode") : (fb != null ? fb.stepsMode : STEPS_DEFAULT);
 		int variants = (e.get("variants") instanceof Number) ? ((Number) e.get("variants")).intValue() : (fb != null ? fb.variants : 1);
+		int maxVariants = (e.get("maxVariants") instanceof Number) ? ((Number) e.get("maxVariants")).intValue() : (fb != null ? fb.maxVariants : variants);
 		boolean upscale = (e.get("upscale") instanceof Boolean) ? ((Boolean) e.get("upscale")).booleanValue() : (fb != null && fb.upscale);
 		String qa = (e.get("qa") instanceof String && !((String) e.get("qa")).isBlank()) ? ((String) e.get("qa")).toUpperCase() : (fb != null ? fb.qa : QA_OFF);
-		return new Preset(key, scale, stepsMode, variants, upscale, qa);
+		return new Preset(key, scale, stepsMode, variants, maxVariants, upscale, qa);
 	}
 
 	private static Map<String, Object> load() {

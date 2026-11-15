@@ -32,6 +32,10 @@ import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 
+import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * Import a PB1 book (an {@code auth.group} + {@code data.note} JSON under
  * {@code ~/Data/PictureBooks/}) into the PB2 schema
@@ -346,11 +350,14 @@ public class PbMigrationUtil {
 	 * {@code PictureBookUtil.resolveBookGroupEither} needs when the PB1 group name does not equal the slug (the
 	 * slug-named lookup cannot find it), which is why {@code /health} flags its absence as a WARN.
 	 * <p>
-	 * Written when the key is missing, or when it names a book the importer can no longer read (a stale link
-	 * from a deleted earlier import). Left alone, with a warning, when it names a book the importer CAN still
-	 * read: that PB1 group is some other live book's scene group and the import must not steal it -
-	 * {@code /health} will report it and Repair, an explicit user action, may overwrite. Every refusal or
-	 * failure is a warning on the result, never a failure of the import (§28: non-destructive).
+	 * Written when the key is missing, or when it names no book in the organization at all (a stale link from
+	 * a deleted earlier import - {@link PbBookUtil#bookExists}, the olio-principal existence probe, decides
+	 * that). Left alone, with a warning, when it names a book that exists: one the importer can read (that PB1
+	 * group is some other live book's scene group) or one the importer cannot see (another user's book, which
+	 * reads as absent to the caller but is just as live) - the import must not steal it either way;
+	 * {@code /health} will report it and Repair, an explicit user action, may overwrite. Absent-to-me and
+	 * absent are different answers (§24 U-6 security review of I-5). Every refusal or failure is a warning on
+	 * the result, never a failure of the import (§28: non-destructive).
 	 */
 	private static void linkV1MetaToBook(BaseRecord user, BaseRecord metaNote, String metaJson, String bookObjectId,
 			long orgId, List<String> warnings) {
@@ -371,13 +378,17 @@ public class PbMigrationUtil {
 				warnings.add("meta note pb2BookObjectId left as '" + link + "' (a live book); /health reports it, Repair may overwrite");
 				return;
 			}
-			logger.info("PB1 migration: meta note pb2BookObjectId '{}' is stale (no such readable book); relinking to {}", link, bookObjectId);
+			if(PbBookUtil.bookExists(link.toString(), orgId)) {
+				warnings.add("meta note pb2BookObjectId left as '" + link + "' (a book you cannot see - another user's); /health reports it, Repair may overwrite");
+				return;
+			}
+			logger.info("PB1 migration: meta note pb2BookObjectId '{}' is stale (no such book in the organization); relinking to {}", link, bookObjectId);
 		}
 		metaMap.put("pb2BookObjectId", bookObjectId);
 		boolean ok;
 		try {
 			BaseRecord patch = PbGraphUtil.patchOf(metaNote, ModelNames.MODEL_NOTE, FieldNames.FIELD_TEXT);
-			patch.set(FieldNames.FIELD_TEXT, JSONUtil.exportObject(metaMap));
+			patch.set(FieldNames.FIELD_TEXT, exportMetaMap(metaMap));
 			ok = IOSystem.getActiveContext().getAccessPoint().update(user, patch) != null;
 		}
 		catch(FieldException | ValueException | ModelNotFoundException | PictureBookException e) {
@@ -386,6 +397,27 @@ public class PbMigrationUtil {
 		}
 		if(!ok) {
 			warnings.add("meta note pb2BookObjectId link was not persisted (the note was not updatable as the importing user); /health Repair can set it");
+		}
+	}
+
+	/**
+	 * Serialise a PB1 {@code .pictureBookMeta} map back into the note's text with EVERY entry kept. The three
+	 * writers that re-serialise that map (this import's link, {@code PbHealthUtil}'s {@code META_LINK_BROKEN}
+	 * repair, and {@code PictureBookUtil.deleteOrphanedMetaNotes}' unlink) must use this and not
+	 * {@code JSONUtil.exportObject}: that mapper is {@code Include.NON_EMPTY} and silently drops every null /
+	 * {@code ""} / {@code []} / <code>{}</code> value of someone else's data - a scene's {@code characters: []}
+	 * vanished from the PB1 note at import (§24 UAT-3, 2026-11-15) - which breaks both the design's "non-destructive,
+	 * PB1 data is never modified" (§28) and this class's one-additive-exception amendment of it (class Javadoc,
+	 * §6.C 301). The note is the PB1 book's data, not ours: we add or remove one key and nothing else.
+	 */
+	static String exportMetaMap(Map<String, Object> metaMap) {
+		ObjectMapper mapper = new ObjectMapper();
+		mapper.setSerializationInclusion(Include.ALWAYS);
+		try {
+			return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(metaMap);
+		}
+		catch(JsonProcessingException e) {
+			throw new PictureBookException(500, "The .pictureBookMeta note could not be re-serialised: " + e.getMessage());
 		}
 	}
 

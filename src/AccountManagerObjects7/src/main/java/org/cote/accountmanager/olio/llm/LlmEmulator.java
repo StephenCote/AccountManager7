@@ -30,7 +30,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -207,6 +210,21 @@ public final class LlmEmulator {
 	/// entry of that name (the loose file shadows it). Diagnostic: a non-zero value means the zip is
 	/// not the whole story for that set.
 	private static final AtomicLong SHADOWED = new AtomicLong();
+
+	/**
+	 * Every emulated outcome completes its future on a pool thread after this delay, never inline on the
+	 * caller. The real transport ({@code ClientUtil.postToRecordAndStream} → {@code HttpClient.sendAsync})
+	 * completes on an HttpClient worker, so {@link Chat}'s stream consumer runs off the calling thread and
+	 * anything the consumer wants the caller to read must be handed over explicitly after the wait. An
+	 * emulator that completed inline let a consumer-side {@code ThreadLocal} write look correct under
+	 * JUnit and never fire in Tomcat — the first UAT-5 fix (2026-11-15, ledger §6.C 313). The delay only
+	 * guarantees the caller has registered its continuation before the future completes, so the
+	 * continuation cannot run on the registering thread by accident.
+	 */
+	static final long COMPLETION_DELAY_MS = 25L;
+	private static final Executor COMPLETION_EXECUTOR = CompletableFuture.delayedExecutor(COMPLETION_DELAY_MS, TimeUnit.MILLISECONDS);
+	/// Name of the thread that pulled the first line of the most recently consumed emulated body.
+	private static final AtomicReference<String> LAST_CONSUMER_THREAD = new AtomicReference<>();
 	/// Per-(set, fault index) match counters driving manifest {@code faults[].occurrence}.
 	private static final ConcurrentHashMap<String, AtomicLong> FAULT_COUNTERS = new ConcurrentHashMap<>();
 	/// Lazily loaded {@code fixtures.zip} contents per set: absolute set directory → (entry name → raw
@@ -323,6 +341,29 @@ public final class LlmEmulator {
 		RECORDED.set(0);
 		SHADOWED.set(0);
 		FAULT_COUNTERS.clear();
+		LAST_CONSUMER_THREAD.set(null);
+	}
+
+	/**
+	 * Name of the thread that pulled the first line of the most recently consumed emulated body, or null
+	 * when nothing has been consumed since {@link #resetCounters()}. A test that wants to prove a
+	 * consumer-side value really was handed back to the caller asserts this differs from the calling
+	 * thread's name — otherwise the proof is vacuous (see {@link #COMPLETION_DELAY_MS}).
+	 */
+	public static String lastConsumerThread() {
+		return LAST_CONSUMER_THREAD.get();
+	}
+
+	/// Complete on a pool thread after COMPLETION_DELAY_MS, exactly like the real transport.
+	private static CompletableFuture<HttpResponse<Stream<String>>> deliver(HttpResponse<Stream<String>> resp) {
+		return CompletableFuture.supplyAsync(() -> resp, COMPLETION_EXECUTOR);
+	}
+
+	/// Fail on a pool thread after COMPLETION_DELAY_MS, with the same exception shape as a failed sendAsync.
+	private static CompletableFuture<HttpResponse<Stream<String>>> fail(Throwable t) {
+		CompletableFuture<HttpResponse<Stream<String>>> f = new CompletableFuture<>();
+		COMPLETION_EXECUTOR.execute(() -> f.completeExceptionally(t));
+		return f;
 	}
 
 	// ------------------------------------------------------------------------------------------------
@@ -410,17 +451,33 @@ public final class LlmEmulator {
 	// Manifest
 	// ------------------------------------------------------------------------------------------------
 
+	/**
+	 * One manifest {@code faults[]} entry: on the {@code occurrence}-th call matching {@code kind} and/or
+	 * {@code keyPrefix}, answer with {@code mode} instead of a fixture/synthesis. Modes:
+	 * {@code http500} (default; an emulated provider error body), {@code unreachable} (the future fails
+	 * with a ConnectException), {@code empty} (a well-formed {@code []} reply), and
+	 * {@code content_filter} (UAT-5, 2026-11-15: the stream carries {@code content} — default none — as
+	 * ordinary deltas and then ends {@code finish_reason: content_filter}, which is what Azure's
+	 * completion-side filter does through LiteLLM when it withholds a completion the model already wrote).
+	 */
 	static final class Fault {
 		final String kind;
 		final String keyPrefix;
 		final long occurrence;
 		final String mode;
+		/// Optional reply fragment delivered before the fault's finish (content_filter only).
+		final String content;
 
 		Fault(String kind, String keyPrefix, long occurrence, String mode) {
+			this(kind, keyPrefix, occurrence, mode, null);
+		}
+
+		Fault(String kind, String keyPrefix, long occurrence, String mode, String content) {
 			this.kind = kind;
 			this.keyPrefix = keyPrefix;
 			this.occurrence = occurrence;
 			this.mode = mode;
+			this.content = content;
 		}
 
 		boolean matches(String k, String key) {
@@ -482,7 +539,8 @@ public final class LlmEmulator {
 					String keyPrefix = f.get("keyPrefix") instanceof String ? (String) f.get("keyPrefix") : null;
 					long occ = f.get("occurrence") instanceof Number ? ((Number) f.get("occurrence")).longValue() : 1L;
 					String mode = f.get("mode") instanceof String ? ((String) f.get("mode")).trim().toLowerCase() : "http500";
-					faults.add(new Fault(kind, keyPrefix, Math.max(1L, occ), mode));
+					String content = f.get("content") instanceof String ? (String) f.get("content") : null;
+					faults.add(new Fault(kind, keyPrefix, Math.max(1L, occ), mode, content));
 				}
 			}
 			return new Manifest(strict, kinds, faults);
@@ -543,18 +601,18 @@ public final class LlmEmulator {
 	public static CompletableFuture<HttpResponse<Stream<String>>> respond(String serverUrl, OpenAIRequest wireReq, String serializedReq) {
 		Config cfg = CONFIG;
 		if (cfg.fixtureRoot == null) {
-			return CompletableFuture.completedFuture(errorResponse(503, "LLM emulator not configured on this deployment"));
+			return deliver(errorResponse(503, "LLM emulator not configured on this deployment"));
 		}
 		String set = parseSetName(serverUrl);
 		if (set == null) {
 			MISS.incrementAndGet();
-			return CompletableFuture.completedFuture(errorResponse(400,
+			return deliver(errorResponse(400,
 				"LLM emulator: invalid emulator set in serverUrl (expected emulator://<set>, set matching " + SAFE_NAME.pattern() + ")"));
 		}
 		Path setDir = resolveUnder(cfg.fixtureRoot, set);
 		if (setDir == null) {
 			MISS.incrementAndGet();
-			return CompletableFuture.completedFuture(errorResponse(400, "LLM emulator: set '" + set + "' resolves outside the fixture root"));
+			return deliver(errorResponse(400, "LLM emulator: set '" + set + "' resolves outside the fixture root"));
 		}
 		Manifest manifest = loadManifest(setDir);
 		String key = requestKey(wireReq);
@@ -568,12 +626,14 @@ public final class LlmEmulator {
 			logger.warn("LLM emulator FAULT fired: set=" + set + " kind=" + kind + " mode=" + fault.mode + " occurrence=" + fault.occurrence);
 			switch (fault.mode) {
 				case "unreachable":
-					return CompletableFuture.failedFuture(new java.net.ConnectException("emulated: connection refused (" + serverUrl + ")"));
+					return fail(new java.net.ConnectException("emulated: connection refused (" + serverUrl + ")"));
 				case "empty":
-					return CompletableFuture.completedFuture(sseResponse("[]"));
+					return deliver(sseResponse("[]"));
+				case "content_filter":
+					return deliver(sseResponse(fault.content, "content_filter"));
 				case "http500":
 				default:
-					return CompletableFuture.completedFuture(errorResponse(500, "emulated failure"));
+					return deliver(errorResponse(500, "emulated failure"));
 			}
 		}
 
@@ -582,14 +642,14 @@ public final class LlmEmulator {
 		if (content != null) {
 			HIT.incrementAndGet();
 			logger.info("LLM emulator HIT: set=" + set + " kind=" + kind + " key=" + key.substring(0, 12));
-			return CompletableFuture.completedFuture(sseResponse(content));
+			return deliver(sseResponse(content));
 		}
 
 		/// 2. Strict → miss is an error.
 		if (cfg.strict || manifest.strict) {
 			MISS.incrementAndGet();
 			logger.warn("LLM emulator MISS (strict): set=" + set + " kind=" + kind + " key=" + key);
-			return CompletableFuture.completedFuture(errorResponse(500,
+			return deliver(errorResponse(500,
 				"LLM emulator fixture miss (strict): set=" + set + " kind=" + kind + " key=" + key));
 		}
 
@@ -597,7 +657,7 @@ public final class LlmEmulator {
 		String synth = synthesize(kind, wireReq, key);
 		SYNTH.incrementAndGet();
 		logger.info("LLM emulator SYNTH: set=" + set + " kind=" + kind + " key=" + key.substring(0, 12) + " chars=" + synth.length());
-		return CompletableFuture.completedFuture(sseResponse(synth));
+		return deliver(sseResponse(synth));
 	}
 
 	private static Fault matchFault(String set, Manifest manifest, String kind, String key) {
@@ -1298,6 +1358,15 @@ public final class LlmEmulator {
 
 	/** OpenAI-compatible SSE stream carrying {@code content}, split into deltas, then finish + [DONE]. */
 	static HttpResponse<Stream<String>> sseResponse(String content) {
+		return sseResponse(content, "stop");
+	}
+
+	/**
+	 * As {@link #sseResponse(String)} but ending with the given {@code finish_reason} — {@code stop} for a
+	 * normal reply; {@code content_filter} reproduces a provider that delivers nothing (or a fragment) and
+	 * then declares the completion withheld.
+	 */
+	static HttpResponse<Stream<String>> sseResponse(String content, String finishReason) {
 		List<String> lines = new ArrayList<>();
 		String c = content == null ? "" : content;
 		int pos = 0;
@@ -1313,7 +1382,8 @@ public final class LlmEmulator {
 			first = false;
 			pos = end;
 		}
-		lines.add("data: {\"id\":\"emu\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}");
+		lines.add("data: {\"id\":\"emu\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":"
+			+ jsonString(finishReason == null || finishReason.isBlank() ? "stop" : finishReason) + "}]}");
 		lines.add("data: [DONE]");
 		return new EmulatedResponse(200, Map.of("content-type", List.of("text/event-stream")), lines.stream());
 	}
@@ -1350,7 +1420,13 @@ public final class LlmEmulator {
 		EmulatedResponse(int status, Map<String, List<String>> headers, Stream<String> body) {
 			this.status = status;
 			this.headers = HttpHeaders.of(headers, (a, b) -> true);
-			this.body = body;
+			final boolean[] seen = { false };
+			this.body = body.peek(line -> {
+				if (!seen[0]) {
+					seen[0] = true;
+					LAST_CONSUMER_THREAD.set(Thread.currentThread().getName());
+				}
+			});
 		}
 
 		@Override public int statusCode() { return status; }

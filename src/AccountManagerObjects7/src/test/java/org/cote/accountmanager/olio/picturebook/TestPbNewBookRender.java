@@ -88,6 +88,94 @@ public class TestPbNewBookRender extends BaseTest {
 	// ─────────────────────────────── cases ───────────────────────────────
 
 	/**
+	 * KI-90 (§24 I-9): a created book's {@code name} is the title the caller passed, not {@code Book <slug>}.
+	 * Read back fresh (uncached, as the owner) rather than trusting the create's return. The title is still
+	 * copied to {@code description}, so the DTO's {@code title} is unchanged. A book created with NO title keeps
+	 * the old {@code Book <slug>} name. Two books sharing one title in the same organization both create - the
+	 * per-book {@code /Book} group keeps the unique {@code (name, groupId, organizationId)} index clear - and a
+	 * title longer than {@code common.name}'s 256-character cap is cut to fit instead of failing validation.
+	 */
+	@Test(timeout = LOCAL_TIMEOUT_MS)
+	public void case00_createdBookNameIsThePassedTitle() throws Exception {
+		Fixture f = fixture("i9ki90", 1);
+		Fixture twin = null;
+		BaseRecord untitled = null;
+		BaseRecord longTitled = null;
+		String untitledSlug = "i9ki90u-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+		String longSlug = "i9ki90l-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		try {
+			String title = "New-book render " + f.slug;
+			BaseRecord fresh = readBookFresh(f.owner, f.bookOid, f.orgId);
+			assertEquals("name is the passed title (KI-90)", title, fresh.get(FieldNames.FIELD_NAME));
+			assertEquals("description still carries the title", title, fresh.get(FieldNames.FIELD_DESCRIPTION));
+			assertEquals("slug unchanged", f.slug, fresh.get(OlioFieldNames.FIELD_PB_SLUG));
+			assertEquals("bookName derives the same value", title, PbBookUtil.bookName(f.slug, title));
+
+			/// A second book with the SAME title: its own group, so no (name, groupId, organizationId) collision.
+			twin = new Fixture();
+			twin.owner = f.owner;
+			twin.orgId = f.orgId;
+			twin.slug = "i9ki90t-" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+			twin.book = PbBookUtil.createBook(f.owner, dataPath, twin.slug, title);
+			assertNotNull("a second book with the same title must create (per-book group)", twin.book);
+			twin.bookOid = twin.book.get(FieldNames.FIELD_OBJECT_ID);
+			BaseRecord twinFresh = readBookFresh(f.owner, twin.bookOid, f.orgId);
+			assertEquals("the twin's name is the shared title", title, twinFresh.get(FieldNames.FIELD_NAME));
+			assertFalse("two distinct books", f.bookOid.equals(twin.bookOid));
+			assertFalse("two distinct groups", ((Number) fresh.get(FieldNames.FIELD_GROUP_ID)).longValue()
+				== ((Number) twinFresh.get(FieldNames.FIELD_GROUP_ID)).longValue());
+
+			/// No title at all: the legacy derived name.
+			untitled = PbBookUtil.createBook(f.owner, dataPath, untitledSlug, null);
+			assertNotNull("untitled book creates", untitled);
+			BaseRecord untitledFresh = readBookFresh(f.owner, untitled.get(FieldNames.FIELD_OBJECT_ID), f.orgId);
+			assertEquals("no title keeps Book <slug>", "Book " + untitledSlug, untitledFresh.get(FieldNames.FIELD_NAME));
+			assertNull("no title, no description", untitledFresh.get(FieldNames.FIELD_DESCRIPTION));
+			assertEquals("bookName: blank title is no title", "Book " + untitledSlug, PbBookUtil.bookName(untitledSlug, "   "));
+
+			/// Over the name cap (96 - the urn column's 255 is the binding limit, see bookName's javadoc; a
+			/// 256-character name was refused by Postgres on the urn when this case first ran): cut to fit,
+			/// the full title in description (512 cap).
+			StringBuilder sb = new StringBuilder("Long title ");
+			while(sb.length() < 300) sb.append("x");
+			String longTitle = sb.toString();
+			longTitled = PbBookUtil.createBook(f.owner, dataPath, longSlug, longTitle);
+			assertNotNull("over-long title must still create", longTitled);
+			BaseRecord longFresh = readBookFresh(f.owner, longTitled.get(FieldNames.FIELD_OBJECT_ID), f.orgId);
+			assertEquals("name cut to the cap", longTitle.substring(0, PbBookUtil.MAX_BOOK_NAME_LENGTH).trim(), longFresh.get(FieldNames.FIELD_NAME));
+			assertEquals("description carries the whole title", longTitle, longFresh.get(FieldNames.FIELD_DESCRIPTION));
+		}
+		finally {
+			cleanup(f);
+			cleanup(twin);
+			deleteQuietly(f.owner, untitled);
+			deleteQuietly(f.owner, longTitled);
+		}
+	}
+
+	private static BaseRecord readBookFresh(BaseRecord user, String bookOid, long orgId) {
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK, FieldNames.FIELD_OBJECT_ID, bookOid);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+		q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME,
+			FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_GROUP_ID, OlioFieldNames.FIELD_PB_SLUG });
+		q.setCache(false);
+		BaseRecord b = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		assertNotNull("fresh read of book " + bookOid, b);
+		return b;
+	}
+
+	private void deleteQuietly(BaseRecord owner, BaseRecord book) {
+		if(book == null) return;
+		try {
+			PbDeleteUtil.deleteBookComplete(owner, book.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		catch(Exception e) {
+			logger.warn("Cleanup of " + book.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+		}
+	}
+
+	/**
 	 * {@code requestBuildGraph}: no workflow and no node before; afterwards one workflow and exactly one
 	 * RENDER_PLAN node per scene under the deterministic handle, scoped to the scene; a second call finds them
 	 * all (nothing materialised, same workflow, still three nodes). {@code scene.sceneNode} stays unset.

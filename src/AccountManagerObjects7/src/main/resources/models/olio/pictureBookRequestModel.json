@@ -249,6 +249,11 @@
 			"name": "h",
 			"type": "int",
 			"description": "V3 Phase 9 (P9-0, 212 p): PUT …/canvas — the node's canvas height. See x."
+		},
+		{
+			"name": "variants",
+			"type": "int",
+			"description": "V3 §24 I-6 (212 c): POST /{bookObjectId}/scene/{sceneObjectId}/render, …/render-plan and /{bookObjectId}/render-all — per-request override of the quality preset's variant count (design section 23). Absent = the preset's own `variants`. Present = validated by PbServiceFacade.validateVariants against the effective preset: an integer from 1 to the preset's declared maxVariants (qualityPresets.json), else 400 with a message naming the range and preset; never clamped silently. Read through hasField() (KI-25): an absent int reads 0, which would otherwise be a 400 on every body that omits it. Must be declared or RecordDeserializer drops it (KI-24)."
 		}
 	]
 }

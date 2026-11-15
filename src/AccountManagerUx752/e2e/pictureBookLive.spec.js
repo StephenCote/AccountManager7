@@ -25,8 +25,8 @@
  * the hand-rolled V3 reader (features/pictureBook.js pb2PageReaderView), NOT components/readerShell.js:
  *   root [data-testid="pb2-reader"][data-fullscreen="0|1"]; header [data-pb2-book-name] + 'Cover' /
  *   'Page N of M', [data-testid="pb2-export"] + [data-testid="pb2-fullscreen"] (UAT-2, through the shared
- *   exportBook engine); cover h1 = the book's NAME ("Book <slug>" — PbBookUtil.bookName; the human title
- *   lives in description), [data-pb2-cover-count] "N rendered of M scenes", a rounded-full Begin button;
+ *   exportBook engine); cover h1 = the book's NAME (the title the import was given, since KI-90 §24 I-9;
+ *   "Book <slug>" only when no title was passed - PbBookUtil.bookName), [data-pb2-cover-count] "N rendered of M scenes", a rounded-full Begin button;
  *   scene page h2 = scene.title, p.italic = poemStanza|blurb|summary, [data-testid="pb2-scene-image"] or
  *   an 'image' placeholder, Compose / Render / Plan & generate controls, footer 'Page N of M'; page dots
  *   button.w-2.5.rounded-full titled 'Cover' / 'Page N'. A fresh book has ONE front page (the cover), so
@@ -319,6 +319,10 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
         test('B.3 GET /scenes returns valid data', async ({ page }) => {
             test.setTimeout(30000);
+            // Scene-dependent (reads /scenes of the book beforeAll imported), so it is gated like B.1 and
+            // D-I: without PB_LLM_TESTS there is no book, scenesId would be the AIME note and /scenes
+            // 404s (the §24 U-6 full gate, 107-u6-verify.phases.clean.log:3264).
+            test.skip(!PB_LLM, NO_SCENES_REASON);
             test.skip(!workObjectId, 'No work created');
 
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
@@ -672,11 +676,12 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             console.log('  Cover count: ' + state.coverCount);
 
             expect(state.hasNoBook).toBe(false);
-            // The cover h1 is the BOOK's name — "Book <slug>" (PbBookUtil.bookName); the human title the
-            // import was given ("AIME Test Book <ts>") lives in the book's description, not its name.
+            // The cover h1 is the BOOK's name - since KI-90 (§24 I-9) the title the import was given
+            // ("AIME Test Book <ts>"; PbBookUtil.bookName), which also lives in the book's description.
+            // §24 U-3 (§6.C 312): I-9 updated this comment but left the regex at the pre-KI-90 "Book <slug>".
             expect(state.coverTitle).toBeTruthy();
             expect(state.coverTitle).toBe(state.headerName);
-            expect(state.coverTitle).toMatch(/^Book aime-live-[a-z0-9]+$/);
+            expect(state.coverTitle).toMatch(/^AIME Test Book [a-z0-9]+$/);
             // One front page (the cover) + one dot per imported scene; titled Cover, Page 1..N.
             expect(state.dotCount).toBe(extractedScenes.length + 1);
             expect(state.dotTitles).toEqual(['Cover'].concat(extractedScenes.map((s, i) => 'Page ' + (i + 1))));
@@ -1159,7 +1164,8 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await expect(reader.locator('textarea'), 'no inline blurb editor').toHaveCount(0);
 
             await expect(reader.locator('button[title="Back to book list"]')).toBeVisible();
-            await expect(reader.locator('[data-pb2-book-name]')).toHaveText(/^Book aime-live-[a-z0-9]+$/);
+            // KI-90 (§24 I-9): the header carries the title the import was given, not "Book <slug>" (§24 U-3, §6.C 312).
+            await expect(reader.locator('[data-pb2-book-name]')).toHaveText(/^AIME Test Book [a-z0-9]+$/);
             await expect(reader.locator('[data-testid="pb2-chat-config"]')).toBeVisible();
             await expect(reader.locator('[data-testid="pb2-auto-approve-badge"]')).toHaveText(/^Auto-approve: (ON|OFF)$/);
             await expect(reader.locator('[data-testid="pb2-render-all"]')).toHaveAttribute('title', 'Render all scenes');
@@ -1213,7 +1219,8 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             // The download event is REQUIRED (the old `.catch(() => null)` made this test pass on no
             // download at all). The filename comes from exportBook: the book name with every non
-            // [a-zA-Z0-9_-] replaced by '_' + '-picturebook.html' → 'Book_aime-live-<ts>-picturebook.html'.
+            // [a-zA-Z0-9_-] replaced by '_' + '-picturebook.html' → 'AIME_Test_Book_<ts>-picturebook.html'
+            // (the title the import was given, KI-90 / §24 I-9; corrected §24 U-3, §6.C 312).
             let downloadPromise = page.waitForEvent('download', { timeout: 60000 });
             await page.locator('[data-testid="pb2-export"]').click();
             let download = await downloadPromise;
@@ -1227,7 +1234,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
             console.log('=== I.2 Export ===');
             console.log('  File: ' + filename + ' (' + size + ' bytes)');
-            expect(filename).toMatch(/^Book_aime-live-[a-z0-9]+-picturebook\.html$/);
+            expect(filename).toMatch(/^AIME_Test_Book_[a-z0-9]+-picturebook\.html$/);
             expect(size).toBeGreaterThan(100);
             await expect(page.getByText('Picture book exported')).toBeVisible({ timeout: 10000 });
             await expect(page.locator('[data-testid="pb2-export"]')).toBeEnabled();
@@ -1318,6 +1325,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
         test('J.2 Zero mediaUrl errors in full flow', async ({ page }) => {
             test.setTimeout(60000);
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);   // openReaderAtCover + expectScenePage read the import (§24 U-6)
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
@@ -1349,6 +1357,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
         test('J.3 Zero [object Object] URLs', async ({ page }) => {
             test.setTimeout(60000);
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);   // openReaderAtCover + expectScenePage read the import (§24 U-6)
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
@@ -1376,6 +1385,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
 
         test('J.4 Zero 400/500 during normal flow', async ({ page }) => {
             test.setTimeout(60000);
+            test.skip(!extractedScenes.length, NO_SCENES_REASON);   // openReaderAtCover + expectScenePage read the import (§24 U-6)
             test.skip(!workObjectId, 'No work created');
             await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 

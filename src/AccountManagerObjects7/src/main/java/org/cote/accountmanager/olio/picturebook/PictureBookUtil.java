@@ -1833,7 +1833,7 @@ public class PictureBookUtil {
      * (removed at P10-1) — used to resolve the scene by objectId and act on it
      * without ever resolving, let alone authorizing, its book. That is a direct object reference
      * with no book-level check: the coarse {@code @RolesAllowed({"admin","user"})} on the REST
-     * endpoints says "is a user", never "may act on <i>this</i> book". PictureBook2Plan.md §5.6
+     * endpoints says "is a user", never "may act on <i>this</i> book". archive/PictureBook2Plan.md §5.6
      * requires each of them to resolve the scene's book and re-authorize.
      *
      * <p><b>Where the check lives.</b> Here, in Objects7, driven by {@code AuthorizationUtil} (the
@@ -2107,24 +2107,12 @@ public class PictureBookUtil {
     }
 
     /**
-     * Persist the last-used image generation settings for a book, so images can be recreated
-     * with the same settings later. Best-effort: a failure here must not fail the actual
-     * generation request the caller is in the middle of servicing.
-     */
-    private static void persistBookSdConfig(BaseRecord user, String bookGroupPath, BaseRecord sdConfig) {
-        try {
-            BaseRecord meta = loadTypedMeta(user, bookGroupPath);
-            if (meta == null) return;
-            meta.set("sdConfig", sdConfig);
-            saveMeta(user, bookGroupPath, meta);
-        } catch (Exception e) {
-            logger.warn("Failed to persist book sdConfig: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Read back the last-used image generation settings for a book (see persistBookSdConfig),
-     * or null if the book has never generated an image / has no meta yet.
+     * Read back the image generation settings stored on the book meta's {@code sdConfig} key, or
+     * null if the book has none. Nothing writes that key any more: the PB1 writer
+     * ({@code setBookSdConfig} and its {@code persistBookSdConfig*} helpers; route retired 216 d) was
+     * deleted 2026-11-14 (§24 C-1), so this returns a value only for a book whose meta was written
+     * before then. V3 books carry their settings on {@code olio.pb.book.sdConfig}
+     * ({@link PbBookUtil#getBookSdConfig}).
      *
      * <p>{@code bookObjectId} is EITHER the PB1 scene-group ({@code data.group}) objectId OR the
      * {@code olio.pb.book} objectId — the same dual-lookup {@link #listScenes} / {@link #listCharacters}
@@ -2150,94 +2138,6 @@ public class PictureBookUtil {
         BaseRecord meta = loadTypedMeta(user, bookGroupPath);
         if (meta == null) return null;
         return meta.get("sdConfig");
-    }
-
-    /**
-     * Companion to {@link #persistBookSdConfig} for the optional ALTERNATE composite config
-     * — writes meta key "compositeSdConfig". Best-effort, same as persistBookSdConfig.
-     */
-    private static void persistBookCompositeSdConfig(BaseRecord user, String bookGroupPath, BaseRecord compositeSdConfig) {
-        try {
-            BaseRecord meta = loadTypedMeta(user, bookGroupPath);
-            if (meta == null) return;
-            meta.set("compositeSdConfig", compositeSdConfig);
-            saveMeta(user, bookGroupPath, meta);
-        } catch (Exception e) {
-            logger.warn("Failed to persist book compositeSdConfig: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Store the book's COMMON (and optional ALTERNATE composite) olio.sd.config once — the settings
-     * the generation pipeline reads back as the base for every scene (portraits/landscape/scene).
-     * Lets the test/Ux "set one config" then have generation pick it up (PUT /{bookObjectId}/settings).
-     * fillStyleDefaults is applied so the stored config yields a complete getSDConfigPrompt style.
-     * Returns the stored common config (or null if none supplied / no book meta).
-     * <p>
-     * S6: also persists each config as an olio.sd.config row and patches the olio.pb.book FK when
-     * a PB2 book record exists in the book group.
-     * <p>
-     * {@code bookObjectId} is EITHER the PB1 scene-group objectId OR the {@code olio.pb.book} objectId —
-     * the same dual-lookup as {@link #getBookSdConfig}, so a config saved by one handle reads back by the other.
-     */
-    public static BaseRecord setBookSdConfig(BaseRecord user, String bookObjectId, BaseRecord sdConfig, BaseRecord compositeSdConfig) {
-        long orgId = ((Number) user.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue();
-        BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
-        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
-        long bookGroupId = bookGroup.get(FieldNames.FIELD_ID);
-        if (sdConfig != null) {
-            SDUtil.fillStyleDefaults(sdConfig);
-            persistBookSdConfig(user, bookGroupPath, sdConfig);
-            persistBookSdConfigFk(user, sdConfig, "book-sdConfig",
-                OlioFieldNames.FIELD_PB_SD_CONFIG, bookGroupId, orgId);
-        }
-        if (compositeSdConfig != null) {
-            SDUtil.fillStyleDefaults(compositeSdConfig);
-            persistBookCompositeSdConfig(user, bookGroupPath, compositeSdConfig);
-            persistBookSdConfigFk(user, compositeSdConfig, "book-compositeSdConfig",
-                OlioFieldNames.FIELD_PB_COMPOSITE_SD_CONFIG, bookGroupId, orgId);
-        }
-        return getBookSdConfigByPath(user, bookGroupPath);
-    }
-
-    /**
-     * Persist an olio.sd.config as a FK row in the book group and patch the book record's field.
-     * Best-effort: no-ops if there is no PB2 book record in the group yet.
-     */
-    private static void persistBookSdConfigFk(BaseRecord user, BaseRecord sdConfig,
-            String configName, String bookFieldName, long bookGroupId, long orgId) {
-        try {
-            String existingOid = sdConfig.get(FieldNames.FIELD_OBJECT_ID);
-            if (existingOid == null || existingOid.trim().isEmpty()) {
-                sdConfig.set(FieldNames.FIELD_NAME, configName);
-                sdConfig.set(FieldNames.FIELD_GROUP_ID, bookGroupId);
-                sdConfig.set(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-            }
-            BaseRecord persisted = SdConfigUtil.createOrUpdateConfig(user, sdConfig);
-            if (persisted == null) {
-                logger.warn("persistBookSdConfigFk: failed to persist " + configName);
-                return;
-            }
-            // Find the olio.pb.book in the book group (PB2 only; PB1 books have no row)
-            Query bq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_BOOK,
-                FieldNames.FIELD_GROUP_ID, bookGroupId);
-            bq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
-            bq.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID,
-                FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID});
-            bq.setCache(false);
-            BaseRecord book = IOSystem.getActiveContext().getAccessPoint().find(user, bq);
-            if (book == null) {
-                return; // PB1 book, no olio.pb.book row
-            }
-            BaseRecord patch = PbGraphUtil.patchOf(book, OlioModelNames.MODEL_PB_BOOK, bookFieldName);
-            patch.set(bookFieldName, persisted);
-            if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
-                logger.warn("persistBookSdConfigFk: failed to patch book " + bookFieldName);
-            }
-        } catch (Exception e) {
-            logger.warn("persistBookSdConfigFk error for " + configName + ": " + e.getMessage());
-        }
     }
 
     /**
@@ -3487,7 +3387,7 @@ public class PictureBookUtil {
     @Deprecated
     public static boolean tagApparelSceneIndex(BaseRecord user, String charObjectId, String apparelObjectId,
             int sceneIndex) {
-        // PB1 guard: identical pattern to persistBookSdConfigFk. Characters in a PB1 world have no
+        // PB1 guard (the pattern the deleted PB1 persistBookSdConfigFk used). Characters in a PB1 world have no
         // olio.pb.book row; those characters may live in a group other than a book's "Characters" folder.
         // If the book-group lookup returns null, skip silently instead of throwing a 403. A current-layout
         // PB2 character (Population / Chapter Population <slug>) is NOT a PB1 character and is authorized.
@@ -4615,8 +4515,9 @@ public class PictureBookUtil {
     ///   - "No chat config available"         (config)
     ///   - "Null LLM response"                (infra)
     ///   - exception thrown by chat.chat(...) (infra)
-    /// It is left FALSE for the SOFT outcomes (conversational refusal; blank/think-only stripped-empty
-    /// content) and on success. It is caller-initialized; this method only ever sets it to true.
+    /// It is left FALSE for the SOFT outcomes (conversational refusal; a content-filtered completion —
+    /// finish_reason=content_filter, UAT-5; blank/think-only stripped-empty content) and on success.
+    /// It is caller-initialized; this method only ever sets it to true.
     private static String callLlmInternal(BaseRecord user, BaseRecord chatConfig, String promptName, Map<String, String> vars, boolean[] hardFailureOut) {
         return callLlmInternal(user, chatConfig, promptName, vars, hardFailureOut,
             resolvePrompt(user, chatConfig, promptName));
@@ -4804,6 +4705,29 @@ public class PictureBookUtil {
             } catch (Exception ex) { /* ignore if field doesn't exist */ }
             chat.newMessage(req, userTpl);
             OpenAIResponse resp = chat.chat(req);
+            // UAT-5 (2026-11-15): the provider's completion-side content filter withholds a completion
+            // the model already wrote — the stream ends finish_reason=content_filter with the content
+            // empty (→ "Null LLM response", a HARD infra failure the chunk loop reported as "did not
+            // finish within the request timeout") or a "{" / "{\"" fragment (→ parsed as an object with
+            // no keys and counted as a SUCCESSFUL reply with no scenes). Both are wrong: the model
+            // answered and the route declined to deliver it. Classify it exactly like a conversational
+            // refusal — a SOFT decline (hardFailureOut stays false), LAST_REFUSAL set so the chunk loop
+            // records KIND_REFUSAL ("the model declined to process this passage"), not retried with the
+            // same model, retryable via retryFailedChunks with another one.
+            if (Chat.isLastCallContentFiltered()) {
+                String got = (resp != null && resp.getMessage() != null && resp.getMessage().getContent() != null)
+                    ? resp.getMessage().getContent() : "";
+                String reason = "The model server's content filter withheld the completion (finish_reason=content_filter"
+                    + (got.isEmpty() ? ", no content" : ", " + got.length() + " chars received before the cut") + ")";
+                logger.warn("LLM completion content-filtered for prompt '" + promptName + "' — discarding the "
+                    + got.length() + "-char fragment: " + reason);
+                logger.warn("  filtered-request system=[" + system + "]");
+                String sentUser = (userTpl != null) ? userTpl : "";
+                if (sentUser.length() > 4000) sentUser = sentUser.substring(0, 4000) + " …(truncated, " + userTpl.length() + " chars total)";
+                logger.warn("  filtered-request user=[" + sentUser + "]");
+                LAST_REFUSAL.set(reason);
+                return null;
+            }
             if (resp != null && resp.getMessage() != null) {
                 String out = stripThink(resp.getMessage().getContent());
                 // Central safeguard: if the model DECLINED (a conversational refusal like "I'm sorry,
@@ -9848,10 +9772,26 @@ public class PictureBookUtil {
     static BaseRecord resolveTrustedCharsGroup(BaseRecord user, String pb2Hint,
             String bookGroupPath, long orgId) {
         String trustedPopulationPath = deriveTrustedCharsGroupPath(user, pb2Hint, orgId);
+        // A V3-only book (no PB1 scene group, bookGroupPath null — §24 UAT-6) has no legacy Characters
+        // subgroup to fall back to: no world population group means no characters, never a "null/…" path.
+        if (trustedPopulationPath == null && bookGroupPath == null) return null;
         String charsGroupPath = (trustedPopulationPath != null)
                 ? trustedPopulationPath : (bookGroupPath + "/" + CHARACTERS_DIR);
         return IOSystem.getActiveContext().getPathUtil().findPath(user,
                 ModelNames.MODEL_GROUP, charsGroupPath, GroupEnumType.DATA.toString(), orgId);
+    }
+
+    /**
+     * Whether {@code bookObjectId} names an {@code olio.pb.book} this user may read that has NO PB1 scene
+     * {@code data.group} (§24 UAT-6): every {@code POST /books} fixture, and a product-created chapter whose
+     * extraction has not run yet. Such a book is real but has no legacy layer, so the PB1 read routes
+     * ({@link #listScenes}, {@link #listCharacters}) answer with what it does have (no scenes; its world
+     * population characters) rather than 404 "Book not found" — which the Manage Characters dialog took at
+     * face value and never recovered from. Called only after {@link #resolveBookGroupEither} missed; the
+     * read goes through {@code AccessPoint} (readBook), so an absent OR unreadable book stays a 404.
+     */
+    private static boolean isReadableV3OnlyBook(BaseRecord user, String bookObjectId, long orgId) {
+        return PbBookUtil.readBook(user, bookObjectId, orgId) != null;
     }
 
     @SuppressWarnings("unchecked")
@@ -9860,8 +9800,12 @@ public class PictureBookUtil {
         // Dual-lookup: a data.group objectId OR an olio.pb.book objectId — the UI passes whichever it
         // has. Shared with mergeCharacters via resolveBookGroupEither.
         BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
-        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
-        String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
+        if (bookGroup == null && !isReadableV3OnlyBook(user, bookObjectId, orgId)) {
+            throw new PictureBookException(404, "Book not found");
+        }
+        // null for a V3-only book: no meta note to read, no {bookGroupPath}/Characters fallback — its
+        // characters are the world population group deriveTrustedCharsGroupPath resolves from the book itself.
+        String bookGroupPath = (bookGroup != null) ? bookGroup.get(FieldNames.FIELD_PATH) : null;
 
         // Parse the book's meta ONCE — but ONLY for the failedApparel/failedStatistics DISPLAY flags.
         // The characters GROUP is NOT taken from the meta: that note is owned by (and PATCH-writable by)
@@ -9874,7 +9818,7 @@ public class PictureBookUtil {
         Set<String> failedStatistics = new HashSet<>();
         String storedCharsGroupPath = null;
         String metaPb2BookObjectId = null;
-        BaseRecord metaRec = loadMeta(user, bookGroupPath);
+        BaseRecord metaRec = (bookGroupPath != null) ? loadMeta(user, bookGroupPath) : null;
         if (metaRec != null) {
             try {
                 String metaJson = metaRec.get("text");
@@ -9996,7 +9940,12 @@ public class PictureBookUtil {
         // resolveBookGroupEither maps to its scene group via the .pictureBookMeta pb2BookObjectId link.
         // Shared with listCharacters.
         BaseRecord bookGroup = resolveBookGroupEither(user, bookObjectId, orgId);
-        if (bookGroup == null) throw new PictureBookException(404, "Book not found");
+        if (bookGroup == null) {
+            // §24 UAT-6: a readable olio.pb.book with no PB1 scene group has no PB1 scenes - an empty list,
+            // not "Book not found" (which only an absent or unreadable book earns).
+            if (isReadableV3OnlyBook(user, bookObjectId, orgId)) return new ArrayList<>();
+            throw new PictureBookException(404, "Book not found");
+        }
         String bookGroupPath = bookGroup.get(FieldNames.FIELD_PATH);
 
         BaseRecord metaRec = loadMeta(user, bookGroupPath);
@@ -10329,7 +10278,8 @@ public class PictureBookUtil {
                     try {
                         m.remove("pb2BookObjectId");
                         BaseRecord patch = PbGraphUtil.patchOf(note, ModelNames.MODEL_NOTE, FieldNames.FIELD_TEXT);
-                        patch.set(FieldNames.FIELD_TEXT, JSONUtil.exportObject(m));
+                        // Every other key of the PB1 note kept as-is (PbMigrationUtil.exportMetaMap, §24 UAT-3)
+                        patch.set(FieldNames.FIELD_TEXT, PbMigrationUtil.exportMetaMap(m));
                         if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) != null) {
                             logger.info("Unlinked .pictureBookMeta note {} (live PB1 group) from deleted book {}",
                                 note.get(FieldNames.FIELD_OBJECT_ID), bookObjectId);

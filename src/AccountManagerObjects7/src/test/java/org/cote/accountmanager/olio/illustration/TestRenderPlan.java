@@ -423,12 +423,15 @@ public class TestRenderPlan {
 	@Test
 	public void degradationCodesAreTheClosedSet() {
 		/// The closed set: the P5 eight, then QA_FAIL + QA_UNAVAILABLE (P6), VARIANT_FAILED + VARIANT_SEED_UNKNOWN (P6-2),
-		/// UPSCALE_NOT_RENDERED (§24 I-3, 224 e) and TITLE_BAND_FAILED (§24 I-4, 236 i). A new code is added HERE too.
+		/// UPSCALE_NOT_RENDERED (§24 I-3, 224 e), TITLE_BAND_FAILED (§24 I-4, 236 i), and BACKGROUND_REGEN_NO_REGIONS +
+		/// ACTOR_SEED_NEW (§24 I-8, background-only regenerate). A new code is added HERE too - this pin was missed
+		/// twice (§6.C 300, §6.C 316) by slices that added a code and re-ran only a subset of the Objects7 tests.
 		String[] closed = new String[] {Degradation.ACTOR_TEXT_ONLY, Degradation.ACTOR_UNRESOLVED, Degradation.ACTOR_FAILED, Degradation.LOCATION_TEXT_ONLY,
 				Degradation.MODEL_SUBSTITUTED, Degradation.PROMPT_TRUNCATED, Degradation.QA_WARN, Degradation.COMPOSED_OUT_OF_ORDER,
 				Degradation.QA_FAIL, Degradation.QA_UNAVAILABLE, Degradation.VARIANT_FAILED, Degradation.VARIANT_SEED_UNKNOWN,
-				Degradation.UPSCALE_NOT_RENDERED, Degradation.TITLE_BAND_FAILED};
-		assertEquals(14, closed.length);
+				Degradation.UPSCALE_NOT_RENDERED, Degradation.TITLE_BAND_FAILED, Degradation.BACKGROUND_REGEN_NO_REGIONS,
+				Degradation.ACTOR_SEED_NEW};
+		assertEquals(16, closed.length);
 		assertEquals("every code in the set is listed here", closed.length, Degradation.CODES.size());
 		for(String code : closed) {
 			assertTrue(code, Degradation.CODES.contains(code));

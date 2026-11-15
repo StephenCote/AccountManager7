@@ -142,6 +142,30 @@ public class Query extends LooseRecord{
 		return true;
 	}
 
+	/// The request entries that cannot be projected on this query's model: a top-level name the schema
+	/// does not define, or a dotted path expandRequestPaths() refused (a segment that is not a plannable
+	/// foreign model field, or a leaf missing on the model the path arrives at). StatementUtil.getSelectTemplate
+	/// throws FieldException for exactly these, DBSearch wraps it in a ReaderException and AccessPoint.search
+	/// swallows that into a null result, so a transport that wants to answer 400 instead of an empty 200
+	/// (KI-83) must ask here first. Empty when the model is unknown (nothing to validate against) or when every
+	/// entry resolves. Does not mutate the query beyond the idempotent expandRequestPaths() it runs first.
+	public List<String> invalidRequestFields() {
+		expandRequestPaths();
+		List<String> request = getRequest();
+		String type = getType();
+		ModelSchema schema = (type != null ? RecordFactory.getSchema(type) : null);
+		List<String> invalid = new ArrayList<>();
+		if(request == null || schema == null) {
+			return invalid;
+		}
+		for(String s : request) {
+			if(s == null || schema.getFieldSchema(s) == null) {
+				invalid.add(s);
+			}
+		}
+		return invalid;
+	}
+
 	/// Every segment but the last must be a plannable foreign model field (MODEL or LIST of model with a
 	/// concrete base model); the last segment must exist on the model the path arrives at.
 	private static boolean validateRequestPath(ModelSchema schema, String[] segs) {

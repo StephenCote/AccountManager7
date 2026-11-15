@@ -76,7 +76,7 @@ function bookRef(poem) {
 // ─────────────────────────────── C3: poem scoping REST round-trip ───────────────────────────────
 
 test.describe('C3 — poem scoping to a chapbook (REST)', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     test('scoped import filters GET /poems; bad bookObjectId => 404', async ({ request }) => {
         await ensureSharedTestUser(request);
@@ -260,7 +260,7 @@ function stepsSpinner(card) {
 }
 
 test.describe('C5 — per-scene SD-config override editor (UI)', () => {
-    test.describe.configure({ timeout: 180000 });
+    test.describe.configure({ timeout: 300000 });
 
     // Badges (since the 2026-11-10 "Chapbook patch", edf35b94): the toggle shows "unsaved" (cb-override-unsaved)
     // while override edits are pending on the card and "overridden" (cb-override-saved) once an override is

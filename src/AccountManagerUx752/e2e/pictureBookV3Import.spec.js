@@ -6,7 +6,8 @@
  * olio.pb.book) is shown read-only on the PB1 viewer (P7-3). The only way forward for it is the
  * server's PbMigrationUtil.importV1Book, which creates the V3 book + scenes, carries the scene text,
  * the rendered scene image (the note's imageObjectId, read by bookPageView's fallback) and the
- * landscape (an unapproved artifact on the scene's LANDSCAPE node), and never modifies a PB1 record.
+ * landscape (an unapproved artifact on the scene's LANDSCAPE node), and modifies no PB1 record except for the
+ * one additive pb2BookObjectId back-link it writes into the .pictureBookMeta note (§24 I-5 / 218 d).
  *
  * Fixture: the exact on-disk PB1 shape, built over REST as the shared test user — book group,
  * Scenes group, one data.data PNG, one scene note whose JSON names that PNG as both imageObjectId
@@ -15,7 +16,7 @@
  *
  * Checks: notice → Import → POST /migrate-v1 {groupObjectId} 200 → hash /picture-book/v2/<new oid>
  * → result dialog "1 scene imported, 1 landscape imported" → Close → the reader page shows the PB1
- * image through /media (200) → the PB1 records are unchanged → the group now bridges (/pb2 200) so
+ * image through /media (200) → the PB1 records are unchanged but for the meta back-link → the group now bridges (/pb2 200) so
  * re-opening the PB1 route redirects to the V3 reader → a second /migrate-v1 is the 409 slug
  * conflict (REST; the UI's handling of it is in src/test/pictureBookV3Import.test.js).
  *
@@ -282,13 +283,19 @@ test.describe('PictureBook V3 import of a pre-V3 book (P7-4)', () => {
         expect(importedPb2Oid, 'the import test must have run first').toBeTruthy();
         await restLogin(request);
 
-        // 1. PB1 never modified: the scene note and the meta note read back byte-for-byte.
+        // 1. PB1 untouched but for the one additive key (§24 I-5 / 218 d, §6.C 301): the scene note reads back
+        //    byte-for-byte; the meta note differs from what was written only by the pb2BookObjectId back-link
+        //    PbMigrationUtil.linkV1MetaToBook sets to the book just created (re-serialised, so compare parsed).
+        //    Pinned byte-for-byte until the §24 U-2 default run read it (2026-11-15).
         const s = await getNoteText(request, sceneNote.objectId);
         expect(s && s.text, 'scene note vanished').toBeTruthy();
         expect(s.text).toBe(sceneNoteText);
         const mt = await getNoteText(request, metaNote.objectId);
         expect(mt && mt.text, 'meta note vanished').toBeTruthy();
-        expect(mt.text).toBe(metaNoteText);
+        const metaAfter = JSON.parse(mt.text);
+        expect(metaAfter.pb2BookObjectId, 'meta note pb2BookObjectId back-link').toBe(importedPb2Oid);
+        delete metaAfter.pb2BookObjectId;
+        expect(metaAfter, 'meta note changed beyond the pb2BookObjectId back-link').toEqual(JSON.parse(metaNoteText));
 
         // 2. The V3 book is in /books under the slug derived from the group name, and the PB1 group now
         //    bridges to it (/pb2 resolves by that same slug) ...

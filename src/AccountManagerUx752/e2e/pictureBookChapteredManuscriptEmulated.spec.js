@@ -210,6 +210,24 @@ async function getJson(request, url) {
     return resp.json();
 }
 
+/**
+ * GET /olio/picture-book/books used as an EXHAUSTIVE selector. PbServiceFacade.listBooks enumerates at most
+ * LIST_BOOKS_CANDIDATE_CAP (400) candidate rows, name-sorted, with no paging indicator, so a user who owns more
+ * books than that silently loses the tail (found §24 U-6: 400 rows came back holding 9 of this run's 10
+ * chapters, because earlier runs never deleted their fixtures). The assertions filter the whole list by
+ * seriesName, which is only sound while the list is complete — stated here as a precondition, not folded into
+ * the assertions. afterAll deletes the series each run mints so the count stays well below the cap.
+ */
+const BOOKS_CAP = 400;
+async function allBooksExhaustive(request) {
+    const books = await getJson(request, PB_REST + '/books');
+    expect(books.length, 'GET /books returned ' + books.length + ' rows: at PbServiceFacade.LIST_BOOKS_CANDIDATE_CAP ('
+        + BOOKS_CAP + ') the name-sorted list is truncated and cannot select this run\'s chapters exhaustively; '
+        + EMU_USER + ' owns too many books - delete stale fixture series (DELETE /olio/picture-book/series/{oid})')
+        .toBeLessThan(BOOKS_CAP);
+    return books;
+}
+
 async function emulatorStats(request, reset) {
     const resp = await request.get(REST + '/chat/emulator/stats' + (reset ? '?reset=true' : ''),
         { headers: { Accept: 'application/json' } });
@@ -277,6 +295,41 @@ function recordedSceneTitles(set) {
         }
     }
     return titles;
+}
+
+/**
+ * The race strings the set's recorded reduce-character replies carry, per character name (lower-cased,
+ * as the prompt's "character detail for '{name}'" line names it — PictureBookUtil hands the prompt the
+ * cast name and persists that same name, so the roster below matches by it). The reply's RAW value is
+ * what the emulator replays and what the grounding gate then judges, so this is the ceiling of what the
+ * run can persist: a character whose every recorded reply says "Unknown" can never carry a race, by
+ * design. Replies whose JSON does not parse (the model's `"race_evidence": """"` habit) fall back to a
+ * regex read of the race field alone; a reply with no readable race contributes nothing.
+ */
+function recordedRaceByName(set) {
+    const byName = new Map();
+    const nameRe = /character detail for '([\s\S]*?)'\. Return JSON only/;
+    const raceRe = /"race"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+    const setDir = path.join(FIXTURE_ROOT, set);
+    for (const f of realFixtureFiles(set)) {
+        let fx;
+        try { fx = JSON.parse(readFixture(setDir, f, 'utf8')); } catch (_) { continue; }
+        if (fx.kind !== 'reduce-character') continue;
+        const msgs = (fx.request && Array.isArray(fx.request.messages)) ? fx.request.messages : [];
+        const user = msgs.filter(m => m && m.role === 'user').map(m => String(m.content || '')).join('\n');
+        const nm = nameRe.exec(user);
+        if (!nm) continue;
+        const body = String((fx.response && fx.response.content) || '').replace(/<think>[\s\S]*?<\/think>/g, '');
+        let race = null;
+        const obj = /\{[\s\S]*\}/.exec(body);
+        if (obj) { try { race = JSON.parse(obj[0]).race; } catch (_) { race = null; } }
+        if (typeof race !== 'string') { const rm = raceRe.exec(body); race = rm ? rm[1] : null; }
+        if (typeof race !== 'string') continue;
+        const key = nm[1].trim().toLowerCase();
+        if (!byName.has(key)) byName.set(key, new Set());
+        byName.get(key).add(race.trim());
+    }
+    return byName;
 }
 
 /**
@@ -673,6 +726,12 @@ async function runExtract(page, budgetMs, tag) {
                 chunkTotals[chapter] = k;
             }
         } else if (Date.now() - startedAt > 15000) {
+            // The URL at the top of this iteration predates the isVisible() read, and the wizard closes
+            // its dialog and routes to /workflow in the same tick — so a clean landing between the two
+            // reads arrives here with the workflow URL already in hand (the full gate threw this error
+            // with url=…/workflow in its own message, 107-u6-verify.phases.clean.log:3094). Re-check
+            // before calling the dialog "vanished"; the next iteration returns 'landed'.
+            if (/\/picture-book\/[^/]+\/workflow/.test(page.url())) continue;
             await screenshot(page, 'pb-emu-' + tag + '-dialog-vanished');
             throw new Error('[' + tag + '] wizard dialog disappeared without navigating to the workflow route; url=' + page.url());
         }
@@ -703,12 +762,32 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
     let orgId = null;
     // Set by the first test; consumed by the re-run test at the end of the serial block.
     let rerun = null;
+    // Series this run minted ({ oid, name }); deleted in afterAll so the EMU user's book count stays below the
+    // /books cap (allBooksExhaustive). PB_EMU_KEEP_FIXTURES=1 keeps them for a look.
+    const mintedSeries = [];
 
     test.beforeAll(async ({ request }) => {
         test.setTimeout(240000);
         await ensureSharedTestUser(request, { name: EMU_USER, password: EMU_PASSWORD });
         await restLogin(request);
         ({ orgId } = await ensureEmulatorChatConfig(request, { configName: MAIN_CONFIG_NAME, set: MAIN_SET }));
+    });
+
+    test.afterAll(async ({ request }) => {
+        if (!mintedSeries.length) return;
+        if (process.env.PB_EMU_KEEP_FIXTURES) {
+            console.log('[pb-emu] PB_EMU_KEEP_FIXTURES set: leaving ' + mintedSeries.map(s => s.name).join(', '));
+            return;
+        }
+        await restLogin(request);
+        for (const s of mintedSeries) {
+            // DELETE /olio/picture-book/series/{oid} (PbSeriesUtil.deleteSeries): every chapter book, the shared
+            // series world, the series row and its role pair. Logged, not asserted: a cleanup failure must not
+            // turn a green run red, and the next run's allBooksExhaustive precondition reports the accumulation.
+            const d = await request.delete(PB_REST + '/series/' + s.oid, { headers: { Accept: 'application/json' } });
+            const body = await d.json().catch(() => null);
+            console.log('[pb-emu] afterAll DELETE series "' + s.name + '" -> ' + d.status() + ' ' + JSON.stringify(body));
+        }
     });
 
     test('N chapters through the wizard: parity, bundling, reader, cast, re-run reuse, emulator stats',
@@ -845,13 +924,14 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         expect(stats1.fault, 'no faults in the ' + MAIN_SET + ' set').toBe(0);
 
         // ── REST truth (assertion 3) ─────────────────────────────────────────────────────────
-        const allBooks1 = await getJson(request, PB_REST + '/books');
+        const allBooks1 = await allBooksExhaustive(request);
         const mine1 = allBooks1.filter(b => b.seriesName === docFileName);
         expect(mine1.length, 'chapter books in series "' + docFileName + '" (series seen: '
             + JSON.stringify([...new Set(allBooks1.map(b => b.seriesName))]) + ')').toBe(N);
         const seriesOids = [...new Set(mine1.map(b => b.seriesObjectId))];
         expect(seriesOids.length, 'exactly one series for this run: ' + JSON.stringify(seriesOids)).toBe(1);
         const seriesOid = seriesOids[0];
+        mintedSeries.push({ oid: seriesOid, name: docFileName });
         const seriesBooks1 = await getJson(request, PB_REST + '/series/' + seriesOid + '/books');
         expect(seriesBooks1.length, '/series/{oid}/books count').toBe(N);
         const byChapter = new Map(seriesBooks1.map(b => [Number(b.chapter), b]));
@@ -1153,7 +1233,38 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
                 for (const r of code.split('+')) if (!ALLOWED_RACE[r]) offRace.push(r + ' x' + count);
             }
             expect(offRace, 'race labels the manuscript never states').toEqual([]);
-            expect(raceTally.Z || 0, 'at least one fairy (the text names them 191 times)').toBeGreaterThan(0);
+            if (REPLAY) {
+                // The positive control ("at least one fairy") is only as strong as the replayed replies: the
+                // emulator hands the product the RECORDED reduce-character answers, so a race can persist
+                // only where a recorded reply names one. In the 2026-11-13 recording the model answered
+                // "Unknown" for every character of chapters 1..10 (the text names fairies 77 times there;
+                // the model still would not say so) and "Fairy" only for two chapter >10 characters — so at
+                // the default PB_UX_MAX_CHAPTERS=10 the old unconditional "Z > 0" asserted something the
+                // input cannot produce (§24 U-2, read 2026-11-15; §24 #3 proved it green at
+                // PB_UX_MAX_CHAPTERS=0 because those two are in the roster there). Asserted now, exactly:
+                // where the recording names a fairy for a character of THIS run, the gate keeps at least
+                // one; where it names none, NONE may persist (the gate invents nothing) — the second branch
+                // is the same text-faithfulness contract with the recording as its ground truth.
+                const recorded = recordedRaceByName(MAIN_SET);
+                const fairyNamed = [], unrecorded = [];
+                for (const info of roster.values()) {
+                    const races = recorded.get(String(info.name || '').trim().toLowerCase());
+                    if (!races) { unrecorded.push(info.name); continue; }
+                    if ([...races].some(r => /^fair(y|ies)$/i.test(r))) fairyNamed.push(info.name);
+                }
+                console.log('[pb-emu] recorded reduce-character race for this run\'s ' + roster.size + ' characters: fairy-named='
+                    + JSON.stringify(fairyNamed) + ' without-a-recorded-reply=' + unrecorded.length
+                    + ' (a character whose cast entry already carried an appearance is never reduced)');
+                if (fairyNamed.length > 0) {
+                    expect(raceTally.Z || 0, 'the recording names a fairy for ' + fairyNamed.join(', ')
+                        + ' — the grounding gate keeps at least one text-stated fairy').toBeGreaterThan(0);
+                } else {
+                    expect(raceTally['(none)'] || 0, 'no recorded reduce-character reply for the ' + N + ' handed chapter(s) names a race, so'
+                        + ' no character may carry one (PB_UX_MAX_CHAPTERS=0 reaches the two recorded Fairy replies)').toBe(roster.size);
+                }
+            } else {
+                expect(raceTally.Z || 0, 'at least one fairy (the text names them 191 times)').toBeGreaterThan(0);
+            }
         } else {
             expect(roster.size - noRace.length, 'at least one character with a text-grounded race').toBeGreaterThan(0);
         }
@@ -1234,9 +1345,10 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
         }
 
         await restLogin(request);
-        const allBooks = await getJson(request, PB_REST + '/books');
+        const allBooks = await allBooksExhaustive(request);
         const mine = allBooks.filter(b => b.seriesName === docFileName);
         expect(mine.length, 'chapter books for the faults run').toBe(N);
+        mintedSeries.push({ oid: mine[0].seriesObjectId, name: docFileName });
         const seriesBooks = await getJson(request, PB_REST + '/series/' + mine[0].seriesObjectId + '/books');
         expect(seriesBooks.length).toBe(N);
         const sceneCounts = {};
@@ -1334,10 +1446,11 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
 
         // REST truth: one chapter book, no scenes, no later chapter.
         await restLogin(request);
-        const allBooks = await getJson(request, PB_REST + '/books');
+        const allBooks = await allBooksExhaustive(request);
         const mine = allBooks.filter(b => b.seriesName === docFileName);
         expect(mine.length, 'books in series "' + docFileName + '": ' + JSON.stringify(mine.map(b =>
             ({ ch: b.chapter, sceneCount: b.sceneCount })))).toBe(1);
+        mintedSeries.push({ oid: mine[0].seriesObjectId, name: docFileName });
         expect(Number(mine[0].chapter)).toBe(1);
         expect(Number(mine[0].sceneCount || 0), 'chapter 1 must not report scenes').toBe(0);
         const seriesBooks = await getJson(request, PB_REST + '/series/' + mine[0].seriesObjectId + '/books');
@@ -1373,7 +1486,7 @@ test.describe('PictureBook chaptered manuscript — emulated LLM, real Ux + Dock
 
         await restLogin(request);
         await awaitComposeJobs(request, cap, 'run2');
-        const allBooks2 = await getJson(request, PB_REST + '/books');
+        const allBooks2 = await allBooksExhaustive(request);
         const mine2 = allBooks2.filter(b => b.seriesName === docFileName);
         const seriesOids2 = [...new Set(mine2.map(b => b.seriesObjectId))];
         expect(seriesOids2, 're-run reused the same single series').toEqual([seriesOid]);

@@ -40,6 +40,10 @@ let characters = [];
 let selectedObjectId = null;
 let selectedInst = null;
 let loading = false;
+// Message of the last failed character-list read (§24 UAT-6): the dialog used to stay on "Loading
+// characters…" forever with an unhandled rejection when GET /characters failed (404 for a V3-only book
+// before the server fix; any 5xx still). Shown in place of the list; cleared by the next successful read.
+let listError = null;
 let sceneTagInputs = {}; // apparelObjectId -> string (pending scene index input)
 // Merge mode: which duplicates are ticked to fold into the currently-selected character.
 let mergeMode = false;
@@ -77,6 +81,7 @@ function resetState() {
     selectedObjectId = null;
     selectedInst = null;
     loading = false;
+    listError = null;
     sceneTagInputs = {};
     mergeMode = false;
     mergeSelection = {};
@@ -570,7 +575,17 @@ function renderWardrobePanel() {
 }
 
 async function refreshList() {
-    characters = await listCharacters(bookObjectId);
+    try {
+        characters = await listCharacters(bookObjectId);
+        listError = null;
+    } catch (e) {
+        // §24 UAT-6: never leave the dialog on "Loading characters…" with an unhandled rejection. The list
+        // is emptied (a stale list after a failed refresh would misreport what the server holds), the
+        // reason is shown in the list column and toasted once.
+        characters = [];
+        listError = (e && e.message) || String(e);
+        page.toast('error', 'Could not load characters: ' + listError);
+    }
     m.redraw();
 }
 
@@ -1097,7 +1112,9 @@ function renderContent() {
             m('div', { class: 'flex flex-col gap-1' },
                 characters.length
                     ? characters.map(renderCharacterListItem)
-                    : m('div', { class: 'text-sm text-gray-500 p-2' }, 'No characters extracted yet.'))
+                    : listError
+                        ? m('div', { 'data-testid': 'pb-chars-error', class: 'text-sm text-red-600 p-2' }, 'Could not load characters: ' + listError)
+                        : m('div', { 'data-testid': 'pb-chars-empty', class: 'text-sm text-gray-500 p-2' }, 'No characters extracted yet.'))
         ]),
         m('div', { class: 'flex-1 overflow-y-auto' }, renderDetail())
     ]);

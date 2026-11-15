@@ -170,7 +170,12 @@ function orphanItemsMentioning(scan, text) {
 }
 
 test.describe.serial('PictureBook — health check, repair, orphan cleanup, complete delete', () => {
-    test.describe.configure({ timeout: 120000 });
+    // Budgets are not thresholds (§24 U-2, 2026-11-15). GET /health audits every book the shared user can read
+    // (322 on the Docker stack after two suite runs: 23 s), and POST /health/heal runs that audit twice around the
+    // repairs plus the orphan scan (82 s measured: the forged checkpoint was deleted at +38 s, the toast only
+    // arrives when the request returns). Asserted 120 s / 60 s; now the whole describe gets 15 min and each wait
+    // the budget it needs on a small device.
+    test.describe.configure({ timeout: 900000 });
 
     test.beforeAll(async ({ request }) => {
         await ensureSharedTestUser(request);
@@ -267,7 +272,7 @@ test.describe.serial('PictureBook — health check, repair, orphan cleanup, comp
 
         await page.locator('[data-pb-health-check]').click();
         const row = page.locator('[data-pb-health-finding="CHECKPOINT_DANGLING"]').filter({ hasText: docObjectId });
-        await expect(row, 'dangling-checkpoint finding row for ' + docObjectId).toBeVisible({ timeout: 60000 });
+        await expect(row, 'dangling-checkpoint finding row for ' + docObjectId).toBeVisible({ timeout: 300000 });
         await expect(row).toHaveAttribute('data-pb-health-severity', 'WARN');
         await expect(row).toContainText('repairable');
         const repair = page.locator('[data-pb-health-repair]');
@@ -282,10 +287,12 @@ test.describe.serial('PictureBook — health check, repair, orphan cleanup, comp
         await expect(dialog).toContainText('Repair Picture Books');
         await dialog.locator('.am7-dialog-footer button.am7-dialog-btn-primary').click();
 
+        // The toast is pbHealOutcomeToast after healOrg resolves — i.e. after both audit passes and the orphan
+        // scan, not after the repair itself (82 s on this stack; 60 s was a threshold until 2026-11-15).
         const toast = page.locator('.toast-box').filter({ hasText: /\d+ repairs? applied/ });
-        await expect(toast, 'no "N repairs applied" toast').toBeVisible({ timeout: 60000 });
+        await expect(toast, 'no "N repairs applied" toast').toBeVisible({ timeout: 600000 });
         await expect(page.locator('.toast-box').filter({ hasText: 'Repair failed' })).toHaveCount(0);
-        await expect(row, 'the dangling checkpoint is still reported after Repair').toHaveCount(0, { timeout: 15000 });
+        await expect(row, 'the dangling checkpoint is still reported after Repair').toHaveCount(0, { timeout: 60000 });
         await page.screenshot({ path: 'test-results/pb-health-list-after-repair.png' });
 
         // The server agrees: the checkpoint note is gone, the finding is gone.
@@ -315,7 +322,7 @@ test.describe.serial('PictureBook — health check, repair, orphan cleanup, comp
         await openSelector(page);
         await page.locator('[data-pb-orphans-scan]').click();
         const dialog = page.locator('[role="dialog"]');
-        await expect(dialog, 'destructive confirm after the scan').toBeVisible({ timeout: 60000 });
+        await expect(dialog, 'destructive confirm after the scan').toBeVisible({ timeout: 300000 });
         await expect(dialog).toContainText('Clean Up Orphans');
         await expect(dialog).toContainText('ORPHAN_CHECKPOINT');
         await expect(dialog).toContainText('Live books are never touched');
@@ -323,7 +330,7 @@ test.describe.serial('PictureBook — health check, repair, orphan cleanup, comp
         await dialog.locator('.am7-dialog-footer button.am7-dialog-btn-destructive').click();
 
         const toast = page.locator('.toast-box').filter({ hasText: /\d+ orphans? deleted/ });
-        await expect(toast, 'no "N orphans deleted" toast').toBeVisible({ timeout: 60000 });
+        await expect(toast, 'no "N orphans deleted" toast').toBeVisible({ timeout: 300000 });
         await expect(page.locator('.toast-box').filter({ hasText: 'Orphan cleanup failed' })).toHaveCount(0);
         await page.screenshot({ path: 'test-results/pb-health-orphans-after-purge.png' });
 

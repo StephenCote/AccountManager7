@@ -57,8 +57,12 @@ const SHARED_PASSWORD = 'password';
 
 /** See pictureBookRetryFailed.spec.js: >= LLM_INFRA_FAILURE_MS so it is a timeout, not a breaker trip. */
 const RETRY_SLOW_TIMEOUT_S = 8;
-const SLOW_CONFIG = 'e2e-pb-retry-slow';
-const SLOW_CONN = 'e2e-pb-retry-slow-conn';
+// Both configs are picked through the ObjectPicker, which lists ~/Chat ten rows a page sorted by name; the
+// '000-' prefix puts them on the first page (the convention of pictureBookNewBookRender / RenderChatConfig /
+// ChapteredManuscriptUx). The API-only sibling spec keeps its own 'e2e-pb-retry-slow' pair.
+const SLOW_CONFIG = '000-pb-retry-slow';
+const SLOW_CONN = '000-pb-retry-slow-conn';
+const GOOD_CONFIG = '000-pb-retry-good';
 
 const TEST_TIMEOUT_MS = 25 * 60 * 1000;
 
@@ -127,7 +131,10 @@ function failures(result) {
 /**
  * The library picker opened by a chat-config field: rows are `tr.tabular-row`, a single click selects
  * (a double click toggles it back off), and `button.button` first is the confirm (pattern from
- * chapbook-issues.spec.js). The picker starts in the user's own ~/Chat, where both e2e configs live.
+ * chapbook-issues.spec.js). The picker starts in the user's own ~/Chat, where both e2e configs live — on
+ * its FIRST page only because they are named '000-…' (the picker pages ten rows sorted by name and ~/Chat
+ * accumulates every spec's fixtures; the first live run of this spec, §24 U-3, looked for
+ * 'e2e-pb-retry-slow' on page 1 of 7 and timed out).
  */
 async function pickChatConfig(page, name) {
     const picker = page.locator('.am7-picker-overlay');
@@ -161,7 +168,8 @@ test.describe('PictureBook wizard — failed passages are explained and retried 
             const slowConfig = await ensureChatConfig(ctx, null, {
                 configName: SLOW_CONFIG, connectionName: SLOW_CONN, requestTimeout: RETRY_SLOW_TIMEOUT_S
             });
-            goodConfig = await ensureChatConfig(ctx, null);
+            // The retry target: the resolved route's default connection (300 s), under a first-page name.
+            goodConfig = await ensureChatConfig(ctx, null, { configName: GOOD_CONFIG });
             expect(typeof slowConfig).toBe('string');
             expect(typeof goodConfig).toBe('string');
             expect(slowConfig).not.toBe(goodConfig);

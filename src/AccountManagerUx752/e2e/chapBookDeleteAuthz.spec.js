@@ -56,7 +56,7 @@ async function restLoginShared(request) {
 }
 
 test.describe('ChapBook DELETE authorization', () => {
-    test.describe.configure({ timeout: 120000 });
+    test.describe.configure({ timeout: 300000 });
 
     let orgId = null;
     let dataGroupId = null;
