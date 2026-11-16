@@ -64,7 +64,10 @@ describe('sceneChip — bookPageView fields → chip', () => {
         expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'APPROVED' })).toBe('approved');
         expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'approved' })).toBe('approved');
         expect(pbf.sceneChip({ nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED', artifactObjectId: 'a1' })).toBe('review');
-        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'REJECTED', artifactObjectId: 'a1' })).toBe('review');
+        // 2026-11-16: a REJECTED selection means every candidate was rejected - its own chip, and Render all re-renders it
+        expect(pbf.sceneChip({ nodeStatus: 'DONE', reviewStatus: 'REJECTED', artifactObjectId: 'a1' })).toBe('rejected');
+        expect(pbf.sceneChip({ nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'rejected', artifactObjectId: 'a1' })).toBe('rejected');
+        expect(pbf.sceneChip({ nodeStatus: 'STALE', reviewStatus: 'REJECTED', artifactObjectId: 'a1' })).toBe('stale');
         // Legacy page image with no artifact: nothing is in the review queue, so no chip.
         expect(pbf.sceneChip({ nodeStatus: 'DONE', dataObjectId: 'd1' })).toBeNull();
         // Wire: sceneNodeObjectId/nodeStatus/reviewStatus/artifactObjectId absent (not null) without a node; pinned always boolean.

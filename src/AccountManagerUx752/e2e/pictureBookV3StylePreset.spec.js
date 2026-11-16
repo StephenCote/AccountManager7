@@ -126,10 +126,13 @@ test.describe('PictureBook V3 style presets', () => {
         await expect(page.getByTestId('pb2-style-no-description')).toHaveCount(0);
         await expect(page.getByTestId('pb2-style-dirty-description')).toBeVisible();
 
-        /// Re-roll redraws asynchronously; the value is read back only after Save has settled, so the comparison is
-        /// against what the editor actually shows (an immediate read races the redraw - measured 2026-11-05).
-        await page.getByTestId('pb2-style-preset-reroll').click();
+        /// The preset is a one-shot fill (2026-11-16): the select returns to its placeholder after a pick, and picking
+        /// the same preset again re-rolls its details (the Re-roll button is gone). The re-roll redraws asynchronously;
+        /// the value is read back only after Save has settled, so the comparison is against what the editor shows.
+        await expect(page.getByTestId('pb2-style-preset')).toHaveValue('');
+        await page.getByTestId('pb2-style-preset').selectOption('anime');
         await expect(page.getByTestId('pb2-style-description')).toHaveValue(/^Anime illustration/);
+        await expect(page.getByTestId('pb2-style-preset')).toHaveValue('');
 
         await page.getByTestId('pb2-style-save').click();
         await expect(page.getByTestId('pb2-style-dirty-description')).toHaveCount(0, { timeout: 15000 });
@@ -146,6 +149,8 @@ test.describe('PictureBook V3 style presets', () => {
         await page.reload();
         await expect(page.getByTestId('pb2-style-description')).toHaveValue(rerolled, { timeout: 30000 });
         await expect(page.getByTestId('pb2-style-no-description')).toHaveCount(0);
+        /// what persists is the description it filled; the select never claims a preset, before or after the reload
+        await expect(page.getByTestId('pb2-style-preset')).toHaveValue('');
     });
 
     test('3. once the style has a description (saved in test 2) Render is enabled and the dialog can Start', async ({ page }) => {

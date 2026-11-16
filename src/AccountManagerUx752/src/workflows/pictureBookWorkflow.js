@@ -180,6 +180,7 @@ function normalizeSubmit(r) {
         plannedNodeCount: r.plannedNodeCount != null ? r.plannedNodeCount : 0,
         reusedNodeCount: r.reusedNodeCount != null ? r.reusedNodeCount : 0,
         pinnedNodeCount: r.pinnedNodeCount != null ? r.pinnedNodeCount : 0,
+        rejectedNodeCount: r.rejectedNodeCount != null ? r.rejectedNodeCount : 0,
         scenesWithoutNode: Array.isArray(r.scenesWithoutNode) ? r.scenesWithoutNode : [],
         chatConfig: normalizeChatConfigRef(r.chatConfig)
     });
@@ -1147,7 +1148,7 @@ export function styleStepFinishState(s) {
     if (s.saving) return { enabled: false, reason: 'Saving the book style…' };
     if (styleHasDescription(s.style)) return { enabled: true, reason: null };
     let dirty = !!(s.draft && Object.keys(s.draft).length);
-    return { enabled: false, reason: dirty ? 'Save the style to continue' : 'Choose a style preset or write a description, then Save' };
+    return { enabled: false, reason: dirty ? 'Save the style to continue' : 'Fill from a preset or write a description, then Save' };
 }
 
 /** Normalize a plan body (from /plan or a renderPlan artifact's artifactText) so arrays/objects are always present. Pure. */

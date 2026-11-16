@@ -258,8 +258,6 @@ export function presetFields(cfg) {
     return { description: description, photoreal: photo, exclusions: photo ? PRESET_EXCLUSIONS_PHOTO : PRESET_EXCLUSIONS_ART };
 }
 
-let presetStyle = '';
-
 /** Apply a preset as draft edits: fresh detail picks every call, so re-applying the same preset re-rolls them. */
 export function applyPreset(styleValue, fill) {
     let cfg = { style: styleValue };
@@ -267,25 +265,28 @@ export function applyPreset(styleValue, fill) {
     if (filler) filler(cfg);
     let f = presetFields(cfg);
     if (!f) return null;
-    presetStyle = styleValue;
     touch('description', f.description);
     touch('photoreal', f.photoreal);
     touch('exclusions', f.exclusions);
     return f;
 }
 
+// The preset is a one-shot fill, not a stored setting: olio.pb.style has no preset field, only the Description /
+// Photoreal / Exclusions it writes (as draft edits, saved by Save). So the select always shows its placeholder -
+// after a pick it returns to it, and after a reload nothing claims a preset was chosen. Picking the same preset
+// again re-rolls its camera / artist / era details (applyPreset draws fresh picks on every call).
 function renderPresetField() {
     let locked = isLocked();
     return m('div', { class: 'mb-3' }, [
-        m('div', { class: 'flex items-center text-xs font-medium text-gray-600 dark:text-gray-300 mb-1' }, ['Style preset',
-            m('span', { class: 'ml-2 text-[11px] font-normal text-gray-400' }, 'fills Description, Photoreal and Exclusions — edit before saving')]),
-        m('div', { class: 'flex gap-2' }, [
-            m('select', { 'data-testid': 'pb2-style-preset', class: INPUT, disabled: locked, value: presetStyle,
-                onchange: function (e) { if (e.target.value) applyPreset(e.target.value); else presetStyle = ''; } },
-                [m('option', { value: '' }, 'Choose a style…')].concat(STYLE_PRESETS.map(function (p) { return m('option', { value: p.value, selected: p.value === presetStyle }, p.label); }))),
-            m('button', { 'data-testid': 'pb2-style-preset-reroll', class: BTN, disabled: locked || !presetStyle, title: 'Pick new camera / artist / era details for this preset',
-                onclick: function () { applyPreset(presetStyle); } }, 'Re-roll')
-        ])
+        m('div', { class: 'flex items-center text-xs font-medium text-gray-600 dark:text-gray-300 mb-1' }, ['Fill from preset',
+            m('span', { class: 'ml-2 text-[11px] font-normal text-gray-400' }, 'fills Description, Photoreal and Exclusions — edit before saving; pick again for new details. The preset itself is not saved.')]),
+        m('select', { 'data-testid': 'pb2-style-preset', class: INPUT, disabled: locked, value: '',
+            onchange: function (e) {
+                let v = e && e.target ? e.target.value : '';
+                if (v) applyPreset(v);
+                if (e && e.target) e.target.value = '';
+            } },
+            [m('option', { value: '' }, 'Fill from a preset…')].concat(STYLE_PRESETS.map(function (p) { return m('option', { value: p.value }, p.label); })))
     ]);
 }
 
@@ -755,7 +756,7 @@ export function renderStyleBody() {
             'This style is locked — unlock it before editing.') : null,
         renderChain(),
         missingDescription(style, draft) ? m('div', { 'data-testid': 'pb2-style-no-description', class: 'mb-3 text-xs px-3 py-2 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200' },
-            'No style description: nothing tells the renderer what this book should look like, so every image picks its own look. Choose a style preset or write a description.') : null,
+            'No style description: nothing tells the renderer what this book should look like, so every image picks its own look. Fill from a preset or write a description.') : null,
         m('div', { class: 'grid grid-cols-1 md:grid-cols-2 gap-x-6' }, [
             m('div', [
                 renderPresetField(),
@@ -789,7 +790,6 @@ export function initStyleEditor(id) {
         style = null;
         error = null;
         draft = {};
-        presetStyle = '';
         book = null;
         taskInfo = {};
         sd = { mode: 'none', oid: null, name: null, fromName: null, inst: null, loading: false, error: null, busy: false };

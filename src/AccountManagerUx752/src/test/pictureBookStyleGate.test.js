@@ -80,7 +80,7 @@ describe('styleHasDescription / styleStepFinishState — the wizard step-4 gate'
     });
     it('enabled only on a SAVED description; unsaved edits, loading, saving and read errors each say why', () => {
         expect(wf.styleStepFinishState({ style: described, draft: {} })).toEqual({ enabled: true, reason: null });
-        expect(wf.styleStepFinishState({ style: none, draft: {} })).toEqual({ enabled: false, reason: 'Choose a style preset or write a description, then Save' });
+        expect(wf.styleStepFinishState({ style: none, draft: {} })).toEqual({ enabled: false, reason: 'Fill from a preset or write a description, then Save' });
         expect(wf.styleStepFinishState({ style: none, draft: { description: 'x' } })).toEqual({ enabled: false, reason: 'Save the style to continue' });
         expect(wf.styleStepFinishState({ style: null, loading: true }).reason).toBe('Loading the book style…');
         expect(wf.styleStepFinishState({ style: null, error: '(404) Book not found' }).reason).toBe('The book style could not be read: (404) Book not found');
@@ -288,6 +288,53 @@ describe('ChapBook books are exempt from the style gate', () => {
         await pbf.__pb2SubmitRenderSceneForTest(PAGES[0]);
         expect(global.fetch).toHaveBeenCalled();
         expect(String(global.fetch.mock.calls[0][0])).toMatch(/\/scene\/s1\/render/);
+    });
+});
+
+// 2026-11-16: every image of a scene rejected in review - the page says so and points at Re-render (Render all
+// re-renders it too: PbRenderJobUtil.selectedImageRejected).
+describe('a scene whose images were all rejected', () => {
+    const REJECTED_PAGE = { objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE_UNVERIFIED', sceneNodeObjectId: 'n1', dataObjectId: 'd1',
+        imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'REJECTED', artifactObjectId: 'a1' };
+    it('red Rejected chip, an "All images rejected" badge, and Re-render offered with the reason', () => {
+        pbf.__setPb2V3StateForTest({ pb2StyleDescribed: true, pb2Pages: [REJECTED_PAGE] });
+        vi.spyOn(am7client, 'dotPath').mockReturnValue('Public');
+        let pg = pbf.renderPb2ScenePage();
+        let chip = findDeep(pg, 'pb2-scene-chip');
+        expect(chip.attrs['data-chip']).toBe('rejected');
+        expect(textOf(chip)).toBe('Rejected');
+        expect(textOf(findDeep(pg, 'pb2-rejected-badge'))).toContain('All images rejected');
+        expect(findDeep(pg, 'pb2-stale-badge')).toBeNull();
+        let r = findDeep(pg, 'pb2-scene-render');
+        expect(r.attrs.disabled).toBe(false);
+        expect(textOf(r)).toContain('Re-render');
+        expect(r.attrs.title).toBe('Every image of this scene was rejected; render a new one');
+    });
+    it('a GENERATED selection is still Review, with no rejected badge', () => {
+        pbf.__setPb2V3StateForTest({ pb2StyleDescribed: true, pb2Pages: [Object.assign({}, REJECTED_PAGE, { reviewStatus: 'GENERATED' })] });
+        vi.spyOn(am7client, 'dotPath').mockReturnValue('Public');
+        let pg = pbf.renderPb2ScenePage();
+        expect(findDeep(pg, 'pb2-scene-chip').attrs['data-chip']).toBe('review');
+        expect(findDeep(pg, 'pb2-rejected-badge')).toBeNull();
+    });
+    it('the Render dialog says rejected scenes are rendered', async () => {
+        let opened = null;
+        vi.spyOn(Dialog, 'open').mockImplementation(c => { opened = c; });
+        global.fetch = vi.fn(async () => jsonResponse(200, { effective: { fields: { description: 'ink' } } }));
+        await pbf.__pb2OpenRenderDialogForTest();
+        let body = opened.content.view();
+        expect(textOf(body)).toContain('missing, stale, or rejected');
+    });
+});
+
+describe('normalizeSubmit carries rejectedNodeCount', () => {
+    it('defaults to 0 and passes the server count through', async () => {
+        let calls = [];
+        global.fetch = vi.fn(async (u, init) => { calls.push(String(u)); return jsonResponse(202, { jobId: 'J', runObjectId: 'R', planned: ['h'], rejectedNodeCount: 3 }); });
+        let r = await wf.renderAll('B1', {});
+        expect(r.rejectedNodeCount).toBe(3);
+        global.fetch = vi.fn(async () => jsonResponse(202, { jobId: 'J', runObjectId: 'R', planned: [] }));
+        expect((await wf.renderAll('B1', {})).rejectedNodeCount).toBe(0);
     });
 });
 

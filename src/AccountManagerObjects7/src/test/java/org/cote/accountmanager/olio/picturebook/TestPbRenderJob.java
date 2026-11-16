@@ -40,6 +40,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PbArtifactTypeEnumType;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
@@ -1373,6 +1374,84 @@ public class TestPbRenderJob extends BaseTest {
 	}
 
 	// ─────────────────────────────── fixture ───────────────────────────────
+
+	/**
+	 * 2026-11-16 (Stephen): a scene whose every image was rejected in review was reported "current" by Render all
+	 * (and by an un-forced scene render) and never re-rendered. Now a current RENDER_PLAN node whose selected
+	 * {@code base} image is REJECTED - which review only leaves selected when no GENERATED / IN_REVIEW / APPROVED
+	 * sibling survives - is executed again and counted as {@code rejected}. While one candidate survives the node is
+	 * still reused; a pinned node stays pinned; a non-scene node (PORTRAIT) with a rejected selection is not swept in.
+	 * Byte-free TEXT artifacts stand in for the images and nothing is submitted, so no SD backend is involved.
+	 */
+	@Test(timeout = LOCAL_TIMEOUT_MS)
+	public void case13_aCurrentSceneRenderWhoseImagesAreAllRejectedIsRenderedAgain() throws Exception {
+		BaseRecord u = user();
+		BaseRecord bk = book(u);
+		BaseRecord wf = workflow(u, bk);
+		long orgId = orgOf(u);
+		String agp = PbBookUtil.artifactGroupPath(SLUG);
+		BaseRecord node = plainNode(u, wf, "rej-c13", PbNodeTypeEnumType.RENDER_PLAN, 0);
+		BaseRecord portrait = plainNode(u, wf, "rej-c13-p", PbNodeTypeEnumType.PORTRAIT, 0);
+		List<Long> terminals = Arrays.asList(idOf(node), idOf(portrait));
+		try {
+			/// make both nodes current: their own input hash stored, DONE_UNVERIFIED
+			for(BaseRecord n : Arrays.asList(node, portrait)) {
+				assertTrue("inputHash", PbGraphUtil.persistInputHash(u, n, PbGraphUtil.computeInputHash(u, n, bk)));
+				assertTrue("status", PbGraphUtil.persistStatus(u, n, PbNodeStatusEnumType.DONE_UNVERIFIED));
+			}
+			BaseRecord a1 = PbArtifactUtil.persistArtifact(u, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.TEXT, agp, null, "c13 base 1", null, null);
+			BaseRecord a2 = PbArtifactUtil.persistArtifact(u, node, PbPipelineUtil.ROLE_BASE, PbArtifactTypeEnumType.TEXT, agp, null, "c13 base 2", null, null);
+			BaseRecord p1 = PbArtifactUtil.persistArtifact(u, portrait, PbPipelineUtil.ROLE_PORTRAIT, PbArtifactTypeEnumType.TEXT, agp, null, "c13 portrait", null, null);
+			assertNotNull(a1);
+			assertNotNull(a2);
+			assertNotNull(p1);
+
+			PbStaleUtil.clear();
+			PbRenderJobUtil.Plan plan = PbRenderJobUtil.plan(u, bk, wf, terminals);
+			logger.info("rejected case13 before: execute=" + plan.handles() + " reused=" + plan.reused + " rejected=" + plan.rejected);
+			assertTrue("current nodes with a GENERATED selection are reused", plan.execute.isEmpty());
+			assertEquals(2, plan.reused);
+			assertEquals(0, plan.rejected);
+
+			/// reject the selected base: the selection moves to the surviving sibling, so the scene is still current
+			PbArtifactUtil.reject(u, PbArtifactUtil.readArtifact(u, a2.get(FieldNames.FIELD_OBJECT_ID), orgId));
+			BaseRecord sel = PbArtifactUtil.findSelected(u, node, PbPipelineUtil.ROLE_BASE);
+			String a1Oid = a1.get(FieldNames.FIELD_OBJECT_ID);
+			String selOid = sel.get(FieldNames.FIELD_OBJECT_ID);
+			assertEquals("precondition: the survivor is selected", a1Oid, selOid);
+			PbStaleUtil.clear();
+			plan = PbRenderJobUtil.plan(u, bk, wf, terminals);
+			assertTrue("one surviving candidate: still reused - " + plan.handles(), plan.execute.isEmpty());
+			assertEquals(0, plan.rejected);
+
+			/// reject the last one: nothing survives, the rejected image stays selected, and the scene is rendered again
+			PbArtifactUtil.reject(u, PbArtifactUtil.readArtifact(u, a1.get(FieldNames.FIELD_OBJECT_ID), orgId));
+			PbArtifactUtil.reject(u, PbArtifactUtil.readArtifact(u, p1.get(FieldNames.FIELD_OBJECT_ID), orgId));
+			sel = PbArtifactUtil.findSelected(u, node, PbPipelineUtil.ROLE_BASE);
+			assertEquals("precondition: a REJECTED image is the selection", PbReviewStatusEnumType.REJECTED, PbArtifactUtil.reviewStatusOf(sel));
+			assertTrue(PbRenderJobUtil.selectedImageRejected(u, node));
+			assertFalse("a PORTRAIT is not a scene render", PbRenderJobUtil.selectedImageRejected(u, portrait));
+			PbStaleUtil.clear();
+			plan = PbRenderJobUtil.plan(u, bk, wf, terminals);
+			logger.info("rejected case13 all rejected: execute=" + plan.handles() + " reused=" + plan.reused + " rejected=" + plan.rejected);
+			assertEquals("the all-rejected scene render is executed, the portrait is not", Arrays.asList(handleOf(node)), plan.handles());
+			assertEquals(1, plan.rejected);
+			assertEquals(1, plan.reused);
+			assertTrue("a scene render needs the SD backend", plan.needsSd);
+
+			/// a pin still wins
+			assertTrue(PbGraphUtil.setPinned(u, node, true));
+			PbStaleUtil.clear();
+			plan = PbRenderJobUtil.plan(u, bk, wf, terminals);
+			assertTrue("pinned: not executed - " + plan.handles(), plan.execute.isEmpty());
+			assertEquals(1, plan.pinned);
+			assertEquals(0, plan.rejected);
+		}
+		finally {
+			PbGraphUtil.setPinned(u, node, false);
+			PbStaleUtil.clear();
+		}
+	}
 
 	private BaseRecord user() {
 		OrganizationContext org = getTestOrganization(ORG_A);

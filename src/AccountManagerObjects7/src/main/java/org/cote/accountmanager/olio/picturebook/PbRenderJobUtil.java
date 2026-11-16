@@ -21,6 +21,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
 import org.cote.accountmanager.thread.AsyncJob;
 import org.cote.accountmanager.thread.AsyncJobLimitException;
@@ -40,7 +41,10 @@ import org.cote.accountmanager.util.JSONUtil;
  * else the recomputed status. A node is <b>executed</b> when it is executable
  * ({@link PbNodeExecutor#isExecutable(BaseRecord)}), not pinned, and PENDING / READY / STALE / FAILED
  * (a render request is the retry of a failed node; SKIPPED is a decision and stays). DONE and
- * DONE_UNVERIFIED nodes are reused, pinned nodes are treated as DONE whatever their status, and a node
+ * DONE_UNVERIFIED nodes are reused - unless the node is a scene render whose selected image is REJECTED (every
+ * candidate was rejected in review: {@link PbArtifactUtil#reject} moves the selection to any surviving one, so a
+ * REJECTED selection means none survives), which is executed again (Stephen, 2026-11-16) - pinned nodes are treated
+ * as DONE whatever their status, and a node
  * whose type has no executor (SOURCE_TEXT, CHARACTER, ...) is a source. A RUNNING node is a 409 - either
  * another run in this JVM holds it ({@link PbNodeInflight}) or a JVM died with it RUNNING, which only the
  * restart sweep (P1-7) repairs. An empty execution set is a 409 too: there is nothing to render.
@@ -327,6 +331,7 @@ public final class PbRenderJobUtil {
 		out.put("planned", plan.handles());
 		out.put("reusedNodeCount", Integer.valueOf(plan.reused));
 		out.put("pinnedNodeCount", Integer.valueOf(plan.pinned));
+		out.put("rejectedNodeCount", Integer.valueOf(plan.rejected));
 		out.put("lastRunUpdated", Boolean.valueOf(lastRunUpdated));
 		Map<String, Object> cfgRef = PbGraphUtil.chatConfigRef(run);
 		if(cfgRef != null) {
@@ -454,6 +459,8 @@ public final class PbRenderJobUtil {
 		final Map<Long, List<Long>> producers;
 		int reused = 0;
 		int pinned = 0;
+		/// current scene renders executed again because every candidate image was rejected (counted in execute too)
+		int rejected = 0;
 		boolean needsSd = false;
 		String scopeLabel = "the plan";
 
@@ -469,6 +476,29 @@ public final class PbRenderJobUtil {
 			}
 			return out;
 		}
+	}
+
+	/**
+	 * True when {@code n} is a scene render (RENDER_PLAN, whose image is its {@code base} chain, or COMPOSITE, whose
+	 * image is its {@code composite} chain) and that chain's selected image is REJECTED. Review moves the selection off
+	 * a rejected image whenever a GENERATED / IN_REVIEW / APPROVED sibling exists, so a REJECTED selection means every
+	 * candidate was rejected and the scene has nothing to show: it is rendered again rather than reused. A node with no
+	 * selected image is not "rejected" (its status already says whether it needs a render). Reads only.
+	 */
+	static boolean selectedImageRejected(BaseRecord user, BaseRecord n) {
+		PbNodeTypeEnumType t = (n.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE) ? n.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE) : null);
+		String role;
+		if(t == PbNodeTypeEnumType.RENDER_PLAN) {
+			role = PbPipelineUtil.ROLE_BASE;
+		}
+		else if(t == PbNodeTypeEnumType.COMPOSITE) {
+			role = PbPipelineUtil.ROLE_COMPOSITE;
+		}
+		else {
+			return false;
+		}
+		BaseRecord sel = PbArtifactUtil.findSelected(user, n, role);
+		return sel != null && PbArtifactUtil.reviewStatusOf(sel) == PbReviewStatusEnumType.REJECTED;
 	}
 
 	/**
@@ -511,6 +541,11 @@ public final class PbRenderJobUtil {
 					+ (holder != null ? " in run " + holder : " - if no run is in flight, restart recovery has not yet reconciled it"));
 			}
 			if(!EXECUTE_WHEN.contains(effective) && !(force && terminals.contains(id))) {
+				if(selectedImageRejected(user, n)) {
+					plan.rejected++;
+					executeIds.add(id);
+					continue;
+				}
 				plan.reused++;
 				continue;
 			}

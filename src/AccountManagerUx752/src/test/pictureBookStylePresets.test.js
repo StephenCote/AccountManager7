@@ -89,6 +89,48 @@ describe('style presets', () => {
     });
 });
 
+// 2026-11-16 (Stephen): olio.pb.style stores no preset, so a pick that "reset to Choose a style" after F5 read as a
+// lost save. The preset is a one-shot fill: the select always shows its placeholder, and picking again re-rolls.
+describe('preset is a one-shot fill, not a stored setting', () => {
+    beforeEach(() => { __setStyleStateForTest({ bookObjectId: 'B1', style: normalizeStyle(FRESH), draft: {} }); });
+
+    it('the select always shows its placeholder; there is no separate Re-roll and no preset is claimed', () => {
+        let v = renderStyleBody();
+        let sel = findByTestId(v, 'pb2-style-preset');
+        expect(sel.attrs.value).toBe('');
+        expect(allText(sel)).toContain('Fill from a preset…');
+        expect(allText(sel)).not.toContain('Choose a style');
+        expect(findByTestId(v, 'pb2-style-preset-reroll')).toBeNull();
+        expect(allText(v)).toContain('The preset itself is not saved.');
+    });
+
+    it('a pick fills the draft and returns the select to its placeholder; picking again re-rolls', () => {
+        let sel = findByTestId(renderStyleBody(), 'pb2-style-preset');
+        let target = { value: 'anime' };
+        sel.attrs.onchange({ target });
+        expect(target.value).toBe('');
+        let first = __styleStateForTest().draft.description;
+        expect(first).toMatch(/^Anime illustration/);
+        expect(findByTestId(renderStyleBody(), 'pb2-style-preset').attrs.value).toBe('');
+        let draws = new Set([first]);
+        for (let i = 0; i < 12 && draws.size < 2; i++) {
+            let t = { value: 'anime' };
+            findByTestId(renderStyleBody(), 'pb2-style-preset').attrs.onchange({ target: t });
+            expect(t.value).toBe('');
+            let d = __styleStateForTest().draft.description;
+            expect(d).toMatch(/^Anime illustration/);
+            draws.add(d);
+        }
+        expect(draws.size, 're-picking the same preset draws new details').toBeGreaterThan(1);
+    });
+
+    it('the placeholder itself changes nothing', () => {
+        let t = { value: '' };
+        findByTestId(renderStyleBody(), 'pb2-style-preset').attrs.onchange({ target: t });
+        expect(__styleStateForTest().draft).toEqual({});
+    });
+});
+
 describe('no-description warnings', () => {
     beforeEach(() => { __setStyleStateForTest({ bookObjectId: 'B1', style: null, draft: {} }); });
 

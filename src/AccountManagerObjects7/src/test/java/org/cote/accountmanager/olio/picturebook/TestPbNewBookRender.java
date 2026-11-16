@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio.picturebook;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -27,6 +28,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PbNodeStatusEnumType;
+import org.cote.accountmanager.schema.type.PbReviewStatusEnumType;
 import org.cote.accountmanager.schema.type.PbNodeTypeEnumType;
 import org.cote.accountmanager.schema.type.PbRunStatusEnumType;
 import org.cote.accountmanager.thread.AsyncJob;
@@ -402,6 +404,94 @@ public class TestPbNewBookRender extends BaseTest {
 			}
 			assertEquals("scene 0 kept its first artifact (reused, not re-rendered)", artifactOid,
 				PbArtifactUtil.findSelected(f.owner, PbGraphUtil.readNode(f.owner, (String) dto.get("nodeObjectId"), f.orgId), PbPipelineUtil.ROLE_BASE).get(FieldNames.FIELD_OBJECT_ID));
+		}
+		finally {
+			cleanup(f);
+		}
+	}
+
+	/// 2026-11-16 (Stephen): rejecting every image of a scene left Render all reporting the scene as current. Live on
+	/// the SD backend: render one scene, reject its only image (review leaves a REJECTED image selected when nothing
+	/// survives), then Render all plans exactly that scene as a rejected one, renders it, and the scene's selection is
+	/// a new GENERATED image with real PNG bytes - the rejected one is kept, unselected.
+	@Test(timeout = RENDER_TIMEOUT_MS)
+	public void case06_renderAllReRendersASceneWhoseImagesWereAllRejected() throws Exception {
+		assertNotNull(SdTestGate.PROP_SWARM_SERVER + " must be set", server);
+		BaseRecord renderCfg = SdTestGate.requireRenderConfig(testProperties, server, "rejected scene re-render");
+		logger.info("rejected case06 renders on " + server + " with checkpoint " + renderCfg.get(OlioFieldNames.FIELD_SD_MODEL));
+		Fixture f = fixture("rej6", 1);
+		try {
+			String scene0 = f.sceneOids.get(0);
+			String handle0 = PbPipelineUtil.renderPlanHandle(scene0);
+			Map<String, Object> dto = PbServiceFacade.requestSceneRender(f.owner, f.bookOid, scene0, SDAPIEnumType.SWARM.name(), server, false);
+			AsyncJob job = awaitTerminal(f.owner, (String) dto.get("jobId"), RENDER_TIMEOUT_MS);
+			assertEquals("first render, job error: " + job.getError(), AsyncJob.Status.COMPLETED, job.getStatus());
+			String nodeOid = (String) dto.get("nodeObjectId");
+			BaseRecord node0 = PbGraphUtil.readNode(f.owner, nodeOid, f.orgId);
+			BaseRecord first = PbArtifactUtil.findSelected(f.owner, node0, PbPipelineUtil.ROLE_BASE);
+			assertNotNull("the first render's selected base", first);
+			String firstOid = first.get(FieldNames.FIELD_OBJECT_ID);
+
+			/// current: an un-forced Render all has nothing to do
+			PbStaleUtil.clear();
+			try {
+				PbServiceFacade.requestRenderAll(f.owner, f.bookOid, SDAPIEnumType.SWARM.name(), server);
+				fail("a current book has nothing to render");
+			}
+			catch(PictureBookException e) {
+				logger.info("rejected case06 before reject: " + e.getStatus() + " " + e.getMessage());
+				assertEquals(409, e.getStatus());
+			}
+
+			/// reject every image of the scene (variants included)
+			for(BaseRecord a : PbArtifactUtil.listChain(f.owner, node0, PbPipelineUtil.ROLE_BASE)) {
+				PbArtifactUtil.reject(f.owner, a);
+			}
+			BaseRecord selRejected = PbArtifactUtil.findSelected(f.owner, PbGraphUtil.readNode(f.owner, nodeOid, f.orgId), PbPipelineUtil.ROLE_BASE);
+			assertEquals("precondition: a REJECTED image is the selection", PbReviewStatusEnumType.REJECTED, PbArtifactUtil.reviewStatusOf(selRejected));
+
+			PbStaleUtil.clear();
+			long t1 = System.currentTimeMillis();
+			Map<String, Object> all = PbServiceFacade.requestRenderAll(f.owner, f.bookOid, SDAPIEnumType.SWARM.name(), server);
+			logger.info("rejected case06 render-all dto=" + all);
+			assertEquals("the rejected scene is planned", Arrays.asList(handle0), all.get("planned"));
+			assertEquals(Integer.valueOf(1), all.get("rejectedNodeCount"));
+			assertEquals(Integer.valueOf(0), all.get("reusedNodeCount"));
+			AsyncJob jobAll = awaitTerminal(f.owner, (String) all.get("jobId"), RENDER_TIMEOUT_MS);
+			logger.info("rejected case06 render-all durationMs=" + (System.currentTimeMillis() - t1) + " job=" + jobAll.getStatus() + " result=" + jobAll.getResult());
+			assertEquals("job error: " + jobAll.getError(), AsyncJob.Status.COMPLETED, jobAll.getStatus());
+			Map<?, ?> resultAll = JSONUtil.importObject(jobAll.getResult(), Map.class);
+			assertEquals(PbRunStatusEnumType.COMPLETED.name(), resultAll.get("runStatus"));
+			assertEquals(Integer.valueOf(1), resultAll.get("executedNodeCount"));
+
+			BaseRecord after = PbArtifactUtil.findSelected(f.owner, PbGraphUtil.readNode(f.owner, nodeOid, f.orgId), PbPipelineUtil.ROLE_BASE);
+			assertNotNull("a selected base after the re-render", after);
+			String afterOid = after.get(FieldNames.FIELD_OBJECT_ID);
+			assertNotEquals("the selection is a new image, not the rejected one", firstOid, afterOid);
+			assertEquals("the new image awaits review", PbReviewStatusEnumType.GENERATED, PbArtifactUtil.reviewStatusOf(after));
+			BaseRecord firstNow = PbArtifactUtil.readArtifact(f.owner, firstOid, f.orgId);
+			assertEquals("the rejected image is kept", PbReviewStatusEnumType.REJECTED, PbArtifactUtil.reviewStatusOf(firstNow));
+			assertFalse("...and no longer selected", Boolean.TRUE.equals(firstNow.get(OlioFieldNames.FIELD_PB_SELECTED)));
+			byte[] bytes = artifactBytes(f.owner, after, f.orgId);
+			assertTrue("real image bytes (was " + (bytes != null ? bytes.length : -1) + ")", bytes != null && bytes.length > 1024);
+			for(int i = 0; i < PNG_MAGIC.length; i++) {
+				assertEquals("PNG magic byte " + i, PNG_MAGIC[i], bytes[i]);
+			}
+			File png = new File("target/TestPbNewBookRender/rej6-scene0-rerender-" + System.currentTimeMillis() + ".png");
+			png.getParentFile().mkdirs();
+			FileUtil.emitFile(png.getPath(), bytes);
+			logger.info("rejected case06 PNG written: " + png.getAbsolutePath() + " (" + bytes.length + " bytes)");
+
+			/// and the scene is current again: a second Render all has nothing to do
+			PbStaleUtil.clear();
+			try {
+				PbServiceFacade.requestRenderAll(f.owner, f.bookOid, SDAPIEnumType.SWARM.name(), server);
+				fail("after the re-render the book is current again");
+			}
+			catch(PictureBookException e) {
+				logger.info("rejected case06 after re-render: " + e.getStatus() + " " + e.getMessage());
+				assertEquals(409, e.getStatus());
+			}
 		}
 		finally {
 			cleanup(f);

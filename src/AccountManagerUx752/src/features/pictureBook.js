@@ -1359,8 +1359,10 @@ async function pb2EnsureSceneDegradations(scene) {
 /**
  * Scene status chip from the bookPageView fields (sceneNodeObjectId, nodeStatus, pinned, reviewStatus,
  * artifactObjectId, imageStale): 'stale' when the node is STALE or the page flags imageStale (an
- * approved image stays drawn - the badge overlays it); 'approved' when the selected artifact is
- * APPROVED, else 'review' when a selected artifact exists (GENERATED/REJECTED).
+ * approved image stays drawn - the badge overlays it); 'rejected' when the selected artifact is REJECTED
+ * (review leaves a rejected image selected only when every candidate was rejected, so the scene has nothing
+ * to show and Render all re-renders it - 2026-11-16); 'approved' when it is APPROVED, else 'review' when a
+ * selected artifact exists (GENERATED).
  * sceneNodeObjectId/nodeStatus/reviewStatus/artifactObjectId are ABSENT
  * (not null) when the page has no node / no selected artifact; reviewStatus is pre-folded by the
  * server to GENERATED|APPROVED|REJECTED. Enums arrive in either case. A legacy dataObjectId with no
@@ -1372,6 +1374,7 @@ export function sceneChip(page) {
     let stale = ns === 'STALE' || page.imageStale === true;
     if (stale) return 'stale';
     let rs = String(page.reviewStatus || '').toUpperCase();
+    if (rs === 'REJECTED') return 'rejected';
     if (rs === 'APPROVED') return 'approved';
     if (page.artifactObjectId) return 'review';
     return null;
@@ -1728,7 +1731,7 @@ const pb2RenderDialogBody = {
                 'This book has no style description, so nothing can be rendered yet: every image takes its look from it. ',
                 m('button', { 'data-testid': 'pb2-render-no-style-link', class: 'underline', onclick: function () { Dialog.close(); m.route.set('/picture-book/' + pb2BookObjectId + '/style'); } }, 'Set the book style')
             ]) : null,
-            m('p', 'Render every scene whose image is missing or stale. Current and pinned scenes are reused.'),
+            m('p', 'Render every scene whose image is missing, stale, or rejected (every image rejected in review). Current and pinned scenes are reused.'),
             m('p', { class: 'text-xs text-gray-500' }, n + ' page' + (n !== 1 ? 's' : '') + ' in this book.'),
             m('label', { class: 'flex items-center gap-2 cursor-pointer' }, [
                 m('input', {
@@ -2332,9 +2335,10 @@ function renderPb2Cover() {
 const PB2_CHIP_CLASS = {
     stale: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 border-amber-300',
     approved: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200 border-green-300',
-    review: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 border-blue-300'
+    review: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 border-blue-300',
+    rejected: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 border-red-300'
 };
-const PB2_CHIP_LABEL = { stale: 'Stale', approved: 'Approved', review: 'Review' };
+const PB2_CHIP_LABEL = { stale: 'Stale', approved: 'Approved', review: 'Review', rejected: 'Rejected' };
 
 /** The status chip for the open scene page (S3). Null when there is nothing to say. */
 export function renderPb2SceneChip(scene) {
@@ -2434,7 +2438,11 @@ export function renderPb2ScenePage() {
             chip === 'stale' ? m('div', {
                 'data-testid': 'pb2-stale-badge',
                 class: 'absolute top-2 left-2 flex items-center gap-1 text-xs px-2 py-1 rounded bg-amber-500/90 text-white shadow'
-            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'update'), imgUrl ? 'Image is stale' : 'Needs render']) : null
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'update'), imgUrl ? 'Image is stale' : 'Needs render']) : null,
+            chip === 'rejected' ? m('div', {
+                'data-testid': 'pb2-rejected-badge',
+                class: 'absolute top-2 left-2 flex items-center gap-1 text-xs px-2 py-1 rounded bg-red-600/90 text-white shadow'
+            }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'thumb_down'), 'All images rejected — re-render']) : null
         ]),
 
         m('div', { class: 'flex items-center justify-center gap-2 mb-3 flex-wrap' }, [
@@ -2455,7 +2463,8 @@ export function renderPb2ScenePage() {
                 'data-testid': 'pb2-scene-render',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
                 disabled: !gate.enabled,
-                title: gate.needsStyle || watching ? gate.reason : (chip === 'stale' ? 'Re-render this scene' : 'Render this scene'),
+                title: gate.needsStyle || watching ? gate.reason : (chip === 'rejected' ? 'Every image of this scene was rejected; render a new one'
+                    : chip === 'stale' ? 'Re-render this scene' : 'Render this scene'),
                 onclick: function () { pb2SubmitRenderScene(scene); }
             }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'brush'), chip === 'stale' || imgUrl ? 'Re-render' : 'Render']),
             // §24 I-8: background-only regenerate — only offered when the scene has an image to regenerate the background of

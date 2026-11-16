@@ -173,8 +173,8 @@ describe('step 4 "Continue to Book" — required style', () => {
         await openStep4(UNSTYLED);
         let a = action('Continue to Book');
         expect(a.disabled).toBe(true);
-        expect(a.attrs.title).toBe('Choose a style preset or write a description, then Save');
-        expect(JSON.stringify(pb.renderStep4())).toContain('Choose a style preset or write a description, then Save');
+        expect(a.attrs.title).toBe('Fill from a preset or write a description, then Save');
+        expect(JSON.stringify(pb.renderStep4())).toContain('Fill from a preset or write a description, then Save');
         expect(await pb.handOffToReader()).toBeNull();
         expect(routeSet).not.toHaveBeenCalled();
         expect(dialogClose).not.toHaveBeenCalled();
