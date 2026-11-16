@@ -16,6 +16,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { login, screenshot } from './helpers/auth.js';
+import { completeWizardStyleStep } from './helpers/pbReader.js';
 import { setupWorkflowTestData, cleanupTestUser, apiLogin, apiLogout, ensurePath, createNote, resolveChatRoute } from './helpers/api.js';
 
 const REST = '/AccountManagerService7/rest';
@@ -250,7 +251,7 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         await expect(page.locator('text=Picture Book —').first()).toBeVisible({ timeout: 5000 });
         await expect(openEditorLink).toBeVisible({ timeout: 5000 });
 
-        await page.locator('button:has-text("Continue to Images")').click();
+        await completeWizardStyleStep(page); // step 3 → step 4 Style (required) → reader
         // P7-3 (the only path since P10-1): the wizard closes and the V3 reader opens on the book the
         // wizard created; there is no step 4.
         await expect.poll(() => page.evaluate(() => location.hash), { timeout: 15000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);

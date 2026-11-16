@@ -137,11 +137,27 @@ afterEach(() => {
 function wire(o) {
     o = o || {};
     let calls = [];
+    // The compose dialog's Quick-start style gate (2026-11-16) reads the book style and its bookType when it opens.
+    // Those two reads are answered here (a described STORY book, so Quick start is allowed) and recorded apart, so
+    // `calls` keeps the board's own request order that every test below asserts on.
+    calls.gateReads = [];
+    // am7client.search goes through m.request (XHR), not fetch, so the bookType read is stubbed on am7client itself.
+    vi.spyOn(am7client, 'search').mockImplementation(async (q) => {
+        if (q && q.entity && q.entity.type === 'olio.pb.book') {
+            calls.gateReads.push({ url: '/rest/model/search', method: 'POST', type: q.entity.type });
+            return { results: [{ objectId: BOOK, bookType: o.bookType || 'STORY' }] };
+        }
+        return { results: [] };
+    });
     let polls = {};
     global.fetch = vi.fn(async (u, init) => {
         let url = String(u).replace(/^.*\/rest\//, '/rest/');
         let method = (init && init.method) || 'GET';
         let body = init && typeof init.body === 'string' ? JSON.parse(init.body) : null;
+        if (method === 'GET' && url === PB + '/style') {
+            calls.gateReads.push({ url, method });
+            return jsonResponse(200, o.style || { bookObjectId: BOOK, effective: { fields: { description: 'ink wash, muted palette' } } });
+        }
         calls.push({ url, method, body, rawBody: init ? init.body : undefined });
         if (o.route) {
             let r = o.route(method, url, body, calls);
@@ -1007,6 +1023,8 @@ describe('compose book dialog', () => {
         expect(Dialog.loadDialogs()).toBeFalsy();
         await waitFor(() => calls.some(c => c.url === PB + '/compose'));
         expect(calls[0].body).toEqual({ quickStart: true });
+        // the dialog checked the Quick-start style gate on open: the book style and the bookType, one read each
+        expect(calls.gateReads.map(r => r.method + ' ' + r.url).sort()).toEqual(['GET ' + PB + '/style', 'POST /rest/model/search']);
         await waitFor(() => st().composeRun && st().composeRun.job && st().composeRun.job.terminal === false);
         let v = view();
         let run = one(v, 'pb-cmp-compose-run');

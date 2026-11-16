@@ -561,6 +561,12 @@ public class TestPictureBookComposeRoutes extends BaseTest {
 			refused(service.compose(f.bookOid, json("chatConfigName", MISSING_CONFIG), o, SD_CONTEXT), 404, cnf, "compose with unknown config");
 			refused(service.compose(f.bookOid, json("chatConfigName", "  " + MISSING_CONFIG + " "), o, SD_CONTEXT), 404, cnf, "compose with unknown config is trimmed");
 			refused(service.proposeLocations(f.bookOid, json("chatConfigName", MISSING_CONFIG), o), 404, cnf, "propose with unknown config");
+			/// 2026-11-16: Quick start renders every composed scene on the SD server, so it requires a described book style
+			/// (PbServiceFacade.STYLE_REQUIRED_MESSAGE), checked after the book and grant gates; a plain compose does not.
+			refused(service.compose(f.bookOid, json("quickStart", Boolean.TRUE), o, SD_CONTEXT), 409,
+				org.cote.accountmanager.olio.picturebook.PbServiceFacade.STYLE_REQUIRED_MESSAGE, "quick start on a style-less book");
+			assertNotNull("book style", org.cote.accountmanager.olio.picturebook.PbServiceFacade.putStyle(owner, f.bookOid,
+				Map.of(FieldNames.FIELD_DESCRIPTION, "Test fixture style: clean ink linework with flat, muted colour.")));
 			refused(service.compose(f.bookOid, json("quickStart", Boolean.TRUE), o, NO_SD_CONTEXT), 500, "SD server not configured", "quick start without SD");
 			refused(service.compose(f.bookOid, json("quickStart", "true"), o, NO_SD_CONTEXT), 500, "SD server not configured", "quick start as a string without SD");
 			assertEquals("no job runs for the owner after the refusals", 0, AsyncJobRegistry.list(owner).stream().filter(j -> !j.isTerminal()).count());

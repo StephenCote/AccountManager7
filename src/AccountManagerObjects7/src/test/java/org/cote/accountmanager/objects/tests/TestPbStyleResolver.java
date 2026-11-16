@@ -851,8 +851,8 @@ public class TestPbStyleResolver extends BaseTest {
 		assertTrue(es.isEmpty());
 		assertTrue(es.isComplete());
 		assertTrue(es.chain().isEmpty());
-		assertEquals(PbStyleResolver.DEFAULT_QUALITY_PRESET, es.qualityPreset());
-		assertEquals(PbQualityPresetEnumType.STANDARD, es.qualityPreset());
+		assertEquals(PbStyleResolver.defaultQualityPreset(), es.qualityPreset());
+		assertEquals("An unset preset is the resource's defaultPreset (DRAFT), not STANDARD", PbQualityPresetEnumType.DRAFT, es.qualityPreset());
 		assertEquals(PbStyleResolver.DEFAULT_PAGE_FORMAT, es.pageFormat());
 		assertEquals(PbPageFormatEnumType.SQUARE, es.pageFormat());
 		assertEquals("", es.canonicalStyle());

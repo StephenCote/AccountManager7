@@ -37,6 +37,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
+import { E2E_STYLE_DESCRIPTION } from './helpers/pbReader.js';
 import { randomUUID } from 'crypto';
 import { mkdirSync } from 'fs';
 
@@ -431,7 +432,7 @@ test.describe('PictureBook V3 P8-5 — visual-QA verdicts on the canvas, the ins
         const scene = JSON.parse(sceneText);
         live.book = storyOid; live.scene = scene.objectId;
         // STANDARD = QA CANONICAL (variant 0 judged); the default DRAFT style would turn QA off.
-        const styleResp = await request.put(PB_ROOT + '/' + storyOid + '/style', { data: { qualityPreset: 'STANDARD' } });
+        const styleResp = await request.put(PB_ROOT + '/' + storyOid + '/style', { data: { qualityPreset: 'STANDARD', description: E2E_STYLE_DESCRIPTION } });
         const styleText = await styleResp.text();
         expect(styleResp.ok(), 'PUT /style: HTTP ' + styleResp.status() + ' ' + styleText.slice(0, 300)).toBe(true);
         const style = await (await request.get(PB_ROOT + '/' + storyOid + '/style')).json();

@@ -32,6 +32,7 @@ import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, resolveChatRoute, ensureChatConfig, ensurePath } from './helpers/api.js';
 import { REST, PB_REST, restLoginShared, loginAsSharedUser } from './helpers/chapbook.js';
+import { completeWizardStyleStep } from './helpers/pbReader.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = '[p10b-newbook]';
@@ -277,7 +278,7 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             await shot(page, '01b-wizard-scenes');
             expect(blurbs.length, 'scenes with a description (of ' + sceneCount + ')' + reExtractNote).toBeGreaterThan(0);
 
-            // Continue → POST /{work}/create-from-scenes (characters + scenes + graph + compose job) → Continue to Images → reader.
+            // Continue → POST /{work}/create-from-scenes (characters + scenes + graph + compose job) → Continue to Style → step 4 Style → Continue to Book → reader.
             const cfsResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/create-from-scenes$/.test(r.url()), { timeout: T.characters }).then(jsonOf).catch(() => null);
             await page.locator('button:has-text("Continue")').first().click();
             const tChars = Date.now();
@@ -290,7 +291,7 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             await shot(page, '01c-wizard-characters');
             expect(charCount, 'characters created (empty state: ' + (await empty.count()) + ')').toBeGreaterThan(0);
 
-            await page.locator('button:has-text("Continue to Images")').click();
+            await completeWizardStyleStep(page); // step 3 → step 4 Style (required) → reader
             await expect.poll(() => page.evaluate(() => location.hash), { timeout: 60000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);
             const bookOid = (await page.evaluate(() => location.hash)).replace(/^#!\/picture-book\/v2\//, '');
             await expect(page.locator('[data-pb2-book-name]')).toBeVisible({ timeout: T.ui });

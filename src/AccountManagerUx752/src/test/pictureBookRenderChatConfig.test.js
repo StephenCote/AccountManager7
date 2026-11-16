@@ -265,14 +265,16 @@ describe('reader: the picked / carried / default chat config reaches every rende
         expect(page.toast).toHaveBeenCalledWith('success', 'Scene rendered (artifact art-9)');
     });
 
-    it('header control: "(click to select)" without a config, the name with one; onPick replaces the ref', () => {
-        let ctl = findByTestId(pbf.renderPb2Header(), 'pb2-chat-config');
-        expect(ctl).not.toBeNull();
-        expect(textOf(ctl)).toContain('(click to select)');
+    it('Tools item: "(click to select)" without a config, the name with one, "Resolving default…" while resolving', () => {
+        // The reader's chat config pick lives in the "Optional tools" overflow (pb2OverflowItems), not on the toolbar.
+        function item() { return pbf.pb2OverflowItems().find(i => i.attrs && i.attrs['data-testid'] === 'pb2-chat-config') || null; }
+        expect(findByTestId(pbf.renderPb2Header(), 'pb2-chat-config')).toBeNull();
+        expect(item()).not.toBeNull();
+        expect(item().label).toContain('(click to select)');
         pbf.__setPb2V3StateForTest({ pb2ChatConfig: CFG });
-        expect(textOf(findByTestId(pbf.renderPb2Header(), 'pb2-chat-config'))).toContain(CFG.name);
+        expect(item().label).toContain(CFG.name);
         pbf.__setPb2V3StateForTest({ pb2ChatConfig: null, pb2ChatConfigResolving: true });
-        expect(textOf(findByTestId(pbf.renderPb2Header(), 'pb2-chat-config'))).toContain('Resolving default…');
+        expect(item().label).toContain('Resolving default…');
     });
 
     it('opening a book seeds the carried config (a ChapBook) else the library default (contentAnalysis first), and never overwrites a pick', async () => {

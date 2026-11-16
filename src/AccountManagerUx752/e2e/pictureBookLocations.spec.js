@@ -38,6 +38,7 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { ensureSharedTestUser, ensureChatConfig } from './helpers/api.js';
 import { loginAsSharedUser } from './helpers/chapbook.js';
+import { openReaderTools } from './helpers/pbReader.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -765,6 +766,8 @@ test.describe('location library Ux (default tier)', () => {
         test.setTimeout(5 * 60 * 1000);
         await loginAsSharedUser(page);
         await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
+        // Locations is an item of the reader's Tools overflow (helpers/pbReader.js).
+        await openReaderTools(page);
         const link = page.getByTestId('pb2-locations-link');
         await expect(link).toBeVisible({ timeout: 30000 });
         await link.click();

@@ -38,6 +38,7 @@
  */
 import { test as base, expect } from '@playwright/test';
 import { login } from './helpers/auth.js';
+import { openReaderTools, closeReaderTools } from './helpers/pbReader.js';
 import {
     setupWorkflowTestData, apiLogin, apiLogout, ensureChatConfig,
     ensurePath, createNote, createObject
@@ -823,7 +824,10 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             }
             let names = (extractedScenes[0].characters || []).map(c => typeof c === 'string' ? c : (c && c.name)).filter(Boolean);
             for (let p of pills) expect(names, 'no pill is a character name').not.toContain(p.text);
-            await expect(reader.locator('[data-testid="pb2-auto-approve-badge"]')).toHaveText(/^Auto-approve: (ON|OFF)$/);
+            // The auto-approve state is an item of the Tools overflow (helpers/pbReader.js), not a reader pill.
+            await openReaderTools(page);
+            await expect(page.getByTestId('pb2-auto-approve-badge')).toHaveText(/^Auto-approve: (ON|OFF)$/);
+            await closeReaderTools(page);
 
             // The scene page's own controls and image slot.
             // Each button's textContent is '<icon name>' + label ('brushRender'), so pin the label's end.
@@ -1166,16 +1170,23 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await expect(reader.locator('button[title="Back to book list"]')).toBeVisible();
             // KI-90 (§24 I-9): the header carries the title the import was given, not "Book <slug>" (§24 U-3, §6.C 312).
             await expect(reader.locator('[data-pb2-book-name]')).toHaveText(/^AIME Test Book [a-z0-9]+$/);
-            await expect(reader.locator('[data-testid="pb2-chat-config"]')).toBeVisible();
-            await expect(reader.locator('[data-testid="pb2-auto-approve-badge"]')).toHaveText(/^Auto-approve: (ON|OFF)$/);
-            await expect(reader.locator('[data-testid="pb2-render-all"]')).toHaveAttribute('title', 'Render all scenes');
-            await expect(reader.locator('[data-testid="pb2-review-link"]')).toHaveAttribute('title', 'Review queue');
+            // Toolbar: setup (Style, Characters), the labeled Render, Tools, then Export / Fullscreen / Delete.
+            // Render is titled "Render all scenes" only once the book has a style; without one it is disabled and
+            // titled with the reason (the style gate).
+            await expect(reader.locator('[data-testid="pb2-render-all"]')).toHaveText(/Render$/);
+            await expect(reader.locator('[data-testid="pb2-render-all"]')).toHaveAttribute('title', /^(Render all scenes|Set the book style first)$/);
             await expect(reader.locator('[data-testid="pb2-style-link"]')).toBeVisible();
-            await expect(reader.locator('[data-testid="pb2-locations-link"]')).toBeVisible();
-            await expect(reader.locator('[data-testid="pb2-compose-link"]')).toBeVisible();
-            await expect(reader.locator('[data-testid="pb2-cover-link"]')).toBeVisible();
             await expect(reader.locator('button[title="Manage characters"]')).toHaveAttribute('data-pb2-characters', pb2BookObjectId);
-            await expect(reader.locator('button[title="Open Workflow Canvas"]')).toBeVisible();
+            // The optional tools are items of the Tools overflow (helpers/pbReader.js), mounted at the app root.
+            await openReaderTools(page);
+            await expect(page.getByTestId('pb2-chat-config')).toBeVisible();
+            await expect(page.getByTestId('pb2-auto-approve-badge')).toHaveText(/^Auto-approve: (ON|OFF)$/);
+            await expect(page.getByTestId('pb2-review-link')).toHaveAttribute('title', 'Review queue');
+            await expect(page.getByTestId('pb2-locations-link')).toBeVisible();
+            await expect(page.getByTestId('pb2-compose-link')).toBeVisible();
+            await expect(page.getByTestId('pb2-cover-link')).toBeVisible();
+            await expect(page.locator('button[title="Open Workflow Canvas"]')).toBeVisible();
+            await closeReaderTools(page);
             await expect(reader.locator('[data-testid="pb2-export"]')).toHaveAttribute('title', 'Export as HTML');
             await expect(reader.locator('[data-testid="pb2-fullscreen"]')).toHaveAttribute('title', 'Fullscreen');
             await expect(reader.locator('button[title="Delete picture book"]')).toBeVisible();

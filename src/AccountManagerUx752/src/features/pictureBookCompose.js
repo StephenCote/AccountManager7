@@ -44,7 +44,8 @@ import {
     composeBook, composeScene, normalizeComposeJobResult, isComposeJobRefusal,
     bookPages, planScene, normalizePlan, degradationSummary,
     coverPurposesFor, coverPurposeOf, coverPurposeLabel, coverPathWord, getCovers, getCover, createCover,
-    renderCover, patchCover, planCover, approveArtifact, isPinnedNodeRefusal, carriedBookChatConfig
+    renderCover, patchCover, planCover, approveArtifact, isPinnedNodeRefusal, carriedBookChatConfig,
+    getStyle, normalizeStyle, styleHasDescription, isChapBookType, STYLE_REQUIRED_REASON
 } from '../workflows/pictureBookWorkflow.js';
 
 // ── Module state ───────────────────────────────────────────────────────
@@ -956,9 +957,39 @@ function dismissRun() {
 
 // ── Dialogs ────────────────────────────────────────────────────────────
 
+/**
+ * Quick start renders a draft of every composed scene on the SD server, so it carries the scene-render style gate
+ * (server: PbServiceFacade.requestCompose 409 STYLE_REQUIRED_MESSAGE). Resolves true when Quick start must be
+ * refused (a non-ChapBook book whose effective style has no description), false when allowed, null when either
+ * read failed (unknown never blocks; the server is the final gate). A ChapBook takes its look from its SD config.
+ */
+export async function quickStartStyleBlocked(bookOid) {
+    try {
+        let q = am7client.newQuery('olio.pb.book');
+        q.cache(false);
+        q.field('objectId', bookOid);
+        q.range(0, 1);
+        if (q.entity.request.indexOf('bookType') < 0) q.entity.request.push('bookType');
+        let read = await Promise.all([getStyle(bookOid), am7client.search(q)]);
+        let rec = read[1] && read[1].results && read[1].results[0];
+        if (!rec) return null;
+        if (isChapBookType(rec.bookType)) return false;
+        return !styleHasDescription(normalizeStyle(read[0]));
+    } catch (e) {
+        return null;
+    }
+}
+
 function openComposeDialog() {
-    let st = { quickStart: false, force: false };
+    let st = { quickStart: false, force: false, styleBlocked: null };
     let warn = USER_EDITED_WARNING;
+    let dialogBook = bookObjectId;
+    quickStartStyleBlocked(dialogBook).then(function (blocked) {
+        if (dialogBook !== bookObjectId) return;
+        st.styleBlocked = blocked;
+        if (blocked) st.quickStart = false;
+        m.redraw();
+    });
     Dialog.open({
         title: 'Compose book',
         size: 'md',
@@ -968,10 +999,18 @@ function openComposeDialog() {
                     m('p', { class: 'text-gray-600 dark:text-gray-300' }, 'Composes every scene that has no composition yet, in scene order. Scenes with a hand-edited composition are kept unless you force them.'),
                     m('p', { 'data-testid': 'pb-cmp-compose-chatconfig', class: 'text-xs text-gray-500 dark:text-gray-400' },
                         'Chat config: ' + (chatConfigRef && chatConfigRef.name ? chatConfigRef.name : '(none picked — the server uses its default)')),
-                    m('label', { class: 'flex items-start gap-2' }, [
-                        m('input', { type: 'checkbox', 'data-testid': 'pb-cmp-quickstart', checked: st.quickStart, onchange: function (e) { st.quickStart = e.target.checked; } }),
+                    m('label', { class: 'flex items-start gap-2' + (st.styleBlocked ? ' opacity-60' : '') }, [
+                        m('input', { type: 'checkbox', 'data-testid': 'pb-cmp-quickstart', checked: st.quickStart, disabled: st.styleBlocked === true,
+                            title: st.styleBlocked ? STYLE_REQUIRED_REASON : undefined,
+                            onchange: function (e) { st.quickStart = !st.styleBlocked && e.target.checked; } }),
                         m('span', 'Quick start — render a draft of each scene after composing it')
                     ]),
+                    st.styleBlocked ? m('button', {
+                        'data-testid': 'pb-cmp-quickstart-needs-style',
+                        class: 'flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300 underline hover:text-amber-900',
+                        title: 'Open Book style',
+                        onclick: function () { Dialog.close(); m.route.set('/picture-book/' + dialogBook + '/style'); }
+                    }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'palette'), STYLE_REQUIRED_REASON + ' to use Quick start']) : null,
                     m('label', { class: 'flex items-start gap-2' }, [
                         m('input', { type: 'checkbox', 'data-testid': 'pb-cmp-force', checked: st.force, onchange: function (e) { st.force = e.target.checked; } }),
                         m('span', 'Re-compose in order — overwrite every existing composition, including hand-edited ones')
@@ -982,7 +1021,7 @@ function openComposeDialog() {
         },
         actions: [
             { label: 'Cancel', icon: 'cancel', onclick: function () { Dialog.close(); } },
-            { label: 'Start', icon: 'auto_awesome', primary: true, attrs: { 'data-testid': 'pb-cmp-compose-start' }, onclick: function () { Dialog.close(); startComposeBook(st); } }
+            { label: 'Start', icon: 'auto_awesome', primary: true, attrs: { 'data-testid': 'pb-cmp-compose-start' }, onclick: function () { Dialog.close(); startComposeBook({ quickStart: st.quickStart && !st.styleBlocked, force: st.force }); } }
         ]
     });
 }
@@ -1679,6 +1718,7 @@ const composeView = {
 
 // ── Test seams ─────────────────────────────────────────────────────────
 
+export { openComposeDialog as __openComposeDialogForTest };
 export function __composeStateForTest() {
     return { bookObjectId, sceneObjectId, pages, board, noComposition, noCompositionMessage, loading, error, loadSeq, outfits, outfitsError, plan, planError, planLoading, busy, edits, lastEdit, characters, composeRun, composeAbort, drag, overrideInst, overrideExpanded, sdModels, sdLoras, pollIntervalMs, chatConfigRef, chatConfigResolving, coverPurpose, cover, covers, coverSeriesObjectId, renderRun, renderAbort };
 }

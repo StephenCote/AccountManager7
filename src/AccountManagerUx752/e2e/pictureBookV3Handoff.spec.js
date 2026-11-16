@@ -26,6 +26,7 @@
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser, apiLogin, apiLogout, ensurePath, deleteObject } from './helpers/api.js';
 import { screenshot } from './helpers/auth.js';
+import { completeWizardStyleStep } from './helpers/pbReader.js';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
 const REST = BASE_URL + '/AccountManagerService7/rest';
@@ -261,7 +262,7 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
     // 1. create → step 3 → reader. Manual scene entry on a fresh source document; the progress bar
     //    has no Images/View steps; "Continue to Images" closes the wizard and opens the V3 reader on the
     //    book the step-2 Continue created; no retired PB1 route is called along the way.
-    test('wizard: step 3 "Continue to Images" hands off to the V3 reader', async ({ page }) => {
+    test('wizard: step 3 "Continue to Style" → step 4 style → "Continue to Book" hands off to the V3 reader', async ({ page }) => {
         const retired = trackRetiredPb1Calls(page);
         await loginAsSharedUser(page);
 
@@ -283,7 +284,7 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         const bookName = 'E2E P73 Wizard ' + tag;
         await dlg.locator('label:has-text("Picture Book Name") + input').fill(bookName);
         await dlg.locator('input[type="radio"][name="method"][value="manual"]').check();
-        await dlg.locator('.am7-dialog-footer button').filter({ hasText: 'Continue' }).filter({ hasNotText: 'Images' }).click();
+        await dlg.locator('.am7-dialog-footer button').filter({ hasText: 'Continue' }).filter({ hasNotText: /Images|Style|Book/ }).click();
 
         // Step 2: one manual scene.
         await expect(dlg.locator('text=/Scene List \\(\\d+\\)/')).toBeVisible({ timeout: 10000 });
@@ -291,16 +292,19 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         await dlg.locator('input[placeholder="Scene title"]').first().fill('The Gull in the Net');
         await dlg.locator('textarea[placeholder="Scene description/blurb"]').first().fill('The keeper leans over the gunwale and cuts the net away from the gull.');
         await screenshot(page, 'p73-wizard-step2');
-        await dlg.locator('.am7-dialog-footer button').filter({ hasText: 'Continue' }).filter({ hasNotText: 'Images' }).click();
+        await dlg.locator('.am7-dialog-footer button').filter({ hasText: 'Continue' }).filter({ hasNotText: /Images|Style|Book/ }).click();
 
         // Step 3 (Characters) — reached once POST /chapter + create-from-scenes return. No LLM on this
         // path, but /chapter builds a world: give it room.
-        const continueToImages = dlg.locator('.am7-dialog-footer button').filter({ hasText: 'Continue to Images' });
-        await expect(continueToImages).toBeVisible({ timeout: 180000 });
+        const continueToStyle = dlg.getByTestId('pb-wizard-continue-style');
+        await expect(continueToStyle).toBeVisible({ timeout: 180000 });
         await screenshot(page, 'p73-wizard-step3');
-        await continueToImages.click();
 
-        // Hand-off: the wizard closes and the V3 reader opens on the new book; step 4 never renders.
+        // Step 4 (Style, required since 2026-11-16): "Continue to Book" stays disabled until the saved
+        // effective style has a description; the helper asserts that, fills + saves one, then continues.
+        await completeWizardStyleStep(page);
+
+        // Hand-off: the wizard closes and the V3 reader opens on the new book.
         await expect.poll(() => currentHash(page), { timeout: 30000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);
         wizardPb2Oid = (await currentHash(page)).split('/').pop();
         // The book the reader opened is the one the wizard's step-2 Continue created from the typed

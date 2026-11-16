@@ -287,6 +287,45 @@ public class PbServiceFacade {
 		return workflow;
 	}
 
+	/**
+	 * The 409 a PictureBook scene render answers when the book's <b>effective</b> style (book → series → library,
+	 * {@link PbStyleResolver#resolve}) has no description. Shown verbatim by the UI. The style is a required
+	 * predicate for rendering scenes: without it a book rendered under the hardcoded preset fallback (2 variants
+	 * plus VLM QA per scene) with no look at all.
+	 */
+	public static final String STYLE_REQUIRED_MESSAGE = "Set the book style before rendering: the book's style has no description (open Book style).";
+
+	/**
+	 * True when {@code book}'s effective style, resolved as {@code user}, carries a meaningful description - the
+	 * same predicate as the Ux752 {@code styleHasDescription} check ({@code effective.fields.description}
+	 * non-blank, which the style DTO fills from {@code es.value(description)}). Reads only.
+	 */
+	static boolean hasRenderableStyle(BaseRecord user, BaseRecord book) {
+		Object d = PbStyleResolver.resolve(user, book).value(FieldNames.FIELD_DESCRIPTION);
+		return (d instanceof String && !((String) d).isBlank());
+	}
+
+	/**
+	 * The style predicate of the PictureBook scene render entry points: a 409 {@link #STYLE_REQUIRED_MESSAGE}
+	 * unless the book's effective style has a description. Called only <b>after</b> the book is read, the
+	 * caller is authorized to update it and the scene / node is resolved as one of its own, so a stranger
+	 * still gets the 403 / 404 and never a 409 that confirms the record exists (architecture.md, "Feature /
+	 * product gates sit after authorization and existence checks"). ChapBooks are exempt
+	 * ({@link PbNodeExecutor#isChapBook}): a ChapBook takes its look from the effective non-flux
+	 * {@code olio.sd.config} (book config, then the page's {@code configOverride}) through ChapBookStraightGen, and a
+	 * book-style description would override that ({@code bookStyleDescribed()} drops the config's style clause), so
+	 * requiring one would break per-page style overrides. The generic scene route also re-renders ChapBook pages.
+	 */
+	private static void requireRenderableStyle(BaseRecord user, BaseRecord book, String what) {
+		if(PbNodeExecutor.isChapBook(book)) {
+			return;
+		}
+		if(!hasRenderableStyle(user, book)) {
+			logger.warn("Refusing to " + what + " in book " + book.get(FieldNames.FIELD_OBJECT_ID) + ": no effective style description");
+			throw new PictureBookException(409, STYLE_REQUIRED_MESSAGE);
+		}
+	}
+
 	private static long orgOf(BaseRecord user) {
 		Long id = user.get(FieldNames.FIELD_ORGANIZATION_ID);
 		if(id == null) {
@@ -634,6 +673,12 @@ public class PbServiceFacade {
 		requireBookUpdate(user, book, "regenerate a node");
 		BaseRecord workflow = requireWorkflow(user, book);
 		BaseRecord node = requireNodeOfBook(user, workflow, nodeObjectId);
+		/// Only a scene render node (V3 RENDER_PLAN, PB1 COMPOSITE) needs the style; a portrait, prompt or location
+		/// regenerate does not render a scene.
+		PbNodeTypeEnumType regenType = (node.hasField(OlioFieldNames.FIELD_PB_NODE_TYPE) ? node.getEnum(OlioFieldNames.FIELD_PB_NODE_TYPE) : null);
+		if(regenType == PbNodeTypeEnumType.RENDER_PLAN || regenType == PbNodeTypeEnumType.COMPOSITE) {
+			requireRenderableStyle(user, book, "regenerate a scene node");
+		}
 
 		Boolean pinned = node.get(OlioFieldNames.FIELD_PB_PINNED);
 		if(pinned != null && pinned.booleanValue()) {
@@ -739,6 +784,8 @@ public class PbServiceFacade {
 		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
 		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg,
 			validateVariants(user, book, null, variants));
+		/// After the book / update / scene gates and the request's own 404 / 400, before any node or run is written.
+		requireRenderableStyle(user, book, "render a scene plan");
 		return executePlanScene(user, book, scene, sdu, opts, null);
 	}
 
@@ -868,6 +915,8 @@ public class PbServiceFacade {
 		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
 		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg,
 			validateVariants(user, book, null, variants));
+		/// After the book / update / scene gates and the request's own 404 / 400, before the workflow or node is written.
+		requireRenderableStyle(user, book, "render a scene");
 		/// After the gates: the workflow and the scene's terminal are created on first use (P10-B 1), as the
 		/// book's updater - the same pattern executePlanScene has always followed for Plan & generate.
 		BaseRecord workflow = ensureWorkflow(user, book);
@@ -911,6 +960,7 @@ public class PbServiceFacade {
 		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
 		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg, null)
 			.withBackgroundRegen(true);
+		requireRenderableStyle(user, book, "regenerate a scene background");
 		BaseRecord workflow = ensureWorkflow(user, book);
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("sceneObjectId", scene.get(FieldNames.FIELD_OBJECT_ID));
@@ -1054,6 +1104,8 @@ public class PbServiceFacade {
 		BaseRecord cfg = PbComposeJobUtil.resolveChatConfig(user, chatConfigName);
 		PbRenderPlanUtil.PlanOptions opts = new PbRenderPlanUtil.PlanOptions(null, false, null, null, cfg,
 			validateVariants(user, book, null, variants));
+		/// After the book gates, the no-scenes 409 and the request's own 404 / 400, before any node is materialized.
+		requireRenderableStyle(user, book, "render the book");
 		BaseRecord workflow = ensureWorkflow(user, book);
 		List<Long> terminals = new ArrayList<>();
 		int materialized = 0;
@@ -4031,6 +4083,12 @@ public class PbServiceFacade {
 			String chatConfigName, String sdApiType, String sdServer, String dataPath) {
 		BaseRecord book = requireBook(user, bookObjectId);
 		requireBookUpdate(user, book, "compose scenes");
+		/// Quick-start renders every composed scene on the SD server (PbComposeJobUtil -> executePlanScene, below the
+		/// scene-render gates), so it carries the same style predicate; a plain compose renders nothing and is not gated.
+		/// Decided once, at admission: the job never re-checks mid-run (architecture.md, gates never live in a job).
+		if(quickStart) {
+			requireRenderableStyle(user, book, "quick-start render");
+		}
 		return PbComposeJobUtil.submitCompose(user, book, quickStart, force, chatConfigName, sdApiType, sdServer, dataPath);
 	}
 

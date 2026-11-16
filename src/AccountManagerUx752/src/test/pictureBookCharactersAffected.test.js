@@ -56,7 +56,10 @@ beforeEach(async () => {
     pbc = await import('../workflows/pictureBookCharacters.js');
     pbc.__setPbCharStateForTest({
         bookObjectId: 'book-1', standalone: true, selectedObjectId: null, selectedInst: null,
-        affected: null, lastSaveKind: null, regen: null, editingIdentity: false, editName: '', editDescription: '', regenPollIntervalMs: 5
+        affected: null, lastSaveKind: null, regen: null, editingIdentity: false, editName: '', editDescription: '', regenPollIntervalMs: 5,
+        // The book style is known-good here so the call-budget tests below see only the character reads; the
+        // style gate has its own describe block at the end of the file.
+        styleDescribed: true
     });
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
     vi.spyOn(am7client, 'getFull').mockResolvedValue(Object.assign({}, ENTITY));
@@ -391,5 +394,91 @@ describe('regenerateAffected — serial per-scene render over the affected scene
         pbc.__setPbCharStateForTest({ standalone: true, regen: { total: 1, done: 0 } });
         await pbc.__pbCharRegenerateAffectedForTest();
         expect(calls.length).toBe(0);
+    });
+});
+
+// ─────────────────────────────── book-style gate on Regenerate ───────────────────────────────
+// A scene render is refused without a book style description (server 409); Regenerate is a serial scene render,
+// so it is gated like the reader's Render: disabled with "Set the book style first" and a link to the style view.
+
+describe('Regenerate — book style gate', () => {
+    beforeEach(() => {
+        pbc.__setPbCharStateForTest({ selectedObjectId: 'c1', selectedInst: { entity: ENTITY }, affected: { forObjectId: 'c1', loading: false, data: AFFECTED, error: null } });
+    });
+
+    it('no style description: Regenerate disabled with the reason; the link closes the manager and opens the style view', () => {
+        pbc.__setPbCharStateForTest({ styleDescribed: false });
+        let panel = pbc.renderAffectedPanel();
+        let btn = byTestId(panel, 'pbchar-affected-regenerate')[0];
+        expect(btn.attrs.disabled).toBe(true);
+        expect(btn.attrs.title).toBe('Set the book style first');
+        let link = byTestId(panel, 'pbchar-affected-needs-style')[0];
+        expect(textOf(link)).toBe('Set the book style first');
+        link.attrs.onclick();
+        expect(Dialog.closeAll).toHaveBeenCalledTimes(1);
+        expect(m.route.set).toHaveBeenCalledWith('/picture-book/book-1/style');
+    });
+
+    it('unknown style (null) does not block; a described style shows no link', () => {
+        pbc.__setPbCharStateForTest({ styleDescribed: null });
+        let panel = pbc.renderAffectedPanel();
+        expect(byTestId(panel, 'pbchar-affected-regenerate')[0].attrs.disabled).toBe(false);
+        expect(byTestId(panel, 'pbchar-affected-needs-style').length).toBe(0);
+        pbc.__setPbCharStateForTest({ styleDescribed: true });
+        expect(byTestId(pbc.renderAffectedPanel(), 'pbchar-affected-needs-style').length).toBe(0);
+    });
+
+    it('regenerateAffected is a no-op while the style is known missing (no request at all)', async () => {
+        let calls = mockStack();
+        pbc.__setPbCharStateForTest({ styleDescribed: false });
+        await pbc.__pbCharRegenerateAffectedForTest();
+        expect(calls).toHaveLength(0);
+        expect(pbc.__pbCharStateForTest().regen).toBeNull();
+    });
+
+    it('the server 409 is toasted verbatim, stops the loop, and locks the gate', async () => {
+        const MSG = "Set the book style before rendering: the book's style has no description (open Book style).";
+        let calls = mockStack({ sceneRender: () => jsonResponse(409, { error: MSG }) });
+        pbc.__setPbCharStateForTest({ styleDescribed: null });
+        await pbc.__pbCharRegenerateAffectedForTest();
+        expect(page.toast).toHaveBeenCalledWith('error', '(409) ' + MSG);
+        expect(calls.filter(c => /\/render\?force=true$/.test(c.url))).toHaveLength(1);
+        expect(pbc.__pbCharStateForTest().styleDescribed).toBe(false);
+        // not mistaken for a pinned refusal: no unpin call
+        expect(calls.filter(c => /\/pin$/.test(c.url))).toHaveLength(0);
+    });
+
+    it('a ChapBook with no style description is exempt: the gate reads unknown (never blocks)', async () => {
+        // ChapBook pages take their look from the SD config + per-page overrides (ChapBookStraightGen).
+        pbc.__setPbCharStateForTest({ styleDescribed: null, affected: null });
+        mockStack();
+        let base = global.fetch;
+        global.fetch = vi.fn(async (u, init) => {
+            if (/\/book-1\/style$/.test(String(u))) return jsonResponse(200, { effective: { fields: {} } });
+            return base(u, init);
+        });
+        let search = vi.spyOn(am7client, 'search').mockResolvedValue({ results: [{ objectId: 'book-1', bookType: 'chapbook' }] });
+        await pbc.__pbCharSelectCharacterForTest('c1');
+        await flushPromises();
+        await flushPromises();
+        expect(search).toHaveBeenCalled();
+        expect(search.mock.calls[0][0].entity.request).toContain('bookType');
+        expect(pbc.__pbCharStateForTest().styleDescribed).toBeNull();
+    });
+
+    it('opening a detail with the style unknown reads it once; a second open does not re-read', async () => {
+        pbc.__setPbCharStateForTest({ styleDescribed: null, affected: null });
+        let calls = mockStack();
+        let base = global.fetch;
+        global.fetch = vi.fn(async (u, init) => {
+            if (/\/book-1\/style$/.test(String(u))) { calls.push({ url: String(u), method: 'GET' }); return jsonResponse(200, { effective: { fields: { description: 'ink and watercolor' } } }); }
+            return base(u, init);
+        });
+        await pbc.__pbCharSelectCharacterForTest('c1');
+        await flushPromises();
+        expect(pbc.__pbCharStateForTest().styleDescribed).toBe(true);
+        await pbc.__pbCharSelectCharacterForTest('c1');
+        await flushPromises();
+        expect(seqOf(calls).filter(x => /\/style$/.test(x))).toEqual(['GET /rest/olio/picture-book/book-1/style']);
     });
 });

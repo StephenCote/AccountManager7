@@ -153,6 +153,8 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 		f.book = PbBookUtil.createBook(f.owner, dataPath, f.slug, "Render plan " + f.slug);
 		assertNotNull("createBook", f.book);
 		f.bookOid = f.book.get(FieldNames.FIELD_OBJECT_ID);
+		/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE).
+		assertNotNull("book style", PbRenderStyleFixture.describe(f.owner, f.bookOid));
 		BaseRecord scene = PbBookUtil.createScene(f.owner, f.book, 0, (withText ? "Scene 0" : null), PbBookUtil.bookGroupPath(f.slug));
 		assertNotNull("scene", scene);
 		f.sceneOid = scene.get(FieldNames.FIELD_OBJECT_ID);
@@ -750,8 +752,23 @@ public class TestPbRenderPlanExecutor extends BaseTest {
 		try {
 			long orgId = orgOf(f.owner);
 			PbStyleResolver.EffectiveStyle chain = PbStyleResolver.resolve(f.owner, PbBookUtil.readBook(f.owner, f.bookOid, orgId));
-			assertTrue("precondition: a fresh book resolves no style hop (no LIBRARY style under /Library/"
-				+ PbStyleResolver.LIBRARY_STYLES + " in this org); got " + chain.chain().size() + " hop(s)", chain.isEmpty());
+			/// Since 2026-11-16 a scene render requires a described style, so the fixture's book carries exactly its own
+			/// description-only style (PbRenderStyleFixture). The precondition is unchanged in substance: no LIBRARY style
+			/// (or any other hop) is in the chain, and the one hop contributes no config tier and no exclusions, so render 1
+			/// still sees the schema defaults only.
+			assertEquals("precondition: the book resolves exactly its own style hop (no LIBRARY style under /Library/"
+				+ PbStyleResolver.LIBRARY_STYLES + " in this org); got " + chain, 1, chain.chain().size());
+			BaseRecord ownHop = chain.chain().get(0);
+			BaseRecord bookStyle = PbBookUtil.readBook(f.owner, f.bookOid, orgId).get(OlioFieldNames.FIELD_STYLE);
+			assertNotNull("precondition: the book has its own style", bookStyle);
+			assertEquals("precondition: the one hop is the book's own style", (Object) bookStyle.get(FieldNames.FIELD_ID), ownHop.get(FieldNames.FIELD_ID));
+			assertTrue("precondition: the chain is complete", chain.isComplete());
+			assertNull("precondition: the style names no sdConfig (no style config tier)", chain.sdConfig());
+			assertNull("precondition: the style sets no sdConfig reference", chain.sdConfigSource());
+			assertNull("precondition: the style sets no exclusions", chain.value(OlioFieldNames.FIELD_PB_EXCLUSIONS));
+			assertTrue("precondition: the style pins no task models", chain.taskModels().isEmpty());
+			assertEquals("precondition: the style's only set field is its description", PbRenderStyleFixture.DESCRIPTION,
+				chain.value(FieldNames.FIELD_DESCRIPTION));
 
 			/// Render 1: schema defaults only (no book tier, no override).
 			Map<String, Object> first = PbServiceFacade.requestRenderPlanScene(f.owner, f.bookOid, f.sceneOid, sdu);

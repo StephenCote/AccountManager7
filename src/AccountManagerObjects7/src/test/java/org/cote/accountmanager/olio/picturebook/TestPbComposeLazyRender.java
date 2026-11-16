@@ -211,6 +211,8 @@ public class TestPbComposeLazyRender extends BaseTest {
 		try {
 			bk = newBook(u, "lazy");
 			bkOid = oidOf(bk);
+			/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE).
+			assertNotNull("book style", PbRenderStyleFixture.describe(u, bkOid));
 			String slug = bk.get(OlioFieldNames.FIELD_PB_SLUG);
 			BaseRecord scene = addScene(u, bk, 1, TITLE, SETTING, ACTION, MOOD, TEXT);
 			String sceneOid = oidOf(scene);

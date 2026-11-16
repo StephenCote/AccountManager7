@@ -96,10 +96,25 @@ public class TestPbRouteGateOrder extends BaseTest {
 		return created;
 	}
 
+	/// Give the bare book a style with a description through PbServiceFacade.putStyle (creates the book's own style in
+	/// the book's group and links book.style); deleteBareBook removes it with the book.
+	private void describeStyle(String bookObjectId) {
+		Map<String, Object> dto = org.cote.accountmanager.olio.picturebook.PbServiceFacade.putStyle(user, bookObjectId,
+			Map.of(FieldNames.FIELD_DESCRIPTION, "Test fixture style: clean ink linework with flat, muted colour."));
+		assertNotNull("style PUT", dto);
+	}
+
 	private void deleteBareBook(BaseRecord book) {
 		if(book != null) {
+			/// The book's own style, when describeStyle gave it one: read before the book goes, deleted after it.
+			BaseRecord read = PbBookUtil.readBook(user, (String) book.get(FieldNames.FIELD_OBJECT_ID), orgId);
+			BaseRecord styleRef = (read != null ? read.get(OlioFieldNames.FIELD_STYLE) : null);
+			BaseRecord own = (styleRef != null ? org.cote.accountmanager.olio.picturebook.PbStyleUtil.readStyle(user, styleRef, orgId) : null);
 			assertTrue("Failed to delete the bare book fixture",
 				IOSystem.getActiveContext().getAccessPoint().delete(user, book));
+			if(own != null) {
+				assertTrue("cleanup: style", IOSystem.getActiveContext().getAccessPoint().delete(user, own));
+			}
 		}
 	}
 
@@ -247,6 +262,9 @@ public class TestPbRouteGateOrder extends BaseTest {
 			String sid = scene.get(FieldNames.FIELD_OBJECT_ID);
 			BaseRecord read = PbBookUtil.readBook(user, bid, orgId);
 			assertNotNull("the bare book must read back for its owner", read);
+			/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE, 409), checked after the
+			/// variants range and before the pin; given through the production style PUT path as the owner.
+			describeStyle(bid);
 			BaseRecord wf = org.cote.accountmanager.olio.picturebook.PbGraphUtil.getCreateWorkflow(user, read, GROUP_PATH);
 			assertNotNull("workflow fixture is null", wf);
 			node = org.cote.accountmanager.olio.picturebook.PbGraphUtil.addNode(user, wf,
@@ -359,6 +377,9 @@ public class TestPbRouteGateOrder extends BaseTest {
 			String sid = scene.get(FieldNames.FIELD_OBJECT_ID);
 			BaseRecord read = PbBookUtil.readBook(user, bid, orgId);
 			assertNotNull("the bare book must read back for its owner", read);
+			/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE, 409), checked after the
+			/// variants range and before the pin; given through the production style PUT path as the owner.
+			describeStyle(bid);
 			BaseRecord wf = org.cote.accountmanager.olio.picturebook.PbGraphUtil.getCreateWorkflow(user, read, GROUP_PATH);
 			assertNotNull("workflow fixture is null", wf);
 			node = org.cote.accountmanager.olio.picturebook.PbGraphUtil.addNode(user, wf,

@@ -67,6 +67,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser, ensureIso42001TestUser } from './helpers/api.js';
+import { ensureBookStyleDescription } from './helpers/pbReader.js';
 import { gunzipSync } from 'zlib';
 import { mkdirSync, writeFileSync } from 'fs';
 
@@ -265,6 +266,8 @@ test.describe('PictureBook V3 P2-5 — render from the plan over REST', () => {
         const chapter = JSON.parse(createText);
         bookObjectId = chapter.bookObjectId || chapter.objectId;
         expect(bookObjectId, 'seeded STORY book objectId: ' + createText.slice(0, 300)).toBeTruthy();
+        // Scene renders require a described book style (409 otherwise, since 2026-11-16).
+        await ensureBookStyleDescription(request, PB_ROOT, bookObjectId);
         const PB = PB_ROOT + '/' + bookObjectId;
 
         const book = await search(request, 'olio.pb.book', [{ name: 'objectId', comparator: 'equals', value: bookObjectId }],

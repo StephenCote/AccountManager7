@@ -632,6 +632,10 @@ public class TestPictureBookNewBookRoutes extends BaseTest {
 			}
 			String s0 = f.sceneOids.get(0);
 			refused(view(owner, f.bookOid), 404, NO_WORKFLOW, "precondition: a new book has no workflow");
+			/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE, 409); the owner gives the
+			/// book one through the production style PUT path, as the wizard's Book style step does.
+			assertNotNull("book style", org.cote.accountmanager.olio.picturebook.PbServiceFacade.putStyle(owner, f.bookOid,
+				Map.of(FieldNames.FIELD_DESCRIPTION, "Test fixture style: clean ink linework with flat, muted colour.")));
 
 			/// 1. First render from the reader, straight after the wizard.
 			Map<String, Object> r0 = accepted(render(owner, f.bookOid, s0), "first scene render of a new book");

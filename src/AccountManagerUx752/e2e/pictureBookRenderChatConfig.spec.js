@@ -38,6 +38,7 @@ import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, ensureIso42001TestUser, resolveChatRoute, ensureChatConfig } from './helpers/api.js';
 import { REST, PB_REST, restLoginShared, loginAsSharedUser } from './helpers/chapbook.js';
+import { openReaderTools, ensureBookStyleDescription } from './helpers/pbReader.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = '[i2-render-cfg]';
@@ -163,6 +164,8 @@ test.describe('PictureBook V3 I-2 — the reader\'s chat config rides on render 
         expect(created.status(), 'POST /chapter: ' + JSON.stringify(cb).slice(0, 300)).toBe(200);
         const bookOid = cb.bookObjectId || cb.objectId;
         expect(bookOid, 'seeded book objectId').toBeTruthy();
+        // Scene renders require a described book style (409 otherwise, since 2026-11-16).
+        await ensureBookStyleDescription(request, PB_REST, bookOid);
         const row = await search(request, 'olio.pb.book', [{ name: 'objectId', comparator: 'equals', value: bookOid }], ['id', 'objectId', 'name', 'slug', 'groupId', 'groupPath', 'organizationId']);
         expect(row && row.id && row.groupId && row.groupPath, 'book row: ' + JSON.stringify(row)).toBeTruthy();
         fx.book = { id: row.id, objectId: row.objectId, name: row.name, slug, groupId: row.groupId, groupPath: row.groupPath };
@@ -238,15 +241,21 @@ test.describe('PictureBook V3 I-2 — the reader\'s chat config rides on render 
         await restLoginShared(request);
 
         await openReader(page, fx.book.objectId);
+        // The reader's chat config pick is the "Chat config: …" item of the Tools overflow (helpers/pbReader.js);
+        // the item's label is rebuilt each time the menu opens, so the default is read by re-opening until it settles.
         const control = page.getByTestId('pb2-chat-config');
-        await expect(control, 'the reader header shows the Chat Config control').toBeVisible({ timeout: T.ui });
-        await expect(control).not.toContainText('Resolving default', { timeout: T.ui });
-        const labelBefore = ((await control.textContent()) || '').replace(/search$/, '').trim();
+        await expect(async () => {
+            await openReaderTools(page);
+            await expect(control).not.toContainText('Resolving default', { timeout: 2000 });
+        }, 'the Tools menu shows the reader\'s Chat Config item').toPass({ timeout: T.ui });
+        const labelBefore = ((await control.textContent()) || '').replace(/^smart_toy/, '').replace(/^Chat config:\s*/, '').trim();
         await shot(page, '03a-reader-before-pick');
         await control.click();
         await pickFromOverlay(page, CONFIG_NAME);
-        await expect(control, 'the control shows the picked config').toContainText(CONFIG_NAME);
+        await openReaderTools(page);
+        await expect(control, 'the item shows the picked config').toContainText(CONFIG_NAME);
         await shot(page, '03b-reader-picked');
+        await page.keyboard.press('Escape');
 
         await openFirstPage(page);
         const renderBtn = page.getByTestId('pb2-scene-render');

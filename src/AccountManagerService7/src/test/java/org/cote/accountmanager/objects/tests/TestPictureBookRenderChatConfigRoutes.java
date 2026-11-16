@@ -420,6 +420,10 @@ public class TestPictureBookRenderChatConfigRoutes extends BaseTest {
 			String sceneOid = oid(scenes.get(0));
 			String name = "pbrcc-known-" + UUID.randomUUID().toString().substring(0, 8);
 			cfg = createOwnerChatConfig(name);
+			/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE, 409, checked after the
+			/// config and before the workflow), so the owner gives the bare book one through the production style PUT path.
+			assertNotNull("book style", org.cote.accountmanager.olio.picturebook.PbServiceFacade.putStyle(owner, bookOid,
+				Map.of(FieldNames.FIELD_DESCRIPTION, "Test fixture style: clean ink linework with flat, muted colour.")));
 			assertNull("precondition: the stranger must not resolve the owner's config by name",
 				ChatUtil.resolveConfig(stranger, OlioModelNames.MODEL_CHAT_CONFIG, name, null));
 			String known = json("chatConfigName", name);

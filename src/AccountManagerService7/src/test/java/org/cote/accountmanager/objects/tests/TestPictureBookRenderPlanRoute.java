@@ -222,7 +222,12 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 			}
 		}
 		if(book != null) {
+			BaseRecord style = null;
 			try {
+				/// The book's own style, when describeStyle gave it one: read before the book goes, deleted after it.
+				BaseRecord read = PbBookUtil.readBook(owner, oid(book), orgId);
+				BaseRecord ref = (read != null ? read.get(OlioFieldNames.FIELD_STYLE) : null);
+				style = (ref != null ? org.cote.accountmanager.olio.picturebook.PbStyleUtil.readStyle(owner, ref, orgId) : null);
 				if(!IOSystem.getActiveContext().getAccessPoint().delete(owner, book)) {
 					logger.error("cleanup: failed to delete book " + oid(book));
 				}
@@ -230,7 +235,22 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 			catch(Exception e) {
 				logger.error("cleanup: book delete threw: " + e.getMessage());
 			}
+			try {
+				if(style != null && !IOSystem.getActiveContext().getAccessPoint().delete(owner, style)) {
+					logger.error("cleanup: failed to delete style " + oid(style));
+				}
+			}
+			catch(Exception e) {
+				logger.error("cleanup: style delete threw: " + e.getMessage());
+			}
 		}
+	}
+
+	/// Give the book a style with a description through the production style PUT path (PbServiceFacade.putStyle, as the
+	/// owner): a scene render requires one (PbServiceFacade.STYLE_REQUIRED_MESSAGE).
+	private void describeStyle(BaseRecord book) {
+		assertNotNull("book style", org.cote.accountmanager.olio.picturebook.PbServiceFacade.putStyle(owner, oid(book),
+			Map.of(FieldNames.FIELD_DESCRIPTION, "Test fixture style: clean ink linework with flat, muted colour.")));
 	}
 
 	/// A refusal before the workflow gate must leave no graph behind: the find-only lookup is null.
@@ -316,10 +336,44 @@ public class TestPictureBookRenderPlanRoute extends BaseTest {
 		List<BaseRecord> scenes = new ArrayList<>();
 		try {
 			scenes.add(addScene(book, 0, SETTING));
+			describeStyle(book);
 			Response r = render(owner, oid(book), oid(scenes.get(0)));
 			String text = refusal(r, 500, "world-less book");
 			logger.info("MEASURED: world-less render-plan refusal: " + r.getStatus() + " " + text);
 			assertTrue("the 500 names the workflow: " + text, text.toLowerCase().contains("workflow"));
+			assertNoWorkflow(book, "the workflow 500");
+		}
+		finally {
+			cleanup(book, scenes);
+		}
+	}
+
+	// ─────────────────────────────── the style predicate (2026-11-16) ───────────────────────────────
+
+	/// A book whose effective style has no description is refused with 409 and the facade's constant message, in the
+	/// facade's {"error": msg} body, after the book / scene gates and before any write (no workflow). The stranger on
+	/// the same style-less book is still the book's 404, never the 409. Once the owner gives the book a described
+	/// style, the same call passes the predicate and reaches this harness's workflow 500.
+	@Test
+	public void TestStyleLessBookIs409WithTheStyleMessage() throws Exception {
+		BaseRecord book = createBareBook();
+		List<BaseRecord> scenes = new ArrayList<>();
+		try {
+			scenes.add(addScene(book, 0, SETTING));
+			Response r = render(owner, oid(book), oid(scenes.get(0)));
+			assertEquals("style-less render-plan must be 409, body: " + r.getEntity(), 409, r.getStatus());
+			Map<String, Object> b = body(r);
+			logger.info("MEASURED: style-less render-plan refusal body: " + r.getEntity());
+			assertEquals("the body is exactly {error: STYLE_REQUIRED_MESSAGE}: " + b, 1, b.size());
+			assertEquals(org.cote.accountmanager.olio.picturebook.PbServiceFacade.STYLE_REQUIRED_MESSAGE, b.get("error"));
+			assertNoWorkflow(book, "the style 409");
+
+			assertEquals("Book not found", refusal(render(stranger, oid(book), oid(scenes.get(0))), 404, "stranger on a style-less book"));
+			assertNoWorkflow(book, "the stranger's 404");
+
+			describeStyle(book);
+			String text = refusal(render(owner, oid(book), oid(scenes.get(0))), 500, "described style passes the predicate");
+			assertTrue("past the predicate, the 500 names the workflow: " + text, text.toLowerCase().contains("workflow"));
 			assertNoWorkflow(book, "the workflow 500");
 		}
 		finally {

@@ -20,6 +20,14 @@ function jsonResponse(status, body) {
     return { ok: status >= 200 && status < 300, status, text: async () => text, json: async () => JSON.parse(text) };
 }
 
+/** First vnode (depth-first) whose data-testid matches, or null. */
+function findDeep(v, testid) {
+    if (!v || typeof v !== 'object') return null;
+    if (Array.isArray(v)) { for (let c of v) { let r = findDeep(c, testid); if (r) return r; } return null; }
+    if (v.attrs && v.attrs['data-testid'] === testid) return v;
+    return findDeep(v.children, testid);
+}
+
 let origFetch;
 let pbf;
 
@@ -29,7 +37,7 @@ beforeEach(async () => {
     pbf.__pb2StopWatchingForTest();
     pbf.__setPb2V3StateForTest({
         pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null,
-        pb2Submitting: false, pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: 'Harlot\'s Eight', pb2PollIntervalMs: 5,
+        pb2Submitting: false, pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: 'Harlot\'s Eight', pb2PollIntervalMs: 5, pb2StyleDescribed: null,
         pb2Pages: [{ objectId: 's1', sceneIndex: 1, title: 'Arrival', sceneNodeObjectId: 'n1', nodeStatus: 'DONE', pinned: false, dataObjectId: 'd1' }]
     });
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
@@ -133,22 +141,26 @@ describe('runSummaryText', () => {
 
 // ─────────────────────────────── view gating ───────────────────────────────
 
+// The toolbar plus its "Optional tools" overflow items: together, the V3 header contract.
+function headerAndTools() { return JSON.stringify([pbf.renderPb2Header(), pbf.pb2OverflowItems()]); }
+
 describe('renderPb2Header — V3 controls', () => {
-    it('badge reflects auto-approve state; Render-all and Review link present', () => {
+    it('auto-approve item reflects the state; Render-all on the toolbar, Review link in the tools', () => {
         pbf.__setPb2V3StateForTest({ pb2AutoApprove: true });
-        let text = JSON.stringify(pbf.renderPb2Header());
+        let text = headerAndTools();
         expect(text).toContain('"data-testid":"pb2-auto-approve-badge"');
         expect(text).toContain('"data-on":"1"');
         expect(text).toContain('Auto-approve: ON');
-        expect(text).toContain('"data-testid":"pb2-render-all"');
+        expect(JSON.stringify(pbf.renderPb2Header())).toContain('"data-testid":"pb2-render-all"');
         expect(text).toContain('"data-testid":"pb2-review-link"');
         pbf.__setPb2V3StateForTest({ pb2AutoApprove: false });
-        expect(JSON.stringify(pbf.renderPb2Header())).toContain('"data-on":"0"');
+        expect(headerAndTools()).toContain('"data-on":"0"');
     });
-    it('Render-all is disabled while a run is being watched', () => {
+    it('Render-all is disabled while a run is being watched, with the reason as its title', () => {
         pbf.__setPb2V3StateForTest({ pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1'], job: { terminal: false }, label: 'Render all', error: null } });
-        let text = JSON.stringify(pbf.renderPb2Header());
-        expect(text).toMatch(/"data-testid":"pb2-render-all","class":null,"disabled":true/);
+        let b = findDeep(pbf.renderPb2Header(), 'pb2-render-all');
+        expect(b.attrs.disabled).toBe(true);
+        expect(b.attrs.title).toBe('A render is already running');
     });
 });
 
@@ -599,10 +611,7 @@ describe('UAT-2 pb2ExportPageHtml — exported scene section', () => {
 });
 
 describe('UAT-2 header — export and fullscreen buttons', () => {
-    function findButton(testid) {
-        let header = pbf.renderPb2Header();
-        return (header.children || []).find(c => c && c.attrs && c.attrs['data-testid'] === testid) || null;
-    }
+    function findButton(testid) { return findDeep(pbf.renderPb2Header(), testid); }
     it('Export: "Export as HTML", download icon, enabled only with pages, hourglass + disabled while exporting', () => {
         let b = findButton('pb2-export');
         expect(b).not.toBeNull();
@@ -637,7 +646,7 @@ describe('UAT-2 header — export and fullscreen buttons', () => {
         expect(pbf.__pb2V3StateForTest().pb2Fullscreen).toBe(false);
     });
     it('the tool routes, Characters, Canvas and Delete are still offered alongside (the V3 header contract)', () => {
-        let text = JSON.stringify(pbf.renderPb2Header());
+        let text = headerAndTools();
         ['pb2-render-all', 'pb2-review-link', 'pb2-style-link', 'pb2-locations-link', 'pb2-compose-link', 'pb2-cover-link',
             'pb2-export', 'pb2-fullscreen'].forEach(id => expect(text).toContain('"data-testid":"' + id + '"'));
         expect(text).toContain('Open Workflow Canvas');

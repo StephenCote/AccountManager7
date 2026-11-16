@@ -864,6 +864,8 @@ public class TestP52SequentialInpaintLive extends BaseTest {
 		ioContext.getRecordUtil().applyNameGroupOwnership(u, style, "p52-" + tag + "-" + TestP51GraphLive.shortId(), STYLE_PATH, oid);
 		style.set(OlioFieldNames.FIELD_PB_SCOPE, PbStyleScopeEnumType.BOOK.toString());
 		style.set(OlioFieldNames.FIELD_PB_TASK_MODELS, JSONUtil.exportObject(pins));
+		/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE).
+		style.set(FieldNames.FIELD_DESCRIPTION, PbRenderStyleFixture.DESCRIPTION);
 		BaseRecord created = ioContext.getAccessPoint().create(u, style);
 		assertNotNull("style " + tag, created);
 		BaseRecord styleRef = PbStyleUtil.readStyle(u, oidOf(created), oid);

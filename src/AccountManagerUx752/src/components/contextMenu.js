@@ -8,6 +8,8 @@
  *     { divider: true },
  *     { label: 'Tag', icon: 'label', action: () => { ... } }
  *   ]);
+ * Optional per item: `attrs` (extra button attributes, e.g. data-testid / title, merged under the managed
+ * class/role/onclick) and `disabled`.
  */
 import m from 'mithril';
 
@@ -65,6 +67,7 @@ function onKeyDown(e) {
 }
 
 function executeItem(item) {
+    if (item.disabled) return;
     dismiss();
     if (item.action) item.action();
 }
@@ -87,11 +90,12 @@ const contextMenuComponent = {
                 if (item.divider) {
                     return m('div', { class: 'context-menu-divider', role: 'separator' });
                 }
-                return m('button', {
-                    class: 'context-menu-item',
+                return m('button', Object.assign({}, item.attrs || {}, {
+                    class: 'context-menu-item' + (item.disabled ? ' opacity-40 cursor-not-allowed' : ''),
                     role: 'menuitem',
+                    disabled: !!item.disabled,
                     onclick: function () { executeItem(item); }
-                }, [
+                }), [
                     item.icon ? m('span', {
                         class: 'material-symbols-outlined',
                         'aria-hidden': 'true',
@@ -106,6 +110,8 @@ const contextMenuComponent = {
 
 const contextMenu = {
     show: show,
+    /** The items of the open menu (empty when closed). */
+    items: function () { return menuState.visible ? menuState.items : []; },
     dismiss: dismiss,
     component: contextMenuComponent
 };

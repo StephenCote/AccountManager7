@@ -59,7 +59,8 @@ import org.cote.accountmanager.util.LibraryUtil;
  * unobservable and the nearest hop always wins (documented limitation). {@code locked} never pins a value:
  * {@link EffectiveStyle#lockedBy()} is the nearest locked hop and only the write path consults it (156 d).
  * <p>
- * The §29 no-style fallbacks are {@link #DEFAULT_QUALITY_PRESET} and {@link #DEFAULT_PAGE_FORMAT} (156 l).
+ * The no-style fallbacks are {@link #defaultQualityPreset()} (the resource's {@code defaultPreset}) and
+ * {@link #DEFAULT_PAGE_FORMAT} (156 l, preset fallback reversed 2026-11-16).
  */
 public final class PbStyleResolver {
 	public static final Logger logger = LogManager.getLogger(PbStyleResolver.class);
@@ -67,10 +68,18 @@ public final class PbStyleResolver {
 	/** Maximum number of style hops in one chain (book + parents + series + parents + library + parents). */
 	public static final int MAX_DEPTH = 8;
 
-	/** §29: a book with no style renders at STANDARD quality … */
-	public static final PbQualityPresetEnumType DEFAULT_QUALITY_PRESET = PbQualityPresetEnumType.STANDARD;
+	/**
+	 * The preset an unset ({@code null} / {@code UNKNOWN}) {@code qualityPreset} resolves to: the resource's
+	 * {@code defaultPreset} ({@code qualityPresets.json}, DRAFT as shipped), exactly what {@code styleModel.json}'s
+	 * field description promises. Until 2026-11-16 this was a hardcoded STANDARD (§29, 156 l / 157 f); Stephen
+	 * reversed that when the style became a required predicate for scene rendering
+	 * ({@link PbServiceFacade#STYLE_REQUIRED_MESSAGE}).
+	 */
+	public static PbQualityPresetEnumType defaultQualityPreset() {
+		return org.cote.accountmanager.olio.illustration.QualityPresets.defaultPreset();
+	}
 
-	/** … on a SQUARE page. */
+	/** A book with no page format renders on a SQUARE page. */
 	public static final PbPageFormatEnumType DEFAULT_PAGE_FORMAT = PbPageFormatEnumType.SQUARE;
 
 	/** Directory under {@code /Library} holding LIBRARY-scope styles (156 c). Never created by a read. */
@@ -200,7 +209,7 @@ public final class PbStyleResolver {
 		public PbQualityPresetEnumType qualityPreset() {
 			Object v = values.get(OlioFieldNames.FIELD_PB_QUALITY_PRESET);
 			PbQualityPresetEnumType p = enumOf(PbQualityPresetEnumType.class, v);
-			return (p != null && p != PbQualityPresetEnumType.UNKNOWN ? p : DEFAULT_QUALITY_PRESET);
+			return (p != null && p != PbQualityPresetEnumType.UNKNOWN ? p : defaultQualityPreset());
 		}
 
 		public PbPageFormatEnumType pageFormat() {

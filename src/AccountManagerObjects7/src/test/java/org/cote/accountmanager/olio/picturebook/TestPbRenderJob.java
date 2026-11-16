@@ -1331,6 +1331,9 @@ public class TestPbRenderJob extends BaseTest {
 		long newestBefore = newestRunId(u, wf);
 		long inflightBefore = PbNodeInflight.size();
 		String bookOid = bk.get(FieldNames.FIELD_OBJECT_ID);
+		/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE), checked before the pin;
+		/// idempotent on the shared SLUG book (patches the same description on its own style).
+		assertNotNull("book style", PbRenderStyleFixture.describe(u, bookOid));
 		String expected = "Node " + handleOf(terminal) + " is pinned. Unpin it first - pinning means do not replace this artifact.";
 		for(boolean force : new boolean[] { true, false }) {
 			try {

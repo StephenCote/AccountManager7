@@ -3,13 +3,15 @@
  * PictureBook P7-3 / P10-1 — the wizard hands off to the V3 workspace; existing books open in V3.
  *
  * Why: the three PB1 routes the wizard's old steps 4–5 called (scene generate, prepare-images, PUT
- * settings) no longer exist (P10-1). The wizard ENDS at step 3 — "Continue to Images" opens the V3
- * reader on the pb2 book the step-2 Continue created — and an existing book never re-enters the
+ * settings) no longer exist (P10-1). The wizard ENDS at step 4 (Style, required) — step 3's "Continue to
+ * Style" opens the book style editor inline on the pb2 book the step-2 Continue created, and step 4's
+ * "Continue to Book" (disabled until the SAVED style has a description) opens the V3 reader — and an
+ * existing book never re-enters the
  * wizard (the list pencils and the /picture-book/:groupOid route resolve to the V3 reader instead). A
  * pure PB1 book (scenes, no olio.pb.book) is the one thing left on the PB1 viewer, read-only, with the
  * "replaced by V3 — import" notice P7-4 wires up.
  *
- * Covered: resolvePb2BookObjectId's three lookups, the step-3 action, the progress bar,
+ * Covered: resolvePb2BookObjectId's three lookups, the step-3 and step-4 actions, the progress bar,
  * tryResumeExistingBook's four outcomes, handOffToReader with/without a V3 record, the PB1 viewer's
  * redirect / legacy notice / no Edit pencil, and the PB2 reader header never offering its Edit pencil.
  */
@@ -48,6 +50,10 @@ function stubServer(server) {
             let sc = (server.scenes || {})[mm[1]];
             return sc ? jsonResponse(200, sc) : jsonResponse(404, 'Not found');
         }
+        if ((mm = u.match(/\/picture-book\/([^/]+)\/style$/))) {
+            let st = (server.styles || {})[mm[1]];
+            return st ? jsonResponse(200, st) : jsonResponse(404, 'Book not found');
+        }
         if (/\/picture-book\/[^/]+\/characters$/.test(u)) return jsonResponse(200, []);
         if (/\/picture-book\/books(\?|$)/.test(u)) return jsonResponse(200, server.books || []);
         if (/\/picture-book\/[^/]+\/settings$/.test(u)) return jsonResponse(200, {});
@@ -73,6 +79,8 @@ beforeEach(async () => {
     dialogClose = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
     vi.spyOn(page, 'toast').mockImplementation(() => {});
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
+    // The inlined style editor also reads the book record and the SD model lists; neither matters here.
+    vi.spyOn(am7client, 'getFull').mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -110,40 +118,94 @@ describe('resolvePb2BookObjectId — any id the wizard is handed → olio.pb.boo
     });
 });
 
-// ───────────────────────────── step 3 → reader ──────────────────────────────
+// ──────────────────────── step 3 → step 4 (Style) → reader ────────────────────────
 
-function continueToImages() {
-    let a = pb.buildActions().find(x => x.label === 'Continue to Images');
-    expect(a, 'step 3 must still offer "Continue to Images"').toBeTruthy();
+const STYLED = { bookObjectId: 'PB2-A', effective: { fields: { description: 'ink and watercolor' }, sources: {} }, chain: [] };
+const UNSTYLED = { bookObjectId: 'PB2-A', effective: { fields: {}, sources: {} }, chain: [] };
+
+function action(label) {
+    let a = pb.buildActions().find(x => x.label === label);
+    expect(a, 'the wizard must offer "' + label + '"').toBeTruthy();
     return a;
 }
+async function settle() { for (let i = 0; i < 6; i++) await flush(); }
 
-describe('step 3 "Continue to Images"', () => {
-    it('closes the wizard and opens the V3 reader on the pb2 book; there is no step 4', async () => {
-        stubServer({ pb2Books: ['PB2-A'] });
+describe('step 3 "Continue to Style"', () => {
+    it('opens step 4 on the pb2 book (no hand-off yet; the dialog stays open)', async () => {
+        stubServer({ pb2Books: ['PB2-A'], styles: { 'PB2-A': UNSTYLED } });
         pb.__setExtractStateForTest({ step: 3, bookObjectId: 'GRP-1', pb2WizardBookOid: 'PB2-A' });
-        continueToImages().onclick();
-        await flush();
-        expect(dialogClose).toHaveBeenCalledTimes(1);
-        expect(routeSet).toHaveBeenCalledWith('/picture-book/v2/PB2-A');
-        expect(pb.__extractStateForTest().step).toBe(3);
-        expect(global.fetch).not.toHaveBeenCalled();
+        expect(pb.buildActions().find(x => x.label === 'Continue to Images')).toBeUndefined();
+        expect(await pb.continueToStyle()).toBe('PB2-A');
+        await settle();
+        expect(pb.__extractStateForTest().step).toBe(4);
+        expect(dialogClose).not.toHaveBeenCalled();
+        expect(routeSet).not.toHaveBeenCalled();
+        const style = await import('../features/pictureBookStyle.js');
+        expect(style.styleEditorState().bookObjectId).toBe('PB2-A');
     });
     it('resumed on a PB1 group without a cached pb2 oid: resolves it via /pb2 first', async () => {
-        stubServer({ bridges: { 'GRP-1': 'PB2-B' } });
+        stubServer({ bridges: { 'GRP-1': 'PB2-B' }, styles: { 'PB2-B': UNSTYLED } });
         pb.__setExtractStateForTest({ step: 3, bookObjectId: 'GRP-1', pb2WizardBookOid: null });
-        continueToImages().onclick();
-        await flush();
-        expect(routeSet).toHaveBeenCalledWith('/picture-book/v2/PB2-B');
+        action('Continue to Style').onclick();
+        await settle();
         expect(pb.__extractStateForTest().pb2WizardBookOid).toBe('PB2-B');
+        expect(pb.__extractStateForTest().step).toBe(4);
     });
     it('no V3 record: stays on step 3 with an error toast, no route, dialog open', async () => {
         stubServer({});
         pb.__setExtractStateForTest({ step: 3, bookObjectId: 'GRP-1', pb2WizardBookOid: null });
-        expect(await pb.handOffToReader()).toBeNull();
+        expect(await pb.continueToStyle()).toBeNull();
         expect(page.toast).toHaveBeenCalledWith('error', expect.stringMatching(/no V3 record/));
         expect(routeSet).not.toHaveBeenCalled();
         expect(dialogClose).not.toHaveBeenCalled();
+        expect(pb.__extractStateForTest().step).toBe(3);
+    });
+});
+
+describe('step 4 "Continue to Book" — required style', () => {
+    async function openStep4(styleDto) {
+        stubServer({ pb2Books: ['PB2-A'], styles: { 'PB2-A': styleDto } });
+        pb.__setExtractStateForTest({ step: 3, bookObjectId: 'GRP-1', pb2WizardBookOid: 'PB2-A' });
+        await pb.continueToStyle();
+        await settle();
+    }
+    it('no style description: disabled, the reason on the button and under the editor; the hand-off refuses', async () => {
+        await openStep4(UNSTYLED);
+        let a = action('Continue to Book');
+        expect(a.disabled).toBe(true);
+        expect(a.attrs.title).toBe('Choose a style preset or write a description, then Save');
+        expect(JSON.stringify(pb.renderStep4())).toContain('Choose a style preset or write a description, then Save');
+        expect(await pb.handOffToReader()).toBeNull();
+        expect(routeSet).not.toHaveBeenCalled();
+        expect(dialogClose).not.toHaveBeenCalled();
+    });
+    it('the inlined editor is the shared style editor, without its route-changing Back button', async () => {
+        await openStep4(UNSTYLED);
+        let text = JSON.stringify(pb.renderStep4());
+        expect(text).toContain('"data-testid":"pb2-style-save"');
+        expect(text).toContain('"data-testid":"pb2-style-description"');
+        expect(text).not.toContain('"data-testid":"pb2-style-back"');
+    });
+    it('an unsaved description does not count: "Save the style to continue"', async () => {
+        await openStep4(UNSTYLED);
+        const style = await import('../features/pictureBookStyle.js');
+        style.__setStyleStateForTest({ draft: { description: 'ink and watercolor' } });
+        let a = action('Continue to Book');
+        expect(a.disabled).toBe(true);
+        expect(a.attrs.title).toBe('Save the style to continue');
+    });
+    it('a saved style description enables it; it closes the wizard and opens the V3 reader', async () => {
+        await openStep4(STYLED);
+        let a = action('Continue to Book');
+        expect(a.disabled).toBe(false);
+        a.onclick();
+        await settle();
+        expect(dialogClose).toHaveBeenCalledTimes(1);
+        expect(routeSet).toHaveBeenCalledWith('/picture-book/v2/PB2-A');
+    });
+    it('Back from step 4 returns to step 3', async () => {
+        await openStep4(UNSTYLED);
+        action('Back').onclick();
         expect(pb.__extractStateForTest().step).toBe(3);
     });
 });
@@ -160,10 +222,10 @@ describe('renderProgressBar', () => {
         })(vnode);
         return out.filter(t => /^[A-Z][a-z]+$/.test(t));
     }
-    it('ends at Characters — no Images / View steps', () => {
+    it('ends at Style — no Images / View steps', () => {
         pb.__setExtractStateForTest({ step: 3 });
         let labels = labelsOf(pb.renderProgressBar());
-        expect(labels).toEqual(['Source', 'Scenes', 'Characters']);
+        expect(labels).toEqual(['Source', 'Scenes', 'Characters', 'Style']);
     });
 });
 

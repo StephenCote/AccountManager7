@@ -7,7 +7,7 @@ import {
     getExtractCheckpoints, discardExtractCheckpoints
 } from './sceneExtractor.js';
 import { initCharacterManager, renderCharacterManagerContent } from './pictureBookCharacters.js';
-import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter, resolvePb2BookObjectId } from './pictureBookWorkflow.js';
+import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter, resolvePb2BookObjectId, styleStepFinishState } from './pictureBookWorkflow.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { resolveDefaultChatConfig } from '../components/pbChatConfig.js';
@@ -21,8 +21,12 @@ import { resolveDefaultChatConfig } from '../components/pbChatConfig.js';
  *       the time Step 3 renders.
  *   3 — Manage Characters (real charPerson records: portrait, statistics, apparel, "Open Full
  *       Editor" link — renders pictureBookCharacters.js inline, same UI as the standalone popup)
- * Step 3's "Continue to Images" closes the wizard and hands off to the V3 reader, where every image is
- * rendered; an existing book never re-enters the wizard (P10-1: the PB1 image steps 4–5 are gone).
+ *   4 — Style (REQUIRED): the book style editor (features/pictureBookStyle.js) inlined the same way, on the
+ *       pb2 book. "Continue to Book" stays disabled, with the reason, until the SAVED effective style has a
+ *       description — the server refuses every scene render without one (409).
+ * Step 4's "Continue to Book" closes the wizard and hands off to the V3 reader, where every image is
+ * rendered; an existing book never re-enters the wizard (P10-1: the PB1 image steps are gone) — the reader
+ * gates its own renders on the style for books that reach it without one.
  */
 
 // ── Wizard state ──────────────────────────────────────────────────────
@@ -38,11 +42,11 @@ function readerRoute(pb2Oid) {
 }
 
 /**
- * Step-3 "Continue to Images": close the wizard and open the V3 reader on the pb2 book the step-2
- * Continue created. When the wizard was resumed on a PB1 group without a cached pb2 oid, resolve it
- * through the /pb2 bridge first; no V3 record means the step-2 Continue has not run, so stay on step 3.
+ * The pb2 book (olio.pb.book objectId) the step-2 Continue created. When the wizard was resumed on a PB1
+ * group without a cached pb2 oid, resolve it through the /pb2 bridge first; null (with an error toast)
+ * means the step-2 Continue has not run.
  */
-async function handOffToReader() {
+async function resolveWizardPb2Oid() {
     let oid = pb2WizardBookOid;
     if (!oid && bookObjectId) {
         oid = await resolvePb2BookObjectId(bookObjectId);
@@ -53,6 +57,44 @@ async function handOffToReader() {
         m.redraw();
         return null;
     }
+    return oid;
+}
+
+// The book style editor (features/pictureBookStyle.js) is loaded on first use of step 4, not imported statically:
+// it carries the routing layer (router.js) with it, which this wizard module does not otherwise need.
+let styleEditor = null;
+async function loadStyleEditor() {
+    if (!styleEditor) styleEditor = await import('../features/pictureBookStyle.js');
+    return styleEditor;
+}
+
+/** Step-3 "Continue to Style": resolve the pb2 book and open step 4 on its style. Stays on step 3 without one. */
+async function continueToStyle() {
+    let oid = await resolveWizardPb2Oid();
+    if (!oid) return null;
+    let ed = await loadStyleEditor();
+    step = 4;
+    m.redraw();
+    ed.initStyleEditor(oid);
+    return oid;
+}
+
+/** Step 4's finish gate from the inlined style editor (closed while it is pointed at another book). */
+function styleStepState() {
+    if (!styleEditor) return { enabled: false, reason: 'Loading the book style…' };
+    let st = styleEditor.styleEditorState();
+    if (!pb2WizardBookOid || st.bookObjectId !== pb2WizardBookOid) return { enabled: false, reason: 'Loading the book style…' };
+    return styleStepFinishState(st);
+}
+
+/**
+ * Step-4 "Continue to Book": close the wizard and open the V3 reader on the pb2 book. Refused (null) while
+ * the step-4 gate is closed; the button is disabled with the reason then, so this is the backstop.
+ */
+async function handOffToReader() {
+    if (step === 4 && !styleStepState().enabled) return null;
+    let oid = await resolveWizardPb2Oid();
+    if (!oid) return null;
     Dialog.close();
     m.route.set(readerRoute(oid));
     return readerRoute(oid);
@@ -1711,16 +1753,30 @@ function renderBgActivity() {
     ]);
 }
 
+function renderStep4() {
+    // Step 4 IS the book style editor (features/pictureBookStyle.js), inlined as step 3 inlines the characters.
+    // The style is required: the server refuses every scene render while it has no description.
+    let gate = styleStepState();
+    return m('div', { 'data-testid': 'pb-wizard-style', class: 'px-4 pb-2' }, [
+        m('div', { class: 'mb-3 text-sm text-gray-600 dark:text-gray-300' },
+            'Required: give the book a style. Every image takes its look from the style description, so nothing renders until it is saved.'),
+        styleEditor ? styleEditor.renderStyleHeader({ embedded: true }) : null,
+        styleEditor ? styleEditor.renderStyleBody() : null,
+        gate.enabled ? null : m('div', { 'data-testid': 'pb-wizard-style-reason', class: 'mt-2 text-xs text-amber-700 dark:text-amber-300' }, gate.reason)
+    ]);
+}
+
 function renderStepContent() {
     if (step === 1) return renderStep1();
     if (step === 2) return renderStep2();
     if (step === 3) return renderStep3();
+    if (step === 4) return renderStep4();
     return null;
 }
 
 function renderProgressBar() {
-    // The wizard ends at Characters — images are rendered in the V3 reader.
-    let labels = ['Source', 'Scenes', 'Characters'];
+    // The wizard ends at Style — images are rendered in the V3 reader.
+    let labels = ['Source', 'Scenes', 'Characters', 'Style'];
     return m('div', { class: 'flex items-center gap-1 px-4 pt-3 pb-1' },
         labels.map(function (label, i) {
             let n = i + 1;
@@ -1894,7 +1950,16 @@ function buildActions() {
         });
     } else if (step === 3) {
         actions.push({
-            label: 'Continue to Images', icon: 'arrow_forward', primary: true,
+            label: 'Continue to Style', icon: 'arrow_forward', primary: true,
+            attrs: { 'data-testid': 'pb-wizard-continue-style' },
+            onclick: function () { continueToStyle(); }
+        });
+    } else if (step === 4) {
+        let gate = styleStepState();
+        actions.push({
+            label: 'Continue to Book', icon: 'arrow_forward', primary: true,
+            disabled: !gate.enabled,
+            attrs: { 'data-testid': 'pb-wizard-continue-book', title: gate.enabled ? 'Open the book' : gate.reason },
             onclick: function () { handOffToReader(); }
         });
     }
@@ -2033,10 +2098,10 @@ export { doExtract, applyExtractJob, reattachExtractJob, cancelExtract, stoppedE
     loadPendingCheckpoints, discardPendingCheckpoint, describeCheckpointRow, renderCheckpointBanner,
     chapterSummaryState, renderChapterSummary };
 
-// Test-only seam: the reader hand-off. buildActions' step-3 branch, the progress bar, the resume
-// decision and handOffToReader are the whole of "the wizard ends at step 3"; they are module-private
+// Test-only seam: the reader hand-off. buildActions' step-3/4 branches, the progress bar, the resume
+// decision, continueToStyle and handOffToReader are the whole of "the wizard ends at step 4"; they are module-private
 // and reach m.route / Dialog directly, so the test drives them here and stubs those.
-export { buildActions, renderProgressBar, tryResumeExistingBook, handOffToReader };
+export { buildActions, renderProgressBar, tryResumeExistingBook, handOffToReader, continueToStyle, styleStepState, renderStep4 };
 export { loadDefaults as __loadDefaultsForTest };
 export function __extractStateForTest() {
     return {

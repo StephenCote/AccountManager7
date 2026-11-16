@@ -1092,6 +1092,64 @@ export function normalizeStyle(dto) {
     };
 }
 
+/**
+ * True when a normalized style (normalizeStyle) gives the book a look: an effective, non-blank description.
+ * The V3 plan path takes the book's whole look from that text, so the server refuses a scene render without it.
+ */
+export function styleHasDescription(st) {
+    let d = st && st.effective && st.effective.fields ? st.effective.fields.description : null;
+    return d != null && String(d).trim() !== '';
+}
+
+/**
+ * Pure: is this olio.pb.book bookType a ChapBook? (enums arrive lowercase on the wire, compare case-insensitively.)
+ * ChapBook pages take their look from the effective non-flux olio.sd.config - the book's config, then each page's
+ * configOverride (ChapBookStraightGen) - so the book-style render gate never applies to them; the server exempts
+ * them too (PbServiceFacade, PbNodeExecutor.isChapBook). A ChapBook style description would in fact REPLACE the
+ * config's style clause on every page, so it must never be demanded.
+ */
+export function isChapBookType(bookType) {
+    return bookType != null && String(bookType).toUpperCase() === 'CHAPBOOK';
+}
+
+/** The reason every gated scene-render control shows while the book has no style description. */
+export const STYLE_REQUIRED_REASON = 'Set the book style first';
+
+/**
+ * Pure: may a scene render (render, render-all, render-plan, regenerate-background) be started?
+ * o = {styleDescribed: true | false | null, submitting, watching}. `styleDescribed` null means the style
+ * could not be read (or is still loading); that does NOT block, the server's 409 is the final gate.
+ * Returns {enabled, reason, needsStyle}; reason is null when enabled.
+ */
+export function renderGate(o) {
+    o = o || {};
+    if (o.styleDescribed === false) return { enabled: false, reason: STYLE_REQUIRED_REASON, needsStyle: true };
+    if (o.watching) return { enabled: false, reason: 'A render is already running', needsStyle: false };
+    if (o.submitting) return { enabled: false, reason: 'Submitting…', needsStyle: false };
+    return { enabled: true, reason: null, needsStyle: false };
+}
+
+/** The server's refusal of a scene render on a book with no style description (HTTP 409, PbServiceFacade). */
+export function isStyleRequiredRefusal(err) {
+    if (!err || err.status !== 409) return false;
+    return /set the book style/i.test(String(err.message || '') + ' ' + String(err.body || ''));
+}
+
+/**
+ * Pure: the wizard's step-4 "Continue to Book" state from the style editor's state
+ * ({style, draft, loading, saving, error}; pictureBookStyle.styleEditorState). Enabled only when the SAVED
+ * effective style has a non-blank description; unsaved edits do not count. Returns {enabled, reason}.
+ */
+export function styleStepFinishState(s) {
+    s = s || {};
+    if (s.loading && !s.style) return { enabled: false, reason: 'Loading the book style…' };
+    if (s.error && !s.style) return { enabled: false, reason: 'The book style could not be read: ' + s.error };
+    if (s.saving) return { enabled: false, reason: 'Saving the book style…' };
+    if (styleHasDescription(s.style)) return { enabled: true, reason: null };
+    let dirty = !!(s.draft && Object.keys(s.draft).length);
+    return { enabled: false, reason: dirty ? 'Save the style to continue' : 'Choose a style preset or write a description, then Save' };
+}
+
 /** Normalize a plan body (from /plan or a renderPlan artifact's artifactText) so arrays/objects are always present. Pure. */
 export function normalizePlan(plan) {
     let p = plan && typeof plan === 'object' ? plan : {};

@@ -701,12 +701,17 @@ function renderSdSection() {
     return m('div', { 'data-testid': 'pb2-style-sd', class: 'mb-4 p-3 rounded border border-gray-200 dark:border-gray-700' }, [head, body]);
 }
 
-export function renderStyleHeader() {
+/**
+ * opts.embedded: the editor is inlined in another surface (the wizard's step 4), so there is no "Back to book"
+ * (that would route away from under the wizard dialog).
+ */
+export function renderStyleHeader(opts) {
+    let embedded = !!(opts && opts.embedded);
     let own = style && style.own;
     let locked = isLocked();
     let dirty = !!(draft && Object.keys(draft).length);
     return m('div', { class: 'flex items-center gap-3 mb-4 flex-wrap' }, [
-        m('button', {
+        embedded ? null : m('button', {
             'data-testid': 'pb2-style-back',
             class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
             title: 'Back to book',
@@ -774,20 +779,32 @@ export function renderStyleBody() {
     ]);
 }
 
+/**
+ * Point the editor at a book (olio.pb.book objectId) and (re)load it: the route's oninit, and the wizard's
+ * step 4, which inlines renderStyleHeader({embedded}) / renderStyleBody the way step 3 inlines the characters.
+ */
+export function initStyleEditor(id) {
+    if (id && id !== bookObjectId) {
+        bookObjectId = id;
+        style = null;
+        error = null;
+        draft = {};
+        presetStyle = '';
+        book = null;
+        taskInfo = {};
+        sd = { mode: 'none', oid: null, name: null, fromName: null, inst: null, loading: false, error: null, busy: false };
+    }
+    if (bookObjectId) return loadStyle();
+}
+
+/** Read-only view of the editor's state for a host surface (the wizard's step-4 finish gate). */
+export function styleEditorState() {
+    return { bookObjectId, style, draft, loading, saving, error };
+}
+
 const styleView = {
     oninit: function (vnode) {
-        let id = vnode.attrs.bookObjectId;
-        if (id && id !== bookObjectId) {
-            bookObjectId = id;
-            style = null;
-            error = null;
-            draft = {};
-            presetStyle = '';
-            book = null;
-            taskInfo = {};
-            sd = { mode: 'none', oid: null, name: null, fromName: null, inst: null, loading: false, error: null, busy: false };
-        }
-        if (bookObjectId) loadStyle();
+        initStyleEditor(vnode.attrs.bookObjectId);
     },
     view: function () {
         return m('div', { 'data-testid': 'pb2-style', class: 'p-4 flex flex-col h-full' }, [

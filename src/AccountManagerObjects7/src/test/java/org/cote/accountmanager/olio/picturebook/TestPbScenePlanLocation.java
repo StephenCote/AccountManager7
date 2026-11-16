@@ -819,6 +819,8 @@ public class TestPbScenePlanLocation extends BaseTest {
 		BaseRecord u = owner();
 		BaseRecord bk = newBook(u, "h");
 		String bkOid = oidOf(bk);
+		/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE).
+		assertNotNull("book style", PbRenderStyleFixture.describe(u, bkOid));
 		long orgId = orgOf(u);
 		BaseRecord cfg = null;
 		try {

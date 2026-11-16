@@ -268,8 +268,7 @@ test.describe('PictureBook PB2 Page Reader (Phase 5b)', () => {
             content.includes('Failed') ||
             content.includes('scene') ||
             content.includes('Cover') ||
-            content.includes('PB2') ||
-            content.includes('Workflow Book') ||
+            content.includes('Picture Book') ||
             content.includes('picture-book');
         expect(handled).toBe(true);
     });
@@ -365,8 +364,7 @@ test.describe('PictureBook PB2 Page Reader (Phase 5b)', () => {
         let content = await page.content();
         // The work selector renders either the PB2 book list, a loading indicator, or an empty state
         let hasSelector =
-            content.includes('PB2') ||
-            content.includes('Loading PB2') ||
+            content.includes('Loading picture books') ||
             content.includes('picture-book') ||
             content.includes('Picture Book') ||
             content.includes('documents') ||

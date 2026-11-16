@@ -87,11 +87,20 @@ test.describe('PictureBook V3 style presets', () => {
         await request.get(REST + '/logout');
     });
 
-    test('1. a fresh book: the render dialog warns there is no style description', async ({ page }) => {
+    // The style is a required predicate of rendering (2026-11-16): the reader reads it on load and, without a
+    // description, disables Render (and every per-scene render) with the reason and a link to the style view.
+    test('1. a fresh book: Render is disabled with "Set the book style first"; the link opens the style view', async ({ page }) => {
         await loginAsSharedUser(page);
-        await openRenderDialog(page);
-        await expect(page.getByTestId('pb2-render-no-style')).toBeVisible({ timeout: 15000 });
-        await page.getByTestId('pb2-render-no-style-link').click();
+        await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
+        const render = page.getByTestId('pb2-render-all');
+        await expect(render).toBeVisible({ timeout: 60000 });
+        await expect(render).toHaveText(/Render$/);
+        await expect(render).toBeDisabled({ timeout: 30000 });
+        await expect(render).toHaveAttribute('title', 'Set the book style first');
+        await expect(page.getByTestId('pb2-style-status')).toHaveAttribute('data-state', 'attention');
+        const link = page.getByTestId('pb2-render-needs-style');
+        await expect(link).toHaveText(/Set the book style first$/);
+        await link.click();
         await expect(page.getByTestId('pb2-style')).toBeVisible({ timeout: 30000 });
         expect(page.url()).toContain('/picture-book/' + bookObjectId + '/style');
     });
@@ -139,11 +148,19 @@ test.describe('PictureBook V3 style presets', () => {
         await expect(page.getByTestId('pb2-style-no-description')).toHaveCount(0);
     });
 
-    test('3. once the style has a description the render dialog no longer warns', async ({ page }) => {
+    test('3. once the style has a description (saved in test 2) Render is enabled and the dialog can Start', async ({ page }) => {
         await loginAsSharedUser(page);
+        await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
+        const render = page.getByTestId('pb2-render-all');
+        await expect(page.getByTestId('pb2-style-status')).toHaveAttribute('data-state', 'ok', { timeout: 60000 });
+        await expect(render).toBeEnabled();
+        await expect(render).toHaveAttribute('title', 'Render all scenes');
+        await expect(page.getByTestId('pb2-render-needs-style')).toHaveCount(0);
         await openRenderDialog(page);
         await page.waitForTimeout(1500);
         await expect(page.getByTestId('pb2-render-no-style')).toHaveCount(0);
+        await expect(page.getByTestId('pb2-render-all-start')).toBeEnabled();
+        // Cancel, never Start: this spec checks the gate, it does not render.
         await page.getByTestId('pb2-render-dialog-cancel').click();
     });
 });

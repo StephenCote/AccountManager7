@@ -7,6 +7,7 @@ import { renderRange } from '../components/formFieldRenderers.js';
 import { listCharacters, tagApparelSceneIndex, mergeCharacters, deleteCharacter, resolveImageUrl, pollJob } from './sceneExtractor.js';
 import {
     getAffectedBy, bookPages, renderScene, unpinNode, isPinnedRefusal,
+    getStyle, normalizeStyle, styleHasDescription, renderGate, isStyleRequiredRefusal, isChapBookType,
     getWardrobe, addWardrobeEntry, setDefaultApparel, renderApparelReference, migrateSceneTags
 } from './pictureBookWorkflow.js';
 import { reimage } from './reimage.js';
@@ -66,6 +67,9 @@ let standalone = false;
 let affected = null;          // { forObjectId, loading, data, error }
 let lastSaveKind = null;      // 'watched' | 'unwatched' | 'none' after the last saveIdentity (caveat text)
 let regen = null;             // { total, done, current, aborted } while "Regenerate" runs
+// Whether the book's effective style has a description (null = unknown). A scene render is refused without one
+// (server 409), so "Regenerate" is gated on it like the reader's Render; unknown never blocks.
+let styleDescribed = null;
 let regenPollIntervalMs = undefined; // pollJob default; Vitest shortens it through the test seam
 // V3 P4-9: the selected character's wardrobe (GET /{book}/character/{char}/wardrobe), read once per
 // detail open and once after each wardrobe write. Only in standalone, like the affected panel.
@@ -95,6 +99,7 @@ function resetState() {
     affected = null;
     lastSaveKind = null;
     regen = null;
+    styleDescribed = null;
     stopWardrobeWatches();
     wardrobe = null;
     wardrobeBusy = null;
@@ -167,6 +172,8 @@ function v3Enabled() {
 async function loadAffected(charObjectId) {
     if (!v3Enabled() || !charObjectId) { affected = null; return; }
     affected = { forObjectId: charObjectId, loading: true, data: null, error: null };
+    // Once per manager session (resetState clears it), not per affected read: the style is the book's, not the character's.
+    if (styleDescribed === null) loadStyleDescribed();
     m.redraw();
     try {
         let data = await getAffectedBy(bookObjectId, 'olio.charPerson', charObjectId);
@@ -178,6 +185,49 @@ async function loadAffected(charObjectId) {
     }
     affected.loading = false;
     m.redraw();
+}
+
+/** The book's bookType ('CHAPBOOK' / …) or null when it cannot be read. */
+async function readBookType(book) {
+    let q = am7client.newQuery('olio.pb.book');
+    q.cache(false);
+    q.field('objectId', book);
+    q.range(0, 1);
+    if (q.entity.request.indexOf('bookType') < 0) q.entity.request.push('bookType');
+    let qr = await am7client.search(q);
+    let rec = qr && qr.results && qr.results[0];
+    return rec ? rec.bookType : null;
+}
+
+/**
+ * Read the book style once per affected read (not awaited; a failure leaves it unknown). A ChapBook is exempt
+ * from the style gate (isChapBookType: its look comes from the SD config + per-page overrides), so it reads as
+ * unknown (null), which never blocks.
+ */
+async function loadStyleDescribed() {
+    let book = bookObjectId;
+    try {
+        let typeRead = readBookType(book).catch(function () { return null; });
+        let st = normalizeStyle(await getStyle(book));
+        if (book !== bookObjectId) return;
+        styleDescribed = styleHasDescription(st);
+        typeRead.then(function (bt) {
+            if (book !== bookObjectId || !isChapBookType(bt)) return;
+            styleDescribed = null;
+            m.redraw();
+        });
+    } catch (e) {
+        if (book !== bookObjectId) return;
+        styleDescribed = null;
+    }
+    m.redraw();
+}
+
+/** Style → the book style view. Standalone only, as openReviewQueue. */
+function openBookStyle() {
+    if (!v3Enabled()) return;
+    Dialog.closeAll();
+    m.route.set('/picture-book/' + bookObjectId + '/style');
 }
 
 /** Review → the book's review queue. Standalone only (the manager is the only Dialog open), as openFullEditor. */
@@ -197,7 +247,7 @@ function openReviewQueue() {
  * unpins, never retries.
  */
 async function regenerateAffected() {
-    if (!v3Enabled() || regen || !affected || !affected.data) return;
+    if (!v3Enabled() || regen || !affected || !affected.data || styleDescribed === false) return;
     let charId = affected.forObjectId;
     let s = affectedSummary(affected.data);
     if (!s.count) return;
@@ -227,6 +277,7 @@ async function regenerateAffected() {
             submit = await renderScene(book, pg.objectId, { force: true });
         } catch (e) {
             if (!(isPinnedRefusal(e) && pg.sceneNodeObjectId)) {
+                if (isStyleRequiredRefusal(e)) styleDescribed = false;
                 page.toast('error', (e && e.message) || 'Render failed');
                 regen.aborted = true;
                 break;
@@ -284,6 +335,7 @@ function renderAffectedPanel() {
         body = m('span', { 'data-testid': 'pbchar-affected-error', class: 'text-xs text-red-500' }, a.error);
     } else {
         let s = affectedSummary(a.data);
+        let gate = renderGate({ styleDescribed: styleDescribed });
         body = m('div', { class: 'flex items-center gap-2 flex-wrap text-sm' }, [
             m('span', { 'data-testid': 'pbchar-affected-count', 'data-count': String(s.count) },
                 'Affected scenes: ' + s.count + (s.count ? ' (' + s.sceneIndexes.join(', ') + ')' : '')),
@@ -298,10 +350,16 @@ function renderAffectedPanel() {
             m('button', {
                 'data-testid': 'pbchar-affected-regenerate',
                 class: 'button text-xs',
-                disabled: !!regen || !s.count,
-                title: s.count ? 'Re-render every affected scene, one at a time' : 'No scene binds this character',
+                disabled: !!regen || !s.count || !gate.enabled,
+                title: !gate.enabled ? gate.reason : (s.count ? 'Re-render every affected scene, one at a time' : 'No scene binds this character'),
                 onclick: regenerateAffected
-            }, regen ? ('Regenerating ' + (regen.done + 1) + ' of ' + regen.total + (regen.current != null ? ' (scene ' + regen.current + ')' : '') + '…') : 'Regenerate')
+            }, regen ? ('Regenerating ' + (regen.done + 1) + ' of ' + regen.total + (regen.current != null ? ' (scene ' + regen.current + ')' : '') + '…') : 'Regenerate'),
+            gate.needsStyle && s.count ? m('button', {
+                'data-testid': 'pbchar-affected-needs-style',
+                class: 'text-xs text-amber-700 dark:text-amber-300 underline',
+                title: 'Open Book style',
+                onclick: openBookStyle
+            }, gate.reason) : null
         ]);
     }
     return m('div', { 'data-testid': 'pbchar-affected', class: 'p-2 rounded border border-gray-200 dark:border-gray-700' }, [
@@ -1170,7 +1228,7 @@ export function __pbCharStateForTest() {
     return {
         bookObjectId: bookObjectId, standalone: standalone,
         selectedObjectId: selectedObjectId, selectedInst: selectedInst,
-        affected: affected, lastSaveKind: lastSaveKind, regen: regen,
+        affected: affected, lastSaveKind: lastSaveKind, regen: regen, styleDescribed: styleDescribed,
         editingIdentity: editingIdentity, editName: editName, editDescription: editDescription,
         wardrobe: wardrobe, wardrobeBusy: wardrobeBusy, wardrobeAddText: wardrobeAddText, wardrobeRuns: wardrobeRuns
     };
@@ -1184,6 +1242,7 @@ export function __setPbCharStateForTest(patch) {
     if ('affected' in patch) affected = patch.affected;
     if ('lastSaveKind' in patch) lastSaveKind = patch.lastSaveKind;
     if ('regen' in patch) regen = patch.regen;
+    if ('styleDescribed' in patch) styleDescribed = patch.styleDescribed;
     if ('editingIdentity' in patch) editingIdentity = patch.editingIdentity;
     if ('editName' in patch) editName = patch.editName;
     if ('editDescription' in patch) editDescription = patch.editDescription;

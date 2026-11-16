@@ -44,9 +44,11 @@ import {
     deriveStageList, runSummaryText, resolvePb2BookObjectId,
     migrateV1Book, normalizeMigration,
     getCovers, coverPageLayout, readerFrontPages,
-    getStyle, normalizeStyle, carriedBookChatConfig
+    getStyle, normalizeStyle, carriedBookChatConfig,
+    styleHasDescription, renderGate, isStyleRequiredRefusal, STYLE_REQUIRED_REASON, isChapBookType
 } from '../workflows/pictureBookWorkflow.js';
-import { withChatConfig, resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
+import { withChatConfig, resolveDefaultChatConfig, openChatConfigPicker, chatConfigLabel } from '../components/pbChatConfig.js';
+import { contextMenu } from '../components/contextMenu.js';
 import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js';
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { am7olio } from '../components/olio.js';
@@ -184,7 +186,7 @@ function renderPb2EditButton(b, cls) {
 // Characters: open the character manager directly against the book (no wizard detour). `standalone`
 // tells the manager there is no wizard Dialog underneath, so its "Open Full Editor" may navigate in
 // place instead of opening a new tab (pictureBookCharacters.js openFullEditor).
-function renderPb2CharactersButton(b, cls) {
+function renderPb2CharactersButton(b, cls, label) {
     return m('button', {
         class: cls || 'text-gray-400 hover:text-purple-600 p-1',
         title: 'Manage characters',
@@ -193,7 +195,7 @@ function renderPb2CharactersButton(b, cls) {
             e.stopPropagation();
             openCharacterManager(b.objectId, { standalone: true });
         }
-    }, m('span', { class: 'material-symbols-outlined text-lg' }, 'groups'));
+    }, [m('span', { class: 'material-symbols-outlined text-lg' }, 'groups'), label || null]);
 }
 
 // A series is ONE entry in the list: the novel's title with its chapter count. Expanding it lists
@@ -741,9 +743,9 @@ var workSelectorView = {
 
             // PB2 native books
             pb2Books.length > 0 ? m('div', { class: 'mb-6' }, [
-                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Workflow Books (PB2)'),
+                m('div', { class: 'text-xs font-medium text-gray-500 uppercase tracking-wide mb-2' }, 'Picture Books'),
                 m('div', { 'data-pb2-book-list': true, class: 'grid grid-cols-1 gap-2' }, renderPb2BookList())
-            ]) : pb2Loading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Loading PB2 books...') : null,
+            ]) : pb2Loading ? m('div', { class: 'text-sm text-gray-500 mb-6' }, 'Loading picture books...') : null,
 
             // Checkpoints with no book behind them yet
             renderPendingExtractions(),
@@ -1316,14 +1318,8 @@ function pb2EnsureChatConfigDefault() {
     })();
 }
 
-/** The reader's "Chat Config" control (the compose board's, pbChatConfig.js); shown once a book is open. */
-function renderPb2ChatConfigControl() {
-    return renderChatConfigControl({
-        testid: 'pb2-chat-config', ref: pb2ChatConfig, resolving: pb2ChatConfigResolving,
-        title: 'The chat config every render from this reader sends to the LLM',
-        onPick: function (ref) { pb2ChatConfig = ref; m.redraw(); }
-    });
-}
+// The reader's chat config pick (226 a) is the "Chat config: …" item of the Tools overflow (pb2OverflowItems),
+// opening the same picker as the compose board's control (pbChatConfig.js openChatConfigPicker).
 
 // P10-A 7: the pages before the scenes (readerFrontPages) - the cover page, preceded by a series-art page when the
 // chapter's series has approved SERIES_ART and the chapter its own approved COVER. Page numbers: 0 … front-1 are the
@@ -1503,7 +1499,7 @@ async function pb2ReattachRun(bookId, wf) {
 }
 
 async function pb2SubmitRenderAll() {
-    if (!pb2BookObjectId || pb2Submitting) return;
+    if (!pb2BookObjectId || pb2Submitting || pb2StyleMissing()) return;
     pb2Submitting = true;
     m.redraw();
     let bookId = pb2BookObjectId;
@@ -1517,6 +1513,7 @@ async function pb2SubmitRenderAll() {
         pb2WatchJob(submit, 'Render all');
     } catch (e) {
         pb2Submitting = false;
+        pb2NoteStyleRefusal(e);
         page.toast('error', (e && e.message) || 'Render failed');
         m.redraw();
     }
@@ -1530,7 +1527,7 @@ async function pb2SubmitRenderAll() {
  * re-submits. Every other non-2xx (in-flight 409, 429, ...) is toasted verbatim. Never silently unpins.
  */
 async function pb2SubmitRenderScene(pg) {
-    if (!pb2BookObjectId || !pg || !pg.objectId || pb2Submitting) return;
+    if (!pb2BookObjectId || !pg || !pg.objectId || pb2Submitting || pb2StyleMissing()) return;
     pb2Submitting = true;
     m.redraw();
     let bookId = pb2BookObjectId;
@@ -1543,6 +1540,7 @@ async function pb2SubmitRenderScene(pg) {
     } catch (e) {
         pb2Submitting = false;
         if (!(isPinnedRefusal(e) && pg.sceneNodeObjectId)) {
+            pb2NoteStyleRefusal(e);
             page.toast('error', (e && e.message) || 'Render failed');
             m.redraw();
             return;
@@ -1578,7 +1576,7 @@ async function pb2SubmitRenderScene(pg) {
  * RENDER_PLAN node") and every other non-2xx are toasted verbatim. Never silently unpins.
  */
 async function pb2SubmitRegenBackground(pg) {
-    if (!pb2BookObjectId || !pg || !pg.objectId || pb2Submitting) return;
+    if (!pb2BookObjectId || !pg || !pg.objectId || pb2Submitting || pb2StyleMissing()) return;
     pb2Submitting = true;
     m.redraw();
     let bookId = pb2BookObjectId;
@@ -1591,6 +1589,7 @@ async function pb2SubmitRegenBackground(pg) {
     } catch (e) {
         pb2Submitting = false;
         if (!(isPinnedRefusal(e) && pg.sceneNodeObjectId)) {
+            pb2NoteStyleRefusal(e);
             page.toast('error', (e && e.message) || 'Regenerate failed');
             m.redraw();
             return;
@@ -1665,23 +1664,57 @@ async function pb2ToggleAutoApprove(on) {
 // live component body so the auto-approve toggle re-renders in place.
 // Whether the book's EFFECTIVE style carries a description (null = not known yet / could not be read). The V3
 // plan path takes the book's whole look from that text, so without it every scene picks its own style.
+// Read on reader load (loadPb2Pages) and again when the render dialog opens; scene renders are gated on it
+// (pb2RenderGate). Unknown (null) never blocks — the server's 409 is the final gate.
 let pb2StyleDescribed = null;
+// ChapBook books are exempt from the style gate (isChapBookType); set from the book read in loadPb2Pages.
+let pb2IsChapBook = false;
 
-/** True when a normalized style (normalizeStyle) gives the book a look: an effective, non-blank description. */
-export function styleHasDescription(st) {
-    let d = st && st.effective && st.effective.fields ? st.effective.fields.description : null;
-    return d != null && String(d).trim() !== '';
-}
+/** The book needs a style before any scene render: not a ChapBook, and its effective style has no description. */
+function pb2StyleMissing() { return !pb2IsChapBook && pb2StyleDescribed === false; }
+
+// styleHasDescription lives with the other style helpers in workflows/pictureBookWorkflow.js (the wizard's
+// step 4 uses it too); re-exported here for existing importers.
+export { styleHasDescription };
 
 export function __setPb2StyleDescribedForTest(v) { pb2StyleDescribed = v; }
 
+function pb2Watching() { return !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error); }
+
+/** The reader's scene-render gate (renderGate) from its live state. */
+export function pb2RenderGate() {
+    return renderGate({ styleDescribed: pb2IsChapBook ? null : pb2StyleDescribed, submitting: pb2Submitting, watching: pb2Watching() });
+}
+
+function pb2OpenStyle() {
+    if (!pb2BookObjectId) return;
+    m.route.set('/picture-book/' + pb2BookObjectId + '/style');
+}
+
+/** A refused render because the book has no style: record it so every gated control locks. The toast stays verbatim. */
+function pb2NoteStyleRefusal(e) {
+    if (isStyleRequiredRefusal(e)) pb2StyleDescribed = false;
+}
+
+/** "Set the book style first" with a link to the style view, shown beside a disabled render control. */
+function renderPb2NeedsStyle(testid, inDialog) {
+    return m('button', {
+        'data-testid': testid,
+        class: 'flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300 underline hover:text-amber-900',
+        title: 'Open Book style',
+        onclick: function (e) { if (e && e.stopPropagation) e.stopPropagation(); if (inDialog) Dialog.close(); pb2OpenStyle(); }
+    }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'palette'), STYLE_REQUIRED_REASON]);
+}
+
+// Keeps the last known answer while a re-read is in flight (the render dialog re-reads on open), so a gated
+// control does not flicker enabled; loadPb2Pages clears it for a new book.
 async function pb2LoadStyleDescribed(bookId) {
-    pb2StyleDescribed = null;
     try {
         let st = normalizeStyle(await getStyle(bookId));
         if (bookId !== pb2BookObjectId) return;
         pb2StyleDescribed = styleHasDescription(st);
     } catch (e) {
+        if (bookId !== pb2BookObjectId) return;
         pb2StyleDescribed = null;
     }
     m.redraw();
@@ -1691,8 +1724,8 @@ const pb2RenderDialogBody = {
     view: function () {
         let n = pb2Pages.length;
         return m('div', { 'data-testid': 'pb2-render-dialog', class: 'space-y-3 text-sm' }, [
-            pb2StyleDescribed === false ? m('div', { 'data-testid': 'pb2-render-no-style', class: 'text-xs px-3 py-2 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200' }, [
-                'This book has no style description, so each image will pick its own look. ',
+            pb2StyleMissing() ? m('div', { 'data-testid': 'pb2-render-no-style', class: 'text-xs px-3 py-2 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200' }, [
+                'This book has no style description, so nothing can be rendered yet: every image takes its look from it. ',
                 m('button', { 'data-testid': 'pb2-render-no-style-link', class: 'underline', onclick: function () { Dialog.close(); m.route.set('/picture-book/' + pb2BookObjectId + '/style'); } }, 'Set the book style')
             ]) : null,
             m('p', 'Render every scene whose image is missing or stale. Current and pinned scenes are reused.'),
@@ -1715,6 +1748,18 @@ const pb2RenderDialogBody = {
     }
 };
 
+// {view} so Start follows the style read that the dialog's open re-runs (a 409 also locks it).
+const pb2RenderDialogActions = {
+    view: function () {
+        return [
+            { label: 'Cancel', icon: 'close', attrs: { 'data-testid': 'pb2-render-dialog-cancel' }, onclick: function () { Dialog.close(); } },
+            { label: 'Start', icon: 'play_arrow', primary: true, disabled: pb2StyleMissing() || pb2Submitting,
+                attrs: { 'data-testid': 'pb2-render-all-start', title: pb2StyleMissing() ? STYLE_REQUIRED_REASON : undefined },
+                onclick: function () { pb2SubmitRenderAll(); } }
+        ];
+    }
+};
+
 function pb2OpenRenderDialog() {
     if (!pb2BookObjectId) return;
     pb2LoadStyleDescribed(pb2BookObjectId);
@@ -1722,10 +1767,7 @@ function pb2OpenRenderDialog() {
         title: 'Render Picture Book',
         size: 'sm',
         content: pb2RenderDialogBody,
-        actions: [
-            { label: 'Cancel', icon: 'close', attrs: { 'data-testid': 'pb2-render-dialog-cancel' }, onclick: function () { Dialog.close(); } },
-            { label: 'Start', icon: 'play_arrow', primary: true, attrs: { 'data-testid': 'pb2-render-all-start' }, onclick: function () { pb2SubmitRenderAll(); } }
-        ]
+        actions: pb2RenderDialogActions
     });
 }
 
@@ -1760,7 +1802,7 @@ async function pb2LoadPlan() {
 }
 
 async function pb2GenerateFromPlan() {
-    if (pb2Plan.rendering || pb2Plan.loading || !pb2Plan.bookId || !pb2Plan.sceneOid) return;
+    if (pb2Plan.rendering || pb2Plan.loading || !pb2Plan.bookId || !pb2Plan.sceneOid || pb2StyleMissing()) return;
     let bookId = pb2Plan.bookId;
     pb2Plan.rendering = true;
     pb2Plan.error = null;
@@ -1773,6 +1815,7 @@ async function pb2GenerateFromPlan() {
         await pb2RefreshPages(bookId);
     } catch (e) {
         pb2Plan.rendering = false;
+        pb2NoteStyleRefusal(e);
         pb2Plan.error = (e && e.message) || 'Could not render the scene';
         if (!pb2Plan.open) page.toast('error', pb2Plan.error);
         m.redraw();
@@ -1784,6 +1827,8 @@ const pb2PlanDialogBody = {
         let p = pb2Plan;
         let plan = p.plan;
         return m('div', { 'data-testid': 'pb2-plan-dialog', class: 'space-y-3 text-sm' }, [
+            pb2StyleMissing() ? m('div', { class: 'px-3 py-2 rounded bg-amber-50 dark:bg-amber-900/20' },
+                renderPb2NeedsStyle('pb2-plan-needs-style', true)) : null,
             m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
                 m('span', { class: 'text-xs text-gray-500' }, p.sceneTitle || 'Scene'),
                 m('span', { class: 'flex-1' }),
@@ -1827,7 +1872,9 @@ const pb2PlanDialogActions = {
     view: function () {
         return [
             { label: 'Close', icon: 'close', attrs: { 'data-testid': 'pb2-plan-dialog-close' }, onclick: function () { Dialog.close(); } },
-            { label: pb2Plan.rendering ? 'Generating…' : 'Generate', icon: 'brush', primary: true, disabled: pb2Plan.rendering || pb2Plan.loading || !pb2Plan.plan, attrs: { 'data-testid': 'pb2-plan-generate' }, onclick: pb2GenerateFromPlan }
+            { label: pb2Plan.rendering ? 'Generating…' : 'Generate', icon: 'brush', primary: true,
+                disabled: pb2Plan.rendering || pb2Plan.loading || !pb2Plan.plan || pb2StyleMissing(),
+                attrs: { 'data-testid': 'pb2-plan-generate', title: pb2StyleMissing() ? STYLE_REQUIRED_REASON : undefined }, onclick: pb2GenerateFromPlan }
         ];
     }
 };
@@ -1930,7 +1977,7 @@ export function renderPb2RunProgress() {
 }
 
 export function __pb2V3StateForTest() {
-    return { pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations, pb2ChatConfig, pb2ChatConfigResolving, pb2Fullscreen, pb2Exporting };
+    return { pb2AutoApprove, pb2AutoApproveSaving, pb2Run, pb2ResumeRun, pb2Submitting, pb2CurrentPage, pb2Pages, pb2BookObjectId, pb2SceneDegradations, pb2ChatConfig, pb2ChatConfigResolving, pb2Fullscreen, pb2Exporting, pb2StyleDescribed, pb2IsChapBook };
 }
 export function __setPb2V3StateForTest(patch) {
     patch = patch || {};
@@ -1950,8 +1997,11 @@ export function __setPb2V3StateForTest(patch) {
     if ('pb2Fullscreen' in patch) pb2Fullscreen = !!patch.pb2Fullscreen;
     if ('pb2Exporting' in patch) pb2Exporting = !!patch.pb2Exporting;
     if ('pb2Covers' in patch) pb2Covers = patch.pb2Covers || null;
+    if ('pb2StyleDescribed' in patch) pb2StyleDescribed = patch.pb2StyleDescribed;
+    if ('pb2IsChapBook' in patch) pb2IsChapBook = !!patch.pb2IsChapBook;
 }
-export { pb2SubmitRenderScene as __pb2SubmitRenderSceneForTest, pb2SubmitRegenBackground as __pb2SubmitRegenBackgroundForTest,
+export { pb2SubmitRenderScene as __pb2SubmitRenderSceneForTest, pb2OpenRenderDialog as __pb2OpenRenderDialogForTest,
+    pb2GenerateFromPlan as __pb2GenerateFromPlanForTest, pb2SubmitRegenBackground as __pb2SubmitRegenBackgroundForTest,
     pb2SubmitRenderAll as __pb2SubmitRenderAllForTest,
     pb2ResumeInterrupted as __pb2ResumeInterruptedForTest, pb2ReattachRun as __pb2ReattachRunForTest,
     pb2ToggleAutoApprove as __pb2ToggleAutoApproveForTest, pb2StopWatching as __pb2StopWatchingForTest,
@@ -2088,7 +2138,7 @@ async function pb2SearchOne(type, objectId, fields) {
 }
 
 async function loadPb2BookContext(pb2ObjId) {
-    let book = await pb2SearchOne('olio.pb.book', pb2ObjId, ['id', 'objectId', 'name', 'world', 'series']);
+    let book = await pb2SearchOne('olio.pb.book', pb2ObjId, ['id', 'objectId', 'name', 'world', 'series', 'bookType']);
     if (book && book.world && book.world.objectId) {
         // A projected read returns the world one level deep; its basis (the universe) needs its own read.
         let world = await pb2SearchOne('olio.world', book.world.objectId, ['id', 'objectId', 'name', 'basis']);
@@ -2109,6 +2159,8 @@ async function loadPb2Pages(pb2ObjId) {
     pb2SceneTotal = null;
     pb2Health = null;
     pb2Covers = null;
+    pb2StyleDescribed = null;
+    pb2IsChapBook = false;
     pb2CurrentPage = 0;
     pb2BookName = pb2NameHint() || 'Loading...';
     // 226 a: a ChapBook opens with the chat config its own screens carry (null for a PictureBook), else the
@@ -2116,10 +2168,14 @@ async function loadPb2Pages(pb2ObjId) {
     pb2ChatConfig = carriedBookChatConfig(pb2ObjId);
     pb2ChatConfigResolving = false;
     pb2EnsureChatConfigDefault();
+    // The scene-render gate (Render, Re-render, Plan & generate, Regenerate background) needs the style up front,
+    // not only when the render dialog opens. Not awaited: an unreadable style never holds up the pages.
+    pb2LoadStyleDescribed(pb2ObjId);
     m.redraw();
     try {
         let bookFull = await loadPb2BookContext(pb2ObjId);
         am7olio.setCurrentBook(bookFull || null);
+        if (pb2ObjId === pb2BookObjectId) pb2IsChapBook = !!(bookFull && isChapBookType(bookFull.bookType));
         if (bookFull) {
             pb2BookName = bookFull.name || 'Untitled';
         } else {
@@ -2216,7 +2272,7 @@ function renderPb2SeriesArtPage(entry) {
     }, [
         imgUrl ? m('img', { 'data-pb2-series-art-image': true, src: imgUrl, class: 'absolute inset-0 w-full h-full ' + lay.image + ' opacity-100' }) : null,
         m('div', { class: 'relative z-10 text-center ' + lay.block }, [
-            m('div', { class: 'text-blue-200 uppercase tracking-widest ' + lay.kicker }, 'PB2 · Series'),
+            m('div', { class: 'text-blue-200 uppercase tracking-widest ' + lay.kicker }, 'Picture Book · Series'),
             m('h1', { 'data-pb2-series-art-title': true, class: lay.title, style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;' }, pb2SeriesName || pb2BookName || 'Series'),
             m('div', { class: lay.meta }, [
                 m('p', { 'data-pb2-series-art-chapter': true, class: lay.count }, pb2BookName || 'Untitled'),
@@ -2254,7 +2310,7 @@ function renderPb2Cover() {
             class: 'absolute inset-0 w-full h-full ' + lay.image + ' ' + (coverRef ? 'opacity-100' : 'opacity-40')
         }) : null,
         m('div', { class: 'relative z-10 text-center ' + lay.block }, [
-            m('div', { class: 'text-purple-300 uppercase tracking-widest ' + lay.kicker }, 'PB2 · Workflow Book'),
+            m('div', { class: 'text-purple-300 uppercase tracking-widest ' + lay.kicker }, 'Picture Book'),
             m('h1', {
                 class: lay.title,
                 style: 'text-shadow: 0 2px 8px rgba(0,0,0,0.7); font-family: Georgia, serif;'
@@ -2357,7 +2413,10 @@ export function renderPb2ScenePage() {
     let imgUrl = pb2ImageUrl(scene);
     let text = scene.poemStanza || scene.blurb || scene.summary || '';
     let chip = sceneChip(scene);
-    let watching = !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error);
+    let watching = pb2Watching();
+    // Render / Re-render and Regenerate background are refused without a book style (server 409); Plan & generate
+    // stays open for the preview, its Generate is gated in the dialog.
+    let gate = pb2RenderGate();
     return m('div', { class: 'flex flex-col items-center' }, [
         // The image (approved or not) is always drawn; the stale badge overlays it and never replaces it.
         m('div', { class: 'relative w-full mb-4' }, [
@@ -2395,8 +2454,8 @@ export function renderPb2ScenePage() {
             m('button', {
                 'data-testid': 'pb2-scene-render',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
-                disabled: pb2Submitting || watching,
-                title: watching ? 'A render is already running' : (chip === 'stale' ? 'Re-render this scene' : 'Render this scene'),
+                disabled: !gate.enabled,
+                title: gate.needsStyle || watching ? gate.reason : (chip === 'stale' ? 'Re-render this scene' : 'Render this scene'),
                 onclick: function () { pb2SubmitRenderScene(scene); }
             }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'brush'), chip === 'stale' || imgUrl ? 'Re-render' : 'Render']),
             // §24 I-8: background-only regenerate — only offered when the scene has an image to regenerate the background of
@@ -2404,8 +2463,8 @@ export function renderPb2ScenePage() {
             imgUrl ? m('button', {
                 'data-testid': 'pb2-scene-regen-background',
                 class: 'flex items-center gap-1 text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed',
-                disabled: pb2Submitting || watching,
-                title: watching ? 'A render is already running' : 'Re-render the background only; each actor keeps the seed it was rendered with',
+                disabled: !gate.enabled,
+                title: gate.needsStyle || watching ? gate.reason : 'Re-render the background only; each actor keeps the seed it was rendered with',
                 onclick: function () { pb2SubmitRegenBackground(scene); }
             }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'landscape'), 'Regenerate background']) : null,
             m('button', {
@@ -2416,6 +2475,7 @@ export function renderPb2ScenePage() {
                 onclick: function () { pb2OpenPlanDialog(scene); }
             }, [m('span', { class: 'material-symbols-outlined text-sm' }, 'route'), 'Plan & generate'])
         ]),
+        gate.needsStyle ? m('div', { class: 'mb-3' }, renderPb2NeedsStyle('pb2-scene-needs-style')) : null,
 
         renderPb2TruncatedLines(scene),
 
@@ -2438,128 +2498,178 @@ function pb2PageLabel(i) {
     return 'Page ' + (i - front.length + 1);
 }
 
+/**
+ * The reader's "Optional tools" overflow (components/contextMenu.js items). Everything here is optional for
+ * rendering a book; Style and Characters (the setup group) and Render stay on the toolbar. The chat config and
+ * auto-approve live here too: both have working defaults (the library chat config, auto-approve off) and the
+ * render dialog repeats the auto-approve toggle. Every item keeps the data-testid / title its old toolbar
+ * control had. Exported for Vitest.
+ */
+export function pb2OverflowItems() {
+    let id = pb2BookObjectId;
+    if (!id) return [];
+    function go(suffix) { return function () { m.route.set('/picture-book/' + id + suffix); }; }
+    return [
+        { label: 'Locations', icon: 'location_on', attrs: { 'data-testid': 'pb2-locations-link', title: 'Locations library (settings, variants, renders)' }, action: go('/locations') },
+        { label: 'Composition board', icon: 'view_in_ar', attrs: { 'data-testid': 'pb2-compose-link', title: 'Composition board (camera, actors, elements, wardrobe)' }, action: go('/compose') },
+        { label: 'Cover art', icon: 'menu_book', attrs: { 'data-testid': 'pb2-cover-link', title: 'Cover art (cover, title page, chapter opener, series art)' }, action: go('/cover') },
+        { label: 'Review queue', icon: 'rate_review', attrs: { 'data-testid': 'pb2-review-link', title: 'Review queue' }, action: go('/review') },
+        { label: 'Workflow canvas', icon: 'account_tree', attrs: { 'data-testid': 'pb2-workflow-link', title: 'Open Workflow Canvas' }, action: go('/workflow') },
+        { divider: true },
+        { label: 'Chat config: ' + chatConfigLabel(pb2ChatConfig, pb2ChatConfigResolving), icon: 'smart_toy',
+            attrs: { 'data-testid': 'pb2-chat-config', title: 'The chat config every render from this reader sends to the LLM' },
+            action: function () { openChatConfigPicker(function (ref) { pb2ChatConfig = ref; m.redraw(); }); } },
+        // No icon: the item's text is exactly the old badge's ("Auto-approve: ON|OFF").
+        { label: 'Auto-approve: ' + (pb2AutoApprove ? 'ON' : 'OFF'), disabled: pb2AutoApproveSaving,
+            attrs: { 'data-testid': 'pb2-auto-approve-badge', 'data-on': pb2AutoApprove ? '1' : '0',
+                title: 'Auto-approve rendered results' + (pb2AutoApprove ? ': on (results are approved and pinned). Click to turn off' : ': off (results wait in the review queue). Click to turn on') },
+            action: function () { pb2ToggleAutoApprove(!pb2AutoApprove); } }
+    ];
+}
+
+/** Open the overflow under its button (keyboard activation has no pointer position). */
+function pb2OpenToolsMenu(e) {
+    let r = e && e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
+    let at = r ? { clientX: Math.max(8, r.right - 180), clientY: r.bottom + 4 } : { clientX: e ? e.clientX : 0, clientY: e ? e.clientY : 0 };
+    contextMenu.show({
+        preventDefault: function () { if (e && e.preventDefault) e.preventDefault(); },
+        stopPropagation: function () { if (e && e.stopPropagation) e.stopPropagation(); },
+        clientX: at.clientX, clientY: at.clientY
+    }, pb2OverflowItems());
+}
+
+/** The Style button's mark: 'ok' (described), 'attention' (no description), 'unknown' (not read). */
+export function pb2StyleMark(described) {
+    return described === true ? 'ok' : described === false ? 'attention' : 'unknown';
+}
+
+const TB_ICON = 'text-gray-500 hover:text-purple-600 disabled:opacity-30';
+const TB_LABELED = 'flex items-center gap-1 text-xs px-2 py-1 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700';
+
+/**
+ * Reader toolbar, left to right: reading controls (back, prev, title/page, next); the setup group (Style with
+ * its ✓ / needs-attention mark, Characters); the labeled primary Render (disabled with its reason until the
+ * book has a style, or while a run is in progress); the "Optional tools" overflow; Export, Fullscreen, Delete.
+ * Each group carries data-pb2-toolbar-group so the grouping is testable.
+ */
 export function renderPb2Header() {
     let total = pb2TotalPages();
     let pageLabel = pb2SceneNumber() <= 0
         ? pb2PageLabel(pb2CurrentPage)
         : 'Page ' + pb2SceneNumber() + ' of ' + pb2Pages.length;
     let v3 = !!pb2BookObjectId;
-    let watching = !!(pb2Run && !(pb2Run.job && pb2Run.job.terminal) && !pb2Run.error);
-    return m('div', { class: 'flex items-center gap-3 mb-4' }, [
-        // Back is hidden in fullscreen, as in ReaderShell (Escape or the fullscreen toggle leaves it).
-        pb2Fullscreen ? null : m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-            title: 'Back to book list',
-            onclick: function () { m.route.set('/picture-book'); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
+    let gate = pb2RenderGate();
+    let mark = pb2StyleMark(pb2IsChapBook ? null : pb2StyleDescribed);
+    return m('div', { class: 'flex items-center gap-3 mb-4 flex-wrap' }, [
+        // ── Reading controls ──
+        m('div', { 'data-pb2-toolbar-group': 'reading', class: 'flex items-center gap-3 flex-1 min-w-0' }, [
+            // Back is hidden in fullscreen, as in ReaderShell (Escape or the fullscreen toggle leaves it).
+            pb2Fullscreen ? null : m('button', {
+                class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
+                title: 'Back to book list',
+                onclick: function () { m.route.set('/picture-book'); }
+            }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
 
-        m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
-            disabled: pb2CurrentPage === 0,
-            onclick: function () { pb2GoToPage(pb2CurrentPage - 1); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'chevron_left')),
+            m('button', {
+                class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
+                disabled: pb2CurrentPage === 0,
+                onclick: function () { pb2GoToPage(pb2CurrentPage - 1); }
+            }, m('span', { class: 'material-symbols-outlined' }, 'chevron_left')),
 
-        m('div', { class: 'flex-1 flex flex-col items-center gap-1' }, [
-            m('div', [
-                pb2SeriesName ? m('span', { class: 'text-gray-500 text-xs mr-2' }, pb2SeriesName + ' ·') : null,
-                m('span', { 'data-pb2-book-name': true, class: 'font-semibold text-sm' }, pb2BookName && pb2BookName !== 'Loading...' ? pb2BookName : 'Picture Book'),
-                m('span', { class: 'text-gray-400 text-xs ml-2' }, pageLabel)
+            m('div', { class: 'flex-1 flex flex-col items-center gap-1 min-w-0' }, [
+                m('div', [
+                    pb2SeriesName ? m('span', { class: 'text-gray-500 text-xs mr-2' }, pb2SeriesName + ' ·') : null,
+                    m('span', { 'data-pb2-book-name': true, class: 'font-semibold text-sm' }, pb2BookName && pb2BookName !== 'Loading...' ? pb2BookName : 'Picture Book'),
+                    m('span', { class: 'text-gray-400 text-xs ml-2' }, pageLabel)
+                ]),
+                renderPb2ChapterSelect()
             ]),
-            renderPb2ChapterSelect()
+
+            m('button', {
+                class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
+                disabled: pb2CurrentPage >= total - 1,
+                onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
+            }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right'))
         ]),
 
-        m('button', {
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
-            disabled: pb2CurrentPage >= total - 1,
-            onclick: function () { pb2GoToPage(pb2CurrentPage + 1); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'chevron_right')),
+        // ── Setup: what a book needs before it renders ──
+        v3 ? m('div', { 'data-pb2-toolbar-group': 'setup', class: 'flex items-center gap-2' }, [
+            m('button', {
+                'data-testid': 'pb2-style-link',
+                'data-style-state': mark,
+                class: TB_LABELED + (mark === 'attention' ? ' border-amber-400 text-amber-800 dark:text-amber-200' : ''),
+                title: mark === 'attention'
+                    ? 'Book style: required — set a style description before rendering'
+                    : 'Book style (render settings, page format, models)',
+                onclick: pb2OpenStyle
+            }, [
+                m('span', { class: 'material-symbols-outlined text-lg' }, 'palette'),
+                'Style',
+                mark === 'unknown' ? null : m('span', {
+                    'data-testid': 'pb2-style-status',
+                    'data-state': mark,
+                    class: 'material-symbols-outlined text-sm ' + (mark === 'ok' ? 'text-green-600' : 'text-amber-500'),
+                    title: mark === 'ok' ? 'The book has a style' : 'Needs attention: no style description'
+                }, mark === 'ok' ? 'check_circle' : 'error')
+            ]),
+            // Characters — as on the book list rows. The Edit pencil is not offered here: the wizard would
+            // only hand straight back to this reader (P7-3 / P10-1). A ChapBook has no characters (its extraction
+            // creates none and it has no character management), so the control is not offered on one.
+            pb2IsChapBook ? null : renderPb2CharactersButton({ objectId: pb2BookObjectId }, TB_LABELED, 'Characters')
+        ]) : null,
 
-        // With a book id: chat config (226 a), auto-approve badge, Render (async run), Review queue link, the V3 tool routes.
-        v3 ? renderPb2ChatConfigControl() : null,
-        v3 ? m('span', {
-            'data-testid': 'pb2-auto-approve-badge',
-            'data-on': pb2AutoApprove ? '1' : '0',
-            class: 'text-xs px-2 py-0.5 rounded-full ' + (pb2AutoApprove
-                ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'
-                : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'),
-            title: 'Auto-approve rendered results' + (pb2AutoApprove ? ': on (results are approved and pinned)' : ': off (results wait in the review queue)')
-        }, 'Auto-approve: ' + (pb2AutoApprove ? 'ON' : 'OFF')) : null,
-        v3 ? m('button', {
-            'data-testid': 'pb2-render-all',
-            class: 'text-gray-500 hover:text-purple-600 disabled:opacity-30',
-            disabled: pb2Submitting || watching,
-            title: watching ? 'A render is already running' : 'Render all scenes',
-            onclick: pb2OpenRenderDialog
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'brush')) : null,
-        v3 ? m('button', {
-            'data-testid': 'pb2-review-link',
-            class: 'text-gray-500 hover:text-purple-600',
-            title: 'Review queue',
-            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/review'); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'rate_review')) : null,
-        v3 ? m('button', {
-            'data-testid': 'pb2-style-link',
-            class: 'text-gray-500 hover:text-purple-600',
-            title: 'Book style (render settings, page format, models)',
-            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/style'); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'palette')) : null,
-        v3 ? m('button', {
-            'data-testid': 'pb2-locations-link',
-            class: 'text-gray-500 hover:text-purple-600',
-            title: 'Locations library (settings, variants, renders)',
-            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/locations'); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'location_on')) : null,
-        v3 ? m('button', {
-            'data-testid': 'pb2-compose-link',
-            class: 'text-gray-500 hover:text-purple-600',
-            title: 'Composition board (camera, actors, elements, wardrobe)',
-            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/compose'); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'view_in_ar')) : null,
-        v3 ? m('button', {
-            'data-testid': 'pb2-cover-link',
-            class: 'text-gray-500 hover:text-purple-600',
-            title: 'Cover art (cover, title page, chapter opener, series art)',
-            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/cover'); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'menu_book')) : null,
+        // ── Primary: Render (async run) ──
+        v3 ? m('div', { 'data-pb2-toolbar-group': 'render', class: 'flex items-center gap-2' }, [
+            m('button', {
+                'data-testid': 'pb2-render-all',
+                class: 'flex items-center gap-1 text-sm px-3 py-1 rounded text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed',
+                disabled: !gate.enabled,
+                title: gate.enabled ? 'Render all scenes' : gate.reason,
+                onclick: pb2OpenRenderDialog
+            }, [m('span', { class: 'material-symbols-outlined text-lg' }, 'brush'), 'Render']),
+            gate.needsStyle ? renderPb2NeedsStyle('pb2-render-needs-style') : null
+        ]) : null,
 
-        // Characters — as on the book list rows. The Edit pencil is not offered here: the wizard would
-        // only hand straight back to this reader (P7-3 / P10-1).
-        pb2BookObjectId ? renderPb2CharactersButton(
-            { objectId: pb2BookObjectId }, 'text-gray-500 hover:text-purple-600') : null,
+        // ── Optional tools (overflow) ──
+        v3 ? m('div', { 'data-pb2-toolbar-group': 'tools', class: 'flex items-center' }, [
+            m('button', {
+                'data-testid': 'pb2-tools-menu',
+                class: TB_LABELED,
+                title: 'Optional tools: locations, composition board, cover art, review queue, workflow canvas, chat config, auto-approve',
+                'aria-haspopup': 'menu',
+                onclick: pb2OpenToolsMenu
+            }, [m('span', { class: 'material-symbols-outlined text-lg' }, 'more_horiz'), 'Tools'])
+        ]) : null,
 
-        // Open workflow canvas — always visible for PB2 books
-        pb2BookObjectId ? m('button', {
-            class: 'text-gray-500 hover:text-purple-600',
-            title: 'Open Workflow Canvas',
-            onclick: function () { m.route.set('/picture-book/' + pb2BookObjectId + '/workflow'); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'account_tree')) : null,
+        // ── Right: export, fullscreen, delete ──
+        m('div', { 'data-pb2-toolbar-group': 'right', class: 'flex items-center gap-3' }, [
+            // UAT-2: export + fullscreen, mirroring ReaderShell's header contract (same icons and titles).
+            m('button', {
+                'data-testid': 'pb2-export',
+                class: TB_ICON,
+                title: 'Export as HTML',
+                disabled: pb2Exporting || !pb2Pages.length,
+                onclick: pb2ExportBook
+            }, m('span', { class: 'material-symbols-outlined text-lg' }, pb2Exporting ? 'hourglass_empty' : 'download')),
+            m('button', {
+                'data-testid': 'pb2-fullscreen',
+                class: 'text-gray-500 hover:text-purple-600',
+                title: pb2Fullscreen ? 'Exit fullscreen' : 'Fullscreen',
+                onclick: function () { pb2Fullscreen = !pb2Fullscreen; m.redraw(); }
+            }, m('span', { class: 'material-symbols-outlined text-lg' }, pb2Fullscreen ? 'fullscreen_exit' : 'fullscreen')),
 
-        // UAT-2: export + fullscreen, mirroring ReaderShell's header contract (same icons and titles).
-        m('button', {
-            'data-testid': 'pb2-export',
-            class: 'text-gray-500 hover:text-purple-600 disabled:opacity-30',
-            title: 'Export as HTML',
-            disabled: pb2Exporting || !pb2Pages.length,
-            onclick: pb2ExportBook
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, pb2Exporting ? 'hourglass_empty' : 'download')),
-        m('button', {
-            'data-testid': 'pb2-fullscreen',
-            class: 'text-gray-500 hover:text-purple-600',
-            title: pb2Fullscreen ? 'Exit fullscreen' : 'Fullscreen',
-            onclick: function () { pb2Fullscreen = !pb2Fullscreen; m.redraw(); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, pb2Fullscreen ? 'fullscreen_exit' : 'fullscreen')),
-
-        // Delete button — always available
-        pb2BookObjectId ? m('button', {
-            class: 'text-red-400 hover:text-red-600',
-            title: 'Delete picture book',
-            onclick: async function () {
-                let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, images, workflow, world and roles will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
-                if (!ok) return;
-                let gone = await performPbDelete(pb2BookObjectId, null);
-                if (gone) m.route.set('/picture-book');
-            }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null
+            // Delete button — always available
+            pb2BookObjectId ? m('button', {
+                class: 'text-red-400 hover:text-red-600',
+                title: 'Delete picture book',
+                onclick: async function () {
+                    let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book? Scenes, characters, images, workflow, world and roles will be removed.', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
+                    if (!ok) return;
+                    let gone = await performPbDelete(pb2BookObjectId, null);
+                    if (gone) m.route.set('/picture-book');
+                }
+            }, m('span', { class: 'material-symbols-outlined text-lg' }, 'delete')) : null
+        ])
     ]);
 }
 

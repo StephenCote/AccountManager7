@@ -35,6 +35,7 @@ import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, resolveChatRoute, ensureChatConfig, ensurePath, createObject } from './helpers/api.js';
 import { REST, PB_REST, restLoginShared, loginAsSharedUser } from './helpers/chapbook.js';
+import { openReaderTools, closeReaderTools, clickReaderTool, completeWizardStyleStep } from './helpers/pbReader.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = '[p90-gate]';
@@ -304,9 +305,9 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             // so the fresh-user shape is the one to expect — the list is asserted after the import below.
             await page.goto('/#!/picture-book', { timeout: T.ui });
             await expect(page.locator('[data-pb-health-check]')).toBeVisible({ timeout: T.ui });
-            // The list loads after the page paints ("Loading PB2 books..." while pb2Loading); count only
+            // The list loads after the page paints ("Loading picture books..." while pb2Loading); count only
             // once that is gone, or a leftover book from the previous run is reported as "absent" (run 22).
-            await expect(page.getByText('Loading PB2 books...')).toHaveCount(0, { timeout: T.ui });
+            await expect(page.getByText('Loading picture books...')).toHaveCount(0, { timeout: T.ui });
             const listBefore = await page.locator('[data-pb2-book-list]').count();
             const rowsBefore = await page.locator('[data-pb2-book]').count();
             await page.locator('[data-pb-health-check]').click();
@@ -444,7 +445,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await shot(page, '02c-wizard-characters');
             expect(charCount, 'characters created (empty state: ' + (await empty.count()) + ')').toBeGreaterThan(0);
 
-            await page.locator('button:has-text("Continue to Images")').click();
+            await completeWizardStyleStep(page); // step 3 → step 4 Style (required) → reader
             await expect.poll(() => page.evaluate(() => location.hash), { timeout: 60000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);
             const bookOid = (await page.evaluate(() => location.hash)).replace(/^#!\/picture-book\/v2\//, '');
             await expect(page.locator('[data-pb2-book-name]')).toBeVisible({ timeout: T.ui });
@@ -506,9 +507,13 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await expect(cover).toContainText('of ' + fx.scenes.length + ' scene');
             const coverText = (await cover.textContent()) || '';
             const chapterSelect = await page.locator('[data-pb2-chapter-select]').count();
-            for (const id of ['pb2-style-link', 'pb2-locations-link', 'pb2-compose-link', 'pb2-review-link', 'pb2-render-all']) await expect(page.getByTestId(id), id).toBeVisible();
-            await expect(page.locator('button[title="Open Workflow Canvas"]')).toBeVisible();
+            for (const id of ['pb2-style-link', 'pb2-render-all', 'pb2-tools-menu']) await expect(page.getByTestId(id), id).toBeVisible();
             await expect(page.locator('[data-pb2-characters="' + fx.book.objectId + '"]')).toBeVisible();
+            // The optional tools are items of the Tools overflow (helpers/pbReader.js).
+            await openReaderTools(page);
+            for (const id of ['pb2-locations-link', 'pb2-compose-link', 'pb2-review-link']) await expect(page.getByTestId(id), id).toBeVisible();
+            await expect(page.locator('button[title="Open Workflow Canvas"]')).toBeVisible();
+            await closeReaderTools(page);
             await openFirstPage(page);
             await expect(page.locator('h2', { hasText: fx.scene0.title || 'Scene' }).first()).toBeVisible({ timeout: T.ui });
             // 213 e / 219 f: no scene has an image yet; the reader shows the placeholder, not pb2-scene-image.
@@ -681,7 +686,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
                     + ' locationPass ' + JSON.stringify(cr.locationPass || null).slice(0, 120);
             }
             await openReader(page, fx.book.objectId);
-            await page.getByTestId('pb2-locations-link').click();
+            await clickReaderTool(page, 'pb2-locations-link');
             await expect(page.getByTestId('pb-loc-count')).toBeVisible({ timeout: T.ui });
             const countBefore = ((await page.getByTestId('pb-loc-count').textContent()) || '').trim();
             // The real button first, with whatever the header's "Chat Config" resolved to on its own (267: the

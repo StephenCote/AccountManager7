@@ -432,6 +432,9 @@ public class TestPbNewBookRender extends BaseTest {
 		f.book = PbBookUtil.createBook(f.owner, dataPath, f.slug, "New-book render " + f.slug);
 		assertNotNull("createBook", f.book);
 		f.bookOid = f.book.get(FieldNames.FIELD_OBJECT_ID);
+		/// A scene render requires a described style (PbServiceFacade.STYLE_REQUIRED_MESSAGE); the empty book only reaches
+		/// the no-scenes 409, which fires first, so it gets one too without changing what it proves.
+		assertNotNull("book style", PbRenderStyleFixture.describe(f.owner, f.bookOid));
 		for(int i = 0; i < sceneCount; i++) {
 			BaseRecord scene = PbBookUtil.createScene(f.owner, f.book, i, "Scene " + i, PbBookUtil.bookGroupPath(f.slug));
 			assertNotNull("scene " + i, scene);
