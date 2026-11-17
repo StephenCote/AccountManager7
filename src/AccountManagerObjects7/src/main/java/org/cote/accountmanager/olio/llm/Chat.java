@@ -1016,6 +1016,18 @@ public class Chat {
 		/// Stash the incoming message for Layer 3 semantic recall (used in retrieveRelevantMemories)
 		pendingUserMessage = message;
 
+		/// Wardrobe tokens in the user's message (${outfit...}, ${dress...}, ${give...}) are applied on receipt,
+		/// BEFORE the prompt is rebuilt, so this turn's character descriptions already show the change.
+		/// aiDocs/ChatWardrobeTokensDesign.md §3.2.
+		message = applyWardrobeTokens(message, true);
+		/// What the assistant's tokens did to the user character lands in the user's own message
+		if (message != null && message.length() > 0) {
+			String floated = takeWardrobePending(req, "user");
+			if (!floated.isEmpty()) {
+				message = floated + message;
+			}
+		}
+
 		/// Rebuild the system prompt (and intros) from current state each turn.
 		/// This ensures dynamic tokens (memory, scene, episode, etc.) are always fresh.
 		refreshSystemPrompt(req);
@@ -3283,6 +3295,47 @@ public class Chat {
 		return truncated + "...";
 	}
 
+	/// Apply wardrobe tokens in one message. fromUser: the user character is the speaker ("me"), the system
+	/// character is "you"; otherwise the reverse. After a change the in-memory chatConfig characters are replaced
+	/// by fresh full records so the next refreshSystemPrompt describes the new outfits.
+	public String applyWardrobeTokens(String content, boolean fromUser) {
+		if (chatConfig == null || user == null || !ChatWardrobeTokenUtil.hasTokens(content)) {
+			return content;
+		}
+		BaseRecord sys = chatConfig.get("systemCharacter");
+		BaseRecord usr = chatConfig.get("userCharacter");
+		if (sys == null || usr == null) {
+			return content;
+		}
+		ChatWardrobeTokenUtil.Result r = ChatWardrobeTokenUtil.process(user, fromUser ? usr : sys, fromUser ? sys : usr, content, fromUser ? "user" : "assistant");
+		if (r.isChanged()) {
+			chatConfig.setValue("userCharacter", fromUser ? r.getSpeaker() : r.getOther());
+			chatConfig.setValue("systemCharacter", fromUser ? r.getOther() : r.getSpeaker());
+		}
+		if (r.getApplied() > 0 || r.getFailed() > 0) {
+			logger.info("[WARDROBE] " + (fromUser ? "user" : "assistant") + " message: applied=" + r.getApplied() + " failed=" + r.getFailed());
+		}
+		return r.getContent();
+	}
+
+	/// Floating wardrobe results (ChatWardrobeTokenUtil.takePending): results of the OTHER character's
+	/// cross-character tokens, addressed to targetRole, are removed from the stored messages that carried them
+	/// and returned as <private>[wardrobe] ...</private> notes for targetRole's own new message.
+	public String takeWardrobePending(OpenAIRequest req, String targetRole) {
+		if (req == null) return "";
+		List<BaseRecord> raw = req.get("messages");
+		if (raw == null || raw.isEmpty()) return "";
+		List<String> contents = new ArrayList<>();
+		boolean any = false;
+		for (BaseRecord m : raw) {
+			String c = m.get("content");
+			contents.add(c);
+			if (ChatWardrobeTokenUtil.hasPending(c)) any = true;
+		}
+		if (!any) return "";
+		return ChatWardrobeTokenUtil.takePending(contents, targetRole, (i, c) -> raw.get(i).setValue("content", c));
+	}
+
 	public void handleResponse(OpenAIRequest req, OpenAIResponse rep, boolean emitResponse) {
 		List<BaseRecord> msgs = new ArrayList<>();
 		BaseRecord msg = rep.get("message");
@@ -3296,6 +3349,21 @@ public class Chat {
 			msgs.add(msg);
 		}
 		for (BaseRecord m : msgs) {
+			/// Wardrobe tokens in the reply are applied once, here, before the reply enters history and is saved
+			/// (both the buffered path and ChatListener's stream completion come through handleResponse).
+			String raw = m.get("content");
+			String resolved = raw;
+			if (ChatWardrobeTokenUtil.hasTokens(raw)) {
+				resolved = applyWardrobeTokens(raw, false);
+			}
+			/// What the user's tokens did to the system character lands in the system character's own reply
+			String floated = takeWardrobePending(req, "assistant");
+			if (!floated.isEmpty() && resolved != null) {
+				resolved = floated + resolved;
+			}
+			if (resolved != null && !resolved.equals(raw)) {
+				m.setValue("content", resolved);
+			}
 			if (includeMessageHistory) {
 				req.addMessage(new OpenAIMessage(m));
 			}
@@ -4563,6 +4631,17 @@ public class Chat {
 		/// temperature for this turn only. Detection uses pure local
 		/// string math via ConversationQualityMetrics — no LLM cost.
 		maybeInjectEchoSteering(wireReq);
+		/// Floating wardrobe results: "this is happening to you now" for the assistant; none of the user's.
+		/// Wire copy only — the stored session keeps the pending blocks until takeWardrobePending moves them.
+		List<BaseRecord> wireMsgs = wireReq.get("messages");
+		if (wireMsgs != null) {
+			for (BaseRecord wm : wireMsgs) {
+				String wc = wm.get("content");
+				if (ChatWardrobeTokenUtil.hasPending(wc)) {
+					wm.setValue("content", ChatWardrobeTokenUtil.filterPendingForWire(wc, "assistant"));
+				}
+			}
+		}
 		String ser = JSONUtil.exportObject(wireReq, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 		/// Native Ollama ignores sampling/context params outside `options` — see
 		/// ChatUtil.nestNativeOllamaOptions. Must run after maybeInjectEchoSteering.

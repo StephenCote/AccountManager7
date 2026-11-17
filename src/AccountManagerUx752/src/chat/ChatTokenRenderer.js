@@ -8,6 +8,7 @@
  * those globals are absent, e.g. in a non-browser test environment.
  */
 import m from 'mithril';
+import { processWardrobeTokens, stripWardrobeTokens } from './wardrobeTokens.js';
 import { LLMConnector } from './LLMConnector.js';
 import { am7imageTokens } from './imageTokens.js';
 import { am7audioTokens } from './audioTokens.js';
@@ -72,6 +73,11 @@ const ChatTokenRenderer = {
      * With am7imageTokens loaded: resolves to <img> elements with cached URLs.
      * Without: renders placeholder spans.
      */
+    /** Render ${outfit...}/${dress...}/${give...} as chips (chat/wardrobeTokens.js). */
+    processWardrobeTokens: function(content) {
+        return processWardrobeTokens(content);
+    },
+
     processImageTokens: function(content, msgRole, msgIndex, characters, state, onResolve) {
         if (!content || typeof content !== "string" || content.indexOf("${image.") === -1) return content;
 
@@ -265,6 +271,7 @@ const ChatTokenRenderer = {
         if (!content) return "";
         if (typeof content !== "string") content = String(content);
         let opts = options || {};
+        content = ChatTokenRenderer.processWardrobeTokens(content);   // before pruning: needs the [wardrobe] notes
         content = ChatTokenRenderer.pruneForDisplay(content, opts.hideThoughts !== false);
         content = ChatTokenRenderer.processMcpTokens(content, opts.debugMode);
         content = ChatTokenRenderer.processImageTokens(
@@ -283,6 +290,7 @@ const ChatTokenRenderer = {
         if (!content) return "";
         content = content.replace(IMAGE_TOKEN_RE, "");
         content = content.replace(AUDIO_TOKEN_RE, "");
+        content = stripWardrobeTokens(content);
         content = content.replace(MCP_BLOCK_RE, "");
         content = content.replace(MCP_RESOURCE_RE, "");
         return content.trim();

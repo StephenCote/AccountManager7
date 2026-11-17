@@ -252,7 +252,7 @@ public class TestPromptTemplate extends BaseTest {
 			assertTrue("SMS template should teach ${outfit:...}", composed.contains("${outfit:clothing:boxer shorts:BASE:m:waist"));
 			assertTrue("SMS template should teach ${outfit.you:...}", composed.contains("${outfit.you:jewelry:corsage:ACCESSORY:u:chest}"));
 			assertTrue("SMS template should teach ${dress.me.up}", composed.contains("${dress.me.up}"));
-			assertTrue("SMS template should teach ${give.you:...}", composed.contains("${give.you:jacket}"));
+			assertTrue("SMS template should teach ${give.you:...}", composed.contains("${give.you:jewelry:necklace:ACCESSORY:u:neck}"));
 
 			logger.info("Composed SMS system (" + composed.length() + " chars)");
 			logger.info("Test 25 PASSED: SMS Template - image/audio tokens pass through correctly");

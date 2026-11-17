@@ -110,6 +110,48 @@ Related defects:
 
 ## 3. Wardrobe tokens
 
+### 3.0 Implementation status (2026-11-17)
+
+**Built and tested: server-side resolution on receipt.**
+
+- **Util:** `olio/llm/ChatWardrobeTokenUtil` (Objects7).
+- **Hooks in `Chat`:**
+  - User messages: `applyWardrobeTokens(message, true)`, run **before** `refreshSystemPrompt`, so the same turn's prompt describes the change.
+  - Assistant replies: `handleResponse`, run before the reply enters history. This covers both the buffered path and `ChatListener`'s stream completion.
+- **In-memory refresh.** After a change, `chatConfig.systemCharacter` / `userCharacter` are replaced with fresh full records.
+- **Notes.** Every applied token gets a `<private>[wardrobe] …</private>` note (§3.4b). A token that can't be applied is left unresolved, gets a `Not applied: <reason>` note and a WARN, and nothing is thrown.
+- **Ux.** `chat/wardrobeTokens.js` renders resolved tokens as chips. Unresolved ones show struck-through, labelled "not applied".
+- **Links.**
+  - A resolved chip links to its record's object view in a new tab: `outfit.me` / `dress` → `olio.apparel`; `outfit.you` / `give` → `olio.wearable`.
+  - The chat toolbar shows each character next to the title (→ `olio.charPerson`), with a 👔 link to their active outfit (→ `olio.apparel`). The outfit is found like `olio.js dressCharacter`: `getFull(olio.store)`, then the first `inuse` apparel. It is re-read on session open, and after a turn whose last two messages contain wardrobe tokens.
+  - The links are hidden below `sm`, where the toolbar is too narrow.
+- **Tests.**
+  - `TestChatWardrobeTokens` (Bob/Sally wedding, through `Chat.applyWardrobeTokens` against the live DB): user outfit pick; Bob's bare-name tuxedo; Sally's corsage on Bob; down/up; `dress.you.BASE`; an unknown layer left unresolved; give creating new shoes (Bob keeps his); user-side `${give:ring}`; idempotence; chatConfig refresh.
+  - `TestWearLevelEmbed`.
+  - Chip rendering was checked in Node through the real stash → `marked` → restore sequence.
+
+**Defaults chosen for §3.7 (Stephen asked for the build; each is easy to change):**
+
+1. `${outfit:…}` creates a new apparel and makes it the **only** active one (replace).
+2. `you` is always the other chat character.
+3. `give` **creates a new item** on the other character, worn (Stephen, 2026-11-17). It does not have to exist on, and does not leave, the giver. Moving real inventory belongs to the RPG layer, so chat stays a chat.
+4. No automatic portrait refresh yet.
+
+**Matching rules:**
+
+- **Bare names** go to an exact catalog match first, then the nearest catalog name (plural stripped, whole-word prefix or suffix: `boxers` → `boxer shorts`).
+- **Unknown accessory words** (corsage, pin, ring, …) become `jewelry:…:ACCESSORY`; anything else unknown becomes `clothing:…:SUIT`.
+
+**Not built yet:**
+
+- re-evaluate action (§3.4);
+- quick-open wardrobe dialog (§3.4a);
+- starting-wardrobe picker in chat setup (§3.4);
+- automatic portrait refresh;
+- multi-word fuzzy matching (`tuxedo shirt` is free-form, because the catalog has no such item).
+
+**Catalog note.** `clothing.json` puts `tuxedo pants` at 9 (OVER) with the jacket, so one `dress down` removes both.
+
 ### 3.1 Grammar
 
 `me` and `you` are relative to the **speaker** of the message:
@@ -257,6 +299,30 @@ ${image.<oid>.selfie,casual}<private>[image] Rebecca sent a casual selfie: <pose
 - **Assistant images.** Today they get no description at all. The MCP enrichment runs only on incoming user messages (`Chat.java:1028-1033`), so these notes are the first description assistant images will get.
 
 **Cost.** About 20–35 tokens per resolved token. With pruning on (§1.3), that is a rounding error.
+
+### 3.4c Cross-character tokens: action in the sender's turn, result in the target's (2026-11-17)
+
+Stephen: when a token targets the other character, a result note in the *sender's* message confuses the model about who acted and who was affected. So such a note is split in two.
+
+**1. In the sender's message: the action only, kept permanently.**
+
+`${dress.<oid>.you.SUIT}<private>[wardrobe] Stephen takes off one of Rebecca's layers.</private>`
+
+**2. The result floats.** It is stored in the same message as `<private>[wardrobe-pending:<targetRole>] Stephen took off Rebecca's nipple ring; Rebecca is now wearing ….</private>`.
+
+- It is written in the third person with both names, so it reads correctly in either turn.
+- It is never sent as-is. On the wire copy built in `chatInternal` (`ChatWardrobeTokenUtil.filterPendingForWire`), a pending block for the assistant becomes `<private>[wardrobe] This is happening to you now: …</private>`, and a pending block for the user is removed.
+
+**3. It lands in the target's own next message** (`Chat.takeWardrobePending`), and the pending block is removed from the sender's message:
+
+- **Target is the assistant:** prefixed to its reply in `handleResponse`, in the same request.
+- **Target is the user:** prefixed to the user's next message, before `refreshSystemPrompt`.
+
+**Rules**
+
+- Self-targeted tokens (`${outfit:…}`, `${dress.me…}`) keep a single result note in the speaker's message.
+- A pending block that is never delivered, for example because the generation failed, is shown again on the next generation and then taken.
+- Tested by `TestChatWardrobeTokens#TestFloatingResults` (through `Chat.handleResponse` and `takeWardrobePending` with a real `OpenAIRequest`).
 
 ### 3.5 Prompt instruction (landed 2026-11-17)
 

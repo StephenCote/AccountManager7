@@ -60,7 +60,41 @@ function newChatConfig() {
 
 // ── Session lifecycle ───────────────────────────────────────────────
 
+/// Active outfit per chat character, for the toolbar's outfit links: { objectId, name } or null.
+let activeApparel = { system: null, user: null };
+
+/// Find each character's active apparel the way components/olio.js dressCharacter does: the store's
+/// apparel with inuse (the server applies wardrobe tokens, so this is re-read after a turn that used them).
+async function refreshActiveApparel() {
+    for (let role of ["system", "user"]) {
+        let ch = chatCfg[role];
+        let storeRef = ch && ch.store ? ch.store : null;
+        if (!storeRef || !storeRef.objectId) { activeApparel[role] = null; continue; }
+        try {
+            await am7client.clearCache("olio.store");
+            let sto = await am7client.getFull("olio.store", storeRef.objectId);
+            let ap = sto && sto.apparel ? (sto.apparel.find(a => a.inuse) || null) : null;
+            activeApparel[role] = ap ? { objectId: ap.objectId, name: ap.name || "outfit" } : null;
+        } catch (e) {
+            console.warn("refreshActiveApparel failed for " + role, e);
+            activeApparel[role] = null;
+        }
+    }
+    m.redraw();
+}
+
+function hasWardrobeTokens(msgs, lastN) {
+    if (!msgs || !msgs.length) return false;
+    return msgs.slice(-lastN).some(mm => mm && mm.content && /\$\{(outfit|dress|give)/.test(mm.content));
+}
+
+/// Same route pictureBookCharacters.openInNewTab opens: the generic object view.
+function objectViewHref(type, objectId) {
+    return window.location.pathname + "#!/view/" + type + "/" + objectId;
+}
+
 function doClear() {
+    activeApparel = { system: null, user: null };
     inst = null;
     chatCfg = newChatConfig();
     clearFormattedCache();
@@ -138,6 +172,7 @@ async function doPeek() {
     }
     chatCfg.peek = false;
     m.redraw();
+    refreshActiveApparel();
 }
 
 async function getHistory() {
@@ -316,6 +351,7 @@ function newChatStream() {
                     if (!h.messages) h.messages = [];
                     chatCfg.history = h;
                     clearFormattedCache();
+                    if (hasWardrobeTokens(h.messages, 2)) refreshActiveApparel();
                 }
                 m.redraw();
             });
@@ -544,7 +580,10 @@ function getFormattedContent(content, msg, idx) {
     let cached = _formattedCache.get(cacheKey);
     if (cached !== undefined) return cached;
 
-    let processed = ChatTokenRenderer.pruneForDisplay(content, hideThoughts);
+    /// Wardrobe chips first: telling "failed" from "pending" needs the <private>[wardrobe] note that
+    /// pruneForDisplay is about to strip (chat/wardrobeTokens.js).
+    let processed = ChatTokenRenderer.processWardrobeTokens(content);
+    processed = ChatTokenRenderer.pruneForDisplay(processed, hideThoughts);
     /// Strip <think>/<thought>/<private> when hidden; when shown, wrap them in a
     /// visible styled <details> block (see ChatTokenRenderer.renderThoughts).
     processed = ChatTokenRenderer.renderThoughts(processed, hideThoughts);
@@ -715,6 +754,25 @@ function renderStreamingMessage() {
 }
 
 // Portrait header: system character left, user character right — show/hide toggle, default off
+/// Toolbar links: each chat character (opens the charPerson) with its active outfit (opens the apparel).
+function renderCharacterLinks() {
+    let link = "inline-flex items-center gap-0.5 text-xs text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400";
+    function one(role) {
+        let ch = chatCfg[role];
+        if (!ch || !ch.objectId) return null;
+        let nm = ch.firstName || ch.name || role;
+        let ap = activeApparel[role];
+        return m("span", { class: "inline-flex items-center gap-1", "data-testid": "chat-char-links-" + role }, [
+            m("a", { href: objectViewHref("olio.charPerson", ch.objectId), target: "_blank", rel: "noopener", class: link, title: "Open " + (ch.name || nm), "data-testid": "chat-char-link-" + role }, [
+                m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "person"), nm
+            ]),
+            ap ? m("a", { href: objectViewHref("olio.apparel", ap.objectId), target: "_blank", rel: "noopener", class: link, title: "Open outfit: " + ap.name, "data-testid": "chat-outfit-link-" + role },
+                m("span", { class: "material-symbols-outlined", style: "font-size:14px" }, "checkroom")) : null
+        ]);
+    }
+    return m("div", { class: "hidden sm:flex items-center gap-3 min-w-0" }, [one("system"), one("user")]);
+}
+
 function renderPortraitHeader() {
     if (!chatCfg.system && !chatCfg.user) return null;
 
@@ -904,6 +962,7 @@ function renderToolbar() {
                 : m("span", { style: "font-size:16px; line-height:1;" }, sessionIcon)
             ) : null,
             m("h2", { class: "text-sm font-semibold text-gray-800 dark:text-white truncate max-w-xs" }, sessionTitle),
+            inst ? renderCharacterLinks() : null,
             bgActivity && bgActivity.icon ? m("span", {
                 class: "material-symbols-outlined text-blue-500 animate-spin",
                 style: "font-size:16px",
