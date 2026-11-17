@@ -154,12 +154,18 @@ async function getHistory() {
 
 /**
  * Patch resolved image tokens on the server session, then reload history.
- * replacements: array of {from: unresolvedTokenStr, to: resolvedTokenStr}
+ * replacements: array of {from, to, role?, content?}. When role/content are given (resolveChatImages
+ * always gives them) only the server message with that role whose content matches is patched — the
+ * same unresolved token (e.g. ${image.casual,public}) appears in both the user and assistant intros,
+ * and patching every message that contained it gave the user's intro the system character's picture.
+ * Only an occurrence NOT already followed by an [image] note is replaced, so annotation is idempotent.
+ * Returns true when something was patched.
  */
 async function patchChatImageToken(replacements) {
-    if (!inst || !replacements || !replacements.length) return;
+    if (!inst || !replacements || !replacements.length) return false;
     let entity = inst.entity;
-    if (!entity || !entity.session || !entity.sessionType) return;
+    if (!entity || !entity.session || !entity.sessionType) return false;
+    let patched = false;
 
     try {
         let q = am7client.newQuery(entity.sessionType);
@@ -170,15 +176,19 @@ async function patchChatImageToken(replacements) {
         if (qr && qr.results && qr.results.length > 0) {
             let req = qr.results[0];
             if (req.messages) {
-                let patched = false;
-                for (let i = req.messages.length - 1; i >= 0; i--) {
-                    let serverMsg = req.messages[i];
-                    if (!serverMsg.content) continue;
-                    for (let r of replacements) {
-                        if (serverMsg.content.indexOf(r.from) !== -1) {
-                            serverMsg.content = serverMsg.content.replace(r.from, r.to);
-                            patched = true;
-                        }
+                for (let r of replacements) {
+                    /// Prefer the exact message (role + identical content); fall back to the most recent
+                    /// message of that role containing the token when the client copy differs.
+                    let candidates = req.messages.filter(function(sm) {
+                        return sm.content && (!r.role || sm.role === r.role) && sm.content.indexOf(r.from) !== -1;
+                    });
+                    let target = (r.content ? candidates.find(function(sm) { return sm.content === r.content; }) : null)
+                        || (candidates.length ? candidates[candidates.length - 1] : null);
+                    if (!target) continue;
+                    let next = am7imageTokens.replaceUnannotated(target.content, r.from, r.to);
+                    if (next !== target.content) {
+                        target.content = next;
+                        patched = true;
                     }
                 }
                 if (patched) {
@@ -196,7 +206,9 @@ async function patchChatImageToken(replacements) {
         }
     } catch (e) {
         console.error("patchChatImageToken server error:", e);
+        return false;
     }
+    return patched;
 }
 
 /**
@@ -209,6 +221,8 @@ async function resolveChatImages(msgIndex) {
     if (chatCfg.streaming) return;
     let maxIterations = 10;
     let iteration = 0;
+    /// Token strings already handled this pass, so a patch that does not land (PBAC, race) cannot loop.
+    let attempted = new Set();
 
     while (iteration < maxIterations) {
         iteration++;
@@ -223,30 +237,33 @@ async function resolveChatImages(msgIndex) {
 
         let tokens = am7imageTokens.parse(msg.content);
 
-        // Find first unresolved token
-        let unresolvedToken = null;
+        // First token that is unresolved, not yet cached, or still missing its [image] note
+        // (aiDocs/ChatWardrobeTokensDesign.md §3.4b — the note also backfills older chats).
+        let pending = null;
         for (let token of tokens) {
-            if (!token.id || !am7imageTokens.cache[token.id]) {
-                unresolvedToken = token;
+            if (attempted.has(token.match)) continue;
+            if (!token.id || !am7imageTokens.cache[token.id] || am7imageTokens.needsImageNote(msg.content, token.match)) {
+                pending = token;
                 break;
             }
         }
 
-        if (!unresolvedToken) break;
+        if (!pending) break;
+        attempted.add(pending.match);
 
         try {
-            let resolveOpts = {};
-            let resolved = await am7imageTokens.resolve(unresolvedToken, character, resolveOpts);
-            if (resolved && resolved.image) {
-                if (!unresolvedToken.id) {
-                    let newToken = "${image." + resolved.image.objectId + "." + unresolvedToken.tags.join(",") + "}";
-                    await patchChatImageToken([{ from: unresolvedToken.match, to: newToken }]);
-                }
-            } else {
-                break;
+            let resolved = await am7imageTokens.resolve(pending, character, {});
+            if (!resolved || !resolved.image) break;
+            let resolvedToken = pending.id
+                ? pending.match
+                : "${image." + resolved.image.objectId + "." + pending.tags.join(",") + "}";
+            if (!pending.id || am7imageTokens.needsImageNote(msg.content, pending.match)) {
+                let caption = await am7imageTokens.describeImage(resolved.image.objectId);
+                let note = am7imageTokens.buildImageNote(character, pending.tags, caption);
+                await patchChatImageToken([{ from: pending.match, to: resolvedToken + note, role: msg.role, content: msg.content }]);
             }
         } catch (e) {
-            console.error("Error resolving image token:", unresolvedToken.match, e);
+            console.error("Error resolving image token:", pending.match, e);
             break;
         }
     }

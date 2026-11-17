@@ -382,8 +382,120 @@ function processContent(content) {
     return result;
 }
 
+// ── Image action notes (aiDocs/ChatWardrobeTokensDesign.md §3.4b) ────────
+//
+// A resolved image token in history says nothing to the LLM about what was shared. The resolver
+// appends a short system-written note IMMEDIATELY AFTER the token:
+//   ${image.<oid>.selfie,casual}<private>[image] Rebecca shares a picture of herself (selfie, casual): <caption></private>
+// Appended, never wrapped: ChatTokenRenderer strips <private> BEFORE resolving tokens, so a wrapped
+// token would vanish from display. The server keeps <private> in the stored content (it strips it only
+// from the ephemeral displayContent, ChatUtil.populateDisplayFields), so the note reaches the model on
+// every later turn while staying hidden in the chat. The "[image]" marker distinguishes the system's
+// notes from the model's own <private> notes and makes annotation idempotent.
+
+const IMAGE_NOTE_PREFIX = "<private>[image]";
+const NOTE_CAPTION_MAX = 240;
+
+function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** True when this exact token occurrence is already followed by a system image note. */
+function hasImageNote(content, tokenStr) {
+    if (!content || !tokenStr) return false;
+    let re = new RegExp(escapeRegex(tokenStr) + "\\s*" + escapeRegex(IMAGE_NOTE_PREFIX));
+    return re.test(content);
+}
+
+/** True when some occurrence of tokenStr in content still lacks a note. */
+function needsImageNote(content, tokenStr) {
+    if (!content || !tokenStr) return false;
+    let re = new RegExp(escapeRegex(tokenStr) + "(?!\\s*" + escapeRegex(IMAGE_NOTE_PREFIX) + ")");
+    return re.test(content);
+}
+
+/**
+ * Replace the first occurrence of `from` that is NOT already followed by a note with `to`.
+ * Returns the new content, or the original content unchanged when every occurrence is annotated.
+ */
+function replaceUnannotated(content, from, to) {
+    if (!content || !from) return content;
+    let re = new RegExp(escapeRegex(from) + "(?!\\s*" + escapeRegex(IMAGE_NOTE_PREFIX) + ")");
+    return content.replace(re, function() { return to; });
+}
+
+function reflexive(character) {
+    let g = character && character.gender ? String(character.gender).toLowerCase() : "";
+    if (g === "female" || g === "f") return "herself";
+    if (g === "male" || g === "m") return "himself";
+    return "themselves";
+}
+
+/**
+ * Build the note text. Pure (no I/O). caption may be null; the tags then carry the meaning
+ * (the "I pose for you" fallback, written in the third person so it reads the same in user and
+ * assistant turns).
+ */
+function buildImageNote(character, tags, caption) {
+    let name = character ? (character.firstName || character.name || "") : "";
+    name = String(name).trim() || "They";
+    let tagList = (tags || []).filter(function(t) { return t && t.length; });
+    let note = IMAGE_NOTE_PREFIX + " " + name + " shares a picture of " + reflexive(character);
+    if (tagList.length) note += " (" + tagList.join(", ") + ")";
+    let cap = caption ? String(caption).replace(/\s+/g, " ").replace(/[<>]/g, "").trim() : "";
+    if (cap && !/^(null|n\/a|none|unknown)$/i.test(cap)) {
+        if (cap.length > NOTE_CAPTION_MAX) cap = cap.substring(0, NOTE_CAPTION_MAX - 1).trim() + "…";
+        note += ": " + cap;
+    }
+    else if (tagList.length) {
+        note += ", posing for the camera";
+    }
+    return note + ".</private>";
+}
+
+async function readDescription(objectId) {
+    let q = am7client.newQuery("data.data");
+    q.field("objectId", objectId);
+    q.cache(false);
+    q.entity.request.push("id", "objectId", "description");
+    let qr = await page.search(q);
+    let rec = qr && qr.results && qr.results.length ? qr.results[0] : null;
+    let d = rec ? rec.description : null;
+    return (d && String(d).trim().length) ? String(d).trim() : null;
+}
+
+/**
+ * Auto-tagger caption for an image. Reads data.data.description fresh (the resolver's image object
+ * can predate the caption); when it is empty, runs GET /tag/apply/{id}, which stores the caption
+ * on description (TagService.applyImageTags), and reads again. Never throws: returns null when the
+ * record is unreadable or the tag service is unavailable.
+ */
+async function describeImage(objectId) {
+    if (!objectId) return null;
+    try {
+        let d = await readDescription(objectId);
+        if (d) return d;
+        await new Promise(function(resolve) {
+            let done = false;
+            let finish = function() { if (!done) { done = true; resolve(); } };
+            try { am7client.applyImageTags(objectId, finish); } catch (e) { finish(); }
+            setTimeout(finish, 60000);
+        });
+        return await readDescription(objectId);
+    } catch (e) {
+        console.warn("describeImage failed for " + objectId, e);
+        return null;
+    }
+}
+
 const am7imageTokens = {
     tags: chatImageTags,
+    noteMarker: IMAGE_NOTE_PREFIX,
+    hasImageNote,
+    needsImageNote,
+    replaceUnannotated,
+    buildImageNote,
+    describeImage,
     tagToWearLevel: tagToWearLevel,
     parse,
     processContent,

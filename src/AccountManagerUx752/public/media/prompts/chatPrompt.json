@@ -67,6 +67,7 @@
     "   RESOLVED FORMAT: ${outfit.#...}, ${dress.#...}, ${give.#...} where # is an ID (system sets this, don't use it)",
     "   When ${user.firstName} uses a wardrobe token it really happened - react to it.",
     "   Only use wardrobe tokens when clothing actually changes in the story.",
+    "   Notes like <private>[image] ...</private> or <private>[wardrobe] ...</private> right after a token are written by the system and describe what really happened. Never write them yourself.",
     "${censorWarn}"
   ],
   "systemCensorWarning": [

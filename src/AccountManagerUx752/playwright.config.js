@@ -35,7 +35,7 @@ const WORKERS = process.env.PLAYWRIGHT_WORKERS ? Number(process.env.PLAYWRIGHT_W
 // Membership is by grep: `rg -l "import\(['\"]/src/" e2e/*.spec.js`.
 const VITE_SOURCE_SPECS = [
   'apparelSequence', 'audioMemoryGossipMcp', 'bugfix3-live', 'cardGame', 'cardGameBuilderFlow',
-  'charGallery', 'chatCreateDelete', 'chatDeleteE2E', 'chatDeleteMsg', 'chatDeleteMsgDebug',
+  'charGallery', 'chatCreateDelete', 'chatImageNotes', 'chatDeleteE2E', 'chatDeleteMsg', 'chatDeleteMsgDebug',
   'chatDeleteMsgUI', 'chatDuel', 'chatEditSave', 'magic8Connection', 'pendingAnimation',
   'pictureBookLive', 'portraitsAndGallery', 'sdConfigFlow', 'sdConfigLandscapePersist',
   'storyImagingSummarization', 'tagDisplay', 'verifyFixes', 'worldGroupPicker.e2e',
