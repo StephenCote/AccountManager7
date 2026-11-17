@@ -95,7 +95,7 @@ function layout(content) {
 
 // Shared page layout: nav (guarded) + scrollable content area
 function pageLayout(innerContent, navAttrs) {
-    return m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
+    return m("div", { class: "app-shell" }, [
         m(NavGuard, navAttrs || {}),
         m("main", { class: "flex-1 overflow-auto flex bg-white dark:bg-gray-900", role: "main" }, [
             innerContent

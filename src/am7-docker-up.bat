@@ -132,7 +132,8 @@ REM    AM7_OLLAMA_EMBED  1 (default) points the app's embeddings at the containe
 REM                      EMBEDDING_SERVER=http://ollama:11434/v1/embeddings,
 REM                      EMBEDDING_TYPE=openai_compat, EMBEDDING_MODEL=nomic-embed-text.
 REM                      0 leaves the compose defaults (the LAN embedApiMini on .42:8123).
-REM                      An EMBEDDING_* already set in the environment always wins.
+REM                      An EMBEDDING_SERVER/TYPE set in the environment OR in src\.env
+REM                      pins the provider: --ollama then changes none of the three.
 REM    AM7_OLLAMA_GPU    nvidia layers docker-compose.ollama-gpu.yml (device reservation).
 REM                      Unset = CPU only, which is all Docker Desktop offers on this
 REM                      AMD iGPU host.
@@ -236,17 +237,42 @@ REM  Container embeddings for the APP. Only fills a variable that is not already
 REM  set, so a caller's own EMBEDDING_* wins; the compose ${VAR:-...} defaults are
 REM  what these replace. The URL is the compose SERVICE name - resolvable only
 REM  inside the am7-test-net network, which is where Tomcat runs.
-if defined OLLAMA if not "%AM7_OLLAMA_EMBED%"=="0" (
-    if not defined EMBEDDING_SERVER set "EMBEDDING_SERVER=http://ollama:11434/v1/embeddings"
-    if not defined EMBEDDING_TYPE set "EMBEDDING_TYPE=openai_compat"
+REM
+REM  src\.env counts as "already set". Compose gives SHELL variables precedence
+REM  over .env, so filling a variable here that only .env defines silently
+REM  overrode .env (2026-11-17: .env said local + .42:8123, --ollama exported
+REM  openai_compat, and the boot-pinned type no longer matched the DB-backed URL
+REM  -> every embedding 404'd). Import the EMBEDDING_* keys from .env first, then
+REM  treat the provider (server+type+model) as one unit: if SERVER or TYPE is
+REM  set by the caller or .env, --ollama fills none of the three.
+REM  Parser limits: KEY=value lines only; surrounding quotes are stripped; no
+REM  inline "# comment" after a value (compose allows it, this does not).
+if exist "%SRC_DIR%.env" (
+    for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%SRC_DIR%.env") do (
+        if /i "%%A"=="EMBEDDING_SERVER" if not defined EMBEDDING_SERVER set "EMBEDDING_SERVER=%%~B"
+        if /i "%%A"=="EMBEDDING_TYPE" if not defined EMBEDDING_TYPE set "EMBEDDING_TYPE=%%~B"
+        if /i "%%A"=="EMBEDDING_MODEL" if not defined EMBEDDING_MODEL set "EMBEDDING_MODEL=%%~B"
+    )
+)
+set "EMBED_PINNED="
+if defined EMBEDDING_SERVER set "EMBED_PINNED=1"
+if defined EMBEDDING_TYPE set "EMBED_PINNED=1"
+if defined OLLAMA if not "%AM7_OLLAMA_EMBED%"=="0" if defined EMBED_PINNED (
+    echo   NOTE: --ollama is NOT repointing embeddings: EMBEDDING_SERVER/TYPE are set
+    echo         ^(shell or src\.env^). Unset them in src\.env to use the container's
+    echo         nomic-embed-text, or set AM7_OLLAMA_EMBED=0 to silence this note.
+)
+if defined OLLAMA if not "%AM7_OLLAMA_EMBED%"=="0" if not defined EMBED_PINNED (
+    set "EMBEDDING_SERVER=http://ollama:11434/v1/embeddings"
+    set "EMBEDDING_TYPE=openai_compat"
     if not defined EMBEDDING_MODEL set "EMBEDDING_MODEL=nomic-embed-text"
 )
 
 REM  The embedding provider this `up` hands the app, as compose will see it: the
 REM  set value, else the compose default. Same "server type model" format as the
-REM  .sh writes, so the two scripts share one marker file. (Values that live only
-REM  in src\.env are not visible here, so a .env override makes this approximate -
-REM  it is a WARN, not a gate.)
+REM  .sh writes, so the two scripts share one marker file. src\.env EMBEDDING_*
+REM  values were imported above, so this matches what compose will pass. Still a
+REM  WARN, not a gate.
 if defined EMBEDDING_SERVER (set "E_SERVER=%EMBEDDING_SERVER%") else (set "E_SERVER=http://192.168.1.42:8123")
 if defined EMBEDDING_TYPE (set "E_TYPE=%EMBEDDING_TYPE%") else (set "E_TYPE=local")
 if defined EMBEDDING_MODEL (set "E_MODEL=%EMBEDDING_MODEL%") else (set "E_MODEL=-")

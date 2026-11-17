@@ -1409,7 +1409,7 @@ export const routes = {
         onremove: function() { chatView.onremove(); },
         view: function() {
             return layout(
-                m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
+                m("div", { class: "app-shell" }, [
                     page.components.navigation ? m(page.components.navigation) : null,
                     m("div", { style: "flex:1;display:flex;overflow:hidden;min-height:0" }, [
                         chatView.view()

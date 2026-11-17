@@ -147,7 +147,7 @@ public class PromptTemplateComposer {
 	/**
 	 * Validate a composed template for unreplaced tokens.
 	 * Returns list of unreplaced token strings, or empty list if all resolved.
-	 * Tokens matching known runtime-only patterns (image.*, audio.*) are excluded.
+	 * Tokens matching known runtime-only patterns (PromptConfigValidator.isRuntimeToken) are excluded.
 	 */
 	public static List<String> findUnreplacedTokens(String composedText) {
 		List<String> unreplaced = new ArrayList<>();
@@ -157,7 +157,7 @@ public class PromptTemplateComposer {
 			String token = m.group();
 			// Skip runtime-only tokens that are resolved at message time, not composition time
 			// Also skip nlp.* tokens which are pipeline ordering artifacts (Stage 6 runs before Stage 7 dynamic rules expansion)
-			if (token.startsWith("${image.") || token.startsWith("${audio.") || token.startsWith("${nlp.")) {
+			if (PromptConfigValidator.isRuntimeToken(token.substring(2, token.length() - 1))) {
 				continue;
 			}
 			unreplaced.add(token);

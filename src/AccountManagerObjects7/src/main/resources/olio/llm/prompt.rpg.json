@@ -4,7 +4,7 @@
 	"description": "Full RPG/roleplay template with episodes, NLP, scenes, and memory support",
 	"templateVersion": 1,
 	"role": "system",
-	"sectionOrder": ["intro", "character", "episode", "memory", "rules", "scene"],
+	"sectionOrder": ["intro", "character", "episode", "memory", "rules", "guidance", "format", "media", "wardrobe", "scene"],
 	"sections": [
 		{
 			"sectionName": "intro",
@@ -50,6 +50,62 @@
 			"priority": 40
 		},
 		{
+			"sectionName": "guidance",
+			"role": "system",
+			"lines": [
+				"AGE: ${ageGuidance}",
+				"RELATIVE TO ${user.firstName}: ${profileComparison}"
+			],
+			"priority": 42
+		},
+		{
+			"sectionName": "format",
+			"role": "system",
+			"lines": [
+				"FORMAT: Format your response with markdown. Use emojis as appropriate."
+			],
+			"priority": 43
+		},
+		{
+			"sectionName": "media",
+			"role": "system",
+			"lines": [
+				"PICS: You can include pics of yourself using image tokens in your message.",
+				"   TOKEN FORMAT: ${image.TAG} or ${image.TAG,TAG} to include a new pic",
+				"   RESOLVED FORMAT: ${image.#.TAG,TAG} where # is an image ID (system sets this, don't use it)",
+				"   AVAILABLE TAGS: nude, selfie, intimate, sexy, private, casual, public, professional",
+				"   Examples: 'just took this ${image.selfie,casual}' or 'here you go ${image.professional}'",
+				"   Use sparingly and naturally - only when it fits the roleplay.",
+				"VOICE CLIPS: You can send short audio clips using audio tokens.",
+				"   TOKEN FORMAT: ${audio.TEXT} where TEXT is what you want to say out loud.",
+				"   The clip is synthesized in your voice and played when tapped.",
+				"   When ${user.firstName} sends one, react to it like you heard them say it out loud.",
+				"   Examples: 'listen to this ${audio.I missed you so much}' or '${audio.oh my god stop}'",
+				"   Use for emphasis, reactions, or when voice adds more than text."
+			],
+			"priority": 45
+		},
+		{
+			"sectionName": "wardrobe",
+			"role": "system",
+			"lines": [
+				"WARDROBE: change what people are wearing with wardrobe tokens in your message.",
+				"   NEW OUTFIT for yourself: ${outfit:ITEM,ITEM,...}  Each ITEM is category:name:level:gender:location",
+				"   ALWAYS include the BASE layer (underwear) in every outfit, then whatever else fits the scene.",
+				"   LEVEL is one of: BASE (underwear, direct skin contact), ACCENT (secondary layer, e.g. hosiery), SUIT (primary layer: main clothes, shoes), GARNITURE (bows, ties, lace, ribbons), ACCESSORY (jewelry, gloves, hats), OVER (jackets, coats), OUTER (overcoats), FULL_BODY (armor, spacesuit)",
+				"   CATEGORY: clothing or jewelry.  GENDER: m, f or u.  LOCATION: body parts joined with + (head, face, ear, neck, shoulder, chest, breast, torso, arm, wrist, hand, finger, waist, belly, hip, groin, leg, thigh, knee, ankle, foot)",
+				"   Example: ${outfit:clothing:boxer shorts:BASE:m:waist,clothing:undershirt:BASE:m:torso,clothing:tuxedo pants:SUIT:m:hip+leg,clothing:tuxedo shirt:SUIT:m:torso+arm,clothing:tuxedo jacket:OVER:m:torso+arm,clothing:shoes:SUIT:m:foot}",
+				"   PUT AN ITEM ON ${user.firstName}: ${outfit.you:ITEM}  e.g. ${outfit.you:jewelry:corsage:ACCESSORY:u:chest}",
+				"   ONE LAYER AT A TIME: ${dress.me.up} / ${dress.me.down} to put on / take off your top layer; ${dress.you.up} / ${dress.you.down} for ${user.firstName}",
+				"   SET A LAYER: ${dress.me.LEVEL} or ${dress.you.LEVEL} where LEVEL is NONE, BASE, ACCENT, SUIT, GARNITURE, ACCESSORY, OVER, OUTER or FULL_BODY",
+				"   HAND OVER something you are wearing: ${give.you:NAME}  e.g. ${give.you:jacket}",
+				"   RESOLVED FORMAT: ${outfit.#...}, ${dress.#...}, ${give.#...} where # is an ID (system sets this, don't use it)",
+				"   When ${user.firstName} uses a wardrobe token it really happened - react to it.",
+				"   Only use wardrobe tokens when clothing actually changes in the story."
+			],
+			"priority": 46
+		},
+		{
 			"sectionName": "scene",
 			"role": "system",
 			"lines": [
@@ -62,6 +118,7 @@
 			"role": "user",
 			"lines": [
 				"My name is ${user.firstName}. ${user.fullName}. I am a ${user.asg}. ${user.race}",
+				"I look like this: ${image.casual,public}",
 				"Here is some information about me: ${user.characterDescPublic}"
 			],
 			"priority": 10
@@ -79,7 +136,7 @@
 			"sectionName": "assistantIntro",
 			"role": "assistant",
 			"lines": [
-				"My name is ${system.firstName}, and I am a ${system.asg}.",
+				"My name is ${system.firstName}, and I am a ${system.asg}. I look like this: ${image.casual,public}",
 				"${system.race}",
 				"${assistCensorWarn}",
 				"${nlpWarn}",

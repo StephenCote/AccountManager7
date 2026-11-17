@@ -88,7 +88,7 @@ const asideMenu = {
         let asideItems = getMenuItems('aside').filter(function (mi) {
             return isMenuItemVisible(mi, menuCtx);
         });
-        return m("aside", { class: "transition transition-0", style: "display:flex;flex-direction:column;max-height:100vh" }, [
+        return m("aside", { class: "transition transition-0", style: "display:flex;flex-direction:column;max-height:100vh;max-height:100dvh" }, [
             m("div", { class: "p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0" }, [
                 m("h4", { class: "text-lg font-semibold text-gray-800 dark:text-white" }, "Categories")
             ]),

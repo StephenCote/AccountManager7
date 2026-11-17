@@ -19,7 +19,8 @@ import org.cote.accountmanager.schema.ModelSchema;
  *
  * Scans all list&lt;string&gt; fields in a promptConfig for ${...} tokens and
  * checks each against the known set from TemplatePatternEnumType.
- * Runtime-only tokens (image.*, audio.*, nlp.*) are always allowed.
+ * Runtime-only tokens (image.*, audio.*, nlp.*, and the wardrobe tokens dress.*, outfit.* / outfit:*,
+ * give.* / give:*) are always allowed.
  */
 public class PromptConfigValidator {
 	private static final Logger logger = LogManager.getLogger(PromptConfigValidator.class);
@@ -27,7 +28,11 @@ public class PromptConfigValidator {
 	private static final Pattern TOKEN_PATTERN = Pattern.compile("\\$\\{([^}]+)\\}");
 
 	private static final Set<String> KNOWN_TOKENS = new HashSet<>();
-	private static final String[] RUNTIME_PREFIXES = {"image.", "audio.", "nlp."};
+	/// Tokens resolved at message time, not composition time. The wardrobe tokens take either a dotted
+	/// qualifier (${outfit.you:...}, ${dress.me.up}) or a bare colon payload (${outfit:...}, ${give:...}),
+	/// so both separators are listed. Single source of truth: PromptTemplateComposer.findUnreplacedTokens
+	/// calls isRuntimeToken rather than keeping its own copy. See aiDocs/ChatWardrobeTokensDesign.md.
+	private static final String[] RUNTIME_PREFIXES = {"image.", "audio.", "nlp.", "dress.", "outfit.", "outfit:", "give.", "give:"};
 
 	static {
 		for (TemplatePatternEnumType t : TemplatePatternEnumType.values()) {
@@ -112,7 +117,8 @@ public class PromptConfigValidator {
 		return KNOWN_TOKENS.contains(tokenKey);
 	}
 
-	private static boolean isRuntimeToken(String tokenKey) {
+	/// tokenKey is the text inside ${...}.
+	public static boolean isRuntimeToken(String tokenKey) {
 		for (String prefix : RUNTIME_PREFIXES) {
 			if (tokenKey.startsWith(prefix)) {
 				return true;

@@ -179,6 +179,25 @@ public class TestPromptTemplate extends BaseTest {
 			String assistComposed = PromptTemplateComposer.composeAssistant(template, promptConfig, chatConfig);
 			assertNotNull("Assistant role composed text should not be null", assistComposed);
 
+			/// Sections added 2026-11-17 (parity with the alg2 promptConfig): guidance, format, media, wardrobe,
+			/// and the intro pics. Runtime tokens must survive composition; composition tokens must resolve.
+			assertTrue("RPG should include resolved age guidance", composed.contains("AGE: ") && !composed.contains("${ageGuidance}"));
+			assertTrue("RPG should include resolved profile comparison", composed.contains("RELATIVE TO ") && !composed.contains("${profileComparison}"));
+			assertTrue("RPG should include format rule", composed.contains("FORMAT: Format your response with markdown"));
+			assertTrue("RPG should teach image tokens", composed.contains("${image.selfie,casual}"));
+			assertTrue("RPG should teach audio tokens", composed.contains("${audio.oh my god stop}"));
+			assertTrue("RPG should teach wardrobe tokens", composed.contains("${outfit:clothing:boxer shorts:BASE:m:waist") && composed.contains("${dress.me.up}"));
+			assertTrue("RPG user intro should include a pic", userComposed.contains("${image.casual,public}"));
+			assertTrue("RPG assistant intro should include a pic", assistComposed.contains("${image.casual,public}"));
+			assertTrue("No unreplaced tokens in user role: " + PromptTemplateComposer.findUnreplacedTokens(userComposed),
+				PromptTemplateComposer.findUnreplacedTokens(userComposed).isEmpty());
+			/// Section order: rules -> guidance -> format -> media -> wardrobe
+			int iRules = composed.indexOf("RULES:"), iAge = composed.indexOf("AGE: "), iFmt = composed.indexOf("FORMAT: "),
+				iPics = composed.indexOf("PICS: "), iWard = composed.indexOf("WARDROBE: ");
+			assertTrue("Sections out of order: rules=" + iRules + " age=" + iAge + " format=" + iFmt + " pics=" + iPics + " wardrobe=" + iWard,
+				iRules >= 0 && iRules < iAge && iAge < iFmt && iFmt < iPics && iPics < iWard);
+			logger.info("RPG composed system prompt:\n" + composed);
+
 			logger.info("Composed RPG system (" + composed.length() + " chars), user (" + userComposed.length() + " chars), assistant (" + assistComposed.length() + " chars)");
 			logger.info("Test 24 PASSED: RPG Template all tokens resolved");
 
@@ -228,6 +247,12 @@ public class TestPromptTemplate extends BaseTest {
 			// Verify image/audio tokens are still present (they are runtime placeholders)
 			assertTrue("SMS template should contain ${image.selfie} runtime token", composed.contains("${image.selfie}"));
 			assertTrue("SMS template should contain ${audio.hello} runtime token", composed.contains("${audio.hello}"));
+			// Wardrobe tokens (aiDocs/ChatWardrobeTokensDesign.md) are taught in the media section and must
+			// survive composition as runtime tokens; the unreplaced-token assertion above covers them too.
+			assertTrue("SMS template should teach ${outfit:...}", composed.contains("${outfit:clothing:boxer shorts:BASE:m:waist"));
+			assertTrue("SMS template should teach ${outfit.you:...}", composed.contains("${outfit.you:jewelry:corsage:ACCESSORY:u:chest}"));
+			assertTrue("SMS template should teach ${dress.me.up}", composed.contains("${dress.me.up}"));
+			assertTrue("SMS template should teach ${give.you:...}", composed.contains("${give.you:jacket}"));
 
 			logger.info("Composed SMS system (" + composed.length() + " chars)");
 			logger.info("Test 25 PASSED: SMS Template - image/audio tokens pass through correctly");
@@ -693,6 +718,47 @@ public class TestPromptTemplate extends BaseTest {
 			e.printStackTrace();
 			fail("Test 32 failed: " + e.getMessage());
 		}
+	}
+
+	// --- Test 32b: Wardrobe tokens are runtime tokens ---
+	/// aiDocs/ChatWardrobeTokensDesign.md. The wardrobe tokens use both a dotted qualifier
+	/// (${outfit.you:...}, ${dress.me.up}) and a bare colon payload (${outfit:...}, ${give:...});
+	/// both must pass the validator and the composer, while look-alike names must still be flagged.
+	/// alg.prompt.json is loaded as a real promptConfig because it is the RPG prompt that teaches them.
+	@Test
+	public void TestWardrobeTokensAreRuntime() {
+		logger.info("Test 32b: wardrobe tokens (outfit/dress/give) are runtime-only");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/PromptTemplate");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser = mf.getCreateUser(testOrgContext.getAdminUser(), "ptTestUser32b", testOrgContext.getOrganizationId());
+		assertNotNull("Test user should not be null", testUser);
+
+		String wardrobe = "${outfit:clothing:boxer shorts:4:m:waist,clothing:shoes:6:m:foot} ${outfit.you:jewelry:corsage:7:u:chest}"
+			+ " ${outfit.0f1e2d3c-aaaa-bbbb-cccc-000000000001.me:clothing:boxer shorts:4:m:waist}"
+			+ " ${dress.me.up} ${dress.you.down} ${dress.me.SUIT} ${give.you:jacket} ${give:ring}";
+
+		/// Composer path (findUnreplacedTokens) and validateComposed
+		assertTrue("Wardrobe tokens must not be reported unreplaced: " + PromptTemplateComposer.findUnreplacedTokens(wardrobe),
+			PromptTemplateComposer.findUnreplacedTokens(wardrobe).isEmpty());
+		assertTrue("validateComposed should accept wardrobe tokens", PromptConfigValidator.validateComposed(wardrobe).isValid());
+
+		/// Look-alikes that are NOT wardrobe tokens must still be flagged
+		List<String> lookAlikes = PromptTemplateComposer.findUnreplacedTokens("${outfitter} ${dressCode} ${giver}");
+		assertEquals("Look-alike tokens must still be flagged: " + lookAlikes, 3, lookAlikes.size());
+
+		/// Validator path, against the real alg.prompt.json loaded as a promptConfig
+		BaseRecord algCfg = OlioTestUtil.getPromptConfig(testUser, "PT Wardrobe alg " + UUID.randomUUID().toString(), "olio/llm/alg.prompt.json");
+		assertNotNull("alg.prompt.json promptConfig should load", algCfg);
+		List<String> system = algCfg.get("system");
+		assertTrue("alg.prompt.json should teach ${outfit:...}", String.join("\n", system).contains("${outfit:ITEM,ITEM,...}"));
+		ValidationResult result = PromptConfigValidator.validate(algCfg);
+		for (ValidationResult.UnknownToken ut : result.getUnknownTokens()) {
+			String t = ut.getToken();
+			assertFalse("Wardrobe token flagged as unknown: " + t,
+				t.startsWith("outfit") || t.startsWith("dress") || t.startsWith("give"));
+		}
+		assertTrue("alg.prompt.json should validate clean, but found: " + result.getUnknownTokens(), result.isValid());
+		logger.info("Test 32b PASSED: wardrobe tokens treated as runtime tokens");
 	}
 
 	// --- Test 33: Migrator Dry Run ---

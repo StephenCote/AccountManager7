@@ -41,7 +41,7 @@ const routes = {
         view: function() {
             if (loading) {
                 return layout(
-                    m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
+                    m("div", { class: "app-shell" }, [
                         m(navigation, {}),
                         m("div", { class: "flex-1 flex items-center justify-center" },
                             m("div", { class: "text-gray-500 text-lg" }, "Loading Card Game...")
@@ -51,7 +51,7 @@ const routes = {
             }
             if (loadError || !cardGameApp) {
                 return layout(
-                    m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
+                    m("div", { class: "app-shell" }, [
                         m(navigation, {}),
                         m("div", { class: "flex-1 flex items-center justify-center" },
                             m("div", { class: "text-red-500 text-lg" }, "Failed to load Card Game: " + (loadError ? loadError.message : "Unknown error"))

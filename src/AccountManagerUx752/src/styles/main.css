@@ -693,11 +693,25 @@
 }
 
 /* Content layout — plain CSS (outside @layer to avoid Tailwind specificity issues) */
+/* App shell: nav + content filling exactly the visible viewport.
+   On mobile, 100vh is the LARGE viewport (includes the area behind the browser URL bar),
+   so a 100vh column is taller than what is visible and the page itself scrolls — pushing the
+   nav bar off the top to reach the chat input at the bottom. 100dvh tracks the visible
+   viewport; the 100vh line is the fallback for browsers without dynamic viewport units. */
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
 div.content-outer {
     display: flex;
     flex-direction: column;
     min-height: 100vh;
     max-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100dvh;
     overflow: hidden;
 }
 .dark div.content-outer {

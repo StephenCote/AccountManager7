@@ -184,7 +184,8 @@ ALL_PROFILES=(--profile llmproxy --profile ollama)
 #                     EMBEDDING_SERVER=http://ollama:11434/v1/embeddings,
 #                     EMBEDDING_TYPE=openai_compat, EMBEDDING_MODEL=nomic-embed-text.
 #                     0 leaves the compose defaults (the LAN embedApiMini on .42:8123).
-#                     An explicitly exported EMBEDDING_* always wins over both.
+#                     An EMBEDDING_SERVER/TYPE exported OR set in src/.env pins the
+#                     provider: --ollama then changes none of the three.
 #   AM7_OLLAMA_GPU    nvidia layers docker-compose.ollama-gpu.yml (device reservation).
 #                     Unset = CPU only, which is all Docker Desktop can offer on an
 #                     AMD iGPU host.
@@ -287,6 +288,31 @@ if [ -n "$APP_ONLY" ] && [ -n "$OLLAMA" ]; then
   exit 1
 fi
 
+# src/.env counts as "already set". Compose gives SHELL variables precedence over
+# .env, so exporting a variable that only .env defines silently overrode .env
+# (2026-11-17: .env said local + .42:8123, --ollama exported openai_compat, and the
+# boot-pinned type no longer matched the DB-backed URL -> every embedding 404'd).
+# Import the EMBEDDING_* keys from .env into the shell when not already set. This
+# also makes EMBED_EFFECTIVE (the provider-change marker) exact rather than
+# approximate. Parser limits: KEY=value lines; surrounding quotes stripped; no
+# inline "# comment" after a value.
+import_env_embedding() {
+  local f="$SRC_DIR/.env" line key val
+  [ -r "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case "$line" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"; val="${line#*=}"
+    [ "$key" = "$line" ] && continue
+    val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
+    case "$key" in
+      EMBEDDING_SERVER|EMBEDDING_TYPE|EMBEDDING_MODEL)
+        if [ -z "${!key:-}" ]; then printf -v "$key" '%s' "$val"; export "$key"; fi ;;
+    esac
+  done < "$f"
+}
+import_env_embedding
+
 if [ -n "$OLLAMA" ]; then
   # GPU opt-in: an override file rather than an always-on device reservation,
   # because `deploy.resources.reservations.devices` makes `up` FAIL outright on a
@@ -300,19 +326,28 @@ if [ -n "$OLLAMA" ]; then
   # caller already exported wins; the compose ${VAR:-...} defaults are what these
   # replace. The URL is the compose SERVICE name - resolvable only inside the
   # am7-test-net network, which is where Tomcat runs.
+  # src/.env counts as "already set" (see import_env_embedding below): if SERVER
+  # or TYPE is set by the caller or .env, the provider is pinned and none of the
+  # three is filled - server+type+model are one unit.
   if [ "$AM7_OLLAMA_EMBED" != "0" ]; then
-    : "${EMBEDDING_SERVER:=http://ollama:11434/v1/embeddings}"
-    : "${EMBEDDING_TYPE:=openai_compat}"
-    : "${EMBEDDING_MODEL:=nomic-embed-text}"
-    export EMBEDDING_SERVER EMBEDDING_TYPE EMBEDDING_MODEL
+    if [ -n "${EMBEDDING_SERVER:-}" ] || [ -n "${EMBEDDING_TYPE:-}" ]; then
+      echo "  NOTE: --ollama is NOT repointing embeddings: EMBEDDING_SERVER/TYPE are set"
+      echo "        (shell or src/.env). Unset them in src/.env to use the container's"
+      echo "        nomic-embed-text, or set AM7_OLLAMA_EMBED=0 to silence this note."
+    else
+      EMBEDDING_SERVER=http://ollama:11434/v1/embeddings
+      EMBEDDING_TYPE=openai_compat
+      : "${EMBEDDING_MODEL:=nomic-embed-text}"
+      export EMBEDDING_SERVER EMBEDDING_TYPE EMBEDDING_MODEL
+    fi
   fi
 fi
 
 # The embedding provider this `up` will hand the app, as compose will see it:
 # exported value, else the compose default. Space-separated "server type model"
 # ('-' for no model) - the .bat writes the same marker and a '|' would be parsed
-# as a pipe by cmd's echo. (Values that live only in src/.env are not visible
-# here, so a .env override makes this marker approximate - it is a WARN, not a gate.)
+# as a pipe by cmd's echo. src/.env EMBEDDING_* values were imported above, so
+# this matches what compose will pass. Still a WARN, not a gate.)
 EMBED_EFFECTIVE="${EMBEDDING_SERVER:-http://192.168.1.42:8123} ${EMBEDDING_TYPE:-local} ${EMBEDDING_MODEL:--}"
 
 case "$LIFECYCLE" in

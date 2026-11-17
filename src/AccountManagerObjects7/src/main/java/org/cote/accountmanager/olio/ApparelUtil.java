@@ -467,6 +467,14 @@ public class ApparelUtil {
 		return constructApparel(ctx, ownerId, (String)person.get(FieldNames.FIELD_GENDER), getEmbeddedOutfit(names, (String)person.get(FieldNames.FIELD_GENDER)));
 	}
 
+	/// Build (in memory, not persisted) an apparel from embedded wearable strings
+	/// ("category:name:LEVEL:gender:location"), e.g. the items of a chat ${outfit:...} token.
+	/// LEVEL may be a WearLevelEnumType name or number (WearLevelEnumType.fromToken). Entries that
+	/// fail to parse are logged and skipped. The caller persists the result.
+	public static BaseRecord constructApparelFromEmbedded(OlioContext ctx, long ownerId, String gender, String[] embedded) {
+		return constructApparel(ctx, ownerId, gender, embedded);
+	}
+
 	/**
 	 * C3: apply LLM-guessed color NAMES to an apparel's clothing wearables, resolving each name to a
 	 * shared-library {@code data.color} FOREIGN reference via {@link ColorUtil#getColorByName} — the
@@ -634,8 +642,13 @@ public class ApparelUtil {
 
 			rec.set(FieldNames.FIELD_TYPE, tmeta[1]);
 			rec.set(FieldNames.FIELD_NAME, tmeta[1]);
-			int lvl = Integer.parseInt(tmeta[2]);
-			WearLevelEnumType wlvl = WearLevelEnumType.valueOf(lvl);
+			/// Level may be the enum name (chat wardrobe tokens) or its number (catalogs).
+			WearLevelEnumType wlvl = WearLevelEnumType.fromToken(tmeta[2]);
+			if(wlvl == WearLevelEnumType.UNKNOWN) {
+				logger.error("Unrecognized wear level '" + tmeta[2] + "' in embed: " + embType);
+				return applied;
+			}
+			int lvl = WearLevelEnumType.valueOf(wlvl);
 			if(ttype.equals("clothing")) {
 				applyEmbeddedFabric(rec, randomFabric(lvl, gender));
 			}

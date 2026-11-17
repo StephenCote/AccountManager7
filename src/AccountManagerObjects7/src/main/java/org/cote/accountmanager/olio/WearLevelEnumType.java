@@ -55,6 +55,29 @@ public enum WearLevelEnumType {
 		}
         return levelMap.get(val);
     }
+    /// Parse the level part of an embedded wearable ("category:name:LEVEL:gender:location").
+    /// Accepts the enum name, case-insensitive (BASE, suit, FULL_BODY) — the form the chat wardrobe
+    /// tokens teach the LLM — or the numeric value the clothing/jewelry catalogs use (4, 6).
+    /// Returns UNKNOWN for null, blank or unrecognized input; callers decide whether that is fatal.
+    public static WearLevelEnumType fromToken(String token) {
+    	if(token == null) return UNKNOWN;
+    	String t = token.trim();
+    	if(t.isEmpty()) return UNKNOWN;
+    	if(t.chars().allMatch(Character::isDigit)) {
+    		try {
+    			return valueOf(Integer.parseInt(t));
+    		}
+    		catch(NumberFormatException e) {
+    			return UNKNOWN;
+    		}
+    	}
+    	try {
+    		return WearLevelEnumType.valueOf(t.toUpperCase().replace(' ', '_').replace('-', '_'));
+    	}
+    	catch(IllegalArgumentException e) {
+    		return UNKNOWN;
+    	}
+    }
     public static int valueOf(WearLevelEnumType lvl) {
     	return lvl.val;
     	/// return levelMap.entrySet().stream().filter(entry -> lvl == entry.getValue()).map(Map.Entry::getKey).findFirst().get();

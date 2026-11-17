@@ -40,7 +40,7 @@ const routes = {
         view: function(vnode) {
             if (loading) {
                 return layout(
-                    m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
+                    m("div", { class: "app-shell" }, [
                         m(navigation, {}),
                         m("div", { class: "flex-1 flex items-center justify-center bg-gray-900" },
                             m("div", { class: "text-gray-400 text-lg" }, "Loading Magic 8...")
@@ -50,7 +50,7 @@ const routes = {
             }
             if (loadError || !magic8App) {
                 return layout(
-                    m("div", { style: "display:flex;flex-direction:column;height:100vh;overflow:hidden" }, [
+                    m("div", { class: "app-shell" }, [
                         m(navigation, {}),
                         m("div", { class: "flex-1 flex items-center justify-center bg-gray-900" },
                             m("div", { class: "text-red-500 text-lg" }, "Failed to load Magic 8: " + (loadError ? loadError.message : "Unknown error"))
