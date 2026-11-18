@@ -32,10 +32,10 @@ export function chatConfigName(ref) {
     return withChatConfig({}, ref).chatConfigName;
 }
 
-/** Pure: the "Chat Config" control's label. */
-export function chatConfigLabel(ref, resolving) {
+/** Pure: the "Chat Config" control's label. placeholder overrides the no-pick text. */
+export function chatConfigLabel(ref, resolving, placeholder) {
     if (ref && ref.name) return ref.name;
-    return resolving ? 'Resolving default…' : '(click to select)';
+    return resolving ? 'Resolving default…' : (placeholder || '(click to select)');
 }
 
 /** The first library name that resolves, as {name, objectId}; null when none does. Never throws. */
@@ -60,18 +60,38 @@ export function openChatConfigPicker(onPick) {
     });
 }
 
-/** The "Chat Config" control: label + click-to-pick box. o = {testid, ref, resolving, title, onPick}. */
+/**
+ * The one chat-config control for every PB / ChapBook surface: label + click-to-pick box.
+ * o = { testid, ref, resolving, title, onPick, disabled,
+ *       label:       'Chat Config' (default) | any text | null (no label — e.g. inline "using [x]"),
+ *       placeholder: text shown with no pick (default "(click to select)"),
+ *       stacked:     true → form layout (label above a full-width box) for dialogs / wizard steps,
+ *       attrs:       extra attributes for the clickable box (e.g. a legacy data-* selector) }
+ */
 export function renderChatConfigControl(o) {
+    let label = o.label === undefined ? 'Chat Config' : o.label;
+    let disabled = !!o.disabled;
+    let box = m('div', Object.assign({
+        'data-testid': o.testid,
+        role: 'button',
+        tabindex: disabled ? -1 : 0,
+        'aria-disabled': disabled ? 'true' : undefined,
+        'aria-label': (label || 'Chat Config') + ': ' + chatConfigLabel(o.ref, o.resolving, o.placeholder),
+        class: 'text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 flex items-center gap-1 '
+            + (o.stacked ? 'w-full justify-between' : 'max-w-xs')
+            + (disabled ? ' opacity-50 cursor-not-allowed' : ' cursor-pointer hover:border-blue-500'),
+        title: o.title,
+        onclick: function () { if (!disabled) openChatConfigPicker(o.onPick); },
+        onkeydown: function (e) { if (!disabled && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openChatConfigPicker(o.onPick); } }
+    }, o.attrs || {}), [
+        m('span', { class: 'truncate' + (o.ref && o.ref.name ? '' : ' text-gray-400') }, chatConfigLabel(o.ref, o.resolving, o.placeholder)),
+        m('span', { class: 'material-symbols-outlined text-sm text-gray-400' }, 'search')
+    ]);
+    if (o.stacked) {
+        return m('div', [label ? m('label', { class: 'field-label' }, label) : null, box]);
+    }
     return m('div', { class: 'flex items-center gap-1' }, [
-        m('label', { class: 'field-label text-xs whitespace-nowrap mb-0' }, 'Chat Config'),
-        m('div', {
-            'data-testid': o.testid,
-            class: 'text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 cursor-pointer flex items-center gap-1 max-w-xs',
-            title: o.title,
-            onclick: function () { openChatConfigPicker(o.onPick); }
-        }, [
-            m('span', { class: 'truncate' + (o.ref ? '' : ' text-gray-400') }, chatConfigLabel(o.ref, o.resolving)),
-            m('span', { class: 'material-symbols-outlined text-sm text-gray-400' }, 'search')
-        ])
+        label ? m('label', { class: 'field-label text-xs whitespace-nowrap mb-0' }, label) : null,
+        box
     ]);
 }

@@ -37,6 +37,9 @@ import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { DEFAULT_CHAT_CONFIG_NAMES, withChatConfig, chatConfigLabel, resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
 import { applicationPath } from '../core/config.js';
 import { pollJob, listCharacters } from '../workflows/sceneExtractor.js';
+import { BTN, BTN_PRIMARY } from '../components/buttons.js';
+import { pageHeader } from '../components/pageHeader.js';
+import { jobRunPanel } from '../components/jobRunPanel.js';
 import {
     COMPOSITION_ENUMS, enumOptions, boardDelta, getSceneComposition, patchComposition,
     addActor, patchActor, deleteActor, addElement, patchElement, deleteElement, promoteElement,
@@ -1158,8 +1161,7 @@ function openAddElementDialog() {
 // ── Rendering ──────────────────────────────────────────────────────────
 
 const INPUT = 'w-full text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 disabled:opacity-60';
-const BTN = 'text-xs px-2 py-1 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed';
-const PRIMARY = BTN + ' bg-purple-600 text-white border-purple-600 hover:bg-purple-700';
+const PRIMARY = BTN_PRIMARY;
 const CHIP = 'text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200';
 const WARN_CHIP = 'text-[11px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200';
 
@@ -1231,23 +1233,22 @@ function renderHeader() {
     let prev = idx > 0 ? pages[idx - 1].objectId : null;
     let next = idx >= 0 && idx < pages.length - 1 ? pages[idx + 1].objectId : null;
     let coverMode = isCoverMode();
-    return m('div', { class: 'flex flex-wrap items-center gap-2 mb-3' }, [
-        m('button', { 'data-testid': 'pb-cmp-back', class: 'text-gray-500 hover:text-purple-600', title: 'Back to the book', onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); } }, icon('arrow_back', 'text-lg')),
-        m('h2', { 'data-testid': 'pb-cmp-title', class: 'text-base font-semibold' }, coverMode ? 'Cover art' : 'Composition board'),
-        coverMode ? renderPurposeTabs() : m('div', { class: 'flex items-center gap-1 ml-2' }, [
+    return pageHeader({
+        back: { testid: 'pb-cmp-back', title: 'Back to the book', onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); } },
+        title: coverMode ? 'Cover art' : 'Composition board', titleTestid: 'pb-cmp-title',
+        refresh: { testid: 'pb-cmp-refresh', disabled: loading, onclick: function () { refetch(); } },
+        meta: [coverMode ? renderPurposeTabs() : m('div', { class: 'flex items-center gap-1 ml-2' }, [
             m('button', { 'data-testid': 'pb-cmp-scene-prev', class: BTN, disabled: !prev, onclick: function () { goScene(prev); } }, icon('chevron_left')),
             m('select', { 'data-testid': 'pb-cmp-scene-select', class: INPUT + ' w-auto max-w-xs', value: sceneObjectId || '', onchange: function (e) { goScene(e.target.value); } },
                 pages.map(function (pg) { return m('option', { value: pg.objectId, selected: pg.objectId === sceneObjectId }, sceneLabel(pg)); })),
             m('button', { 'data-testid': 'pb-cmp-scene-next', class: BTN, disabled: !next, onclick: function () { goScene(next); } }, icon('chevron_right'))
-        ]),
-        m('div', { class: 'flex-1' }),
-        renderBoardChatConfigControl(),
+        ])],
+        actions: [renderBoardChatConfigControl(),
         coverMode
             ? m('button', { 'data-testid': 'pb-cmp-scenes-link', class: BTN, title: 'The scene composition board', onclick: function () { m.route.set('/picture-book/' + bookObjectId + '/compose'); } }, [icon('view_in_ar', 'text-sm align-middle mr-1'), 'Scenes'])
             : m('button', { 'data-testid': 'pb-cmp-compose-book', class: PRIMARY, disabled: !!busy.composeBook || !!(composeRun && composeRun.job && !composeRun.job.terminal), onclick: openComposeDialog }, [icon('auto_awesome', 'text-sm align-middle mr-1'), 'Compose book…']),
-        coverMode ? null : m('button', { 'data-testid': 'pb-cmp-cover-link', class: BTN, title: 'Cover art', onclick: function () { m.route.set('/picture-book/' + bookObjectId + '/cover'); } }, [icon('menu_book', 'text-sm align-middle mr-1'), 'Covers']),
-        m('button', { 'data-testid': 'pb-cmp-refresh', class: BTN, title: 'Refresh', disabled: loading, onclick: function () { refetch(); } }, icon('refresh'))
-    ]);
+        coverMode ? null : m('button', { 'data-testid': 'pb-cmp-cover-link', class: BTN, title: 'Cover art', onclick: function () { m.route.set('/picture-book/' + bookObjectId + '/cover'); } }, [icon('menu_book', 'text-sm align-middle mr-1'), 'Covers'])]
+    });
 }
 
 /** Cover mode: the render job being followed (the compose-run panel's shape). */
@@ -1256,15 +1257,13 @@ function renderRenderRun() {
     let run = renderRun;
     let job = run.job;
     let terminal = !!(job && job.terminal);
-    return m('div', { 'data-testid': 'pb-cmp-render-run', 'data-run-terminal': terminal ? 'true' : 'false', class: 'mb-3 border rounded dark:border-gray-700 p-2 text-sm' }, [
-        m('div', { class: 'flex items-center gap-2' }, [
-            terminal ? icon(job && (job.error || job.cancelled) ? 'error' : 'task_alt', 'text-base ' + (job && (job.error || job.cancelled) ? 'text-red-600' : 'text-green-600')) : icon('progress_activity', 'text-base animate-spin'),
-            m('span', { class: 'font-medium' }, 'Render ' + coverPurposeLabel(run.purpose).toLowerCase()),
-            m('span', { 'data-testid': 'pb-cmp-render-counter', class: 'text-gray-600 dark:text-gray-300' }, run.error ? run.error : renderCounterText(job)),
-            m('div', { class: 'flex-1' }),
-            m('button', { 'data-testid': 'pb-cmp-render-dismiss', class: BTN, title: terminal ? 'Dismiss' : 'Stop following (the job keeps running)', onclick: dismissRenderRun }, icon('close'))
-        ])
-    ]);
+    return jobRunPanel({
+        testid: 'pb-cmp-render-run', terminalAttr: 'bool', terminal: terminal, failed: !!(job && (job.error || job.cancelled)),
+        label: 'Render ' + coverPurposeLabel(run.purpose).toLowerCase(),
+        counter: run.error ? run.error : renderCounterText(job), counterTestid: 'pb-cmp-render-counter',
+        onDismiss: dismissRenderRun, dismissWhileRunning: true, dismissTestid: 'pb-cmp-render-dismiss',
+        dismissTitle: terminal ? 'Dismiss' : 'Stop following (the job keeps running)'
+    });
 }
 
 /**
@@ -1321,27 +1320,27 @@ function renderComposeRun() {
     let job = run.job;
     let terminal = !!(job && job.terminal);
     let res = run.result;
-    return m('div', { 'data-testid': 'pb-cmp-compose-run', 'data-run-terminal': terminal ? 'true' : 'false', class: 'mb-3 border rounded dark:border-gray-700 p-2 text-sm' }, [
-        m('div', { class: 'flex items-center gap-2' }, [
-            terminal ? icon('task_alt', 'text-base text-green-600') : icon('progress_activity', 'text-base animate-spin'),
-            m('span', { class: 'font-medium' }, run.label + (run.force ? ' (re-compose in order)' : '') + (run.quickStart ? ' + quick start' : '')),
-            m('span', { 'data-testid': 'pb-cmp-compose-counter', class: 'text-gray-600 dark:text-gray-300' }, run.error ? run.error : composeCounterText(job)),
-            m('div', { class: 'flex-1' }),
-            m('button', { 'data-testid': 'pb-cmp-compose-dismiss', class: BTN, title: terminal ? 'Dismiss' : 'Stop following (the job keeps running)', onclick: dismissRun }, icon('close'))
-        ]),
-        terminal && res && res.scenes.length ? m('ul', { class: 'mt-1 space-y-0.5 text-xs' }, res.scenes.map(function (s) {
-            return m('li', { 'data-testid': 'pb-cmp-compose-scene-' + s.sceneIndex, 'data-status': s.status || '', class: 'flex items-center gap-2' }, [
-                m('span', { class: CHIP }, s.status || '?'),
-                m('span', 'Scene ' + s.sceneIndex + (s.title ? ' · ' + s.title : '')),
-                s.actorCount || s.elementCount ? m('span', { class: 'text-gray-500' }, s.actorCount + ' actors, ' + s.elementCount + ' elements') : null,
-                s.error ? m('span', { class: 'text-red-600' }, s.error) : null,
-                s.draftRenderError ? m('span', { class: 'text-amber-700' }, 'draft: ' + s.draftRenderError) : null,
-                s.warnings.length ? m('span', { class: 'text-amber-700' }, s.warnings.join('; ')) : null,
-                s.sceneObjectId ? m('button', { class: BTN, onclick: function () { goScene(s.sceneObjectId); } }, 'Open') : null
-            ]);
-        })) : null,
-        terminal && res && res.note ? m('div', { class: 'mt-1 text-xs text-gray-500' }, res.note) : null
-    ]);
+    return jobRunPanel({
+        testid: 'pb-cmp-compose-run', terminalAttr: 'bool', terminal: terminal, failed: !!(job && job.error),
+        label: run.label + (run.force ? ' (re-compose in order)' : '') + (run.quickStart ? ' + quick start' : ''),
+        counter: run.error ? run.error : composeCounterText(job), counterTestid: 'pb-cmp-compose-counter',
+        onDismiss: dismissRun, dismissWhileRunning: true, dismissTestid: 'pb-cmp-compose-dismiss',
+        dismissTitle: terminal ? 'Dismiss' : 'Stop following (the job keeps running)',
+        body: [
+            terminal && res && res.scenes.length ? m('ul', { class: 'mt-1 space-y-0.5 text-xs' }, res.scenes.map(function (s) {
+                return m('li', { 'data-testid': 'pb-cmp-compose-scene-' + s.sceneIndex, 'data-status': s.status || '', class: 'flex items-center gap-2' }, [
+                    m('span', { class: CHIP }, s.status || '?'),
+                    m('span', 'Scene ' + s.sceneIndex + (s.title ? ' · ' + s.title : '')),
+                    s.actorCount || s.elementCount ? m('span', { class: 'text-gray-500' }, s.actorCount + ' actors, ' + s.elementCount + ' elements') : null,
+                    s.error ? m('span', { class: 'text-red-600' }, s.error) : null,
+                    s.draftRenderError ? m('span', { class: 'text-amber-700' }, 'draft: ' + s.draftRenderError) : null,
+                    s.warnings.length ? m('span', { class: 'text-amber-700' }, s.warnings.join('; ')) : null,
+                    s.sceneObjectId ? m('button', { class: BTN, onclick: function () { goScene(s.sceneObjectId); } }, 'Open') : null
+                ]);
+            })) : null,
+            terminal && res && res.note ? m('div', { class: 'mt-1 text-xs text-gray-500' }, res.note) : null
+        ]
+    });
 }
 
 function renderEmpty() {

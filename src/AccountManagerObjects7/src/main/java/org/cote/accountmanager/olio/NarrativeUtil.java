@@ -1024,12 +1024,11 @@ public class NarrativeUtil {
 		}
 
 
-		String pref = " " + cpro + " is (" + (ujobDesc.length() > 0 ? "a " + ujobDesc + " " : "") + "(" + verb + ")) ";
 		if(setting != null && setting.length() > 0) {
 			if(setting.equalsIgnoreCase("random")) {
 				setting = NarrativeUtil.getRandomSetting();
 			}
-			buff.append(pref + " " + setting);
+			buff.append(getSDActionSettingClause(cpro, ujobDesc, verb, setting));
 		}
 		else {
 			if(cell != null) {
@@ -1040,7 +1039,7 @@ public class NarrativeUtil {
 				if(stets.size() > 0) {
 					tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
 				}
-				buff.append(pref + tdesc + ".");
+				buff.append(getSDActionSettingClause(cpro, ujobDesc, verb, tdesc) + ".");
 			}
 		}
 
@@ -1050,6 +1049,16 @@ public class NarrativeUtil {
 		return buff.toString();
 	}
 	
+	/// The action + setting clause of the SD prompt: " He is ((sitting in) a spaceship bridge)", or with a trade
+	/// " He is (a smith (sitting in) a spaceship bridge)". The setting sits INSIDE the outer emphasis group with the
+	/// action, so the weighting covers "action in place" as one phrase (was "((sitting in))  a spaceship bridge",
+	/// which left the setting unweighted outside the group). jobDesc may be "" or carry a leading space.
+	public static String getSDActionSettingClause(String pronoun, String jobDesc, String verb, String place) {
+		String job = (jobDesc == null ? "" : jobDesc.trim());
+		String p = (place == null ? "" : place.trim());
+		return " " + pronoun + " is (" + (job.length() > 0 ? "a " + job + " " : "") + "(" + verb + ")" + (p.length() > 0 ? " " + p : "") + ")";
+	}
+
 	public static String getSDFigurinePrompt(PersonalityProfile pp) {
 		return 	"((isometric model)) ((isometric view)) of ((realistic)) painted game ((figurine on plastic stand) of " + getSDMinPrompt(pp) + " ((white (#FFFFFF) background)), isolated view, one character, <lora:add-detail-xl:.5>  <lora:xl_more_art-full_v1:1.2>";
 	}

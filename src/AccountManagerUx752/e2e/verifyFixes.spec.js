@@ -9,6 +9,19 @@ import { ensureSharedTestUser } from './helpers/api.js';
 
 const test = base;
 
+/** The portrait toggle lives in the chat toolbar's overflow (features/chat.js chatOverflowItems). */
+async function openChatOverflow(page) {
+    let menu = page.locator('.context-menu');
+    if (await menu.isVisible().catch(() => false)) { await page.keyboard.press('Escape'); await expect(menu).toHaveCount(0); }
+    await page.locator('button[title="More chat actions"]').click();
+    await expect(menu).toBeVisible({ timeout: 3000 });
+}
+async function closeChatOverflow(page) {
+    let menu = page.locator('.context-menu');
+    if (await menu.isVisible().catch(() => false)) await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+}
+
 let _testUser = {};
 test.beforeAll(async ({ request }) => {
     _testUser = await ensureSharedTestUser(request);
@@ -38,9 +51,10 @@ test.describe('Chat portrait header', () => {
         // Wait for a session to load (need characters assigned for portrait button)
         await page.waitForTimeout(3000);
 
-        // Check portrait toggle button exists
-        let portraitBtn = page.locator('button[title="Show portraits"]');
-        let hideBtn = page.locator('button[title="Hide portraits"]');
+        // Check portrait toggle exists (toolbar overflow item)
+        await openChatOverflow(page);
+        let portraitBtn = page.locator('.context-menu button[title="Show portraits"]');
+        let hideBtn = page.locator('.context-menu button[title="Hide portraits"]');
 
         // Default should be OFF — so "Show portraits" should be visible (not "Hide")
         let showVisible = await portraitBtn.isVisible({ timeout: 5000 }).catch(() => false);
@@ -55,6 +69,7 @@ test.describe('Chat portrait header', () => {
         // Portraits should be OFF by default
         if (showVisible) {
             console.log('VERIFIED: Portrait toggle shows "Show portraits" — default is OFF');
+            await closeChatOverflow(page);
 
             // No portrait header should be visible
             let portraitHeader = page.locator('.flex.justify-around img[style*="120px"]');
@@ -63,11 +78,14 @@ test.describe('Chat portrait header', () => {
             console.log('VERIFIED: No portrait header visible when toggle is OFF');
 
             // Click to enable
+            await openChatOverflow(page);
             await portraitBtn.click();
             await page.waitForTimeout(500);
 
-            // Now "Hide portraits" should be visible
-            await expect(page.locator('button[title="Hide portraits"]')).toBeVisible({ timeout: 3000 });
+            // Now "Hide portraits" should be offered
+            await openChatOverflow(page);
+            await expect(page.locator('.context-menu button[title="Hide portraits"]')).toBeVisible({ timeout: 3000 });
+            await closeChatOverflow(page);
             console.log('VERIFIED: Toggle switches to "Hide portraits" after click');
 
             // Portrait images should now appear (if characters have portraits)
@@ -78,8 +96,11 @@ test.describe('Chat portrait header', () => {
             await screenshot(page, 'verify-portraits-on');
 
             // Toggle back off
-            await page.locator('button[title="Hide portraits"]').click();
-            await expect(page.locator('button[title="Show portraits"]')).toBeVisible({ timeout: 3000 });
+            await openChatOverflow(page);
+            await page.locator('.context-menu button[title="Hide portraits"]').click();
+            await openChatOverflow(page);
+            await expect(page.locator('.context-menu button[title="Show portraits"]')).toBeVisible({ timeout: 3000 });
+            await closeChatOverflow(page);
             console.log('VERIFIED: Toggle back to OFF works');
         } else {
             console.log('Portrait toggle shows "Hide portraits" — default is ON, which is WRONG');

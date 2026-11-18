@@ -343,13 +343,13 @@ function renderAffectedPanel() {
                 s.staleCount + ' stale') : null,
             m('button', {
                 'data-testid': 'pbchar-affected-review',
-                class: 'button text-xs',
+                class: 'btn btn-sm',
                 disabled: !!regen,
                 onclick: openReviewQueue
             }, 'Review'),
             m('button', {
                 'data-testid': 'pbchar-affected-regenerate',
-                class: 'button text-xs',
+                class: 'btn btn-sm',
                 disabled: !!regen || !s.count || !gate.enabled,
                 title: !gate.enabled ? gate.reason : (s.count ? 'Re-render every affected scene, one at a time' : 'No scene binds this character'),
                 onclick: regenerateAffected
@@ -552,14 +552,14 @@ function renderWardrobeEntry(e) {
         m('div', { class: 'flex flex-col gap-1 flex-shrink-0' }, [
             m('button', {
                 'data-testid': 'pb-wd-set-default',
-                class: 'button text-xs',
+                class: 'btn btn-sm',
                 disabled: e.isDefault || !!wardrobeBusy,
                 title: e.isDefault ? 'This is the default outfit' : 'Make this the outfit scenes wear unless an actor pins another',
                 onclick: function () { doSetDefault(e); }
             }, busyDefault ? 'Setting…' : 'Set default'),
             m('button', {
                 'data-testid': 'pb-wd-render-ref',
-                class: 'button text-xs',
+                class: 'btn btn-sm',
                 disabled: !!run || !!wardrobeBusy,
                 title: 'Render a reference image of this outfit on the character (a job; the image lands in the apparel gallery)',
                 onclick: function () { doRenderReference(e); }
@@ -607,7 +607,7 @@ function renderWardrobePanel() {
                 }),
                 m('button', {
                     'data-testid': 'pb-wd-add',
-                    class: 'button text-xs',
+                    class: 'btn btn-sm',
                     disabled: !!wardrobeBusy || !String(wardrobeAddText || '').trim(),
                     title: 'Build the outfit from this description with the LLM and add it as an alternate',
                     onclick: doAddWardrobeEntry
@@ -616,7 +616,7 @@ function renderWardrobePanel() {
             m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
                 m('button', {
                     'data-testid': 'pb-wd-migrate',
-                    class: 'button text-xs',
+                    class: 'btn btn-sm',
                     disabled: !!wardrobeBusy,
                     title: 'Pin every legacy "scene N" apparel tag of this book onto the matching scene actor (idempotent)',
                     onclick: doMigrateSceneTags
@@ -775,11 +775,17 @@ async function doMergeSelected() {
         let c = characters.find(function (x) { return x.objectId === id; });
         return (c && c.name) || id;
     });
-    let ok = window.confirm('Merge ' + dropNames.join(', ') + ' into "' + keepName + '"?\n\n'
-        + 'Every scene that references ' + (dropNames.length > 1 ? 'them' : 'it')
-        + ' will be repointed to "' + keepName + '", and '
-        + (dropNames.length > 1 ? 'those characters' : 'that character')
-        + ' will be deleted along with their portrait, statistics and wardrobe. This cannot be undone.');
+    let ok = await Dialog.confirm({
+        title: 'Merge Characters',
+        message: 'Merge ' + dropNames.join(', ') + ' into "' + keepName + '"? '
+            + 'Every scene that references ' + (dropNames.length > 1 ? 'them' : 'it')
+            + ' will be repointed to "' + keepName + '", and '
+            + (dropNames.length > 1 ? 'those characters' : 'that character')
+            + ' will be deleted along with their portrait, statistics and wardrobe. This cannot be undone.',
+        confirmLabel: 'Merge',
+        confirmIcon: 'merge',
+        destructive: true
+    });
     if (!ok) return;
 
     merging = true;
@@ -820,9 +826,14 @@ async function doDeleteSelected() {
     let name = (characters.find(function (c) { return c.objectId === selectedObjectId; }) || {}).name
         || (selectedInst && selectedInst.entity && selectedInst.entity.name)
         || selectedObjectId;
-    let ok = window.confirm('Delete "' + name + '"?\n\n'
-        + 'It will be removed from every scene that references it, and deleted along with its '
-        + 'portrait, statistics and wardrobe. This cannot be undone.');
+    let ok = await Dialog.confirm({
+        title: 'Delete Character',
+        message: 'Delete "' + name + '"? It will be removed from every scene that references it, and '
+            + 'deleted along with its portrait, statistics and wardrobe. This cannot be undone.',
+        confirmLabel: 'Delete',
+        confirmIcon: 'delete',
+        destructive: true
+    });
     if (!ok) return;
 
     deleting = true;
@@ -1002,7 +1013,7 @@ function renderApparelPanel() {
                 value: sceneTagInputs[a.objectId] || '',
                 oninput: function (e) { sceneTagInputs[a.objectId] = e.target.value; }
             }),
-            m('button', { class: 'button', onclick: function () { tagApparel(a.objectId); } }, 'Tag')
+            m('button', { class: 'btn', onclick: function () { tagApparel(a.objectId); } }, 'Tag')
         ]);
     }));
 }
@@ -1013,7 +1024,7 @@ function renderPortraitPanel() {
         profile && profile.portrait
             ? m(PortraitImage, { objectId: profile.portrait.objectId })
             : m('div', { class: 'text-sm text-gray-500' }, 'No portrait yet.'),
-        m('button', { class: 'button primary', onclick: doReimage }, 'Regenerate Portrait')
+        m('button', { class: 'btn btn-primary', onclick: doReimage }, 'Regenerate Portrait')
     ]);
 }
 
@@ -1062,12 +1073,12 @@ function renderIdentityEditor() {
         }),
         m('div', { class: 'flex items-center gap-2' }, [
             m('button', {
-                class: 'button primary text-xs',
+                class: 'btn btn-sm btn-primary',
                 'data-char-save': true,
                 disabled: savingIdentity || !(editName || '').trim(),
                 onclick: saveIdentity
             }, savingIdentity ? 'Saving…' : 'Save'),
-            m('button', { class: 'button text-xs', disabled: savingIdentity, onclick: cancelEditIdentity }, 'Cancel')
+            m('button', { class: 'btn btn-sm', disabled: savingIdentity, onclick: cancelEditIdentity }, 'Cancel')
         ])
     ]);
 }
@@ -1124,7 +1135,7 @@ function renderDetail() {
         m('div', [
             m('div', { class: 'flex items-center justify-between mb-1' }, [
                 m('div', { class: 'font-medium' }, 'Apparel'),
-                m('button', { class: 'button', onclick: doOutfitBuilder }, 'Generate New Outfit')
+                m('button', { class: 'btn', onclick: doOutfitBuilder }, 'Generate New Outfit')
             ]),
             renderApparelPanel()
         ])
@@ -1153,11 +1164,11 @@ function renderMergeToolbar() {
                 : 'Select the character to KEEP first, then tick its duplicates.'),
         m('div', { class: 'flex gap-2' }, [
             m('button', {
-                class: 'button primary text-xs',
+                class: 'btn btn-sm btn-primary',
                 disabled: merging || !selectedObjectId || !selectedCount,
                 onclick: doMergeSelected
             }, merging ? 'Merging…' : ('Merge ' + selectedCount + ' →')),
-            m('button', { class: 'button text-xs', disabled: merging, onclick: toggleMergeMode }, 'Cancel')
+            m('button', { class: 'btn btn-sm', disabled: merging, onclick: toggleMergeMode }, 'Cancel')
         ])
     ]);
 }
@@ -1250,6 +1261,8 @@ export function __setPbCharStateForTest(patch) {
     if ('wardrobe' in patch) wardrobe = patch.wardrobe;
     if ('wardrobeBusy' in patch) wardrobeBusy = patch.wardrobeBusy;
     if ('wardrobeAddText' in patch) wardrobeAddText = patch.wardrobeAddText;
+    if ('characters' in patch) characters = patch.characters;
+    if ('mergeSelection' in patch) mergeSelection = patch.mergeSelection;
     if ('wardrobeRuns' in patch) wardrobeRuns = patch.wardrobeRuns && typeof patch.wardrobeRuns === 'object' ? patch.wardrobeRuns : {};
 }
 export const __pbCharSelectCharacterForTest = selectCharacter;
@@ -1261,6 +1274,8 @@ export const __pbCharSetDefaultForTest = doSetDefault;
 export const __pbCharRenderReferenceForTest = doRenderReference;
 export const __pbCharMigrateSceneTagsForTest = doMigrateSceneTags;
 export const __pbCharDoReimageForTest = doReimage;
+export const __pbCharMergeSelectedForTest = doMergeSelected;
+export const __pbCharDeleteSelectedForTest = doDeleteSelected;
 
 export {
     openCharacterManager, initCharacterManager, renderCharacterManagerContent,

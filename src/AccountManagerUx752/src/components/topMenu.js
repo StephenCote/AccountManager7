@@ -92,6 +92,13 @@ const topMenu = {
                 'aria-label': "Home"
             }, m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "home")),
             m("button", {
+                class: "menu-button" + (/^\/app(\/|$)/.test(m.route.get() || '') ? " active" : ""),
+                onclick: function () { m.route.set("/app"); },
+                title: "App Panel",
+                'aria-label': "App Panel",
+                'data-top': "app"
+            }, m("span", { class: "material-symbols-outlined", 'aria-hidden': 'true' }, "apps")),
+            m("button", {
                 class: "menu-button",
                 onclick: toggleDarkMode,
                 title: "Toggle dark mode",

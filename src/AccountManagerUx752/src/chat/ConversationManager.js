@@ -167,10 +167,6 @@ function sessionListView() {
     return filtered.map(s => sessionItemView(s, s.objectId === selectedObjectId));
 }
 
-function metaRow(label, value) {
-    return m("div", { class: "text-xs text-gray-400" }, label + ": " + value);
-}
-
 function metadataView() {
     if (!metadataExpanded) return "";
     let meta = getSelectedMetadata();
@@ -209,15 +205,7 @@ function metadataView() {
         })
     ]));
 
-    if (meta.chatConfig) {
-        let cc = meta.chatConfig;
-        if (chatConfigs && cc.objectId) {
-            let full = chatConfigs.find(c => c.objectId === cc.objectId);
-            if (full) cc = full;
-        }
-        if (cc.model) rows.push(metaRow("Model", cc.model));
-    }
-    if (meta.contextType) rows.push(metaRow("Context", meta.contextType));
+    /// Model and context type moved to the chat's LLM Debug drawer (chat/LLMDebugPanel.js SessionView).
 
     return m("div", { class: "px-3 py-2 border-t border-gray-200 dark:border-gray-600 space-y-1" }, rows);
 }

@@ -19,6 +19,7 @@ import {
     normalizeQa, qaBadge, qaFindings, qaReportsForNewestAttempt
 } from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
+import { pageHeader, chip, metaText } from '../components/pageHeader.js';
 
 let bookObjectId = null;
 let queue = null;
@@ -329,31 +330,16 @@ export function renderReviewHeader() {
             onclick: function () { setFilter(f); }
         }, label);
     };
-    return m('div', { class: 'flex items-center gap-3 mb-4 flex-wrap' }, [
-        m('button', {
-            'data-testid': 'pb2-review-back',
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-            title: 'Back to book',
-            onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
-        m('span', { class: 'font-semibold text-sm' }, 'Review queue'),
-        m('span', { 'data-testid': 'pb2-review-counts', class: 'text-xs text-gray-500' },
-            queue ? (s.pending + ' pending · ' + s.artifacts + ' artifact' + (s.artifacts !== 1 ? 's' : '') + ' · ' + s.nodes + ' node' + (s.nodes !== 1 ? 's' : '')) : ''),
-        queue ? m('span', {
-            'data-testid': 'pb2-review-auto-approve',
-            'data-on': s.autoApprove ? '1' : '0',
-            class: 'text-xs px-2 py-0.5 rounded-full ' + (s.autoApprove ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300')
-        }, 'Auto-approve: ' + (s.autoApprove ? 'ON' : 'OFF')) : null,
-        m('span', { class: 'flex-1' }),
-        tab('all', 'All', 'pb2-review-filter-all'),
-        tab('auto-approved', 'Auto-approved', 'pb2-review-filter-auto'),
-        m('button', {
-            'data-testid': 'pb2-review-refresh',
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
-            title: 'Refresh', disabled: loading,
-            onclick: function () { loadQueue(); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'refresh'))
-    ]);
+    return pageHeader({
+        back: { testid: 'pb2-review-back', title: 'Back to book', onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); } },
+        title: 'Review queue',
+        meta: [
+            metaText(queue ? (s.pending + ' pending · ' + s.artifacts + ' artifact' + (s.artifacts !== 1 ? 's' : '') + ' · ' + s.nodes + ' node' + (s.nodes !== 1 ? 's' : '')) : '', { 'data-testid': 'pb2-review-counts' }),
+            queue ? chip('Auto-approve: ' + (s.autoApprove ? 'ON' : 'OFF'), s.autoApprove ? 'green' : 'gray', { 'data-testid': 'pb2-review-auto-approve', 'data-on': s.autoApprove ? '1' : '0' }) : null
+        ],
+        actions: [tab('all', 'All', 'pb2-review-filter-all'), tab('auto-approved', 'Auto-approved', 'pb2-review-filter-auto')],
+        refresh: { testid: 'pb2-review-refresh', disabled: loading, onclick: function () { loadQueue(); } }
+    });
 }
 
 export function renderReviewBody() {

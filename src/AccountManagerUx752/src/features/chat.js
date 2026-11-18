@@ -23,6 +23,9 @@ import { SceneGenerator } from '../chat/SceneGenerator.js';
 import { ChainManager } from '../chat/ChainManager.js';
 import { ChatExport } from '../chat/ChatExport.js';
 import { am7imageTokens } from '../chat/imageTokens.js';
+import { LLMDebugPanel } from '../chat/LLMDebugPanel.js';
+import { contextMenu } from '../components/contextMenu.js';
+import { Dialog } from '../components/dialogCore.js';
 import { marked } from 'marked';
 
 // Ensure am7model._sd is loaded for image token generation (fetchTemplate)
@@ -44,6 +47,10 @@ let editMode = false;
 let deletedIndices = new Set();
 let fullMode = false;
 let showPortraits = false;
+/// Render <mcp:context> blocks as debug cards instead of stripping them (LLM Debug drawer toggle).
+let showMcpContext = false;
+/// The per-chat LLM Debug drawer under the toolbar (opened from the toolbar overflow).
+let debugDrawerOpen = false;
 
 function newChatConfig() {
     return {
@@ -444,6 +451,22 @@ async function doSend(message) {
     }
 }
 
+/// Toolbar overflow "Clear history": wipes the session's messages on the server, so ask first.
+async function confirmClearHistory() {
+    if (!inst) return false;
+    let name = inst.api.name ? inst.api.name() : null;
+    let ok = await Dialog.confirm({
+        title: "Clear history",
+        message: "Clear all messages in \"" + (name || "this chat") + "\"? This cannot be undone.",
+        confirmLabel: "Clear",
+        confirmIcon: "delete_sweep",
+        destructive: true
+    });
+    if (!ok) return false;
+    await doCancel();
+    return true;
+}
+
 async function doCancel() {
     chatCfg.pending = false;
     chatCfg.streaming = false;
@@ -576,7 +599,7 @@ function getFormattedContent(content, msg, idx) {
     /// hideThoughts MUST be part of the cache key — without it, toggling the
     /// show/hide-thoughts button has no visible effect on already-rendered
     /// messages because the cached HTML is returned unchanged.
-    let cacheKey = msg.role + ":" + idx + ":" + (hideThoughts ? "h" : "s") + ":" + content;
+    let cacheKey = msg.role + ":" + idx + ":" + (hideThoughts ? "h" : "s") + (showMcpContext ? "m" : "") + ":" + content;
     let cached = _formattedCache.get(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -587,8 +610,9 @@ function getFormattedContent(content, msg, idx) {
     /// Strip <think>/<thought>/<private> when hidden; when shown, wrap them in a
     /// visible styled <details> block (see ChatTokenRenderer.renderThoughts).
     processed = ChatTokenRenderer.renderThoughts(processed, hideThoughts);
-    // 1. Strip MCP blocks before markdown (they contain XML that marked would escape)
-    processed = ChatTokenRenderer.processMcpTokens(processed, false);
+    // 1. Strip MCP blocks before markdown (they contain XML that marked would escape);
+    //    the LLM Debug drawer's "Show MCP context in chat" renders them as cards instead.
+    processed = ChatTokenRenderer.processMcpTokens(processed, showMcpContext);
 
     // 2. Extract image/audio tokens into placeholders before markdown rendering.
     //    marked.parse() would escape ${...} and the <img>/<button> HTML they produce.
@@ -849,9 +873,6 @@ function renderConfigAccordion() {
         let pt = inst.api.promptTemplate();
         if (pt && pt.name) promptTemplateName = pt.name;
     }
-    let rating = chatCfg && chatCfg.chat && chatCfg.chat.rating ? chatCfg.chat.rating.toUpperCase() : null;
-    let model = chatCfg && chatCfg.chat && chatCfg.chat.model ? chatCfg.chat.model : null;
-
     return m("div", { class: "border-t border-gray-200 dark:border-gray-600" }, [
         m("button", {
             class: "w-full text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700",
@@ -863,9 +884,8 @@ function renderConfigAccordion() {
         ]),
         configAccordionOpen ? m("div", { class: "px-3 py-2 space-y-1" }, [
             configRow("Chat Config", chatConfigName, "settings", "chatConfig"),
-            configRow("Prompt", promptConfigName || promptTemplateName, "edit_note", "promptTemplate"),
-            model ? m("div", { class: "text-xs text-gray-400" }, "Model: " + model) : null,
-            rating ? m("div", { class: "text-xs text-gray-400" }, "Rating: " + rating) : null
+            configRow("Prompt", promptConfigName || promptTemplateName, "edit_note", "promptTemplate")
+            // Model and rating moved to the LLM Debug drawer (renderDebugDrawer / LLMDebugPanel.SessionView).
         ]) : null
     ]);
 }
@@ -969,12 +989,7 @@ function renderToolbar() {
                 title: bgActivity.label || ""
             }, bgActivity.icon) : null
         ]),
-        m("div", { class: "flex items-center gap-1" }, [
-            m("button", {
-                class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
-                title: hideThoughts ? "Show thoughts" : "Hide thoughts",
-                onclick: function() { hideThoughts = !hideThoughts; m.redraw(); }
-            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, hideThoughts ? "visibility_off" : "visibility")),
+        m("div", { class: "flex items-center gap-1", "data-chat-toolbar": "actions" }, [
             // Edit mode toggle
             inst ? m("button", {
                 class: "p-1.5 rounded " + (editMode ? "text-blue-600 bg-blue-50 dark:bg-blue-900/30" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"),
@@ -1020,38 +1035,112 @@ function renderToolbar() {
                 }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "landscape")),
                 m(SceneGenerator.PanelView)
             ]) : null,
-            // Export
-            inst && chatCfg.history.messages.length > 0 ? m("button", {
-                class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
-                title: "Export chat",
-                onclick: function() {
-                    let name = inst.api.name ? inst.api.name() : "chat";
-                    ChatExport.exportChat(chatCfg.history, name, "markdown", chatCfg);
-                }
-            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "download")) : null,
-            // Portrait toggle
-            (chatCfg.system || chatCfg.user) ? m("button", {
-                class: "p-1.5 rounded " + (showPortraits ? "text-blue-600 bg-blue-50 dark:bg-blue-900/30" : "text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"),
-                title: showPortraits ? "Hide portraits" : "Show portraits",
-                onclick: function() { showPortraits = !showPortraits; m.redraw(); }
-            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "portrait")) : null,
-            // Fullscreen toggle
+            // Export, portraits, fullscreen, LLM Debug, clear history and delete session live in the overflow
             m("button", {
                 class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
-                title: fullMode ? "Exit fullscreen" : "Fullscreen",
-                onclick: function() { fullMode = !fullMode; m.redraw(); }
-            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, fullMode ? "close_fullscreen" : "open_in_full")),
-            inst ? m("button", {
-                class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
-                title: "Clear history",
-                onclick: doCancel
-            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "delete_sweep")) : null,
-            inst ? m("button", {
-                class: "p-1.5 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800",
-                title: "Delete session",
-                onclick: doDelete
-            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "delete")) : null
+                title: "More chat actions",
+                "aria-haspopup": "menu",
+                "data-testid": "chat-overflow",
+                onclick: openChatOverflow
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:18px" }, "more_vert"))
         ])
+    ]);
+}
+
+/**
+ * The chat toolbar's overflow (components/contextMenu.js items, same pattern as the PB2 reader's Tools
+ * overflow). Each item keeps the title its old toolbar button had, so existing selectors still find it once
+ * the menu is open. Exported for Vitest.
+ */
+export function chatOverflowItems() {
+    let items = [];
+    if (inst && chatCfg.history.messages && chatCfg.history.messages.length > 0) {
+        items.push({ label: "Export chat", icon: "download", attrs: { "data-testid": "chat-export", title: "Export chat" }, action: function() {
+            let name = inst.api.name ? inst.api.name() : "chat";
+            ChatExport.exportChat(chatCfg.history, name, "markdown", chatCfg);
+        } });
+    }
+    if (chatCfg.system || chatCfg.user) {
+        items.push({ label: showPortraits ? "Hide portraits" : "Show portraits", icon: "portrait",
+            attrs: { "data-testid": "chat-portraits", title: showPortraits ? "Hide portraits" : "Show portraits" },
+            action: function() { showPortraits = !showPortraits; m.redraw(); } });
+    }
+    items.push({ label: fullMode ? "Exit fullscreen" : "Fullscreen", icon: fullMode ? "close_fullscreen" : "open_in_full",
+        attrs: { "data-testid": "chat-fullscreen", title: fullMode ? "Exit fullscreen" : "Fullscreen" },
+        action: function() { fullMode = !fullMode; m.redraw(); } });
+    if (inst) {
+        items.push({ label: debugDrawerOpen ? "Hide LLM Debug" : "LLM Debug", icon: "bug_report",
+            attrs: { "data-testid": "chat-llm-debug", title: debugDrawerOpen ? "Hide the LLM debug drawer" : "Show the LLM debug drawer for this chat" },
+            action: function() { debugDrawerOpen = !debugDrawerOpen; m.redraw(); } });
+        items.push({ divider: true });
+        items.push({ label: "Clear history", icon: "delete_sweep", attrs: { "data-testid": "chat-clear-history", title: "Clear history" }, action: confirmClearHistory });
+        items.push({ label: "Delete session", icon: "delete", attrs: { "data-testid": "chat-delete-session", title: "Delete session" }, action: doDelete });
+    }
+    return items;
+}
+
+/** Open the overflow under its button (keyboard activation has no pointer position). */
+function openChatOverflow(e) {
+    let r = e && e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget.getBoundingClientRect() : null;
+    let at = r ? { clientX: Math.max(8, r.right - 180), clientY: r.bottom + 4 } : { clientX: e ? e.clientX : 0, clientY: e ? e.clientY : 0 };
+    contextMenu.show({
+        preventDefault: function () { if (e && e.preventDefault) e.preventDefault(); },
+        stopPropagation: function () { if (e && e.stopPropagation) e.stopPropagation(); },
+        clientX: at.clientX, clientY: at.clientY
+    }, chatOverflowItems());
+}
+
+// ── LLM Debug drawer ────────────────────────────────────────────────
+
+/// What LLMDebugPanel.SessionView shows for the active chat; the callbacks drive this view's own state.
+function sessionDebugInfo() {
+    if (!inst) return null;
+    let meta = ConversationManager.getSelectedSession() || {};
+    let pc = inst.api.promptConfig ? inst.api.promptConfig() : null;
+    let pt = inst.api.promptTemplate ? inst.api.promptTemplate() : null;
+    let cc = chatCfg.chat;
+    let ctx = ContextPanel.getData();
+    let session = inst.entity ? inst.entity.session : null;
+    return {
+        sessionId: inst.api.objectId(),
+        requestId: session && session.objectId ? session.objectId : null,
+        name: meta.chatTitle || meta.name || (inst.api.name ? inst.api.name() : null),
+        model: cc && cc.model ? cc.model : null,
+        rating: cc && cc.rating ? String(cc.rating).toUpperCase() : null,
+        chatConfigName: cc && cc.name ? cc.name : null,
+        promptConfigName: pc && pc.name ? pc.name : null,
+        promptTemplateName: pt && pt.name ? pt.name : null,
+        contextType: meta.contextType || null,
+        hideThoughts: hideThoughts,
+        onToggleThoughts: function() { hideThoughts = !hideThoughts; m.redraw(); },
+        showMcp: showMcpContext,
+        onToggleMcp: function() { showMcpContext = !showMcpContext; clearFormattedCache(); m.redraw(); },
+        summarizing: !!(ctx && ctx.summarizing),
+        contextRefs: ctx && ctx.contextRefs ? ctx.contextRefs : [],
+        onCancelSummarize: function(objectId) { ContextPanel.cancelSummarize(objectId); },
+        onRetrySummarize: function(objectId) { ContextPanel.retrySummarize(objectId); },
+        canExtract: !!MemoryPanel.getChatRequestObjectId(),
+        extracting: MemoryPanel.isExtracting(),
+        onExtractMemories: function() { MemoryPanel.forceExtract(); }
+    };
+}
+
+function renderDebugDrawer(info) {
+    if (!debugDrawerOpen || !info) return null;
+    return m("div", {
+        class: "px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/60 max-h-72 overflow-y-auto shrink-0",
+        "data-testid": "chat-llm-debug-drawer"
+    }, [
+        m("div", { class: "flex items-center gap-2 mb-2" }, [
+            m("span", { class: "material-symbols-outlined text-gray-500", style: "font-size:16px" }, "bug_report"),
+            m("span", { class: "text-xs font-semibold text-gray-700 dark:text-gray-200 flex-1" }, "LLM Debug — this chat"),
+            m("button", {
+                class: "p-0.5 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700",
+                title: "Close LLM debug drawer",
+                onclick: function() { debugDrawerOpen = false; m.redraw(); }
+            }, m("span", { class: "material-symbols-outlined", style: "font-size:16px" }, "close"))
+        ]),
+        m(LLMDebugPanel.SessionView, { info: info })
     ]);
 }
 
@@ -1355,12 +1444,15 @@ const chatView = {
     },
 
     view: function() {
+        let debugInfo = sessionDebugInfo();
+        if (debugInfo) LLMDebugPanel.setLastChatSession(debugInfo);
         return m("div", { class: "flex flex-1 w-full bg-white dark:bg-gray-950 min-h-0" }, [
             // Sidebar (hidden in fullscreen)
             fullMode ? null : renderSidebar(),
             // Main chat area
             m("div", { class: "flex-1 flex flex-col min-w-0" }, [
                 renderToolbar(),
+                renderDebugDrawer(debugInfo),
                 m(ChainManager.ProgressView),
                 // Portrait header (Ux7 style)
                 inst ? renderPortraitHeader() : null,
@@ -1476,6 +1568,10 @@ async function initChatView() {
 
     m.redraw();
 }
+
+/// Exported for Vitest (src/test/chatToolbarOverflow.test.js): select a session and render the toolbar /
+/// debug drawer without mounting the whole route (whose oninit needs the chat library on the server).
+export { pickSession, renderToolbar, renderDebugDrawer, sessionDebugInfo, confirmClearHistory };
 
 // ── Route export ────────────────────────────────────────────────────
 

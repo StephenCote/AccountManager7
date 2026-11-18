@@ -275,9 +275,9 @@ test.describe('PictureBook Series/Chapters (N3 + N4)', () => {
             { timeout: 30000 }
         );
 
-        // Open the New Chapter dialog via the toolbar Chapter button (the 📖 Chapter action,
-        // distinct from the view-mode toggle's plain "Chapter" and from "📖 Pages").
-        const chapterBtn = page.locator('button', { hasText: '📖 Chapter' });
+        // Open the New Chapter dialog via the toolbar "New chapter" button (pbwf-chapter-open,
+        // distinct from the view-mode toggle's plain "Chapter").
+        const chapterBtn = page.getByTestId('pbwf-chapter-open');
         await chapterBtn.click();
 
         // N3 additions must be present.
@@ -306,7 +306,7 @@ test.describe('PictureBook Series/Chapters (N3 + N4)', () => {
             { timeout: 30000 }
         );
 
-        await page.locator('button', { hasText: '📖 Chapter' }).click();
+        await page.getByTestId('pbwf-chapter-open').click();
 
         // The chapter dialog is now a dialogCore dialog — exactly one backdrop, correct title.
         const backdrop = page.locator('.am7-dialog-backdrop[role="dialog"]');

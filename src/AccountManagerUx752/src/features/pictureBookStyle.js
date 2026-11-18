@@ -22,6 +22,8 @@ import { am7model } from '../core/model.js';
 import { layout, pageLayout } from '../router.js';
 import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
+import { BTN, BTN_PRIMARY } from '../components/buttons.js';
+import { pageHeader, chip, metaText } from '../components/pageHeader.js';
 import {
     getStyle, putStyle, lockStyle, listModelsForTask, normalizeStyle,
     STYLE_PAGE_FORMATS, STYLE_QUALITY_PRESETS, STYLE_TASKS
@@ -559,7 +561,6 @@ export async function unlinkSdConfig() {
 // ── Rendering ──────────────────────────────────────────────────────────
 
 const INPUT = 'w-full text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 disabled:opacity-60';
-const BTN = 'text-xs px-2 py-1 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed';
 
 function isLocked() { return !!(style && style.own && style.own.locked); }
 
@@ -711,19 +712,15 @@ export function renderStyleHeader(opts) {
     let own = style && style.own;
     let locked = isLocked();
     let dirty = !!(draft && Object.keys(draft).length);
-    return m('div', { class: 'flex items-center gap-3 mb-4 flex-wrap' }, [
-        embedded ? null : m('button', {
-            'data-testid': 'pb2-style-back',
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-            title: 'Back to book',
-            onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
-        m('span', { class: 'font-semibold text-sm' }, 'Book style'),
-        own ? m('span', { 'data-testid': 'pb2-style-own-name', class: 'text-xs text-gray-500' }, own.name) : null,
-        locked ? m('span', { 'data-testid': 'pb2-style-locked', class: 'text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' },
-            'Locked' + (style.lockedBy ? ' by ' + hopName(style, style.lockedBy) : '')) : null,
-        m('span', { class: 'flex-1' }),
-        m('button', {
+    return pageHeader({
+        back: embedded ? null : { testid: 'pb2-style-back', title: 'Back to book', onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); } },
+        title: 'Book style',
+        meta: [
+            own ? metaText(own.name, { 'data-testid': 'pb2-style-own-name' }) : null,
+            locked ? chip('Locked' + (style.lockedBy ? ' by ' + hopName(style, style.lockedBy) : ''), 'amber', { 'data-testid': 'pb2-style-locked' }) : null
+        ],
+        refresh: { testid: 'pb2-style-refresh', disabled: loading, onclick: function () { loadStyle(); } },
+        actions: [m('button', {
             'data-testid': 'pb2-style-lock',
             class: BTN,
             disabled: lockBusy || !own,
@@ -732,17 +729,11 @@ export function renderStyleHeader(opts) {
         }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' }, locked ? 'lock_open' : 'lock'), locked ? 'Unlock' : 'Lock']),
         m('button', {
             'data-testid': 'pb2-style-save',
-            class: BTN + ' bg-purple-600 text-white border-purple-600 hover:bg-purple-700',
+            class: BTN_PRIMARY,
             disabled: saving || !dirty || locked,
             onclick: saveStyle
-        }, saving ? 'Saving…' : 'Save'),
-        m('button', {
-            'data-testid': 'pb2-style-refresh',
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
-            title: 'Refresh', disabled: loading,
-            onclick: function () { loadStyle(); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'refresh'))
-    ]);
+        }, saving ? 'Saving…' : 'Save')]
+    });
 }
 
 export function renderStyleBody() {

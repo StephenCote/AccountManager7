@@ -1,5 +1,6 @@
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
+import { applicationPath } from '../core/config.js';
 import { Dialog } from '../components/dialogCore.js';
 import {
     createFromScenes, createChapBookRecord, regenerateBlurb, loadPictureBook,
@@ -10,7 +11,8 @@ import { initCharacterManager, renderCharacterManagerContent } from './pictureBo
 import { listPb2Books, listSeriesBooks, detectBoundaries, createSeries, createChapter, resolvePb2BookObjectId, styleStepFinishState } from './pictureBookWorkflow.js';
 import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
-import { resolveDefaultChatConfig } from '../components/pbChatConfig.js';
+import { resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
+import { bgActivityBanner } from '../components/jobRunPanel.js';
 
 /**
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
@@ -117,6 +119,165 @@ let promptTemplates = {      // per-prompt mode (object refs)
 };
 let defaultsLoading = false;
 
+// ── Scene count guidance ──────────────────────────────────────────────
+// The wizard used to send no `count`, so every document — a 3-page story or a 60-page novella —
+// got the server's MAX_SCENES_DEFAULT of 10, spread over the chunks with a floor of one per chunk
+// (measured on alchemy.doc: 57K chars → 8 chunks → at most 2 new scenes per chunk → 14 scenes).
+// The count is now guessed from the source length and stays editable before AND after extraction.
+const CHARS_PER_SUGGESTED_SCENE = 2500; // ≈ 400 words of prose per illustrated scene
+const CHARS_PER_WORD = 6;               // display estimate only (alchemy.doc: 57,113 chars / 9,402 words)
+const SUGGESTED_SCENES_MIN = 3;
+const SUGGESTED_SCENES_MAX = 60;
+const SCENE_COUNT_MIN = 1;
+const SCENE_COUNT_MAX = 200;
+/// Server fallback when no count is sent (PictureBookUtil.MAX_SCENES_DEFAULT) — shown in the hint only.
+const SERVER_DEFAULT_SCENES = 10;
+
+let sceneCount = null;          // the count the next extraction sends; null = let the server default
+let sceneCountEdited = false;   // the user typed a count, so a later measurement must not overwrite it
+let sourceChars = null;         // extracted-text length of the source, from detect-boundaries
+let sourceChapters = 0;         // chapter ranges detect-boundaries found (≥2 ⇒ per-chapter fan-out)
+let sourceMeasuring = false;
+let sourceMeasureFailed = false;
+let lastExtractCount = null;    // the count the last extraction actually ran with
+
+/** Suggested scene count for a text of `chars` characters; null when the size is unknown. */
+function suggestSceneCount(chars) {
+    if (!(chars > 0)) return null;
+    let n = Math.round(chars / CHARS_PER_SUGGESTED_SCENE);
+    return Math.min(SUGGESTED_SCENES_MAX, Math.max(SUGGESTED_SCENES_MIN, n));
+}
+
+/** Parse/clamp a user-entered count; blank or non-numeric ⇒ null (server default). */
+function normalizeSceneCount(v) {
+    let n = parseInt(v, 10);
+    if (isNaN(n) || n <= 0) return null;
+    return Math.min(SCENE_COUNT_MAX, Math.max(SCENE_COUNT_MIN, n));
+}
+
+/**
+ * A chapter's share of the book's scene count, proportional to its length, never below 1. The
+ * server applies `count` per extraction call, so sending the whole-book count to every chapter job
+ * would multiply it by the number of chapters.
+ */
+function chapterSceneCount(total, startOffset, endOffset, totalChars) {
+    if (!(total > 0)) return null;
+    let len = Number(endOffset) - Number(startOffset);
+    if (!(totalChars > 0) || !(len > 0)) return Math.max(1, Math.round(total));
+    return Math.max(1, Math.round(total * len / totalChars));
+}
+
+/** Adopt detect-boundaries ranges as the source measurement; fills the suggestion unless the user edited it. */
+function applySourceRanges(ranges) {
+    let end = 0;
+    (ranges || []).forEach(function (r) {
+        let e = Number(r && r.endOffset);
+        if (e > end) end = e;
+    });
+    sourceChars = end > 0 ? end : null;
+    sourceChapters = Array.isArray(ranges) ? ranges.length : 0;
+    sourceMeasureFailed = sourceChars == null;
+    if (!sceneCountEdited) sceneCount = suggestSceneCount(sourceChars);
+}
+
+/** Measure the source on wizard open so Step 1 can show the guessed count. Never throws. */
+async function measureSource() {
+    if (!workObjectId) return;
+    sourceMeasuring = true;
+    sourceMeasureFailed = false;
+    m.redraw();
+    try {
+        applySourceRanges(await detectBoundaries(workObjectId));
+    } catch (e) {
+        // detect-boundaries resolves data.data only. The wizard also opens on data.note sources,
+        // whose text is on the record itself: measure that instead. Anything else (unsupported type,
+        // no read access) leaves no guess — the user can still type a count.
+        let len = await noteTextLength(workObjectId);
+        if (len > 0) applySourceRanges([{ startOffset: 0, endOffset: len }]);
+        else sourceMeasureFailed = true;
+    } finally {
+        sourceMeasuring = false;
+        m.redraw();
+    }
+}
+
+/** Text length of a data.note source, or 0 when it is not a readable note. Never throws. */
+async function noteTextLength(objectId) {
+    try {
+        let resp = await fetch(applicationPath + '/rest/model/data.note/' + encodeURIComponent(objectId) + '/full',
+            { credentials: 'include' });
+        if (!resp.ok) return 0;
+        let rec = await resp.json();
+        return (rec && typeof rec.text === 'string') ? rec.text.length : 0;
+    } catch (e) {
+        return 0;
+    }
+}
+
+function setSceneCountFromInput(v) {
+    sceneCount = normalizeSceneCount(v);
+    sceneCountEdited = true;
+}
+
+function useSuggestedSceneCount() {
+    sceneCount = suggestSceneCount(sourceChars);
+    sceneCountEdited = false;
+}
+
+/**
+ * Whether the count differs from the one the last extraction THIS wizard started ran with. A run
+ * the wizard only reattached to has no known count (lastExtractCount stays null), so it never
+ * counts as changed — Re-extract then resumes rather than discarding work it cannot compare.
+ */
+function sceneCountChanged() {
+    return lastExtractCount !== null && lastExtractCount !== sceneCount && extractedScenes.length > 0;
+}
+
+/**
+ * Step 2 "Re-extract". With an unchanged count it behaves as before (an unfinished run resumes from
+ * its checkpoint). With a CHANGED count it starts fresh: resuming would keep the chunks already
+ * extracted under the old per-chunk budget and apply the new count only to the rest. A completed
+ * run has no checkpoint left, so `fresh` costs nothing there.
+ */
+function doReextract() {
+    return doExtract(sceneCountChanged() ? { fresh: true } : undefined);
+}
+
+function renderSceneCountHint() {
+    let suggested = suggestSceneCount(sourceChars);
+    let text;
+    if (sourceMeasuring) text = 'Measuring source text...';
+    else if (suggested != null) {
+        text = 'Suggested ' + suggested + ' for ~' + Math.round(sourceChars / CHARS_PER_WORD).toLocaleString()
+            + ' words (about one scene per ' + Math.round(CHARS_PER_SUGGESTED_SCENE / CHARS_PER_WORD) + ' words)';
+        if (sourceChapters >= 2) text += ', split across ' + sourceChapters + ' chapters by length';
+        text += '.';
+    } else if (sourceMeasureFailed) {
+        text = 'Could not measure the source text. Leave blank for the server default ('
+            + SERVER_DEFAULT_SCENES + ').';
+    } else text = 'Leave blank for the server default (' + SERVER_DEFAULT_SCENES + ').';
+    return m('div', { class: 'text-[10px] text-gray-400 flex items-center gap-2' }, [
+        m('span', text),
+        (suggested != null && sceneCount !== suggested) ? m('button', {
+            class: 'underline hover:text-gray-600',
+            'data-pb-scene-count-suggested': '1',
+            onclick: useSuggestedSceneCount
+        }, 'Use ' + suggested) : null
+    ]);
+}
+
+function renderSceneCountInput(extraClass) {
+    return m('input', {
+        type: 'number', min: SCENE_COUNT_MIN, max: SCENE_COUNT_MAX,
+        class: 'text-field-compact ' + (extraClass || ''),
+        'data-pb-scene-count': '1',
+        placeholder: String(SERVER_DEFAULT_SCENES),
+        disabled: extracting,
+        value: sceneCount == null ? '' : sceneCount,
+        oninput: function (e) { setSceneCountFromInput(e.target.value); }
+    });
+}
+
 // Default prompt template names for each slot — resolved on demand from system library
 const DEFAULT_PROMPT_NAMES = {
     extractScenes: 'pictureBook.extract-scenes',
@@ -183,6 +344,13 @@ function resetState() {
     promptTemplate = null;
     promptTemplates = { extractScenes: null, extractChunk: null, extractCharacter: null, sceneBlurb: null, landscapePrompt: null };
     defaultsLoading = false;
+    sceneCount = null;
+    sceneCountEdited = false;
+    sourceChars = null;
+    sourceChapters = 0;
+    sourceMeasuring = false;
+    sourceMeasureFailed = false;
+    lastExtractCount = null;
     extractedScenes = [];
     extracting = false;
     extractError = null;
@@ -289,22 +457,11 @@ function chatConfigName() {
 }
 
 // One chat config drives every LLM call the wizard makes (extraction, retries, per-scene image
-// prompts), so every picker in the wizard binds to the same chatConfigRef.
-function openChatConfigPicker() {
-    ObjectPicker.openLibrary({
-        libraryType: 'chatConfig',
-        title: 'Select Chat Config',
-        onSelect: function (item) {
-            if (item && item.name) {
-                chatConfigRef = { name: item.name, objectId: item.objectId };
-                m.redraw();
-            }
-        }
-    });
-}
-
-function chatConfigLabel() {
-    return chatConfigRef ? chatConfigRef.name : (defaultsLoading ? 'Loading default...' : '(click to select)');
+// prompts), so every picker in the wizard binds to the same chatConfigRef — through the one shared
+// control (components/pbChatConfig.renderChatConfigControl) every PB / ChapBook surface uses.
+function pickWizardChatConfig(ref) {
+    chatConfigRef = ref;
+    m.redraw();
 }
 
 /**
@@ -429,6 +586,10 @@ async function doExtract(opts) {
             console.warn('[pictureBook] chapter boundary detection failed; '
                 + 'extracting as a single document:', e && e.message);
         }
+        // The same detection doubles as the size measurement: if the open-time measure had not
+        // finished (or failed), fill the guess in now — unless the user typed their own count.
+        if (ranges.length) applySourceRanges(ranges);
+        lastExtractCount = sceneCount;
         extractChaptered = ranges.length >= 2;
         if (extractChaptered) {
             // Multi-chapter novel: one bounded extraction job per chapter, sequentially.
@@ -436,7 +597,7 @@ async function doExtract(opts) {
         } else {
             // Single whole-document extraction — the ORIGINAL path, unchanged. No offsets, no series;
             // startExtractScenes produces exactly '?async=true' [+ '&fresh=true'] as before.
-            let started = await startExtractScenes(workObjectId, chatConfigName(), null,
+            let started = await startExtractScenes(workObjectId, chatConfigName(), sceneCount,
                 getPromptTemplate('extractScenes'), opts);
             extractJobId = started.jobId;
             m.redraw();
@@ -587,7 +748,8 @@ async function fanOutChaptersExtract(ranges, opts) {
         //    unprocessed with no record of why.
         let job;
         try {
-            let started = await startExtractScenes(workObjectId, chatConfigName(), null,
+            let started = await startExtractScenes(workObjectId, chatConfigName(),
+                chapterSceneCount(sceneCount, r.startOffset, r.endOffset, sourceChars),
                 getPromptTemplate('extractScenes'), {
                     fresh: !!(opts && opts.fresh),
                     seriesObjectId: pb2SeriesObjectId,
@@ -1172,7 +1334,7 @@ function renderExtractProgress() {
                     : (total > 0 ? 'Extracting scenes — chunk ' + cur + ' of ' + total
                         : 'Extracting scenes...')),
             extractJobId ? m('button', {
-                class: 'btn text-xs',
+                class: 'btn btn-sm',
                 disabled: extractCancelling,
                 onclick: function () { cancelExtract(); }
             }, [
@@ -1280,7 +1442,7 @@ function renderCheckpointBanner() {
             return m('li', { key: row.noteObjectId || i, 'data-pb-checkpoint-row': '1', class: 'flex items-center gap-2' }, [
                 m('span', { class: 'flex-1' }, describeCheckpointRow(row)),
                 m('button', {
-                    class: 'btn text-xs btn-primary',
+                    class: 'btn btn-sm btn-primary',
                     'data-pb-checkpoint-resume': '1',
                     disabled: extracting || checkpointDiscarding,
                     title: complete
@@ -1290,7 +1452,7 @@ function renderCheckpointBanner() {
                 }, [m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'resume'),
                     complete ? 'Review saved scenes' : 'Resume']),
                 m('button', {
-                    class: 'btn text-xs',
+                    class: 'btn btn-sm',
                     'data-pb-checkpoint-discard': '1',
                     disabled: extracting || checkpointDiscarding,
                     title: 'Delete the saved progress without extracting anything',
@@ -1317,12 +1479,12 @@ function renderExtractWarnings() {
             // scene already extracted and re-pays for the chunks that already succeeded. On a
             // 17-chunk document that is most of an hour thrown away to recover from a blip.
             m('button', {
-                class: 'btn text-xs btn-primary',
+                class: 'btn btn-sm btn-primary',
                 disabled: extracting,
                 onclick: function () { doExtract(); }
             }, [m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'resume'), 'Resume']),
             m('button', {
-                class: 'btn text-xs',
+                class: 'btn btn-sm',
                 disabled: extracting,
                 title: 'Discard the scenes above and re-extract the whole document from the start',
                 onclick: function () { doExtract({ fresh: true }); }
@@ -1378,7 +1540,7 @@ function renderFailedPassages() {
             })),
         anyChaptered ? null : m('div', { class: 'flex flex-wrap items-center gap-2 pt-1' }, [
             m('button', {
-                class: 'btn text-xs btn-primary',
+                class: 'btn btn-sm btn-primary',
                 'data-pb-retry-failed': '1',
                 disabled: extracting || !retryCount,
                 title: retryCount
@@ -1390,16 +1552,11 @@ function renderFailedPassages() {
                 extracting && retryingFailed ? 'Retrying...' : 'Retry ' + retryCount + ' failed passage' + (retryCount === 1 ? '' : 's')
             ]),
             m('span', { class: 'text-gray-600 dark:text-gray-300' }, 'using'),
-            m('button', {
-                class: 'btn text-xs',
-                'data-pb-retry-chatconfig': '1',
-                disabled: extracting,
-                title: 'Change the chat config (model) the retry will use — a refused passage usually needs a different model',
-                onclick: openChatConfigPicker
-            }, [
-                chatConfigRef ? chatConfigRef.name : '(default chat config)',
-                m('span', { class: 'material-symbols-outlined text-xs ml-1' }, 'search')
-            ])
+            renderChatConfigControl({
+                label: null, ref: chatConfigRef, resolving: defaultsLoading, placeholder: '(default chat config)',
+                disabled: extracting, onPick: pickWizardChatConfig, attrs: { 'data-pb-retry-chatconfig': '1' },
+                title: 'Change the chat config (model) the retry will use — a refused passage usually needs a different model'
+            })
         ])
     ]);
 }
@@ -1452,7 +1609,7 @@ function renderChapterSummary() {
             : null,
         m('div', { class: 'flex flex-wrap items-center gap-2 pt-1' }, [
             m('button', {
-                class: 'btn text-xs btn-primary',
+                class: 'btn btn-sm btn-primary',
                 'data-pb-open-series': '1',
                 disabled: extracting,
                 onclick: function () {
@@ -1462,13 +1619,13 @@ function renderChapterSummary() {
                 }
             }, 'Open series'),
             m('button', {
-                class: 'btn text-xs',
+                class: 'btn btn-sm',
                 'data-pb-rerun-resume': '1',
                 disabled: extracting,
                 onclick: function () { doExtract(); }
             }, 'Re-run to resume'),
             retryable ? m('button', {
-                class: 'btn text-xs',
+                class: 'btn btn-sm',
                 'data-pb-retry-failed-chapters': '1',
                 disabled: extracting,
                 title: 'Re-run only the ' + retryable + ' passage(s) the model could not read, with the chat config selected above, and add any recovered scenes to their chapter books',
@@ -1522,28 +1679,29 @@ function renderStep1() {
         ]),
 
         method === 'auto' ? m('div', { class: 'space-y-3' }, [
-            m('div', [
-                m('label', { class: 'field-label' }, 'Chat Config'),
-                m('div', {
-                    class: 'text-field-full text-sm cursor-pointer flex items-center justify-between',
-                    onclick: openChatConfigPicker
-                }, [
-                    m('span', { class: chatConfigRef ? '' : 'text-gray-400' }, chatConfigLabel()),
-                    m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
-                ])
-            ]),
-            m('div', [
-                m('label', { class: 'field-label' }, 'Genre Hint'),
-                m('select', {
-                    class: 'text-field-compact',
-                    value: genre,
-                    onchange: function (e) { genre = e.target.value; }
-                }, [
-                    m('option', { value: '' }, 'None'),
-                    m('option', { value: 'fantasy' }, 'Fantasy'),
-                    m('option', { value: 'sci-fi' }, 'Sci-Fi'),
-                    m('option', { value: 'contemporary' }, 'Contemporary'),
-                    m('option', { value: 'historical' }, 'Historical')
+            renderChatConfigControl({
+                stacked: true, testid: 'pb-wiz-chatconfig', ref: chatConfigRef, resolving: defaultsLoading,
+                onPick: pickWizardChatConfig, title: 'The chat config every extraction call uses'
+            }),
+            m('div', { class: 'grid grid-cols-2 gap-3' }, [
+                m('div', [
+                    m('label', { class: 'field-label' }, 'Scene Count'),
+                    renderSceneCountInput(),
+                    renderSceneCountHint()
+                ]),
+                m('div', [
+                    m('label', { class: 'field-label' }, 'Genre Hint'),
+                    m('select', {
+                        class: 'text-field-compact',
+                        value: genre,
+                        onchange: function (e) { genre = e.target.value; }
+                    }, [
+                        m('option', { value: '' }, 'None'),
+                        m('option', { value: 'fantasy' }, 'Fantasy'),
+                        m('option', { value: 'sci-fi' }, 'Sci-Fi'),
+                        m('option', { value: 'contemporary' }, 'Contemporary'),
+                        m('option', { value: 'historical' }, 'Historical')
+                    ])
                 ])
             ]),
             // Prompt template config
@@ -1648,13 +1806,21 @@ function renderStep2() {
             m('h3', { class: 'font-medium' }, 'Scene List (' + extractedScenes.length + ')'),
             m('div', { class: 'flex gap-2' }, [
                 m('button', {
-                    class: 'btn text-xs',
+                    class: 'btn btn-sm',
                     onclick: function () { addManualScene(); }
                 }, [m('span', { class: 'material-symbols-outlined text-xs mr-1' }, 'add'), 'Add Scene']),
+                m('label', { class: 'flex items-center gap-1 text-xs text-gray-500' }, [
+                    'Scenes',
+                    renderSceneCountInput('w-16')
+                ]),
                 m('button', {
-                    class: 'btn text-xs',
+                    class: 'btn btn-sm',
+                    'data-pb-reextract': '1',
                     disabled: extracting,
-                    onclick: function () { doExtract(); }
+                    title: sceneCountChanged()
+                        ? 'Scene count changed: discards the scenes below and re-extracts from the start'
+                        : 'Re-run extraction (resumes an unfinished run)',
+                    onclick: doReextract
                 }, extracting ? 'Extracting...' : 'Re-extract')
             ])
         ]),
@@ -1706,7 +1872,7 @@ function renderStep2() {
                                 }
                             }),
                             blurbOid ? m('button', {
-                                class: 'btn text-xs text-gray-500',
+                                class: 'btn btn-sm',
                                 disabled: regenerating,
                                 onclick: function () { doRegenerateBlurb(i, blurbOid); }
                             }, [
@@ -1745,12 +1911,7 @@ function renderStep3() {
 }
 
 function renderBgActivity() {
-    let bg = LLMConnector.bgActivity;
-    if (!bg || !bg.label) return null;
-    return m('div', { class: 'flex items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded mx-4 mb-2' }, [
-        m('span', { class: 'material-symbols-outlined text-base animate-spin' }, bg.icon || 'progress_activity'),
-        m('span', bg.label)
-    ]);
+    return bgActivityBanner({ bg: LLMConnector.bgActivity, class: 'mx-4' });
 }
 
 function renderStep4() {
@@ -2010,6 +2171,8 @@ async function pictureBook(entity, inst, onClose) {
         return;
     }
     loadDefaults();
+    // Not awaited: the Step 1 scene-count hint fills in on its own redraw.
+    measureSource();
 
     // Issue 9: check for AccountUsers role — same pattern as ChapBook.
     let pbRoles = page.context && page.context() && page.context().roles;
@@ -2108,7 +2271,8 @@ export function __extractStateForTest() {
         step, workObjectId, extracting, retryingFailed, extractChaptered, extractError, extractJobId, extractProgress,
         extractPartial, extractFailedChunks, extractedScenes, reattaching,
         extractChapterIndex, extractChapterCount, pb2SeriesObjectId, extractChapterSummary, chatConfigRef,
-        pendingCheckpoints, checkpointDiscarding, bookObjectId, pb2WizardBookOid
+        pendingCheckpoints, checkpointDiscarding, bookObjectId, pb2WizardBookOid,
+        sceneCount, sceneCountEdited, sourceChars, sourceChapters, sourceMeasureFailed, lastExtractCount
     };
 }
 export function __setExtractStateForTest(patch) {
@@ -2124,6 +2288,10 @@ export function __setExtractStateForTest(patch) {
     if ('workName' in patch) workName = patch.workName;
     if ('bookObjectId' in patch) bookObjectId = patch.bookObjectId;
     if ('pb2WizardBookOid' in patch) pb2WizardBookOid = patch.pb2WizardBookOid;
+    if ('sceneCount' in patch) sceneCount = patch.sceneCount;
+    if ('sceneCountEdited' in patch) sceneCountEdited = patch.sceneCountEdited;
+    if ('sourceChars' in patch) sourceChars = patch.sourceChars;
+    if ('lastExtractCount' in patch) lastExtractCount = patch.lastExtractCount;
 }
 export function __resetExtractStateForTest(work) {
     step = 1;
@@ -2152,4 +2320,14 @@ export function __resetExtractStateForTest(work) {
     promptTemplate = null;
     bookName = '';
     workName = '';
+    sceneCount = null;
+    sceneCountEdited = false;
+    sourceChars = null;
+    sourceChapters = 0;
+    sourceMeasuring = false;
+    sourceMeasureFailed = false;
+    lastExtractCount = null;
 }
+// Test-only seam: scene-count guidance.
+export { suggestSceneCount, normalizeSceneCount, chapterSceneCount, measureSource, setSceneCountFromInput,
+    useSuggestedSceneCount, sceneCountChanged, doReextract, renderStep1, renderStep2 };

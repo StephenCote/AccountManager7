@@ -29,6 +29,8 @@ import { loadPictureBook, resolveImageUrl } from '../workflows/sceneExtractor.js
 import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { ObjectPicker } from '../components/picker.js';
 import { Dialog } from '../components/dialogCore.js';
+import { pageHeader, chip, metaText } from '../components/pageHeader.js';
+import { btn, iconBtn } from '../components/buttons.js';
 
 // Re-exported for callers/tests that import from the canvas module (the pure impl lives in the
 // deps-free ../workflows/pictureBookSeries.js so it is testable without the mithril/router imports).
@@ -1868,108 +1870,70 @@ var pictureBookWorkflowView = {
         let sz = canvasSize();
 
         return m('div', { style: 'display:flex;flex-direction:column;height:100%;' }, [
-            // Toolbar
-            m('div', { style: 'display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid #e2e8f0;flex-shrink:0;' }, [
-                m('span', { class: 'material-symbols-outlined', style: 'color:#3b82f6;' }, 'account_tree'),
-                m('span', { 'data-wf-title': true, style: 'font-weight:700;font-size:15px;' }, bookName ? bookName + ' — Workflow' : 'Workflow Graph'),
-                loading ? m('span', { style: 'font-size:12px;color:#64748b;margin-left:8px;' }, 'Loading…') : null,
-                // Count the nodes actually returned: the DTO's nodeCount is the stored counter and
-                // has been observed as 0 for a graph with populated nodes[].
-                graphData ? m('span', { 'data-node-count': true, style: 'font-size:12px;color:#64748b;margin-left:8px;' },
-                    ((graphData.nodes && graphData.nodes.length) || 0) + ' nodes') : null,
-                // Stale count badge
-                graphData && graphData.nodes ? (function () {
-                    let staleCount = graphData.nodes.filter(function (n) {
-                        return (n.status || n.storedStatus || '').toUpperCase() === 'STALE';
-                    }).length;
-                    return staleCount > 0
-                        ? m('span', { style: 'font-size:11px;color:#d97706;font-weight:600;margin-left:4px;' },
-                            staleCount + ' stale')
-                        : null;
-                })() : null,
-                // Spacer
-                m('div', { style: 'flex:1;' }),
-                // N4 — view-mode toggle (single-chapter graph ⇄ whole-series overview).
-                m('div', {
-                    'data-view-mode-toggle': true,
-                    style: 'display:inline-flex;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin-right:4px;',
-                }, [
-                    m('button', {
-                        'data-view-mode': 'chapter',
-                        title: 'Show this chapter’s workflow graph',
-                        style: 'border:none;padding:4px 10px;cursor:pointer;font-size:12px;'
-                            + (viewMode === 'chapter' ? 'background:#3b82f6;color:#fff;' : 'background:#fff;color:#334155;'),
-                        onclick: function () { setViewMode('chapter'); },
-                    }, 'Chapter'),
-                    m('button', {
-                        'data-view-mode': 'series',
-                        title: 'Show all chapters in this series',
-                        style: 'border:none;padding:4px 10px;cursor:pointer;font-size:12px;'
-                            + (viewMode === 'series' ? 'background:#3b82f6;color:#fff;' : 'background:#fff;color:#334155;'),
-                        onclick: function () { setViewMode('series'); },
-                    }, 'Series'),
-                ]),
-                // Recheck stale button — only meaningful for the single-chapter graph.
-                (viewMode === 'chapter' && pb2BookObjectId) ? m('button', {
-                    title: 'Recompute staleness from backend and reload graph',
-                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: doRecheckStale,
-                    disabled: recheckingStale,
-                }, recheckingStale ? '…' : '↻ Stale') : null,
-                // Zoom controls — graph-only.
-                viewMode === 'chapter' ? m('button', {
-                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;',
-                    onclick: function () { zoom = Math.max(0.3, zoom * 0.85); m.redraw(); }
-                }, '−') : null,
-                viewMode === 'chapter' ? m('span', { style: 'font-size:12px;min-width:40px;text-align:center;' }, Math.round(zoom * 100) + '%') : null,
-                viewMode === 'chapter' ? m('button', {
-                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:14px;',
-                    onclick: function () { zoom = Math.min(3, zoom * 1.15); m.redraw(); }
-                }, '+') : null,
-                viewMode === 'chapter' ? m('button', {
-                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: function () { pan = { x: 0, y: 0 }; zoom = 1; m.redraw(); }
-                }, 'Reset') : null,
-                // Share button
-                pb2BookObjectId ? m('button', {
-                    class: 'btn',
-                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: openMemberDialog
-                }, '🔗 Share') : null,
-                // Chapter button
-                pb2BookObjectId ? m('button', {
-                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: openChapterDialog
-                }, '📖 Chapter') : null,
-                // Retention button — V3 §23 variant retention dry run → apply (book-scoped)
-                pb2BookObjectId ? m('button', {
-                    'data-testid': 'pbwf-retention-open',
-                    title: 'Archive old variants / delete archived bytes',
-                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: openRetentionDialog
-                }, '🗄 Retention') : null,
-                // Pages button — PB2 page reader
-                pb2BookObjectId ? m('button', {
-                    title: 'View scene pages',
-                    style: 'border:1px solid #a855f7;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:#7c3aed;',
-                    onclick: function () { m.route.set('/picture-book/v2/' + pb2BookObjectId); }
-                }, '📖 Pages') : null,
-                // Back button. When the route id IS the PB2 book (ChapBook / PB2 chapter — the direct
-                // workflowView hit), the PB1 viewer route would 404 on it, so go to the PB2 page
-                // reader instead; the book name rides along in history.state so the reader can
-                // title itself before its own book lookup returns.
-                m('button', {
-                    'data-back-to-book': true,
-                    style: 'border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;',
-                    onclick: function () {
+            // Toolbar — shared pageHeader (bar variant) + shared buttons
+            (function () {
+                let staleCount = graphData && graphData.nodes ? graphData.nodes.filter(function (n) {
+                    return (n.status || n.storedStatus || '').toUpperCase() === 'STALE';
+                }).length : 0;
+                let chapterView = viewMode === 'chapter';
+                let seg = function (mode, label, tip) {
+                    let on = viewMode === mode;
+                    return m('button', {
+                        'data-view-mode': mode, title: tip,
+                        class: 'px-2.5 py-1 text-xs ' + (on ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'),
+                        onclick: function () { setViewMode(mode); }
+                    }, label);
+                };
+                return pageHeader({
+                    bar: true,
+                    // When the route id IS the PB2 book (ChapBook / PB2 chapter — the direct workflowView
+                    // hit), the PB1 viewer route would 404 on it, so go to the PB2 page reader instead; the
+                    // book name rides along in history.state so the reader can title itself before its own
+                    // book lookup returns.
+                    back: { title: 'Back to book', attrs: { 'data-back-to-book': true }, onclick: function () {
                         if (pb2BookObjectId && pb2BookObjectId === bookGroupObjectId) {
                             m.route.set('/picture-book/v2/' + pb2BookObjectId, null, { state: { bookName: bookName || '' } });
                         } else {
                             m.route.set('/picture-book/' + bookGroupObjectId);
                         }
-                    }
-                }, '← Book'),
-            ]),
+                    } },
+                    icon: 'account_tree',
+                    title: bookName ? bookName + ' — Workflow' : 'Workflow Graph',
+                    titleAttrs: { 'data-wf-title': true },
+                    meta: [
+                        loading ? metaText('Loading…') : null,
+                        // Count the nodes actually returned: the DTO's nodeCount is the stored counter and
+                        // has been observed as 0 for a graph with populated nodes[].
+                        graphData ? metaText(((graphData.nodes && graphData.nodes.length) || 0) + ' nodes', { 'data-node-count': true }) : null,
+                        staleCount > 0 ? chip(staleCount + ' stale', 'amber') : null
+                    ],
+                    actions: [
+                        // N4 — view-mode toggle (single-chapter graph ⇄ whole-series overview).
+                        m('div', { 'data-view-mode-toggle': true, class: 'inline-flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden' }, [
+                            seg('chapter', 'Chapter', 'Show this chapter’s workflow graph'),
+                            seg('series', 'Series', 'Show all chapters in this series')
+                        ]),
+                        // Recheck stale — only meaningful for the single-chapter graph.
+                        (chapterView && pb2BookObjectId) ? btn({ size: 'sm', icon: recheckingStale ? 'progress_activity' : 'sync', label: 'Recheck stale',
+                            title: 'Recompute staleness from backend and reload graph', disabled: recheckingStale, onclick: doRecheckStale }) : null,
+                        // Zoom controls — graph-only.
+                        chapterView ? m('div', { class: 'inline-flex items-center gap-1' }, [
+                            iconBtn('zoom_out', 'Zoom out', function () { zoom = Math.max(0.3, zoom * 0.85); m.redraw(); }),
+                            m('span', { class: 'text-xs w-10 text-center' }, Math.round(zoom * 100) + '%'),
+                            iconBtn('zoom_in', 'Zoom in', function () { zoom = Math.min(3, zoom * 1.15); m.redraw(); }),
+                            iconBtn('fit_screen', 'Reset view', function () { pan = { x: 0, y: 0 }; zoom = 1; m.redraw(); })
+                        ]) : null,
+                        pb2BookObjectId ? btn({ size: 'sm', icon: 'share', label: 'Share', onclick: openMemberDialog, attrs: { 'data-testid': 'pbwf-share-open' } }) : null,
+                        pb2BookObjectId ? btn({ size: 'sm', icon: 'library_add', label: 'New chapter', onclick: openChapterDialog, attrs: { 'data-testid': 'pbwf-chapter-open' } }) : null,
+                        // Retention — V3 §23 variant retention dry run → apply (book-scoped)
+                        pb2BookObjectId ? btn({ size: 'sm', icon: 'inventory_2', label: 'Retention', title: 'Archive old variants / delete archived bytes',
+                            onclick: openRetentionDialog, attrs: { 'data-testid': 'pbwf-retention-open' } }) : null,
+                        // Pages — PB2 page reader
+                        pb2BookObjectId ? btn({ size: 'sm', kind: 'primary', icon: 'auto_stories', label: 'Pages', title: 'View scene pages',
+                            onclick: function () { m.route.set('/picture-book/v2/' + pb2BookObjectId); } }) : null
+                    ]
+                });
+            })(),
 
             // N4 — whole-series overview (distinct view state from the single-chapter graph).
             viewMode === 'series' ? renderSeriesView() : null,

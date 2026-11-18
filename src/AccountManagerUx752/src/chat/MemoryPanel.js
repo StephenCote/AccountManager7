@@ -292,7 +292,6 @@ function memoryItemView(mem) {
         }, [
             m("span", { class: "material-symbols-outlined flex-shrink-0 text-gray-400", style: "font-size: 14px;" }, memoryTypeIcon(type)),
             m("span", { class: "flex-1 truncate text-gray-700 dark:text-gray-300" }, summary || content.substring(0, 80)),
-            importance > 0 ? m("span", { class: "text-gray-400 flex-shrink-0", title: "Importance: " + importance }, importance) : "",
             isCharView ? m("button", {
                 class: "flex-shrink-0 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600",
                 title: "Share to current pair",
@@ -305,7 +304,11 @@ function memoryItemView(mem) {
             }, m("span", { class: "material-symbols-outlined text-red-400 opacity-40 hover:opacity-100", style: "font-size: 14px;" }, "delete"))
         ]),
         isExpanded ? m("div", { class: "px-3 py-1.5 bg-gray-50 dark:bg-gray-800 text-xs" }, [
-            m("div", { class: "text-gray-400 capitalize mb-0.5" }, type),
+            // Importance lives in the expanded detail, not the compact row.
+            m("div", { class: "text-gray-400 mb-0.5" }, [
+                m("span", { class: "capitalize" }, type),
+                importance > 0 ? m("span", { "data-memory-importance": importance }, " · importance " + importance + "/10") : null
+            ]),
             m("div", { class: "text-gray-700 dark:text-gray-300 whitespace-pre-wrap" }, content)
         ]) : ""
     ]);
@@ -426,6 +429,10 @@ const MemoryPanel = {
     getMemoryCount: () => _memoryCount,
     toggle: () => { _expanded = !_expanded; },
     isExpanded: () => _expanded,
+    /** Force memory extraction for the loaded chat (driven from the LLM Debug drawer). */
+    forceExtract: forceExtract,
+    isExtracting: () => _extracting,
+    getChatRequestObjectId: () => _chatRequestObjectId,
 
     clear: () => {
         _memories = null;
@@ -493,14 +500,7 @@ const MemoryPanel = {
                         label
                     ]),
                     m("span", { class: "flex items-center gap-1" }, [
-                        _chatRequestObjectId ? m("button", {
-                            class: "p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600",
-                            title: "Extract memories from conversation",
-                            onclick: e => { e.stopPropagation(); forceExtract(); }
-                        }, m("span", {
-                            class: "material-symbols-outlined" + (_extracting ? " animate-spin" : ""),
-                            style: "font-size: 16px;"
-                        }, _extracting ? "progress_activity" : "auto_awesome")) : "",
+                        // Force-extract moved to the chat's LLM Debug drawer (LLMDebugPanel.SessionView).
                         m("button", {
                             class: "p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600",
                             title: "Create memory",

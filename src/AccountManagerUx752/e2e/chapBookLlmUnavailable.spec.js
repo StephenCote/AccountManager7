@@ -515,7 +515,7 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
 
             // Select the throw-away config in the dialog's "Chat Config" picker: single-click the row
             // (a double-click descends into it), then the picker's confirm (check) button.
-            const chatCfgControl = renderDialog.locator('div.mb-4:has(label.field-label:text-is("Chat Config")) div.text-field-full');
+            const chatCfgControl = renderDialog.getByTestId('cb-render-chatconfig');
             await expect(chatCfgControl, 'Render dialog Chat Config control missing').toBeVisible({ timeout: 10000 });
             await chatCfgControl.click();
             const overlay = page.locator('.am7-picker-overlay');

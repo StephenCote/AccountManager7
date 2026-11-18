@@ -26,6 +26,9 @@ import { Dialog } from '../components/dialogCore.js';
 import { chatConfigName, resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
 import { pollJob, resolveImageUrl } from '../workflows/sceneExtractor.js';
 import { orderNewestFirst, reviewStatusOf, isAutoApproved, artifactActions } from './pictureBookReview.js';
+import { BTN, BTN_PRIMARY, BTN_DANGER } from '../components/buttons.js';
+import { pageHeader, metaText } from '../components/pageHeader.js';
+import { jobRunPanel } from '../components/jobRunPanel.js';
 import {
     listLocations, createLocation, updateLocation, deleteLocation, createLocationVariant, lockLocation,
     mergeLocations, renderLocation, isPinnedNodeRefusal, proposeLocations, locationPassFromJob, listLocationProposals,
@@ -574,7 +577,6 @@ function artifactAct(label, fn, artifactObjectId) {
 // ── Rendering ──────────────────────────────────────────────────────────
 
 const INPUT = 'w-full text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 disabled:opacity-60';
-const BTN = 'text-xs px-2 py-1 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed';
 const CHIP = 'text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200';
 
 function field(label, control) {
@@ -594,17 +596,6 @@ function statusClass(rs) {
         case 'ARCHIVED': return 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300';
         case 'IN_REVIEW': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200';
         default: return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200';
-    }
-}
-
-function stageIcon(state) {
-    switch (state) {
-        case 'running': return 'progress_activity';
-        case 'done': return 'check_circle';
-        case 'failed': return 'error';
-        case 'skipped': return 'push_pin';
-        case 'unrun': return 'remove_circle_outline';
-        default: return 'radio_button_unchecked';
     }
 }
 
@@ -645,7 +636,7 @@ function renderChainArtifact(loc, node, a) {
                 onclick: function () { artifactAct('Approved', approveArtifact, a.objectId); }
             }, 'Approve') : null,
             acts.canReject ? m('button', {
-                'data-testid': 'pb-loc-reject', class: BTN + ' text-red-600', disabled: isBusy, title: loc.locked ? 'Unlock the location to reject a render' : 'Reject this render',
+                'data-testid': 'pb-loc-reject', class: BTN_DANGER, disabled: isBusy, title: loc.locked ? 'Unlock the location to reject a render' : 'Reject this render',
                 onclick: function () { artifactAct('Rejected', rejectArtifact, a.objectId); }
             }, 'Reject') : null
         ])
@@ -675,27 +666,15 @@ function renderRun(key) {
     let stages = deriveStageList(run.planned, job);
     let total = job && typeof job.total === 'number' ? job.total : stages.length;
     let current = job && typeof job.current === 'number' ? job.current : 0;
-    return m('div', { 'data-testid': 'pb-loc-run', 'data-run-terminal': terminal ? '1' : '0', class: 'mt-2 p-2 rounded border dark:border-gray-700 bg-white dark:bg-gray-900 text-xs' }, [
-        m('div', { class: 'flex items-center gap-2 mb-1' }, [
-            m('span', { class: 'material-symbols-outlined text-base ' + (terminal ? 'text-gray-500' : 'text-teal-500 animate-spin') }, terminal ? 'task_alt' : 'progress_activity'),
-            m('span', { class: 'font-semibold' }, run.label),
-            m('span', { 'data-testid': 'pb-loc-run-counter', class: 'text-gray-500' }, terminal ? runSummaryText(job) : (current + ' of ' + total + (job && job.phase ? ' · ' + job.phase : ''))),
-            m('span', { class: 'flex-1' }),
-            terminal || run.error ? m('button', { 'data-testid': 'pb-loc-run-dismiss', class: 'text-gray-400 hover:text-gray-600', title: 'Dismiss', onclick: function () { dismissRun(key); } },
-                m('span', { class: 'material-symbols-outlined text-base' }, 'close')) : null
-        ]),
-        run.error ? m('div', { class: 'text-red-500 mb-1' }, run.error) : null,
-        stages.length ? m('ul', { class: 'space-y-0.5' }, stages.map(function (s) {
-            return m('li', {
-                key: s.handle, 'data-testid': 'pb-loc-run-stage', 'data-stage-state': s.state,
-                class: 'flex items-center gap-1 ' + (s.state === 'failed' ? 'text-red-600' : s.state === 'running' ? 'text-teal-600' : s.state === 'done' ? 'text-green-700' : 'text-gray-500')
-            }, [
-                m('span', { class: 'material-symbols-outlined text-sm' + (s.state === 'running' ? ' animate-spin' : '') }, stageIcon(s.state)),
-                m('span', { class: 'font-mono' }, s.handle),
-                s.error ? m('span', { class: 'ml-1 truncate' }, '— ' + s.error) : null
-            ]);
-        })) : m('div', { class: 'text-gray-500' }, 'Waiting for the first poll…')
-    ]);
+    return jobRunPanel({
+        compact: true, testid: 'pb-loc-run', terminal: terminal, failed: !!(job && (job.error || job.failed)),
+        label: run.label,
+        counter: terminal ? runSummaryText(job) : (current + ' of ' + total + (job && job.phase ? ' · ' + job.phase : '')),
+        counterTestid: 'pb-loc-run-counter',
+        error: run.error,
+        onDismiss: function () { dismissRun(key); }, dismissTestid: 'pb-loc-run-dismiss',
+        stages: stages, stageTestid: 'pb-loc-run-stage', emptyText: 'Waiting for the first poll…'
+    });
 }
 
 function renderPinnedRefusal(loc, variant) {
@@ -714,7 +693,7 @@ function renderButton(loc, variant) {
     let watching = !!runAborts[key];
     return m('button', {
         'data-testid': variant ? 'pb-loc-variant-render' : 'pb-loc-render',
-        class: BTN + ' bg-teal-600 text-white border-teal-600 hover:bg-teal-700',
+        class: BTN_PRIMARY,
         disabled: loc.locked || !!busy[key] || watching,
         title: loc.locked ? 'Unlock the location to render it' : watching ? 'A render is being watched' : 'Render on the server\'s SD backend',
         onclick: function () { startRender(loc, variant); }
@@ -747,7 +726,7 @@ function renderEditor(loc) {
             field('Aliases (comma separated)', m('input', { 'data-testid': 'pb-loc-edit-aliases', class: INPUT, value: draft.aliases, oninput: function (e) { draft.aliases = e.target.value; } }))
         ]),
         m('div', { class: 'flex items-center gap-2' }, [
-            m('button', { 'data-testid': 'pb-loc-save', class: BTN + ' bg-purple-600 text-white border-purple-600 hover:bg-purple-700', disabled: isBusy, onclick: function () { saveEdit(loc); } }, isBusy ? 'Saving…' : 'Save'),
+            m('button', { 'data-testid': 'pb-loc-save', class: BTN_PRIMARY, disabled: isBusy, onclick: function () { saveEdit(loc); } }, isBusy ? 'Saving…' : 'Save'),
             m('button', { 'data-testid': 'pb-loc-cancel-edit', class: BTN, disabled: isBusy, onclick: function () { cancelEdit(loc.objectId); } }, 'Cancel')
         ])
     ]);
@@ -810,7 +789,7 @@ export function renderLocationCard(loc) {
                 onclick: function () { openMergeDialog(loc, null); }
             }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' }, 'merge'), 'Merge into…']),
             m('button', {
-                'data-testid': 'pb-loc-delete', class: BTN + ' text-red-600', disabled: loc.locked || isBusy,
+                'data-testid': 'pb-loc-delete', class: BTN_DANGER, disabled: loc.locked || isBusy,
                 title: loc.locked ? 'Unlock the location to delete it' : 'Delete the location, its variants and this book\'s renders of it',
                 onclick: function () { confirmDelete(loc); }
             }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' }, 'delete'), 'Delete'])
@@ -839,9 +818,9 @@ function renderProposal(p) {
                 'overwrite description/kind of an existing match'
             ]),
             m('span', { class: 'flex-1' }),
-            m('button', { 'data-testid': 'pb-loc-proposal-accept', class: BTN + ' bg-teal-600 text-white border-teal-600 hover:bg-teal-700', disabled: isBusy, onclick: function () { acceptProposal(p); } }, 'Accept'),
+            m('button', { 'data-testid': 'pb-loc-proposal-accept', class: BTN_PRIMARY, disabled: isBusy, onclick: function () { acceptProposal(p); } }, 'Accept'),
             m('button', { 'data-testid': 'pb-loc-proposal-merge', class: BTN, disabled: isBusy || !locations.length, title: 'Accept, then merge the result into the location it duplicates', onclick: function () { acceptAndMerge(p); } }, 'Merge into…'),
-            m('button', { 'data-testid': 'pb-loc-proposal-dismiss', class: BTN + ' text-red-600', disabled: isBusy, onclick: function () { openDismissDialog(p); } }, 'Dismiss')
+            m('button', { 'data-testid': 'pb-loc-proposal-dismiss', class: BTN_DANGER, disabled: isBusy, onclick: function () { openDismissDialog(p); } }, 'Dismiss')
         ]) : null
     ]);
 }
@@ -864,17 +843,12 @@ export function renderProposalsPanel() {
 }
 
 export function renderLocationsHeader() {
-    return m('div', { class: 'flex items-center gap-3 mb-4 flex-wrap' }, [
-        m('button', {
-            'data-testid': 'pb-loc-back',
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-            title: 'Back to book',
-            onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); }
-        }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
-        m('span', { class: 'font-semibold text-sm' }, 'Locations'),
-        m('span', { 'data-testid': 'pb-loc-count', class: 'text-xs text-gray-500' }, locations.length + ' location' + (locations.length === 1 ? '' : 's')),
-        m('span', { class: 'flex-1' }),
-        renderChatConfigControl({
+    return pageHeader({
+        back: { testid: 'pb-loc-back', title: 'Back to book', onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); } },
+        title: 'Locations',
+        meta: [metaText(locations.length + ' location' + (locations.length === 1 ? '' : 's'), { 'data-testid': 'pb-loc-count' })],
+        refresh: { testid: 'pb-loc-refresh', disabled: loading, onclick: function () { loadLocations(); } },
+        actions: [renderChatConfigControl({
             testid: 'pb-loc-chatconfig', ref: chatConfigRef, resolving: chatConfigResolving,
             title: 'The chat config "Propose from scenes" sends to the LLM',
             onPick: pickChatConfig
@@ -886,16 +860,10 @@ export function renderLocationsHeader() {
         }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' + (proposing ? ' animate-spin' : '') }, proposing ? 'progress_activity' : 'auto_awesome'),
             proposing ? 'Proposing…' + (proposeJob && proposeJob.phase ? ' ' + proposeJob.phase : '') : 'Propose from scenes']),
         m('button', {
-            'data-testid': 'pb-loc-new', class: BTN + ' bg-purple-600 text-white border-purple-600 hover:bg-purple-700', disabled: loading,
+            'data-testid': 'pb-loc-new', class: BTN_PRIMARY, disabled: loading,
             onclick: openNewLocationDialog
-        }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' }, 'add_location'), 'New location']),
-        m('button', {
-            'data-testid': 'pb-loc-refresh',
-            class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 disabled:opacity-30',
-            title: 'Refresh', disabled: loading,
-            onclick: function () { loadLocations(); }
-        }, m('span', { class: 'material-symbols-outlined text-lg' }, 'refresh'))
-    ]);
+        }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' }, 'add_location'), 'New location'])]
+    });
 }
 
 export function renderLocationsBody() {

@@ -53,6 +53,9 @@ import { PbPlanInspector, estimateText } from '../components/PbPlanInspector.js'
 import { groupBooksBySeries } from '../workflows/pictureBookSeries.js';
 import { am7olio } from '../components/olio.js';
 import { ReaderShell, exportBook, escHtml } from '../components/readerShell.js';
+import { BTN, BTN_ICON } from '../components/buttons.js';
+import { jobRunPanel } from '../components/jobRunPanel.js';
+import { chip } from '../components/pageHeader.js';
 
 // ── Work Selector View ────────────────────────────────────────────────
 
@@ -1014,7 +1017,7 @@ function renderViewerError() {
     return m('div', { class: 'text-center py-12' }, [
         m('div', { class: 'text-red-500 text-sm mb-6' }, viewerError),
         m('button', {
-            class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
+            class: 'btn btn-danger px-6 py-2',
             onclick: async function () {
                 let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
                 if (!ok) return;
@@ -1044,7 +1047,7 @@ function renderViewerEmpty() {
                 'Generate Picture Book'
             ]),
             m('button', {
-                class: 'btn px-6 py-2 text-red-500 border border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20',
+                class: 'btn btn-danger px-6 py-2',
                 title: 'Delete this incomplete book',
                 onclick: async function () {
                     let ok = await Dialog.confirm({ title: 'Delete Picture Book', message: 'Delete this incomplete picture book?', confirmLabel: 'Delete', confirmIcon: 'delete', destructive: true });
@@ -1916,17 +1919,6 @@ export function renderPb2ResumeBanner() {
     ]);
 }
 
-function stageIcon(state) {
-    switch (state) {
-        case 'running': return 'progress_activity';
-        case 'done': return 'check_circle';
-        case 'failed': return 'error';
-        case 'skipped': return 'push_pin';
-        case 'unrun': return 'remove_circle_outline';
-        default: return 'radio_button_unchecked';
-    }
-}
-
 export function renderPb2RunProgress() {
     if (!pb2Run) return null;
     let job = pb2Run.job;
@@ -1934,49 +1926,19 @@ export function renderPb2RunProgress() {
     let stages = deriveStageList(pb2Run.planned, job);
     let total = job && typeof job.total === 'number' ? job.total : stages.length;
     let current = job && typeof job.current === 'number' ? job.current : 0;
-    return m('div', {
-        'data-testid': 'pb2-run-progress',
-        'data-run-terminal': terminal ? '1' : '0',
-        class: 'mb-4 p-3 rounded border dark:border-gray-700 bg-white dark:bg-gray-900 text-sm'
-    }, [
-        m('div', { class: 'flex items-center gap-2 mb-2' }, [
-            m('span', { class: 'material-symbols-outlined ' + (terminal ? 'text-gray-500' : 'text-purple-500 animate-spin') }, terminal ? 'task_alt' : 'progress_activity'),
-            m('span', { class: 'font-semibold' }, pb2Run.label),
-            m('span', { 'data-testid': 'pb2-run-counter', class: 'text-xs text-gray-500' },
-                terminal ? runSummaryText(job) : (current + ' of ' + total + (job && job.phase ? ' · ' + job.phase : ''))),
-            pb2Run.chatConfig && pb2Run.chatConfig.name ? m('span', {
-                'data-testid': 'pb2-run-chat-config',
-                class: 'text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300',
-                title: 'The chat config this run was opened with'
-            }, pb2Run.chatConfig.name) : null,
-            m('span', { class: 'flex-1' }),
-            !terminal && pb2Run.runObjectId ? m('button', {
-                'data-testid': 'pb2-run-cancel',
-                class: 'text-xs px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700',
-                onclick: pb2CancelRun
-            }, 'Cancel') : null,
-            terminal ? m('button', {
-                'data-testid': 'pb2-run-dismiss',
-                class: 'text-gray-400 hover:text-gray-600',
-                title: 'Dismiss',
-                onclick: function () { pb2Run = null; }
-            }, m('span', { class: 'material-symbols-outlined text-lg' }, 'close')) : null
-        ]),
-        pb2Run.error ? m('div', { class: 'text-xs text-red-500 mb-2' }, pb2Run.error) : null,
-        stages.length ? m('ul', { class: 'text-xs space-y-0.5' }, stages.map(function (s) {
-            return m('li', {
-                key: s.handle,
-                'data-testid': 'pb2-run-stage',
-                'data-stage-state': s.state,
-                class: 'flex items-center gap-1 ' + (s.state === 'failed' ? 'text-red-600' : s.state === 'running' ? 'text-purple-600' : s.state === 'done' ? 'text-green-700' : 'text-gray-500')
-            }, [
-                m('span', { class: 'material-symbols-outlined text-sm' + (s.state === 'running' ? ' animate-spin' : '') }, stageIcon(s.state)),
-                m('span', { class: 'font-mono' }, s.handle),
-                s.error ? m('span', { class: 'ml-1 truncate' }, '— ' + s.error) : null,
-                s.autoApproved ? m('span', { class: 'ml-1 text-gray-400' }, 'auto-approved') : null
-            ]);
-        })) : m('div', { class: 'text-xs text-gray-500' }, 'Nothing planned.')
-    ]);
+    return m('div', { class: 'mb-4' }, jobRunPanel({
+        testid: 'pb2-run-progress', terminal: terminal, failed: !!(job && (job.error || job.failed)),
+        label: pb2Run.label,
+        counter: terminal ? runSummaryText(job) : (current + ' of ' + total + (job && job.phase ? ' · ' + job.phase : '')),
+        counterTestid: 'pb2-run-counter',
+        chips: [pb2Run.chatConfig && pb2Run.chatConfig.name ? chip(pb2Run.chatConfig.name, 'gray', {
+            'data-testid': 'pb2-run-chat-config', title: 'The chat config this run was opened with'
+        }) : null],
+        error: pb2Run.error,
+        onCancel: pb2Run.runObjectId ? pb2CancelRun : null, cancelTestid: 'pb2-run-cancel',
+        onDismiss: terminal ? function () { pb2Run = null; } : null, dismissTestid: 'pb2-run-dismiss',
+        stages: stages, stageTestid: 'pb2-run-stage', emptyText: 'Nothing planned.'
+    }));
 }
 
 export function __pb2V3StateForTest() {
@@ -2552,8 +2514,8 @@ export function pb2StyleMark(described) {
     return described === true ? 'ok' : described === false ? 'attention' : 'unknown';
 }
 
-const TB_ICON = 'text-gray-500 hover:text-purple-600 disabled:opacity-30';
-const TB_LABELED = 'flex items-center gap-1 text-xs px-2 py-1 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700';
+const TB_ICON = BTN_ICON;
+const TB_LABELED = BTN;
 
 /**
  * Reader toolbar, left to right: reading controls (back, prev, title/page, next); the setup group (Style with

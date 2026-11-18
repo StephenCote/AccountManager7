@@ -187,4 +187,76 @@ test.describe('Shared SD config — reimage regression guard', () => {
         await page.screenshot({ path: path.join(RESULTS, 'verify-reimage-saved-config.png'), fullPage: true });
         expect(pageErrors, 'uncaught page error(s) during reimage: ' + pageErrors.join(' | ')).toEqual([]);
     });
+
+    // ── LOAD SHARED: the Reimage dialog's "Load Shared" button applies ~/Data/.preferences/sharedSD.json ──
+    // A second character with NO per-character config, so the dialog opens on defaults (steps 40); a
+    // match on steps 13 + SEEDED_MODEL after the click can only have come from the shared record.
+    test('reimage: Load Shared applies sharedSD.json to the open dialog', async ({ page, request }) => {
+        await restLogin(request, 'e2etest_shared', 'password');
+        // Seed sharedSD.json IN THE PREFS GROUP (name + groupId), exactly what loadConfig looks up.
+        const found = await request.post(REST + '/model/search', {
+            data: {
+                schema: 'io.query', type: 'olio.sd.config',
+                fields: [
+                    { name: 'name', comparator: 'equals', value: 'sharedSD.json' },
+                    { name: 'groupId', comparator: 'equals', value: prefsGroupId },
+                    { name: 'organizationId', comparator: 'equals', value: orgId }
+                ],
+                request: ['id', 'objectId', 'name'], recordCount: 1, cache: false
+            }
+        });
+        const fb = await found.json().catch(() => null);
+        const ex = fb && fb.results && fb.results[0];
+        if (ex && ex.objectId) {
+            const pr = await request.fetch(REST + '/model', {
+                method: 'PATCH',
+                data: { schema: 'olio.sd.config', id: ex.id, objectId: ex.objectId, name: 'sharedSD.json', model: SEEDED_MODEL, steps: 13 }
+            });
+            expect(pr.ok(), 'PATCH sharedSD.json failed: ' + pr.status()).toBe(true);
+        } else {
+            const cr = await request.post(REST + '/model', {
+                data: {
+                    schema: 'olio.sd.config', name: 'sharedSD.json', groupId: prefsGroupId, groupPath: prefsGroupPath,
+                    model: SEEDED_MODEL, steps: 13, cfg: 7, width: 1024, height: 1024, style: 'photograph'
+                }
+            });
+            expect(cr.ok(), 'create sharedSD.json failed: ' + cr.status()).toBe(true);
+        }
+        const charDir = await request.get(REST + '/path/make/auth.group/data/' + encPath('~/Characters'));
+        const charDirBody = await charDir.json();
+        const name2 = 'LoadShared' + Date.now().toString(36);
+        const c2 = await request.post(REST + '/model', {
+            data: {
+                schema: 'olio.charPerson', name: name2, firstName: 'Load', middleName: 'Shared', lastName: 'Probe',
+                gender: 'male', alignment: 'neutralgood', groupId: charDirBody.id, groupPath: charDirBody.path
+            }
+        });
+        const c2Rec = await c2.json().catch(() => null);
+        expect(c2Rec && c2Rec.objectId, 'second charPerson not created').toBeTruthy();
+        await request.get(REST + '/logout');
+
+        const pageErrors = [];
+        const consoleWarn = [];
+        page.on('pageerror', (e) => pageErrors.push(String(e)));
+        page.on('console', (msg) => { if (/am7sd|shared/i.test(msg.text())) consoleWarn.push(msg.type() + ': ' + msg.text()); });
+
+        await loginAndLoad(page, 'e2etest_shared', 'password');
+        await page.evaluate((oid) => { window.location.hash = '!/view/olio.charPerson/' + oid; }, c2Rec.objectId);
+        const reimageBtn = page.locator('button:has(span.material-symbols-outlined:text-is("auto_awesome"))').first();
+        await expect(reimageBtn).toBeVisible({ timeout: 20000 });
+        await reimageBtn.click();
+        await expect(page.locator('text=Reimage ' + name2).first()).toBeVisible({ timeout: 20000 });
+
+        const modelSelect = page.locator('xpath=//label[normalize-space()="Model"]/following-sibling::select[1]');
+        await expect(modelSelect).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('label', { hasText: /^Steps: 40$/ }).first(), 'dialog did not open on defaults').toBeVisible();
+
+        await page.locator('button[title="Load shared config"]').click();
+        await expect(page.locator('text=Loaded shared SD config').first(), 'success toast; consoles: ' + consoleWarn.join(' | ')).toBeVisible({ timeout: 15000 });
+        await expect(page.locator('label', { hasText: /^Steps: 13$/ }).first(), 'Steps not applied from sharedSD.json').toBeVisible({ timeout: 5000 });
+        await expect(modelSelect, 'Model not applied from sharedSD.json').toHaveValue(SEEDED_MODEL);
+
+        await page.screenshot({ path: path.join(RESULTS, 'verify-reimage-load-shared.png'), fullPage: true });
+        expect(pageErrors, 'uncaught page error(s): ' + pageErrors.join(' | ')).toEqual([]);
+    });
 });

@@ -4,7 +4,8 @@
 //   routes:        () => import(...)   lazy chunk factory (kept as an ES module so Vite can
 //                                      tree-shake / code-split the dead import() paths)
 //   menuItems:     [...]              menu entries; `section` is 'top' (top bar), 'aside' (flyout
-//                                      Features list) or 'app' (a card on the App Panel, #!/app)
+//                                      Features list) or 'app' (a card on the App Panel, #!/app;
+//                                      optional `group` names the App Panel heading, default 'Tools')
 //   routePrefixes: [...]              route path prefixes this feature owns (§3.6 catch-all)
 //
 // The DATA half (id, label, description, required, deps) lives in ./features.manifest.json, which is
@@ -46,12 +47,12 @@ const featureWiring = {
     },
     cardGame: {
         routes: () => import('./features/cardGame.js'),
-        menuItems: [{ icon: 'playing_cards', label: 'Card Game', route: '/cardGame', section: 'top' }],
+        menuItems: [{ icon: 'playing_cards', label: 'Card Game', route: '/cardGame', section: 'app', group: 'Games' }],
         routePrefixes: ['/cardGame']
     },
     games: {
         routes: () => import('./features/games.js'),
-        menuItems: [{ icon: 'sports_esports', label: 'Games', route: '/game', section: 'top' }],
+        menuItems: [{ icon: 'sports_esports', label: 'Games', route: '/game', section: 'app', group: 'Games' }],
         routePrefixes: ['/game']
     },
     testHarness: {

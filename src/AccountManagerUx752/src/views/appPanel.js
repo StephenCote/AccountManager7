@@ -1,6 +1,7 @@
 /**
  * App Panel (#!/app) — per-user tools gathered from the flyout gutter and the chat toolbar:
- * Explorer, feature tools whose menu item is tagged `section: 'app'` (Passkeys, Access Requests),
+ * Explorer, feature tools whose menu item is tagged `section: 'app'` (Passkeys, Access Requests;
+ * Card Game and Games under a "Games" heading via `group: 'Games'`),
  * the Breadcrumb Bar toggle and the LLM Debug monitor. Same visual model as the admin Feature
  * Configuration panel (features/featureConfig.js) but a core route open to every user.
  */
@@ -20,19 +21,25 @@ function sectionHeading(text) {
     return m("h3", { class: "field-label mb-2 mt-6" }, text);
 }
 
-/** Core tools plus every enabled feature's `section: 'app'` menu items the current user may see. */
-function tools() {
+/**
+ * Core tools plus every enabled feature's `section: 'app'` menu items the current user may see,
+ * bucketed by the item's `group` (default 'Tools'). Returns an ordered list of [group, items].
+ */
+function toolGroups() {
     let ctx = { roles: page.context().roles, devMode: page.devMode };
-    let list = CORE_TOOLS.slice();
+    let groups = { Tools: CORE_TOOLS.slice() };
+    let order = ['Tools'];
     Object.keys(features).forEach(function (id) {
         if (!isEnabled(id)) return;
         let f = features[id];
         f.menuItems.forEach(function (mi) {
             if (mi.section !== 'app' || !isMenuItemVisible(mi, ctx)) return;
-            list.push({ icon: mi.icon, label: mi.label, route: mi.route, description: f.description });
+            let g = mi.group || 'Tools';
+            if (!groups[g]) { groups[g] = []; order.push(g); }
+            groups[g].push({ icon: mi.icon, label: mi.label, route: mi.route, description: f.description });
         });
     });
-    return list;
+    return order.map(function (g) { return [g, groups[g]]; });
 }
 
 function toolCard(t) {
@@ -75,6 +82,10 @@ function llmDebugCard() {
             m("span", { class: "font-medium text-gray-900 dark:text-white" }, "LLM Debug")
         ]),
         m("p", { class: "mb-2 text-sm text-gray-500 dark:text-gray-400" }, "Live LLM requests, active calls and summarizations for this server. Refreshes every 2 seconds while this page is open."),
+        LLMDebugPanel.getLastChatSession() ? m("div", { class: "mb-3 pb-3 border-b border-gray-200 dark:border-gray-700", "data-last-chat": "1" }, [
+            m("div", { class: "text-sm font-medium text-gray-700 dark:text-gray-200 mb-1" }, "Last active chat"),
+            m(LLMDebugPanel.SessionView, { info: LLMDebugPanel.getLastChatSession() })
+        ]) : null,
         m(LLMDebugPanel.InlineView)
     ]);
 }
@@ -89,8 +100,12 @@ const appPanelView = {
                 ]),
                 m("p", { class: "field-label mt-1" }, "Tools, display settings and diagnostics for your account.")
             ]),
-            sectionHeading("Tools"),
-            m("div", { class: "grid gap-3 sm:grid-cols-2" }, tools().map(toolCard)),
+            toolGroups().map(function (g) {
+                return [
+                    sectionHeading(g[0]),
+                    m("div", { class: "grid gap-3 sm:grid-cols-2", "data-group": g[0] }, g[1].map(toolCard))
+                ];
+            }),
             sectionHeading("Display"),
             breadcrumbCard(),
             sectionHeading("Diagnostics"),

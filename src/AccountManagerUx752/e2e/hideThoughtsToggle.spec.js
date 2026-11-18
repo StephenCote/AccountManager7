@@ -96,6 +96,11 @@ test.describe('Show/Hide thoughts toggle', () => {
             });
         });
 
+        // Report the chat library as initialized: a user without one gets the setup wizard, and cancelling
+        // it leaves session selection unwired, so the test would skip without exercising anything.
+        await page.route('**/AccountManagerService7/rest/chat/library/status', (route) =>
+            route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ initialized: true }) }));
+
         // Log ALL POSTs for visibility
         page.on('request', (req) => {
             if (req.method() === 'POST' && req.url().includes('/chat/')) {
@@ -165,8 +170,12 @@ test.describe('Show/Hide thoughts toggle', () => {
 
         await screenshot(page, 'thoughts-hidden');
 
-        // Click the toggle (visibility_off icon means currently hidden;
-        // clicking will show)
+        // The toggle lives in the chat's LLM Debug drawer (toolbar overflow > LLM Debug).
+        await page.locator('button[title="More chat actions"]').click();
+        await page.locator('.context-menu [data-testid="chat-llm-debug"]').click();
+        await expect(page.locator('[data-testid="chat-llm-debug-drawer"]')).toBeVisible({ timeout: 5000 });
+
+        // Click the toggle (off means thoughts are currently hidden; clicking will show)
         let toggleBtn = page.locator('button[title="Show thoughts"]').first();
         await expect(toggleBtn).toBeVisible({ timeout: 5000 });
         await toggleBtn.click();

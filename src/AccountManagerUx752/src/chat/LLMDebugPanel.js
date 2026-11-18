@@ -2,6 +2,8 @@
  * LLMDebugPanel — live view of active LLM requests and summarizations (ESM port).
  * Rendered inline by the App Panel (#!/app). Polls GET /rest/chat/llm/active every 2 seconds
  * while mounted. Shows request metadata and per-row abort controls.
+ * SessionView is the per-chat variant: the chat view's "LLM Debug" drawer, and the App Panel's
+ * "Last active chat" section (fed by setLastChatSession).
  */
 import m from 'mithril';
 import { applicationPath } from '../core/config.js';
@@ -36,18 +38,28 @@ async function fetchActive() {
     m.redraw();
 }
 
+/// Mounted views sharing the one poller: the App Panel renders InlineView and (when a chat was active)
+/// SessionView together, and the chat's debug drawer renders SessionView on its own. The poller and
+/// its data live until the last subscriber unmounts.
+let _subscribers = 0;
+
 function startPoller() {
+    _subscribers++;
     if (_poller) return;
     fetchActive();
     _poller = setInterval(fetchActive, _pollInterval);
 }
 
 function stopPoller() {
+    if (_subscribers > 0) _subscribers--;
+    if (_subscribers > 0) return;
     _generation++;
     if (_poller) {
         clearInterval(_poller);
         _poller = null;
     }
+    _data = null;
+    _loaded = false;
 }
 
 function abortAll() {
@@ -222,15 +234,183 @@ function inlineView() {
     ]);
 }
 
+// ── Per-chat session view ───────────────────────────────────────────
+
+/// Phase text for an attached context object's summarization (fields from GET /rest/chat/context).
+function summarizeProgressText(ref) {
+    let phase = ref.summaryPhase || "pending";
+    if (phase === "vectorize") return "vectorizing...";
+    if (phase === "vectorize-summary") return "vectorizing summary...";
+    if (phase === "map") return ref.summaryTotal > 0 ? "summarizing " + ref.summaryCurrent + "/" + ref.summaryTotal + "..." : "summarizing...";
+    if (phase === "reduce") return ref.summaryTotal > 0 ? "merging " + ref.summaryCurrent + "/" + ref.summaryTotal + "..." : "merging...";
+    if (phase === "complete") return "complete";
+    if (phase === "failed") return "failed";
+    if (phase === "cancelled") return "cancelled";
+    return "summarizing...";
+}
+
+/// Last chat session the chat view reported (plain-data snapshot; callbacks are dropped so the App Panel
+/// never drives chat-view state it is not showing).
+let _lastChatSession = null;
+
+function setLastChatSession(info) {
+    if (!info) { _lastChatSession = null; return; }
+    let snap = {};
+    Object.keys(info).forEach(function(k) {
+        let v = info[k];
+        if (typeof v === "function") return;
+        if (k === "contextRefs") return;
+        snap[k] = v;
+    });
+    _lastChatSession = snap;
+}
+
+function getLastChatSession() { return _lastChatSession; }
+
+/// Server rows that belong to this chat. llmRequests are keyed by the chat's OpenAI request (session)
+/// objectId (ChatListener.getRequestInfo requestId); summarizations by the chatRequest objectId
+/// (ChatService summarizingRefs). activeLLMCalls carry only a stream/call id, so they cannot be attributed.
+function sessionRows(info) {
+    let ids = [info.sessionId, info.requestId].filter(function(v) { return !!v; });
+    let llmRequests = (_data && _data.llmRequests) ? _data.llmRequests : [];
+    let summarizations = (_data && _data.summarizations) ? _data.summarizations : [];
+    return {
+        llmRequests: llmRequests.filter(function(r) { return ids.indexOf(r.requestId) !== -1; }),
+        summarizations: summarizations.filter(function(s) { return info.sessionId && s.sessionId === info.sessionId; })
+    };
+}
+
+function infoRow(label, value, key) {
+    return m("div", { class: "flex gap-2", "data-session-field": key }, [
+        m("span", { class: "text-gray-500 dark:text-gray-400 w-28 shrink-0" }, label),
+        m("span", { class: "truncate", title: value || "" }, value || "—")
+    ]);
+}
+
+function toggleRow(on, label, onTitle, offTitle, key, onToggle) {
+    return m("div", { class: "flex items-center gap-2" }, [
+        m("button", {
+            class: "toggle-field mt-0" + (on ? " active" : ""),
+            title: on ? onTitle : offTitle,
+            "data-toggle": key,
+            onclick: onToggle
+        }, m("span", { class: "toggle-knob" })),
+        m("span", label)
+    ]);
+}
+
+function iconButton(icon, title, onclick, cls, attrs) {
+    return m("button", Object.assign({
+        class: "p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700",
+        title: title,
+        onclick: onclick
+    }, attrs || {}), m("span", { class: "material-symbols-outlined " + (cls || ""), style: "font-size: 16px;" }, icon));
+}
+
+function contextSummaryControls(info) {
+    let refs = (info.contextRefs || []).filter(function(r) { return (r.refSchema || r.schema) !== "data.tag"; });
+    if (!refs.length && !info.summarizing) return null;
+    return [
+        m("div", { class: SECTION + " mt-3 flex items-center gap-2" }, [
+            "Context summaries",
+            info.summarizing && info.onCancelSummarize
+                ? iconButton("stop_circle", "Stop all summarizations", function() { info.onCancelSummarize(null); }, "text-red-600 dark:text-red-400")
+                : null
+        ]),
+        refs.map(function(ref) {
+            let busy = ref.summarizing === true;
+            return m("div", { class: "flex items-center gap-2 py-0.5", "data-summary-ref": ref.objectId }, [
+                m("span", { class: "flex-1 truncate", title: ref.name || ref.objectId }, ref.name || ref.objectId),
+                m("span", { class: busy ? "text-yellow-600 dark:text-yellow-400 italic" : "text-gray-500" },
+                    busy ? summarizeProgressText(ref) : (ref.summaryPhase ? summarizeProgressText(ref) : "")),
+                busy && info.onCancelSummarize ? iconButton("stop_circle", "Stop summarization", function() { info.onCancelSummarize(ref.objectId); }, "text-red-600 dark:text-red-400") : null,
+                !busy && info.onRetrySummarize ? iconButton("refresh", "Re-summarize", function() { info.onRetrySummarize(ref.objectId); }, "text-blue-600 dark:text-blue-400") : null
+            ]);
+        })
+    ];
+}
+
+function sessionView(vnode) {
+    let info = vnode.attrs.info || {};
+    let rows = sessionRows(info);
+    let promptName = info.promptConfigName || info.promptTemplateName;
+    let hasControls = !!(info.onToggleThoughts || info.onToggleMcp);
+
+    return m("div", { class: "text-xs text-gray-700 dark:text-gray-300", "data-llm-session": info.sessionId || "" }, [
+        m("div", { class: "space-y-0.5" }, [
+            infoRow("Session", info.name, "name"),
+            infoRow("Model", info.model, "model"),
+            infoRow("Rating", info.rating, "rating"),
+            infoRow("Chat config", info.chatConfigName, "chatConfig"),
+            infoRow(info.promptConfigName ? "Prompt config" : "Prompt template", promptName, "prompt"),
+            infoRow("Context type", info.contextType, "contextType")
+        ]),
+        hasControls ? m("div", { class: "mt-3 space-y-1" }, [
+            info.onToggleThoughts ? toggleRow(!info.hideThoughts, "Show thoughts", "Hide thoughts", "Show thoughts", "thoughts", info.onToggleThoughts) : null,
+            info.onToggleMcp ? toggleRow(!!info.showMcp, "Show MCP context in chat", "Hide MCP context in chat", "Show MCP context in chat", "mcp", info.onToggleMcp) : null
+        ]) : null,
+        contextSummaryControls(info),
+        info.onExtractMemories && info.canExtract ? m("div", { class: "mt-3 flex items-center gap-2" }, [
+            m("button", {
+                class: "flex items-center gap-1 px-2 py-0.5 rounded border dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50",
+                title: "Extract memories from conversation",
+                disabled: !!info.extracting,
+                onclick: info.onExtractMemories
+            }, [
+                m("span", { class: "material-symbols-outlined" + (info.extracting ? " animate-spin" : ""), style: "font-size: 14px;" }, info.extracting ? "progress_activity" : "auto_awesome"),
+                info.extracting ? "Extracting…" : "Extract memories"
+            ])
+        ]) : null,
+        m("div", { class: SECTION + " mt-3" }, "Server activity for this chat"),
+        (rows.llmRequests.length === 0 && rows.summarizations.length === 0)
+            ? m("div", { class: "text-gray-500", "data-session-idle": "1" }, !_loaded ? "Loading…" : (_data ? "No server activity for this chat" : "LLM status unavailable"))
+            : [
+                rows.llmRequests.length > 0 ? m("table", { class: "w-full mb-2" }, [
+                    m("thead", m("tr", { class: HEAD }, [
+                        m("th", { class: "px-2 py-0.5 text-left" }, "ID"),
+                        m("th", { class: "px-2 py-0.5 text-left" }, "Model"),
+                        m("th", { class: "px-2 py-0.5 text-right" }, "Tokens"),
+                        m("th", { class: "px-2 py-0.5 text-left" }, "Type"),
+                        m("th", { class: "px-2 py-0.5 text-left" }, "Status")
+                    ])),
+                    m("tbody", rows.llmRequests.map(llmRequestRow))
+                ]) : null,
+                rows.summarizations.length > 0 ? m("table", { class: "w-full" }, [
+                    m("thead", m("tr", { class: HEAD }, [
+                        m("th", { class: "px-2 py-0.5 text-left" }, "Object"),
+                        m("th", { class: "px-2 py-0.5 text-left" }, "Session"),
+                        m("th", { class: "px-2 py-0.5 text-left" }, "Phase"),
+                        m("th", { class: "px-2 py-0.5 text-left" }, "")
+                    ])),
+                    m("tbody", rows.summarizations.map(summRow))
+                ]) : null
+            ]
+    ]);
+}
+
 const LLMDebugPanel = {
     fetchActive: fetchActive,
     abortAll: abortAll,
+    setLastChatSession: setLastChatSession,
+    getLastChatSession: getLastChatSession,
     InlineView: {
         oninit: function() { startPoller(); },
-        onremove: function() { stopPoller(); _data = null; _loaded = false; },
+        onremove: function() { stopPoller(); },
         view: inlineView
+    },
+    /**
+     * One chat's LLM details: attrs.info = { sessionId (chatRequest objectId), requestId (session objectId),
+     * name, model, rating, chatConfigName, promptConfigName, promptTemplateName, contextType,
+     * hideThoughts, onToggleThoughts, showMcp, onToggleMcp, summarizing, contextRefs,
+     * onCancelSummarize(objectId|null), onRetrySummarize(objectId), canExtract, extracting, onExtractMemories }.
+     * Controls render only when their callback is present (the App Panel passes a callback-free snapshot).
+     */
+    SessionView: {
+        oninit: function() { startPoller(); },
+        onremove: function() { stopPoller(); },
+        view: sessionView
     }
 };
 
-export { LLMDebugPanel };
+export { LLMDebugPanel, setLastChatSession };
 export default LLMDebugPanel;

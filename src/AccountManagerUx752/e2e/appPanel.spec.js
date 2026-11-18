@@ -10,7 +10,7 @@
  *   - the LLM Debug card really calls GET /rest/chat/llm/active (200) as a plain user and renders
  *     either the idle text or the request table;
  *   - the Breadcrumb Bar switch hides and re-shows nav.breadcrumb-bar;
- *   - the chat toolbar still has Fullscreen but no LLM Debug button.
+ *   - the chat toolbar offers Fullscreen from its overflow and never mounts the server-wide LLM Debug panel.
  * Passkeys / Access Requests are feature-gated; the suite asserts the org config enables them rather
  * than mutating the organization's feature set.
  *
@@ -180,13 +180,26 @@ test.describe('App Panel — flyout entry, tool cards, LLM Debug, breadcrumb swi
         await expect(toggle).toHaveClass(/active/);
     });
 
-    test('chat toolbar keeps Fullscreen but has no LLM Debug button', async ({ page }) => {
+    test('chat toolbar: Fullscreen lives in the overflow, no server-wide LLM Debug panel on the chat page', async ({ page }) => {
         test.skip(!orgFeatures.includes('chat'), 'chat feature is not enabled for this org');
         await loginAsSharedUser(page);
         await page.evaluate(() => { window.location.hash = '#!/chat'; });
-        const fullscreen = page.locator('button[title="Fullscreen"], button[title="Exit fullscreen"]');
-        await expect(fullscreen.first(), 'chat toolbar did not render').toBeVisible({ timeout: 30000 });
+        const overflow = page.locator('button[title="More chat actions"]');
+        await expect(overflow, 'chat toolbar did not render').toBeVisible({ timeout: 30000 });
+        // Moved into the overflow: no visible toolbar Fullscreen / LLM Debug buttons.
+        await expect(page.locator('[data-chat-toolbar="actions"] button[title="Fullscreen"]')).toHaveCount(0);
         await expect(page.locator('button[title="LLM Debug"]')).toHaveCount(0);
+        // A user without a chat library gets the setup wizard overlay; dismiss it (it is not under test).
+        const wizard = page.locator('text=Chat Library Setup');
+        if (await wizard.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await page.locator('div.fixed.inset-0 button:has-text("Cancel")').first().click();
+            await expect(wizard).toHaveCount(0, { timeout: 5000 });
+        }
+        await overflow.click();
+        const fullscreen = page.locator('.context-menu button[title="Fullscreen"], .context-menu button[title="Exit fullscreen"]');
+        await expect(fullscreen.first(), 'overflow did not offer Fullscreen').toBeVisible({ timeout: 5000 });
+        await page.keyboard.press('Escape');
+        // The server-wide monitor stays on the App Panel; the chat only gets the per-chat drawer.
         await expect(page.locator('[data-llm-debug]')).toHaveCount(0);
     });
 });

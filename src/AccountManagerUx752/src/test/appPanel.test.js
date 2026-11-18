@@ -11,7 +11,9 @@ import { initFeatures, getMenuItems } from '../features.js';
 import { page } from '../core/pageClient.js';
 import '../components/breadcrumb.js'; // registers page.components.breadCrumb
 import { appPanelView } from '../views/appPanel.js';
+import { LLMDebugPanel } from '../chat/LLMDebugPanel.js';
 import { asideMenu } from '../components/asideMenu.js';
+import { topMenu } from '../components/topMenu.js';
 
 const EMPTY_STATUS = { summarizations: [], llmRequests: [], bufferModeStreams: 0, activeLLMCallCount: 0, activeLLMCalls: [] };
 
@@ -39,7 +41,9 @@ async function waitFor(pred, label) {
 const ROUTES = {
     "/app": { view: function () { return m(appPanelView); } },
     "/explorer": { view: function () { return m("div", { class: "marker" }, "EXPLORER-VIEW"); } },
-    "/webauthn": { view: function () { return m("div", { class: "marker" }, "PASSKEYS-VIEW"); } }
+    "/webauthn": { view: function () { return m("div", { class: "marker" }, "PASSKEYS-VIEW"); } },
+    "/cardGame": { view: function () { return m("div", { class: "marker" }, "CARDGAME-VIEW"); } },
+    "/topbar": { view: function () { return m(topMenu); } }
 };
 
 async function mountApp() {
@@ -95,6 +99,27 @@ describe('App Panel view', () => {
         expect(root.querySelector('[data-tool="/webauthn"]')).toBeNull();
         expect(root.querySelector('[data-tool="/accessRequests"]')).toBeNull();
         expect(getMenuItems('app')).toEqual([]);
+    });
+
+    it('lists Card Game and Games under a separate Games heading, not under Tools', async () => {
+        initFeatures(['core', 'webauthn', 'cardGame', 'games']);
+        await mountApp();
+        let games = root.querySelector('[data-group="Games"]');
+        expect(games).not.toBeNull();
+        expect(games.querySelector('[data-tool="/cardGame"]')).not.toBeNull();
+        expect(games.querySelector('[data-tool="/game"]')).not.toBeNull();
+        let tools = root.querySelector('[data-group="Tools"]');
+        expect(tools.querySelector('[data-tool="/webauthn"]')).not.toBeNull();
+        expect(tools.querySelector('[data-tool="/cardGame"]')).toBeNull();
+        root.querySelector('[data-tool="/cardGame"]').click();
+        await waitFor(function () { return m.route.get() === '/cardGame' && /CARDGAME-VIEW/.test(root.textContent); }, 'route to /cardGame');
+    });
+
+    it('omits the Games heading when no game feature is enabled', async () => {
+        initFeatures(['core', 'webauthn']);
+        await mountApp();
+        expect(root.querySelector('[data-group="Games"]')).toBeNull();
+        expect(root.textContent).not.toContain('Games');
     });
 
     it('clicking a tool card routes to the tool', async () => {
@@ -163,6 +188,49 @@ describe('App Panel view', () => {
         expect(dbg.querySelector('button[title="Cancel"]')).not.toBeNull();
     });
 
+    it('shows a "Last active chat" section above the server tables once a chat reported its session', async () => {
+        initFeatures(['core']);
+        await mountApp();
+        expect(root.querySelector('[data-last-chat]'), 'no section before any chat was active').toBeNull();
+        m.mount(root, null);
+        root = null;
+        await settle();
+
+        requestSpy.mockRestore();
+        stubStatus({
+            summarizations: [{ objectId: 'doc-1', sessionId: 'cr-last', phase: 'map', current: 1, total: 2, elapsed: 3, cancelled: false }],
+            llmRequests: [
+                { requestId: 'sess-last', model: 'qwen3:8b', tokenCount: 9, serviceType: 'OLLAMA', stopped: false },
+                { requestId: 'unrelated-req', model: 'other-model', tokenCount: 1, serviceType: 'OLLAMA', stopped: false }
+            ],
+            bufferModeStreams: 0, activeLLMCallCount: 0, activeLLMCalls: []
+        });
+        LLMDebugPanel.setLastChatSession({ sessionId: 'cr-last', requestId: 'sess-last', name: 'Last chat', model: 'qwen3:8b',
+            rating: 'E', chatConfigName: 'Open Chat', onToggleThoughts: function () {} });
+        try {
+            window.location.hash = '';
+            await mountApp();
+            let last = root.querySelector('[data-last-chat]');
+            expect(last).not.toBeNull();
+            expect(last.textContent).toContain('Last active chat');
+            expect(last.querySelector('[data-session-field="model"]').textContent).toContain('qwen3:8b');
+            expect(last.querySelector('[data-session-field="chatConfig"]').textContent).toContain('Open Chat');
+            // Section sits above the server-wide tables.
+            let dbg = root.querySelector('[data-llm-debug]');
+            expect(last.compareDocumentPosition(dbg) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+            await waitFor(function () { return /sess-last/.test(last.textContent) && /LLM Requests \(2\)/.test(dbg.textContent); }, 'session + server rows');
+            expect(last.textContent).not.toContain('other-model');
+            expect(dbg.textContent).toContain('other-model');
+            // Snapshot carries no callbacks, so no chat-view toggles in the App Panel.
+            expect(last.querySelector('[data-toggle="thoughts"]')).toBeNull();
+            // One shared poller for both views.
+            let calls = requestSpy.mock.calls.filter(function (c) { return /\/rest\/chat\/llm\/active$/.test(c[0].url); });
+            expect(calls.length).toBe(1);
+        } finally {
+            LLMDebugPanel.setLastChatSession(null);
+        }
+    });
+
     it('LLM Debug ignores a fetch that resolves after the panel was unmounted', async () => {
         requestSpy.mockRestore();
         // Every status fetch stays pending until the test resolves it, so timing is under test control.
@@ -203,6 +271,47 @@ describe('App Panel view', () => {
         await new Promise(function (r) { setTimeout(r, 2300); });
         expect(requestSpy.mock.calls.length).toBe(before);
     }, 10000);
+});
+
+describe('Top bar after the games move', () => {
+
+    beforeEach(() => {
+        window.location.hash = '';
+        document.body.innerHTML = '';
+        stubStatus(EMPTY_STATUS);
+    });
+
+    afterEach(async () => {
+        if (root) { m.mount(root, null); root = null; }
+        await settle();
+        if (requestSpy) { requestSpy.mockRestore(); requestSpy = null; }
+        document.body.innerHTML = '';
+    });
+
+    async function mountTopBar() {
+        root = document.createElement('div');
+        document.body.appendChild(root);
+        m.route(root, "/topbar", ROUTES);
+        await waitFor(function () { return m.route.get() === '/topbar' && !!root.querySelector('[role="toolbar"]'); }, 'top bar to render');
+    }
+
+    it('has no Card Game / Games buttons even with both features enabled, and keeps Chat', async () => {
+        initFeatures(['core', 'chat', 'cardGame', 'games']);
+        await mountTopBar();
+        let titles = Array.from(root.querySelectorAll('[role="toolbar"] button')).map(function (b) { return b.getAttribute('title'); });
+        expect(titles).not.toContain('Card Game');
+        expect(titles).not.toContain('Games');
+        expect(titles).toContain('Chat');
+        expect(titles).toContain('App Panel');
+    });
+
+    it('the App Panel button routes to #!/app', async () => {
+        initFeatures(['core']);
+        await mountTopBar();
+        root.querySelector('[data-top="app"]').click();
+        await waitFor(function () { return m.route.get() === '/app' && !!root.querySelector('[data-toggle="breadcrumb"]'); }, 'route to /app');
+        expect(root.textContent).toContain('App Panel');
+    });
 });
 
 describe('Flyout (asideMenu) after the App Panel move', () => {

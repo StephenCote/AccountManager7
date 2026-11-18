@@ -172,7 +172,7 @@ async function loginSharedUser(page, creds) {
 async function pickChatConfig(page, dialog, configName) {
     const cfgField = dialog.locator('label.field-label:has-text("Chat Config") + div');
     // loadDefaults() overwrites chatConfigRef when its own lookup lands; let it finish first.
-    await expect(cfgField).not.toContainText('Loading default...', { timeout: 30000 });
+    await expect(cfgField).not.toContainText('Resolving default', { timeout: 30000 });
     console.log('[ux-chapters] Step 1 default chatConfig field: "' + ((await cfgField.textContent()) || '').trim() + '"');
     await cfgField.click();
     const overlay = page.locator('.am7-picker-overlay');

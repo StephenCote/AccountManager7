@@ -372,7 +372,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await expect(dialog).toContainText('Source: ' + docName, { timeout: T.ui });
             // Chat config: the stack's default resolves to a library config; pick the gate's own on the live tier.
             const cfgField = dialog.locator('label.field-label:has-text("Chat Config") + div');
-            await expect(cfgField).not.toContainText('Loading default...', { timeout: T.ui });
+            await expect(cfgField).not.toContainText('Resolving default', { timeout: T.ui });
             await cfgField.click();
             await pickFromOverlay(page, CONFIG_NAME);
             await expect(cfgField).toContainText(CONFIG_NAME);

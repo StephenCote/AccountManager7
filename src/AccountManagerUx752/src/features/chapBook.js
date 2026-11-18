@@ -17,8 +17,11 @@ import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
 import { am7model } from '../core/model.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
-import { resolveDefaultChatConfig } from '../components/pbChatConfig.js';
+import { resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
 import { ReaderShell, exportBook, escHtml } from '../components/readerShell.js';
+import { pageHeader } from '../components/pageHeader.js';
+import { bgActivityBanner } from '../components/jobRunPanel.js';
+import { btn } from '../components/buttons.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
 
@@ -1333,29 +1336,10 @@ function renderRenderDialog() {
             // FIX A: visible Chat Config control — opens the library picker (system + accessible
             // chat configs), shows the chosen/auto-resolved name, and the chosen name is sent as the
             // chatConfig field on the render POSTs (via doRenderFromDialog → renderChapBookScenes).
-            m('div', { class: 'mb-4' }, [
-                m('label', { class: 'field-label' }, 'Chat Config'),
-                m('div', {
-                    class: 'text-field-full text-sm cursor-pointer flex items-center justify-between',
-                    onclick: function () {
-                        ObjectPicker.openLibrary({
-                            libraryType: 'chatConfig',
-                            title: 'Select Chat Config',
-                            onSelect: function (item) {
-                                if (item && item.name) {
-                                    renderChatConfigRef = { name: item.name, objectId: item.objectId };
-                                    m.redraw();
-                                }
-                            }
-                        });
-                    }
-                }, [
-                    m('span', { class: renderChatConfigRef ? '' : 'text-gray-400' },
-                        renderChatConfigRef ? renderChatConfigRef.name
-                            : (_renderChatConfigResolving ? 'Resolving default…' : '(click to select)')),
-                    m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
-                ])
-            ]),
+            m('div', { class: 'mb-4' }, renderChatConfigControl({
+                stacked: true, testid: 'cb-render-chatconfig', ref: renderChatConfigRef, resolving: _renderChatConfigResolving,
+                onPick: function (ref) { renderChatConfigRef = ref; m.redraw(); }
+            })),
             renderSdConfigInst
                 ? m(SdConfigPanel, {
                     inst: renderSdConfigInst,
@@ -1771,17 +1755,11 @@ async function cancelCreateChapBook() {
  * strip so the two features read identically.
  */
 function renderChapBookBgActivity() {
-    let bg = LLMConnector.bgActivity;
-    if (!bg || !bg.label) return null;
-    return m('div', { class: 'flex items-center gap-2 px-4 py-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded mb-2' }, [
-        m('span', { class: 'material-symbols-outlined text-base animate-spin' }, bg.icon || 'progress_activity'),
-        m('span', { class: 'flex-1' }, bg.label),
-        createJobId ? m('button', {
-            class: 'px-2 py-0.5 rounded border border-blue-300 dark:border-blue-700 text-xs',
-            disabled: createCancelling,
-            onclick: function () { cancelCreateChapBook(); }
-        }, createCancelling ? 'Cancelling...' : 'Cancel') : null
-    ]);
+    return bgActivityBanner({
+        bg: LLMConnector.bgActivity,
+        onCancel: createJobId ? function () { cancelCreateChapBook(); } : null,
+        cancelling: createCancelling
+    });
 }
 
 /**
@@ -1960,26 +1938,11 @@ function renderConfigDesignSettings(book, bookObjectId) {
                 }),
                 'Fixed page height'
             ]) : null,
-            m('div', [
-                m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Default chat config'),
-                m('div', {
-                    class: 'w-56 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white cursor-pointer flex items-center justify-between',
-                    onclick: function () {
-                        ObjectPicker.openLibrary({
-                            libraryType: 'chatConfig',
-                            title: 'Select Chat Config',
-                            onSelect: function (item) {
-                                if (item && item.name) { configChatConfigRef = { name: item.name, objectId: item.objectId }; m.redraw(); }
-                            }
-                        });
-                    }
-                }, [
-                    m('span', { class: configChatConfigRef ? '' : 'text-gray-400' },
-                        configChatConfigRef ? configChatConfigRef.name
-                            : (_configChatConfigResolving ? 'Resolving default…' : '(default — click to select)')),
-                    m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
-                ])
-            ])
+            m('div', { class: 'w-56' }, renderChatConfigControl({
+                stacked: true, label: 'Default chat config', testid: 'cb-config-chatconfig', ref: configChatConfigRef,
+                resolving: _configChatConfigResolving, placeholder: '(default — click to select)',
+                onPick: function (ref) { configChatConfigRef = ref; m.redraw(); }
+            }))
         ]),
         m('div', { class: 'border-t border-gray-200 dark:border-gray-700 pt-2' }, [
             m('button', {
@@ -2240,29 +2203,11 @@ function renderCreateDialog() {
                         oninput: function (e) { createMaxLines = parseInt(e.target.value) || 8; }
                     })
                 ]),
-                m('div', [
-                    m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Chat Config'),
-                    m('div', {
-                        class: 'w-full px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white cursor-pointer flex items-center justify-between',
-                        onclick: function () {
-                            ObjectPicker.openLibrary({
-                                libraryType: 'chatConfig',
-                                title: 'Select Chat Config',
-                                onSelect: function (item) {
-                                    if (item && item.name) {
-                                        createChatConfigRef = { name: item.name, objectId: item.objectId };
-                                        m.redraw();
-                                    }
-                                }
-                            });
-                        }
-                    }, [
-                        m('span', { class: createChatConfigRef ? '' : 'text-gray-400' },
-                            createChatConfigRef ? createChatConfigRef.name
-                                : (_createChatConfigResolving ? 'Resolving default…' : '(default — click to select)')),
-                        m('span', { class: 'material-symbols-outlined text-gray-400 text-sm' }, 'search')
-                    ])
-                ]),
+                renderChatConfigControl({
+                    stacked: true, testid: 'cb-create-chatconfig', ref: createChatConfigRef, resolving: _createChatConfigResolving,
+                    placeholder: '(default — click to select)',
+                    onPick: function (ref) { createChatConfigRef = ref; m.redraw(); }
+                }),
                 m('div', { class: 'text-xs text-gray-500 dark:text-gray-400' },
                     selectedIds.size + ' poem(s) selected')
             ]),
@@ -2836,28 +2781,11 @@ function renderReaderActionsLeft(nav) {
         // Fixed page height now lives (once) in the shared ChapBookConfig panel above the reader,
         // bound to readerBook — renderReaderPage still re-clamps immediately when it's toggled there.
         // Issue 2c: pick the chat config used for the Re-analyze pass.
-        readerPoemIds.length > 0 ? m('button', {
-            class: 'px-3 py-1.5 rounded border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 text-sm hover:bg-blue-50 dark:hover:bg-blue-900/20 flex items-center gap-1 disabled:opacity-50',
-            title: 'Choose the chat config used to re-analyze poem themes',
-            disabled: busy || roleWarning,
-            onclick: function () {
-                ObjectPicker.openLibrary({
-                    libraryType: 'chatConfig',
-                    title: 'Select Chat Config for Re-analysis',
-                    onSelect: function (item) {
-                        if (item && item.name) {
-                            reanalyzeChatConfigRef = { name: item.name, objectId: item.objectId };
-                            m.redraw();
-                        }
-                    }
-                });
-            }
-        }, [
-            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'tune'),
-            m('span', { class: 'max-w-[10rem] truncate' },
-                reanalyzeChatConfigRef ? reanalyzeChatConfigRef.name
-                    : (_reanalyzeChatConfigResolving ? 'Resolving…' : 'Config'))
-        ]) : null,
+        readerPoemIds.length > 0 ? renderChatConfigControl({
+            label: null, testid: 'cb-reanalyze-chatconfig', ref: reanalyzeChatConfigRef, resolving: _reanalyzeChatConfigResolving,
+            placeholder: 'Config', disabled: busy || roleWarning, title: 'Choose the chat config used to re-analyze poem themes',
+            onPick: function (ref) { reanalyzeChatConfigRef = ref; m.redraw(); }
+        }) : null,
         readerPoemIds.length > 0 ? m('button', {
             class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
             title: 'Re-analyze poem themes with the selected chat config',
@@ -4790,24 +4718,13 @@ const ChapBookReview = {
                 'You need the AccountUsers role to use ChapBook features.'
             ]) : null,
             // Header
-            m('div', { class: 'flex flex-wrap items-center gap-3 mb-4' }, [
-                m('button', {
-                    class: 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-                    title: 'Back to Poem Library',
-                    onclick: function () { m.route.set('/chap-book'); }
-                }, m('span', { class: 'material-symbols-outlined' }, 'arrow_back')),
-                m('span', { class: 'material-symbols-outlined text-2xl text-purple-500' }, 'edit_note'),
-                m('h2', { class: 'flex-1 text-xl font-semibold dark:text-white truncate', title: title },
-                    title + ' — Review'),
-                m('button', {
-                    class: 'px-3 py-1.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-sm hover:bg-purple-200 flex items-center gap-1',
-                    onclick: function () { m.route.set('/chap-book/read/' + reviewBookObjectId); }
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'auto_stories'),
-                    ' Read'
-                ])
-                // Render and Export now live (once) in the shared ChapBookConfig panel below.
-            ]),
+            pageHeader({
+                back: { title: 'Back to Poem Library', onclick: function () { m.route.set('/chap-book'); } },
+                icon: 'edit_note',
+                title: title + ' — Review', titleTip: title,
+                // Render and Export live (once) in the shared ChapBookConfig panel below.
+                actions: [btn({ label: 'Read', icon: 'auto_stories', onclick: function () { m.route.set('/chap-book/read/' + reviewBookObjectId); } })]
+            }),
             // Shared collapsible config panel (same one shown on create/read) — hosts the single
             // fixPageHeight toggle, design defaults, the poem queue, and the primary actions (Render,
             // Export). Bound to reviewBook so its fixPageHeight toggle patches the book being reviewed.

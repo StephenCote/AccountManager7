@@ -238,7 +238,7 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             const dialog = page.locator('[role="dialog"]').first();
             await expect(dialog).toContainText('Source: ' + docName, { timeout: T.ui });
             const cfgField = dialog.locator('label.field-label:has-text("Chat Config") + div');
-            await expect(cfgField).not.toContainText('Loading default...', { timeout: T.ui });
+            await expect(cfgField).not.toContainText('Resolving default', { timeout: T.ui });
             await cfgField.click();
             await pickFromOverlay(page, CONFIG_NAME);
             await expect(cfgField).toContainText(CONFIG_NAME);

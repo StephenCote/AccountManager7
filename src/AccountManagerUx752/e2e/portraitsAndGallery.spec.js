@@ -12,6 +12,19 @@ import path from 'path';
 
 const test = base;
 
+/** The portrait toggle lives in the chat toolbar's overflow (features/chat.js chatOverflowItems). */
+async function openChatOverflow(page) {
+    let menu = page.locator('.context-menu');
+    if (await menu.isVisible().catch(() => false)) { await page.keyboard.press('Escape'); await expect(menu).toHaveCount(0); }
+    await page.locator('button[title="More chat actions"]').click();
+    await expect(menu).toBeVisible({ timeout: 3000 });
+}
+async function closeChatOverflow(page) {
+    let menu = page.locator('.context-menu');
+    if (await menu.isVisible().catch(() => false)) await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+}
+
 test.describe('Portraits, Gallery, Image Viewer', () => {
     let testInfo = {};
 
@@ -211,9 +224,10 @@ test.describe('Portraits, Gallery, Image Viewer', () => {
             }
         }
 
-        // Check portrait toggle
-        let showPortrait = page.locator('button[title="Show portraits"]');
-        let hidePortrait = page.locator('button[title="Hide portraits"]');
+        // Check portrait toggle (toolbar overflow item)
+        await openChatOverflow(page);
+        let showPortrait = page.locator('.context-menu button[title="Show portraits"]');
+        let hidePortrait = page.locator('.context-menu button[title="Hide portraits"]');
         let showVisible = await showPortrait.isVisible({ timeout: 5000 }).catch(() => false);
         let hideVisible = await hidePortrait.isVisible({ timeout: 1000 }).catch(() => false);
 
@@ -223,7 +237,9 @@ test.describe('Portraits, Gallery, Image Viewer', () => {
             // Toggle ON
             await showPortrait.click();
             await page.waitForTimeout(500);
-            await expect(page.locator('button[title="Hide portraits"]')).toBeVisible({ timeout: 3000 });
+            await openChatOverflow(page);
+            await expect(page.locator('.context-menu button[title="Hide portraits"]')).toBeVisible({ timeout: 3000 });
+            await closeChatOverflow(page);
             console.log('VERIFIED: Toggle switches to ON');
 
             // Check for portrait images
@@ -259,8 +275,11 @@ test.describe('Portraits, Gallery, Image Viewer', () => {
             }
 
             // Toggle OFF
-            await page.locator('button[title="Hide portraits"]').click();
-            await expect(page.locator('button[title="Show portraits"]')).toBeVisible({ timeout: 3000 });
+            await openChatOverflow(page);
+            await page.locator('.context-menu button[title="Hide portraits"]').click();
+            await openChatOverflow(page);
+            await expect(page.locator('.context-menu button[title="Show portraits"]')).toBeVisible({ timeout: 3000 });
+            await closeChatOverflow(page);
             console.log('VERIFIED: Toggle back to OFF');
 
             await screenshot(page, 'verify-portraits');

@@ -193,18 +193,9 @@ function contextRowView(label, data, detachType, detachObjectId) {
     ]);
 }
 
-function summarizeProgressText(ref) {
-    let phase = ref.summaryPhase || "pending";
-    if (phase === "vectorize") return "vectorizing...";
-    if (phase === "vectorize-summary") return "vectorizing summary...";
-    if (phase === "map") return ref.summaryTotal > 0 ? "summarizing " + ref.summaryCurrent + "/" + ref.summaryTotal + "..." : "summarizing...";
-    if (phase === "reduce") return ref.summaryTotal > 0 ? "merging " + ref.summaryCurrent + "/" + ref.summaryTotal + "..." : "merging...";
-    if (phase === "complete") return "complete";
-    if (phase === "failed") return "failed";
-    if (phase === "cancelled") return "cancelled";
-    return "summarizing...";
-}
-
+/// Summarization phase text and the stop / re-summarize controls live in the chat's LLM Debug drawer
+/// (chat/LLMDebugPanel.js SessionView), which calls cancelSummarize / retrySummarize below via
+/// ContextPanel.cancelSummarize / ContextPanel.retrySummarize. This panel keeps only a compact indicator.
 function cancelSummarize(objectId) {
     if (!_sessionId) return;
     m.request({
@@ -243,20 +234,9 @@ function contextRefRowView(ref) {
             isSummarizing
                 ? m("span", { class: "material-symbols-outlined mr-1 animate-spin", style: "font-size: 14px;" }, "progress_activity")
                 : m("span", { class: "material-symbols-outlined mr-1", style: "font-size: 14px;" }, icon),
-            label + ": " + displayName,
-            isSummarizing ? m("span", { class: "ml-1 text-yellow-500 italic" }, summarizeProgressText(ref)) : ""
+            label + ": " + displayName
         ]),
         m("span", { class: "flex items-center flex-shrink-0" }, [
-            isSummarizing ? m("button", {
-                class: "p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ml-1",
-                title: "Stop summarization",
-                onclick: e => { e.stopPropagation(); cancelSummarize(ref.objectId); }
-            }, m("span", { class: "material-symbols-outlined text-red-400", style: "font-size: 16px;" }, "stop_circle")) : "",
-            !isSummarizing && rSchema !== "data.tag" ? m("button", {
-                class: "p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ml-1",
-                title: "Re-summarize",
-                onclick: e => { e.stopPropagation(); retrySummarize(ref.objectId); }
-            }, m("span", { class: "material-symbols-outlined text-blue-400", style: "font-size: 16px;" }, "refresh")) : "",
             m("button", {
                 class: "p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 ml-1",
                 title: "Detach " + label,
@@ -371,26 +351,11 @@ function panelContentView() {
     let rows = [];
 
     if (_contextData.summarizing) {
-        let bannerText = "Creating summary for attached document(s)...";
-        if (_contextData.contextRefs) {
-            let active = _contextData.contextRefs.filter(r => r.summarizing);
-            if (active.length > 0) bannerText = active.map(r => summarizeProgressText(r)).join(" | ");
-        }
-        rows.push(m("div", { class: "flex items-center gap-1 px-2 py-1.5 mb-1 rounded bg-yellow-900/40 border border-yellow-700/50 text-yellow-300 text-xs" }, [
-            m("span", { class: "material-symbols-outlined animate-spin", style: "font-size: 16px;" }, "progress_activity"),
-            m("span.flex-1", bannerText),
-            m("button", {
-                class: "ml-1 flex-shrink-0 p-0.5 rounded hover:bg-gray-600",
-                title: "Stop all summarizations",
-                onclick: e => { e.stopPropagation(); cancelSummarize(null); }
-            }, m("span", { class: "material-symbols-outlined text-red-400", style: "font-size: 16px;" }, "stop_circle"))
-        ]));
+        rows.push(m("div", { class: "text-xs text-yellow-500 italic px-1 mb-1", "data-context-summarizing": "1" }, "Summarizing…"));
     }
 
     if (_contextData.chatConfig) {
         rows.push(contextRowView("Config", _contextData.chatConfig, null));
-        let modelName = _contextData.chatConfig.model || _contextData.chatConfig.refSchema;
-        if (modelName) rows.push(m("div", { class: "text-xs text-gray-500 pl-3" }, "Model: " + modelName));
     }
     if (_contextData.promptConfig) rows.push(contextRowView("Prompt", _contextData.promptConfig, null));
     if (_contextData.systemCharacter) rows.push(contextRowView("System Char", _contextData.systemCharacter, "systemCharacter"));
@@ -416,6 +381,10 @@ const ContextPanel = {
     onContextChange: fn => { _onContextChange = fn; },
     attach,
     detach,
+    /** Stop one summarization (objectId) or all for this session (null). Driven from the LLM Debug drawer. */
+    cancelSummarize,
+    /** Re-run summarization for one attached context object. Driven from the LLM Debug drawer. */
+    retrySummarize,
     toggle: () => { _expanded = !_expanded; },
     isExpanded: () => _expanded,
     clear: () => { _contextData = null; _sessionId = null; stopSummarizePoller(); },

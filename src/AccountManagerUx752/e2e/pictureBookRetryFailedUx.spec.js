@@ -262,7 +262,7 @@ test.describe('PictureBook wizard — failed passages are explained and retried 
         await expect(dialog).toContainText('Source: ' + docName, { timeout: 10000 });
 
         const configField = dialog.locator('label.field-label:has-text("Chat Config")').locator('xpath=following-sibling::div[1]');
-        await expect(configField).not.toContainText('Loading default', { timeout: 20000 });
+        await expect(configField).not.toContainText('Resolving default', { timeout: 20000 });
         await configField.click();
         await pickChatConfig(page, SLOW_CONFIG);
         await expect(configField).toContainText(SLOW_CONFIG);

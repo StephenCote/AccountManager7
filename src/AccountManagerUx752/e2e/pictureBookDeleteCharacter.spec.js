@@ -8,7 +8,7 @@
  * rendered UI on an already-extracted book belonging to the shared test user:
  *
  *   viewer route -> "Edit Book" -> wizard resumes on step 4/5 -> "Manage Characters" -> click the
- *   bogus extract -> "Delete character" -> accept window.confirm -> success toast -> list refreshed
+ *   bogus extract -> "Delete character" -> confirm in the in-page dialog -> success toast -> list refreshed
  *   without it -> GET /characters (REST) confirms it is gone -> no scene still names it.
  *
  * It does NOT run an extraction (minutes of LLM time): it looks through the shared user's existing
@@ -179,21 +179,22 @@ test.describe('PictureBook — Manage Characters delete', () => {
         await expect(mgr.locator('div.text-lg.font-semibold', { hasText: targetName })).toBeVisible();
         await page.screenshot({ path: shot('pb-delete-char-2-detail'), fullPage: true });
 
-        // First pass: dismiss the confirm — nothing must be deleted.
-        page.once('dialog', async (d) => {
-            expect(d.type()).toBe('confirm');
-            expect(d.message()).toContain('Delete "' + targetName + '"');
-            await d.dismiss();
-        });
+        // First pass: cancel the in-page confirm (Dialog.confirm, stacked over the manager) — nothing
+        // must be deleted.
+        const confirmDlg = dialogs.filter({ hasText: 'Delete Character' }).last();
         await deleteBtn.click();
-        await page.waitForTimeout(1500);
+        await expect(confirmDlg, 'in-page confirm opens').toBeVisible({ timeout: 10000 });
+        await expect(confirmDlg).toContainText('Delete "' + targetName + '"');
+        await confirmDlg.locator('button:has-text("Cancel")').click();
+        await expect(confirmDlg).toHaveCount(0, { timeout: 10000 });
         const afterDismiss = await listCharacters(page, bookOid);
         expect(afterDismiss.some((c) => c.objectId === target.objectId), 'dismissing the confirm deletes nothing').toBeTruthy();
         await expect(targetCard, 'still listed after dismiss').toBeVisible();
 
         // Second pass: accept -> DELETE fires -> toast -> list refreshes without the extract.
-        page.once('dialog', async (d) => { await d.accept(); });
         await deleteBtn.click();
+        await expect(confirmDlg).toBeVisible({ timeout: 10000 });
+        await confirmDlg.locator('button.am7-dialog-btn-destructive').click();
         const toast = page.locator('.toast-box', { hasText: 'Deleted "' + targetName + '"' });
         await expect(toast, 'success toast names the deleted character').toBeVisible({ timeout: 60000 });
         const toastText = await toast.textContent();
