@@ -595,6 +595,19 @@ public class PictureBookUtil {
         public boolean metaUpdated;
         /** Characters that could not be deleted after their references moved. */
         public final List<String> failedDeletes = new ArrayList<>();
+        /** V3 cast: scene {@code characters} participations moved to the keeper, and composition actors repointed. */
+        public final V3CastResult v3 = new V3CastResult();
+    }
+
+    /** What {@link #repointV3Cast} changed (and failed to change) in a V3 book's scenes and compositions. */
+    public static final class V3CastResult {
+        public int sceneMembershipsChanged;
+        public int actorsChanged;
+        public final List<String> failures = new ArrayList<>();
+        @Override public String toString() {
+            return sceneMembershipsChanged + " scene membership(s), " + actorsChanged + " actor(s)"
+                    + (failures.isEmpty() ? "" : ", FAILED " + failures);
+        }
     }
 
     /**
@@ -615,6 +628,8 @@ public class PictureBookUtil {
         public int artifactsRemoved;
         /** Whether the charPerson (and its sub-records) were deleted. */
         public boolean deleted;
+        /** V3 cast: scene {@code characters} participations removed, and composition actors unlinked. */
+        public final V3CastResult v3 = new V3CastResult();
     }
 
     /**
@@ -845,6 +860,9 @@ public class PictureBookUtil {
             unionSceneRefs(user, keep, drops, bookScopedAttributeName(ATTR_SCENE_REFS, pb2BookObjectId));
         }
 
+        /// 3b. The V3 book's own cast: scene memberships and composition actors.
+        repointV3Cast(user, pb2BookObjectId, orgId, drops, keep, result.v3);
+
         /// 4. Only now delete the duplicates, with their own foreign sub-records (profile,
         /// narrative, statistics, store, instinct, personality, state), which live outside the
         /// book's group subtree and would otherwise be orphaned - the same list and the same reason
@@ -856,7 +874,7 @@ public class PictureBookUtil {
         }
 
         logger.info("mergeCharacters: merged " + result.mergedNames + " into '" + keepName
-                + "' (" + result.scenesRepointed + " scene(s) repointed, meta "
+                + "' (" + result.scenesRepointed + " scene(s) repointed, V3 cast: " + result.v3 + ", meta "
                 + (result.metaUpdated ? "updated" : "unchanged")
                 + (result.failedDeletes.isEmpty() ? "" : ", FAILED to delete " + result.failedDeletes) + ")");
         PbStaleUtil.touch(OlioModelNames.MODEL_CHAR_PERSON, keepObjectId);
@@ -956,13 +974,16 @@ public class PictureBookUtil {
         /// 3. The PB2 graph.
         detachCharacterFromGraph(user, pb2BookObjectId, charObjectId, orgId, result);
 
+        /// 3b. The V3 book's own cast: scene memberships and composition actors.
+        repointV3Cast(user, pb2BookObjectId, orgId, Collections.singletonList(target), null, result.v3);
+
         /// 4. Only now the record itself.
         result.deleted = deleteBookCharacter(user, target);
         PbStaleUtil.touch(OlioModelNames.MODEL_CHAR_PERSON, charObjectId);
 
         logger.info("deleteCharacter: '" + targetName + "' " + (result.deleted ? "deleted" : "NOT deleted")
                 + " (" + result.scenesDetached + " scene(s) detached, meta "
-                + (result.metaUpdated ? "updated" : "unchanged") + ", graph: " + result.bindingsRemoved
+                + (result.metaUpdated ? "updated" : "unchanged") + ", V3 cast: " + result.v3 + ", graph: " + result.bindingsRemoved
                 + " binding(s), " + result.nodesRemoved + " node(s), " + result.artifactsRemoved
                 + " artifact(s) removed)");
         return result;
@@ -975,6 +996,110 @@ public class PictureBookUtil {
      * (binding, artifact → node), the same ordering the book-delete walk uses. A PB1 book, or a PB2
      * book that has no workflow yet, has nothing to detach.
      */
+    /**
+     * Repoint (merge, {@code keep != null}) or detach (delete, {@code keep == null}) the dropped characters in the
+     * V3 book's own cast records, which the scene notes / meta / binding rewrites never touched:
+     * <ul>
+     *   <li>{@code olio.pb.scene.characters} participations — moved to the keeper, or removed;</li>
+     *   <li>{@code olio.pb.sceneActor.character} on every composition of the book — set to the keeper, or
+     *       cleared with the dropped name kept as the actor's {@code description} (an actor without a character
+     *       needs one). {@code apparel} is cleared either way: it belonged to the dropped character's store,
+     *       which the delete step removes, so keeping it would leave a dangling outfit.</li>
+     * </ul>
+     * Measured 2026-11-18 (alchemy.doc): a merge of two generals into "Manuel deFól" left the deleted record as the
+     * hero of 10 scene compositions — every one of those renders silently had no portrait reference. Must run
+     * BEFORE the drops are deleted. Failures are collected on the result, never thrown.
+     */
+    private static void repointV3Cast(BaseRecord user, String pb2BookObjectId, long orgId,
+            List<BaseRecord> drops, BaseRecord keep, V3CastResult res) {
+        if (pb2BookObjectId == null || pb2BookObjectId.isBlank() || drops == null || drops.isEmpty()) return;
+        BaseRecord book;
+        try {
+            book = PbBookUtil.readBook(user, pb2BookObjectId, orgId);
+        } catch (Exception e) {
+            res.failures.add("read book: " + e.getMessage());
+            return;
+        }
+        if (book == null) return;
+        Map<Long, BaseRecord> dropById = new HashMap<>();
+        for (BaseRecord d : drops) {
+            Object id = d.get(FieldNames.FIELD_ID);
+            if (id instanceof Number) dropById.put(((Number) id).longValue(), d);
+        }
+        if (dropById.isEmpty()) return;
+        org.cote.accountmanager.util.MemberUtil mu = IOSystem.getActiveContext().getMemberUtil();
+
+        /// 1. Scene cast memberships.
+        for (BaseRecord scene : PbBookUtil.listScenes(user, book)) {
+            boolean touched = false;
+            for (BaseRecord d : dropById.values()) {
+                try {
+                    if (!mu.isMember(d, scene, OlioFieldNames.FIELD_PB_CHARACTERS)) continue;
+                    if (!IOSystem.getActiveContext().getAccessPoint().member(user, scene, OlioFieldNames.FIELD_PB_CHARACTERS, d, null, false)) {
+                        res.failures.add("remove " + d.get(FieldNames.FIELD_NAME) + " from scene " + scene.get(FieldNames.FIELD_OBJECT_ID));
+                        continue;
+                    }
+                    res.sceneMembershipsChanged++;
+                    touched = true;
+                    if (keep != null && !mu.isMember(keep, scene, OlioFieldNames.FIELD_PB_CHARACTERS)) {
+                        if (!IOSystem.getActiveContext().getAccessPoint().member(user, scene, OlioFieldNames.FIELD_PB_CHARACTERS, keep, null, true)) {
+                            res.failures.add("add " + keep.get(FieldNames.FIELD_NAME) + " to scene " + scene.get(FieldNames.FIELD_OBJECT_ID));
+                        }
+                    }
+                } catch (Exception e) {
+                    res.failures.add("scene " + scene.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+                }
+            }
+            if (touched) PbStaleUtil.touch(scene);
+        }
+
+        /// 2. Composition actors — every purpose (scene and cover boards both carry actors).
+        Long gid = book.get(FieldNames.FIELD_GROUP_ID);
+        if (gid == null || gid.longValue() <= 0L) {
+            res.failures.add("book has no group; composition actors not repointed");
+            return;
+        }
+        Query cq = QueryUtil.createQuery(OlioModelNames.MODEL_PB_COMPOSITION, OlioFieldNames.FIELD_PB_BOOK, book);
+        cq.field(FieldNames.FIELD_GROUP_ID, gid);
+        cq.field(FieldNames.FIELD_ORGANIZATION_ID, orgId);
+        cq.setRequest(PbComposeUtil.compositionRequest());
+        cq.setCache(false);
+        BaseRecord[] comps = IOSystem.getActiveContext().getAccessPoint().list(user, cq).getResults();
+        if (comps == null) return;
+        for (BaseRecord comp : PbGraphUtil.restoreSchema(Arrays.asList(comps), OlioModelNames.MODEL_PB_COMPOSITION)) {
+            for (BaseRecord actor : PbComposeUtil.listActors(user, comp)) {
+                BaseRecord ch = actor.get(OlioFieldNames.FIELD_PB_CHARACTER);
+                Object cid = (ch != null ? ch.get(FieldNames.FIELD_ID) : null);
+                if (!(cid instanceof Number) || !dropById.containsKey(((Number) cid).longValue())) continue;
+                BaseRecord dropped = dropById.get(((Number) cid).longValue());
+                try {
+                    BaseRecord patch;
+                    if (keep != null) {
+                        patch = PbGraphUtil.patchOf(actor, OlioModelNames.MODEL_PB_SCENE_ACTOR,
+                                OlioFieldNames.FIELD_PB_CHARACTER, OlioFieldNames.FIELD_APPAREL);
+                        patch.set(OlioFieldNames.FIELD_PB_CHARACTER, keep);
+                    } else {
+                        patch = PbGraphUtil.patchOf(actor, OlioModelNames.MODEL_PB_SCENE_ACTOR,
+                                OlioFieldNames.FIELD_PB_CHARACTER, OlioFieldNames.FIELD_APPAREL, FieldNames.FIELD_DESCRIPTION);
+                        patch.set(OlioFieldNames.FIELD_PB_CHARACTER, null);
+                        String existing = actor.get(FieldNames.FIELD_DESCRIPTION);
+                        String dn = dropped.get(FieldNames.FIELD_NAME);
+                        patch.set(FieldNames.FIELD_DESCRIPTION, (NarrativeUtil.isMeaningful(existing) ? existing : (dn != null ? dn : "figure")));
+                    }
+                    patch.set(OlioFieldNames.FIELD_APPAREL, null);
+                    if (IOSystem.getActiveContext().getAccessPoint().update(user, patch) == null) {
+                        res.failures.add("actor " + actor.get(FieldNames.FIELD_OBJECT_ID));
+                        continue;
+                    }
+                    res.actorsChanged++;
+                    PbStaleUtil.touch(actor);
+                } catch (Exception e) {
+                    res.failures.add("actor " + actor.get(FieldNames.FIELD_OBJECT_ID) + ": " + e.getMessage());
+                }
+            }
+        }
+    }
+
     private static void detachCharacterFromGraph(BaseRecord user, String pb2BookObjectId,
             String charOid, long orgId, DeleteCharacterResult result) {
         BaseRecord book;
@@ -2757,6 +2882,106 @@ public class PictureBookUtil {
                     + found.get(FieldNames.FIELD_NAME) + "' via the first-name pass");
         }
         return found;
+    }
+
+    /// Rank and title words dropped before fuzzy name matching ("General deFäl", "Staff Sergeant Aufait",
+    /// "Sergeant Major at Arms Victual"). Matching-only: names are never rewritten with this list. Kinship
+    /// words ("father", "dad") are deliberately absent for the same reason as NAME_HONORIFICS.
+    private static final Set<String> NAME_TITLE_TOKENS = new HashSet<>(Arrays.asList(
+            "the", "mr", "mrs", "ms", "miss", "dr", "doctor", "prof", "professor", "sir", "madam", "madame",
+            "lord", "lady", "general", "gen", "major", "maj", "colonel", "col", "commander", "cmdr", "admiral",
+            "captain", "capt", "lieutenant", "lt", "sergeant", "sgt", "staff", "corporal", "cpl", "private", "pvt",
+            "officer", "constable", "reverend", "rev", "at", "arms", "chief", "first", "second"));
+
+    /// Lower-cased, accent-folded, possessive-stripped name tokens with rank/title words removed.
+    static List<String> nameMatchTokens(String name) {
+        List<String> out = new ArrayList<>();
+        if (name == null) return out;
+        String t = stripDiacritics(name).toLowerCase(Locale.ROOT);
+        t = t.replaceAll("[’ʼ']s\\b", " ").replaceAll("[^a-z0-9]+", " ").trim();
+        if (t.isEmpty()) return out;
+        for (String tok : t.split("\\s+")) {
+            if (tok.length() >= 2 && !NAME_TITLE_TOKENS.contains(tok)) out.add(tok);
+        }
+        return out;
+    }
+
+    /// Optimal-string-alignment distance (Levenshtein plus adjacent transposition), so "Finely"/"Finley" is 1.
+    static int nameEditDistance(String a, String b) {
+        int n = a.length(), m = b.length();
+        int[][] d = new int[n + 1][m + 1];
+        for (int i = 0; i <= n; i++) d[i][0] = i;
+        for (int j = 0; j <= m; j++) d[0][j] = j;
+        for (int i = 1; i <= n; i++) {
+            for (int j = 1; j <= m; j++) {
+                int cost = (a.charAt(i - 1) == b.charAt(j - 1)) ? 0 : 1;
+                d[i][j] = Math.min(Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1), d[i - 1][j - 1] + cost);
+                if (i > 1 && j > 1 && a.charAt(i - 1) == b.charAt(j - 2) && a.charAt(i - 2) == b.charAt(j - 1)) {
+                    d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+                }
+            }
+        }
+        return d[n][m];
+    }
+
+    /**
+     * Last-resort fuzzy resolution of an LLM-supplied actor name to ONE of {@code candidates}, run only after
+     * every exact pass missed. Measured 2026-11-18 on alchemy.doc: the composer left real characters unlinked
+     * (no portrait reference, an invented face) for "Gallant", "Doughty", "Aufait" (surname only, rank
+     * dropped), "deFöl" / "General deFäl" / "General deFål" (diacritic drift) and "Marcus Finely" (typo).
+     *
+     * <p>Every title-stripped token of the name must match a token of the candidate's title-stripped name
+     * within a small edit distance (0 for tokens of up to 4 letters, 1 up to 7, else 2). Candidates are ranked
+     * by total distance plus a small penalty per extra candidate token, so "Darby" prefers "Darby" over
+     * "Darby's dad" (the substring-collision lesson of {@link #findCharPersonByNameInGroup}). A tie for best
+     * is AMBIGUOUS and returns null — a wrong face is worse than no reference.
+     */
+    public static BaseRecord fuzzyCharacterMatch(String name, List<BaseRecord> candidates) {
+        List<String> want = nameMatchTokens(name);
+        if (want.isEmpty() || candidates == null || candidates.isEmpty()) return null;
+        BaseRecord best = null;
+        double bestScore = Double.MAX_VALUE;
+        boolean tie = false;
+        Set<Long> seen = new HashSet<>();
+        for (BaseRecord cand : candidates) {
+            if (cand == null) continue;
+            Object idObj = cand.hasField(FieldNames.FIELD_ID) ? cand.get(FieldNames.FIELD_ID) : null;
+            if (idObj instanceof Number && !seen.add(((Number) idObj).longValue())) continue;
+            List<String> have = nameMatchTokens((String) cand.get(FieldNames.FIELD_NAME));
+            if (have.isEmpty()) continue;
+            int total = 0;
+            boolean ok = true;
+            for (String w : want) {
+                int allowed = (w.length() <= 4 ? 0 : (w.length() <= 7 ? 1 : 2));
+                int bestTok = Integer.MAX_VALUE;
+                for (String h : have) bestTok = Math.min(bestTok, nameEditDistance(w, h));
+                if (bestTok > allowed) { ok = false; break; }
+                total += bestTok;
+            }
+            if (!ok) continue;
+            double score = total + 0.25 * Math.max(0, have.size() - want.size());
+            if (score < bestScore) { best = cand; bestScore = score; tie = false; }
+            else if (score == bestScore) { tie = true; }
+        }
+        if (best == null) return null;
+        if (tie) {
+            logger.warn("Fuzzy actor name '" + name + "' matches more than one character equally — ambiguous, not resolving");
+            return null;
+        }
+        logger.info("Resolved actor name '" + name + "' to '" + best.get(FieldNames.FIELD_NAME) + "' via the fuzzy pass (score " + bestScore + ")");
+        return best;
+    }
+
+    /// Every charPerson in one character group (the same projection findCharPersonByNameInGroup returns).
+    static List<BaseRecord> listCharPersonsInGroup(BaseRecord user, BaseRecord grp) {
+        if (user == null || grp == null) return Collections.emptyList();
+        Query allq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+        allq.field(FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
+        allq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+        allq.setRequest(new String[]{"id", FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, "firstName",
+            "narrative", "gender", "profile", FieldNames.FIELD_STORE, FieldNames.FIELD_ATTRIBUTES});
+        BaseRecord[] all = IOSystem.getActiveContext().getAccessPoint().list(user, allq).getResults();
+        return (all == null ? Collections.emptyList() : Arrays.asList(all));
     }
 
     static BaseRecord findCharPersonByNameInGroup(BaseRecord user, String cname, BaseRecord grp) {

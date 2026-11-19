@@ -1755,7 +1755,22 @@ public class PbComposeUtil {
 				logger.warn("Lookup of '" + name + "' in group " + grp.get(FieldNames.FIELD_NAME) + " failed: " + e.getMessage());
 			}
 		}
-		return null;
+		/// Last resort: fuzzy (surname-only, rank dropped, diacritic drift, small typos), cast first so a scene's
+		/// own people win, then every character of the book's groups. Unique best match only.
+		BaseRecord fuzzy = PictureBookUtil.fuzzyCharacterMatch(name, cast.members);
+		if(fuzzy != null) {
+			return fuzzy;
+		}
+		List<BaseRecord> everyone = new ArrayList<>();
+		for(BaseRecord grp : groups) {
+			try {
+				everyone.addAll(PictureBookUtil.listCharPersonsInGroup(user, grp));
+			}
+			catch(Exception e) {
+				logger.warn("Listing group " + grp.get(FieldNames.FIELD_NAME) + " for a fuzzy match failed: " + e.getMessage());
+			}
+		}
+		return PictureBookUtil.fuzzyCharacterMatch(name, everyone);
 	}
 
 	private static boolean firstNameMatches(BaseRecord cp, String name) {

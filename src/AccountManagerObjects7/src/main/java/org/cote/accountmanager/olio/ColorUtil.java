@@ -171,9 +171,14 @@ public class ColorUtil {
 		return defaultColors.get(rand.nextInt(defaultColors.size())).get("hex");
 	}
 	
+	/// The {hue, saturation, lightness} triple persisted on data.color, on the 0..1 scale of
+	/// java.awt.Color.RGBtoHSB (lightness is HSB brightness). Every seeded library row and olio/colors.json
+	/// are on this scale, and findComplementaryColor's SQL depends on it (hue +/- 0.5). fromRGB below returns
+	/// DEGREES and x100 percentages, so a library seeded through it would silently break every complement
+	/// lookup; it is kept only for callers that want that form.
 	public static double[] getHSL(int red, int green, int blue) {
-		float[] hsl = fromRGB(red, green, blue);
-		return new double[] { floatToDouble(hsl[0]), floatToDouble(hsl[1]), floatToDouble(hsl[2])};
+		float[] hsb = java.awt.Color.RGBtoHSB(red, green, blue, null);
+		return new double[] { floatToDouble(hsb[0]), floatToDouble(hsb[1]), floatToDouble(hsb[2])};
 	}
 	
 	/// from https://gist.github.com/Yona-Appletree/0c4b58763f070ae8cdff7db583c82563
@@ -301,27 +306,45 @@ public class ColorUtil {
 		/// An adjustment of 10% is added to give a little more variety
 		/// OFFSET ?
 
-		StringBuilder buff = new StringBuilder();
-		buff.append("SELECT id, name FROM (");
-		buff.append("(SELECT id, name, hue FROM " + tableName + " C2 WHERE C2.hue >= (SELECT (CASE WHEN hue <= 0.5 THEN (hue + 0.5) ELSE (hue - 0.5) END) as chue FROM " + tableName + " WHERE hex = ? AND groupId = ? LIMIT 1) ORDER BY C2.hue LIMIT 1)");
-		buff.append(" UNION ALL ");
-		buff.append("(SELECT id, name, hue FROM " + tableName + " C3 WHERE C3.hue < (SELECT (CASE WHEN hue <= 0.5 THEN (hue + 0.5) ELSE (hue - 0.5) END) as chue FROM " + tableName + " WHERE hex = ? AND groupId = ? LIMIT 1) ORDER BY C3.hue DESC LIMIT 1)");
-		buff.append(") as hs ORDER BY abs(hue) LIMIT 1;");
+		/// The nearest CHROMATIC colour in the same library to the opposite hue (hue +/- 0.5): one candidate
+		/// at or above the target and one below, then whichever is closer to the target. Three defects fixed
+		/// 2026-11-18: (1) the final pick was ORDER BY abs(hue) - the lower hue, not the nearer one; (2) the
+		/// candidate subqueries had no groupId condition, so a complement could come from another world's
+		/// library; (3) an achromatic input (black/white/grey, saturation 0, hue 0) always "complemented" to
+		/// whatever sat at hue 0.5 - every grey suit got the same teal. An achromatic colour has no hue to
+		/// oppose, so it now complements to itself (the fallback below), and candidates exclude achromatics.
+		String sql = "WITH src AS (SELECT hue, saturation, (CASE WHEN hue <= 0.5 THEN (hue + 0.5) ELSE (hue - 0.5) END) AS chue"
+			+ " FROM " + tableName + " WHERE hex = ? AND groupId = ? LIMIT 1)"
+			+ " SELECT hs.id FROM ("
+			+ "(SELECT C2.id, C2.hue FROM " + tableName + " C2, src WHERE C2.groupId = ? AND C2.saturation > 0 AND C2.hue >= src.chue ORDER BY C2.hue LIMIT 1)"
+			+ " UNION ALL "
+			+ "(SELECT C3.id, C3.hue FROM " + tableName + " C3, src WHERE C3.groupId = ? AND C3.saturation > 0 AND C3.hue < src.chue ORDER BY C3.hue DESC LIMIT 1)"
+			+ ") AS hs, src WHERE src.saturation > 0 ORDER BY abs(hs.hue - src.chue) LIMIT 1";
+		String selfSql = "SELECT id FROM " + tableName + " WHERE hex = ? AND groupId = ? LIMIT 1";
 		long id = 0L;
-		try (Connection con = dbUtil.getDataSource().getConnection(); PreparedStatement statement = con.prepareStatement(buff.toString())){
-
-			statement.setString(1, colorHex);
-			statement.setLong(2, groupId);
-			statement.setString(3, colorHex);
-			statement.setLong(4, groupId);
-			//statement.setInt(4, rand.nextInt(10));
-			
-			ResultSet rset = statement.executeQuery();
-			if(rset.next()) {
-				id = rset.getLong(FieldNames.FIELD_ID);
+		try (Connection con = dbUtil.getDataSource().getConnection()){
+			try (PreparedStatement statement = con.prepareStatement(sql)) {
+				statement.setString(1, colorHex);
+				statement.setLong(2, groupId);
+				statement.setLong(3, groupId);
+				statement.setLong(4, groupId);
+				try (ResultSet rset = statement.executeQuery()) {
+					if(rset.next()) {
+						id = rset.getLong(FieldNames.FIELD_ID);
+					}
+				}
 			}
-			rset.close();
-			
+			if(id == 0L) {
+				try (PreparedStatement self = con.prepareStatement(selfSql)) {
+					self.setString(1, colorHex);
+					self.setLong(2, groupId);
+					try (ResultSet rset = self.executeQuery()) {
+						if(rset.next()) {
+							id = rset.getLong(FieldNames.FIELD_ID);
+						}
+					}
+				}
+			}
 		} catch (NullPointerException | SQLException e) {
 			logger.error(e);
 		}

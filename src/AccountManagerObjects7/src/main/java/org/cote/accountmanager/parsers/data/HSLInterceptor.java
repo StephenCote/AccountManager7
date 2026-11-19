@@ -24,7 +24,10 @@ public class HSLInterceptor implements IParseInterceptor {
 	@Override
 	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, BaseRecord rec, FieldSchema fieldSchema, FieldType fieldType, String baseVal) {
 		String outVal = baseVal;
-		if(outVal != null && outVal.length() > 1) {
+		/// A single-digit blue ("0", "2") is a real value: `length() > 1` here skipped HSL for every colour with
+		/// blue < 10 (89 of the 864 library colours shipped with hue/saturation/lightness 0, so all of them
+		/// "complemented" to the same teal).
+		if(outVal != null && !outVal.trim().isEmpty()) {
 			int red = rec.get("red");
 			int green = rec.get("green");
 			int blue = Integer.parseInt(outVal);
