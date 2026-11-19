@@ -328,6 +328,35 @@ Cache management endpoints:
 - Invalidate specific entries
 - Cache statistics
 
+### AdminService - Administrative maintenance (`/rest/admin`)
+
+Transport for `AdminMaintenanceUtil` (Objects7) behind the Ux752 Admin panel (`/admin/system`,
+feature `systemAdmin`). Every route is `@RolesAllowed({"admin"})` **and** the util re-checks the
+role membership in-process (org admin user, or SystemAdministrators / DataAdministrators /
+AccountAdministrators). `system.audit` has no group/owner/access block, so these reads and deletes
+bypass `AccessPoint` deliberately, after that explicit check. Scope is one boolean,
+`allOrganizations`; an organization id is never accepted from the client, and the all-organizations
+scope is refused (403) to anyone who is not the org admin user or a **SystemAdministrators** member.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/scope` | GET | `{organizationId, organizationPath, systemAdministrator, organizations:[{id,path}]}` |
+| `/admin/thumbnails/count?allOrganizations=` | GET | `{scope, total, organizations:[{id,path,count}]}` |
+| `/admin/thumbnails?allOrganizations=` | DELETE | Wipe every `data.thumbnail` in scope (they regenerate on demand) |
+| `/admin/audit/count?allOrganizations=` | GET | Same shape as thumbnails/count |
+| `/admin/audit/search` | POST | Body `{allOrganizations, startRecord, recordCount, action, response, resourceType, subjectType, text, since, until}` (dates = epoch ms) → `io.queryResult`, newest first |
+| `/admin/audit/{objectId}?allOrganizations=` | GET | `{audit:{...}, organizationPath, contextUser, subject, resource}`; 404 outside scope |
+| `/admin/audit?allOrganizations=&days=N` | DELETE | Trim: delete records older than N days (N ≥ 1) |
+| `/admin/audit?allOrganizations=&purge=true` | DELETE | Purge every record in scope (`days` and `purge` together, or neither → 400) |
+
+Each destructive command is itself journaled as a PERMIT `DELETE` audit by the caller, so a purge
+leaves exactly one record: the one that says who purged it. `system.audit` carries index hints
+(`organizationId, createdDate`, `objectId`, `createdDate`) so these queries are index scans; on a
+database created before the hints existed the indexes are built by `IOSystem.open()` on the next
+startup (`CREATE INDEX IF NOT EXISTS`). Tests: `TestAdminService` (Service7, H2),
+`TestAdminMaintenanceUtil` (Objects7, live DB, confined to `/Development/AdminMaintenance`),
+`e2e/systemAdmin.spec.js` (Ux752, Docker stack).
+
 ### PolicyService
 
 Policy evaluation endpoints:

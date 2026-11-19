@@ -117,6 +117,12 @@ const featureWiring = {
         // isMenuItemVisible predicate (features.js) gates it consistently (adminOnly ⇒ roles.admin).
         menuItems: [{ icon: 'travel_explore', label: 'Olio Admin', route: '/admin/olio', section: 'aside', adminOnly: true, roles: ['admin'] }],
         routePrefixes: ['/admin/olio']
+    },
+    systemAdmin: {
+        routes: () => import('./features/systemAdmin/routes.js'),
+        // Thumbnail cleanup + audit list/search/view/trim/purge over /rest/admin (AdminService).
+        menuItems: [{ icon: 'admin_panel_settings', label: 'Admin', route: '/admin/system', section: 'aside', adminOnly: true, roles: ['admin'] }],
+        routePrefixes: ['/admin/system']
     }
 };
 
@@ -189,7 +195,7 @@ const profiles = {
     standard: ['core', 'media', 'chat'],
     full: Object.keys(features),
     gaming: ['core', 'media', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig'],
+    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig', 'systemAdmin'],
     // ISO 42001 appliance — minimal compliance-only surface (design §9.2). chat is required (the suite runs
     // LLM tests through LLMConnector); accessRequests + featureConfig support RBAC onboarding + admin toggling.
     compliance: ['core', 'chat', 'iso42001', 'accessRequests', 'featureConfig']
