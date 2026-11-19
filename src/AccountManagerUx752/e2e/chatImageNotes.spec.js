@@ -16,6 +16,7 @@
  *   PLAYWRIGHT_BASE_URL=https://127.0.0.1:9443 npx playwright test e2e/chatImageNotes.spec.js --workers=1 --project=chromium-vite
  */
 import { test, expect } from './helpers/fixtures.js';
+import { openChat } from './helpers/nav.js';
 import { login } from './helpers/auth.js';
 import { ensureSharedTestUser, ensurePath, createObject, apiLogin, apiLogout } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
@@ -71,7 +72,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 async function openChat(page) {
-    await page.locator('button[title="Chat"]').click();
+    await openChat(page);
     await page.waitForURL(/.*#!\/chat/, { timeout: 15000 });
     await expect(page.locator('button[title="Sessions"]')).toBeVisible({ timeout: 20000 });
     let wizardTitle = page.locator('text=Chat Library Setup');

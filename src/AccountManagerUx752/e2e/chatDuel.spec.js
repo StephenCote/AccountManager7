@@ -6,6 +6,7 @@
  * (chatConfig.serverUrl no longer exists), and the model/dialect come from the same route.
  */
 import { test as base, expect } from '@playwright/test';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { captureConsole } from './helpers/console.js';
 import { ensureSharedTestUser, ensureChatConfig, resolveChatRoute } from './helpers/api.js';
@@ -29,7 +30,7 @@ test.describe('Chat duel + memories + gossip', () => {
         let capture = captureConsole(page, { verbose: true });
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 

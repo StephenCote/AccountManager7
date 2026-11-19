@@ -4,6 +4,7 @@
  * Uses test user. ALL tests hit real endpoints.
  */
 import { test as base, expect } from '@playwright/test';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { captureConsole } from './helpers/console.js';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -61,7 +62,7 @@ test.describe('Audio, Memory, Gossip, MCP', () => {
         test.setTimeout(60000);
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -107,7 +108,7 @@ test.describe('Audio, Memory, Gossip, MCP', () => {
         let capture = captureConsole(page, { verbose: true });
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 

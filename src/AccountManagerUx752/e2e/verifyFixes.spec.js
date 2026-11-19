@@ -3,6 +3,7 @@
  * Each test states what it verifies and what it cannot verify.
  */
 import { test as base, expect } from '@playwright/test';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { captureConsole } from './helpers/console.js';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -39,7 +40,7 @@ test.describe('Chat portrait header', () => {
         test.setTimeout(60000);
         await testLogin(page);
 
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -118,7 +119,7 @@ test.describe('Image viewer (page.imageView)', () => {
         await testLogin(page);
 
         // Navigate to chat to load modules
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -151,7 +152,7 @@ test.describe('Audio TTS synthesize', () => {
         test.setTimeout(60000);
         await testLogin(page);
 
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -326,7 +327,7 @@ test.describe('Pending animation', () => {
         });
         expect(setup.error, 'session setup: ' + JSON.stringify(setup)).toBeUndefined();
 
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
 
         let wizardTitle = page.locator('text=Chat Library Setup');
@@ -401,7 +402,7 @@ test.describe('Firefox perf (Chromium proxy)', () => {
         await testLogin(page);
 
         let start = Date.now();
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
         let elapsed = Date.now() - start;

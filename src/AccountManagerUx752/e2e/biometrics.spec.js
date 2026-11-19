@@ -22,6 +22,16 @@ async function newApiContext() {
     return pwRequest.newContext({ baseURL: BASE_URL, ignoreHTTPSErrors: true });
 }
 
+/// Magic 8 lives on the App Panel (top bar → App Panel → Apps → Magic 8), not in the top bar.
+async function openMagic8(page) {
+    let appBtn = page.locator('button[data-top="app"]');
+    await expect(appBtn).toBeVisible({ timeout: 5000 });
+    await appBtn.click();
+    let card = page.locator('[data-group="Apps"] [data-tool="/magic8"]');
+    await expect(card).toBeVisible({ timeout: 10000 });
+    await card.click();
+}
+
 test.describe('Magic 8 (Biometrics) feature', () => {
     let testInfo = {};
 
@@ -33,10 +43,9 @@ test.describe('Magic 8 (Biometrics) feature', () => {
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
     });
 
-    test('magic 8 button navigates to session config', async ({ page }) => {
-        let bioBtn = page.locator('button[title="Magic 8"]');
-        await expect(bioBtn).toBeVisible({ timeout: 5000 });
-        await bioBtn.click();
+    test('magic 8 App Panel card navigates to session config', async ({ page }) => {
+        await expect(page.locator('button[title="Magic 8"]'), 'Magic 8 is no longer a top-bar button').toHaveCount(0);
+        await openMagic8(page);
         await page.waitForURL(/.*#!\/magic8/, { timeout: 10000 });
         // SessionConfigEditor shows "Magic8 Session" heading or loading spinner
         let heading = page.locator('text=Magic8 Session');
@@ -46,7 +55,7 @@ test.describe('Magic 8 (Biometrics) feature', () => {
     });
 
     test('session config shows Start Session button', async ({ page }) => {
-        await page.locator('button[title="Magic 8"]').click();
+        await openMagic8(page);
         await page.waitForURL(/.*#!\/magic8/, { timeout: 10000 });
         let startBtn = page.locator('button:has-text("Start Session")');
         await expect(startBtn).toBeVisible({ timeout: 20000 });
@@ -54,7 +63,7 @@ test.describe('Magic 8 (Biometrics) feature', () => {
     });
 
     test('session config shows configuration description', async ({ page }) => {
-        await page.locator('button[title="Magic 8"]').click();
+        await openMagic8(page);
         await page.waitForURL(/.*#!\/magic8/, { timeout: 10000 });
         await expect(page.locator('text=Magic8 Session')).toBeVisible({ timeout: 20000 });
         await expect(page.locator('text=Configure your immersive experience')).toBeVisible();
@@ -62,7 +71,7 @@ test.describe('Magic 8 (Biometrics) feature', () => {
     });
 
     test('session config shows biometric adaptation and recording sections', async ({ page }) => {
-        await page.locator('button[title="Magic 8"]').click();
+        await openMagic8(page);
         await page.waitForURL(/.*#!\/magic8/, { timeout: 10000 });
         await expect(page.locator('text=Magic8 Session')).toBeVisible({ timeout: 20000 });
         // Biometric Adaptation section with its enable checkbox
@@ -78,7 +87,7 @@ test.describe('Magic 8 (Biometrics) feature', () => {
         let errors = [];
         page.on('pageerror', err => errors.push(err.message));
 
-        await page.locator('button[title="Magic 8"]').click();
+        await openMagic8(page);
         await page.waitForURL(/.*#!\/magic8/, { timeout: 15000 });
         await expect(page.locator('text=Magic8 Session').or(page.locator('text=Loading configuration options')).first()).toBeVisible({ timeout: 20000 });
         await page.waitForTimeout(2000); // let async subsystem init settle

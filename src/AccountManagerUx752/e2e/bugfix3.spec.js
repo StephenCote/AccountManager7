@@ -3,6 +3,7 @@
  * Tests for Issues #24-#33 against live backend at localhost:8443
  */
 import { test, expect } from './helpers/fixtures.js';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 
@@ -125,9 +126,7 @@ test.describe('Issue #32: Picker field labels in new session dialog', () => {
 
     test('new session dialog picker fields show as labels, not inputs', async ({ page }) => {
         // Navigate to chat
-        let chatBtn = page.locator('button[title="Chat"]');
-        await expect(chatBtn).toBeVisible({ timeout: 5000 });
-        await chatBtn.click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
 
         // Wait for chat to load
@@ -176,7 +175,7 @@ test.describe('Issue #26: Scene generation with SdConfigPanel', () => {
 
     test('scene generation button opens SdConfigPanel with all fields', async ({ page }) => {
         // Navigate to chat
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -253,7 +252,7 @@ test.describe('Issue #28: Sidebar config picker click', () => {
     });
 
     test('config accordion is visible in sidebar and clickable', async ({ page }) => {
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -306,7 +305,7 @@ test.describe('Issue #24: Edit mode save', () => {
     });
 
     test('edit mode toggle and save button are visible', async ({ page }) => {
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -440,7 +439,7 @@ test.describe('Issue #30: Audio token rendering', () => {
     });
 
     test('ChatTokenRenderer processes audio tokens correctly', async ({ page }) => {
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -484,7 +483,7 @@ test.describe('Issue #25: Image token processing', () => {
     });
 
     test('am7imageTokens is loaded and parse works', async ({ page }) => {
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -521,7 +520,7 @@ test.describe('Issue #29: Pending animation', () => {
     });
 
     test('pending indicator exists in chat view code', async ({ page }) => {
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -547,7 +546,7 @@ test.describe('Issue #27: Memoization cache', () => {
     });
 
     test('chat page loads and renders messages without excessive delay', async ({ page }) => {
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
 
         // Measure time to reach stable state

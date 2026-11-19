@@ -219,9 +219,9 @@ describe('D4 — isMenuItemVisible', () => {
         expect(isMenuItemVisible(roleItem, { roles: { admin: true } })).toBe(false);
     });
 
-    it('testHarness is hidden when devMode is false (the topMenu regression)', () => {
+    it('testHarness (App Panel, Developer) is hidden when devMode is false (the topMenu regression)', () => {
         initFeatures('full');
-        let items = getMenuItems('top');
+        let items = getMenuItems('app');
         let harness = items.find(function (mi) { return mi.label === 'Tests'; });
         expect(harness).toBeDefined();
         expect(harness.devOnly).toBe(true);

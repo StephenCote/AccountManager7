@@ -4,6 +4,7 @@
  * Uses test user, not admin.
  */
 import { test as base, expect } from '@playwright/test';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { captureConsole } from './helpers/console.js';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -51,7 +52,7 @@ test.describe('Portraits, Gallery, Image Viewer', () => {
         }
 
         // Navigate to chat to load modules
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -184,7 +185,7 @@ test.describe('Portraits, Gallery, Image Viewer', () => {
         // Reload chat page to pick up new session
         await page.locator('button[title="Home"]').click();
         await page.waitForTimeout(1000);
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(5000);
 

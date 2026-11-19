@@ -13,6 +13,7 @@
  * Runs under the chromium-vite project (dynamic `/src/...` imports need the Vite dev server).
  */
 import { test, expect } from './helpers/fixtures.js';
+import { openChat } from './helpers/nav.js';
 import { login } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 
@@ -72,7 +73,7 @@ test.describe('Chat delete message', () => {
         console.log('[chatDelete] session ' + setup.name + ' patched=' + JSON.stringify(setup.patched));
 
         // Navigate to chat and select the session
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
 
         let sessionsBtn = page.locator('button[title="Sessions"]');

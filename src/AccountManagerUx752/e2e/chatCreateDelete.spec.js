@@ -2,6 +2,7 @@
  * Chat session create/delete UX — exercises the ACTUAL UI flow.
  */
 import { test as base, expect } from '@playwright/test';
+import { openChat } from './helpers/nav.js';
 import { login } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 
@@ -19,7 +20,7 @@ test.describe('Chat session create/delete UX', () => {
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
         // Navigate to chat
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 

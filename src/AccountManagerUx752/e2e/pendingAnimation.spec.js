@@ -5,6 +5,7 @@
  * Uses test user. Creates a chatConfig with startMode=system.
  */
 import { test as base, expect } from '@playwright/test';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { captureConsole } from './helpers/console.js';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -24,7 +25,7 @@ test.describe('Pending animation', () => {
         let capture = captureConsole(page, { verbose: true });
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
@@ -110,7 +111,7 @@ test.describe('Pending animation', () => {
 
         await page.locator('button[title="Home"]').click();
         await page.waitForTimeout(1000);
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 

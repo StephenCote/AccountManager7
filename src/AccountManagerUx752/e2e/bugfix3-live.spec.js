@@ -23,6 +23,7 @@
  *   - am7imageTokens.generateForTags -> POST /olio/olio.charPerson/{id}/reimage.
  */
 import { test, expect } from './helpers/fixtures.js';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { ensureSharedTestUser, ensurePath, createObject, apiLogin, apiLogout } from './helpers/api.js';
 import { request as pwRequest } from '@playwright/test';
@@ -84,7 +85,7 @@ function testLogin(page) {
 
 /// Chat feature route; the one-time "Chat Library Setup" wizard is dismissed if it is showing.
 async function openChat(page) {
-    await page.locator('button[title="Chat"]').click();
+    await openChat(page);
     await page.waitForURL(/.*#!\/chat/, { timeout: 15000 });
     await expect(page.locator('button[title="Sessions"]')).toBeVisible({ timeout: 20000 });
     let wizardTitle = page.locator('text=Chat Library Setup');

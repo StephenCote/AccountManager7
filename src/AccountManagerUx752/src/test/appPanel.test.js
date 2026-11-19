@@ -115,6 +115,33 @@ describe('App Panel view', () => {
         await waitFor(function () { return m.route.get() === '/cardGame' && /CARDGAME-VIEW/.test(root.textContent); }, 'route to /cardGame');
     });
 
+    it('lists Chat, Picture Book, ChapBook and Magic 8 under Apps, and Tests under Developer only in dev mode', async () => {
+        let savedDev = page.devMode;
+        try {
+            initFeatures(['core', 'chat', 'pictureBook', 'chapBook', 'biometrics', 'testHarness']);
+            page.devMode = false;
+            await mountApp();
+            let apps = root.querySelector('[data-group="Apps"]');
+            expect(apps).not.toBeNull();
+            expect(apps.querySelector('[data-tool="/magic8"]').textContent).toContain('Magic 8');
+            expect(apps.querySelector('[data-tool="/chat"]').textContent).toContain('Chat');
+            expect(apps.querySelector('[data-tool="/picture-book"]').textContent).toContain('Picture Book');
+            expect(apps.querySelector('[data-tool="/chap-book"]').textContent).toContain('ChapBook');
+            expect(root.querySelector('[data-tool="/test"]')).toBeNull();
+            expect(root.querySelector('[data-group="Developer"]')).toBeNull();
+            m.mount(root, null); root = null;
+            await settle();
+            window.location.hash = '';
+            page.devMode = true;
+            await mountApp();
+            let dev = root.querySelector('[data-group="Developer"]');
+            expect(dev).not.toBeNull();
+            expect(dev.querySelector('[data-tool="/test"]').textContent).toContain('Tests');
+        } finally {
+            page.devMode = savedDev;
+        }
+    });
+
     it('omits the Games heading when no game feature is enabled', async () => {
         initFeatures(['core', 'webauthn']);
         await mountApp();
@@ -295,14 +322,19 @@ describe('Top bar after the games move', () => {
         await waitFor(function () { return m.route.get() === '/topbar' && !!root.querySelector('[role="toolbar"]'); }, 'top bar to render');
     }
 
-    it('has no Card Game / Games buttons even with both features enabled, and keeps Chat', async () => {
-        initFeatures(['core', 'chat', 'cardGame', 'games']);
-        await mountTopBar();
-        let titles = Array.from(root.querySelectorAll('[role="toolbar"] button')).map(function (b) { return b.getAttribute('title'); });
-        expect(titles).not.toContain('Card Game');
-        expect(titles).not.toContain('Games');
-        expect(titles).toContain('Chat');
-        expect(titles).toContain('App Panel');
+    it('has no feature buttons (Chat / Card Game / Games / Magic 8 / Tests) even with those features on (and dev mode)', async () => {
+        let savedDev = page.devMode;
+        try {
+            page.devMode = true;
+            initFeatures(['core', 'chat', 'cardGame', 'games', 'biometrics', 'testHarness']);
+            await mountTopBar();
+            let titles = Array.from(root.querySelectorAll('[role="toolbar"] button')).map(function (b) { return b.getAttribute('title'); });
+            ['Chat', 'Card Game', 'Games', 'Magic 8', 'Tests'].forEach(function (t) { expect(titles).not.toContain(t); });
+            expect(titles).toContain('App Panel');
+            expect(titles).toContain('Home');
+        } finally {
+            page.devMode = savedDev;
+        }
     });
 
     it('the App Panel button routes to #!/app', async () => {
@@ -348,10 +380,12 @@ describe('Flyout (asideMenu) after the App Panel move', () => {
         expect(div.textContent).not.toContain('Browse');
     });
 
-    it('still lists aside-section features and the System actions', () => {
+    it('no longer lists Picture Book / ChapBook (now App Panel apps) but keeps the System actions', () => {
+        initFeatures(['core', 'webauthn', 'accessRequests', 'pictureBook', 'chapBook']);
         let div = renderAside();
         let labels = buttonLabels(div);
-        expect(labels.some(function (l) { return /Picture Book/.test(l); })).toBe(true);
+        expect(labels.some(function (l) { return /Picture Book/.test(l); })).toBe(false);
+        expect(labels.some(function (l) { return /ChapBook/.test(l); })).toBe(false);
         expect(labels.some(function (l) { return /Clear Cache/.test(l); })).toBe(true);
         expect(labels.some(function (l) { return /Cleanup/.test(l); })).toBe(true);
     });

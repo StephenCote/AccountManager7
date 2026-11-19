@@ -75,14 +75,16 @@ describe('Feature System', () => {
 
     it('getMenuItems returns items for enabled features only', () => {
         initFeatures('minimal');
-        let topItems = getMenuItems('top');
-        expect(topItems.length).toBe(0); // core has no menu items
+        expect(getMenuItems('app').length).toBe(0); // core has no menu items
 
         initFeatures('full');
-        let allTopItems = getMenuItems('top');
-        expect(allTopItems.length).toBeGreaterThan(0);
-        // Verify chat button is in the list
-        expect(allTopItems.some(mi => mi.label === 'Chat')).toBe(true);
+        let appItems = getMenuItems('app');
+        expect(appItems.length).toBeGreaterThan(0);
+        // Chat, Picture Book and ChapBook are App Panel apps now; the top bar carries no feature items
+        expect(appItems.some(mi => mi.label === 'Chat')).toBe(true);
+        expect(appItems.some(mi => mi.label === 'Picture Book')).toBe(true);
+        expect(appItems.some(mi => mi.label === 'ChapBook')).toBe(true);
+        expect(getMenuItems('top')).toEqual([]);
     });
 
     it('getMenuItems filters by section', () => {

@@ -42,7 +42,7 @@ const featureWiring = {
     },
     chat: {
         routes: () => import('./features/chat.js'),
-        menuItems: [{ icon: 'chat', label: 'Chat', route: '/chat', section: 'top' }],
+        menuItems: [{ icon: 'chat', label: 'Chat', route: '/chat', section: 'app', group: 'Apps' }],
         routePrefixes: ['/chat']
     },
     cardGame: {
@@ -57,7 +57,7 @@ const featureWiring = {
     },
     testHarness: {
         routes: () => import('./features/testHarness.js'),
-        menuItems: [{ icon: 'science', label: 'Tests', route: '/test', section: 'top', devOnly: true }],
+        menuItems: [{ icon: 'science', label: 'Tests', route: '/test', section: 'app', group: 'Developer', devOnly: true }],
         routePrefixes: ['/test']
     },
     iso42001: {
@@ -73,7 +73,7 @@ const featureWiring = {
     },
     biometrics: {
         routes: () => import('./features/biometrics.js'),
-        menuItems: [{ icon: 'monitor_heart', label: 'Magic 8', route: '/magic8', section: 'top' }],
+        menuItems: [{ icon: 'monitor_heart', label: 'Magic 8', route: '/magic8', section: 'app', group: 'Apps' }],
         routePrefixes: ['/magic8']
     },
     schema: {
@@ -98,7 +98,7 @@ const featureWiring = {
     },
     pictureBook: {
         routes: () => import('./features/pictureBook.js'),
-        menuItems: [{ icon: 'auto_stories', label: 'Picture Book', route: '/picture-book', section: 'aside' }],
+        menuItems: [{ icon: 'auto_stories', label: 'Picture Book', route: '/picture-book', section: 'app', group: 'Apps' }],
         routePrefixes: ['/picture-book']
     },
     pictureBookWorkflow: {
@@ -108,7 +108,7 @@ const featureWiring = {
     },
     chapBook: {
         routes: () => import('./features/chapBook.js'),
-        menuItems: [{ icon: 'menu_book', label: 'ChapBook', route: '/chap-book', section: 'aside' }],
+        menuItems: [{ icon: 'menu_book', label: 'ChapBook', route: '/chap-book', section: 'app', group: 'Apps' }],
         routePrefixes: ['/chap-book']
     },
     olioAdmin: {

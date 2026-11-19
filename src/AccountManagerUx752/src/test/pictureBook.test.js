@@ -274,11 +274,12 @@ describe('pictureBook feature manifest', () => {
         expect(features.pictureBook.deps).toContain('chat');
     });
 
-    it('pictureBook has aside menu item', async () => {
+    it('pictureBook has an App Panel (Apps) menu item, not a flyout one', async () => {
         let { features } = await import('../features.js');
         let mi = features.pictureBook.menuItems;
         expect(Array.isArray(mi)).toBe(true);
-        expect(mi[0].section).toBe('aside');
+        expect(mi[0].section).toBe('app');
+        expect(mi[0].group).toBe('Apps');
         expect(mi[0].route).toBe('/picture-book');
     });
 

@@ -15,6 +15,7 @@
  *   8. Context panel attach/detach round-trip
  */
 import { test as base, expect } from '@playwright/test';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 
@@ -26,7 +27,7 @@ const MODEL = 'qwen3-vl:8b-instruct';
  * Navigate to chat view to ensure all LLM modules are loaded, dismiss wizard if shown.
  */
 async function goToChat(page) {
-    await page.locator('button[title="Chat"]').click();
+    await openChat(page);
     await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
     await page.waitForTimeout(3000);
     // Dismiss library setup wizard if visible

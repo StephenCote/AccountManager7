@@ -4,6 +4,7 @@
  * then exercises edit mode delete.
  */
 import { test, expect } from './helpers/fixtures.js';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 
@@ -19,7 +20,7 @@ test.describe('Chat message delete E2E', () => {
         page.on('console', msg => consoleLog.push(msg.type() + ': ' + msg.text()));
 
         // Navigate to chat
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 

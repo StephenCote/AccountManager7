@@ -3,6 +3,7 @@
  * Uses REST API to create session, send message via /rest/chat/text, then test edit.
  */
 import { test as base, expect } from '@playwright/test';
+import { openChat } from './helpers/nav.js';
 import { login, screenshot } from './helpers/auth.js';
 import { captureConsole } from './helpers/console.js';
 import { ensureSharedTestUser } from './helpers/api.js';
@@ -23,7 +24,7 @@ test.describe('Chat edit save', () => {
         await login(page, { user: testInfo.testUserName, password: testInfo.testPassword });
 
         // Navigate to chat to load modules
-        await page.locator('button[title="Chat"]').click();
+        await openChat(page);
         await page.waitForURL(/.*#!\/chat/, { timeout: 10000 });
         await page.waitForTimeout(3000);
 
