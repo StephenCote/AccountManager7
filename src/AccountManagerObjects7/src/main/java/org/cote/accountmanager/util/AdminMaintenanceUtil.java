@@ -56,11 +56,13 @@ import org.cote.accountmanager.schema.type.RoleEnumType;
 /// onto), and this class re-checks the same membership in-process so an in-JVM caller (Console7, a test,
 /// a future MCP tool) gets the same answer.
 ///
-/// SCOPE. Roles are per organization, so there is no built-in "cross-tenant administrator". The
-/// all-organizations scope is therefore restricted to members of the caller's SystemAdministrators role,
-/// or the organization admin user itself ({@link #isSystemAdministrator}); every other administrator is
-/// confined to the organization they are an administrator OF. The scope is resolved server-side from the
-/// principal plus one boolean; an organization id is never accepted from the client.
+/// SCOPE. Roles are per organization, so there is no built-in "cross-tenant administrator": a member of
+/// /Development's SystemAdministrators role is an administrator of /Development and nothing else. The
+/// all-organizations scope is therefore granted only to administrators OF THE /System ORGANIZATION
+/// ({@link #isSystemOrganizationAdministrator}); every other organization's administrators - including
+/// that organization's admin user and its SystemAdministrators members - are confined to their own
+/// organization. The scope is resolved server-side from the principal plus one boolean; an organization
+/// id is never accepted from the client.
 ///
 /// AUDIT OF THE MAINTENANCE ITSELF. Each destructive command (thumbnail wipe, audit trim, audit purge)
 /// closes a PERMIT audit naming the actor, the scope and the count, through the normal AuditUtil queue.
@@ -141,16 +143,23 @@ public class AdminMaintenanceUtil {
 			|| isRoleMember(user, orgId, AccessSchema.ROLE_ACCOUNT_ADMINISTRATOR);
 	}
 
-	/// The organization admin user, or a member of the organization's SystemAdministrators role. This is
-	/// the only principal allowed the all-organizations scope.
-	public static boolean isSystemAdministrator(BaseRecord user, long orgId) {
-		if(user == null) {
+	/// An administrator ({@link #isAdministrator}) whose organization IS /System
+	/// (OrganizationContext.SYSTEM_ORGANIZATION). This is the only principal allowed the all-organizations
+	/// scope: /System is the deployment-global organization, and no per-organization role - not even
+	/// another organization's SystemAdministrators - reaches past its own organization. Exact path match;
+	/// a sub-organization of /System is not /System.
+	public static boolean isSystemOrganizationAdministrator(BaseRecord user, long orgId) {
+		if(user == null || orgId <= 0L) {
 			return false;
 		}
-		if(isOrganizationAdminUser(user)) {
-			return true;
+		BaseRecord org = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_ORGANIZATION, orgId);
+		if(org == null || !org.hasField(FieldNames.FIELD_PATH)) {
+			return false;
 		}
-		return isRoleMember(user, orgId, AccessSchema.ROLE_SYSTEM_ADMINISTRATOR);
+		if(!OrganizationContext.SYSTEM_ORGANIZATION.equals(org.get(FieldNames.FIELD_PATH))) {
+			return false;
+		}
+		return isAdministrator(user, orgId);
 	}
 
 	private static boolean isOrganizationAdminUser(BaseRecord user) {
@@ -194,8 +203,8 @@ public class AdminMaintenanceUtil {
 	public static List<BaseRecord> resolveScope(BaseRecord user, boolean allOrganizations) {
 		long orgId = requireAdministrator(user);
 		if(allOrganizations) {
-			if(!isSystemAdministrator(user, orgId)) {
-				throw new AdminMaintenanceException(403, "The all-organizations scope requires the SystemAdministrators role");
+			if(!isSystemOrganizationAdministrator(user, orgId)) {
+				throw new AdminMaintenanceException(403, "The all-organizations scope is limited to administrators of the " + OrganizationContext.SYSTEM_ORGANIZATION + " organization");
 			}
 			List<BaseRecord> orgs = listOrganizations();
 			if(orgs.isEmpty()) {
@@ -214,11 +223,12 @@ public class AdminMaintenanceUtil {
 	/// all-organizations option is available to them, and (only then) the organizations it would cover.
 	public static Map<String, Object> describeScope(BaseRecord user) {
 		long orgId = requireAdministrator(user);
-		boolean sysAdmin = isSystemAdministrator(user, orgId);
+		boolean sysAdmin = isSystemOrganizationAdministrator(user, orgId);
 		Map<String, Object> out = new LinkedHashMap<>();
 		out.put("organizationId", orgId);
 		out.put("organizationPath", organizationPath(user, orgId));
-		out.put("systemAdministrator", sysAdmin);
+		/// True only for an administrator of /System; the panel offers the all-organizations option on this.
+		out.put("allOrganizationsAllowed", sysAdmin);
 		List<Map<String, Object>> orgs = new ArrayList<>();
 		if(sysAdmin) {
 			for(BaseRecord org : listOrganizations()) {

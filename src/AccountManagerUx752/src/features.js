@@ -30,9 +30,16 @@ import localManifest from './features.manifest.json';
 
 const featureWiring = {
     core: {
-        routes: null,
-        menuItems: [],
-        routePrefixes: []
+        // The Admin panel (/admin/system: thumbnail cleanup; audit list/search/view/trim/purge, over
+        // /rest/admin) is part of CORE, not a toggleable feature id. It must reach every organization's
+        // administrators, and an organization with a STORED feature set never gains a feature id added
+        // after that set was saved (FeatureConfigUtil.resolveFeatures force-includes only core), so as its
+        // own id it surfaced only in organizations with no stored set (e.g. /System). The item is
+        // role-gated (adminOnly ⇒ roles.admin); the server's @RolesAllowed admin + in-process role check
+        // on /rest/admin is the real boundary, and the org/all-orgs scope is decided there.
+        routes: () => import('./features/systemAdmin/routes.js'),
+        menuItems: [{ icon: 'admin_panel_settings', label: 'Admin', route: '/admin/system', section: 'aside', adminOnly: true, roles: ['admin'] }],
+        routePrefixes: ['/admin/system']
     },
     media: {
         // media.js registers lazy components only — `const routes = {}` (src/features/media.js:48)
@@ -117,12 +124,6 @@ const featureWiring = {
         // isMenuItemVisible predicate (features.js) gates it consistently (adminOnly ⇒ roles.admin).
         menuItems: [{ icon: 'travel_explore', label: 'Olio Admin', route: '/admin/olio', section: 'aside', adminOnly: true, roles: ['admin'] }],
         routePrefixes: ['/admin/olio']
-    },
-    systemAdmin: {
-        routes: () => import('./features/systemAdmin/routes.js'),
-        // Thumbnail cleanup + audit list/search/view/trim/purge over /rest/admin (AdminService).
-        menuItems: [{ icon: 'admin_panel_settings', label: 'Admin', route: '/admin/system', section: 'aside', adminOnly: true, roles: ['admin'] }],
-        routePrefixes: ['/admin/system']
     }
 };
 
@@ -195,7 +196,7 @@ const profiles = {
     standard: ['core', 'media', 'chat'],
     full: Object.keys(features),
     gaming: ['core', 'media', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig', 'systemAdmin'],
+    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig'],
     // ISO 42001 appliance — minimal compliance-only surface (design §9.2). chat is required (the suite runs
     // LLM tests through LLMConnector); accessRequests + featureConfig support RBAC onboarding + admin toggling.
     compliance: ['core', 'chat', 'iso42001', 'accessRequests', 'featureConfig']

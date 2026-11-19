@@ -90,30 +90,34 @@ describe('buildAuditSearch', () => {
     });
 });
 
-describe('systemAdmin feature wiring', () => {
-    it('is registered with an adminOnly aside item at /admin/system and a manifest entry', async () => {
-        let { features, isMenuItemVisible } = await import('../features.js');
-        let f = features.systemAdmin;
-        expect(f).toBeDefined();
-        expect(f.label).toBe('Admin');
-        expect(f.deps).toEqual(['core']);
-        expect(f.routePrefixes).toEqual(['/admin/system']);
-        expect(f.menuItems.length).toBe(1);
-        expect(f.menuItems[0].route).toBe('/admin/system');
-        expect(f.menuItems[0].section).toBe('aside');
-        expect(f.menuItems[0].adminOnly).toBe(true);
-        expect(isMenuItemVisible(f.menuItems[0], { roles: { admin: false } })).toBe(false);
-        expect(isMenuItemVisible(f.menuItems[0], { roles: { admin: true } })).toBe(true);
+describe('Admin panel wiring (part of core)', () => {
+    it("core carries the adminOnly aside item at /admin/system, so every organization's admins get it", async () => {
+        let { features, isMenuItemVisible, initFeatures, getMenuItems } = await import('../features.js');
+        let core = features.core;
+        expect(core.required).toBe(true);
+        expect(typeof core.routes).toBe('function');
+        expect(core.routePrefixes).toEqual(['/admin/system']);
+        expect(core.menuItems.length).toBe(1);
+        let mi = core.menuItems[0];
+        expect(mi.route).toBe('/admin/system');
+        expect(mi.section).toBe('aside');
+        expect(mi.adminOnly).toBe(true);
+        expect(isMenuItemVisible(mi, { roles: { admin: false } })).toBe(false);
+        expect(isMenuItemVisible(mi, { roles: { admin: true } })).toBe(true);
+
+        // A stored MINIMAL set (the case that hid the panel when it was its own feature id) still offers it.
+        initFeatures('minimal');
+        expect(getMenuItems('aside').some(i => i.route === '/admin/system')).toBe(true);
 
         let routes = (await import('../features/systemAdmin/routes.js')).routes;
         expect(Object.keys(routes)).toEqual(['/admin/system']);
     });
 
-    it('the Ux752 manifest copy still matches the Objects7 resource byte for byte', () => {
+    it('is not a manifest feature id (it cannot be toggled off per organization)', () => {
         let ux = readFileSync(resolve(here, '../features.manifest.json'));
         let obj = readFileSync(resolve(here, '../../../AccountManagerObjects7/src/main/resources/features/uxFeatureManifest.json'));
         expect(Buffer.compare(ux, obj)).toBe(0);
         let ids = JSON.parse(ux.toString('utf-8')).map(e => e.id);
-        expect(ids).toContain('systemAdmin');
+        expect(ids).not.toContain('systemAdmin');
     });
 });

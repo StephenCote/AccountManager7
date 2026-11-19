@@ -1,10 +1,12 @@
 /**
- * Admin panel (/admin/system) — administrative maintenance commands over /rest/admin:
+ * Admin panel (/admin/system, part of core) — administrative maintenance commands over /rest/admin:
  *
  *   Thumbnails: count / wipe every data.thumbnail (they are a derived cache and regenerate on demand).
  *   Audit:      list / search / view system.audit records; trim to the last N days; purge.
  *
- * Scope: "This organization" or, for SystemAdministrators members only, "All organizations". The
+ * Scope: "This organization" or, for administrators of the /System organization only, "All
+ * organizations" (a per-organization role - even SystemAdministrators - reaches no further than its own
+ * organization). The
  * organization is derived server-side from the principal; the client sends ONE boolean and never an
  * organization id. Whether the all-organizations option is offered is taken from GET /rest/admin/scope,
  * not from the client role context — the server is the authority (the client gate here is cosmetic,
@@ -107,7 +109,7 @@ async function loadScope() {
     scopeError = null;
     try {
         scope = await systemAdminClient.scope();
-        if (!scope || !scope.systemAdministrator) allOrganizations = false;
+        if (!scope || !scope.allOrganizationsAllowed) allOrganizations = false;
     } catch (e) {
         scope = null;
         scopeError = errorText(e, 'Could not load the maintenance scope.');
@@ -323,7 +325,7 @@ function perOrgTable(result) {
 
 function scopeControl() {
     if (!scope) return null;
-    let canAll = !!scope.systemAdministrator;
+    let canAll = !!scope.allOrganizationsAllowed;
     let n = Array.isArray(scope.organizations) ? scope.organizations.length : 0;
     return m('div', { class: 'flex flex-wrap items-center gap-4 text-sm text-gray-700 dark:text-gray-300' }, [
         m('span', { class: 'font-medium' }, 'Scope:'),
@@ -333,7 +335,7 @@ function scopeControl() {
         ]),
         m('label', {
             class: 'flex items-center gap-1 ' + (canAll ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'),
-            title: canAll ? '' : 'Requires the SystemAdministrators role'
+            title: canAll ? '' : 'Only administrators of the /System organization can act across organizations'
         }, [
             m('input', { type: 'radio', name: 'systemAdminScope', id: 'systemAdminScopeAll', checked: allOrganizations, disabled: !canAll, onchange: () => setScope(true) }),
             'All organizations' + (canAll ? ' (' + n + ')' : '')

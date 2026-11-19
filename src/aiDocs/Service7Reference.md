@@ -330,17 +330,19 @@ Cache management endpoints:
 
 ### AdminService - Administrative maintenance (`/rest/admin`)
 
-Transport for `AdminMaintenanceUtil` (Objects7) behind the Ux752 Admin panel (`/admin/system`,
-feature `systemAdmin`). Every route is `@RolesAllowed({"admin"})` **and** the util re-checks the
+Transport for `AdminMaintenanceUtil` (Objects7) behind the Ux752 Admin panel (`/admin/system`, wired
+from the **core** feature — not a toggleable feature id, so every organization's administrators get it
+regardless of the org's stored feature set). Every route is `@RolesAllowed({"admin"})` **and** the util re-checks the
 role membership in-process (org admin user, or SystemAdministrators / DataAdministrators /
 AccountAdministrators). `system.audit` has no group/owner/access block, so these reads and deletes
 bypass `AccessPoint` deliberately, after that explicit check. Scope is one boolean,
 `allOrganizations`; an organization id is never accepted from the client, and the all-organizations
-scope is refused (403) to anyone who is not the org admin user or a **SystemAdministrators** member.
+scope is refused (403) to anyone who is not an administrator **of the `/System` organization** — a
+per-organization role (even `SystemAdministrators`) confines its holder to that organization.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/admin/scope` | GET | `{organizationId, organizationPath, systemAdministrator, organizations:[{id,path}]}` |
+| `/admin/scope` | GET | `{organizationId, organizationPath, allOrganizationsAllowed, organizations:[{id,path}]}` |
 | `/admin/thumbnails/count?allOrganizations=` | GET | `{scope, total, organizations:[{id,path,count}]}` |
 | `/admin/thumbnails?allOrganizations=` | DELETE | Wipe every `data.thumbnail` in scope (they regenerate on demand) |
 | `/admin/audit/count?allOrganizations=` | GET | Same shape as thumbnails/count |

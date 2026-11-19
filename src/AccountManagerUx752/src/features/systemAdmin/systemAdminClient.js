@@ -3,7 +3,7 @@
  * olioAdminClient's transport (m.request + session cookie; the server enforces @RolesAllowed admin and
  * AdminMaintenanceUtil re-checks the role in-process). The organization is derived server-side from the
  * principal; the only scope input is the boolean `allOrganizations`, and whether the caller may use it
- * (SystemAdministrators only) is decided by the server — see GET /scope.
+ * (administrators of the /System organization only) is decided by the server — see GET /scope.
  */
 import m from 'mithril';
 import { applicationPath } from '../../core/config.js';
@@ -29,7 +29,7 @@ function scoped(url, allOrganizations, extra) {
 }
 
 export const systemAdminClient = {
-    // {organizationId, organizationPath, systemAdministrator, organizations:[{id,path}]}
+    // {organizationId, organizationPath, allOrganizationsAllowed, organizations:[{id,path}]}
     scope: () => req('GET', ADMIN + '/scope'),
 
     // {scope, total, organizations:[{id,path,count}]}

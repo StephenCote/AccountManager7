@@ -1,7 +1,7 @@
 /**
- * System Admin feature routes — follows the Ux752 feature pattern: a single exported `routes` map,
- * each entry wrapped in layout(pageLayout(...)), lazy-loaded + tree-shaken when the feature is disabled.
- * Mirrors ../olioAdmin/routes.js.
+ * Admin panel routes — wired from the CORE feature (features.js), not from a toggleable feature id, so
+ * every organization's administrators get it regardless of the org's stored feature set. Same shape as
+ * ../olioAdmin/routes.js: a single exported `routes` map, each entry wrapped in layout(pageLayout(...)).
  */
 import { layout, pageLayout } from '../../router.js';
 import { systemAdminView } from './systemAdminView.js';

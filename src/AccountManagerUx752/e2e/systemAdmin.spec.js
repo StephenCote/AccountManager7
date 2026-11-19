@@ -1,11 +1,12 @@
 /**
- * Admin panel (/admin/system) — thumbnail cleanup and audit list/search/view/trim/purge over /rest/admin.
+ * Admin panel (/admin/system, part of core) — thumbnail cleanup and audit list/search/view/trim/purge over /rest/admin.
  *
- * Runs as the admin-ROLE test user (`e2etest_featadmin`, an AccountAdministrators member — never `admin`);
- * the authorization checks use the shared (non-admin) test user. An AccountAdministrators member is an
- * administrator but NOT a SystemAdministrators member, so the all-organizations scope must be refused to
- * it both in the UI (disabled radio) and by the server (403) — that refusal is the cross-tenant boundary
- * this spec pins.
+ * Runs as the admin-ROLE test user (`e2etest_featadmin`, an AccountAdministrators member of /Development —
+ * never `admin`); the authorization checks use the shared (non-admin) test user. Only an administrator OF
+ * /System may use the all-organizations scope, so a /Development administrator must be refused it both in
+ * the UI (disabled radio) and by the server (403) — that refusal is the cross-tenant boundary this spec
+ * pins. The positive /System path is covered by TestAdminService / TestAdminMaintenanceUtil (the only
+ * /System user with a credential is the built-in admin, which tests never use).
  *
  * Destructive commands exercised here are confined to the test stack's /Development organization:
  * the thumbnail wipe (thumbnails regenerate on demand) and an audit TRIM to the last 3650 days (deletes
@@ -17,16 +18,13 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { login, screenshot } from './helpers/auth.js';
-import {
-    ensureAdminRoleTestUser, ensureSharedTestUser, apiLogin, getOrgFeatures, setOrgFeatures
-} from './helpers/api.js';
+import { ensureAdminRoleTestUser, ensureSharedTestUser, apiLogin } from './helpers/api.js';
 
 const BASE = process.env.PLAYWRIGHT_BASE_URL || 'https://127.0.0.1:9443';
 const REST = BASE + '/AccountManagerService7/rest';
 const ADMIN = REST + '/admin';
 
 let featAdmin, shared;
-let featuresBefore = null;
 
 async function openAdmin(page) {
     await page.goto('/#!/admin/system');
@@ -57,29 +55,28 @@ test.describe('Admin panel — thumbnails and audit', () => {
         featAdmin = await ensureAdminRoleTestUser(request);
         shared = await ensureSharedTestUser(request);
         expect(featAdmin.roleAssigned, 'the AccountAdministrators role could not be assigned').toBe(true);
-
-        // The systemAdmin feature is optional; make sure the org has it enabled for the UI tests.
-        let seen = await getOrgFeatures(request, { userName: featAdmin.testUserName, password: featAdmin.testPassword });
-        if (Array.isArray(seen.features) && !seen.features.includes('systemAdmin')) {
-            featuresBefore = seen.features;
-            let stored = await setOrgFeatures(request, featuresBefore.concat(['systemAdmin']));
-            expect(stored, 'could not enable the systemAdmin feature').toContain('systemAdmin');
-        }
-    });
-
-    test.afterAll(async ({ request }) => {
-        if (featuresBefore) {
-            await setOrgFeatures(request, featuresBefore);
-        }
+        // The Admin panel is part of core (not a feature id), so nothing has to be enabled for the org:
+        // it is reachable by this organization's administrators whatever feature set the org has stored.
     });
 
     test('panel renders for the admin-role user; all-organizations scope is withheld from a non-system administrator', async ({ page }) => {
         await login(page, { user: featAdmin.testUserName, password: featAdmin.testPassword });
-        await openAdmin(page);
+        // Reachable from the aside menu for an ORG administrator in /Development, whatever feature set
+        // that org has stored (the defect: as its own feature id the item only showed for /System).
+        // Aside buttons render icon glyph + label, e.g. "admin_panel_settingsAdmin".
+        await page.goto('/#!/main');
+        await page.waitForFunction(() => Array.from(document.querySelectorAll('button'))
+            .some(b => b.textContent.trim() === 'admin_panel_settingsAdmin'), { timeout: 30000 });
+        await page.evaluate(() => {
+            let btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent.trim() === 'admin_panel_settingsAdmin');
+            if (btn) btn.click();
+        });
+        await page.waitForFunction(() => window.location.hash.includes('/admin/system'), { timeout: 15000 });
+        await expect(page.locator('#systemAdminScopeOrg')).toBeVisible({ timeout: 30000 });
 
         await expect(page.locator('label', { hasText: 'This organization (/Development)' })).toBeVisible();
         await expect(page.locator('#systemAdminScopeOrg')).toBeChecked();
-        // AccountAdministrators ≠ SystemAdministrators: the all-orgs option is present but disabled.
+        // A /Development administrator is not a /System administrator: the all-orgs option is present but disabled.
         await expect(page.locator('#systemAdminScopeAll')).toBeDisabled();
 
         await page.locator('#systemAdminThumbCount').click();
@@ -186,13 +183,13 @@ test.describe('Admin panel — thumbnails and audit', () => {
         expect(scope.status()).toBe(200);
         let s = await scope.json();
         expect(s.organizationPath).toBe('/Development');
-        expect(s.systemAdministrator).toBe(false);
+        expect(s.allOrganizationsAllowed).toBe(false);
         expect(s.organizations).toEqual([]);
 
         for (let url of [ADMIN + '/thumbnails/count?allOrganizations=true', ADMIN + '/audit/count?allOrganizations=true']) {
             let r = await page.request.get(url);
             expect(r.status(), url).toBe(403);
-            expect((await r.json()).error).toContain('SystemAdministrators');
+            expect((await r.json()).error).toContain('/System');
         }
         expect((await page.request.delete(ADMIN + '/thumbnails?allOrganizations=true')).status()).toBe(403);
         expect((await page.request.delete(ADMIN + '/audit?allOrganizations=true&purge=true')).status()).toBe(403);

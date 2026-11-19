@@ -40,10 +40,10 @@ import jakarta.ws.rs.core.Response;
 /// Every route is @RolesAllowed({"admin"}) - the container gate - AND AdminMaintenanceUtil re-checks the
 /// same role membership in-process, so an in-JVM call (a test, Console7) gets the same 401/403 as HTTP.
 /// The all-organizations scope is a plain boolean; which organizations that means, and whether the caller
-/// may ask for it (SystemAdministrators only), is decided in Objects7. An organization id is never
-/// accepted from the client.
+/// may ask for it (administrators of the /System organization only - a per-organization role never reaches
+/// past its organization), is decided in Objects7. An organization id is never accepted from the client.
 ///
-///   GET    /rest/admin/scope                                   -> {organizationId, organizationPath, systemAdministrator, organizations:[{id,path}]}
+///   GET    /rest/admin/scope                                   -> {organizationId, organizationPath, allOrganizationsAllowed, organizations:[{id,path}]}
 ///   GET    /rest/admin/thumbnails/count?allOrganizations=      -> {scope, total, organizations:[{id,path,count}]}
 ///   DELETE /rest/admin/thumbnails?allOrganizations=            -> same shape; count = deleted
 ///   GET    /rest/admin/audit/count?allOrganizations=           -> {scope, total, organizations:[{id,path,count}]}

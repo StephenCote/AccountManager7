@@ -26,6 +26,7 @@ import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionEnumType;
+import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.AdminMaintenanceException;
@@ -41,21 +42,27 @@ import org.junit.Test;
 /// Runs against the database this JVM opened (am7db by default). EVERYTHING DESTRUCTIVE HERE IS CONFINED
 /// TO ONE DEDICATED ORGANIZATION (/Development/AdminMaintenance): the audit trim and purge really run,
 /// but only with the organization scope, so no other organization's journal or thumbnails are touched.
-/// The all-organizations scope is exercised for its GATE (403 for an AccountAdministrators member) and
-/// for its READ paths (count, list) as a SystemAdministrators member; the all-organizations DELETE
-/// paths are deliberately NOT run against a shared database. State that limit plainly: the cross-org
-/// delete fan-out is the same perOrganization loop the single-org path uses, so what is untested is the
-/// loop over more than one element, not the delete itself.
+/// The all-organizations scope is exercised for its GATE (403 for every administrator of the test
+/// organization - AccountAdministrators AND SystemAdministrators members alike: a per-organization role
+/// never reaches past its organization) and for its READ paths (count, list, detail) as an administrator
+/// of /System; the all-organizations DELETE paths are deliberately NOT run against a shared database.
+/// State that limit plainly: the cross-org delete fan-out is the same perOrganization loop the single-org
+/// path uses, so what is untested is the loop over more than one element, not the delete itself.
 ///
 /// Actors (never the built-in admin user as an assertion subject - llm-conduct rule 3):
-///   amAcctAdmin  - AccountAdministrators member: an administrator, but NOT a system administrator
-///   amSysAdmin   - SystemAdministrators member: may use the all-organizations scope
-///   amPlainUser  - no administrative role at all
+///   amAcctAdmin   - AccountAdministrators member of the test org: an administrator of that org only
+///   amSysAdmin    - SystemAdministrators member of the test org: STILL an administrator of that org only
+///   amSysOrgAdmin - AccountAdministrators member of /System: the one actor allowed all organizations.
+///                   Created credential-less by Factory.getCreateUser (it cannot log in); /System is the
+///                   deployment-global org, so this is the only way to exercise the positive path without
+///                   the built-in admin.
+///   amPlainUser   - no administrative role at all
 public class TestAdminMaintenanceUtil extends BaseTest {
 
 	private static final String ORG = "/Development/AdminMaintenance";
 	private static final String ACCT_ADMIN = "amAcctAdmin";
 	private static final String SYS_ADMIN = "amSysAdmin";
+	private static final String SYS_ORG_ADMIN = "amSysOrgAdmin";
 	private static final String PLAIN = "amPlainUser";
 	private static final String GROUP = "~/AdminMaintenance";
 
@@ -85,6 +92,16 @@ public class TestAdminMaintenanceUtil extends BaseTest {
 
 	private BaseRecord sysAdmin(OrganizationContext o) {
 		return withRole(o, SYS_ADMIN, AccessSchema.ROLE_SYSTEM_ADMINISTRATOR);
+	}
+
+	/// An administrator OF /System - the only principal the all-organizations scope admits.
+	private BaseRecord systemOrgAdmin() {
+		OrganizationContext sys = ioContext.getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, OrganizationEnumType.SYSTEM);
+		assertNotNull("Failed to resolve " + OrganizationContext.SYSTEM_ORGANIZATION, sys);
+		assertTrue(OrganizationContext.SYSTEM_ORGANIZATION + " is not initialized", sys.isInitialized());
+		BaseRecord u = withRole(sys, SYS_ORG_ADMIN, AccessSchema.ROLE_ACCOUNT_ADMINISTRATOR);
+		assertTrue(SYS_ORG_ADMIN + " must be an administrator of /System", AdminMaintenanceUtil.isSystemOrganizationAdministrator(u, sys.getOrganizationId()));
+		return u;
 	}
 
 	private BaseRecord plain(OrganizationContext o) {
@@ -168,6 +185,7 @@ public class TestAdminMaintenanceUtil extends BaseTest {
 		OrganizationContext o = org();
 		BaseRecord acct = acctAdmin(o);
 		BaseRecord sys = sysAdmin(o);
+		BaseRecord sysOrg = systemOrgAdmin();
 		BaseRecord nobody = plain(o);
 
 		assertEquals("null principal must be 401", 401, status(() -> AdminMaintenanceUtil.requireAdministrator(null)));
@@ -175,16 +193,21 @@ public class TestAdminMaintenanceUtil extends BaseTest {
 		assertEquals("an AccountAdministrators member is an administrator", o.getOrganizationId(), AdminMaintenanceUtil.requireAdministrator(acct));
 		assertEquals("a SystemAdministrators member is an administrator", o.getOrganizationId(), AdminMaintenanceUtil.requireAdministrator(sys));
 
-		assertFalse("AccountAdministrators is not SystemAdministrators", AdminMaintenanceUtil.isSystemAdministrator(acct, o.getOrganizationId()));
-		assertTrue(AdminMaintenanceUtil.isSystemAdministrator(sys, o.getOrganizationId()));
+		assertFalse("an AccountAdministrators member of " + ORG + " is not a /System administrator", AdminMaintenanceUtil.isSystemOrganizationAdministrator(acct, o.getOrganizationId()));
+		assertFalse("a SystemAdministrators member of " + ORG + " is STILL not a /System administrator", AdminMaintenanceUtil.isSystemOrganizationAdministrator(sys, o.getOrganizationId()));
+		assertTrue(AdminMaintenanceUtil.isSystemOrganizationAdministrator(sysOrg, ((Number) sysOrg.get(FieldNames.FIELD_ORGANIZATION_ID)).longValue()));
 
-		/// Every all-organizations entry point refuses the account administrator with 403 ...
-		assertEquals(403, status(() -> AdminMaintenanceUtil.countThumbnails(acct, true)));
-		assertEquals(403, status(() -> AdminMaintenanceUtil.cleanupThumbnails(acct, true)));
-		assertEquals(403, status(() -> AdminMaintenanceUtil.countAudit(acct, true)));
-		assertEquals(403, status(() -> AdminMaintenanceUtil.listAudit(acct, true, null)));
-		assertEquals(403, status(() -> AdminMaintenanceUtil.trimAudit(acct, true, 30)));
-		assertEquals(403, status(() -> AdminMaintenanceUtil.purgeAudit(acct, true)));
+		/// Every all-organizations entry point refuses BOTH of the test org's administrators with 403 -
+		/// the SystemAdministrators member included: that role is per organization ...
+		for(BaseRecord orgAdmin : new BaseRecord[] { acct, sys }) {
+			assertEquals(403, status(() -> AdminMaintenanceUtil.countThumbnails(orgAdmin, true)));
+			assertEquals(403, status(() -> AdminMaintenanceUtil.cleanupThumbnails(orgAdmin, true)));
+			assertEquals(403, status(() -> AdminMaintenanceUtil.countAudit(orgAdmin, true)));
+			assertEquals(403, status(() -> AdminMaintenanceUtil.listAudit(orgAdmin, true, null)));
+			assertEquals(403, status(() -> AdminMaintenanceUtil.getAuditDetail(orgAdmin, true, UUID.randomUUID().toString())));
+			assertEquals(403, status(() -> AdminMaintenanceUtil.trimAudit(orgAdmin, true, 30)));
+			assertEquals(403, status(() -> AdminMaintenanceUtil.purgeAudit(orgAdmin, true)));
+		}
 		/// ... and every entry point refuses the plain user, in either scope.
 		assertEquals(403, status(() -> AdminMaintenanceUtil.countThumbnails(nobody, false)));
 		assertEquals(403, status(() -> AdminMaintenanceUtil.cleanupThumbnails(nobody, false)));
@@ -194,29 +217,36 @@ public class TestAdminMaintenanceUtil extends BaseTest {
 		assertEquals(403, status(() -> AdminMaintenanceUtil.purgeAudit(nobody, false)));
 		assertEquals(403, status(() -> AdminMaintenanceUtil.purgeAudit(nobody, true)));
 
-		/// Scope resolution: the account admin sees exactly its own organization; the system admin's
-		/// all-organizations scope covers this org and its parent.
-		List<BaseRecord> own = AdminMaintenanceUtil.resolveScope(acct, false);
-		assertEquals(1, own.size());
-		assertEquals(o.getOrganizationId(), ((Number) own.get(0).get(FieldNames.FIELD_ID)).longValue());
-		List<BaseRecord> all = AdminMaintenanceUtil.resolveScope(sys, true);
+		/// Scope resolution: each of the test org's administrators sees exactly its own organization; the
+		/// /System administrator's all-organizations scope covers the test org, its parent and /System.
+		for(BaseRecord orgAdmin : new BaseRecord[] { acct, sys }) {
+			List<BaseRecord> own = AdminMaintenanceUtil.resolveScope(orgAdmin, false);
+			assertEquals(1, own.size());
+			assertEquals(o.getOrganizationId(), ((Number) own.get(0).get(FieldNames.FIELD_ID)).longValue());
+		}
+		List<BaseRecord> all = AdminMaintenanceUtil.resolveScope(sysOrg, true);
 		assertTrue("all-organizations scope must list more than one organization, got " + all.size(), all.size() > 1);
-		boolean sawSelf = false, sawDev = false;
+		boolean sawSelf = false, sawDev = false, sawSystem = false;
 		for(BaseRecord r : all) {
 			String p = r.get(FieldNames.FIELD_PATH);
 			if(ORG.equals(p)) sawSelf = true;
 			if("/Development".equals(p)) sawDev = true;
+			if(OrganizationContext.SYSTEM_ORGANIZATION.equals(p)) sawSystem = true;
 		}
 		assertTrue("scope must include " + ORG, sawSelf);
 		assertTrue("scope must include /Development", sawDev);
+		assertTrue("scope must include /System", sawSystem);
 
 		/// describeScope: what the panel keys its scope control on.
-		Map<String, Object> dAcct = AdminMaintenanceUtil.describeScope(acct);
-		assertEquals(Boolean.FALSE, dAcct.get("systemAdministrator"));
-		assertEquals(ORG, dAcct.get("organizationPath"));
-		assertTrue("non-system admins get no organization list", ((List<?>) dAcct.get("organizations")).isEmpty());
-		Map<String, Object> dSys = AdminMaintenanceUtil.describeScope(sys);
-		assertEquals(Boolean.TRUE, dSys.get("systemAdministrator"));
+		for(BaseRecord orgAdmin : new BaseRecord[] { acct, sys }) {
+			Map<String, Object> d = AdminMaintenanceUtil.describeScope(orgAdmin);
+			assertEquals(Boolean.FALSE, d.get("allOrganizationsAllowed"));
+			assertEquals(ORG, d.get("organizationPath"));
+			assertTrue("an organization's administrators get no organization list", ((List<?>) d.get("organizations")).isEmpty());
+		}
+		Map<String, Object> dSys = AdminMaintenanceUtil.describeScope(sysOrg);
+		assertEquals(Boolean.TRUE, dSys.get("allOrganizationsAllowed"));
+		assertEquals(OrganizationContext.SYSTEM_ORGANIZATION, dSys.get("organizationPath"));
 		assertEquals(all.size(), ((List<?>) dSys.get("organizations")).size());
 	}
 
@@ -226,7 +256,7 @@ public class TestAdminMaintenanceUtil extends BaseTest {
 	public void thumbnailWipeRemovesEveryThumbnailInTheOrganizationAndTheyRegenerate() throws Exception {
 		OrganizationContext o = org();
 		BaseRecord acct = acctAdmin(o);
-		BaseRecord sys = sysAdmin(o);
+		BaseRecord sys = systemOrgAdmin();
 
 		String n1 = "am-thumb-" + UUID.randomUUID().toString().substring(0, 8) + ".png";
 		String n2 = "am-thumb-" + UUID.randomUUID().toString().substring(0, 8) + ".png";
@@ -236,7 +266,7 @@ public class TestAdminMaintenanceUtil extends BaseTest {
 		long before = count(AdminMaintenanceUtil.countThumbnails(acct, false));
 		assertTrue("expected at least the two thumbnails just created, got " + before, before >= 2);
 
-		/// The system administrator's all-organizations COUNT must be at least the single-org count.
+		/// The /System administrator's all-organizations COUNT must be at least the single-org count.
 		Map<String, Object> allCount = AdminMaintenanceUtil.countThumbnails(sys, true);
 		assertEquals(AdminMaintenanceUtil.SCOPE_ALL, allCount.get("scope"));
 		assertTrue(count(allCount) >= before);
@@ -275,7 +305,7 @@ public class TestAdminMaintenanceUtil extends BaseTest {
 	public void auditListSearchViewTrimAndPurge() throws Exception {
 		OrganizationContext o = org();
 		BaseRecord acct = acctAdmin(o);
-		BaseRecord sys = sysAdmin(o);
+		BaseRecord sys = systemOrgAdmin();
 
 		/// Start from a known-empty journal in THIS organization only.
 		AdminMaintenanceUtil.purgeAudit(acct, false);
@@ -363,7 +393,7 @@ public class TestAdminMaintenanceUtil extends BaseTest {
 		assertEquals(404, status(() -> AdminMaintenanceUtil.getAuditDetail(acct, false, UUID.randomUUID().toString())));
 
 		/// A record in another organization is 404 to this org's administrator, but visible to the
-		/// system administrator in the all-organizations scope.
+		/// /System administrator in the all-organizations scope.
 		OrganizationContext dev = getTestOrganization("/Development");
 		BaseRecord devUser = getCreateUser(PLAIN, dev);
 		assertNotNull(devUser);

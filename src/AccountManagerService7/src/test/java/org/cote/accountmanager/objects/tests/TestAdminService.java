@@ -26,6 +26,7 @@ import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionEnumType;
+import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.AdminMaintenanceUtil;
@@ -49,21 +50,28 @@ import jakarta.ws.rs.core.Response;
 /// body shapes, the parameter validation, and - the point of the second gate - that a plain user who
 /// somehow reaches the method is still refused (403) by AdminMaintenanceUtil's own role check.
 ///
-/// USERS. All in a dedicated organization (/Development/AdminMaintenance) so the audit trim/purge that
-/// really run here cannot touch another organization's journal. The org admin appears only as the
-/// setup actor for user creation and role grants, never as an assertion subject.
+/// USERS. The organization's actors live in a dedicated organization (/Development/AdminMaintenance) so
+/// the audit trim/purge that really run here cannot touch another organization's journal. The
+/// all-organizations scope admits ONLY an administrator of /System, so one credential-less /System user
+/// (amSvcSysOrgAdmin, AccountAdministrators there) exercises that positive path; the test org's own
+/// SystemAdministrators member is the NEGATIVE case - a per-organization role reaches no further than its
+/// organization. The org admins appear only as setup actors for user creation and role grants, never as
+/// assertion subjects.
 public class TestAdminService extends BaseTest {
 
 	private static final String ORG = "/Development/AdminMaintenance";
 	private static final String ACCT_ADMIN = "amSvcAcctAdmin";
 	private static final String SYS_ADMIN = "amSvcSysAdmin";
+	private static final String SYS_ORG_ADMIN = "amSvcSysOrgAdmin";
 	private static final String PLAIN = "amSvcPlainUser";
 
 	private final AdminService service = new AdminService();
 
 	private OrganizationContext org;
+	private OrganizationContext systemOrg;
 	private BaseRecord acct;
 	private BaseRecord sys;
+	private BaseRecord sysOrg;
 	private BaseRecord nobody;
 
 	@Override
@@ -75,25 +83,34 @@ public class TestAdminService extends BaseTest {
 		assertNotNull("Failed to resolve " + ORG, org);
 		assertTrue(ORG + " is not initialized", org.isInitialized());
 
-		acct = withRole(ACCT_ADMIN, AccessSchema.ROLE_ACCOUNT_ADMINISTRATOR);
-		sys = withRole(SYS_ADMIN, AccessSchema.ROLE_SYSTEM_ADMINISTRATOR);
+		acct = withRole(org, ACCT_ADMIN, AccessSchema.ROLE_ACCOUNT_ADMINISTRATOR);
+		sys = withRole(org, SYS_ADMIN, AccessSchema.ROLE_SYSTEM_ADMINISTRATOR);
+		systemOrg = ioContext.getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, OrganizationEnumType.SYSTEM);
+		assertNotNull("Failed to resolve /System", systemOrg);
+		assertTrue("/System is not initialized", systemOrg.isInitialized());
+		sysOrg = withRole(systemOrg, SYS_ORG_ADMIN, AccessSchema.ROLE_ACCOUNT_ADMINISTRATOR);
+		assertTrue(SYS_ORG_ADMIN + " must be an administrator of /System",
+			AdminMaintenanceUtil.isSystemOrganizationAdministrator(sysOrg, systemOrg.getOrganizationId()));
 		nobody = getCreateUser(PLAIN, org);
 		assertNotNull("Failed to resolve " + PLAIN, nobody);
 		assertFalse(PLAIN + " must not be an administrator", AdminMaintenanceUtil.isAdministrator(nobody, org.getOrganizationId()));
 	}
 
-	private BaseRecord withRole(String userName, String roleName) {
-		BaseRecord u = getCreateUser(userName, org);
+	private BaseRecord withRole(OrganizationContext o, String userName, String roleName) {
+		BaseRecord u = getCreateUser(userName, o);
 		assertNotNull("Failed to resolve " + userName + " - check the $minLen5 rule", u);
-		BaseRecord role = AccessSchema.getSystemRole(roleName, RoleEnumType.USER.toString(), org.getOrganizationId());
+		BaseRecord role = AccessSchema.getSystemRole(roleName, RoleEnumType.USER.toString(), o.getOrganizationId());
 		assertNotNull(roleName + " role is null", role);
-		ioContext.getMemberUtil().member(org.getAdminUser(), role, u, null, true);
+		ioContext.getMemberUtil().member(o.getAdminUser(), role, u, null, true);
 		assertTrue(userName + " must be a " + roleName + " member", ioContext.getMemberUtil().isMember(u, role, null));
 		return u;
 	}
 
+	/// The principal's organization path is what ServiceUtil.getPrincipalUser resolves the user in, so a
+	/// /System user must be presented as a /System principal.
 	private HttpServletRequestMock requestAs(BaseRecord user) {
-		return new HttpServletRequestMock(new UserPrincipal((String) user.get(FieldNames.FIELD_NAME), ORG));
+		String orgPath = (user == sysOrg ? OrganizationContext.SYSTEM_ORGANIZATION : ORG);
+		return new HttpServletRequestMock(new UserPrincipal((String) user.get(FieldNames.FIELD_NAME), orgPath));
 	}
 
 	@SuppressWarnings("unchecked")
@@ -187,28 +204,36 @@ public class TestAdminService extends BaseTest {
 	}
 
 	@Test
-	public void TestAllOrganizationsScopeRequiresSystemAdministrators() {
-		HttpServletRequestMock r = requestAs(acct);
-		Map<String, Object> scope = body(service.getScope(r));
-		assertEquals(Boolean.FALSE, scope.get("systemAdministrator"));
-		assertEquals(ORG, scope.get("organizationPath"));
-		/// The empty list is the signal the panel keys on; it must be PRESENT, not dropped by a
-		/// NON_EMPTY serializer.
-		assertTrue("organizations must be an (empty) array for a non-system administrator: " + scope,
-			scope.get("organizations") instanceof List && ((List<?>) scope.get("organizations")).isEmpty());
-		assertEquals(403, service.countThumbnails(true, r).getStatus());
-		assertEquals(403, service.cleanupThumbnails(true, r).getStatus());
-		assertEquals(403, service.countAudit(true, r).getStatus());
-		assertEquals(403, service.searchAudit("{\"allOrganizations\":true}", r).getStatus());
-		assertEquals(403, service.deleteAudit(true, 30, false, r).getStatus());
-		assertEquals(403, service.deleteAudit(true, null, true, r).getStatus());
+	public void TestAllOrganizationsScopeRequiresSystemOrganizationAdministrator() {
+		/// BOTH of the test organization's administrators are refused - the SystemAdministrators member
+		/// included. That role is per organization; it is not a cross-tenant grant.
+		for(BaseRecord orgAdmin : new BaseRecord[] { acct, sys }) {
+			HttpServletRequestMock r = requestAs(orgAdmin);
+			Map<String, Object> scope = body(service.getScope(r));
+			assertEquals(Boolean.FALSE, scope.get("allOrganizationsAllowed"));
+			assertEquals(ORG, scope.get("organizationPath"));
+			/// The empty list is the signal the panel keys on; it must be PRESENT, not dropped by a
+			/// NON_EMPTY serializer.
+			assertTrue("organizations must be an (empty) array for an organization's administrator: " + scope,
+				scope.get("organizations") instanceof List && ((List<?>) scope.get("organizations")).isEmpty());
+			Response denied = service.countThumbnails(true, r);
+			assertEquals(403, denied.getStatus());
+			assertTrue("the 403 names /System: " + denied.getEntity(), String.valueOf(body(denied).get("error")).contains("/System"));
+			assertEquals(403, service.cleanupThumbnails(true, r).getStatus());
+			assertEquals(403, service.countAudit(true, r).getStatus());
+			assertEquals(403, service.searchAudit("{\"allOrganizations\":true}", r).getStatus());
+			assertEquals(403, service.getAudit(UUID.randomUUID().toString(), true, r).getStatus());
+			assertEquals(403, service.deleteAudit(true, 30, false, r).getStatus());
+			assertEquals(403, service.deleteAudit(true, null, true, r).getStatus());
+		}
 
-		HttpServletRequestMock s = requestAs(sys);
+		HttpServletRequestMock s = requestAs(sysOrg);
 		Map<String, Object> sscope = body(service.getScope(s));
-		assertEquals(Boolean.TRUE, sscope.get("systemAdministrator"));
+		assertEquals(Boolean.TRUE, sscope.get("allOrganizationsAllowed"));
+		assertEquals(OrganizationContext.SYSTEM_ORGANIZATION, sscope.get("organizationPath"));
 		List<?> orgs = (List<?>) sscope.get("organizations");
-		assertTrue("a system administrator is told which organizations the all scope covers", orgs.size() > 1);
-		/// All-organizations READS as the system administrator.
+		assertTrue("a /System administrator is told which organizations the all scope covers", orgs.size() > 1);
+		/// All-organizations READS as the /System administrator.
 		Map<String, Object> allThumbs = body(service.countThumbnails(true, s));
 		assertEquals(200, service.countThumbnails(true, s).getStatus());
 		assertEquals("all", allThumbs.get("scope"));

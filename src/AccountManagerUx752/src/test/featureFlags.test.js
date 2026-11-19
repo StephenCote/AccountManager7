@@ -65,7 +65,9 @@ describe('D2 — one manifest', () => {
     it('wiring is preserved through the merge', () => {
         setManifest(localManifest);
         expect(typeof features.chat.routes).toBe('function');
-        expect(features.core.routes).toBe(null);
+        // core carries the Admin panel (/admin/system) since 2026-11-19: it is role-gated, not feature-gated.
+        expect(typeof features.core.routes).toBe('function');
+        expect(features.core.routePrefixes).toEqual(['/admin/system']);
         expect(Array.isArray(features.chat.menuItems)).toBe(true);
         expect(Array.isArray(features.chat.routePrefixes)).toBe(true);
     });

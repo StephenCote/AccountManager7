@@ -110,12 +110,5 @@
 		"description": "Load Olio corpus reference data into the current organization (admin only)",
 		"required": false,
 		"deps": ["core"]
-	},
-	{
-		"id": "systemAdmin",
-		"label": "Admin",
-		"description": "Administrative maintenance: thumbnail cleanup and audit list/search/view/trim/purge (admin only)",
-		"required": false,
-		"deps": ["core"]
 	}
 ]
