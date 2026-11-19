@@ -126,15 +126,15 @@ async function loginAndLoad(page, name, password) {
     );
 }
 
-// The READER's own Analyze / chat-config controls (renderReaderActionsLeft, chapBook.js) — rendered
-// only while readerPoemIds is non-empty. They must be targeted by their titles: the ChapBookConfig
-// panel above the reader (mode 'read') hosts the full Poem queue, whose EVERY row carries its own
-// per-poem "Analyze" button, so a bare button:has-text("Analyze") matches dozens of queue rows and
-// says nothing about the reader control.
-const READER_ANALYZE_TITLE = 'Re-analyze poem themes with the selected chat config';
-const READER_ANALYZE_CFG_TITLE = 'Choose the chat config used to re-analyze poem themes';
-function readerAnalyzeBtn(page) { return page.locator('button[title="' + READER_ANALYZE_TITLE + '"]'); }
-function readerAnalyzeCfgBtn(page) { return page.locator('button[title="' + READER_ANALYZE_CFG_TITLE + '"]'); }
+// The book's own Analyze control. Since the Read | Edit split (aiDocs/PictureBookUxConsistencyDesign.md §8.1 / §8.2)
+// it is Edit › Pages' toolbar "Analyze poems" (cb-analyze-poems) — rendered only while the editor knows the book's
+// source poems (persisted create-time ids ∪ GET /poems?bookObjectId), exactly as the reader's was. Its chat config is
+// Edit › Book's session control (cb-config-chatconfig), which is book-level and always shown. The poem queue (whose
+// rows carry per-poem "Analyze" buttons) lives only on the library, so the testid is unambiguous.
+function readerAnalyzeBtn(page) { return page.getByTestId('cb-analyze-poems'); }
+function editPagesRoute(oid) { return '!/chap-book/edit/' + oid + '/pages'; }
+// Edit › Render — the Render Settings dialog's content inline (§8.2 row 7).
+function renderSection(page) { return page.locator('[data-testid="cb-render-section"]'); }
 
 test.describe('ChapBook — UX verification', () => {
     test.describe.configure({ timeout: 300000 });
@@ -246,21 +246,17 @@ test.describe('ChapBook — UX verification', () => {
     });
 
     // ── #4: render dialog loads saved defaults; Model is a populated <select> with saved value selected
-    test('4: render dialog Model control is a populated <select> whose value is the saved default', async ({ page }) => {
+    test('4: Edit › Render Model control is a populated <select> whose value is the saved default', async ({ page }) => {
         await loginAndLoad(page, 'e2etest_shared', 'password');
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
-
-        // Open the pre-render SD config dialog via the reader's Render button.
-        const renderBtn = page.locator('button:has-text("Render")').first();
-        await expect(renderBtn).toBeVisible({ timeout: 15000 });
-        await expect(renderBtn).toBeEnabled();
-        await renderBtn.click();
-
-        // Dialog + config panel must actually finish loading the saved config (not stay on the spinner).
-        await expect(page.locator('text=Render Settings')).toBeVisible({ timeout: 10000 });
+        // The Render Settings dialog's content is inline on Edit › Render since the Read | Edit split (§8.2).
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/render'; }, bookOid);
+        await expect(page.getByTestId('cb-render-start')).toBeVisible({ timeout: 15000 });
+        await expect(page.getByTestId('cb-render-start')).toBeEnabled();
+        const section = renderSection(page);
+        await expect(section).toBeVisible({ timeout: 15000 });
 
         // The live catalog is non-empty, so the Model control is a <select> (not the text fallback).
-        const modelSelect = page.locator('xpath=//label[normalize-space()="Model"]/following-sibling::select[1]');
+        const modelSelect = section.locator('xpath=.//label[normalize-space()="Model"]/following-sibling::select[1]');
         await expect(modelSelect, 'expected a <select> for Model (live catalog is populated)').toBeVisible({ timeout: 15000 });
         // Real options present (placeholder + the live catalog).
         const optionCount = await modelSelect.locator('option').count();
@@ -291,20 +287,15 @@ test.describe('ChapBook — UX verification', () => {
     // ── #A (FIX A): the render dialog exposes a Chat Config control resolved to the SYSTEM default ─────
     // Proves the render dialog now has a visible Chat Config picker and its auto-default is the SYSTEM
     // library config (contentAnalysis) — NOT a silent random arr[0]. The user can override via the picker.
-    test('A: render dialog Chat Config control auto-resolves to the system default (contentAnalysis)', async ({ page }) => {
+    test('A: Edit › Render Chat Config control auto-resolves to the system default (contentAnalysis)', async ({ page }) => {
         await loginAndLoad(page, 'e2etest_shared', 'password');
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
+        // The Render Settings dialog's content is inline on Edit › Render (§8.2).
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/render'; }, bookOid);
+        await expect(page.getByTestId('cb-render-start')).toBeVisible({ timeout: 15000 });
+        await expect(page.getByTestId('cb-render-start')).toBeEnabled();
 
-        const renderBtn = page.locator('button:has-text("Render")').first();
-        await expect(renderBtn).toBeVisible({ timeout: 15000 });
-        await expect(renderBtn).toBeEnabled();
-        await renderBtn.click();
-
-        await expect(page.locator('text=Render Settings')).toBeVisible({ timeout: 10000 });
-
-        // The Chat Config control is the clickable div immediately after the "Chat Config" label.
-        const chatCfgControl = page.locator('xpath=//label[normalize-space()="Chat Config"]/following-sibling::div[1]');
-        await expect(chatCfgControl, 'Chat Config control missing from render dialog').toBeVisible({ timeout: 10000 });
+        const chatCfgControl = page.getByTestId('cb-render-chatconfig');
+        await expect(chatCfgControl, 'Chat Config control missing from Edit › Render').toBeVisible({ timeout: 10000 });
         // The auto-default must resolve to the SYSTEM library config, not a placeholder or random user config.
         await expect(chatCfgControl, 'Chat Config did not auto-resolve to the system default').toContainText('contentAnalysis', { timeout: 15000 });
 
@@ -312,7 +303,7 @@ test.describe('ChapBook — UX verification', () => {
     });
 
     // ── #5: Analyze control restored from persistence across a FRESH page reload ─────────────────────
-    test('5: reader Analyze control survives a full page reload (restored from localStorage, not memory)', async ({ page }) => {
+    test('5: the book\'s Analyze control survives a full page reload (restored from localStorage, not memory)', async ({ page }) => {
         await loginAndLoad(page, 'e2etest_shared', 'password');
         await page.evaluate(() => { window.location.hash = '!/chap-book'; });
 
@@ -339,17 +330,17 @@ test.describe('ChapBook — UX verification', () => {
         await titleInput.fill(uiTitle);
         await page.locator('div.fixed button:has-text("Create")').last().click();
 
-        // Navigation to the reader route (creation runs as an async job; allow ample time).
-        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), null, { timeout: 120000 });
-        const readerHash = await page.evaluate(() => window.location.hash);
-        const readerOid = readerHash.split('/chap-book/read/')[1];
-        expect(readerOid, 'could not capture reader objectId from hash').toBeTruthy();
+        // Navigation to Edit (guided, §7.2) — creation runs as an async job; allow ample time.
+        await page.waitForFunction(() => /#!\/chap-book\/edit\//.test(window.location.hash), null, { timeout: 120000 });
+        const readerHash = decodeURIComponent(await page.evaluate(() => window.location.hash));
+        const readerOid = readerHash.split('/chap-book/edit/')[1].split(/[/?#]/)[0];
+        expect(readerOid, 'could not capture the book objectId from hash').toBeTruthy();
 
-        // In-memory state right after creation: the READER's Analyze + its chat-config picker are present
-        // (exactly one each — the reader toolbar, not a Poem-queue row).
-        await expect(readerAnalyzeBtn(page), 'reader Analyze absent right after creation').toBeVisible({ timeout: 15000 });
+        // In-memory state right after creation: Edit › Pages' Analyze is present (exactly one), and its chat config
+        // (Edit › Book) is a book-level control.
+        await page.evaluate((h) => { window.location.hash = h; }, editPagesRoute(readerOid));
+        await expect(readerAnalyzeBtn(page), 'Analyze absent right after creation').toBeVisible({ timeout: 15000 });
         await expect(readerAnalyzeBtn(page)).toHaveCount(1);
-        await expect(readerAnalyzeCfgBtn(page)).toHaveCount(1);
 
         // The REAL persist path wrote localStorage (this is what a reload will restore from).
         const persisted = await page.evaluate((oid) => localStorage.getItem('cb-poemids-' + oid), readerOid);
@@ -370,15 +361,15 @@ test.describe('ChapBook — UX verification', () => {
             'expected NO server-scoped poems for a create-flow book (the create flow does not stamp the book FK) — ' +
             'got: ' + JSON.stringify(scopedPoems).slice(0, 300)).toBe(0);
 
-        // FULL PAGE RELOAD → brand-new JS VM; all module-level state (readerPoemIds, etc.) is wiped.
+        // FULL PAGE RELOAD → brand-new JS VM; all module-level state (the editor's poem ids, etc.) is wiped.
         await page.reload({ timeout: 30000 });
-        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), null, { timeout: 30000 });
+        await page.waitForFunction(() => /#!\/chap-book\/edit\//.test(window.location.hash), null, { timeout: 30000 });
 
         // Reader Analyze STILL present — it can only be here if oninit re-derived readerPoemIds from
         // localStorage (the server-scoped list for this book is empty, proven above).
         await expect(
             readerAnalyzeBtn(page),
-            'reader Analyze NOT restored after full reload — persistence broken'
+            'Analyze NOT restored after full reload — persistence broken'
         ).toBeVisible({ timeout: 30000 });
         await expect(readerAnalyzeBtn(page)).toHaveCount(1);
         await page.screenshot({ path: path.join(RESULTS, 'verify-5-analyze-after-reload.png'), fullPage: true });
@@ -389,21 +380,20 @@ test.describe('ChapBook — UX verification', () => {
         // there — that is exactly why the bare text locator could never prove this.
         await page.evaluate((oid) => localStorage.removeItem('cb-poemids-' + oid), readerOid);
         await page.reload({ timeout: 30000 });
-        await page.waitForFunction(() => /#!\/chap-book\/read\//.test(window.location.hash), null, { timeout: 30000 });
-        // Reader settled on the Cover (title + Begin), i.e. loadReaderBook finished and the toolbar is final.
-        await expect(page.locator('button:has-text("Begin")'), 'reader Cover did not render').toBeVisible({ timeout: 30000 });
-        await expect(page.locator('button:has-text("Review")').first()).toBeVisible({ timeout: 15000 });
+        await page.waitForFunction(() => /#!\/chap-book\/edit\//.test(window.location.hash), null, { timeout: 30000 });
+        // Edit › Pages settled (the page list rendered), i.e. the book loaded and the toolbar is final.
+        await expect(page.getByTestId('cb-page-list'), 'Edit › Pages did not render').toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('book-mode-read')).toBeVisible({ timeout: 15000 });
         const stillCleared = await page.evaluate((oid) => localStorage.getItem('cb-poemids-' + oid), readerOid);
         expect(stillCleared, 'reader re-wrote cb-poemids-<oid> on open — the negative control would be moot').toBeNull();
         await expect(
             readerAnalyzeBtn(page),
-            'reader Analyze STILL present after clearing persistence (and no server-scoped poems) — not actually persistence-driven'
+            'Analyze STILL present after clearing persistence (and no server-scoped poems) — not actually persistence-driven'
         ).toHaveCount(0, { timeout: 15000 });
-        await expect(readerAnalyzeCfgBtn(page)).toHaveCount(0);
-        // The queue rows' per-poem Analyze buttons remain (they are poem-level, not reader-level). Since
-        // P10-C 2 (§6.C 264) the poem queue is a collapsible sub-section that starts COLLAPSED on the reader
-        // (configQueueExpandedByMode.read = false), so its rows are not in the DOM until the queue is
-        // expanded: open the config panel and the queue first (both toggles only when they are closed).
+        // The queue rows' per-poem Analyze buttons remain (they are poem-level, not book-level). The poem queue lives
+        // only on the library since §7.2, as a collapsible sub-section: open the config panel and the queue first
+        // (both toggles only when they are closed).
+        await page.evaluate(() => { window.location.hash = '!/chap-book'; });
         const cfgToggle = page.getByTestId('cb-config-toggle');
         await expect(cfgToggle).toBeVisible({ timeout: 15000 });
         if (await page.getByTestId('cb-queue-toggle').count() === 0) await cfgToggle.click();
@@ -422,7 +412,7 @@ test.describe('ChapBook — UX verification', () => {
     // server-derived ids (GET /poems?bookObjectId — poems carrying this book's `book` FK) into readerPoemIds.
     // Seed a book-scoped poem via a direct `book` FK PATCH (localStorage-independent), then prove Analyze
     // appears in a browser that has NO cb-poemids entry for that book.
-    test('C: reader Analyze appears from server-derived poems when localStorage is empty (FIX C)', async ({ page, request }) => {
+    test('C: Edit › Pages Analyze appears from server-derived poems when localStorage is empty (FIX C)', async ({ page, request }) => {
         await restLogin(request, 'e2etest_shared', 'password');
 
         // Fresh book (distinct from bookOid) so this browser holds NO create-flow localStorage for it.
@@ -474,20 +464,19 @@ test.describe('ChapBook — UX verification', () => {
         expect(scopedIds, 'server did not return the book-scoped poem').toContain(srvPoemOid);
         await request.get(REST + '/logout');
 
-        // Browser: open the reader with NO localStorage for this book — Analyze must appear from server derivation.
+        // Browser: open Edit › Pages with NO localStorage for this book — Analyze must appear from server derivation.
         await loginAndLoad(page, 'e2etest_shared', 'password');
         await page.evaluate((oid) => { localStorage.removeItem('cb-poemids-' + oid); }, bookOidC);
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOidC);
+        await page.evaluate((h) => { window.location.hash = h; }, editPagesRoute(bookOidC));
 
         // Confirm there is NO local poem-id state for this book (so the button can only be server-derived).
         const localState = await page.evaluate((oid) => localStorage.getItem('cb-poemids-' + oid), bookOidC);
         expect(localState, 'unexpected localStorage for the fresh book — test would not prove server derivation').toBeFalsy();
 
-        // The READER's own control (by title) — the Poem queue above the reader has a per-poem Analyze
-        // button on every row, so a bare text locator would be satisfied regardless of FIX C.
+        // The book's own control (by testid) — never a per-poem queue row.
         await expect(
             readerAnalyzeBtn(page),
-            'reader Analyze NOT shown from server-derived poems (FIX C broken)'
+            'Analyze NOT shown from server-derived poems (FIX C broken)'
         ).toBeVisible({ timeout: 20000 });
         await expect(readerAnalyzeBtn(page)).toHaveCount(1);
         await page.screenshot({ path: path.join(RESULTS, 'verify-C-analyze-server-derived.png'), fullPage: true });
@@ -510,9 +499,9 @@ test.describe('ChapBook — UX verification', () => {
         await expect(page.locator('button:has-text("New Poem")').first(), 'create(new poem) not disabled').toBeDisabled();
         await page.screenshot({ path: path.join(RESULTS, 'verify-6a-norole-disabled.png'), fullPage: true });
 
-        // Reader Render button (render action) is also disabled for the role-less user.
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
-        await expect(page.locator('button:has-text("Render")').first(), 'render not disabled for role-less user').toBeDisabled({ timeout: 15000 });
+        // The Render action (Edit › Render since §8.2) is also disabled for the role-less user.
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/render'; }, bookOid);
+        await expect(page.getByTestId('cb-render-start'), 'render not disabled for role-less user').toBeDisabled({ timeout: 15000 });
 
         // 6b — contrast: the shared user (HAS AccountUsers) can click the same buttons.
         await loginAndLoad(page, 'e2etest_shared', 'password');
@@ -526,8 +515,8 @@ test.describe('ChapBook — UX verification', () => {
         await expect(page.locator('button:has-text("Add from Data")').first(), 'import(data) should be enabled').toBeEnabled();
         await expect(page.locator('button:has-text("New Poem")').first(), 'create(new poem) should be enabled').toBeEnabled();
 
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
-        await expect(page.locator('button:has-text("Render")').first(), 'render should be enabled for role user').toBeEnabled({ timeout: 15000 });
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/render'; }, bookOid);
+        await expect(page.getByTestId('cb-render-start'), 'render should be enabled for role user').toBeEnabled({ timeout: 15000 });
         await page.screenshot({ path: path.join(RESULTS, 'verify-6b-roleuser-enabled.png'), fullPage: true });
     });
 });

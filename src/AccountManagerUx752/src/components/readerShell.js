@@ -42,6 +42,12 @@
  *   containerClass   string='p-4 flex flex-col h-full'
  *   bodyClass        string='flex-1 overflow-y-auto max-w-3xl mx-auto w-full'
  *   headerClass      string='flex items-center gap-3 mb-4'
+ *   renderHeader(nav, ctl) → vnode                 replaces the shell's own header in BOTH normal and fullscreen view
+ *                                                 (the PictureBook / ChapBook Read mode draws components/bookHeader.js
+ *                                                 here — aiDocs/PictureBookUxConsistencyDesign.md §4.1, D5). ctl =
+ *                                                 { exporting, doExport() } so the caller's header drives the shell's
+ *                                                 export; fullscreen is nav.toggleFullscreen(). The caller then owns
+ *                                                 back / prev / next / export / fullscreen — none are drawn twice.
  *   Export params: exportTitleSuffix, exportNameFallback, exportNameSuffix, exportToast,
  *                  exportCountNoun, coverImageUrl(), exportCss(), exportPageHtml(page,i,imgB64,total)
  *
@@ -362,8 +368,11 @@ export const ReaderShell = function () {
             // reading view stays clean; the body (incl. renderEmpty) is unchanged by it.
             let banner = (!fs && typeof a.renderBanner === 'function') ? a.renderBanner(nav) : null;
 
+            let header = typeof a.renderHeader === 'function'
+                ? a.renderHeader(nav, { exporting: exporting, doExport: function () { return doExport(a); } })
+                : renderHeader(a, nav, exporting, doExport);
             return m('div', { class: containerClass }, [
-                renderHeader(a, nav, exporting, doExport),
+                header,
                 banner,
                 body
             ]);

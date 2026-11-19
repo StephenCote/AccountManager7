@@ -60,10 +60,12 @@ async function getStyle(request, oid) {
     return JSON.parse(text);
 }
 
-async function openRenderDialog(page) {
-    await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
-    await expect(page.getByTestId('pb2-render-all')).toBeVisible({ timeout: 60000 });
-    await page.getByTestId('pb2-render-all').click();
+// Since the Read | Edit split the render settings that were the Render dialog are inline on Edit › Render
+// (PictureBookUxConsistencyDesign.md §5.9): Render all (pb2-render-all-start) is the section toolbar's button, the
+// dialog body (pb2-render-dialog) is the section's settings block, and the style status is the rail's Style mark.
+async function openRenderSection(page) {
+    await page.goto('/#!/picture-book/' + bookObjectId + '/edit/render', { timeout: 30000 });
+    await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'render', { timeout: 60000 });
     await expect(page.getByTestId('pb2-render-dialog')).toBeVisible({ timeout: 15000 });
 }
 
@@ -87,27 +89,27 @@ test.describe('PictureBook V3 style presets', () => {
         await request.get(REST + '/logout');
     });
 
-    // The style is a required predicate of rendering (2026-11-16): the reader reads it on load and, without a
-    // description, disables Render (and every per-scene render) with the reason and a link to the style view.
+    // The style is a required predicate of rendering (2026-11-16): Edit › Render reads it on load and, without a
+    // description, disables Render all (and every per-scene render) with the reason and a link to Edit › Style.
     test('1. a fresh book: Render is disabled with "Set the book style first"; the link opens the style view', async ({ page }) => {
         await loginAsSharedUser(page);
-        await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
-        const render = page.getByTestId('pb2-render-all');
+        await openRenderSection(page);
+        const render = page.getByTestId('pb2-render-all-start');
         await expect(render).toBeVisible({ timeout: 60000 });
-        await expect(render).toHaveText(/Render$/);
+        await expect(render).toHaveText(/Render all$/);
         await expect(render).toBeDisabled({ timeout: 30000 });
         await expect(render).toHaveAttribute('title', 'Set the book style first');
-        await expect(page.getByTestId('pb2-style-status')).toHaveAttribute('data-state', 'attention');
+        await expect(page.getByTestId('ws-rail-style')).toHaveAttribute('data-status', 'attention', { timeout: 30000 });
         const link = page.getByTestId('pb2-render-needs-style');
         await expect(link).toHaveText(/Set the book style first$/);
         await link.click();
-        await expect(page.getByTestId('pb2-style')).toBeVisible({ timeout: 30000 });
-        expect(page.url()).toContain('/picture-book/' + bookObjectId + '/style');
+        await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'style', { timeout: 30000 });
+        expect(page.url()).toContain('/picture-book/' + bookObjectId + '/edit/style');
     });
 
     test('2. the Anime preset fills description / photoreal / exclusions, and Save persists exactly that', async ({ page }) => {
         await loginAsSharedUser(page);
-        await page.goto('/#!/picture-book/' + bookObjectId + '/style', { timeout: 30000 });
+        await page.goto('/#!/picture-book/' + bookObjectId + '/edit/style', { timeout: 30000 });
         await expect(page.getByTestId('pb2-style-chain')).toBeVisible({ timeout: 30000 });
         await expect(page.getByTestId('pb2-style-no-description')).toBeVisible();
 
@@ -153,19 +155,17 @@ test.describe('PictureBook V3 style presets', () => {
         await expect(page.getByTestId('pb2-style-preset')).toHaveValue('');
     });
 
-    test('3. once the style has a description (saved in test 2) Render is enabled and the dialog can Start', async ({ page }) => {
+    test('3. once the style has a description (saved in test 2) Render is enabled and Render all can start', async ({ page }) => {
         await loginAsSharedUser(page);
-        await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
-        const render = page.getByTestId('pb2-render-all');
-        await expect(page.getByTestId('pb2-style-status')).toHaveAttribute('data-state', 'ok', { timeout: 60000 });
+        await openRenderSection(page);
+        const render = page.getByTestId('pb2-render-all-start');
+        await expect(page.getByTestId('ws-rail-style')).toHaveAttribute('data-status', 'ok', { timeout: 60000 });
         await expect(render).toBeEnabled();
-        await expect(render).toHaveAttribute('title', 'Render all scenes');
+        await expect(render).toHaveAttribute('title', 'Render every scene whose image is missing, stale or rejected');
         await expect(page.getByTestId('pb2-render-needs-style')).toHaveCount(0);
-        await openRenderDialog(page);
         await page.waitForTimeout(1500);
         await expect(page.getByTestId('pb2-render-no-style')).toHaveCount(0);
-        await expect(page.getByTestId('pb2-render-all-start')).toBeEnabled();
-        // Cancel, never Start: this spec checks the gate, it does not render.
-        await page.getByTestId('pb2-render-dialog-cancel').click();
+        await expect(render).toBeEnabled();
+        // Never Start: this spec checks the gate, it does not render.
     });
 });

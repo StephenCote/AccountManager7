@@ -11,6 +11,7 @@
  * from the Docker stack (C:\tmp\p29-plan2.json, 2026-10-15).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import m from 'mithril';
 import { Dialog } from '../components/dialogCore.js';
 import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
@@ -312,18 +313,26 @@ describe('canvas node detail View plan', () => {
 
 // ─────────────────────────────── reader: Plan & generate dialog ───────────────────────────────
 
+// aiDocs/PictureBookUxConsistencyDesign.md §5.6: the per-scene "Plan & generate" button moved from the Read page to
+// Edit › Scenes › Render (same testid, same dialog). The dialog tests open it from there, rendered into jsdom.
 describe('reader Plan & generate dialog', () => {
     let pbf;
+    let edit;
     const SCENE = { objectId: 's1', sceneIndex: 1, title: 'Arrival', sceneNodeObjectId: 'n1', nodeStatus: 'DONE', pinned: false, dataObjectId: 'd1' };
 
     beforeEach(async () => {
         pbf = await import('../features/pictureBook.js');
+        edit = await import('../features/pictureBookEdit.js');
         pbf.__pb2StopWatchingForTest();
         pbf.__setPb2V3StateForTest({
             pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null,
             pb2Submitting: false, pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: 'P29', pb2PollIntervalMs: 5,
-            pb2Pages: [SCENE]
+            pb2Pages: [SCENE], pb2StyleDescribed: null, pb2IsChapBook: false, pb2ChatConfig: null,
+            // seeded so rendering the Render tab reads nothing (the call lists below are exact)
+            pb2SceneDegradations: { n1: { loading: false, summary: null, error: null } }
         });
+        edit.__resetPbEditForTest();
+        edit.__setPbEditStateForTest({ sceneRecs: { s1: { loading: false, error: null, rec: { id: 1, objectId: 's1', title: 'Arrival' } } } });
         pbf.__setPb2PlanStateForTest({ bookId: null, sceneOid: null, plan: null, error: null, loading: false, rendering: false, open: false, inspect: false, preset: '' });
     });
     afterEach(() => {
@@ -343,15 +352,34 @@ describe('reader Plan & generate dialog', () => {
         return calls;
     }
 
-    it('shows the Plan & generate button and the style link', () => {
-        expect(findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render')).not.toBeNull();
-        expect(findByTestId(pbf.renderPb2Header(), 'pb2-style-link')).not.toBeNull();
+    /** Edit › Scenes › scene s1 › Render tab, rendered with the real Mithril renderer. */
+    function renderTab() {
+        let div = document.createElement('div');
+        m.render(div, edit.scenesSection.body({ kind: 'pb', bookObjectId: 'B1', section: 'scenes', item: 's1', tab: 'render', go() {}, select() {}, setTab() {} }));
+        return div;
+    }
+    function clickPlan() { renderTab().querySelector('[data-testid="pb2-plan-render"]').click(); }
+
+    // Intentionally changed (§5.1 / §5.6): the button is in Edit › Scenes › Render, not on the Read page; the style
+    // link is the Edit rail's Style section (the needs-style link appears beside the gated buttons when it applies).
+    it('shows the Plan & generate button in Edit › Scenes › Render (not on the Read page) and the Style section in the rail', async () => {
+        let el = renderTab();
+        expect(el.querySelector('[data-testid="pb2-plan-render"]')).not.toBeNull();
+        expect(el.querySelector('[data-testid="pb2-plan-render"]').textContent).toBe('Plan & generate');
+        let read = document.createElement('div');
+        m.render(read, pbf.renderPb2ScenePage());
+        expect(read.querySelector('[data-testid="pb2-plan-render"]')).toBeNull();
+        let nav = await import('../workflows/bookWorkspaceNav.js');
+        expect(nav.sectionDef('pb', 'style')).toMatchObject({ id: 'style', label: 'Style' });
+        pbf.__setPb2V3StateForTest({ pb2StyleDescribed: false });
+        expect(renderTab().querySelector('[data-testid="pb2-scene-needs-style"]')).not.toBeNull();
+        pbf.__setPb2V3StateForTest({ pb2StyleDescribed: null });
     });
 
     it('opens the dialog, POSTs /scene/{s}/plan with an empty body, shows the estimate verbatim and enables Generate', async () => {
         let calls = planFetch([{ re: /^POST .*\/scene\/s1\/plan$/, fn: () => jsonResponse(200, PLAN) }]);
         let openSpy = vi.spyOn(Dialog, 'open');
-        findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render').attrs.onclick();
+        clickPlan();
         expect(Dialog.stackDepth()).toBe(1);
         let cfg = openSpy.mock.calls[0][0];
         expect(cfg.title).toBe('Plan & generate');
@@ -390,7 +418,7 @@ describe('reader Plan & generate dialog', () => {
     it('a /plan failure is shown verbatim in the dialog and Generate stays disabled', async () => {
         planFetch([{ re: /^POST .*\/plan$/, fn: () => jsonResponse(400, { error: true, message: 'Malformed request body' }) }]);
         let openSpy = vi.spyOn(Dialog, 'open');
-        findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render').attrs.onclick();
+        clickPlan();
         await flushPromises();
         let cfg = openSpy.mock.calls[0][0];
         expect(textOf(findByTestId(cfg.content.view(), 'pb2-plan-error'))).toBe('(400) Malformed request body');
@@ -404,7 +432,7 @@ describe('reader Plan & generate dialog', () => {
             { re: /^POST .*\/render-plan$/, fn: () => jsonResponse(503, { error: RENDER_503 }) }
         ]);
         let openSpy = vi.spyOn(Dialog, 'open');
-        findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render').attrs.onclick();
+        clickPlan();
         await flushPromises();
         let cfg = openSpy.mock.calls[0][0];
         let gen = cfg.actions.view()[1];
@@ -433,7 +461,7 @@ describe('reader Plan & generate dialog', () => {
             { re: /^GET .*\/covers$/, fn: () => jsonResponse(200, { bookObjectId: 'B1', covers: {} }) }
         ]);
         let openSpy = vi.spyOn(Dialog, 'open');
-        findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render').attrs.onclick();
+        clickPlan();
         await flushPromises();
         let cfg = openSpy.mock.calls[0][0];
         await cfg.actions.view()[1].onclick();

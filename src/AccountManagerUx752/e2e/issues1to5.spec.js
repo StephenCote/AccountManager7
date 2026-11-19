@@ -174,7 +174,7 @@ test.describe('UAT regression — Issues 1, 2, 4 (browser, no LLM/SD)', () => {
 
     async function gotoChapBook(page) {
         await page.goto('/#!/chap-book', { timeout: 30000 });
-        await expect(page.getByText('ChapBook — Poem Library')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('cb-library-title')).toHaveText('ChapBooks', { timeout: 30000 });
     }
 
     // ── Issue 1 — picker navigate-up for a group-contained type ───────────────

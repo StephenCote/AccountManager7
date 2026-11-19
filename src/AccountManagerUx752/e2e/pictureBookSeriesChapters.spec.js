@@ -221,7 +221,7 @@ test.describe('PictureBook Series/Chapters (N3 + N4)', () => {
     test('N4: view-mode toggle switches between the chapter graph and the whole-series overview', async ({ page }) => {
         test.skip(!pb2BookObjectId, 'pb2 book not seeded');
         await loginAsSharedUser(page);
-        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/workflow'; }, pb2BookObjectId);
+        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/edit/canvas'; }, pb2BookObjectId);
 
         // Chapter view: wait for the graph to render node cards.
         await page.waitForFunction(
@@ -268,7 +268,7 @@ test.describe('PictureBook Series/Chapters (N3 + N4)', () => {
     test('N3: the New Chapter dialog exposes the source-manuscript + boundary review controls', async ({ page }) => {
         test.skip(!pb2BookObjectId, 'pb2 book not seeded');
         await loginAsSharedUser(page);
-        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/workflow'; }, pb2BookObjectId);
+        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/edit/canvas'; }, pb2BookObjectId);
         await page.waitForFunction(
             () => document.querySelectorAll('[data-node-id]').length > 0
                 || document.body.innerText.includes('Failed'),
@@ -299,7 +299,7 @@ test.describe('PictureBook Series/Chapters (N3 + N4)', () => {
     test('P1-3: Choose manuscript picker opens above the New Chapter dialog and Escape closes only the picker', async ({ page }) => {
         test.skip(!pb2BookObjectId, 'pb2 book not seeded');
         await loginAsSharedUser(page);
-        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/workflow'; }, pb2BookObjectId);
+        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/edit/canvas'; }, pb2BookObjectId);
         await page.waitForFunction(
             () => document.querySelectorAll('[data-node-id]').length > 0
                 || document.body.innerText.includes('Failed'),

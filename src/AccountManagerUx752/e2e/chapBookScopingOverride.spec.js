@@ -231,9 +231,9 @@ async function gotoReview(page, oid) {
     await page.waitForFunction(
         () => window.location.hash.includes('/main') && document.querySelector('[role="main"]'),
         null, { timeout: 30000 });
-    await page.evaluate((o) => { window.location.hash = '!/chap-book/review/' + o; }, oid);
+    await page.evaluate((o) => { window.location.hash = '!/chap-book/edit/' + o + '/pages'; }, oid);
     await page.waitForFunction(
-        () => window.location.hash.includes('/chap-book/review'), null, { timeout: 30000 });
+        () => window.location.hash.includes('/chap-book/edit/'), null, { timeout: 30000 });
     // Scene cards carry the "Image config overrides" toggle.
     await expect(page.locator('button:has-text("Image config overrides")').first())
         .toBeVisible({ timeout: 20000 });

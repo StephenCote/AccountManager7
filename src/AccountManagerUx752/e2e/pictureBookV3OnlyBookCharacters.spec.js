@@ -79,13 +79,16 @@ async function openSelector(page) {
     await expect(page.locator('[data-pb2-book-list]')).toBeVisible({ timeout: 30000 });
 }
 
+// Since the Read | Edit split the library row's Characters icon routes to Edit › Characters (design §4.7 / §5.4, D2:
+// the pop-in is retired), and the manager renders inline in the workspace pane. `managerDialog` keeps its name for
+// the assertions below: it is now that pane. There is nothing to close; `closeManager` asserts no dialog opened.
 function managerDialog(page) {
-    return page.locator('.am7-dialog').filter({ has: page.locator('.am7-dialog-title', { hasText: 'Manage Characters' }) }).last();
+    return page.locator('[data-testid="ws-pane"][data-section="characters"]');
 }
 
 async function closeManager(page, dlg) {
-    await dlg.locator('.am7-dialog-footer button').filter({ hasText: 'Close' }).first().click();
-    await expect(dlg).toHaveCount(0, { timeout: 10000 });
+    await expect(page.locator('.am7-dialog').filter({ has: page.locator('.am7-dialog-title', { hasText: 'Manage Characters' }) }),
+        'the retired Manage Characters pop-in must not open').toHaveCount(0);
 }
 
 // ── Fixture: ONE V3-only standalone book, created once, deleted in afterAll ───────────────────────
@@ -141,7 +144,7 @@ test.describe('PictureBook — V3-only book: legacy reads + Manage Characters (�
         console.log('[uat6] REST characters=' + cj.length + ' scenes=' + sj.length + ' absent=404/404');
     });
 
-    // 2. The product entry point: list row → Characters → the dialog settles on the empty state, with no
+    // 2. The product entry point: list row → Characters → Edit › Characters settles on the empty state, with no
     //    unhandled rejection (asserted by the fixtures.js console/pageerror capture after the test).
     test('list row Characters on a V3-only book shows the empty state, not a hung "Loading characters…"', async ({ page }) => {
         await openSelector(page);
@@ -150,6 +153,7 @@ test.describe('PictureBook — V3-only book: legacy reads + Manage Characters (�
 
         const charsResp = page.waitForResponse((r) => r.url().includes('/picture-book/' + bookOid + '/characters'), { timeout: 30000 });
         await row.locator('[data-pb2-characters="' + bookOid + '"]').click();
+        await expect(page).toHaveURL(new RegExp('#!/picture-book/' + bookOid + '/edit/characters'), { timeout: 30000 });
         const resp = await charsResp;
         expect(resp.status(), 'the dialog\'s GET /characters answered ' + resp.status()).toBe(200);
 
@@ -162,7 +166,7 @@ test.describe('PictureBook — V3-only book: legacy reads + Manage Characters (�
         await closeManager(page, dlg);
     });
 
-    // 3. A failed list is reported, not thrown: the dialog renders the inline error and an error toast.
+    // 3. A failed list is reported, not thrown: Edit › Characters renders the inline error and an error toast.
     test('a failed /characters list renders an inline error and a toast instead of an unhandled rejection', async ({ page }) => {
         await openSelector(page);
         const row = page.locator('[data-pb2-book-list] [data-pb2-book="' + bookOid + '"]');

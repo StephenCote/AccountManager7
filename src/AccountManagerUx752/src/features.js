@@ -104,17 +104,17 @@ const featureWiring = {
         routePrefixes: ['/admin/features']
     },
     pictureBook: {
-        routes: () => import('./features/pictureBook.js'),
+        routes: () => import('./features/pictureBookWorkspace.js'), // Read + Edit + legacy redirects (PictureBookUxConsistencyDesign §3)
         menuItems: [{ icon: 'auto_stories', label: 'Picture Book', route: '/picture-book', section: 'app', group: 'Apps' }],
         routePrefixes: ['/picture-book']
     },
     pictureBookWorkflow: {
-        routes: () => import('./features/pictureBookWorkflow.js'),
+        routes: () => import('./features/pictureBookWorkspace.js'), // same table: /workflow redirects into Edit › Canvas
         menuItems: [],
         routePrefixes: ['/picture-book']
     },
     chapBook: {
-        routes: () => import('./features/chapBook.js'),
+        routes: () => import('./features/chapBookWorkspace.js'), // Read + Edit + the /review redirect (PictureBookUxConsistencyDesign §3, §8)
         menuItems: [{ icon: 'menu_book', label: 'ChapBook', route: '/chap-book', section: 'app', group: 'Apps' }],
         routePrefixes: ['/chap-book']
     },

@@ -922,7 +922,7 @@ test.describe('PictureBook V3 P1-10 — criterion 4: ChapBook per-page Re-render
 
         // 1. The review page: the first card's Re-render button is marked pinned, the prompt is prefilled.
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + c4.book, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + c4.book + '/pages', { timeout: 30000 });
         const btn = page.locator('[data-testid="cb-page-rerender"][data-scene-oid="' + c4.scene.objectId + '"]');
         await expect(btn).toBeVisible({ timeout: 30000 });
         await expect(btn).toHaveAttribute('data-pinned', '1');

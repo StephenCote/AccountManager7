@@ -96,7 +96,7 @@ async function loginAsSharedUser(page) {
 
 /** Open the workflow canvas, click the seeded node card and wait for its artifact strip. */
 async function openNodeStrip(page) {
-    await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/workflow'; }, bookObjectId);
+    await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/edit/canvas'; }, bookObjectId);
     const card = page.locator('[data-node-id="' + nodeObjectId + '"]');
     await expect(card, 'seeded node card on the canvas').toBeVisible({ timeout: 30000 });
     await card.click();

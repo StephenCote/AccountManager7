@@ -35,7 +35,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
-import { ensureBookStyleDescription } from './helpers/pbReader.js';
+import { ensureBookStyleDescription, openReviewNode } from './helpers/pbReader.js';
 import { mkdirSync } from 'fs';
 
 const SD_ENABLED = process.env.PB_SD_TESTS === '1';
@@ -109,10 +109,16 @@ async function openReader(page, bookOid) {
     await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible({ timeout: 30000 });
 }
 
+// Page 1, then its "Edit this page" pencil → Edit › Scenes › that scene › Render tab: Plan & generate moved there
+// from the reader page (design §5.1 / §5.6) and opens the same Plan dialog.
 async function openFirstPage(page) {
     await page.locator('button', { hasText: 'Begin' }).click();
     // The reader prints the counter twice (header span + page footer); strict mode needs .first().
     await expect(page.getByText(/^Page 1 of \d+$/).first()).toBeVisible({ timeout: 30000 });
+    await page.getByTestId('pb2-edit-page').click();
+    await expect(page.getByTestId('pb-edit-page')).toBeVisible({ timeout: 30000 });
+    await page.getByTestId('pb-scene-tab-render').click();
+    await expect(page.getByTestId('pb-render-tab')).toBeVisible({ timeout: 30000 });
 }
 
 async function openPlanDialog(page) {
@@ -199,7 +205,8 @@ test.describe('PictureBook V3 P2-9 — Plan & generate dialog, estimate, plan in
         page.on('request', req => { if (req.method() === 'POST' && /\/scene\/[^/]+\/plan$/.test(req.url())) planPosts.push(JSON.parse(req.postData() || 'null')); });
         await openReader(page, bookObjectId);
         await openFirstPage(page);
-        await expect(page.getByTestId('pb2-style-link')).toBeVisible();
+        // The book has a style description (the render gate's predicate): the rail's Style mark is ✓.
+        await expect(page.getByTestId('ws-rail-style')).toHaveAttribute('data-status', 'ok', { timeout: 30000 });
         await openPlanDialog(page);
         expect(planPosts, 'the first plan is requested with the style default preset').toEqual([{}]);
 
@@ -350,14 +357,10 @@ test.describe('PictureBook V3 P2-9 — Plan & generate dialog, estimate, plan in
         else expect(planNode.objectId, 'the same RENDER_PLAN node test 2 found').toBe(fx.nodeOid);
         await request.get(REST + '/logout');
 
-        await page.goto('/#!/picture-book/' + bookObjectId + '/review', { timeout: 30000 });
-        const row = page.locator('[data-testid="pb2-review-node"][data-node-id="' + planNode.objectId + '"]');
-        await expect(row).toBeVisible({ timeout: 60000 });
-        const planToggle = row.getByTestId('pb2-review-plan-toggle');
-        await expect(planToggle).toHaveText('Plan');
-        await planToggle.click();
-        await expect(planToggle).toHaveText('Hide plan', { timeout: 30000 });
-        await expect(row.getByTestId('pb2-review-plan').getByTestId('pb2-plan-inspector')).toBeVisible();
+        // Edit › Review is master/detail (§5.8): the node's detail shows its plan expanded — there is no Plan toggle.
+        const row = await openReviewNode(page, bookObjectId, planNode.objectId);
+        await expect(row.getByTestId('pb2-review-plan-toggle')).toHaveCount(0);
+        await expect(row.getByTestId('pb2-review-plan').getByTestId('pb2-plan-inspector')).toBeVisible({ timeout: 30000 });
         await expect(row.getByTestId('pb2-review-plan-error')).toHaveCount(0);
         await page.screenshot({ path: OUT_DIR + '/03-review-plan.png', fullPage: true });
     });
@@ -370,7 +373,7 @@ test.describe('PictureBook V3 P2-9 — Plan & generate dialog, estimate, plan in
     test('4. [needs 2 or 3] the canvas node detail: "View plan" on the RENDER_PLAN node shows the same inspector with its revision', async ({ page }) => {
         test.skip(!fx.nodeOid, 'needs the RENDER_PLAN node from test 2 (503 tier) or test 3 (SD render)');
         await loginAsSharedUser(page);
-        await page.goto('/#!/picture-book/' + bookObjectId + '/workflow', { timeout: 30000 });
+        await page.goto('/#!/picture-book/' + bookObjectId + '/edit/canvas', { timeout: 30000 });
         const node = page.locator('[data-node-id="' + fx.nodeOid + '"]');
         await expect(node).toBeVisible({ timeout: 60000 });
         // Click the card's header handle, not the card's centre: the centre of a thumb-less card is its actions

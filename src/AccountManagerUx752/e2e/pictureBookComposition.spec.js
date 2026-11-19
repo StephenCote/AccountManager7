@@ -159,9 +159,17 @@ function recordWrites(page) {
     return writes;
 }
 
+// Since the Read | Edit split the board is Edit › Scenes › <scene> › Composition tab (PictureBookUxConsistencyDesign.md
+// §5.6; the old /compose/:s route redirects there). The tab body is the board's own body (pb-cmp-composition).
+function boardRoute(sceneOid) {
+    return '/picture-book/' + bookObjectId + '/edit/scenes/' + sceneOid + '?tab=composition';
+}
+function boardUrlRe(sceneOid) {
+    return new RegExp('/picture-book/' + bookObjectId + '/edit/scenes/' + sceneOid + '\\?tab=composition$');
+}
 async function openBoard(page, sceneOid) {
-    await page.goto('/#!/picture-book/' + bookObjectId + '/compose/' + sceneOid, { timeout: 30000 });
-    await expect(page.getByTestId('pb-cmp')).toBeVisible({ timeout: 30000 });
+    await page.goto('/#!' + boardRoute(sceneOid), { timeout: 30000 });
+    await expect(page.getByTestId('pb-cmp-composition')).toBeVisible({ timeout: 30000 });
 }
 
 // The board compiles /plan on open and after every write (act → refetch → loadBoard → loadPlan). Register the
@@ -318,7 +326,7 @@ test.describe('composition board (default tier)', () => {
         console.log(TAG + ' seeded composition=' + compositionObjectId + ' actor=' + actorObjectId + ' (' + actorName + ') element=' + elementObjectId + ' revision=' + revision + ' title=' + title);
     });
 
-    test('scene 2 opens to the empty state; the header navigates between scenes; the reader deep-links to the board', async ({ page }) => {
+    test('scene 2 opens to the empty state; the scene list navigates between scenes; the reader deep-links to the board', async ({ page }) => {
         test.setTimeout(20 * 60 * 1000);
         await loginAsSharedUser(page);
         await openBoard(page, sceneIds[1]);
@@ -326,28 +334,33 @@ test.describe('composition board (default tier)', () => {
         await expect(page.getByTestId('pb-cmp-empty-message')).toContainText('has no composition');
         await expect(page.getByTestId('pb-cmp-compose-scene')).toBeEnabled();
         await expect(page.getByTestId('pb-cmp-camera')).toHaveCount(0);
-        const sel = page.getByTestId('pb-cmp-scene-select');
-        await expect(sel).toHaveValue(sceneIds[1]);
-        await expect(sel.locator('option')).toHaveText(['1 · Dawn on the Quay', '2 · The Copyist']);
-        await expect(page.getByTestId('pb-cmp-scene-next')).toBeDisabled();
+        // The Edit › Scenes list replaced the board header's prev / select / next (§5.6): one row per scene, in order,
+        // scene 2 selected, and nothing after it.
+        const rows = page.getByTestId('pb-scene-row');
+        await expect(rows).toHaveCount(2);
+        expect(await rows.evaluateAll(els => els.map(e => e.getAttribute('data-item-id')))).toEqual(sceneIds);
+        await expect(rows.nth(0)).toContainText('1. Dawn on the Quay');
+        await expect(rows.nth(1)).toContainText('2. The Copyist');
+        await expect(page.locator('[data-testid="pb-scene-row"][data-item-id="' + sceneIds[1] + '"]')).toHaveAttribute('data-selected', '1');
         await shot(page, 'p49-board-empty');
 
-        await page.getByTestId('pb-cmp-scene-prev').click();
-        await expect(page).toHaveURL(new RegExp('/picture-book/' + bookObjectId + '/compose/' + sceneIds[0] + '$'));
+        await page.locator('[data-testid="pb-scene-row"][data-item-id="' + sceneIds[0] + '"]').click();
+        await expect(page).toHaveURL(boardUrlRe(sceneIds[0]));
         await expect(page.getByTestId('pb-cmp-camera')).toBeVisible({ timeout: 60000 });
-        await expect(sel).toHaveValue(sceneIds[0]);
+        await expect(page.locator('[data-testid="pb-scene-row"][data-item-id="' + sceneIds[0] + '"]')).toHaveAttribute('data-selected', '1');
 
-        // Back → the reader; the reader's Compose button on page 1 deep-links to this scene's board.
-        await page.getByTestId('pb-cmp-back').click();
+        // Edit → Read (the board's back arrow is gone; the header's mode toggle is the way back and keeps the page).
+        await page.getByTestId('book-mode-read').click();
         await expect(page).toHaveURL(new RegExp('/picture-book/v2/' + bookObjectId + '$'));
-        await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible({ timeout: 30000 });
-        await page.locator('button', { hasText: 'Begin' }).click();
-        await expect(page.getByText(/^Page 1 of \d+$/).first()).toBeVisible({ timeout: 30000 });
-        const btn = page.getByTestId('pb2-scene-compose');
-        await expect(btn).toBeVisible();
-        await expect(btn).toHaveAttribute('title', 'Open the composition board for this scene (camera, actors, elements, wardrobe)');
-        await btn.click();
-        await expect(page).toHaveURL(new RegExp('/picture-book/' + bookObjectId + '/compose/' + sceneIds[0] + '$'));
+        await expect(page.getByTestId('pb2-scene-page')).toHaveAttribute('data-scene-id', sceneIds[0], { timeout: 30000 });
+        // The reader's per-page Compose button became the page's "Edit this page" pencil → Edit › Scenes › scene,
+        // whose Composition tab is the board (§4.3, D3).
+        const pencil = page.getByTestId('pb2-edit-page');
+        await expect(pencil).toBeVisible();
+        await pencil.click();
+        await expect(page).toHaveURL(new RegExp('/picture-book/' + bookObjectId + '/edit/scenes/' + sceneIds[0] + '\\?tab=page$'));
+        await page.getByTestId('pb-scene-tab-composition').click();
+        await expect(page).toHaveURL(boardUrlRe(sceneIds[0]));
         await expect(page.getByTestId('pb-cmp-camera')).toBeVisible({ timeout: 60000 });
     });
 

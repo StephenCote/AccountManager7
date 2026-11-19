@@ -6,11 +6,11 @@
  * (helpers/loginAsSharedUser) that Docker's proxy requires.
  *
  *  (1) One shared collapsible ChapBookConfig panel (cb-config-panel / cb-config-toggle) is rendered at
- *      the TOP of ALL THREE ChapBook views — create (PoemLibrary), review (ChapBookReview), read
- *      (ChapBookReader) — inline (not a tab/drawer): it collapses/expands in place. The POEM QUEUE lives
- *      INSIDE the panel (descendant of cb-config-panel). Exactly one panel + one toggle per view.
+ *      the TOP of the library (PoemLibrary) — inline (not a tab/drawer): it collapses/expands in place. The
+ *      POEM QUEUE lives INSIDE the panel. Since the Read | Edit split (PictureBookUxConsistencyDesign.md §7.2,
+ *      §8.1) it is mounted ONLY there: Edit › Pages and Read carry no panel (asserted below).
  *
- *  (2) Two per-page buttons on each review scene card:
+ *  (2) Two per-page buttons on each Edit › Pages scene card:
  *        - cb-page-regen-prompt → POST /scene/{oid}/prompt/regenerate → re-derives the landscape prompt
  *          via the LLM, persists it with promptLocked:false (prompt only, no image render).
  *        - cb-page-analyze      → POST /scene/{oid}/analyze → re-derives the mood via the LLM and
@@ -116,38 +116,34 @@ test.describe('ChapBook shared config panel', () => {
         await expect(queue).toBeVisible();           // re-expands in place
     });
 
-    test('REVIEW view: panel + queue at top of the scene list', async ({ page, request }) => {
+    // Since the Read | Edit split (aiDocs/PictureBookUxConsistencyDesign.md §7.2 / §8.1, approved 2026-11-19) the
+    // shared panel + poem queue live ONLY on the library: Edit › Pages and Read must not mount it.
+    test('EDIT › Pages view: no config panel; the page card (per-page actions) is the top of the section', async ({ page, request }) => {
         const { bookOid } = await seedBook(request, 'e2e-cb-cfg-review');
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
-        await expect(page.locator(PANEL)).toBeVisible({ timeout: 20000 });
-        // scene cards loaded (each card has a per-page analyze button)
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
+        await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'pages', { timeout: 30000 });
+        // scene card loaded (each card has a per-page analyze button)
         await expect(page.locator('[data-testid="cb-page-analyze"]').first()).toBeVisible({ timeout: 20000 });
 
-        await assertSharedPanel(page);
-
-        // At the TOP: the panel precedes the first scene card's per-page action.
-        const order = await panelPrecedes(page, { selector: '[data-testid="cb-page-analyze"]' });
-        expect(order.anchor, 'scene cards present on review view').toBe(true);
-        expect(order.ok, 'config panel is rendered ABOVE the scene cards').toBe(true);
+        await expect(page.locator(PANEL), 'the poem-queue panel is library-only (§7.2)').toHaveCount(0);
+        await expect(page.locator(TOGGLE)).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: 'Poem queue' })).toHaveCount(0);
     });
 
-    test('READ view: panel + queue at top of the reader', async ({ page, request }) => {
+    test('READ view: no config panel; the reader header is the top of the view', async ({ page, request }) => {
         const { bookOid } = await seedBook(request, 'e2e-cb-cfg-read');
 
         await loginAsSharedUser(page);
         await page.goto('/#!/chap-book/read/' + bookOid, { timeout: 30000 });
-        await expect(page.locator(PANEL)).toBeVisible({ timeout: 20000 });
-        // The reader header renders a "Back to Poem Library" control (its only one on the read view).
-        await expect(page.locator('button[title="Back to Poem Library"]').first()).toBeVisible({ timeout: 20000 });
+        // The reader's bookHeader carries the one back control ("Back to ChapBooks", §4.1).
+        await expect(page.getByTestId('book-header')).toHaveAttribute('data-mode', 'read', { timeout: 20000 });
+        await expect(page.getByTestId('book-back')).toHaveAttribute('title', 'Back to ChapBooks');
 
-        await assertSharedPanel(page);
-
-        // At the TOP: the panel precedes the reader shell (its back control).
-        const order = await panelPrecedes(page, { selector: 'button[title="Back to Poem Library"]' });
-        expect(order.anchor, 'reader shell present on read view').toBe(true);
-        expect(order.ok, 'config panel is rendered ABOVE the reader shell').toBe(true);
+        await expect(page.locator(PANEL), 'the poem-queue panel is library-only (§8.1)').toHaveCount(0);
+        await expect(page.locator(TOGGLE)).toHaveCount(0);
+        await expect(page.getByRole('heading', { name: 'Poem queue' })).toHaveCount(0);
     });
 
     // ── Per-page LLM actions (live LLM at 192.168.1.42) ──────────────────────────────────────────
@@ -178,7 +174,7 @@ test.describe('ChapBook shared config panel', () => {
         const oldPrompt = before.sdPrompt || '';
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
         const regenBtn = page.locator('[data-testid="cb-page-regen-prompt"]').first();
         await expect(regenBtn).toBeVisible({ timeout: 20000 });
         await expect(regenBtn).toBeEnabled();
@@ -235,7 +231,7 @@ test.describe('ChapBook shared config panel', () => {
         const oldMood = await sceneMood(request, oid);
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
         const analyzeBtn = page.locator('[data-testid="cb-page-analyze"]').first();
         await expect(analyzeBtn).toBeVisible({ timeout: 20000 });
         await expect(analyzeBtn).toBeEnabled();

@@ -38,7 +38,7 @@ import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, ensureIso42001TestUser, resolveChatRoute, ensureChatConfig } from './helpers/api.js';
 import { REST, PB_REST, restLoginShared, loginAsSharedUser } from './helpers/chapbook.js';
-import { openReaderTools, ensureBookStyleDescription } from './helpers/pbReader.js';
+import { openEditSection, openActivityDock, ensureBookStyleDescription } from './helpers/pbReader.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = '[i2-render-cfg]';
@@ -241,23 +241,23 @@ test.describe('PictureBook V3 I-2 — the reader\'s chat config rides on render 
         await restLoginShared(request);
 
         await openReader(page, fx.book.objectId);
-        // The reader's chat config pick is the "Chat config: …" item of the Tools overflow (helpers/pbReader.js);
-        // the item's label is rebuilt each time the menu opens, so the default is read by re-opening until it settles.
-        const control = page.getByTestId('pb2-chat-config');
-        await expect(async () => {
-            await openReaderTools(page);
-            await expect(control).not.toContainText('Resolving default', { timeout: 2000 });
-        }, 'the Tools menu shows the reader\'s Chat Config item').toPass({ timeout: T.ui });
-        const labelBefore = ((await control.textContent()) || '').replace(/^smart_toy/, '').replace(/^Chat config:\s*/, '').trim();
+        // The book's chat config pick moved from the reader's Tools overflow to Edit › Book (design §5.2) — the same
+        // session-wide pick every render from the book sends (helpers/pbReader.js maps the old testid).
+        await openEditSection(page, 'book');
+        const control = page.getByTestId('ws-pane').getByTestId('pb2-chat-config');
+        await expect(control).toBeVisible({ timeout: T.ui });
+        await expect(control, 'the default has resolved').not.toContainText('Resolving default', { timeout: T.ui });
+        const labelBefore = ((await control.textContent()) || '').replace(/search$/, '').trim();
         await shot(page, '03a-reader-before-pick');
         await control.click();
         await pickFromOverlay(page, CONFIG_NAME);
-        await openReaderTools(page);
-        await expect(control, 'the item shows the picked config').toContainText(CONFIG_NAME);
+        await expect(control, 'the control shows the picked config').toContainText(CONFIG_NAME);
         await shot(page, '03b-reader-picked');
-        await page.keyboard.press('Escape');
 
-        await openFirstPage(page);
+        // Page 1's Render is on Edit › Scenes › scene 1 › Render (design §5.6); Scenes opens on the first scene.
+        await openEditSection(page, 'scenes');
+        await expect(page.getByTestId('pb-scene-row').first()).toHaveAttribute('data-selected', '1', { timeout: T.ui });
+        await page.getByTestId('pb-scene-tab-render').click();
         const renderBtn = page.getByTestId('pb2-scene-render');
         await expect(renderBtn).toBeVisible({ timeout: T.ui });
         const renderResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/scene\/[^/]+\/render(\?|$)/.test(r.url()), { timeout: 120000 });
@@ -277,7 +277,8 @@ test.describe('PictureBook V3 I-2 — the reader\'s chat config rides on render 
         expect(body.runObjectId && body.jobId, '202 body carries runObjectId + jobId').toBeTruthy();
         fx.run1 = { runObjectId: body.runObjectId, jobId: body.jobId, chatConfig: body.chatConfig };
 
-        // The run banner chip, as the user sees it.
+        // The run panel's chip, as the user sees it — in the workspace's activity dock (design §4.5).
+        await openActivityDock(page);
         const chip = page.getByTestId('pb2-run-chat-config');
         await expect(chip, 'the run banner names the config').toBeVisible({ timeout: 60000 });
         await expect(chip).toHaveText(CONFIG_NAME);

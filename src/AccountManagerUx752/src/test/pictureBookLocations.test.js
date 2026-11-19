@@ -29,6 +29,9 @@ import * as wf from '../workflows/pictureBookWorkflow.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import * as pbcc from '../components/pbChatConfig.js';
+import { jobRunPanel } from '../components/jobRunPanel.js';
+import { getActivity, activitiesFor, __resetActivityForTest } from '../workflows/bookActivity.js';
+import { anyDirty, __resetDirtyForTest } from '../components/dirtyGuard.js';
 
 const BOOK = 'book-oid-1';
 const PB = '/rest/olio/picture-book/' + BOOK;
@@ -73,6 +76,8 @@ function textOf(v) {
     if (v.tag === '#') return String(v.children);
     return textOf(v.children);
 }
+/** §4.5: a location render's progress lives in bookActivity; this is the panel the dock renders for it. */
+function dockRun(key) { let a = getActivity(BOOK, key); return a ? jobRunPanel(a) : null; }
 function seqOf(calls) { return calls.map(c => c.method + ' ' + c.url); }
 function only(calls, re) { return calls.filter(c => re.test(c.method + ' ' + c.url)); }
 
@@ -171,6 +176,8 @@ beforeEach(() => {
     origFetch = global.fetch;
     Dialog._reset();
     document.body.innerHTML = '';
+    __resetActivityForTest();
+    __resetDirtyForTest();
     lib.__setLocationsStateForTest(freshState());
     vi.spyOn(page, 'toast').mockImplementation(() => {});
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
@@ -671,7 +678,9 @@ describe('render a location', () => {
         btn.attrs.onclick();
         await waitFor(() => { let r = lib.__locationsStateForTest().runs.L1; return r && r.job; });
         let mid = lib.renderLocationCard(l);
-        let midRun = findByTestId(mid, 'pb-loc-run');
+        expect(findByTestId(mid, 'pb-loc-run'), 'no run panel in the page flow').toBeNull();
+        expect(getActivity(BOOK, 'location-render:L1').section).toBe('locations');
+        let midRun = dockRun('location-render:L1');
         expect(midRun.attrs['data-run-terminal']).toBe('0');
         expect(textOf(findByTestId(midRun, 'pb-loc-run-counter'))).toBe('0 of 1 · location-tavern');
         expect(findAllByTestId(midRun, 'pb-loc-run-stage').map(s => s.attrs['data-stage-state'])).toEqual(['running']);
@@ -685,14 +694,16 @@ describe('render a location', () => {
         expect(seqOf(calls).slice(0, 3)).toEqual(['POST ' + PB + '/location/L1/render', 'GET /rest/job/j1', 'GET /rest/job/j1']);
         expect(seqOf(calls).slice(3)).toEqual(['GET ' + PB + '/locations', 'GET ' + PB + '/locations/proposed?status=proposed']);
         let done = lib.renderLocationCard(lib.__locationsStateForTest().locations[0]);
-        let run = findByTestId(done, 'pb-loc-run');
+        expect(findByTestId(done, 'pb-loc-run')).toBeNull();
+        let run = dockRun('location-render:L1');
         expect(run.attrs['data-run-terminal']).toBe('1');
         expect(textOf(run)).toContain('Render The Drowned Anchor');
         expect(textOf(findByTestId(run, 'pb-loc-run-counter'))).toBe('Render complete: 1 rendered');
         expect(findAllByTestId(run, 'pb-loc-run-stage').map(s => [textOf(s), s.attrs['data-stage-state']])).toEqual([[expect.stringContaining('location-tavern'), 'done']]);
         expect(findByTestId(done, 'pb-loc-render').attrs.disabled).toBe(false);
         findByTestId(run, 'pb-loc-run-dismiss').attrs.onclick();
-        expect(findByTestId(lib.renderLocationCard(l), 'pb-loc-run')).toBeNull();
+        expect(getActivity(BOOK, 'location-render:L1'), 'dismiss clears the activity').toBeNull();
+        expect(lib.__locationsStateForTest().runs.L1).toBeUndefined();
     });
     it('a variant render carries ?variant=V1, is keyed by the variant and labelled "<location> / <variant>"', async () => {
         let calls = wire({
@@ -705,7 +716,8 @@ describe('render a location', () => {
         findByTestId(findByTestId(lib.renderLocationCard(l), 'pb-loc-variant'), 'pb-loc-variant-render').attrs.onclick();
         await waitFor(() => only(calls, /GET .*\/proposed/).length === 1);
         expect(calls[0].url).toBe(PB + '/location/L1/render?variant=V1');
-        let run = findByTestId(findByTestId(lib.renderLocationCard(l), 'pb-loc-variant'), 'pb-loc-run');
+        expect(findByTestId(findByTestId(lib.renderLocationCard(l), 'pb-loc-variant'), 'pb-loc-run')).toBeNull();
+        let run = dockRun('location-render:L1:V1');
         expect(run).toBeTruthy();
         expect(textOf(run)).toContain('Render The Drowned Anchor / The Drowned Anchor - dusk, rain');
         expect(lib.__locationsStateForTest().runs.V1).toBeTruthy();
@@ -722,7 +734,8 @@ describe('render a location', () => {
         await lib.startRender(l, null);
         await waitFor(() => page.toast.mock.calls.length > 0);
         expect(page.toast).toHaveBeenCalledWith('warn', 'Render failed: 0 rendered, 1 failed');
-        let stage = findByTestId(lib.renderLocationCard(l), 'pb-loc-run-stage');
+        expect(findByTestId(lib.renderLocationCard(l), 'pb-loc-run-stage')).toBeNull();
+        let stage = findByTestId(dockRun('location-render:L1'), 'pb-loc-run-stage');
         expect(stage.attrs['data-stage-state']).toBe('failed');
         expect(textOf(stage)).toContain('SD backend unreachable');
     });

@@ -10,6 +10,11 @@
  * shown verbatim and only an explicit "Unpin and re-render" confirmation sends pin {pinned:false}.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import m from 'mithril';
+import { pageHeader } from '../components/pageHeader.js';
+import { __resetDirtyForTest } from '../components/dirtyGuard.js';
+import * as activity from '../workflows/bookActivity.js';
+import * as nav from '../workflows/bookWorkspaceNav.js';
 import * as wf from '../workflows/pictureBookWorkflow.js';
 import { Dialog } from '../components/dialogCore.js';
 import { page } from '../core/pageClient.js';
@@ -30,14 +35,20 @@ function findDeep(v, testid) {
 
 let origFetch;
 let pbf;
+let edit;
 
 beforeEach(async () => {
     origFetch = global.fetch;
     pbf = await import('../features/pictureBook.js');
+    edit = await import('../features/pictureBookEdit.js');
+    __resetDirtyForTest();
+    activity.__resetActivityForTest();
+    edit.__resetPbEditForTest();
     pbf.__pb2StopWatchingForTest();
     pbf.__setPb2V3StateForTest({
         pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null,
         pb2Submitting: false, pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: 'Harlot\'s Eight', pb2PollIntervalMs: 5, pb2StyleDescribed: null,
+        pb2Covers: null, pb2Fullscreen: false, pb2IsChapBook: false, pb2SceneDegradations: {},
         pb2Pages: [{ objectId: 's1', sceneIndex: 1, title: 'Arrival', sceneNodeObjectId: 'n1', nodeStatus: 'DONE', pinned: false, dataObjectId: 'd1' }]
     });
     vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
@@ -143,59 +154,187 @@ describe('runSummaryText', () => {
 });
 
 // ─────────────────────────────── view gating ───────────────────────────────
+// aiDocs/PictureBookUxConsistencyDesign.md §5.1 / §5.2 / §5.6 / §5.9: the V3 controls left the Read header. Render all
+// is the Edit › Render toolbar action, Auto-approve an Edit › Book control, the per-scene Render / Regenerate / Plan
+// buttons the Edit › Scenes › Render tab, and the tool views (Review, …) Edit rail sections. Rendered into jsdom.
 
-// The toolbar plus its "Optional tools" overflow items: together, the V3 header contract.
-function headerAndTools() { return JSON.stringify([pbf.renderPb2Header(), pbf.pb2OverflowItems()]); }
+function render(vnode) { let div = document.createElement('div'); m.render(div, vnode); return div; }
+function q(el, testid) { return el.querySelector('[data-testid="' + testid + '"]'); }
+function ctxFor(over) {
+    return Object.assign({ kind: 'pb', bookObjectId: 'B1', section: 'scenes', item: 's1', tab: 'render', go: vi.fn(), select: vi.fn(), setTab: vi.fn() }, over || {});
+}
+function seedScenes(pages) {
+    pbf.__setPb2V3StateForTest({ pb2Pages: pages, pb2SceneDegradations: { n1: { loading: false, summary: null, error: null } } });
+    let recs = {};
+    pages.forEach(p => { recs[p.objectId] = { loading: false, error: null, rec: { id: 1, objectId: p.objectId, title: p.title || '' } }; });
+    edit.__resetPbEditForTest();
+    edit.__setPbEditStateForTest({ sceneRecs: recs });
+}
+function sceneTab(tab) { return render(edit.scenesSection.body(ctxFor({ tab }))); }
+function renderToolbar() {
+    return render(pageHeader(Object.assign({ bar: true }, edit.renderSection.toolbar(ctxFor({ section: 'render', item: null, tab: null })), { back: null })));
+}
+function bookBody() { return render(edit.bookSection.body(ctxFor({ section: 'book', item: null, tab: null }))); }
 
 describe('renderPb2Header — V3 controls', () => {
-    it('auto-approve item reflects the state; Render-all on the toolbar, Review link in the tools', () => {
+    // Intentionally changed (§5.1 / §5.2): the controls moved out of the Read header into Edit › Book / Render / the rail.
+    it('Read has no auto-approve / Render all / Review link; Edit › Book reflects auto-approve, Edit › Render has Render all, the rail has Review', () => {
         pbf.__setPb2V3StateForTest({ pb2AutoApprove: true });
-        let text = headerAndTools();
-        expect(text).toContain('"data-testid":"pb2-auto-approve-badge"');
-        expect(text).toContain('"data-on":"1"');
-        expect(text).toContain('Auto-approve: ON');
-        expect(JSON.stringify(pbf.renderPb2Header())).toContain('"data-testid":"pb2-render-all"');
-        expect(text).toContain('"data-testid":"pb2-review-link"');
+        let header = render(pbf.renderPb2Header());
+        ['pb2-auto-approve-badge', 'pb2-render-all', 'pb2-render-all-start', 'pb2-review-link'].forEach(id => expect(q(header, id), id).toBeNull());
+        let aa = q(bookBody(), 'pb2-auto-approve-badge');
+        expect(aa.getAttribute('data-on')).toBe('1');
+        expect(aa.checked).toBe(true);
+        expect(q(renderToolbar(), 'pb2-render-all-start')).not.toBeNull();
+        expect(nav.sectionsFor('pb').map(s => s.id)).toContain('review');
+        expect(edit.pbWorkspace).toBeTruthy();
         pbf.__setPb2V3StateForTest({ pb2AutoApprove: false });
-        expect(headerAndTools()).toContain('"data-on":"0"');
+        expect(q(bookBody(), 'pb2-auto-approve-badge').getAttribute('data-on')).toBe('0');
     });
     it('Render-all is disabled while a run is being watched, with the reason as its title', () => {
         pbf.__setPb2V3StateForTest({ pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1'], job: { terminal: false }, label: 'Render all', error: null } });
-        let b = findDeep(pbf.renderPb2Header(), 'pb2-render-all');
-        expect(b.attrs.disabled).toBe(true);
-        expect(b.attrs.title).toBe('A render is already running');
+        let b = q(renderToolbar(), 'pb2-render-all-start');
+        expect(b.disabled).toBe(true);
+        expect(b.title).toBe('A render is already running');
+    });
+    it('Read header in Read mode has no edit controls, and the reader view has no per-scene / run / resume controls', () => {
+        pbf.__setPb2V3StateForTest({ pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1'], job: { terminal: false, current: 0, total: 1 }, label: 'Render all', error: null },
+            pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED', sceneNodeObjectId: 'n1' }],
+            pb2SceneDegradations: { n1: { loading: false, summary: { count: 2, codes: ['MODEL_SUBSTITUTED', 'PROMPT_TRUNCATED'], truncatedDropped: ['the dropped words'] }, error: null } } });
+        let el = render(pbf.__pb2PageReaderViewForTest.view());
+        expect(q(el, 'pb2-reader').getAttribute('data-mode')).toBe('read');
+        ['pb2-style-link', 'pb2-style-status', 'pb2-render-all', 'pb2-tools-menu', 'pb2-chat-config', 'pb2-auto-approve-badge',
+            'pb2-review-link', 'pb2-locations-link', 'pb2-compose-link', 'pb2-cover-link', 'pb2-workflow-link', 'pb-book-delete',
+            'pb2-scene-render', 'pb2-scene-regen-background', 'pb2-plan-render', 'pb2-scene-compose', 'pb2-scene-chip',
+            'pb2-scene-degradations', 'pb2-scene-truncated', 'pb2-run-progress', 'pb2-run-cancel', 'pb2-resume-banner', 'pb2-resume-run']
+            .forEach(id => expect(q(el, id), id).toBeNull());
+        expect(el.querySelector('[data-pb2-characters]')).toBeNull();
+        expect(el.querySelector('[data-pb2-edit]')).toBeNull();
+        expect(el.querySelector('[title="Delete picture book"]')).toBeNull();
+        // the run is shown as the one-line activity pill instead (§4.5)
+        expect(q(el, 'book-activity').getAttribute('data-running')).toBe('1');
+        expect(q(el, 'pb2-edit-page')).not.toBeNull();
+        // the same state does draw the edit-only page parts in Edit › Scenes › Page, so the absences above are real
+        edit.__setPbEditStateForTest({ sceneRecs: { s1: { loading: false, error: null, rec: { id: 1, objectId: 's1' } } } });
+        let pageTab = render(edit.scenesSection.body(ctxFor({ tab: 'page' })));
+        ['pb2-scene-chip', 'pb2-scene-degradations', 'pb2-scene-truncated', 'pb-page-goto-render'].forEach(id => expect(q(pageTab, id), id).not.toBeNull());
+        expect(q(pageTab, 'pb2-edit-page')).toBeNull();
+    });
+    it('the Read → Edit toggle routes to Edit › Scenes › the current scene, Page tab; on a front page to bare /edit', async () => {
+        let set = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let el = render(pbf.renderPb2Header());
+        expect(q(el, 'book-mode-read').getAttribute('aria-checked')).toBe('true');
+        q(el, 'book-mode-edit').click();
+        await flushPromises(); await flushPromises();
+        expect(set).toHaveBeenCalledWith('/picture-book/B1/edit/scenes/s1?tab=page');
+        // page 0 is the cover (a front page): no scene to land on → the D6 entry route
+        set.mockClear();
+        pbf.__setPb2V3StateForTest({ pb2CurrentPage: 0 });
+        el = render(pbf.renderPb2Header());
+        q(el, 'book-mode-edit').click();
+        await flushPromises(); await flushPromises();
+        expect(set).toHaveBeenCalledWith('/picture-book/B1/edit');
+        // clicking the active mode does nothing
+        set.mockClear();
+        q(el, 'book-mode-read').click();
+        await flushPromises();
+        expect(set).not.toHaveBeenCalled();
+    });
+    it('"Edit this page" on the Read image routes to Edit › Scenes › that scene, Page tab', () => {
+        let set = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let el = render(pbf.renderPb2ScenePage());
+        q(el, 'pb2-edit-page').click();
+        expect(set).toHaveBeenCalledWith('/picture-book/B1/edit/scenes/s1?tab=page');
+    });
+});
+
+describe('pb2PublishActivity — the run goes to the bookActivity store, not the page flow (§4.5)', () => {
+    it('sets "pb-render" from the watched run and clears it when there is none; a paused run is "pb-resume"', () => {
+        pbf.__setPb2V3StateForTest({ pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1', 'scene-2'], label: 'Render all', error: null,
+            job: { status: 'running', phase: 'scene-2', current: 1, total: 2, terminal: false } } });
+        pbf.pb2PublishActivity();
+        let a = activity.getActivity('B1', 'pb-render');
+        expect(a).toMatchObject({ section: 'render', testid: 'pb2-run-progress', terminal: false, label: 'Render all', counter: '1 of 2 · scene-2' });
+        expect(a.stages.map(s => s.state)).toEqual(['done', 'running']);
+        expect(typeof a.onCancel).toBe('function');
+        expect(activity.summaryFor('B1')).toMatchObject({ running: true, label: 'Render all' });
+        expect(activity.getActivity('B1', 'pb-resume')).toBeNull();
+        // the run is dropped → the activity is cleared
+        pbf.__setPb2V3StateForTest({ pb2Run: null });
+        pbf.pb2PublishActivity();
+        expect(activity.getActivity('B1', 'pb-render')).toBeNull();
+        expect(activity.summaryFor('B1')).toBeNull();
+        // a resumable INTERRUPTED run, not being watched → the paused activity
+        pbf.__setPb2V3StateForTest({ pb2ResumeRun: { runObjectId: 'R1', name: 'run-3', runStatus: 'INTERRUPTED', resumable: true, requestedNodeIds: [1, 2], executedNodeCount: 1 } });
+        pbf.pb2PublishActivity();
+        expect(activity.getActivity('B1', 'pb-resume')).toMatchObject({ label: 'Render paused', terminal: true, counter: '1 of 2 · Resume available' });
+        pbf.__setPb2V3StateForTest({ pb2ResumeRun: null });
+        pbf.pb2PublishActivity();
+        expect(activity.getActivity('B1', 'pb-resume')).toBeNull();
+    });
+    it('no open book → nothing is published', () => {
+        pbf.__setPb2V3StateForTest({ pb2BookObjectId: null, pb2Run: { jobId: 'J1', planned: [], job: { terminal: false }, label: 'x', error: null } });
+        pbf.pb2PublishActivity();
+        expect(activity.activitiesFor(null)).toEqual([]);
+        pbf.__setPb2V3StateForTest({ pb2BookObjectId: 'B1', pb2Run: null });
     });
 });
 
 describe('renderPb2ScenePage — chip, stale overlay, per-scene Render button', () => {
+    // The chip is drawn in Edit › Scenes › Page (mode 'edit'); the Render button is in the Render tab (§5.6).
     it('approved + pinned page: approved chip with pinned suffix, Re-render button, no badge', () => {
-        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', pinned: true, dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED' }] });
-        let text = JSON.stringify(pbf.renderPb2ScenePage());
-        expect(text).toContain('"data-chip":"approved"');
-        expect(text).toContain('Approved · pinned');
-        expect(text).toContain('"data-testid":"pb2-scene-render"');
-        expect(text).toContain('Re-render');
-        expect(text).not.toContain('pb2-stale-badge');
+        seedScenes([{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', pinned: true, dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED', sceneNodeObjectId: 'n1' }]);
+        let pg = sceneTab('page');
+        let chip = q(pg, 'pb2-scene-chip');
+        expect(chip.getAttribute('data-chip')).toBe('approved');
+        expect(chip.textContent).toBe('Approved · pinned');
+        expect(q(pg, 'pb2-stale-badge')).toBeNull();
+        let r = q(sceneTab('render'), 'pb2-scene-render');
+        expect(r.textContent).toBe('Re-render page');
     });
     it('never-rendered page: no image, "Needs render" badge only when STALE, button says Render', () => {
-        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'READY' }] });
-        let text = JSON.stringify(pbf.renderPb2ScenePage());
-        expect(text).not.toContain('pb2-scene-image');
-        expect(text).not.toContain('pb2-stale-badge');
-        expect(text).not.toContain('pb2-scene-chip');
-        expect(text).toMatch(/"data-testid":"pb2-scene-render".*"Render"/);
-        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'STALE' }] });
-        expect(JSON.stringify(pbf.renderPb2ScenePage())).toContain('Needs render');
+        seedScenes([{ objectId: 's1', sceneIndex: 1, nodeStatus: 'READY' }]);
+        let read = render(pbf.renderPb2ScenePage());
+        expect(q(read, 'pb2-scene-image')).toBeNull();
+        expect(q(read, 'pb2-stale-badge')).toBeNull();
+        expect(q(sceneTab('page'), 'pb2-scene-chip')).toBeNull();
+        expect(q(sceneTab('render'), 'pb2-scene-render').textContent).toBe('Render page');
+        seedScenes([{ objectId: 's1', sceneIndex: 1, nodeStatus: 'STALE' }]);
+        expect(q(render(pbf.renderPb2ScenePage()), 'pb2-stale-badge').textContent).toContain('Needs render');
     });
     it('§24 I-8: "Regenerate background" is drawn only when the scene has an image, and is disabled while a run is watched', () => {
-        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'READY' }] });
-        expect(JSON.stringify(pbf.renderPb2ScenePage())).not.toContain('pb2-scene-regen-background');
-        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED' }] });
-        let text = JSON.stringify(pbf.renderPb2ScenePage());
-        expect(text).toContain('"data-testid":"pb2-scene-regen-background"');
-        expect(text).toMatch(/"data-testid":"pb2-scene-regen-background".*"disabled":false.*Regenerate background/);
+        seedScenes([{ objectId: 's1', sceneIndex: 1, nodeStatus: 'READY' }]);
+        expect(q(sceneTab('render'), 'pb2-scene-regen-background')).toBeNull();
+        seedScenes([{ objectId: 's1', sceneIndex: 1, nodeStatus: 'DONE', dataObjectId: 'd1', imageGroupPath: '/PictureBook/x', imageName: 'scene-1.png', reviewStatus: 'APPROVED', sceneNodeObjectId: 'n1' }]);
+        let b = q(sceneTab('render'), 'pb2-scene-regen-background');
+        expect(b.disabled).toBe(false);
+        expect(b.textContent).toBe('Regenerate background');
         pbf.__setPb2V3StateForTest({ pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1'], job: { terminal: false }, label: 'Render scene 1', error: null } });
-        expect(JSON.stringify(pbf.renderPb2ScenePage())).toMatch(/"data-testid":"pb2-scene-regen-background".*"disabled":true/);
+        b = q(sceneTab('render'), 'pb2-scene-regen-background');
+        expect(b.disabled).toBe(true);
+        expect(b.title).toBe('A render is already running');
+    });
+});
+
+describe('scenesNeedingRender — the Scenes / Render rail count', () => {
+    it('counts stale, rejected and never-rendered scenes; approved / in-review rendered scenes do not count', () => {
+        expect(edit.scenesNeedingRender([
+            { objectId: 'a', nodeStatus: 'STALE', dataObjectId: 'd' },                                         // stale
+            { objectId: 'b', nodeStatus: 'DONE', reviewStatus: 'REJECTED', artifactObjectId: 'x', dataObjectId: 'd' }, // rejected
+            { objectId: 'c', nodeStatus: 'READY' },                                                            // never rendered
+            { objectId: 'd', nodeStatus: 'DONE', imageStale: true, reviewStatus: 'APPROVED', dataObjectId: 'd' },  // stale image
+            { objectId: 'e', nodeStatus: 'DONE', reviewStatus: 'APPROVED', dataObjectId: 'd' },                 // done
+            { objectId: 'f', nodeStatus: 'DONE_UNVERIFIED', reviewStatus: 'GENERATED', artifactObjectId: 'y', dataObjectId: 'd' }, // in review
+            { objectId: 'g', dataObjectId: 'd' },                                                              // legacy image
+            null
+        ])).toBe(4);
+        expect(edit.scenesNeedingRender([])).toBe(0);
+        expect(edit.scenesNeedingRender(null)).toBe(0);
+    });
+    it('is what the Scenes and Render sections report', () => {
+        pbf.__setPb2V3StateForTest({ pb2Pages: [{ objectId: 'a', nodeStatus: 'STALE', dataObjectId: 'd' }, { objectId: 'c', nodeStatus: 'READY' }, { objectId: 'e', nodeStatus: 'DONE', reviewStatus: 'APPROVED', dataObjectId: 'd' }] });
+        expect(edit.scenesSection.status(ctxFor())).toMatchObject({ kind: 'count', count: 2 });
+        expect(edit.renderSection.status(ctxFor({ section: 'render' }))).toMatchObject({ kind: 'count', count: 2 });
     });
 });
 
@@ -484,7 +623,9 @@ describe('§24 I-8 regenerate background → 202 → job polling → terminal re
 
 describe('render-all dialog → 202 → watch', () => {
     it('warns about scenesWithoutNode, closes the dialog and starts watching the job', async () => {
-        pbf.__setPb2V3StateForTest({});
+        // Started from the Render dialog (the toolbar path, which must NOT close another dialog, is pinned in
+        // pictureBookStyleGate.test.js "Render all closes only its own dialog").
+        pbf.__setPb2V3StateForTest({ pb2RenderDialogOpen: true });
         let close = vi.spyOn(Dialog, 'close').mockImplementation(() => {});
         let calls = mockRenderStack();
         await pbf.__pb2SubmitRenderAllForTest();
@@ -631,54 +772,92 @@ describe('UAT-2 header — export and fullscreen buttons', () => {
         expect(JSON.stringify(b)).toContain('"hourglass_empty"');
         pbf.__setPb2V3StateForTest({ pb2Exporting: false });
     });
+    // Same behaviour; the back tooltip is now bookHeader's "Back to Picture Books" (§4.1, §6.4 terminology).
     it('Fullscreen: toggles title/icon (Fullscreen/fullscreen <-> Exit fullscreen/fullscreen_exit); Back hidden in fullscreen', () => {
         pbf.__setPb2V3StateForTest({ pb2Fullscreen: false });
         let b = findButton('pb2-fullscreen');
         expect(b.attrs.title).toBe('Fullscreen');
         expect(JSON.stringify(b)).toContain('"fullscreen"');
-        expect(JSON.stringify(pbf.renderPb2Header())).toContain('Back to book list');
+        let el = render(pbf.renderPb2Header());
+        expect(q(el, 'book-back').title).toBe('Back to Picture Books');
 
         b.attrs.onclick();
         expect(pbf.__pb2V3StateForTest().pb2Fullscreen).toBe(true);
         b = findButton('pb2-fullscreen');
         expect(b.attrs.title).toBe('Exit fullscreen');
         expect(JSON.stringify(b)).toContain('"fullscreen_exit"');
-        expect(JSON.stringify(pbf.renderPb2Header())).not.toContain('Back to book list');
+        el = render(pbf.renderPb2Header());
+        expect(q(el, 'book-back')).toBeNull();
+        expect(el.querySelector('[title="Back to Picture Books"]')).toBeNull();
 
         b.attrs.onclick();
         expect(pbf.__pb2V3StateForTest().pb2Fullscreen).toBe(false);
     });
-    it('the tool routes, Characters, Canvas and Delete are still offered alongside (the V3 header contract)', () => {
-        let text = headerAndTools();
-        ['pb2-render-all', 'pb2-review-link', 'pb2-style-link', 'pb2-locations-link', 'pb2-compose-link', 'pb2-cover-link',
-            'pb2-export', 'pb2-fullscreen'].forEach(id => expect(text).toContain('"data-testid":"' + id + '"'));
-        expect(text).toContain('Open Workflow Canvas');
-        expect(text).toContain('Delete picture book');
-        expect(text).not.toContain('Edit Book');
+    it('Back goes to the Picture Books library', async () => {
+        let set = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        q(render(pbf.renderPb2Header()), 'book-back').click();
+        await flushPromises(); await flushPromises();
+        expect(set).toHaveBeenCalledWith('/picture-book');
+    });
+    // Intentionally changed (§5.1, §4.2): Read keeps only Export / Fullscreen; the tool routes, Characters, Canvas are
+    // Edit rail sections and Delete is Edit › Book's danger zone.
+    it('Read offers only Export / Fullscreen; the tool routes, Characters, Canvas are Edit rail sections and Delete is in Edit › Book', async () => {
+        let header = render(pbf.renderPb2Header());
+        ['pb2-export', 'pb2-fullscreen'].forEach(id => expect(q(header, id), id).not.toBeNull());
+        ['pb2-render-all', 'pb2-review-link', 'pb2-style-link', 'pb2-locations-link', 'pb2-compose-link', 'pb2-cover-link', 'pb2-workflow-link']
+            .forEach(id => expect(q(header, id), id).toBeNull());
+        expect(header.textContent).not.toContain('Open Workflow Canvas');
+        expect(header.querySelector('[title="Delete picture book"]')).toBeNull();
+        expect(header.textContent).not.toContain('Edit Book');
+        expect(nav.sectionsFor('pb').map(s => s.id)).toEqual(['book', 'style', 'characters', 'locations', 'scenes', 'cover', 'review', 'render', 'canvas']);
+        expect(nav.sectionDef('pb', 'canvas').advanced).toBe(true);
+        // Delete: Edit › Book › Danger zone asks first; declining deletes nothing and stays
+        global.fetch = vi.fn(async () => jsonResponse(500, 'must not be called'));
+        let set = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        let confirm = vi.spyOn(Dialog, 'confirm').mockResolvedValue(false);
+        let book = render(edit.bookSection.body(ctxFor({ section: 'book', item: null, tab: null })));
+        q(book, 'pb-book-delete').click();
+        await flushPromises();
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(confirm.mock.calls[0][0]).toMatchObject({ title: 'Delete Picture Book', destructive: true });
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(set).not.toHaveBeenCalled();
     });
 });
 
 describe('UAT-2 view container + Escape', () => {
+    // Same container contract. The resume banner / run panel are no longer in the reader flow — a run (or a paused
+    // run) is the header's activity pill (§4.5, §5.1), so "run progress kept" in fullscreen is now the pill.
     it('normal: flex root with data-fullscreen=0; fullscreen: fixed inset-0 z-30 overlay, banners hidden, run progress kept', () => {
+        pbf.__setPbHealthStateForTest({ pb2Health: { scope: 'book', findings: [{ code: 'STALE_GRAPH', severity: 'ERROR', message: 'stale' }], summary: { errors: 1, warnings: 0, infos: 0, healable: 1 } } });
         pbf.__setPb2V3StateForTest({ pb2Fullscreen: false, pb2Run: null,
             pb2ResumeRun: { runObjectId: 'R1', name: 'run-2', runStatus: 'INTERRUPTED', resumable: true, requestedNodeIds: [1, 2], executedNodeCount: 1, nodes: [] } });
         let v = pbf.__pb2PageReaderViewForTest.view();
         expect(v.attrs['data-testid']).toBe('pb2-reader');
         expect(v.attrs['data-fullscreen']).toBe('0');
-        expect(v.attrs.className).toContain('flex-1 p-4');
+        expect(v.attrs.className).toContain('flex-1 flex flex-col');
         expect(v.attrs.className).not.toContain('z-30');
-        expect(JSON.stringify(v)).toContain('"data-testid":"pb2-resume-banner"');
+        let el = render(v);
+        expect(q(el, 'pb2-resume-banner')).toBeNull();
+        expect(q(el, 'pb2-health-fix-in-edit')).not.toBeNull();
+        expect(q(el, 'book-activity-label').textContent).toBe('Render paused');
 
-        pbf.__setPb2V3StateForTest({ pb2Fullscreen: true });
+        pbf.__setPb2V3StateForTest({ pb2Fullscreen: true, pb2ResumeRun: null,
+            pb2Run: { jobId: 'J1', runObjectId: 'R1', planned: ['scene-1'], job: { terminal: false, current: 0, total: 1 }, label: 'Render all', error: null } });
         v = pbf.__pb2PageReaderViewForTest.view();
         expect(v.attrs['data-fullscreen']).toBe('1');
         expect(v.attrs.className).toContain('fixed inset-0 z-30');
         // Below the dialog stack (dialogCore.getZIndex(0) = 40) and the toast container (z-50).
         expect(v.attrs.className).not.toMatch(/z-(40|50)/);
-        expect(JSON.stringify(v)).not.toContain('"data-testid":"pb2-resume-banner"');
+        el = render(v);
+        expect(q(el, 'pb2-health-fix-in-edit')).toBeNull();
+        expect(el.querySelector('[data-pb2-health-notice]')).toBeNull();
+        expect(q(el, 'book-activity').getAttribute('data-running')).toBe('1');
+        expect(q(el, 'book-activity-label').textContent).toBe('Render all');
         // The page itself is still rendered inside the overlay.
-        expect(JSON.stringify(v)).toContain('Arrival');
-        pbf.__setPb2V3StateForTest({ pb2Fullscreen: false, pb2ResumeRun: null });
+        expect(el.textContent).toContain('Arrival');
+        pbf.__setPb2V3StateForTest({ pb2Fullscreen: false, pb2ResumeRun: null, pb2Run: null });
+        pbf.__setPbHealthStateForTest({ pb2Health: null });
     });
     it('Escape leaves fullscreen (and is ignored otherwise); arrows still page', () => {
         pbf.__setPb2V3StateForTest({ pb2Fullscreen: true, pb2CurrentPage: 1 });
@@ -754,5 +933,25 @@ describe('UAT-2 pb2ExportBook — through the shared exportBook engine', () => {
         global.Blob = class { constructor() { throw new Error('boom'); } };
         await expect(pbf.__pb2ExportBookForTest()).rejects.toThrow('boom');
         expect(pbf.__pb2V3StateForTest().pb2Exporting).toBe(false);
+    });
+});
+
+// §8.2: a ChapBook already loaded by the reader and then opened on a PictureBook Edit route must still be sent to its
+// own product — the refresh path of pb2EnsureBook, not only a full load (found live by e2e/bookModes.spec.js).
+describe('pb2EnsureBook — ChapBook re-entered on a PictureBook route', () => {
+    it('redirects to the ChapBook route on the already-loaded (refresh) path, without a page reload', () => {
+        pbf.__setPb2V3StateForTest({ pb2BookObjectId: 'C1', pb2Pages: [{ objectId: 's1' }], pb2IsChapBook: true, pb2LoadedBookId: 'C1' });
+        let set = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        vi.spyOn(m.route, 'get').mockReturnValue('/picture-book/C1/edit/scenes');
+        pbf.pb2EnsureBook('C1');
+        expect(set).toHaveBeenCalledWith('/chap-book/edit/C1/pages', null, { replace: true });
+    });
+    it('a PictureBook on the same path is left where it is', () => {
+        pbf.__setPb2V3StateForTest({ pb2BookObjectId: 'B1', pb2Pages: [{ objectId: 's1' }], pb2IsChapBook: false, pb2LoadedBookId: 'B1' });
+        let set = vi.spyOn(m.route, 'set').mockImplementation(() => {});
+        vi.spyOn(m.route, 'get').mockReturnValue('/picture-book/B1/edit/scenes');
+        global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => [], text: async () => '[]' }));
+        pbf.pb2EnsureBook('B1');
+        expect(set).not.toHaveBeenCalled();
     });
 });

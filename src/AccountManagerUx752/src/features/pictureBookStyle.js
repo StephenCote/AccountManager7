@@ -24,6 +24,7 @@ import { SdConfigPanel } from '../components/SdConfigPanel.js';
 import { am7sd } from '../components/sdConfig.js';
 import { BTN, BTN_PRIMARY } from '../components/buttons.js';
 import { pageHeader, chip, metaText } from '../components/pageHeader.js';
+import { registerDirty, unregisterDirty } from '../components/dirtyGuard.js';
 import {
     getStyle, putStyle, lockStyle, listModelsForTask, normalizeStyle,
     STYLE_PAGE_FORMATS, STYLE_QUALITY_PRESETS, STYLE_TASKS
@@ -419,23 +420,28 @@ function touchTaskModel(task, value) {
     draft.taskModels[task] = value;
 }
 
+/** Returns true when the style was written (or there was nothing to write), false on failure — the dirty
+ *  guard (components/dirtyGuard.js) relies on it to keep the user in place when a Save fails. */
 export async function saveStyle() {
-    if (saving || !bookObjectId) return;
+    if (saving || !bookObjectId) return false;
     let body = buildStylePut(draft);
-    if (!body) { page.toast('warn', 'Nothing to save'); return; }
+    if (!body) { page.toast('warn', 'Nothing to save'); return true; }
     saving = true;
     m.redraw();
+    let ok = false;
     try {
         let dto = await putStyle(bookObjectId, body);
         style = normalizeStyle(dto);
         draft = {};
         page.toast('success', 'Style saved');
+        ok = true;
         await loadSdSection(loadSeq);
     } catch (e) {
         page.toast('error', (e && e.message) || 'Save failed');
     }
     saving = false;
     m.redraw();
+    return ok;
 }
 
 export async function toggleLock() {
@@ -713,6 +719,7 @@ export function renderStyleHeader(opts) {
     let locked = isLocked();
     let dirty = !!(draft && Object.keys(draft).length);
     return pageHeader({
+        bar: !!(opts && opts.bar),
         back: embedded ? null : { testid: 'pb2-style-back', title: 'Back to book', onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); } },
         title: 'Book style',
         meta: [
@@ -804,6 +811,43 @@ const styleView = {
         ]);
     }
 };
+
+// ── Edit › Style (aiDocs/PictureBookUxConsistencyDesign.md §5.3) ───────
+
+function styleIsDirty() { return !!(draft && Object.keys(draft).length); }
+
+/**
+ * The workspace section adapter (components/bookWorkspace.js). The body is the editor as the wizard embeds it;
+ * the toolbar is the editor's own header without "Back to book" (the rail is the navigation). The draft is
+ * registered with the dirty guard so leaving the section with unsaved fields asks Save / Discard / Stay.
+ */
+export const styleSection = {
+    dirtyKeys: ['pb-style'],
+    init: function (ctx) {
+        registerDirty('pb-style', {
+            label: 'Book style',
+            isDirty: styleIsDirty,
+            save: saveStyle,
+            discard: function () { draft = {}; }
+        });
+        initStyleEditor(ctx.bookObjectId);
+    },
+    remove: function () { unregisterDirty('pb-style'); },
+    toolbar: function () { return renderStyleHeader({ embedded: true, bar: true }); },
+    body: function () { return renderStyleBody(); },
+    /** ⚠ when the book has no style description (the render gate's reason), ✓ when it has one, unknown before load. */
+    status: function (ctx) {
+        if (!style || bookObjectId !== ctx.bookObjectId) return null;
+        return missingDescription(style, {}) ? { kind: 'attention', title: 'No style description — required before rendering' } : { kind: 'ok', title: 'The book has a style' };
+    }
+};
+
+/** Load the style for the rail's status without opening the section (workspace onEnter). */
+export function loadStyleStatus(id) {
+    if (!id) return;
+    if (id !== bookObjectId) return initStyleEditor(id);
+    if (!style && !loading) return loadStyle();
+}
 
 // ── Test seams ─────────────────────────────────────────────────────────
 

@@ -30,6 +30,7 @@ import { pictureBookFromId } from '../workflows/pictureBook.js';
 import { ObjectPicker } from '../components/picker.js';
 import { Dialog } from '../components/dialogCore.js';
 import { pageHeader, chip, metaText } from '../components/pageHeader.js';
+import { editRoute } from '../workflows/bookWorkspaceNav.js';
 import { btn, iconBtn } from '../components/buttons.js';
 
 // Re-exported for callers/tests that import from the canvas module (the pure impl lives in the
@@ -1123,11 +1124,19 @@ function renderNodeDetailPanel() {
     let n = graphData && graphData.nodes && graphData.nodes.find(function (x) { return x.objectId === selectedNodeId; });
     if (!n) return null;
 
+    // In the Edit workspace the canvas sits under the book header and the section toolbar, so a viewport-fixed panel
+    // (top:80px) would cover the toolbar's right end (the Retention button — §6.C 212 n, unavoidable there at any
+    // width). Embedded, the panel is anchored to the canvas area instead (its body wrapper is position:relative).
     return m('div', {
+        'data-testid': 'pbwf-node-panel',
         style: [
-            'position:fixed;right:16px;top:80px;width:280px;max-height:calc(100vh - 120px);',
+            canvasEmbedded
+                ? 'position:absolute;right:16px;top:16px;width:280px;max-height:calc(100% - 32px);'
+                : 'position:fixed;right:16px;top:80px;width:280px;max-height:calc(100vh - 120px);',
             'background:var(--card-bg,#fff);border:1px solid #e2e8f0;border-radius:10px;',
-            'box-shadow:0 4px 16px rgba(0,0,0,.12);overflow-y:auto;padding:16px;z-index:200;',
+            // Embedded it sits below the dialog stack (dialogCore z-40+): a side panel must never cover a modal's buttons
+            // (the Retention dialog's Scan / Apply did — e2e pictureBookVariants, 2026-11-19).
+            'box-shadow:0 4px 16px rgba(0,0,0,.12);overflow-y:auto;padding:16px;z-index:' + (canvasEmbedded ? '20' : '200') + ';',
         ].join(''),
     }, [
         m('div', { style: 'display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;' }, [
@@ -1760,7 +1769,8 @@ function renderSeriesChapterTile(b) {
         ].join(''),
         onclick: function () {
             // Zoom to a single chapter: load that book's workflow graph in place.
-            m.route.set('/picture-book/' + b.objectId + '/workflow');
+            // the chapter's canvas inside the Edit workspace (the old /workflow route redirects there too)
+            m.route.set(editRoute('pb', b.objectId, 'canvas'));
         },
     }, [
         m('div', { style: 'display:flex;align-items:center;gap:6px;margin-bottom:6px;' }, [
@@ -1823,6 +1833,115 @@ function renderSeriesView() {
     ]);
 }
 
+// ── Toolbar / body (shared by the route and the Edit › Canvas section) ──
+
+/** opts.embedded: hosted in the Edit workspace — no back arrow (the rail navigates) and no 'Pages' button. */
+function renderCanvasToolbar(opts) {
+    let embedded = !!(opts && opts.embedded);
+    let staleCount = graphData && graphData.nodes ? graphData.nodes.filter(function (n) {
+        return (n.status || n.storedStatus || '').toUpperCase() === 'STALE';
+    }).length : 0;
+    let chapterView = viewMode === 'chapter';
+    let seg = function (mode, label, tip) {
+        let on = viewMode === mode;
+        return m('button', {
+            'data-view-mode': mode, title: tip,
+            class: 'px-2.5 py-1 text-xs ' + (on ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'),
+            onclick: function () { setViewMode(mode); }
+        }, label);
+    };
+    return pageHeader({
+        bar: true,
+        // When the route id IS the PB2 book (ChapBook / PB2 chapter — the direct workflowView
+        // hit), the PB1 viewer route would 404 on it, so go to the PB2 page reader instead; the
+        // book name rides along in history.state so the reader can title itself before its own
+        // book lookup returns.
+        back: embedded ? null : { title: 'Back to book', attrs: { 'data-back-to-book': true }, onclick: function () {
+            if (pb2BookObjectId && pb2BookObjectId === bookGroupObjectId) {
+                m.route.set('/picture-book/v2/' + pb2BookObjectId, null, { state: { bookName: bookName || '' } });
+            } else {
+                m.route.set('/picture-book/' + bookGroupObjectId);
+            }
+        } },
+        icon: 'account_tree',
+        title: bookName ? bookName + ' — Workflow' : 'Workflow Graph',
+        titleAttrs: { 'data-wf-title': true },
+        meta: [
+            loading ? metaText('Loading…') : null,
+            // Count the nodes actually returned: the DTO's nodeCount is the stored counter and
+            // has been observed as 0 for a graph with populated nodes[].
+            graphData ? metaText(((graphData.nodes && graphData.nodes.length) || 0) + ' nodes', { 'data-node-count': true }) : null,
+            staleCount > 0 ? chip(staleCount + ' stale', 'amber') : null
+        ],
+        actions: [
+            // N4 — view-mode toggle (single-chapter graph ⇄ whole-series overview).
+            m('div', { 'data-view-mode-toggle': true, class: 'inline-flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden' }, [
+                seg('chapter', 'Chapter', 'Show this chapter’s workflow graph'),
+                seg('series', 'Series', 'Show all chapters in this series')
+            ]),
+            // Recheck stale — only meaningful for the single-chapter graph.
+            (chapterView && pb2BookObjectId) ? btn({ size: 'sm', icon: recheckingStale ? 'progress_activity' : 'sync', label: 'Recheck stale',
+                title: 'Recompute staleness from backend and reload graph', disabled: recheckingStale, onclick: doRecheckStale }) : null,
+            // Zoom controls — graph-only.
+            chapterView ? m('div', { class: 'inline-flex items-center gap-1' }, [
+                iconBtn('zoom_out', 'Zoom out', function () { zoom = Math.max(0.3, zoom * 0.85); m.redraw(); }),
+                m('span', { class: 'text-xs w-10 text-center' }, Math.round(zoom * 100) + '%'),
+                iconBtn('zoom_in', 'Zoom in', function () { zoom = Math.min(3, zoom * 1.15); m.redraw(); }),
+                iconBtn('fit_screen', 'Reset view', function () { pan = { x: 0, y: 0 }; zoom = 1; m.redraw(); })
+            ]) : null,
+            pb2BookObjectId ? btn({ size: 'sm', icon: 'share', label: 'Share', onclick: openMemberDialog, attrs: { 'data-testid': 'pbwf-share-open' } }) : null,
+            pb2BookObjectId ? btn({ size: 'sm', icon: 'library_add', label: 'New chapter', onclick: openChapterDialog, attrs: { 'data-testid': 'pbwf-chapter-open' } }) : null,
+            // Retention — V3 §23 variant retention dry run → apply (book-scoped)
+            pb2BookObjectId ? btn({ size: 'sm', icon: 'inventory_2', label: 'Retention', title: 'Archive old variants / delete archived bytes',
+                onclick: openRetentionDialog, attrs: { 'data-testid': 'pbwf-retention-open' } }) : null,
+            // Pages — PB2 page reader
+            (pb2BookObjectId && !embedded) ? btn({ size: 'sm', kind: 'primary', icon: 'auto_stories', label: 'Pages', title: 'View scene pages',
+                onclick: function () { m.route.set('/picture-book/v2/' + pb2BookObjectId); } }) : null
+        ]
+    });
+}
+
+/** The canvas body: series overview, error / empty states, the pan-zoom graph and the node detail panel. */
+function renderCanvasBody() {
+    let sz = canvasSize();
+    return [
+        // N4 — whole-series overview (distinct view state from the single-chapter graph).
+        viewMode === 'series' ? renderSeriesView() : null,
+
+        // Error state (red) — a genuine failure (auth / server / network).
+        (viewMode === 'chapter' && error) ? m('div', { style: 'padding:32px;text-align:center;color:#dc2626;' }, error) : null,
+
+        // Empty state (grey) — one of the three honest "no graph to draw" cases (a/b/c).
+        (viewMode === 'chapter' && !error && emptyState) ? renderEmptyState() : null,
+
+        // Graph canvas (zoom-to-single-chapter)
+        (viewMode === 'chapter' && !error && !emptyState) ? m('div', {
+            style: 'flex:1;overflow:hidden;position:relative;background:#f8fafc;cursor:' + (dragging ? 'grabbing' : 'grab') + ';',
+            onmousedown: onCanvasMouseDown,
+            onmousemove: onCanvasMouseMove,
+            onmouseup: onCanvasMouseUp,
+            onmouseleave: onCanvasMouseUp,
+            onwheel: onCanvasWheel,
+        }, [
+            m('div', {
+                style: 'position:absolute;transform-origin:0 0;transform:translate(' + pan.x + 'px,' + pan.y + 'px) scale(' + zoom + ');',
+            }, [
+                // SVG edges
+                renderEdges(),
+                // Node cards
+                graphData && graphData.nodes
+                    ? graphData.nodes.map(function (n) { return renderNodeCard(n); })
+                    : null,
+                // Canvas size placeholder (keeps scroll area correct)
+                m('div', { style: 'width:' + sz.w + 'px;height:' + sz.h + 'px;pointer-events:none;' }),
+            ]),
+        ]) : null,
+
+        // Node detail panel (fixed overlay) — chapter view only.
+        viewMode === 'chapter' ? renderNodeDetailPanel() : null,
+    ];
+}
+
 // ── Main view ─────────────────────────────────────────────────────────
 
 var pictureBookWorkflowView = {
@@ -1867,109 +1986,9 @@ var pictureBookWorkflowView = {
         loadGraph(bookGroupObjectId);
     },
     view: function () {
-        let sz = canvasSize();
-
         return m('div', { style: 'display:flex;flex-direction:column;height:100%;' }, [
-            // Toolbar — shared pageHeader (bar variant) + shared buttons
-            (function () {
-                let staleCount = graphData && graphData.nodes ? graphData.nodes.filter(function (n) {
-                    return (n.status || n.storedStatus || '').toUpperCase() === 'STALE';
-                }).length : 0;
-                let chapterView = viewMode === 'chapter';
-                let seg = function (mode, label, tip) {
-                    let on = viewMode === mode;
-                    return m('button', {
-                        'data-view-mode': mode, title: tip,
-                        class: 'px-2.5 py-1 text-xs ' + (on ? 'bg-blue-600 text-white' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'),
-                        onclick: function () { setViewMode(mode); }
-                    }, label);
-                };
-                return pageHeader({
-                    bar: true,
-                    // When the route id IS the PB2 book (ChapBook / PB2 chapter — the direct workflowView
-                    // hit), the PB1 viewer route would 404 on it, so go to the PB2 page reader instead; the
-                    // book name rides along in history.state so the reader can title itself before its own
-                    // book lookup returns.
-                    back: { title: 'Back to book', attrs: { 'data-back-to-book': true }, onclick: function () {
-                        if (pb2BookObjectId && pb2BookObjectId === bookGroupObjectId) {
-                            m.route.set('/picture-book/v2/' + pb2BookObjectId, null, { state: { bookName: bookName || '' } });
-                        } else {
-                            m.route.set('/picture-book/' + bookGroupObjectId);
-                        }
-                    } },
-                    icon: 'account_tree',
-                    title: bookName ? bookName + ' — Workflow' : 'Workflow Graph',
-                    titleAttrs: { 'data-wf-title': true },
-                    meta: [
-                        loading ? metaText('Loading…') : null,
-                        // Count the nodes actually returned: the DTO's nodeCount is the stored counter and
-                        // has been observed as 0 for a graph with populated nodes[].
-                        graphData ? metaText(((graphData.nodes && graphData.nodes.length) || 0) + ' nodes', { 'data-node-count': true }) : null,
-                        staleCount > 0 ? chip(staleCount + ' stale', 'amber') : null
-                    ],
-                    actions: [
-                        // N4 — view-mode toggle (single-chapter graph ⇄ whole-series overview).
-                        m('div', { 'data-view-mode-toggle': true, class: 'inline-flex rounded-md border border-gray-300 dark:border-gray-600 overflow-hidden' }, [
-                            seg('chapter', 'Chapter', 'Show this chapter’s workflow graph'),
-                            seg('series', 'Series', 'Show all chapters in this series')
-                        ]),
-                        // Recheck stale — only meaningful for the single-chapter graph.
-                        (chapterView && pb2BookObjectId) ? btn({ size: 'sm', icon: recheckingStale ? 'progress_activity' : 'sync', label: 'Recheck stale',
-                            title: 'Recompute staleness from backend and reload graph', disabled: recheckingStale, onclick: doRecheckStale }) : null,
-                        // Zoom controls — graph-only.
-                        chapterView ? m('div', { class: 'inline-flex items-center gap-1' }, [
-                            iconBtn('zoom_out', 'Zoom out', function () { zoom = Math.max(0.3, zoom * 0.85); m.redraw(); }),
-                            m('span', { class: 'text-xs w-10 text-center' }, Math.round(zoom * 100) + '%'),
-                            iconBtn('zoom_in', 'Zoom in', function () { zoom = Math.min(3, zoom * 1.15); m.redraw(); }),
-                            iconBtn('fit_screen', 'Reset view', function () { pan = { x: 0, y: 0 }; zoom = 1; m.redraw(); })
-                        ]) : null,
-                        pb2BookObjectId ? btn({ size: 'sm', icon: 'share', label: 'Share', onclick: openMemberDialog, attrs: { 'data-testid': 'pbwf-share-open' } }) : null,
-                        pb2BookObjectId ? btn({ size: 'sm', icon: 'library_add', label: 'New chapter', onclick: openChapterDialog, attrs: { 'data-testid': 'pbwf-chapter-open' } }) : null,
-                        // Retention — V3 §23 variant retention dry run → apply (book-scoped)
-                        pb2BookObjectId ? btn({ size: 'sm', icon: 'inventory_2', label: 'Retention', title: 'Archive old variants / delete archived bytes',
-                            onclick: openRetentionDialog, attrs: { 'data-testid': 'pbwf-retention-open' } }) : null,
-                        // Pages — PB2 page reader
-                        pb2BookObjectId ? btn({ size: 'sm', kind: 'primary', icon: 'auto_stories', label: 'Pages', title: 'View scene pages',
-                            onclick: function () { m.route.set('/picture-book/v2/' + pb2BookObjectId); } }) : null
-                    ]
-                });
-            })(),
-
-            // N4 — whole-series overview (distinct view state from the single-chapter graph).
-            viewMode === 'series' ? renderSeriesView() : null,
-
-            // Error state (red) — a genuine failure (auth / server / network).
-            (viewMode === 'chapter' && error) ? m('div', { style: 'padding:32px;text-align:center;color:#dc2626;' }, error) : null,
-
-            // Empty state (grey) — one of the three honest "no graph to draw" cases (a/b/c).
-            (viewMode === 'chapter' && !error && emptyState) ? renderEmptyState() : null,
-
-            // Graph canvas (zoom-to-single-chapter)
-            (viewMode === 'chapter' && !error && !emptyState) ? m('div', {
-                style: 'flex:1;overflow:hidden;position:relative;background:#f8fafc;cursor:' + (dragging ? 'grabbing' : 'grab') + ';',
-                onmousedown: onCanvasMouseDown,
-                onmousemove: onCanvasMouseMove,
-                onmouseup: onCanvasMouseUp,
-                onmouseleave: onCanvasMouseUp,
-                onwheel: onCanvasWheel,
-            }, [
-                m('div', {
-                    style: 'position:absolute;transform-origin:0 0;transform:translate(' + pan.x + 'px,' + pan.y + 'px) scale(' + zoom + ');',
-                }, [
-                    // SVG edges
-                    renderEdges(),
-                    // Node cards
-                    graphData && graphData.nodes
-                        ? graphData.nodes.map(function (n) { return renderNodeCard(n); })
-                        : null,
-                    // Canvas size placeholder (keeps scroll area correct)
-                    m('div', { style: 'width:' + sz.w + 'px;height:' + sz.h + 'px;pointer-events:none;' }),
-                ]),
-            ]) : null,
-
-            // Node detail panel (fixed overlay) — chapter view only.
-            viewMode === 'chapter' ? renderNodeDetailPanel() : null,
-
+            renderCanvasToolbar(),
+            renderCanvasBody(),
             // Share / New Chapter dialogs are pushed onto the shared dialogCore stack by
             // openMemberDialog() / openChapterDialog() and rendered by the router's OverlayGuard.
         ]);
@@ -2002,6 +2021,35 @@ export function __setCanvasStateForTest(patch) {
     if ('retention' in patch) retention = Object.assign({}, RETENTION_DEFAULTS, patch.retention || {});
     if ('imageUrls' in patch) imageUrls = Object.assign({}, patch.imageUrls || {});
 }
+
+// ── Edit › Canvas (aiDocs/PictureBookUxConsistencyDesign.md §5.10) ──────
+
+/**
+ * The workspace section adapter: the canvas is the last rail item ("Advanced"), full-bleed, with no footer.
+ * Its toolbar is the route's toolbar minus the back arrow and the 'Pages' button (the header's Read | Edit
+ * toggle replaces both).
+ */
+let canvasEmbedded = false;
+
+export const canvasSection = {
+    fullBleed: true,
+    hideFooter: true,
+    init: function (ctx) {
+        canvasEmbedded = true;
+        if (ctx.bookObjectId !== bookGroupObjectId || !graphData) pictureBookWorkflowView.oninit({ attrs: { bookObjectId: ctx.bookObjectId } });
+    },
+    remove: function () {
+        canvasEmbedded = false;
+        // the node detail panel is an overlay; don't leave it floating over the next section
+        selectedNodeId = null;
+        nodeDetails = null;
+    },
+    toolbar: function () { return renderCanvasToolbar({ embedded: true }); },
+    body: function () {
+        canvasEmbedded = true;
+        return m('div', { 'data-testid': 'pb-canvas-section', style: 'display:flex;flex-direction:column;height:100%;flex:1;min-height:0;position:relative;' }, renderCanvasBody());
+    }
+};
 
 // ── Routes ────────────────────────────────────────────────────────────
 

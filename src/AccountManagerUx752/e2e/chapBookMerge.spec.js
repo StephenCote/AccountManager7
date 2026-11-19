@@ -70,7 +70,7 @@ test.describe('ChapBook Review — merge & delete', () => {
 
         // --- drive the real review UI ---
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
         await expect.poll(() => cardCount(page), { timeout: 20000 }).toBe(before.length);
 
         const firstMerge = page.locator('button[title="Merge this page with the next"]').first();
@@ -117,7 +117,7 @@ test.describe('ChapBook Review — merge & delete', () => {
         const removedOid = before[0].objectId;
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
         await expect.poll(() => cardCount(page), { timeout: 20000 }).toBe(n);
 
         await page.locator('button[title="Remove this page"]').first().click();

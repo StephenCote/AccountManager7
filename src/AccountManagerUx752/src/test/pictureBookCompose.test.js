@@ -19,6 +19,8 @@ import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
 import { PbPlanInspector } from '../components/PbPlanInspector.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
+import { jobRunPanel } from '../components/jobRunPanel.js';
+import { getActivity, __resetActivityForTest } from '../workflows/bookActivity.js';
 
 const BOOK = 'book-1';
 const PB = '/rest/olio/picture-book/' + BOOK;
@@ -99,6 +101,8 @@ let wf;
 
 function st() { return cmp.__composeStateForTest(); }
 function view() { return cmp.composeView.view(); }
+/** §4.5: the job panel lives in the book's activity (pill / dock), rendered exactly as the dock renders it. */
+function dock(key) { let a = getActivity(BOOK, key); return a ? jobRunPanel(a) : null; }
 
 function seedBoard(opts) {
     let o = opts || {};
@@ -114,6 +118,7 @@ function seedBoard(opts) {
 
 beforeEach(async () => {
     origFetch = global.fetch;
+    __resetActivityForTest();
     cmp = await import('../features/pictureBookCompose.js');
     wf = await import('../workflows/pictureBookWorkflow.js');
     cmp.__setComposeStateForTest({ bookObjectId: null, sceneObjectId: null, pages: [], board: null, loading: false, error: null, noComposition: false, noCompositionMessage: null, loadSeq: 0, outfits: {}, plan: null, planError: null, planLoading: false, busy: {}, edits: null, lastEdit: null, characters: [], composeRun: null, drag: null, overrideInst: null, overrideExpanded: false, sdModels: [], sdLoras: [], pollIntervalMs: 1, chatConfigRef: null, chatConfigResolving: false });
@@ -1026,7 +1031,11 @@ describe('compose book dialog', () => {
         // the dialog checked the Quick-start style gate on open: the book style and the bookType, one read each
         expect(calls.gateReads.map(r => r.method + ' ' + r.url).sort()).toEqual(['GET ' + PB + '/style', 'POST /rest/model/search']);
         await waitFor(() => st().composeRun && st().composeRun.job && st().composeRun.job.terminal === false);
-        let v = view();
+        // §4.5 (2026-11-19): the panel is no longer in the page flow; it is the book's 'compose-book' activity,
+        // owned by Edit › Scenes
+        none(view(), 'pb-cmp-compose-run');
+        expect(getActivity(BOOK, 'compose-book').section).toBe('scenes');
+        let v = [view(), dock('compose-book')];
         let run = one(v, 'pb-cmp-compose-run');
         expect(run.attrs['data-run-terminal']).toBe('false');
         expect(textOf(run)).toContain('Compose + quick start');
@@ -1035,7 +1044,7 @@ describe('compose book dialog', () => {
         await waitFor(() => st().composeRun && st().composeRun.result);
         await settled(calls);
         expect(toasts()).toEqual([['info', 'Compose job started (2 of 3 scenes)'], ['success', 'Done: composed 2, current 1, drafts rendered 2']]);
-        v = view();
+        v = [view(), dock('compose-book')];
         run = one(v, 'pb-cmp-compose-run');
         expect(run.attrs['data-run-terminal']).toBe('true');
         expect(textOf(one(v, 'pb-cmp-compose-counter'))).toBe('Done: composed 2, current 1, drafts rendered 2');
@@ -1050,7 +1059,8 @@ describe('compose book dialog', () => {
         expect(reads(calls).length).toBe(3);
         expect(calls.filter(c => /^\/rest\/job\//.test(c.url)).length).toBe(3);
         one(v, 'pb-cmp-compose-dismiss').attrs.onclick();
-        none(view(), 'pb-cmp-compose-run');
+        expect(getActivity(BOOK, 'compose-book')).toBeNull();
+        none([view(), dock('compose-book')], 'pb-cmp-compose-run');
         m.render(container, null);
     });
     it('Re-compose in order shows the overwrite warning and sends force:true', async () => {
@@ -1070,7 +1080,7 @@ describe('compose book dialog', () => {
         await settled(calls);
         expect(calls[0].body).toEqual({ force: true });
         expect(toasts()).toEqual([['info', 'Joined the running compose job (3 of 3 scenes)'], ['warn', 'Failed: LLM unavailable']]);
-        let run = one(view(), 'pb-cmp-compose-run');
+        let run = one(dock('compose-book'), 'pb-cmp-compose-run');
         expect(textOf(run)).toContain('Compose (re-compose in order)');
         expect(textOf(one(run, 'pb-cmp-compose-counter'))).toBe('Failed: LLM unavailable');
         m.render(container, null);
@@ -1113,8 +1123,9 @@ describe('compose book dialog', () => {
         let container = openDialog();
         container.querySelector('[data-testid=pb-cmp-compose-start]').click();
         await waitFor(() => polls >= 2);
-        one(view(), 'pb-cmp-compose-dismiss').attrs.onclick();
+        one(dock('compose-book'), 'pb-cmp-compose-dismiss').attrs.onclick();
         expect(st().composeRun).toBeNull();
+        expect(getActivity(BOOK, 'compose-book')).toBeNull();
         expect(st().composeAbort).toBeNull();
         let seen = polls;
         await new Promise(r => setTimeout(r, 15));

@@ -39,7 +39,10 @@ import { applicationPath } from '../core/config.js';
 import { pollJob, listCharacters } from '../workflows/sceneExtractor.js';
 import { BTN, BTN_PRIMARY } from '../components/buttons.js';
 import { pageHeader } from '../components/pageHeader.js';
-import { jobRunPanel } from '../components/jobRunPanel.js';
+import { INPUT, CHIP, WARN_CHIP, field, stateBlock, masterDetail } from '../components/bookUi.js';
+import { registerDirty, guardDirty } from '../components/dirtyGuard.js';
+import { setActivity, clearActivity } from '../workflows/bookActivity.js';
+import { editLink } from '../workflows/bookWorkspaceNav.js';
 import {
     COMPOSITION_ENUMS, enumOptions, boardDelta, getSceneComposition, patchComposition,
     addActor, patchActor, deleteActor, addElement, patchElement, deleteElement, promoteElement,
@@ -94,6 +97,23 @@ let coverSeriesObjectId = null;
 // The cover render job being watched: {jobId, purpose, status, progress, message, done, error, result}.
 let renderRun = null;
 let renderAbort = null;
+// Drafts of the boards not currently shown (design §6.2-4), keyed by draftKey(): 'scene:<sceneObjectId>' or
+// 'cover:<PURPOSE>'. Switching scene / purpose stashes the current board's dirty drafts here and restores the new
+// key's, so switching A → B → A keeps A's edits. { edits, overrideInst, base } — base is the board the drafts were
+// made against, so their dirtiness can be told without re-reading. Dropped on a book change.
+let drafts = {};
+// The base board of drafts just restored, until the board re-read lands (a switch away mid-load re-stashes them).
+let pendingBase = null;
+// init() is idempotent for the board on screen: the workspace host may call composeApi.init on every render, so a
+// board whose read is in flight or settled (loaded, error, or "no composition yet") is not read again until the
+// book / scene / purpose changes or refetch() is asked for. boardLoadKey = the draftKey() of the last read started;
+// pagesLoadingFor = the book whose page list is being read on a book change.
+let boardLoadKey = null;
+let pagesLoadingFor = null;
+
+/** The dirtyGuard key of the scene board (Edit › Scenes › Composition) and of the cover board (Edit › Cover & Art). */
+export const COMPOSE_DIRTY_KEY = 'pb-compose';
+export const COVER_DIRTY_KEY = 'pb-cover';
 
 // ── Pure helpers (exported for Vitest) ─────────────────────────────────
 
@@ -503,6 +523,7 @@ async function loadOutfits() {
 async function loadBoard(keepEdits) {
     if (!bookObjectId || !boardKey()) return;
     let seq = ++loadSeq;
+    boardLoadKey = draftKey();
     loading = true;
     error = null;
     m.redraw();
@@ -510,18 +531,22 @@ async function loadBoard(keepEdits) {
         let b = await (isCoverMode() ? getCover(bookObjectId, coverPurpose) : getSceneComposition(bookObjectId, sceneObjectId));
         if (seq !== loadSeq) return;
         board = b;
+        pendingBase = null;
         cover = isCoverMode() ? (b.cover || null) : null;
         noComposition = false;
         noCompositionMessage = null;
-        if (!keepEdits) edits = { composition: null, actors: {}, elements: {} };
+        if (!keepEdits) edits = freshEdits();
         await loadOutfits();
         if (seq !== loadSeq) return;
     } catch (e) {
         if (seq !== loadSeq) return;
+        // Drafts restored for this board survive a failed re-read: they go back to the stash, not to the bin.
+        if (keepEdits && pendingBase && draftKey()) stashDrafts();
         board = null;
+        pendingBase = null;
         cover = null;
         outfits = {};
-        edits = { composition: null, actors: {}, elements: {} };
+        edits = freshEdits();
         if (isNoCompositionYet(e)) {
             noComposition = true;
             noCompositionMessage = (e && e.message) || (isCoverMode() ? 'This book has no ' + coverPurposeLabel(coverPurpose).toLowerCase() + ' composition yet' : 'This scene has no composition yet');
@@ -567,6 +592,7 @@ async function act(key, fn, successMsg) {
     m.redraw();
     let ok = false;
     let out = null;
+    let dk = draftKey();
     try {
         out = await fn();
         ok = true;
@@ -576,6 +602,9 @@ async function act(key, fn, successMsg) {
     }
     delete busy[key];
     m.redraw();
+    // The user moved to another scene / purpose while this write was in flight: re-reading now would load the
+    // other board and drop the drafts just restored for it.
+    if (draftKey() !== dk) return ok ? (out == null ? true : out) : null;
     await refetch(!ok);
     return ok ? (out == null ? true : out) : null;
 }
@@ -601,6 +630,179 @@ function actorDraft(a) {
 function elementDraft(el) {
     if (!edits.elements[el.objectId]) edits.elements[el.objectId] = Object.assign({}, el);
     return edits.elements[el.objectId];
+}
+
+function freshEdits() { return { composition: null, actors: {}, elements: {} }; }
+
+/** The drafts key of the board on screen: 'cover:<PURPOSE>' in cover mode, 'scene:<sceneObjectId>' otherwise. */
+function draftKey() {
+    if (isCoverMode()) return 'cover:' + coverPurpose;
+    return sceneObjectId ? 'scene:' + sceneObjectId : null;
+}
+
+function findRow(list, oid) {
+    let out = null;
+    (list || []).forEach(function (r) { if (r.objectId === oid) out = r; });
+    return out;
+}
+
+/**
+ * Pure over its arguments: the writes a Save of every dirty section of board `b` would send, each one the existing
+ * row-level delta PATCH of that section — [{kind:'camera'|'prompt'|'config'|'actor'|'element', busyKey, delta, id?}].
+ * Empty = nothing dirty. A draft row whose board row is gone is not a write (its row was removed).
+ */
+export function pendingOps(b, e, inst, coverMode) {
+    let ops = [];
+    if (!b || !b.composition) return ops;
+    e = e || {};
+    let cam = boardDelta(b.composition, e.composition, coverMode ? COVER_COMPOSITION_KEYS : COMPOSITION_KEYS);
+    if (Object.keys(cam).length) ops.push({ kind: 'camera', busyKey: 'camera', delta: cam });
+    let pr = boardDelta(b.composition, e.composition, PROMPT_KEYS);
+    if (Object.keys(pr).length) ops.push({ kind: 'prompt', busyKey: 'prompt', delta: pr });
+    let ch = inst && inst.changes ? inst.changes : null;
+    if (ch && (Array.isArray(ch) ? ch.length : Object.keys(ch).length)) {
+        let od = computeOverrideDelta(b.composition.configOverride, inst);
+        if (!overrideUnchanged(b.composition.configOverride, od)) ops.push({ kind: 'config', busyKey: 'config', delta: { configOverride: od ? JSON.stringify(od) : '' } });
+    }
+    Object.keys(e.actors || {}).forEach(function (oid) {
+        let orig = findRow(b.actors, oid);
+        if (!orig) return;
+        let d = boardDelta(orig, e.actors[oid], ACTOR_KEYS);
+        if (Object.keys(d).length) ops.push({ kind: 'actor', busyKey: 'actor:' + oid, id: oid, delta: d });
+    });
+    Object.keys(e.elements || {}).forEach(function (oid) {
+        let orig = findRow(b.elements, oid);
+        if (!orig) return;
+        let d = boardDelta(orig, e.elements[oid], ELEMENT_KEYS);
+        if (Object.keys(d).length) ops.push({ kind: 'element', busyKey: 'element:' + oid, id: oid, delta: d });
+    });
+    return ops;
+}
+
+/** True when the board on screen holds unsaved drafts. */
+function currentDirty() {
+    return pendingOps(board, edits, overrideInst, isCoverMode()).length > 0;
+}
+
+/** Stash the dirty drafts of the board on screen under its key (a clean board stashes nothing). */
+function stashDrafts() {
+    let k = draftKey();
+    if (!k) return;
+    let base = board || pendingBase;
+    if (pendingOps(base, edits, overrideInst, isCoverMode()).length) drafts[k] = { edits: edits, overrideInst: overrideInst, base: base };
+    else delete drafts[k];
+}
+
+/** Restore the stashed drafts of the board on screen; true when there were any. */
+function restoreDrafts() {
+    let k = draftKey();
+    let d = k ? drafts[k] : null;
+    if (!d) return false;
+    edits = d.edits;
+    overrideInst = d.overrideInst || null;
+    if (overrideInst) overrideExpanded = true;
+    pendingBase = d.base || null;
+    delete drafts[k];
+    return true;
+}
+
+/** Scene objectIds holding unsaved composition drafts: the scene on screen (when dirty) and every stashed one. */
+function dirtySceneIds() {
+    let out = [];
+    if (!isCoverMode() && sceneObjectId && currentDirty()) out.push(sceneObjectId);
+    Object.keys(drafts).forEach(function (k) {
+        if (k.indexOf('scene:') !== 0) return;
+        let d = drafts[k];
+        let sid = k.substring(6);
+        if (out.indexOf(sid) < 0 && pendingOps(d.base, d.edits, d.overrideInst, false).length) out.push(sid);
+    });
+    return out;
+}
+
+function discardCurrent() {
+    let k = draftKey();
+    if (k) delete drafts[k];
+    edits = freshEdits();
+    overrideInst = null;
+    m.redraw();
+}
+
+/**
+ * The guard's Save (§6.2-3/5): every dirty section of the board on screen, each through its existing delta PATCH
+ * (patchComposition / patchCover for camera and prompt, the configOverride PATCH, patchActor, patchElement), in that
+ * order, then one re-read. Resolves false when any write failed: the failed sections keep their drafts and each
+ * error is toasted; the sections that saved drop theirs. Never discards an update result (model-api.md).
+ */
+async function saveAllCurrent() {
+    if (!board) return true;
+    let coverMode = isCoverMode();
+    let ops = pendingOps(board, edits, overrideInst, coverMode);
+    if (!ops.length) return true;
+    for (let i = 0; i < ops.length; i++) if (busy[ops[i].busyKey]) return false;
+    let k = draftKey();
+    let compId = board.compositionObjectId;
+    let failed = false;
+    let compFailed = false;
+    let configFailed = false;
+    ops.forEach(function (op) { busy[op.busyKey] = true; });
+    m.redraw();
+    for (let i = 0; i < ops.length; i++) {
+        let op = ops[i];
+        try {
+            let res;
+            if (op.kind === 'camera' || op.kind === 'prompt' || op.kind === 'config') res = await patchCurrent(op.delta);
+            else if (op.kind === 'actor') res = await patchActor(bookObjectId, compId, op.id, op.delta);
+            else res = await patchElement(bookObjectId, compId, op.id, op.delta);
+            if (!res) throw new Error('The ' + op.kind + ' was not saved');
+            noteEdit(res);
+            if (op.kind === 'actor') { if (res.actor) replaceRow(board.actors, res.actor); delete edits.actors[op.id]; }
+            if (op.kind === 'element') { if (res.element) replaceRow(board.elements, res.element); delete edits.elements[op.id]; }
+        } catch (e) {
+            failed = true;
+            if (op.kind === 'camera' || op.kind === 'prompt') compFailed = true;
+            if (op.kind === 'config') configFailed = true;
+            page.toast('error', (e && e.message) || 'The ' + op.kind + ' could not be saved');
+        }
+        delete busy[op.busyKey];
+    }
+    if (draftKey() !== k) { m.redraw(); return !failed; }
+    if (!compFailed) edits.composition = null;
+    if (!configFailed) overrideInst = null;
+    if (!failed) page.toast('success', 'Composition saved');
+    m.redraw();
+    await refetch(true);
+    return !failed;
+}
+
+function sceneTitle() {
+    let pg = currentPage();
+    if (!pg) return 'scene';
+    return pg.title ? String(pg.title) : 'Scene ' + (pg.sceneIndex != null ? pg.sceneIndex : '?');
+}
+
+/** Register the two board draft sources (idempotent; each answers only while its mode is on screen). */
+function registerDirtySources() {
+    registerDirty(COMPOSE_DIRTY_KEY, {
+        get label() { return 'Composition — ' + sceneTitle(); },
+        isDirty: function () { return !isCoverMode() && currentDirty(); },
+        save: saveAllCurrent,
+        discard: discardCurrent
+    });
+    registerDirty(COVER_DIRTY_KEY, {
+        get label() { return coverArtLabel(coverPurpose || 'COVER') + ' composition'; },
+        isDirty: function () { return isCoverMode() && currentDirty(); },
+        save: saveAllCurrent,
+        discard: discardCurrent
+    });
+}
+
+function currentDirtyKey() { return isCoverMode() ? COVER_DIRTY_KEY : COMPOSE_DIRTY_KEY; }
+
+/** §4.7: an actor's character name opens Edit › Characters on that character, through the dirty guard. */
+function openCharacter(charObjectId) {
+    if (!charObjectId || !bookObjectId) return null;
+    let route = editLink('pb', bookObjectId, { type: 'character', id: charObjectId });
+    return guardDirty(function () { m.route.set(route); }, [currentDirtyKey()]);
 }
 
 function replaceRow(list, row) {
@@ -834,17 +1036,19 @@ async function watchRender(submit) {
     stopWatchingRender();
     let ctl = new AbortController();
     renderAbort = ctl;
-    let run = { jobId: submit.jobId, purpose: coverPurpose, job: null, error: null, nodeObjectId: submit.nodeObjectId, runObjectId: submit.runObjectId };
+    let run = { jobId: submit.jobId, purpose: coverPurpose, job: null, error: null, nodeObjectId: submit.nodeObjectId, runObjectId: submit.runObjectId, bookObjectId: bookObjectId };
     renderRun = run;
     let bookId = bookObjectId;
+    publishRender(run);
     m.redraw();
     try {
         let job = await pollJob(submit.jobId, {
             signal: ctl.signal,
             intervalMs: pollIntervalMs,
-            onProgress: function (j) { if (renderRun === run) { run.job = j; m.redraw(); } }
+            onProgress: function (j) { if (renderRun === run) { run.job = j; publishRender(run); m.redraw(); } }
         });
         run.job = job;
+        publishRender(run);
         if (bookId === bookObjectId) {
             let failed = !!(job && (job.error || job.cancelled));
             page.toast(failed ? 'warn' : 'success', coverPurposeLabel(run.purpose) + ': ' + renderCounterText(job));
@@ -853,10 +1057,36 @@ async function watchRender(submit) {
     } catch (e) {
         if (e && e.name === 'AbortError') return;
         run.error = (e && e.message) || 'The render job could not be followed';
+        publishRender(run);
         page.toast('error', run.error);
     }
     if (renderAbort === ctl) renderAbort = null;
     m.redraw();
+}
+
+/**
+ * §4.5: the cover render job is shown by the activity pill / workspace dock, never in the page flow. Same
+ * jobRunPanel options and testids the in-flow panel had; owned by Edit › Cover & Art.
+ */
+function renderActivityOpts(run) {
+    let job = run.job;
+    let terminal = !!(job && job.terminal);
+    return {
+        testid: 'pb-cmp-render-run', terminalAttr: 'bool', terminal: terminal, failed: !!(job && (job.error || job.cancelled)) || !!run.error,
+        label: 'Render ' + coverPurposeLabel(run.purpose).toLowerCase(),
+        counter: run.error ? run.error : renderCounterText(job), counterTestid: 'pb-cmp-render-counter',
+        onDismiss: dismissRenderRun, dismissWhileRunning: true, dismissTestid: 'pb-cmp-render-dismiss',
+        dismissTitle: terminal ? 'Dismiss' : 'Stop following (the job keeps running)',
+        section: 'cover'
+    };
+}
+
+function publishRender(run) {
+    if (!run || renderRun !== run || !run.bookObjectId) return;
+    let opts = renderActivityOpts(run);
+    // a followed job whose watch failed is over as far as this client knows
+    if (run.error) opts.terminal = true;
+    setActivity(run.bookObjectId, 'cover-render', opts);
 }
 
 /**
@@ -894,7 +1124,9 @@ async function approveLatestCover() {
 
 function dismissRenderRun() {
     stopWatchingRender();
+    if (renderRun && renderRun.bookObjectId) clearActivity(renderRun.bookObjectId, 'cover-render');
     renderRun = null;
+    m.redraw();
 }
 
 // ── Compose job (book-level) ───────────────────────────────────────────
@@ -908,18 +1140,20 @@ async function watchCompose(submit) {
     stopWatching();
     let ctl = new AbortController();
     composeAbort = ctl;
-    let run = { jobId: submit.jobId, job: null, label: 'Compose', error: null, quickStart: !!submit.quickStart, force: !!submit.force, result: null, scenesToCompose: submit.scenesToCompose, sceneCount: submit.sceneCount, pagesSkipped: submit.pagesSkipped };
+    let run = { jobId: submit.jobId, job: null, label: 'Compose', error: null, quickStart: !!submit.quickStart, force: !!submit.force, result: null, scenesToCompose: submit.scenesToCompose, sceneCount: submit.sceneCount, pagesSkipped: submit.pagesSkipped, bookObjectId: bookObjectId };
     composeRun = run;
     let bookId = bookObjectId;
+    publishCompose(run);
     m.redraw();
     try {
         let job = await pollJob(submit.jobId, {
             signal: ctl.signal,
             intervalMs: pollIntervalMs,
-            onProgress: function (j) { if (composeRun === run) { run.job = j; m.redraw(); } }
+            onProgress: function (j) { if (composeRun === run) { run.job = j; publishCompose(run); m.redraw(); } }
         });
         run.job = job;
         if (job && job.result) run.result = normalizeComposeJobResult(job.result);
+        publishCompose(run);
         if (bookId === bookObjectId) {
             let failed = !!(job && (job.error || job.cancelled)) || !!(run.result && run.result.hardFailures);
             page.toast(failed ? 'warn' : 'success', composeCounterText(job));
@@ -928,10 +1162,56 @@ async function watchCompose(submit) {
     } catch (e) {
         if (e && e.name === 'AbortError') return;
         run.error = (e && e.message) || 'The compose job could not be followed';
+        publishCompose(run);
         page.toast('error', run.error);
     }
     if (composeAbort === ctl) composeAbort = null;
     m.redraw();
+}
+
+/** The scene a compose-result row opens: Edit › Scenes › that scene, Composition tab (through the guard). */
+function openSceneComposition(oid) {
+    if (!oid || !bookObjectId) return null;
+    let route = editLink('pb', bookObjectId, { type: 'scene', id: oid, tab: 'composition' });
+    return guardDirty(function () { m.route.set(route); }, [COMPOSE_DIRTY_KEY]);
+}
+
+/**
+ * §4.5: the compose-book job goes to the activity pill / workspace dock (section 'scenes'), never the page flow.
+ * Same jobRunPanel options and testids the in-flow panel had. The per-scene result list is rebuilt on every
+ * publish, so no vnode is shared between two publishes.
+ */
+function composeActivityOpts(run) {
+    let job = run.job;
+    let terminal = !!(job && job.terminal) || !!run.error;
+    let res = run.result;
+    return {
+        testid: 'pb-cmp-compose-run', terminalAttr: 'bool', terminal: terminal, failed: !!(job && job.error) || !!run.error,
+        label: run.label + (run.force ? ' (re-compose in order)' : '') + (run.quickStart ? ' + quick start' : ''),
+        counter: run.error ? run.error : composeCounterText(job), counterTestid: 'pb-cmp-compose-counter',
+        onDismiss: dismissRun, dismissWhileRunning: true, dismissTestid: 'pb-cmp-compose-dismiss',
+        dismissTitle: terminal ? 'Dismiss' : 'Stop following (the job keeps running)',
+        section: 'scenes',
+        body: [
+            terminal && res && res.scenes.length ? m('ul', { class: 'mt-1 space-y-0.5 text-xs' }, res.scenes.map(function (s) {
+                return m('li', { 'data-testid': 'pb-cmp-compose-scene-' + s.sceneIndex, 'data-status': s.status || '', class: 'flex items-center gap-2' }, [
+                    m('span', { class: CHIP }, s.status || '?'),
+                    m('span', 'Scene ' + s.sceneIndex + (s.title ? ' · ' + s.title : '')),
+                    s.actorCount || s.elementCount ? m('span', { class: 'text-gray-500' }, s.actorCount + ' actors, ' + s.elementCount + ' elements') : null,
+                    s.error ? m('span', { class: 'text-red-600' }, s.error) : null,
+                    s.draftRenderError ? m('span', { class: 'text-amber-700' }, 'draft: ' + s.draftRenderError) : null,
+                    s.warnings.length ? m('span', { class: 'text-amber-700' }, s.warnings.join('; ')) : null,
+                    s.sceneObjectId ? m('button', { 'data-testid': 'pb-cmp-compose-scene-open', class: BTN, onclick: function () { openSceneComposition(s.sceneObjectId); } }, 'Open') : null
+                ]);
+            })) : null,
+            terminal && res && res.note ? m('div', { class: 'mt-1 text-xs text-gray-500' }, res.note) : null
+        ]
+    };
+}
+
+function publishCompose(run) {
+    if (!run || composeRun !== run || !run.bookObjectId) return;
+    setActivity(run.bookObjectId, 'compose-book', composeActivityOpts(run));
 }
 
 async function startComposeBook(opts) {
@@ -955,7 +1235,9 @@ async function startComposeBook(opts) {
 
 function dismissRun() {
     stopWatching();
+    if (composeRun && composeRun.bookObjectId) clearActivity(composeRun.bookObjectId, 'compose-book');
     composeRun = null;
+    m.redraw();
 }
 
 // ── Dialogs ────────────────────────────────────────────────────────────
@@ -1160,17 +1442,8 @@ function openAddElementDialog() {
 
 // ── Rendering ──────────────────────────────────────────────────────────
 
-const INPUT = 'w-full text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 disabled:opacity-60';
+// INPUT / CHIP / WARN_CHIP / field() come from components/bookUi.js (design §4.6: one copy of each).
 const PRIMARY = BTN_PRIMARY;
-const CHIP = 'text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200';
-const WARN_CHIP = 'text-[11px] px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200';
-
-function field(label, control) {
-    return m('label', { class: 'block' }, [
-        m('div', { class: 'text-xs font-medium text-gray-600 dark:text-gray-300 mb-1' }, label),
-        control
-    ]);
-}
 
 function enumSelect(testid, list, value, onchange, disabled) {
     let v = value != null ? String(value).toLowerCase() : '';
@@ -1251,21 +1524,6 @@ function renderHeader() {
     });
 }
 
-/** Cover mode: the render job being followed (the compose-run panel's shape). */
-function renderRenderRun() {
-    if (!renderRun) return null;
-    let run = renderRun;
-    let job = run.job;
-    let terminal = !!(job && job.terminal);
-    return jobRunPanel({
-        testid: 'pb-cmp-render-run', terminalAttr: 'bool', terminal: terminal, failed: !!(job && (job.error || job.cancelled)),
-        label: 'Render ' + coverPurposeLabel(run.purpose).toLowerCase(),
-        counter: run.error ? run.error : renderCounterText(job), counterTestid: 'pb-cmp-render-counter',
-        onDismiss: dismissRenderRun, dismissWhileRunning: true, dismissTestid: 'pb-cmp-render-dismiss',
-        dismissTitle: terminal ? 'Dismiss' : 'Stop following (the job keeps running)'
-    });
-}
-
 /**
  * Cover mode: the cover-art strip above the board - the render state line, the approved and the latest render
  * (MediaServlet URLs from the page-view refs), Render / Re-render, Approve latest, and the "nothing to render from"
@@ -1314,34 +1572,6 @@ function renderCoverStrip() {
     ]);
 }
 
-function renderComposeRun() {
-    if (!composeRun) return null;
-    let run = composeRun;
-    let job = run.job;
-    let terminal = !!(job && job.terminal);
-    let res = run.result;
-    return jobRunPanel({
-        testid: 'pb-cmp-compose-run', terminalAttr: 'bool', terminal: terminal, failed: !!(job && job.error),
-        label: run.label + (run.force ? ' (re-compose in order)' : '') + (run.quickStart ? ' + quick start' : ''),
-        counter: run.error ? run.error : composeCounterText(job), counterTestid: 'pb-cmp-compose-counter',
-        onDismiss: dismissRun, dismissWhileRunning: true, dismissTestid: 'pb-cmp-compose-dismiss',
-        dismissTitle: terminal ? 'Dismiss' : 'Stop following (the job keeps running)',
-        body: [
-            terminal && res && res.scenes.length ? m('ul', { class: 'mt-1 space-y-0.5 text-xs' }, res.scenes.map(function (s) {
-                return m('li', { 'data-testid': 'pb-cmp-compose-scene-' + s.sceneIndex, 'data-status': s.status || '', class: 'flex items-center gap-2' }, [
-                    m('span', { class: CHIP }, s.status || '?'),
-                    m('span', 'Scene ' + s.sceneIndex + (s.title ? ' · ' + s.title : '')),
-                    s.actorCount || s.elementCount ? m('span', { class: 'text-gray-500' }, s.actorCount + ' actors, ' + s.elementCount + ' elements') : null,
-                    s.error ? m('span', { class: 'text-red-600' }, s.error) : null,
-                    s.draftRenderError ? m('span', { class: 'text-amber-700' }, 'draft: ' + s.draftRenderError) : null,
-                    s.warnings.length ? m('span', { class: 'text-amber-700' }, s.warnings.join('; ')) : null,
-                    s.sceneObjectId ? m('button', { class: BTN, onclick: function () { goScene(s.sceneObjectId); } }, 'Open') : null
-                ]);
-            })) : null,
-            terminal && res && res.note ? m('div', { class: 'mt-1 text-xs text-gray-500' }, res.note) : null
-        ]
-    });
-}
 
 function renderEmpty() {
     if (isCoverMode()) {
@@ -1468,7 +1698,15 @@ function renderActorRow(a) {
     let tid = function (s) { return 'pb-cmp-actor-' + s; };
     return m('li', { 'data-testid': 'pb-cmp-actor-' + a.objectId, 'data-actor-objectid': a.objectId, class: 'border rounded dark:border-gray-700 p-2' }, [
         m('div', { class: 'flex flex-wrap items-center gap-2 mb-1' }, [
-            m('span', { class: 'font-medium text-sm' }, actorLabel(a)),
+            // §4.7: a bound actor's name links to Edit › Characters on that character (characterObjectId is the
+            // character's objectId — the same id the Add actor dialog sends from listCharacters).
+            a.characterObjectId
+                ? m('a', {
+                    href: '#', 'data-testid': tid('character-link'), 'data-character-objectid': a.characterObjectId,
+                    class: 'font-medium text-sm text-blue-700 dark:text-blue-300 hover:underline', title: 'Edit this character',
+                    onclick: function (e) { if (e && e.preventDefault) e.preventDefault(); openCharacter(a.characterObjectId); }
+                }, actorLabel(a))
+                : m('span', { class: 'font-medium text-sm' }, actorLabel(a)),
             a.characterObjectId ? null : m('span', { class: CHIP }, 'unnamed'),
             m('span', { 'data-testid': tid('outfit-chip'), 'data-source': outfit ? outfit.source : 'none', class: CHIP, title: outfit && outfit.apparelDescription ? outfit.apparelDescription : '' }, outfitChipText(outfit)),
             outfit && outfit.warning ? m('span', { class: WARN_CHIP }, outfit.warning) : null,
@@ -1622,24 +1860,48 @@ function renderBoard() {
     ]);
 }
 
-function renderBody() {
-    if (loading && !board) return m('div', { 'data-testid': 'pb-cmp-loading', class: 'text-sm text-gray-500 p-4' }, 'Loading…');
-    if (error) return m('div', { 'data-testid': 'pb-cmp-error', class: 'text-sm text-red-600 p-4' }, error);
-    if (!isCoverMode() && !sceneObjectId) return m('div', { 'data-testid': 'pb-cmp-no-scenes', class: 'text-sm text-gray-500 p-4' }, 'This book has no pages to compose.');
-    let grid = m('div', { class: 'grid grid-cols-1 lg:grid-cols-3 gap-3' }, [
+/** Loading / error / no-pages, in that order (§4.6 stateBlock, the page's own testids); null = render the board. */
+function renderStates() {
+    return stateBlock({
+        loading: loading && !board,
+        error: error,
+        empty: !isCoverMode() && !sceneObjectId,
+        emptyText: 'This book has no pages to compose.',
+        testids: { loading: 'pb-cmp-loading', error: 'pb-cmp-error', empty: 'pb-cmp-no-scenes' }
+    });
+}
+
+function renderGrid() {
+    return m('div', { class: 'grid grid-cols-1 lg:grid-cols-3 gap-3' }, [
         m('div', { class: 'lg:col-span-2' }, noComposition ? renderEmpty() : (board ? renderBoard() : null)),
         renderPlanSide()
     ]);
-    if (!isCoverMode()) return grid;
-    // Cover mode: the render-job panel and the cover-art strip sit above the board; the strip needs a loaded board.
-    return [renderRenderRun(), board ? renderCoverStrip() : null, grid];
+}
+
+function renderBody() {
+    let s = renderStates();
+    if (s) return s;
+    if (!isCoverMode()) return renderGrid();
+    // Cover mode: the cover-art strip sits above the board and needs a loaded board. The render job is in the
+    // activity pill / dock (§4.5), not here.
+    return [board ? renderCoverStrip() : null, renderGrid()];
 }
 
 // ── View & routes ──────────────────────────────────────────────────────
 
-function resetState() {
-    stopWatching();
+/**
+ * Reset the board state for a new board. `book` (a book change) also stops following the compose-book job; a
+ * scene / purpose / mode change keeps it — it is a book-level job (§4.5). The cover render job is per purpose
+ * and stops being followed on every reset, as before.
+ */
+function resetState(book) {
+    if (book) {
+        stopWatching();
+        if (composeRun && composeRun.bookObjectId) clearActivity(composeRun.bookObjectId, 'compose-book');
+        composeRun = null;
+    }
     stopWatchingRender();
+    if (renderRun && renderRun.bookObjectId) clearActivity(renderRun.bookObjectId, 'cover-render');
     board = null;
     cover = null;
     renderRun = null;
@@ -1651,10 +1913,11 @@ function resetState() {
     plan = null;
     planError = null;
     planLoading = false;
-    busy = {};
-    edits = { composition: null, actors: {}, elements: {} };
+    busy = book ? {} : (busy.composeBook ? { composeBook: true } : {});
+    edits = freshEdits();
+    pendingBase = null;
+    boardLoadKey = null;
     lastEdit = null;
-    composeRun = null;
     drag = null;
     overrideInst = null;
     overrideExpanded = false;
@@ -1676,8 +1939,15 @@ async function init(vnode) {
     let modeChanged = coverMode !== isCoverMode();
     let purposeChanged = coverMode && cp !== coverPurpose;
     let sceneChanged = !coverMode && sid ? sid !== sceneObjectId : false;
-    if (!bookChanged && !modeChanged && !purposeChanged && !sceneChanged && board) return;
+    if (!bookChanged && !modeChanged && !purposeChanged && !sceneChanged) {
+        if (board) return;
+        if (pagesLoadingFor === bid) return;
+        if (boardLoadKey && boardLoadKey === (coverMode ? 'cover:' + cp : (sceneObjectId ? 'scene:' + sceneObjectId : null))) return;
+    }
+    let keep = false;
+    registerDirtySources();
     if (bookChanged) {
+        resetState(true);
         bookObjectId = bid;
         pages = [];
         characters = [];
@@ -1685,33 +1955,163 @@ async function init(vnode) {
         coverSeriesObjectId = null;
         sceneObjectId = sid;
         coverPurpose = cp;
-        resetState();
+        drafts = {};
         // P9-8 (240 d): a ChapBook opens with the chat config its own screens carry (registered by the ChapBook
         // feature; null for a PictureBook or an unknown book), else the library default resolves below.
         chatConfigRef = carriedBookChatConfig(bid);
         chatConfigResolving = false;
         loadSeq++;
         ensureChatConfigDefault();
-        await loadPages();
+        pagesLoadingFor = bid;
+        try { await loadPages(); } finally { if (pagesLoadingFor === bid) pagesLoadingFor = null; }
     } else if (modeChanged || purposeChanged || sceneChanged) {
+        // §6.2-4: the drafts of the board being left are stashed under its key, and the new board's own drafts
+        // (if it was left dirty earlier) come back — they are no longer dropped on a scene change.
+        stashDrafts();
         coverPurpose = cp;
         if (sid) sceneObjectId = sid;
-        resetState();
+        resetState(false);
+        keep = restoreDrafts();
     }
-    if (!coverMode && !sceneObjectId) sceneObjectId = sid || (pages.length ? pages[0].objectId : null);
-    if (bookObjectId === bid && coverPurpose === cp && (!sid || sceneObjectId === sid)) await loadBoard();
+    if (!coverMode && !sceneObjectId) {
+        sceneObjectId = sid || (pages.length ? pages[0].objectId : null);
+        if (!keep) keep = restoreDrafts();
+    }
+    if (bookObjectId === bid && coverPurpose === cp && (!sid || sceneObjectId === sid)) await loadBoard(keep);
     m.redraw();
 }
 
 const composeView = {
     oninit: function (vnode) { init(vnode); },
-    onremove: function () { stopWatching(); stopWatchingRender(); },
+    onremove: function () {
+        // nothing follows the jobs once this view is gone, so their activity rows would go stale
+        stopWatching(); stopWatchingRender();
+        if (composeRun && composeRun.bookObjectId) clearActivity(composeRun.bookObjectId, 'compose-book');
+        if (renderRun && renderRun.bookObjectId) clearActivity(renderRun.bookObjectId, 'cover-render');
+    },
     view: function () {
         return m('div', { 'data-testid': 'pb-cmp', class: 'p-4 flex flex-col h-full' }, [
             renderHeader(),
-            renderComposeRun(),
             m('div', { class: 'flex-1 overflow-y-auto' }, renderBody())
         ]);
+    }
+};
+
+// ── Workspace API (design §5.6 / §5.7) ─────────────────────────────────
+
+function composeBookButton() {
+    return m('button', { 'data-testid': 'pb-cmp-compose-book', class: PRIMARY, disabled: !!busy.composeBook || !!(composeRun && composeRun.job && !composeRun.job.terminal), onclick: openComposeDialog }, [icon('auto_awesome', 'text-sm align-middle mr-1'), 'Compose book…']);
+}
+
+/**
+ * Edit › Scenes › Composition tab. The host (features/pictureBook.js) owns the scene list, the tabs and the section
+ * toolbar; this is the board of one scene inside it.
+ *
+ *   composeApi.init(bookObjectId, sceneObjectId)  load that scene's board (no route change). Switching scene keeps
+ *                                                 each scene's drafts (§6.2-4).
+ *   composeApi.toolbarActions(ctx) → [vnode]      the chat-config control + "Compose book…" (pb-cmp-chatconfig,
+ *                                                 pb-cmp-compose-book), for the section toolbar
+ *   composeApi.renderComposition(ctx) → vnode     the board body: status, re-compose, camera & scene, placement canvas,
+ *                                                 actors, elements, prompt override, image config override, compiled
+ *                                                 plan aside. No header, no scene stepper, no Covers / Scenes links.
+ *   composeApi.sceneFields(sceneObjectId)         {setting, action, mood, props} as last read from that scene's
+ *                                                 COMPOSITION record (olio.pb.composition settingText / action / mood /
+ *                                                 props — not olio.pb.scene); null when that board is not loaded.
+ *   composeApi.isDirty()                          the scene on screen holds unsaved drafts
+ *   composeApi.isSceneDirty(sceneObjectId)        that scene holds unsaved drafts (on screen or stashed) — the list's
+ *                                                 "unsaved" chip
+ *   composeApi.dirtyKey = 'pb-compose'            the dirtyGuard key (registered by init)
+ *   composeApi.save() → Promise<bool>             the guard's Save: every dirty section of the scene on screen
+ *   composeApi.discard()                          drop the drafts of the scene on screen
+ */
+export const composeApi = {
+    dirtyKey: COMPOSE_DIRTY_KEY,
+    init: function (bookOid, sceneOid) {
+        return init({ attrs: { bookObjectId: bookOid, sceneObjectId: sceneOid || null } });
+    },
+    toolbarActions: function () {
+        return [renderBoardChatConfigControl(), composeBookButton()];
+    },
+    renderComposition: function () {
+        if (isCoverMode()) return stateBlock({ loading: true, testids: { loading: 'pb-cmp-loading' } });
+        return m('div', { 'data-testid': 'pb-cmp-composition', 'data-scene': sceneObjectId || '' }, renderStates() || renderGrid());
+    },
+    sceneFields: function (sceneOid) {
+        let b = null;
+        if (!isCoverMode() && sceneOid && sceneOid === sceneObjectId) b = board;
+        else if (sceneOid && drafts['scene:' + sceneOid]) b = drafts['scene:' + sceneOid].base;
+        if (!b || !b.composition) return null;
+        let c = b.composition;
+        return { setting: c.settingText, action: c.action, mood: c.mood, props: c.props };
+    },
+    isDirty: function () { return !isCoverMode() && currentDirty(); },
+    isSceneDirty: function (sceneOid) { return dirtySceneIds().indexOf(sceneOid) >= 0; },
+    dirtySceneIds: dirtySceneIds,
+    save: function () { return isCoverMode() ? Promise.resolve(true) : saveAllCurrent(); },
+    discard: function () { if (!isCoverMode()) discardCurrent(); },
+    refresh: function () { return refetch(); }
+};
+
+/** The cover-mode board for one purpose word (coverPathWord), no route change. */
+function initCover(bookOid, purposeWord) {
+    return init({ attrs: { bookObjectId: bookOid, mode: 'cover', purpose: purposeWord || 'COVER' } });
+}
+
+/** Purposes of the Cover & Art list: coverPurposesFor (Series art only on a chapter of a series). */
+function coverItems() {
+    return coverPurposesFor({ seriesObjectId: coverSeriesObjectId }).map(function (p) {
+        return { purpose: p, word: coverPathWord(p) };
+    });
+}
+
+function renderCoverDetail() {
+    return m('div', { 'data-testid': 'pb-cmp-cover-detail', 'data-purpose': coverPurpose || '' }, renderStates() || [board ? renderCoverStrip() : null, renderGrid()]);
+}
+
+/**
+ * Edit › Cover & Art (§5.7), a bookWorkspace SectionAdapter. List = the cover purposes, a green ● where the purpose
+ * has a composition; ctx.item = the purpose word (coverPathWord; none = Cover); detail = the cover-mode board with
+ * its cover strip and, when empty, "Create cover…". The render job goes to the activity dock (section 'cover').
+ */
+export const coverSection = {
+    dirtyKeys: [COVER_DIRTY_KEY],
+    init: function (ctx) { initCover(ctx.bookObjectId, ctx.item); },
+    select: function (ctx) { initCover(ctx.bookObjectId, ctx.item); },
+    available: function () { return true; },
+    toolbar: function () {
+        return {
+            title: 'Cover & Art', titleTestid: 'pb-cmp-title',
+            actions: [renderBoardChatConfigControl()],
+            refresh: { testid: 'pb-cmp-refresh', disabled: loading, onclick: function () { refetch(); } }
+        };
+    },
+    body: function (ctx) {
+        let selected = isCoverMode() ? coverPathWord(coverPurpose) : null;
+        let items = coverItems();
+        // A purpose named by the route that this book does not offer (Series art on a standalone book) is not listed —
+        // a standalone never offers it (pinned by e2e SeriesArt) — but its detail still says why ("not a chapter of a
+        // series") instead of an empty "Select an item." pane.
+        let unlisted = !!selected && !items.some(function (it) { return it.word === selected; });
+        return masterDetail({
+            testid: 'pb-cover-md', listTestid: 'pb-cover-list', detailTestid: 'pb-cover-detail-pane',
+            items: items,
+            idOf: function (it) { return it.word; },
+            selectedId: selected,
+            onSelect: function (word) { if (ctx && ctx.select) ctx.select(word); else initCover(bookObjectId, word); },
+            rowView: function (it) {
+                let exists = !!(covers && covers[it.purpose]);
+                let active = it.word === selected;
+                return {
+                    title: [coverPurposeLabel(it.purpose), exists ? m('span', { class: 'ml-1 text-green-600', title: 'Has a composition' }, '●') : null],
+                    subtitle: exists ? null : 'No composition yet',
+                    dirty: active && currentDirty(),
+                    attrs: { 'data-testid': 'pb-cmp-purpose-' + it.word, 'data-active': active ? 'true' : 'false', 'data-exists': exists ? 'true' : 'false' }
+                };
+            },
+            detailView: function () { return renderCoverDetail(); },
+            detailFallback: unlisted ? renderCoverDetail() : null,
+            emptyText: 'No cover purposes for this book.'
+        });
     }
 };
 
@@ -1719,12 +2119,14 @@ const composeView = {
 
 export { openComposeDialog as __openComposeDialogForTest };
 export function __composeStateForTest() {
-    return { bookObjectId, sceneObjectId, pages, board, noComposition, noCompositionMessage, loading, error, loadSeq, outfits, outfitsError, plan, planError, planLoading, busy, edits, lastEdit, characters, composeRun, composeAbort, drag, overrideInst, overrideExpanded, sdModels, sdLoras, pollIntervalMs, chatConfigRef, chatConfigResolving, coverPurpose, cover, covers, coverSeriesObjectId, renderRun, renderAbort };
+    return { bookObjectId, sceneObjectId, pages, board, noComposition, noCompositionMessage, loading, error, loadSeq, outfits, outfitsError, plan, planError, planLoading, busy, edits, lastEdit, characters, composeRun, composeAbort, drag, overrideInst, overrideExpanded, sdModels, sdLoras, pollIntervalMs, chatConfigRef, chatConfigResolving, coverPurpose, cover, covers, coverSeriesObjectId, renderRun, renderAbort, drafts };
 }
 
 export function __setComposeStateForTest(s) {
     s = s || {};
-    if ('bookObjectId' in s) bookObjectId = s.bookObjectId;
+    // setting the book is a fresh book for the drafts stash, as a book change in init() is
+    if ('bookObjectId' in s) { bookObjectId = s.bookObjectId; drafts = {}; pendingBase = null; boardLoadKey = null; pagesLoadingFor = null; }
+    if ('drafts' in s) drafts = s.drafts || {};
     if ('sceneObjectId' in s) sceneObjectId = s.sceneObjectId;
     if ('coverPurpose' in s) coverPurpose = s.coverPurpose || null;
     if ('cover' in s) cover = s.cover || null;

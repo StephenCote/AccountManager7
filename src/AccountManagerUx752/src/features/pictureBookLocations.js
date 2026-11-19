@@ -1,8 +1,12 @@
 /**
  * pictureBookLocations — PB2 V3 locations library (design §26/§27, P3-7).
  *
- * Route:
- *   /picture-book/:bookObjectId/locations   (bookObjectId = olio.pb.book objectId)
+ * Surfaces:
+ *   locationsSection — the bookWorkspace Edit › Locations SectionAdapter (aiDocs/PictureBookUxConsistencyDesign.md
+ *     §5.5): master/detail (a pinned "Proposals" pseudo-row, then one row per location), :item = location objectId
+ *     or PROPOSALS_ITEM; render jobs go to workflows/bookActivity.js (the dock / pill), never into the body.
+ *   /picture-book/:bookObjectId/locations   — the legacy full page (same body + a back arrow), until it redirects.
+ *   (bookObjectId = olio.pb.book objectId; PictureBook or ChapBook)
  *
  * One read: GET /{book}/locations (PbServiceFacade.listLocations) — every card is a locationDto with its
  * variants, usedByScenes and (once rendered) its LOCATION node + artifact chain. Every write goes through
@@ -28,7 +32,10 @@ import { pollJob, resolveImageUrl } from '../workflows/sceneExtractor.js';
 import { orderNewestFirst, reviewStatusOf, isAutoApproved, artifactActions } from './pictureBookReview.js';
 import { BTN, BTN_PRIMARY, BTN_DANGER } from '../components/buttons.js';
 import { pageHeader, metaText } from '../components/pageHeader.js';
-import { jobRunPanel } from '../components/jobRunPanel.js';
+import { masterDetail, stateBlock, INPUT, CHIP, field } from '../components/bookUi.js';
+import { registerDirty, unregisterDirty, guardDirty } from '../components/dirtyGuard.js';
+import { setActivity, clearActivity } from '../workflows/bookActivity.js';
+import { editLink, ensureSelection } from '../workflows/bookWorkspaceNav.js';
 import {
     listLocations, createLocation, updateLocation, deleteLocation, createLocationVariant, lockLocation,
     mergeLocations, renderLocation, isPinnedNodeRefusal, proposeLocations, locationPassFromJob, listLocationProposals,
@@ -59,6 +66,15 @@ let pinnedRefusals = {};    // subject objectId → {message, nodeObjectId}
 let overwrite = {};         // proposal objectId → accept with {overwrite:true}
 let imageUrls = {};
 let pollIntervalMs = 2000;
+let openProposalCount = null; // PROPOSED proposals awaiting a decision, null when not known (the rail status never guesses)
+let selectedId = null;      // master/detail selection: a location objectId, PROPOSALS_ITEM, or null (= the first location)
+let selectedIndex = -1;     // the selection's index when last seen, for ensureSelection's same-index re-seat
+let wsKind = null;          // 'pb' | 'cb' while mounted as the workspace section (scene links route there); null on the legacy route
+
+/** The pinned "Proposals" pseudo-row's item id (a location objectId is a UUID, so it cannot collide). */
+export const PROPOSALS_ITEM = 'proposals';
+/** dirtyGuard key held while any inline location edit is open. */
+export const LOCATION_EDIT_DIRTY_KEY = 'pb-location-edit';
 
 export const LOCATION_KINDS = ['interior', 'exterior', 'mixed', 'abstract'];
 export const VARIANT_DELTAS = ['timeOfDay', 'weather', 'season', 'viewpoint', 'extra'];
@@ -75,6 +91,28 @@ export function usedByText(usedBy) {
     let nums = Object.keys(idx).map(Number).sort(function (a, b) { return a - b; });
     if (!nums.length) return 'Used by ' + list.length + ' scene' + (list.length === 1 ? '' : 's');
     return 'Used by scene' + (nums.length === 1 ? ' ' : 's ') + nums.join(', ');
+}
+
+/** Distinct scenes in usedByScenes (by sceneObjectId, else sceneIndex; an entry with neither counts once on its own). */
+export function usedByCount(usedBy) {
+    let list = Array.isArray(usedBy) ? usedBy : [];
+    let seen = {};
+    let n = 0;
+    list.forEach(function (u) {
+        let k = u && u.sceneObjectId != null ? 'o:' + u.sceneObjectId : (u && u.sceneIndex != null ? 'i:' + u.sceneIndex : null);
+        if (k == null) { n++; return; }
+        if (!seen[k]) { seen[k] = true; n++; }
+    });
+    return n;
+}
+
+/** sceneIndex → the first sceneObjectId carried for it (only indices that have an objectId are linkable). */
+export function usedBySceneLinks(usedBy) {
+    let out = {};
+    (Array.isArray(usedBy) ? usedBy : []).forEach(function (u) {
+        if (u && u.sceneIndex != null && u.sceneObjectId && out[u.sceneIndex] === undefined) out[u.sceneIndex] = u.sceneObjectId;
+    });
+    return out;
 }
 
 /** Comma/newline separated alias text → trimmed, de-duplicated list. */
@@ -137,6 +175,7 @@ export async function loadLocations() {
         if (seq !== loadSeq) return;
         locations = r.locations;
         worldObjectId = r.worldObjectId || null;
+        reseatSelection();
         resolveThumbs(locations);
     } catch (e) {
         if (seq !== loadSeq) return;
@@ -158,9 +197,11 @@ export async function loadProposals(seq) {
         let r = await listLocationProposals(bookObjectId, proposalFilter);
         if (seq !== loadSeq) return;
         proposals = r.proposals;
+        openProposalCount = proposalFilter === 'PROPOSED' ? proposals.length : openProposalCount;
     } catch (e) {
         if (seq !== loadSeq) return;
         proposals = [];
+        if (proposalFilter === 'PROPOSED') openProposalCount = null;
         proposalsError = (e && e.message) || 'Failed to load the proposals';
     }
     proposalsLoading = false;
@@ -181,7 +222,16 @@ function resolveThumbs(list) {
     });
 }
 
+/** After a reload: keep the selection if it still exists, else the location at the same index, else the first (§4.4). */
+function reseatSelection() {
+    if (selectedId == null || selectedId === PROPOSALS_ITEM) return;
+    let ids = locations.map(function (l) { return l.objectId; });
+    selectedId = ensureSelection(ids, selectedId, selectedIndex) || null;
+}
+
 async function refetch() {
+    // a write may have accepted / dismissed a proposal: the open count is only re-learned from a PROPOSED read
+    if (proposalFilter !== 'PROPOSED') openProposalCount = null;
     am7client.clearCache('olio.pb.artifact', true);
     am7client.clearCache('olio.pb.node', true);
     am7client.clearCache('olio.pb.scene', true);
@@ -303,22 +353,59 @@ export function openVariantDialog(loc) {
     });
 }
 
+function findLocation(objectId) {
+    for (let i = 0; i < locations.length; i++) if (locations[i].objectId === objectId) return locations[i];
+    return null;
+}
+
+/** True when the open draft for this location would PATCH something (an opened, untouched editor is not dirty). */
+export function isEditDirty(objectId) {
+    let loc = findLocation(objectId);
+    let draft = edits[objectId];
+    return !!(loc && draft && Object.keys(editPatch(loc, draft)).length);
+}
+
+/** Hold the dirtyGuard source while any inline edit is open (§6.2); drop it when none is. */
+function syncDirtyRegistration() {
+    if (!Object.keys(edits).length) { unregisterDirty(LOCATION_EDIT_DIRTY_KEY); return; }
+    registerDirty(LOCATION_EDIT_DIRTY_KEY, {
+        get label() {
+            let names = Object.keys(edits).filter(isEditDirty).map(function (id) { let l = findLocation(id); return l ? l.name : id; });
+            return 'Location edits' + (names.length ? ': ' + names.join(', ') : '');
+        },
+        isDirty: function () { return Object.keys(edits).some(isEditDirty); },
+        save: async function () {
+            let ids = Object.keys(edits).filter(isEditDirty);
+            for (let i = 0; i < ids.length; i++) {
+                let loc = findLocation(ids[i]);
+                if (!loc || !(await saveEdit(loc))) return false;
+            }
+            return true;
+        },
+        discard: function () { edits = {}; syncDirtyRegistration(); }
+    });
+}
+
 export function beginEdit(loc) {
     edits[loc.objectId] = { description: loc.description || '', kind: loc.kind ? String(loc.kind).toLowerCase() : '', aliases: (loc.aliases || []).join(', ') };
+    syncDirtyRegistration();
 }
 
 export function cancelEdit(objectId) {
     delete edits[objectId];
+    syncDirtyRegistration();
 }
 
+/** Saves the draft's changed keys only. true = nothing to save or saved (editor closed); false = the PATCH failed (draft kept). */
 export async function saveEdit(loc) {
     let draft = edits[loc.objectId];
-    if (!draft) return;
+    if (!draft) return true;
     let body = editPatch(loc, draft);
-    if (!Object.keys(body).length) { cancelEdit(loc.objectId); m.redraw(); return; }
+    if (!Object.keys(body).length) { cancelEdit(loc.objectId); m.redraw(); return true; }
     let r = await act(loc.objectId, function () { return updateLocation(bookObjectId, loc.objectId, body); }, 'Saved ' + loc.name);
     if (r) cancelEdit(loc.objectId);
     m.redraw();
+    return !!r;
 }
 
 export function toggleLock(loc) {
@@ -484,12 +571,54 @@ export async function acceptAndMerge(p) {
 
 // ── Render / run watching ──────────────────────────────────────────────
 
+/** bookActivity key of a render subject: 'location-render:<location>' (a variant adds ':<variant>'). */
+export function activityKeyFor(loc, variant) {
+    if (!loc) return null;
+    return 'location-render:' + loc.objectId + (variant ? ':' + variant.objectId : '');
+}
+
+/**
+ * Stop watching (the server job carries on). A run that was still being watched leaves the activity store with
+ * it: nothing would update it any more, and a stale "running" entry would mark the section running for good.
+ */
 function stopWatching(key) {
     let keys = key ? [key] : Object.keys(runAborts);
     keys.forEach(function (k) {
-        if (runAborts[k]) { try { runAborts[k].abort(); } catch (_) {} }
+        if (runAborts[k]) {
+            try { runAborts[k].abort(); } catch (_) {}
+            let run = runs[k];
+            if (run && run.activityKey && !(run.job && run.job.terminal)) clearActivity(run.bookObjectId, run.activityKey);
+        }
         delete runAborts[k];
     });
+}
+
+/** The jobRunPanel opts of one run — published to bookActivity (the workspace dock / header pill), never into the body. */
+export function runPanelOpts(key) {
+    let run = runs[key];
+    if (!run) return null;
+    let job = run.job;
+    let terminal = !!(job && job.terminal);
+    let stages = deriveStageList(run.planned, job);
+    let total = job && typeof job.total === 'number' ? job.total : stages.length;
+    let current = job && typeof job.current === 'number' ? job.current : 0;
+    // a watch that ended in an error is over (nothing polls it any more): terminal + failed, so the dock / pill stop "running"
+    return {
+        compact: true, testid: 'pb-loc-run', terminal: terminal || !!run.error, failed: !!(job && (job.error || job.failed)) || !!run.error,
+        label: run.label,
+        counter: terminal ? runSummaryText(job) : (current + ' of ' + total + (job && job.phase ? ' · ' + job.phase : '')),
+        counterTestid: 'pb-loc-run-counter',
+        error: run.error,
+        onDismiss: function () { dismissRun(key); }, dismissTestid: 'pb-loc-run-dismiss',
+        stages: stages, stageTestid: 'pb-loc-run-stage', emptyText: 'Waiting for the first poll…',
+        section: 'locations'
+    };
+}
+
+function publishRun(key) {
+    let run = runs[key];
+    if (!run || !run.activityKey) return;
+    setActivity(run.bookObjectId, run.activityKey, runPanelOpts(key));
 }
 
 export async function startRender(loc, variant) {
@@ -508,10 +637,10 @@ export async function startRender(loc, variant) {
     }
     delete busy[key];
     m.redraw();
-    if (submit) watchRun(key, submit, 'Render ' + (variant ? loc.name + ' / ' + (variant.name || variantDeltaText(variant)) : loc.name));
+    if (submit) watchRun(key, submit, 'Render ' + (variant ? loc.name + ' / ' + (variant.name || variantDeltaText(variant)) : loc.name), activityKeyFor(loc, variant));
 }
 
-async function watchRun(key, submit, label) {
+async function watchRun(key, submit, label, activityKey) {
     stopWatching(key);
     if (!submit.jobId) {
         page.toast('error', 'Render was accepted but no job id was returned');
@@ -519,17 +648,19 @@ async function watchRun(key, submit, label) {
     }
     let ctl = new AbortController();
     runAborts[key] = ctl;
-    let run = { jobId: submit.jobId, runObjectId: submit.runObjectId, planned: submit.planned, job: null, label: label, error: null };
-    runs[key] = run;
     let bookId = bookObjectId;
+    let run = { jobId: submit.jobId, runObjectId: submit.runObjectId, planned: submit.planned, job: null, label: label, error: null, bookObjectId: bookId, activityKey: activityKey };
+    runs[key] = run;
+    publishRun(key);
     m.redraw();
     try {
         let job = await pollJob(submit.jobId, {
             signal: ctl.signal,
             intervalMs: pollIntervalMs,
-            onProgress: function (j) { if (runs[key] === run) { run.job = j; m.redraw(); } }
+            onProgress: function (j) { if (runs[key] === run) { run.job = j; publishRun(key); m.redraw(); } }
         });
         run.job = job;
+        if (runs[key] === run) publishRun(key);
         if (bookId === bookObjectId) {
             let r = job && job.result;
             let failed = !!(job && (job.error || job.cancelled)) || !!(r && (r.failedNodeCount || String(r.runStatus || '').toUpperCase() === 'FAILED'));
@@ -539,6 +670,7 @@ async function watchRun(key, submit, label) {
     } catch (e) {
         if (e && e.name === 'AbortError') return;
         run.error = (e && e.message) || String(e);
+        if (runs[key] === run) publishRun(key);
         page.toast('error', run.error);
     }
     if (runAborts[key] === ctl) delete runAborts[key];
@@ -567,7 +699,10 @@ export async function unpinAndRender(loc, variant) {
 
 function dismissRun(key) {
     stopWatching(key);
+    let run = runs[key];
+    if (run && run.activityKey) clearActivity(run.bookObjectId, run.activityKey);
     delete runs[key];
+    m.redraw();
 }
 
 function artifactAct(label, fn, artifactObjectId) {
@@ -575,13 +710,6 @@ function artifactAct(label, fn, artifactObjectId) {
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────
-
-const INPUT = 'w-full text-sm px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 disabled:opacity-60';
-const CHIP = 'text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200';
-
-function field(label, control) {
-    return m('label', { class: 'block' }, [m('div', { class: 'text-xs font-medium text-gray-600 dark:text-gray-300 mb-1' }, label), control]);
-}
 
 function kindSelect(testid, value, onchange) {
     return m('select', { 'data-testid': testid, class: INPUT, value: value || '', onchange: function (e) { onchange(e.target.value); } }, [
@@ -658,25 +786,6 @@ function renderChain(loc, node) {
     ]);
 }
 
-function renderRun(key) {
-    let run = runs[key];
-    if (!run) return null;
-    let job = run.job;
-    let terminal = !!(job && job.terminal);
-    let stages = deriveStageList(run.planned, job);
-    let total = job && typeof job.total === 'number' ? job.total : stages.length;
-    let current = job && typeof job.current === 'number' ? job.current : 0;
-    return jobRunPanel({
-        compact: true, testid: 'pb-loc-run', terminal: terminal, failed: !!(job && (job.error || job.failed)),
-        label: run.label,
-        counter: terminal ? runSummaryText(job) : (current + ' of ' + total + (job && job.phase ? ' · ' + job.phase : '')),
-        counterTestid: 'pb-loc-run-counter',
-        error: run.error,
-        onDismiss: function () { dismissRun(key); }, dismissTestid: 'pb-loc-run-dismiss',
-        stages: stages, stageTestid: 'pb-loc-run-stage', emptyText: 'Waiting for the first poll…'
-    });
-}
-
 function renderPinnedRefusal(loc, variant) {
     let key = subjectKey(loc, variant);
     let ref = pinnedRefusals[key];
@@ -709,21 +818,54 @@ function renderVariant(loc, v) {
             m('span', { class: 'flex-1' }),
             renderButton(loc, v)
         ]),
-        m('div', { 'data-testid': 'pb-loc-variant-used-by', class: 'text-[11px] text-gray-500' }, usedByText(v.usedByScenes)),
+        m('div', { 'data-testid': 'pb-loc-variant-used-by', class: 'text-[11px] text-gray-500' }, usedByView(v.usedByScenes)),
         renderChain(loc, v.node),
-        renderPinnedRefusal(loc, v),
-        renderRun(v.objectId)
+        renderPinnedRefusal(loc, v)
     ]);
+}
+
+/**
+ * "Used by scenes 3, 7, 12" — inside the workspace each number links to that scene's Page tab (§4.7) through the
+ * dirty guard; an index whose usedBy entry carries no sceneObjectId, and the legacy route, stay plain text.
+ */
+function usedByView(usedBy) {
+    let text = usedByText(usedBy);
+    let links = usedBySceneLinks(usedBy);
+    if (!wsKind || !bookObjectId || !Object.keys(links).length || !/^Used by scenes? /.test(text)) return text;
+    let prefix = /^Used by scenes? /.exec(text)[0];
+    let nums = text.substring(prefix.length).split(', ');
+    let kind = wsKind;
+    let book = bookObjectId;
+    let out = [prefix];
+    nums.forEach(function (n, i) {
+        if (i) out.push(', ');
+        let oid = links[n];
+        if (!oid) { out.push(n); return; }
+        let href = editLink(kind, book, { type: 'scene', id: oid, tab: 'page' });
+        out.push(m('a', {
+            href: '#!' + href,
+            'data-testid': 'pb-loc-scene-link',
+            'data-scene-id': oid,
+            class: 'text-blue-600 dark:text-blue-400 hover:underline',
+            title: 'Open scene ' + n,
+            onclick: function (e) {
+                if (e && e.preventDefault) e.preventDefault();
+                guardDirty(function () { m.route.set(href); });
+            }
+        }, n));
+    });
+    return out;
 }
 
 function renderEditor(loc) {
     let draft = edits[loc.objectId];
     let isBusy = !!busy[loc.objectId];
-    return m('div', { 'data-testid': 'pb-loc-editor', class: 'space-y-2' }, [
-        field('Description', m('textarea', { 'data-testid': 'pb-loc-edit-description', class: INPUT, rows: 3, value: draft.description, oninput: function (e) { draft.description = e.target.value; } })),
+    let patch = editPatch(loc, draft);
+    return m('div', { 'data-testid': 'pb-loc-editor', 'data-dirty': Object.keys(patch).length ? '1' : '0', class: 'space-y-2' }, [
+        field('Description', m('textarea', { 'data-testid': 'pb-loc-edit-description', class: INPUT, rows: 3, value: draft.description, oninput: function (e) { draft.description = e.target.value; } }), { dirty: 'description' in patch }),
         m('div', { class: 'grid grid-cols-2 gap-3' }, [
-            field('Kind', kindSelect('pb-loc-edit-kind', draft.kind, function (v) { draft.kind = v; })),
-            field('Aliases (comma separated)', m('input', { 'data-testid': 'pb-loc-edit-aliases', class: INPUT, value: draft.aliases, oninput: function (e) { draft.aliases = e.target.value; } }))
+            field('Kind', kindSelect('pb-loc-edit-kind', draft.kind, function (v) { draft.kind = v; }), { dirty: 'kind' in patch }),
+            field('Aliases (comma separated)', m('input', { 'data-testid': 'pb-loc-edit-aliases', class: INPUT, value: draft.aliases, oninput: function (e) { draft.aliases = e.target.value; } }), { dirty: 'aliases' in patch })
         ]),
         m('div', { class: 'flex items-center gap-2' }, [
             m('button', { 'data-testid': 'pb-loc-save', class: BTN_PRIMARY, disabled: isBusy, onclick: function () { saveEdit(loc); } }, isBusy ? 'Saving…' : 'Save'),
@@ -741,10 +883,10 @@ export function renderLocationCard(loc) {
         'data-location-id': loc.objectId,
         'data-location-name': loc.name || '',
         'data-locked': loc.locked ? '1' : '0',
-        class: 'p-3 rounded border dark:border-gray-700 bg-white dark:bg-gray-900 flex flex-col gap-2'
+        class: 'flex flex-col gap-3'
     }, [
         m('div', { class: 'flex items-center gap-2 flex-wrap' }, [
-            m('span', { 'data-testid': 'pb-loc-name', class: 'font-semibold text-sm', title: 'Names are not edited here: a rename is a merge' }, loc.name),
+            m('span', { 'data-testid': 'pb-loc-name', class: 'font-semibold text-lg', title: 'Names are not edited here: a rename is a merge' }, loc.name),
             loc.kind ? m('span', { 'data-testid': 'pb-loc-kind', class: CHIP }, String(loc.kind).toLowerCase()) : null,
             loc.locked ? m('span', { 'data-testid': 'pb-loc-locked', class: 'text-[11px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' }, 'Locked') : null,
             loc.approvedRenderObjectId ? m('span', { class: CHIP, title: 'Approved render ' + loc.approvedRenderObjectId }, 'approved') : null,
@@ -757,7 +899,7 @@ export function renderLocationCard(loc) {
             renderButton(loc, null)
         ]),
         editing ? renderEditor(loc) : m('div', { class: 'space-y-1' }, [
-            m('div', { 'data-testid': 'pb-loc-description', class: 'text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap' }, loc.description || m('span', { class: 'italic text-gray-400' }, 'No description')),
+            m('div', { 'data-testid': 'pb-loc-description', class: 'text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap' }, loc.description || m('span', { class: 'italic text-gray-400' }, 'No description')),
             m('div', { class: 'flex items-center gap-1 flex-wrap' }, [
                 (loc.aliases || []).map(function (a) { return m('span', { key: a, 'data-testid': 'pb-loc-alias', class: CHIP }, a); }),
                 m('button', {
@@ -767,10 +909,9 @@ export function renderLocationCard(loc) {
                 }, 'edit')
             ])
         ]),
-        m('div', { 'data-testid': 'pb-loc-used-by', class: 'text-xs text-gray-500' }, usedByText(loc.usedByScenes)),
+        m('div', { 'data-testid': 'pb-loc-used-by', class: 'text-xs text-gray-500' }, usedByView(loc.usedByScenes)),
         renderChain(loc, loc.node),
         renderPinnedRefusal(loc, null),
-        renderRun(loc.objectId),
         m('div', { class: 'flex items-center gap-2 mt-1' }, [
             m('span', { class: 'text-xs font-medium text-gray-600 dark:text-gray-300' }, 'Variants (' + (loc.variants || []).length + ')'),
             m('span', { class: 'flex-1' }),
@@ -826,7 +967,7 @@ function renderProposal(p) {
 }
 
 export function renderProposalsPanel() {
-    return m('div', { 'data-testid': 'pb-loc-proposals', class: 'mt-6 p-3 rounded border dark:border-gray-700' }, [
+    return m('div', { 'data-testid': 'pb-loc-proposals', class: 'space-y-2' }, [
         m('div', { class: 'flex items-center gap-2 mb-2' }, [
             m('span', { class: 'font-semibold text-sm' }, 'Proposals'),
             m('span', { 'data-testid': 'pb-loc-proposal-count', class: CHIP }, String(proposals.length)),
@@ -842,9 +983,9 @@ export function renderProposalsPanel() {
     ]);
 }
 
-export function renderLocationsHeader() {
-    return pageHeader({
-        back: { testid: 'pb-loc-back', title: 'Back to book', onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); } },
+/** The section toolbar's pageHeader opts (no back: the workspace rail replaces it, §4.2). */
+export function locationsToolbarOpts() {
+    return {
         title: 'Locations',
         meta: [metaText(locations.length + ' location' + (locations.length === 1 ? '' : 's'), { 'data-testid': 'pb-loc-count' })],
         refresh: { testid: 'pb-loc-refresh', disabled: loading, onclick: function () { loadLocations(); } },
@@ -863,61 +1004,156 @@ export function renderLocationsHeader() {
             'data-testid': 'pb-loc-new', class: BTN_PRIMARY, disabled: loading,
             onclick: openNewLocationDialog
         }, [m('span', { class: 'material-symbols-outlined text-sm align-middle mr-1' }, 'add_location'), 'New location'])]
+    };
+}
+
+/** The legacy full-page route's header: the same toolbar plus its back arrow. */
+export function renderLocationsHeader() {
+    return pageHeader(Object.assign({
+        back: { testid: 'pb-loc-back', title: 'Back to book', onclick: function () { m.route.set('/picture-book/v2/' + bookObjectId); } }
+    }, locationsToolbarOpts()));
+}
+
+/** The item the detail pane shows: the stored selection re-seated by ensureSelection; the Proposals row when there is no location. */
+export function effectiveSelection() {
+    if (selectedId === PROPOSALS_ITEM) return PROPOSALS_ITEM;
+    let ids = locations.map(function (l) { return l.objectId; });
+    let sel = ensureSelection(ids, selectedId, selectedIndex);
+    if (sel != null) selectedIndex = ids.indexOf(sel);
+    return sel != null ? sel : PROPOSALS_ITEM;
+}
+
+/** Select a row: through the workspace (ctx.select → dirty guard → route) when mounted there, else locally behind the guard. */
+function selectRow(ctx, id) {
+    if (ctx && typeof ctx.select === 'function') return ctx.select(id);
+    return guardDirty(function () { selectedId = id; });
+}
+
+function locationRow(l) {
+    let n = usedByCount(l.usedByScenes);
+    let dirty = isEditDirty(l.objectId);
+    return {
+        title: l.name,
+        subtitle: 'Used by ' + n + ' scene' + (n === 1 ? '' : 's'),
+        dirty: dirty,
+        attrs: { 'data-location-name': l.name || '', 'data-locked': l.locked ? '1' : '0' },
+        badges: [
+            l.kind ? { text: String(l.kind).toLowerCase(), tone: 'gray', attrs: { 'data-testid': 'pb-loc-row-kind' } } : null,
+            l.locked ? { text: 'Locked', tone: 'amber', attrs: { 'data-testid': 'pb-loc-row-locked' } } : null,
+            dirty ? { text: 'unsaved', tone: 'amber', attrs: { 'data-testid': 'pb-loc-row-unsaved' } } : null
+        ].filter(Boolean)
+    };
+}
+
+function proposalsRow() {
+    let n = openProposalCount;
+    return {
+        title: 'Proposals',
+        subtitle: n == null ? null : (n ? n + ' awaiting a decision' : 'none open'),
+        attrs: { 'data-testid': 'pb-loc-proposals-row' },
+        badges: n ? [{ text: String(n), tone: 'purple', attrs: { 'data-testid': 'pb-loc-proposals-row-count' } }] : []
+    };
+}
+
+/** §5.5: master/detail — the pinned Proposals pseudo-row, then one row per location; the detail is the location page. */
+export function renderLocationsBody(ctx) {
+    let st = stateBlock({
+        loading: loading && !locations.length && !error, error: error,
+        loadingText: 'Loading locations...', testids: { loading: 'pb-loc-loading', error: 'pb-loc-error' }
+    });
+    if (st) return st;
+    let items = [{ objectId: PROPOSALS_ITEM, __proposals: true }].concat(locations);
+    return masterDetail({
+        testid: 'pb-loc-md', listTestid: 'pb-loc-list', rowTestid: 'pb-loc-row', detailTestid: 'pb-loc-detail',
+        items: items,
+        selectedId: effectiveSelection(),
+        onSelect: function (id) { selectRow(ctx, id); },
+        rowView: function (it) { return it.__proposals ? proposalsRow() : locationRow(it); },
+        detailView: function (it) {
+            if (!it.__proposals) return renderLocationCard(it);
+            return m('div', { class: 'space-y-3' }, [
+                locations.length ? null : stateBlock({ empty: true, align: 'left', emptyText: 'No locations yet. Create one, or propose them from the scenes.', testids: { empty: 'pb-loc-empty' } }),
+                renderProposalsPanel()
+            ]);
+        }
     });
 }
 
-export function renderLocationsBody() {
-    if (loading && !locations.length && !error) return m('div', { class: 'text-sm text-gray-500 text-center py-12' }, 'Loading locations...');
-    if (error) return m('div', { 'data-testid': 'pb-loc-error', class: 'text-red-500 text-sm text-center py-12' }, error);
-    return m('div', { class: 'max-w-6xl mx-auto w-full' }, [
-        locations.length
-            ? m('div', { 'data-testid': 'pb-loc-grid', class: 'grid grid-cols-1 lg:grid-cols-2 gap-3' }, locations.map(renderLocationCard))
-            : m('div', { 'data-testid': 'pb-loc-empty', class: 'text-sm text-gray-400 italic text-center py-8' }, 'No locations yet. Create one, or propose them from the scenes.'),
-        renderProposalsPanel()
-    ]);
+/** Reset for a new book (the old route oninit's body); a re-entry of the same book only reloads. */
+function enterBook(id) {
+    if (id && id !== bookObjectId) {
+        stopWatching();
+        bookObjectId = id;
+        locations = [];
+        worldObjectId = null;
+        error = null;
+        proposals = [];
+        proposalsError = null;
+        proposalFilter = 'PROPOSED';
+        openProposalCount = null;
+        busy = {};
+        edits = {};
+        syncDirtyRegistration();
+        runs = {};
+        pinnedRefusals = {};
+        overwrite = {};
+        selectedId = null;
+        selectedIndex = -1;
+        // The book's carried config (a ChapBook's own screens register one; null for a PictureBook),
+        // else the library default resolves below — the board's order (P9-8 240 d).
+        chatConfigRef = carriedBookChatConfig(id);
+        chatConfigResolving = false;
+        chatConfigPending = null;
+    }
+    if (bookObjectId) {
+        // drafts kept for this book (the user chose Stay / left and came back) are guarded again
+        syncDirtyRegistration();
+        loadLocations();
+        ensureChatConfigDefault();
+    }
+}
+
+function leave() {
+    stopWatching();
+    unregisterDirty(LOCATION_EDIT_DIRTY_KEY);
 }
 
 const locationsView = {
-    oninit: function (vnode) {
-        let id = vnode.attrs.bookObjectId;
-        if (id && id !== bookObjectId) {
-            stopWatching();
-            bookObjectId = id;
-            locations = [];
-            worldObjectId = null;
-            error = null;
-            proposals = [];
-            proposalsError = null;
-            proposalFilter = 'PROPOSED';
-            busy = {};
-            edits = {};
-            runs = {};
-            pinnedRefusals = {};
-            overwrite = {};
-            // The book's carried config (a ChapBook's own screens register one; null for a PictureBook),
-            // else the library default resolves below — the board's order (P9-8 240 d).
-            chatConfigRef = carriedBookChatConfig(id);
-            chatConfigResolving = false;
-            chatConfigPending = null;
-        }
-        if (bookObjectId) {
-            loadLocations();
-            ensureChatConfigDefault();
-        }
-    },
-    onremove: function () { stopWatching(); },
+    oninit: function (vnode) { wsKind = null; enterBook(vnode.attrs.bookObjectId); },
+    onremove: function () { leave(); },
     view: function () {
         return m('div', { 'data-testid': 'pb-loc', class: 'p-4 flex flex-col h-full' }, [
             renderLocationsHeader(),
-            m('div', { class: 'flex-1 overflow-y-auto' }, renderLocationsBody())
+            m('div', { class: 'flex-1 min-h-0 flex flex-col mt-2' }, renderLocationsBody(null))
         ]);
+    }
+};
+
+/**
+ * Edit › Locations — the bookWorkspace SectionAdapter (components/bookWorkspace.js header comment). Works for any
+ * olio.pb.book objectId; ctx.kind ('pb' | 'cb') only decides where the scene links route.
+ */
+export const locationsSection = {
+    dirtyKeys: [LOCATION_EDIT_DIRTY_KEY],
+    init: function (ctx) {
+        wsKind = ctx.kind || 'pb';
+        enterBook(ctx.bookObjectId);
+        selectedId = ctx.item || null;
+    },
+    select: function (ctx) { selectedId = ctx.item || null; },
+    remove: function () { leave(); wsKind = null; },
+    toolbar: function () { return locationsToolbarOpts(); },
+    body: function (ctx) { return renderLocationsBody(ctx); },
+    status: function (ctx) {
+        if (!ctx || ctx.bookObjectId !== bookObjectId || openProposalCount == null) return null;
+        return { kind: 'count', count: openProposalCount, title: openProposalCount + ' location proposal' + (openProposalCount === 1 ? '' : 's') + ' awaiting a decision' };
     }
 };
 
 // ── Test seams ─────────────────────────────────────────────────────────
 
 export function __locationsStateForTest() {
-    return { bookObjectId, locations, worldObjectId, loading, error, proposals, proposalFilter, proposalsLoading, proposalsError, proposing, proposeJob, busy, edits, runs, runAborts, pinnedRefusals, overwrite, imageUrls, pollIntervalMs, chatConfigRef, chatConfigResolving };
+    return { bookObjectId, locations, worldObjectId, loading, error, proposals, proposalFilter, proposalsLoading, proposalsError, proposing, proposeJob, busy, edits, runs, runAborts, pinnedRefusals, overwrite, imageUrls, pollIntervalMs, chatConfigRef, chatConfigResolving, openProposalCount, selectedId, selectedIndex, wsKind };
 }
 
 export function __setLocationsStateForTest(s) {
@@ -944,6 +1180,11 @@ export function __setLocationsStateForTest(s) {
     if ('imageUrls' in s) imageUrls = s.imageUrls || {};
     if ('pollIntervalMs' in s) pollIntervalMs = s.pollIntervalMs;
     if ('loadSeq' in s) loadSeq = s.loadSeq;
+    if ('openProposalCount' in s) openProposalCount = s.openProposalCount == null ? null : s.openProposalCount;
+    if ('selectedId' in s) selectedId = s.selectedId || null;
+    if ('selectedIndex' in s) selectedIndex = s.selectedIndex == null ? -1 : s.selectedIndex;
+    if ('wsKind' in s) wsKind = s.wsKind || null;
+    if ('edits' in s) syncDirtyRegistration();
 }
 
 export const routes = {

@@ -369,7 +369,7 @@ test.describe('PictureBook fan-out re-run reuses existing chapter books on 409 (
             // not the product. The 409-reuse property is asserted in BOTH outcomes; the declined passages are logged,
             // never a threshold.
             const firstChapterOid = preCreated[0].objectId;
-            const landing = new RegExp('#!/picture-book/' + firstChapterOid + '/workflow');
+            const landing = new RegExp('#!/picture-book/' + firstChapterOid + '/edit/canvas');
             const errorBanner = dialog.locator('div.text-red-500');
             const summary = dialog.locator('[data-pb-chapter-summary]');
             const deadline = Date.now() + LLM_TEST_TIMEOUT_MS - 3 * 60 * 1000;

@@ -1,8 +1,13 @@
 /**
  * ChapBook feature — Poem library, analysis, and landscape-illustrated poetry-book creation.
  *
- * Routes:
- *   /chap-book   — Poem library + ChapBook creation
+ * Surfaces (aiDocs/PictureBookUxConsistencyDesign.md §7.2, §8; the route table is features/chapBookWorkspace.js):
+ *   /chap-book                              library — "ChapBooks": the poem queue + Create, and the book list
+ *   /chap-book/read/:bookObjectId           Read mode — bookHeader (Read) over the shared ReaderShell, no edit controls
+ *   /chap-book/edit/:bookObjectId[/:section[/:item]]   Edit mode — the shared bookWorkspace; this module exports the
+ *       Book / Style / Pages / Render SectionAdapters (cbBookSection, cbStyleSection, cbPagesSection, cbRenderSection)
+ *       over its own module state; Locations / Cover & Art / Review are the PictureBook adapters (ctx.kind = 'cb').
+ *   /chap-book/review/:bookObjectId         legacy — redirects to /chap-book/edit/:bookObjectId/pages
  */
 import m from 'mithril';
 import { page } from '../core/pageClient.js';
@@ -19,9 +24,14 @@ import { am7model } from '../core/model.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
 import { ReaderShell, exportBook, escHtml } from '../components/readerShell.js';
-import { pageHeader } from '../components/pageHeader.js';
+import { pageHeader, chip, metaText } from '../components/pageHeader.js';
 import { bgActivityBanner } from '../components/jobRunPanel.js';
-import { btn } from '../components/buttons.js';
+import { btn, iconBtn, BTN, BTN_PRIMARY, BTN_DANGER } from '../components/buttons.js';
+import { bookHeader } from '../components/bookHeader.js';
+import { stateBlock, dirtyMark } from '../components/bookUi.js';
+import { registerDirty, guardDirty, guardedRoute } from '../components/dirtyGuard.js';
+import { setActivity, clearActivity } from '../workflows/bookActivity.js';
+import { editRoute, editLink, readRoute } from '../workflows/bookWorkspaceNav.js';
 
 // ── REST base ─────────────────────────────────────────────────────────
 
@@ -679,9 +689,7 @@ let addPoemTitle = '';
 let addPoemAuthor = '';
 let addPoemText = '';
 
-// Render state
-let renderingBook = false;
-let lastRenderResult = null;
+// Create result (the last completed create / reattached create)
 let lastCreatedBook = null;
 
 // Gap 6: per-scene render progress (mirrors PB2's genProgress/sceneImageUrls maps in
@@ -1416,10 +1424,12 @@ async function renderScenesSerially(sceneOids, generateOne, hooks) {
             else if (result && result.skipped && !result.llmUnavailable) skipped++;
             if (result && result.llmUnavailable) llmUnavailable++;
             if (result && result.llmDegraded) llmDegraded++;
+            if (hooks.onResult) hooks.onResult(oid, result, null);
             if (hooks.onProgress) hooks.onProgress(oid, (result && result.pinned) ? 'pinned' : 'done', done + 1, total);
             if (result && result.imageObjectId && hooks.onImage) hooks.onImage(oid, result.imageObjectId);
         } catch (e) {
             failed++;
+            if (hooks.onResult) hooks.onResult(oid, null, (e && (e.error || e.message)) || 'render failed');
             if (hooks.onProgress) hooks.onProgress(oid, 'error', done + 1, total);
         }
         done++;
@@ -1445,7 +1455,26 @@ function pinnedSceneResult(message) {
 // "left pinned" outcome. The bulk path never unpins and never asks: the per-page Re-render / Regenerate
 // buttons on the review page are where the explicit "Unpin and re-render" confirmation lives.
 async function renderChapBookScenes(bookObjectId, chatConfigName, sdConfig, onSceneImage) {
-    let pages = await bookPages(bookObjectId);
+    // §4.5: the run is visible for the first time — the header pill and the Edit dock read the bookActivity entry
+    // published from the same renderProgress map this function has always maintained.
+    renderActivityBook = bookObjectId || null;
+    renderOrder = [];
+    renderStageInfo = {};
+    renderRunFailed = false;
+    renderRunError = null;
+    renderDone = 0;
+    renderTotal = 0;
+    renderProgress = {};
+    publishRenderActivity(false);
+    let pages;
+    try {
+        pages = await bookPages(bookObjectId);
+    } catch (e) {
+        renderRunFailed = true;
+        renderRunError = (e && e.message) || 'Could not read the book\'s pages';
+        publishRenderActivity(true);
+        throw e;
+    }
     pages = Array.isArray(pages) ? pages : [];
     let sceneOids = pages.map(function (p) { return p.objectId; }).filter(Boolean);
     let pinnedByScene = {};
@@ -1454,40 +1483,125 @@ async function renderChapBookScenes(bookObjectId, chatConfigName, sdConfig, onSc
     renderSceneUrls = {};
     renderTotal = sceneOids.length;
     renderDone = 0;
+    renderOrder = sceneOids.slice();
+    publishRenderActivity(false);
     m.redraw();
-    return renderScenesSerially(sceneOids, function (oid) {
-        if (pinnedByScene[oid]) {
-            return Promise.resolve(pinnedSceneResult('page node is pinned'));
+    let result;
+    try {
+        result = await renderScenesSerially(sceneOids, function (oid) {
+            if (pinnedByScene[oid]) {
+                return Promise.resolve(pinnedSceneResult('page node is pinned'));
+            }
+            return renderChapBookScene(oid, chatConfigName, sdConfig, undefined, { bookObjectId: bookObjectId })
+                .catch(function (e) {
+                    if (isChapBookPinnedRefusal(e)) return pinnedSceneResult(e.error || e.message);
+                    throw e;
+                });
+        }, {
+            sleep: sleep,
+            onProgress: function (oid, status, done, total) {
+                renderProgress[oid] = status;
+                renderDone = done;
+                renderTotal = total;
+                publishRenderActivity(false);
+                m.redraw();
+            },
+            onResult: function (oid, r, err) { renderStageInfo[oid] = { result: r || null, error: err || null }; },
+            onImage: function (oid, imageObjectId) {
+                resolveImageUrl(imageObjectId).then(function (url) {
+                    if (url) {
+                        renderSceneUrls[oid] = url;
+                        if (onSceneImage) onSceneImage(oid, url);
+                        m.redraw();
+                    }
+                });
+            }
+        });
+    } catch (e) {
+        renderRunFailed = true;
+        renderRunError = (e && e.message) || 'Render failed';
+        publishRenderActivity(true);
+        m.redraw();
+        throw e;
+    }
+    renderRunFailed = !!(result && result.failed > 0);
+    publishRenderActivity(true, result);
+    m.redraw();
+    return result;
+}
+
+// ── Render activity (§4.5) — the renderProgress map, shaped for jobRunPanel / the bookActivity store ──
+let renderActivityBook = null;  // the book the last renderChapBookScenes ran for
+let renderOrder = [];           // its page objectIds in book order (stage n = Page n)
+let renderStageInfo = {};       // oid → { result, error } as each page settles
+let renderRunFailed = false;
+let renderRunError = null;
+const CB_RENDER_ACTIVITY = 'cb-render';
+
+/** One stage row per page from the renderProgress map (pending until its call starts). Pure — unit-tested. */
+function renderStages(order, progress, info) {
+    return (order || []).map(function (oid, i) {
+        let st = progress ? progress[oid] : null;
+        let inf = (info && info[oid]) || {};
+        let r = inf.result || null;
+        let state = 'pending';
+        let error = null;
+        if (st === 'generating') state = 'running';
+        else if (st === 'error') { state = 'failed'; error = inf.error || 'render failed'; }
+        else if (st === 'pinned') { state = 'skipped'; error = 'left pinned'; }
+        else if (st === 'done') {
+            if (r && r.skipped && !r.rendered) { state = 'skipped'; error = r.llmUnavailable ? 'LLM unavailable — not rendered' : 'needs a prompt'; }
+            else state = 'done';
         }
-        return renderChapBookScene(oid, chatConfigName, sdConfig, undefined, { bookObjectId: bookObjectId })
-            .catch(function (e) {
-                if (isChapBookPinnedRefusal(e)) return pinnedSceneResult(e.error || e.message);
-                throw e;
-            });
-    }, {
-        sleep: sleep,
-        onProgress: function (oid, status, done, total) {
-            renderProgress[oid] = status;
-            renderDone = done;
-            renderTotal = total;
-            m.redraw();
-        },
-        onImage: function (oid, imageObjectId) {
-            resolveImageUrl(imageObjectId).then(function (url) {
-                if (url) {
-                    renderSceneUrls[oid] = url;
-                    if (onSceneImage) onSceneImage(oid, url);
-                    m.redraw();
-                }
-            });
-        }
+        return { handle: 'Page ' + (i + 1), state: state, error: error };
     });
+}
+
+/** The jobRunPanel-shaped activity for the current / last run (bookActivity setActivity opts). */
+function renderActivityOpts(terminal, result) {
+    let total = renderOrder.length || renderTotal || 0;
+    let done = Math.min(renderDone, total);
+    let err = renderRunError;
+    if (terminal && result && !err && renderResultLevel(result) !== 'success') err = renderResultMessage(result);
+    let book = renderActivityBook;
+    return {
+        testid: 'cb-render-activity',
+        label: 'Render',
+        counter: total ? (done + ' of ' + total) : '',
+        counterTestid: 'cb-render-activity-counter',
+        terminal: !!terminal,
+        failed: !!renderRunFailed,
+        error: err,
+        stages: renderStages(renderOrder, renderProgress, renderStageInfo),
+        stageTestid: 'cb-render-stage',
+        emptyText: 'Reading the book\'s pages…',
+        section: 'render',
+        dismissTestid: 'cb-render-dismiss',
+        dismissTitle: 'Dismiss',
+        onDismiss: function () { clearActivity(book, CB_RENDER_ACTIVITY); m.redraw(); }
+    };
+}
+
+function publishRenderActivity(terminal, result) {
+    if (!renderActivityBook) return;
+    setActivity(renderActivityBook, CB_RENDER_ACTIVITY, renderActivityOpts(terminal, result));
 }
 
 // "Rendering N/M..." while a per-scene render is in flight; plain "Rendering..." before scenes load.
 function renderProgressLabel() {
     if (renderTotal > 0) return 'Rendering ' + Math.min(renderDone + 1, renderTotal) + '/' + renderTotal + '...';
     return 'Rendering...';
+}
+
+// The book an Edit › Render run is in flight for (null when none). Entering Read or the library while it runs must not
+// wipe its per-page progress, and re-entering Edit must not re-enable Render over it (a second, parallel render of
+// the same pages) — verifier finding 3, 2026-11-19.
+let renderRunningFor = null;
+
+/** Clear per-page progress, unless a render is still running (its progress is live state, not stale). */
+function resetRenderProgressIfIdle() {
+    if (renderRunningFor) return;
+    resetRenderProgress();
 }
 
 function resetRenderProgress() {
@@ -1558,21 +1672,6 @@ function renderResultLevel(result) {
 // Emit the render-complete toast at the right severity. Uses the file's existing page.toast helper.
 function toastRenderResult(result) {
     page.toast(renderResultLevel(result), renderResultMessage(result));
-}
-
-async function renderBook(bookObjectId, chatConfigName, sdConfig) {
-    renderingBook = true;
-    lastRenderResult = null;
-    m.redraw();
-    try {
-        let result = await renderChapBookScenes(bookObjectId, chatConfigName, sdConfig);
-        lastRenderResult = result;
-        toastRenderResult(result);
-    } catch (e) {
-        page.toast('error', 'Render failed: ' + (e.message || ''));
-    }
-    renderingBook = false;
-    m.redraw();
 }
 
 function renderNoteOrderDialog() {
@@ -1698,10 +1797,12 @@ async function doCreateChapBook() {
             renderSdConfigBookId = navObjectId;
         }
         if (navObjectId) {
-            // D5: persist durably (localStorage) so the reader's Analyze button survives a reload —
-            // the book keeps no poem references, so the reader re-derives these ids on oninit.
+            // D5: persist durably (localStorage) so the Analyze-poems action survives a reload —
+            // the book keeps no poem references, so the editor re-derives these ids on entry.
             persistReaderPoemIds(navObjectId, readerPoemIds);
-            m.route.set('/chap-book/read/' + navObjectId);
+            // §7.2: the chat config picked for this create is the session default for the new book (Edit › Book).
+            carryCreateChatConfig();
+            m.route.set(createdBookRoute(navObjectId));
         }
     } catch (e) {
         page.toast('error', 'Failed to create: ' + (e.message || ''));
@@ -1783,9 +1884,13 @@ async function reattachCreateChapBook(slug) {
         createJobId = mine.jobId;
         onCreateChapBookProgress(mine);
         let bgToken = LLMConnector.lockBgActivity();
+        let landed = null;
         try {
             let job = await pollJob(createJobId, { onProgress: onCreateChapBookProgress });
-            if (job.status === 'completed' && job.result) lastCreatedBook = job.result;
+            if (job.status === 'completed' && job.result) {
+                lastCreatedBook = job.result;
+                landed = job.result.objectId || job.result.bookObjectId || null;
+            }
         } finally {
             LLMConnector.unlockBgActivity(bgToken);
             LLMConnector.setBgActivity(null, null);
@@ -1795,6 +1900,14 @@ async function reattachCreateChapBook(slug) {
             createProgress = null;
             m.redraw();
         }
+        // A reattached run that finished lands where a fresh create does (§7.2), so the library needs no
+        // separate "ChapBook created" strip.
+        if (landed) {
+            showCreateDialog = false;
+            page.toast('success', 'ChapBook created: ' + (lastCreatedBook.slug || slug));
+            carryCreateChatConfig();
+            m.route.set(createdBookRoute(landed));
+        }
         return true;
     } catch (e) {
         console.error('[chapBook] reattach failed:', e);
@@ -1802,6 +1915,18 @@ async function reattachCreateChapBook(slug) {
         createJobId = null;
         m.redraw();
         return false;
+    }
+}
+
+/** §7.2: where a created ChapBook opens — Edit, guided, at the next incomplete section (D6). Pure. */
+function createdBookRoute(bookObjectId) {
+    return editRoute('cb', bookObjectId, null, null, { guided: 1 });
+}
+
+/** The create dialog's chat config becomes the session default the Edit › Book section shows. */
+function carryCreateChatConfig() {
+    if (createChatConfigRef && createChatConfigRef.name && !configChatConfigRef) {
+        configChatConfigRef = { name: createChatConfigRef.name, objectId: createChatConfigRef.objectId != null ? createChatConfigRef.objectId : null };
     }
 }
 
@@ -1852,14 +1977,16 @@ async function doDeleteBook(book) {
         confirmIcon: 'delete',
         destructive: true
     });
-    if (!ok) return;
+    if (!ok) return false;
     try {
         await deleteBook(book.objectId);
         page.toast('success', 'Deleted: ' + (book.name || book.slug));
-        await loadMyBooks();
     } catch (e) {
         page.toast('error', 'Delete failed: ' + (e.message || ''));
+        return false;
     }
+    await loadMyBooks();
+    return true;
 }
 
 async function doDeleteSelected() {
@@ -1900,65 +2027,21 @@ async function doDeleteSelected() {
 // render dialogs (fixed overlays) so those triggers work from every view. Attrs:
 //   { mode, book, onRender, rendering, onExport, exporting, canExport }
 
-// (1) design-time settings. `book` is the current review/reader book (null on the create/landing view);
-// the single working fixed-page-height toggle only renders when there is a book to bind it to.
-// `bookObjectId` is the panel mount's key for the book-level SD config instance (null on create).
-function renderConfigDesignSettings(book, bookObjectId) {
-    return m('div', { class: 'space-y-3' }, [
-        m('div', { class: 'flex flex-wrap items-end gap-4' }, [
-            m('div', [
-                m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Filter poems'),
-                m('input', {
-                    type: 'text',
-                    placeholder: 'Filter by theme or title...',
-                    class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white w-56',
-                    value: themeFilter,
-                    oninput: function (e) { themeFilter = e.target.value; m.redraw(); }
-                })
-            ]),
-            m('div', [
-                m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Max lines / page'),
-                m('input', {
-                    type: 'number', min: 1, max: 32,
-                    class: 'w-24 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white',
-                    value: createMaxLines,
-                    oninput: function (e) { createMaxLines = parseInt(e.target.value) || 8; }
-                })
-            ]),
-            // The SINGLE fixed-page-height toggle (data-testid cb-fix-page-height). Bound to the current
-            // book via buildBookPatchBody/patchBookFixPageHeight/setBookFixPageHeight; only rendered when
-            // a book exists, so review and read each show exactly one working toggle.
-            book ? m('label', { class: 'flex items-center gap-2 text-sm dark:text-white cursor-pointer select-none pb-1' }, [
-                m('input', {
-                    type: 'checkbox',
-                    'data-testid': 'cb-fix-page-height',
-                    checked: !!book.fixPageHeight,
-                    disabled: roleWarning,
-                    onchange: function (e) { setBookFixPageHeight(book, e.target.checked); }
-                }),
-                'Fixed page height'
-            ]) : null,
-            m('div', { class: 'w-56' }, renderChatConfigControl({
-                stacked: true, label: 'Default chat config', testid: 'cb-config-chatconfig', ref: configChatConfigRef,
-                resolving: _configChatConfigResolving, placeholder: '(default — click to select)',
-                onPick: function (ref) { configChatConfigRef = ref; m.redraw(); }
-            }))
-        ]),
-        m('div', { class: 'border-t border-gray-200 dark:border-gray-700 pt-2' }, [
-            m('button', {
-                class: 'flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white',
-                onclick: function () {
-                    configSdExpanded = !configSdExpanded;
-                    if (configSdExpanded) { loadRenderSdModels(); loadRenderSdLoras(); ensureRenderSdConfig(bookObjectId || null); }
-                    m.redraw();
-                }
-            }, [
-                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px' }, configSdExpanded ? 'expand_less' : 'expand_more'),
-                'Default image (SD) settings'
-            ]),
-            configSdExpanded ? (renderSdConfigInst
-                ? m(SdConfigPanel, { inst: renderSdConfigInst, models: renderSdModelList, loras: renderSdLoraList, onChange: function () { m.redraw(); } })
-                : renderSdConfigPlaceholder(bookObjectId || null, 'text-sm')) : null
+// (1) the poem-queue filter. §7.2: the other design-time settings that used to sit here are inputs to ONE create
+// (max lines, default chat config, image settings) and are fields of the Create dialog now; for an existing book
+// they live in Edit › Book / Style / Render. The filter stays with the queue it filters.
+function renderConfigDesignSettings() {
+    return m('div', { class: 'flex flex-wrap items-end gap-4' }, [
+        m('div', [
+            m('label', { class: 'block text-xs font-medium text-gray-500 dark:text-gray-400 mb-0.5' }, 'Filter poems'),
+            m('input', {
+                type: 'text',
+                'data-testid': 'cb-poem-filter',
+                placeholder: 'Filter by theme or title...',
+                class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-sm dark:text-white w-56',
+                value: themeFilter,
+                oninput: function (e) { themeFilter = e.target.value; m.redraw(); }
+            })
         ])
     ]);
 }
@@ -2164,8 +2247,8 @@ function renderCreateDialog() {
     return m('div', {
         class: 'fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50'
     },
-        m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-md mx-4' }, [
-            m('div', { class: 'flex items-center justify-between mb-4' }, [
+        m('div', { class: 'bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto' }, [
+            m('div', { class: 'flex items-center justify-between mb-4', 'data-testid': 'cb-create-dialog' }, [
                 m('h3', { class: 'text-lg font-semibold dark:text-white' }, 'Create ChapBook'),
                 m('button', { class: 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200', onclick: closeCreateDialog },
                     m('span', { class: 'material-symbols-outlined' }, 'close'))
@@ -2204,10 +2287,29 @@ function renderCreateDialog() {
                     })
                 ]),
                 renderChatConfigControl({
-                    stacked: true, testid: 'cb-create-chatconfig', ref: createChatConfigRef, resolving: _createChatConfigResolving,
+                    stacked: true, label: 'Default chat config', testid: 'cb-create-chatconfig', ref: createChatConfigRef, resolving: _createChatConfigResolving,
                     placeholder: '(default — click to select)',
                     onPick: function (ref) { createChatConfigRef = ref; m.redraw(); }
                 }),
+                // §7.2: the new book's image settings are an input to this create (saved to the book once it exists).
+                m('div', { class: 'border-t border-gray-200 dark:border-gray-700 pt-2' }, [
+                    m('button', {
+                        type: 'button',
+                        'data-testid': 'cb-create-image-settings-toggle',
+                        class: 'flex items-center gap-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white',
+                        onclick: function () {
+                            configSdExpanded = !configSdExpanded;
+                            if (configSdExpanded) { loadRenderSdModels(); loadRenderSdLoras(); ensureRenderSdConfig(null); }
+                            m.redraw();
+                        }
+                    }, [
+                        m('span', { class: 'material-symbols-outlined', style: 'font-size:16px' }, configSdExpanded ? 'expand_less' : 'expand_more'),
+                        'Image settings'
+                    ]),
+                    configSdExpanded ? m('div', { class: 'mt-2 max-h-72 overflow-y-auto' }, (renderSdConfigInst && renderSdConfigBookId === null)
+                        ? m(SdConfigPanel, { inst: renderSdConfigInst, models: renderSdModelList, loras: renderSdLoraList, onChange: function () { m.redraw(); } })
+                        : renderSdConfigPlaceholder(null, 'text-sm')) : null
+                ]),
                 m('div', { class: 'text-xs text-gray-500 dark:text-gray-400' },
                     selectedIds.size + ' poem(s) selected')
             ]),
@@ -2302,21 +2404,18 @@ function renderAddPoemDialog() {
     );
 }
 
+// §7.2: the library's "Poems" panel — the poem queue and Create live ONLY here now (it is no longer mounted in the
+// reader or the editor). The testids cb-config-panel / cb-config-toggle are kept for the e2e specs.
 const ChapBookConfig = {
-    oninit: function (vnode) {
-        // Ensure the queue + SD catalog/config + default chat config are loaded regardless of which
-        // view mounted the panel. Guard loadPoems so a review/read remount doesn't clobber a fresh list.
+    oninit: function () {
         if (!poems.length && !loading) loadPoems();
         loadRenderSdModels();
         loadRenderSdLoras();
-        // P0-10d: key the book-level SD config instance to the mounting view's book (null on create).
-        ensureRenderSdConfig((vnode.attrs && vnode.attrs.bookObjectId) || null);
-        ensureConfigChatConfigDefault();
+        // P0-10d: the create view's image-settings instance (null key) — the Create dialog edits it.
+        ensureRenderSdConfig(null);
     },
     view: function (vnode) {
         let attrs = vnode.attrs || {};
-        let book = attrs.book || null;
-        let bookObjectId = attrs.bookObjectId || null;
         return m('div', {
             'data-testid': 'cb-config-panel',
             class: 'mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40'
@@ -2330,21 +2429,20 @@ const ChapBookConfig = {
                     onclick: function () { configPanelExpanded = !configPanelExpanded; m.redraw(); }
                 }, [
                     m('span', { class: 'material-symbols-outlined', style: 'font-size:18px' }, configPanelExpanded ? 'expand_more' : 'chevron_right'),
-                    m('span', { class: 'material-symbols-outlined text-purple-500', style: 'font-size:18px' }, 'tune'),
-                    'ChapBook configuration',
+                    m('span', { class: 'material-symbols-outlined text-purple-500', style: 'font-size:18px' }, 'format_list_bulleted'),
+                    'Poems',
                     selectedIds.size > 0 ? m('span', { class: 'ml-2 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 text-xs' }, selectedIds.size + ' selected') : null
                 ]),
                 renderConfigActions(attrs)
             ]),
             configPanelExpanded ? m('div', { class: 'p-3 space-y-4' }, [
-                renderConfigDesignSettings(book, bookObjectId),
+                renderConfigDesignSettings(),
                 renderConfigPoemQueue(attrs.mode)
             ]) : null,
-            // Dialogs (fixed overlays) — hosted here so their triggers work from every view.
+            // Dialogs (fixed overlays) for the queue's own triggers.
             renderNoteOrderDialog(),
             renderCreateDialog(),
-            renderAddPoemDialog(),
-            renderRenderDialog()
+            renderAddPoemDialog()
         ]);
     }
 };
@@ -2373,52 +2471,32 @@ const PoemLibrary = {
         pendingRenderBookId = null;
         pendingRenderCallback = null;
         renderSdCfg = {};
-        // Gap 6: clear any per-scene render progress from a prior book/session
-        resetRenderProgress();
+        // Gap 6: clear any per-scene render progress from a prior book/session (never a run still in flight)
+        resetRenderProgressIfIdle();
         // Issue 9 / D6: block ChapBook actions when the AccountUsers role is absent
         roleWarning = lacksUserRole(page.context && page.context());
+        // Edit re-reads its book on the next entry.
+        editNeedsReload = true;
         loadPoems();
         loadMyBooks();
     },
     view: function () {
-        return m('div', { class: 'p-4 max-w-5xl' }, [
+        return m('div', { class: 'p-4 max-w-5xl mx-auto w-full', 'data-testid': 'cb-library' }, [
             // Issue 9: role warning banner
             roleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
                 m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
                 'You need the AccountUsers role to use ChapBook features.'
             ]) : null,
 
-            // Header
+            // Header (§6.4: the landing page is "ChapBooks"; the poem queue is its "Poems" section)
             m('div', { class: 'flex items-center gap-2 mb-4' }, [
                 m('span', { class: 'material-symbols-outlined text-2xl text-purple-500' }, 'menu_book'),
-                m('h2', { class: 'text-xl font-semibold dark:text-white' }, 'ChapBook — Poem Library')
+                m('h2', { class: 'text-xl font-semibold dark:text-white', 'data-testid': 'cb-library-title' }, 'ChapBooks')
             ]),
 
-            // Shared config panel — design settings, poem queue, primary actions, and dialogs
-            // (create / add-poem / note-order / render) all live here now, at the top of every view.
-            m(ChapBookConfig, { mode: 'create', book: null, bookObjectId: null }),
-
-            // Last created book — render + review buttons available when a book was just created
-            lastCreatedBook ? m('div', { class: 'mt-4 p-3 rounded bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 flex items-center gap-3' }, [
-                m('span', { class: 'material-symbols-outlined text-purple-500' }, 'auto_stories'),
-                m('span', { class: 'flex-1 text-sm dark:text-white' }, 'ChapBook created: ' + (lastCreatedBook.slug || lastCreatedBook.objectId || '')),
-                m('button', {
-                    class: 'px-3 py-1 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1',
-                    onclick: function () { m.route.set('/chap-book/review/' + (lastCreatedBook.objectId || lastCreatedBook.bookObjectId)); }
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
-                    ' Review'
-                ]),
-                m('button', {
-                    class: 'px-3 py-1 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 flex items-center gap-1 disabled:opacity-50',
-                    disabled: renderingBook || roleWarning,
-                    // Issue 8: open SD config dialog before rendering
-                    onclick: function () { openRenderConfigDialog(lastCreatedBook.objectId || lastCreatedBook.bookObjectId, renderBook); }
-                }, [
-                    m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, renderingBook ? 'hourglass_empty' : 'image'),
-                    renderingBook ? (' ' + renderProgressLabel()) : ' Render'
-                ])
-            ]) : null,
+            // The poem queue + Create (§7.2: only here). A successful create opens the book in Edit, guided, so
+            // the old post-create "ChapBook created" strip is gone.
+            m(ChapBookConfig, { mode: 'create' }),
 
             // My ChapBooks section
             m('div', { class: 'mt-6' }, [
@@ -2442,20 +2520,25 @@ const PoemLibrary = {
                             m('span', { class: 'material-symbols-outlined text-purple-400' }, 'menu_book'),
                             m('span', {
                                 class: 'flex-1 text-sm font-medium dark:text-white truncate cursor-pointer hover:text-purple-600',
-                                onclick: function() { m.route.set('/chap-book/read/' + b.objectId); }
+                                onclick: function() { m.route.set(readRoute('cb', b.objectId)); }
                             }, b.name || b.slug || b.objectId),
                             m('span', { class: 'text-xs text-gray-400' }, b.bookStatus ? b.bookStatus.toLowerCase() : ''),
                             m('button', {
-                                class: 'ml-auto px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs hover:bg-indigo-200 flex items-center gap-1',
-                                title: 'Review and edit pages',
-                                onclick: function() { m.route.set('/chap-book/review/' + b.objectId); }
-                            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'edit_note'), ' Review']),
+                                'data-testid': 'cb-book-read',
+                                class: 'ml-auto px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs hover:bg-purple-200 flex items-center gap-1',
+                                title: 'Read the book',
+                                onclick: function() { m.route.set(readRoute('cb', b.objectId)); }
+                            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'auto_stories'), ' Read']),
                             m('button', {
-                                class: 'px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs hover:bg-purple-200',
-                                onclick: function() { m.route.set('/chap-book/read/' + b.objectId); }
-                            }, 'Open'),
+                                'data-testid': 'cb-book-edit',
+                                class: 'px-2 py-1 rounded bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs hover:bg-indigo-200 flex items-center gap-1',
+                                title: 'Edit the book',
+                                onclick: function() { m.route.set(editRoute('cb', b.objectId)); }
+                            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'edit'), ' Edit']),
                             m('button', {
+                                'data-testid': 'cb-book-delete-row',
                                 class: 'px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs hover:bg-red-200',
+                                title: 'Delete the book',
                                 onclick: function() { doDeleteBook(b); }
                             }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, 'delete')])
                         ]);
@@ -2474,8 +2557,6 @@ let readerBook = null;
 let readerPages = [];
 let readerLoading = false;
 let readerError = null;
-let readerAnalyzing = false;
-let readerRendering = false;
 // P9-4 (V3 §40): the book's cover-art view (GET /{id}/covers); null when unread or the read failed. The reader's
 // cover page (and the HTML export's cover) shows the APPROVED COVER render when there is one, else page 1's image.
 let readerCovers = null;
@@ -2483,17 +2564,12 @@ let readerCovers = null;
 // to the shared ReaderShell (components/readerShell.js), the same reader PictureBook uses — the shell
 // mutates this object and provides keyboard nav, chevrons, page dots, fullscreen and HTML export.
 let cbReader = { currentPage: 0, fullscreen: false };
-// Issue 2c: chat config selected (or auto-resolved) for the reader's Re-analyze pass — lets the user
-// re-run theme analysis against a chosen LLM config during EDIT rather than the deterministic default.
-// { name, objectId } once chosen/resolved; null until the auto-default resolves or the user picks.
-let reanalyzeChatConfigRef = null;
-let _reanalyzeChatConfigResolving = false;
-// Poem objectIds for the book's Analyze pass (a PER-POEM endpoint). Two sources, unioned:
-//   1) SERVER-derived (FIX C): GET /poems?bookObjectId — poems that carry this book's `book` FK.
-//      This is the durable source and works for a book opened in a different browser, after
-//      localStorage was cleared, or created by another user.
-//   2) localStorage (cb-poemids-<bookObjectId>) — poems carried from the create flow that the
-//      backend does not (yet) stamp with the book FK. Kept as a best-effort fallback.
+// §4.3: the page Read should open on when it is entered from Edit › Pages (that page's objectId); consumed by the
+// next reader load. Read → Edit goes the other way through readerCurrentPageOid().
+let readerFocusOid = null;
+let readerExporting = false;   // the bookHeader Export action's in-flight flag
+// Poem objectIds carried from the create flow (the create step's selection), persisted per book so the
+// Edit › Pages "Analyze poems" action survives a reload. Edit unions them with the server-derived ids (FIX C).
 let readerPoemIds = [];
 
 // FIX C: server-derived, localStorage-independent poem ids scoped to this book via the `book` FK.
@@ -2546,12 +2622,12 @@ async function loadReaderBook(bookObjectId) {
         let pages = loaded[0];
         readerPages = Array.isArray(pages) ? pages : [];
         readerCovers = loaded[1] || null;
-        // FIX C: union server-derived (durable, book-FK-scoped) poem ids with any carried in
-        // localStorage, so Analyze is available for books opened without local create-flow state.
-        let serverIds = await fetchBookScopedPoemIds(bookObjectId);
-        let union = readerPoemIds.slice();
-        serverIds.forEach(function (id) { if (union.indexOf(id) === -1) union.push(id); });
-        readerPoemIds = union;
+        // §4.3: Edit › Pages → Read opens on the page that was selected there.
+        if (readerFocusOid) {
+            let fi = readerPages.findIndex(function (p) { return p && p.objectId === readerFocusOid; });
+            if (fi >= 0) cbReader.currentPage = (readerFront().length - 1) + 1 + fi;
+            readerFocusOid = null;
+        }
     } catch (e) {
         readerError = e.message || 'Failed to load book';
         readerPages = [];
@@ -2559,70 +2635,6 @@ async function loadReaderBook(bookObjectId) {
     }
     readerLoading = false;
     m.redraw();
-}
-
-// Issue 2c: resolve the auto-default chat config for the reader's Re-analyze control, unless the user
-// already picked one. Prefers a SYSTEM library config (contentAnalysis → generalChat) via a library
-// lookup only — NO LLM call. Does NOT overwrite a user pick.
-function ensureReanalyzeChatConfigDefault() {
-    if (reanalyzeChatConfigRef || _reanalyzeChatConfigResolving) return;
-    _reanalyzeChatConfigResolving = true;
-    resolveSystemChatConfig().then(function (rec) {
-        _reanalyzeChatConfigResolving = false;
-        if (rec && rec.name && !reanalyzeChatConfigRef) {
-            reanalyzeChatConfigRef = { name: rec.name, objectId: rec.objectId };
-            m.redraw();
-        }
-    }).catch(function () { _reanalyzeChatConfigResolving = false; });
-}
-
-async function analyzeReaderPoems() {
-    if (!readerPoemIds.length) {
-        page.toast('warn', 'No poems are associated with this session — analyze poems from the Poem Library, then create the ChapBook.');
-        return;
-    }
-    readerAnalyzing = true;
-    m.redraw();
-    let ok = 0, fail = 0;
-    // Issue 2c: re-run theme analysis against the user's chosen (or auto-resolved) chat config.
-    let chatConfigName = reanalyzeChatConfigRef && reanalyzeChatConfigRef.name;
-    for (let pid of readerPoemIds) {
-        try {
-            await analyzePoem(pid, chatConfigName);
-            ok++;
-        } catch (e) {
-            fail++;
-        }
-    }
-    readerAnalyzing = false;
-    if (fail) page.toast('warn', 'Analyzed ' + ok + ' poem(s); ' + fail + ' failed');
-    else page.toast('success', 'Analyzed ' + ok + ' poem(s)');
-    m.redraw();
-}
-
-// Issue 8: open the SD config dialog then run the reader-specific render flow.
-function renderReaderBook() {
-    if (!readerBookObjectId) return;
-    openRenderConfigDialog(readerBookObjectId, async function (bookId, chatConfigName, sdConfig) {
-        readerRendering = true;
-        m.redraw();
-        try {
-            // Gap 6: per-scene serial render. Each page's image is refreshed in place the moment its
-            // scene call returns (onSceneImage), so the reader shows progress page-by-page rather than
-            // waiting for one long bulk request.
-            let result = await renderChapBookScenes(bookId, chatConfigName, sdConfig, function (oid, url) {
-                let pg = readerPages.find(function (p) { return p.objectId === oid; });
-                if (pg) pg.imageUrl = url;
-            });
-            toastRenderResult(result);
-            // Reload so the persisted images (dataObjectId path) reconcile with the inline refresh (6C).
-            await loadReaderBook(readerBookObjectId);
-        } catch (e) {
-            page.toast('error', 'Render failed: ' + (e.message || ''));
-        }
-        readerRendering = false;
-        m.redraw();
-    });
 }
 
 // ── ChapBookReader component — dedicated poem-book reader (6B/6C/6D) ──
@@ -2765,43 +2777,92 @@ function renderReaderEmpty() {
     ]);
 }
 
-// Header action slots. actionsLeft = Review + Re-analyze config picker + Analyze; actionsRight = Render.
-// All hidden in fullscreen (matching PictureBook, which hides its editing buttons in fullscreen).
-function renderReaderActionsLeft(nav) {
-    if (nav.fullscreen) return null;
-    let busy = readerAnalyzing || readerRendering;
-    return [
-        m('button', {
-            class: 'px-3 py-1.5 rounded bg-indigo-600 text-white text-sm hover:bg-indigo-700 flex items-center gap-1',
-            onclick: function () { m.route.set('/chap-book/review/' + readerBookObjectId); }
-        }, [
-            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'edit_note'),
-            ' Review'
-        ]),
-        // Fixed page height now lives (once) in the shared ChapBookConfig panel above the reader,
-        // bound to readerBook — renderReaderPage still re-clamps immediately when it's toggled there.
-        // Issue 2c: pick the chat config used for the Re-analyze pass.
-        readerPoemIds.length > 0 ? renderChatConfigControl({
-            label: null, testid: 'cb-reanalyze-chatconfig', ref: reanalyzeChatConfigRef, resolving: _reanalyzeChatConfigResolving,
-            placeholder: 'Config', disabled: busy || roleWarning, title: 'Choose the chat config used to re-analyze poem themes',
-            onPick: function (ref) { reanalyzeChatConfigRef = ref; m.redraw(); }
-        }) : null,
-        readerPoemIds.length > 0 ? m('button', {
-            class: 'px-3 py-1.5 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50',
-            title: 'Re-analyze poem themes with the selected chat config',
-            disabled: busy || roleWarning,
-            onclick: analyzeReaderPoems
-        }, [
-            m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, readerAnalyzing ? 'hourglass_empty' : 'psychology'),
-            readerAnalyzing ? ' Analyzing...' : ' Analyze'
-        ]) : null
-    ];
+// ── Read mode header (§4.1, §8.1) ─────────────────────────────────────
+// Read has no editing controls: page flip, export, fullscreen and the Read | Edit toggle. The header is the shared
+// bookHeader; ReaderShell's own header row is hidden outside fullscreen (it has no option to suppress it — see
+// readerShellHeaderClass) and is the only chrome inside fullscreen, where the shell's overlay covers the page.
+
+/** ReaderShell nav arithmetic, mirrored for the bookHeader controls (front pages, then the cover, then pages). */
+function readerNav() {
+    let front = Math.max(0, readerFront().length - 1);
+    let total = readerPages.length + 1 + front;
+    return {
+        front: front,
+        coverPage: front,
+        total: total,
+        currentPage: cbReader.currentPage,
+        goToPage: function (n) { cbReader.currentPage = Math.max(0, Math.min(n, total - 1)); m.redraw(); }
+    };
 }
 
-function renderReaderActionsRight(nav) {
-    // The Render action now lives (once) in the shared ChapBookConfig panel above the reader; the
-    // shell's right actions slot is intentionally empty here so there is exactly one Render button.
-    return null;
+/** The page objectId Read is showing, or null on a front page / the cover. Pure over reader state. */
+function readerCurrentPageOid() {
+    let nav = readerNav();
+    let idx = cbReader.currentPage - nav.front - 1;
+    let p = idx >= 0 ? readerPages[idx] : null;
+    return p && p.objectId ? p.objectId : null;
+}
+
+/** Read → Edit keeps the place: Edit › Pages › the current page, on its Page tab (§4.3, §8.1). Pure. */
+function readerEditRoute(bookObjectId, pageOid) {
+    return pageOid ? editLink('cb', bookObjectId, { type: 'page', id: pageOid, tab: 'page' }) : editRoute('cb', bookObjectId, 'pages');
+}
+
+function readerPageLabel() {
+    let nav = readerNav();
+    let cp = cbReader.currentPage;
+    if (cp < nav.coverPage) return 'Series art';
+    if (cp === nav.coverPage) return 'Cover';
+    return 'Page ' + (cp - nav.front) + ' of ' + readerPages.length;
+}
+
+async function exportReaderBook() {
+    if (readerExporting || !readerPages.length) return;
+    readerExporting = true;
+    m.redraw();
+    try {
+        await exportBook({
+            pages: readerPages,
+            title: readerTitle(),
+            imageUrlFor: chapImageUrl,
+            coverImageUrl: readerCoverImageUrl,
+            countNoun: 'Page',
+            buildPageHtml: function (p, i, imgB64, total) {
+                return chapExportPageHtml(p, i, imgB64, total, !!(readerBook && readerBook.fixPageHeight));
+            },
+            titleSuffix: 'ChapBook',
+            nameFallback: 'chapbook',
+            nameSuffix: '-chapbook.html',
+            toast: 'ChapBook exported'
+        });
+    } finally {
+        readerExporting = false;
+        m.redraw();
+    }
+}
+
+function renderReaderHeader() {
+    let nav = readerNav();
+    let cp = cbReader.currentPage;
+    return bookHeader({
+        kind: 'cb',
+        mode: 'read',
+        bookObjectId: readerBookObjectId,
+        hideBack: !!cbReader.fullscreen,
+        title: readerTitle(),
+        pageLabel: readerPageLabel(),
+        leftNav: [iconBtn('chevron_left', 'Previous page', function () { nav.goToPage(cp - 1); }, { 'data-testid': 'cb-read-prev', disabled: cp === 0 })],
+        rightNav: [iconBtn('chevron_right', 'Next page', function () { nav.goToPage(cp + 1); }, { 'data-testid': 'cb-read-next', disabled: cp >= nav.total - 1 })],
+        actions: [
+            iconBtn(readerExporting ? 'hourglass_empty' : 'download', 'Export as HTML', exportReaderBook, { 'data-testid': 'cb-read-export', disabled: readerExporting || !readerPages.length }),
+            iconBtn(cbReader.fullscreen ? 'fullscreen_exit' : 'fullscreen', cbReader.fullscreen ? 'Exit fullscreen' : 'Fullscreen',
+                function () { cbReader.fullscreen = !cbReader.fullscreen; m.redraw(); }, { 'data-testid': 'cb-read-fullscreen' })
+        ],
+        onMode: function (mode) {
+            if (mode !== 'edit') return;
+            guardedRoute(readerEditRoute(readerBookObjectId, readerCurrentPageOid()));
+        }
+    });
 }
 
 // Self-contained-HTML export page section for ChapBook: poem stanza over the landscape image.
@@ -2823,62 +2884,34 @@ function chapExportPageHtml(scene, i, imgB64, total, fixPageHeight) {
     return out;
 }
 
+// §8.1: Read mode. Kept: bookHeader (Read), the ReaderShell body (front pages, cover, series art, page flip, export,
+// fullscreen). Removed: the ChapBookConfig panel (→ the library and Edit › Book / Style), the Review button (→ the
+// mode toggle), the chat-config picker and Analyze (→ Edit › Book / Edit › Pages), and the role banner (Read
+// needs no role — every action that does lives in Edit).
+function initReader(bookObjectId) {
+    readerBookObjectId = bookObjectId || null;
+    readerBook = null;
+    readerPages = [];
+    readerError = null;
+    readerExporting = false;
+    // D5: reset page-flip nav to the cover on every open (an Edit › Pages focus is applied after the load).
+    cbReader.currentPage = 0;
+    cbReader.fullscreen = false;
+    // Gap 6: clear any per-scene render progress from a prior book/session (never a run still in flight)
+    resetRenderProgressIfIdle();
+    // Edit re-reads its book on the next entry (pages may have been rendered or changed elsewhere).
+    editNeedsReload = true;
+    if (readerBookObjectId) loadReaderBook(readerBookObjectId);
+}
+
 const ChapBookReader = {
-    oninit: function (vnode) {
-        readerBookObjectId = vnode.attrs.bookObjectId || null;
-        // D5: re-derive the source poem ids fresh on every init from durable storage keyed by this
-        // book (not module memory), so a reload restores the Analyze button and navigating between
-        // books never leaks the previous book's poem ids into this one.
-        readerPoemIds = loadPersistedReaderPoemIds(readerBookObjectId);
-        readerBook = null;
-        readerPages = [];
-        readerError = null;
-        readerAnalyzing = false;
-        readerRendering = false;
-        // D5: reset page-flip nav to the cover on every open.
-        cbReader.currentPage = 0;
-        cbReader.fullscreen = false;
-        // Issue 2c: fresh chat-config resolution per book open (auto-default; user can override via the
-        // Re-analyze picker in the header).
-        reanalyzeChatConfigRef = null;
-        _reanalyzeChatConfigResolving = false;
-        ensureReanalyzeChatConfigDefault();
-        // Issue 8: reset render dialog state
-        showRenderDialog = false;
-        pendingRenderBookId = null;
-        pendingRenderCallback = null;
-        renderSdCfg = {};
-        // Gap 6: clear any per-scene render progress from a prior book/session
-        resetRenderProgress();
-        // Issue 9 / D6: block ChapBook actions when the AccountUsers role is absent
-        roleWarning = lacksUserRole(page.context && page.context());
-        if (readerBookObjectId) loadReaderBook(readerBookObjectId);
-    },
+    oninit: function (vnode) { initReader(vnode.attrs.bookObjectId); },
     view: function () {
+        let fs = !!cbReader.fullscreen;
+        if (readerPages.length) readerLastOid = readerCurrentPageOid();
         // flex-1: [role=main] is a flex row (router.js pageLayout), so without it this wrapper sizes to
         // the shell's max-w-3xl content and sits left-pinned instead of filling main (ledger §6.C 244 c).
-        return m('div', { class: 'flex-1' }, [
-            // Issue 9: role warning banner (rendered above the shared reader; the shell's fullscreen
-            // overlay covers it when active).
-            roleWarning ? m('div', { class: 'px-4 pt-4 max-w-3xl mx-auto' },
-                m('div', { class: 'p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
-                    m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
-                    'You need the AccountUsers role to use ChapBook features.'
-                ])) : null,
-
-            // Shared collapsible config panel (same one shown on create/review) — hosts the single
-            // fixPageHeight toggle, design defaults, the poem queue, and the primary actions including
-            // Render. Bound to readerBook so its fixPageHeight clamp gives immediate visual feedback.
-            // px-4 pt-4: the panel has no gutter of its own; with the wrapper now filling main it would
-            // run edge-to-edge (the role warning above and the shell use the same p-4 gutter).
-            m('div', { class: 'px-4 pt-4' }, m(ChapBookConfig, {
-                mode: 'read',
-                book: readerBook,
-                bookObjectId: readerBookObjectId,
-                onRender: renderReaderBook,
-                rendering: readerRendering
-            })),
-
+        return m('div', { class: 'flex-1 flex flex-col min-w-0', 'data-testid': 'cb-reader', 'data-book-mode': 'read' }, [
             // Shared page-flip reader (same component PictureBook uses).
             m(ReaderShell, {
                 state: cbReader,
@@ -2897,10 +2930,9 @@ const ChapBookReader = {
                 renderCover: renderReaderCover,
                 renderPage: renderReaderPage,
                 imageUrlFor: chapImageUrl,
-                onBack: function () { m.route.set('/chap-book'); },
-                backTitle: 'Back to Poem Library',
-                actionsLeft: renderReaderActionsLeft,
-                actionsRight: renderReaderActionsRight,
+                // The Read header IS bookHeader, in both normal and fullscreen view (ReaderShell renderHeader slot,
+                // design §4.1 / D5) — the shell draws no second header.
+                renderHeader: function () { return renderReaderHeader(); },
                 // Export params — self-contained ChapBook HTML with poem text over each landscape image; the
                 // export's cover is the reader's (approved COVER render, else page 1).
                 coverImageUrl: readerCoverImageUrl,
@@ -2914,7 +2946,6 @@ const ChapBookReader = {
                 exportNameSuffix: '-chapbook.html',
                 exportToast: 'ChapBook exported'
             })
-            // Issue 8: the pre-render SD config dialog is rendered by the ChapBookConfig panel above.
         ]);
     }
 };
@@ -3394,7 +3425,7 @@ async function loadReviewBook(bookObjectId) {
                     schema: 'io.query',
                     type: 'olio.pb.book',
                     cache: false,
-                    request: ['id', 'objectId', 'name', 'slug', 'bookStatus', 'fixPageHeight'],
+                    request: ['id', 'objectId', 'name', 'slug', 'bookStatus', 'fixPageHeight', 'maxLinesPerPage'],
                     fields: [{ name: 'objectId', comparator: 'EQUALS', value: bookObjectId }]
                 })
             });
@@ -3510,6 +3541,8 @@ async function loadReviewBook(bookObjectId) {
                 pageBgOpacity: (reviewScenes[0].pageBgOpacity != null ? reviewScenes[0].pageBgOpacity : null),
                 pageTextAlign: reviewScenes[0].pageTextAlign || ''
             };
+            // D4: the loaded value the Style section's draft is compared against.
+            bookStyleSaved = Object.assign({}, bookStyle);
         }
         // Landscape-prompt review: prefill each card's preview with its already-rendered image (if any)
         // so the user reviews prompts and current images together. Resolved lazily; scenes with no image
@@ -3757,7 +3790,17 @@ export function openSceneLocationPicker(scene) {
                 return m('div', { 'data-testid': 'cb-page-location-picker', class: 'space-y-3 text-sm' }, [
                     loadError ? m('div', { 'data-testid': 'cb-page-location-error', class: 'text-red-600' }, loadError) : null,
                     locs == null ? m('div', { class: 'text-gray-500' }, 'Loading locations…') : null,
-                    locs && !locs.length ? m('div', { 'data-testid': 'cb-page-location-empty', class: 'text-gray-500' }, 'This book has no locations yet. Add them in the Locations library.') : null,
+                    // §8.2: the empty state links to Edit › Locations (the shared Locations section) instead of
+                    // naming a library page the user had to find.
+                    locs && !locs.length ? m('div', { 'data-testid': 'cb-page-location-empty', class: 'text-gray-500' }, [
+                        'This book has no locations yet. ',
+                        m('a', {
+                            'data-testid': 'cb-page-location-empty-link',
+                            href: '#!' + editLink('cb', reviewBookObjectId, { type: 'location' }),
+                            class: 'underline text-teal-700 dark:text-teal-300',
+                            onclick: function (e) { e.preventDefault(); Dialog.close(); goEditSection('locations'); }
+                        }, 'Add them in Locations')
+                    ]) : null,
                     locs && locs.length ? m('label', { class: 'block' }, [
                         m('span', { class: 'block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1' }, 'Location'),
                         m('select', {
@@ -3814,10 +3857,11 @@ export function renderPageLocationChip(scene) {
     ]);
 }
 
-// Book-level Save all (D1): commit every dirty card in order, then one aggregate toast.
+// Book-level Save all (D1): commit every dirty card in order, then one aggregate toast. Resolves true when every
+// dirty page saved (the dirty guard's Save relies on that — a failed write never proceeds).
 async function doSaveAllScenes() {
     let dirtyScenes = reviewScenes.filter(sceneIsDirty);
-    if (!dirtyScenes.length) { page.toast('info', 'No unsaved changes'); return; }
+    if (!dirtyScenes.length) { page.toast('info', 'No unsaved changes'); return true; }
     let ok = 0, bad = 0;
     for (let scene of dirtyScenes) {
         let success = await saveSceneRecord(scene, true);
@@ -3826,30 +3870,83 @@ async function doSaveAllScenes() {
     if (bad) page.toast('error', 'Saved ' + ok + ' page(s); ' + bad + ' failed');
     else page.toast('success', 'Saved ' + ok + ' page(s)');
     m.redraw();
+    return bad === 0;
 }
 
-// Toolbar book-level style change (D2): set the value on every scene as the book default and persist it
-// per scene via one PATCH each (identity + name + the changed style field). Deliberately N patches, not
-// a batch update — PATCH validates the record it is handed, so each must carry its own name (the dirty
-// sets are also heterogeneous). Modeled on reorderScenes' per-scene multi-patch.
-async function applyBookStyle(field, value) {
+// ── Book style (D4: a section draft, one explicit Save) ───────────────
+// Edit › Style's bar (Font, Text colour, Bg colour, Bg opacity, Align) used to fan out N per-page PATCHes on every
+// change. It is now a draft (`bookStyle`) against the loaded value (`bookStyleSaved`) with an on-screen preview;
+// Save sends the same per-page PATCHes ONCE — each carrying identity + the validated name + every changed style
+// field — and reports partial failures; Revert discards. PATCH validates the record it is handed, so each page's
+// patch carries its own name (model-api.md); a page whose PATCH does not return `true` is a failure.
+const BOOK_STYLE_KEYS = ['pageFont', 'pageTextColor', 'pageBgColor', 'pageBgOpacity', 'pageTextAlign'];
+const BOOK_STYLE_LABEL = { pageFont: 'Font', pageTextColor: 'Text colour', pageBgColor: 'Bg colour', pageBgOpacity: 'Bg opacity', pageTextAlign: 'Align' };
+let bookStyleSaved = { pageFont: '', pageTextColor: '', pageBgColor: '', pageBgOpacity: null, pageTextAlign: '' };
+let bookStyleSaving = false;
+
+function styleValue(v) { return (v === undefined || v === '') ? null : v; }
+
+/** The style fields whose draft differs from the loaded book style. Pure over module state. */
+function bookStyleChangedKeys() {
+    return BOOK_STYLE_KEYS.filter(function (k) { return styleValue(bookStyle[k]) !== styleValue(bookStyleSaved[k]); });
+}
+
+function bookStyleDirty() { return bookStyleChangedKeys().length > 0; }
+
+/** A draft edit — nothing is sent until Save. */
+function setBookStyleDraft(field, value) {
     bookStyle[field] = value;
-    reviewScenes.forEach(function (s) {
-        s[field] = value;
-        if (s._dirty) s._dirty.delete(field);   // now the saved value — drop from the card dirty set
-    });
     m.redraw();
-    let bad = 0;
-    for (let s of reviewScenes) {
+}
+
+function discardBookStyle() {
+    bookStyle = Object.assign({}, bookStyleSaved);
+    m.redraw();
+}
+
+/**
+ * Save the book-style draft: one PATCH per page with every changed field. Resolves true when every page took it;
+ * on a partial failure the pages that took it carry the new values, the draft stays dirty (Save again retries) and
+ * the toast names the pages that failed. Never discards the update result.
+ */
+async function saveBookStyle() {
+    let keys = bookStyleChangedKeys();
+    if (!keys.length) return true;
+    if (bookStyleSaving) return false;
+    let changes = {};
+    keys.forEach(function (k) { changes[k] = bookStyle[k]; });
+    bookStyleSaving = true;
+    m.redraw();
+    let failedPages = [];
+    for (let i = 0; i < reviewScenes.length; i++) {
+        let s = reviewScenes[i];
+        let ok = false;
         try {
-            let changes = {};
-            changes[field] = value;
-            await patchSceneFields(s, changes);
-        } catch (e) { bad++; }
+            let res = await patchScene(s.objectId, Object.assign({ name: s.name || '' }, changes));
+            ok = res === true;
+        } catch (e) { ok = false; }
+        if (ok) {
+            keys.forEach(function (k) {
+                s[k] = changes[k];
+                if (s._dirty) s._dirty.delete(k);   // the page now carries the saved book value
+            });
+        } else {
+            failedPages.push(i + 1);
+        }
     }
-    if (bad) page.toast('error', 'Applied to book; ' + bad + ' page(s) failed');
-    else page.toast('success', 'Applied to all pages');
+    bookStyleSaving = false;
+    let total = reviewScenes.length;
+    if (!failedPages.length) {
+        bookStyleSaved = Object.assign({}, bookStyle);
+        page.toast('success', 'Book style saved to ' + (total === 1 ? 'the page' : 'all ' + total + ' pages'));
+        m.redraw();
+        return true;
+    }
+    let okCount = total - failedPages.length;
+    page.toast('error', 'Book style saved to ' + okCount + ' of ' + total + ' pages; failed: page'
+        + (failedPages.length !== 1 ? 's ' : ' ') + failedPages.join(', ') + ' — Save again to retry');
     m.redraw();
+    return false;
 }
 
 // Split is one POST (splitChapBookScene) then a reload, like merge: the server splits the SAVED stanza at
@@ -4297,6 +4394,9 @@ async function doRerenderScene(idx) {
 function renderReviewPageListItem(scene, idx) {
     let oid = scene.objectId;
     let isSelected = !!oid && oid === reviewSelectedOid;
+    // In the workspace the selection is the route's :item (guarded: ctx.select); outside it (the standalone
+    // Pages view the unit tests mount) it is the module selection.
+    let pick = function () { if (pagesCtx && pagesCtx.select) pagesCtx.select(oid, pagesCtx.tab ? { tab: pagesCtx.tab } : null); else selectReviewPage(oid); };
     let badges = [];
     if (scene._saving) badges.push(m('span', { class: 'text-xs text-blue-500' }, 'Saving…'));
     if (sceneIsDirty(scene)) badges.push(m('span', { class: 'text-xs text-amber-600 dark:text-amber-400', 'data-page-badge': 'unsaved' }, 'unsaved'));
@@ -4311,7 +4411,7 @@ function renderReviewPageListItem(scene, idx) {
         'data-page-item': oid || '',
         'data-page-selected': isSelected ? '1' : '0',
         title: scene.title || ('Page ' + (idx + 1)),
-        onclick: function () { selectReviewPage(oid); }
+        onclick: function () { if (!isSelected) pick(); }
     }, [
         m('div', { class: 'font-medium text-sm' }, 'Page ' + (idx + 1)),
         scene.title ? m('div', { class: 'text-xs text-gray-500 dark:text-gray-400 truncate' }, scene.title) : null,
@@ -4335,10 +4435,66 @@ function renderReviewPageList() {
 function renderReviewBody() {
     let idx = selectedReviewIndex();
     if (idx < 0) { ensureReviewSelection(0); idx = selectedReviewIndex(); }
+    let tab = pagesCtx && pagesCtx.tab === 'page' ? 'page' : 'edit';
     return m('div', { class: 'flex gap-4', style: 'min-height: 400px;', 'data-testid': 'cb-review-body' }, [
         renderReviewPageList(),
-        m('div', { class: 'flex-1 min-w-0 overflow-y-auto', 'data-testid': 'cb-page-detail' },
-            idx >= 0 ? renderSceneCard(reviewScenes[idx], idx) : null)
+        m('div', { class: 'flex-1 min-w-0 overflow-y-auto', 'data-testid': 'cb-page-detail', 'data-tab': tab },
+            // Every child is keyed (the card carries its scene key), and no null hole precedes them — Mithril
+            // refuses a fragment that mixes keyed and unkeyed vnodes.
+            idx >= 0 ? [
+                pagesCtx ? renderPageTabBar(tab) : null,
+                tab === 'page' ? renderPageView(reviewScenes[idx], idx) : renderSceneCard(reviewScenes[idx], idx)
+            ].filter(Boolean) : null)
+    ]);
+}
+
+// ── Edit › Pages › Page tab (§8.2, D3) — the page drawn as Read draws it, flippable, cross-linked ─────
+function renderPageTabBar(tab) {
+    function setTab(t) {
+        if (t === tab || !pagesCtx) return;
+        // Drafts are kept per page in memory, so a tab switch loses nothing and is not guarded.
+        m.route.set(editRoute('cb', pagesCtx.bookObjectId, 'pages', reviewSelectedOid, t === 'page' ? { tab: 'page', guided: pagesCtx.guided ? 1 : null } : { guided: pagesCtx.guided ? 1 : null }));
+    }
+    return m('div', { key: '__tabs', class: 'flex items-center gap-1 mb-3', 'data-testid': 'cb-page-tabs' }, [
+        ['edit', 'Edit'], ['page', 'Page']
+    ].map(function (t) {
+        let active = t[0] === tab;
+        return m('button', {
+            key: t[0], type: 'button',
+            'data-testid': 'cb-page-tab-' + t[0],
+            'data-active': active ? '1' : '0',
+            class: 'px-3 py-1 text-xs rounded ' + (active ? 'bg-purple-600 text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200'),
+            onclick: function () { setTab(t[0]); }
+        }, t[1]);
+    }));
+}
+
+function renderPageView(scene, idx) {
+    let total = reviewScenes.length;
+    let prev = idx > 0 ? reviewScenes[idx - 1] : null;
+    let next = idx < total - 1 ? reviewScenes[idx + 1] : null;
+    let flip = function (s) { if (s && pagesCtx) pagesCtx.select(s.objectId, { tab: 'page' }); };
+    let shown = Object.assign({}, scene, { imageUrl: reviewSceneImageUrls[scene.objectId] || null });
+    let loc = scene.location && scene.location.objectId ? scene.location : null;
+    return m('div', { key: 'view-' + (scene.objectId || idx), 'data-testid': 'cb-page-view', 'data-scene-oid': scene.objectId || '' }, [
+        m('div', { class: 'flex items-center gap-2 mb-2' }, [
+            iconBtn('chevron_left', 'Previous page', function () { flip(prev); }, { 'data-testid': 'cb-page-prev', disabled: !prev }),
+            m('span', { class: 'text-xs text-gray-500', 'data-testid': 'cb-page-view-label' }, 'Page ' + (idx + 1) + ' of ' + total),
+            iconBtn('chevron_right', 'Next page', function () { flip(next); }, { 'data-testid': 'cb-page-next', disabled: !next }),
+            m('span', { class: 'flex-1' }),
+            loc ? m('a', {
+                'data-testid': 'cb-page-location-link',
+                'data-location-id': loc.objectId,
+                href: '#!' + editLink('cb', pagesCtx ? pagesCtx.bookObjectId : reviewBookObjectId, { type: 'location', id: loc.objectId }),
+                class: 'text-xs flex items-center gap-1 text-teal-700 dark:text-teal-300 underline',
+                title: 'Edit this location',
+                onclick: function (e) { e.preventDefault(); goEditSection('locations', loc.objectId); }
+            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'location_on'), pageLocationLabel(scene).replace(/^located: /, '')])
+                : m('span', { class: 'text-xs text-gray-400', 'data-testid': 'cb-page-location-none' }, 'No location'),
+            sceneIsDirty(scene) ? chip('unsaved', 'amber', { 'data-testid': 'cb-page-view-unsaved' }) : null
+        ]),
+        m('div', { class: 'rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700' },
+            renderChapBookPage(shown, undefined, !!(reviewBook && reviewBook.fixPageHeight)))
     ]);
 }
 
@@ -4669,215 +4825,620 @@ function renderSceneCard(scene, idx) {
     ]);
 }
 
-const ChapBookReview = {
-    oninit: function (vnode) {
-        reviewBookObjectId = vnode.attrs.bookObjectId || null;
-        reviewBook = null;
-        reviewScenes = [];
-        // P10-C 4: a re-entered review starts on page 1 (loadReviewBook seats the selection).
-        reviewSelectedOid = null;
-        reviewLoading = false;
-        reviewError = null;
-        reviewRendering = false;
-        reviewGroupId = null;
-        // 266 j: a re-entered review says the landscape-prompt summary once more (once per book load).
-        placeholderToastedFor = null;
-        // Gap 8: reset per-scene override caches so a re-entered review starts fresh
-        sceneOverrideInsts = {};
-        sceneOverrideExpanded = {};
-        // D2: reset shared book-style + toolbar SD-panel state
-        bookStyle = { pageFont: '', pageTextColor: '', pageBgColor: '', pageBgOpacity: null, pageTextAlign: '' };
-        bookSdExpanded = false;
-        // Landscape-prompt review: reset per-scene preview URLs so a re-entered review starts fresh
-        reviewSceneImageUrls = {};
-        reviewCovers = null;
-        // Issue 8: reset render dialog state so the SD config modal starts fresh
-        showRenderDialog = false;
-        pendingRenderBookId = null;
-        pendingRenderCallback = null;
-        renderSdCfg = {};
-        // Gap 6: clear any per-scene render progress from a prior book/session
-        resetRenderProgress();
-        // Issue 9 / D6: block scene edits + render when the AccountUsers role is absent
-        roleWarning = lacksUserRole(page.context && page.context());
-        // D2: prime the shared toolbar SD panel (models/loras catalog + the book-level SD config
-        // instance). The same instance backs the pre-render dialog, so priming it here means the
-        // toolbar's "Book image settings" panel and the Render dialog show one consistent config.
-        loadRenderSdModels();
-        loadRenderSdLoras();
-        ensureRenderSdConfig(reviewBookObjectId);
-        if (reviewBookObjectId) loadReviewBook(reviewBookObjectId);
+// ── ChapBook Edit mode (§8.2) — Book · Style · Locations · Pages · Cover & Art · Review · Render ─────────
+// Book / Style / Pages / Render are SectionAdapters (components/bookWorkspace.js header) over this module's edit
+// state (review* — the state the pre-workspace "Review" page held). features/chapBookWorkspace.js builds the
+// workspace and its routes; Locations, Cover & Art and Review are the PictureBook adapters, told ctx.kind = 'cb'.
+
+let editCtx = null;          // the active CB section's ctx (cross-links from inside a section go through ctx.go)
+let pagesCtx = null;         // the Pages section's ctx while it is active (selection, tab); null outside the workspace
+let editNeedsReload = false; // set when Read / the library is entered: the next Edit entry re-reads the book
+let editPoemIds = [];        // the book's source poems (persisted create-time ids ∪ GET /poems?bookObjectId)
+let editAnalyzingPoems = false;
+let readerLastOid = null;    // the page Read last showed (§4.3: Edit → Read from a non-Pages section returns there)
+
+/** A route under this book's Edit mode, through the section ctx (guarded) when there is one. */
+function goEditSection(section, item, query) {
+    if (editCtx && editCtx.go) return editCtx.go(section, item, query);
+    return guardedRoute(editRoute('cb', reviewBookObjectId, section, item, query));
+}
+
+/** Fresh edit state for one book, then its load (the body of the old ChapBookReview.oninit). */
+function resetEditBook(bookObjectId) {
+    reviewBookObjectId = bookObjectId || null;
+    reviewBook = null;
+    reviewScenes = [];
+    // P10-C 4: a re-entered editor starts on page 1 unless the route names a page (loadReviewBook seats it).
+    reviewSelectedOid = null;
+    reviewLoading = false;
+    reviewError = null;
+    // A render still running for this book keeps Render disabled after a re-entry (no parallel second render).
+    reviewRendering = renderRunningFor === reviewBookObjectId && !!reviewBookObjectId;
+    reviewGroupId = null;
+    // 266 j: a re-entered editor says the landscape-prompt summary once more (once per book load).
+    placeholderToastedFor = null;
+    // Gap 8: reset per-scene override caches so a re-entered editor starts fresh
+    sceneOverrideInsts = {};
+    sceneOverrideExpanded = {};
+    // D2 / D4: reset the book-style draft + the Style section's image-settings collapsible
+    bookStyle = { pageFont: '', pageTextColor: '', pageBgColor: '', pageBgOpacity: null, pageTextAlign: '' };
+    bookStyleSaved = Object.assign({}, bookStyle);
+    bookStyleSaving = false;
+    bookSdExpanded = false;
+    // Landscape-prompt review: reset per-scene preview URLs so a re-entered editor starts fresh
+    reviewSceneImageUrls = {};
+    reviewCovers = null;
+    // Issue 8: reset render dialog state
+    showRenderDialog = false;
+    pendingRenderBookId = null;
+    pendingRenderCallback = null;
+    renderSdCfg = {};
+    editPoemIds = [];
+    editAnalyzingPoems = false;
+    editNeedsReload = false;
+    // Issue 9 / D6: block page edits + render when the AccountUsers role is absent
+    roleWarning = lacksUserRole(page.context && page.context());
+    // D2: prime the shared SD catalog + the book-level SD config instance (Style's Image settings and Render show
+    // the same instance).
+    loadRenderSdModels();
+    loadRenderSdLoras();
+    ensureRenderSdConfig(reviewBookObjectId);
+    ensureConfigChatConfigDefault();
+    if (reviewBookObjectId) {
+        loadReviewBook(reviewBookObjectId);
+        loadEditPoemIds(reviewBookObjectId);
+    }
+}
+
+/** Load the book once per Edit entry (a different book, or a return from Read / the library). */
+function ensureEditBook(bookObjectId) {
+    if (!bookObjectId) return;
+    if (reviewBookObjectId !== bookObjectId || editNeedsReload) resetEditBook(bookObjectId);
+}
+
+// FIX C + D5: the poems behind this book — the server-derived (book-FK-scoped) ids unioned with the create-time
+// ids persisted in localStorage — so "Analyze poems" works for books opened without the create flow's state.
+async function loadEditPoemIds(bookObjectId) {
+    let ids = loadPersistedReaderPoemIds(bookObjectId).slice();
+    let serverIds = await fetchBookScopedPoemIds(bookObjectId);
+    serverIds.forEach(function (id) { if (ids.indexOf(id) === -1) ids.push(id); });
+    if (reviewBookObjectId === bookObjectId) {
+        editPoemIds = ids;
+        m.redraw();
+    }
+}
+
+// The reader's old book-level Analyze (theme analysis of the source poems, a per-poem endpoint), now an action of
+// Edit › Pages. It uses the session's chat config (Edit › Book); per-page Analyze stays on each page.
+async function analyzeEditPoems() {
+    if (!editPoemIds.length || editAnalyzingPoems) return;
+    editAnalyzingPoems = true;
+    m.redraw();
+    let ok = 0, fail = 0;
+    let chatConfigName = effectiveChatConfigName();
+    for (let pid of editPoemIds) {
+        try { await analyzePoem(pid, chatConfigName); ok++; }
+        catch (e) { fail++; }
+    }
+    editAnalyzingPoems = false;
+    if (fail) page.toast('warn', 'Analyzed ' + ok + ' poem(s); ' + fail + ' failed');
+    else page.toast('success', 'Analyzed ' + ok + ' poem(s)');
+    m.redraw();
+}
+
+function roleBanner() {
+    return roleWarning ? m('div', { 'data-testid': 'cb-role-warning', class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
+        m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
+        'You need the AccountUsers role to use ChapBook features.'
+    ]) : null;
+}
+
+/** Pages that still need a render: image outdated, no usable prompt, or no image at all. Pure — unit-tested. */
+function pagesNeedingRender(scenes) {
+    return (scenes || []).filter(function (s) {
+        if (!s) return false;
+        return (s.imageStale && s.imageObjectId) || isSceneUnprompted(s) || !s.imageObjectId;
+    }).length;
+}
+
+function editLoaded(ctx) {
+    return !!ctx && reviewBookObjectId === ctx.bookObjectId && !reviewLoading && (reviewBook != null || reviewScenes.length > 0);
+}
+
+// The dirty sources the workspace guards (§6.2-3): every unsaved page, and the book-style draft.
+const CB_PAGES_DIRTY = 'cb-pages';
+const CB_STYLE_DIRTY = 'cb-style';
+
+async function saveAllDirtyPages() {
+    if (!reviewScenes.some(sceneIsDirty)) return true;
+    return doSaveAllScenes();
+}
+
+/** Drop every page draft and re-read the book, so the pages show the stored values again. */
+function discardPageDrafts() {
+    reviewScenes.forEach(function (s) {
+        if (sceneIsDirty(s)) { s._dirty = new Set(); resetSceneOverride(s.objectId); }
+    });
+    if (reviewBookObjectId) loadReviewBook(reviewBookObjectId);
+}
+
+function registerEditGuards() {
+    registerDirty(CB_PAGES_DIRTY, {
+        label: 'Pages',
+        isDirty: function () { return reviewScenes.some(sceneIsDirty); },
+        save: saveAllDirtyPages,
+        discard: discardPageDrafts
+    });
+    registerDirty(CB_STYLE_DIRTY, {
+        label: 'Book style',
+        isDirty: bookStyleDirty,
+        save: saveBookStyle,
+        discard: discardBookStyle
+    });
+}
+
+function enterSection(ctx) {
+    editCtx = ctx;
+    registerEditGuards();
+    ensureEditBook(ctx.bookObjectId);
+}
+
+// ── Edit › Book ───────────────────────────────────────────────────────
+
+const cbBookSection = {
+    init: enterSection,
+    select: function (ctx) { editCtx = ctx; },
+    status: function (ctx) { return editLoaded(ctx) && reviewBook ? { kind: 'ok' } : null; },
+    toolbar: function () {
+        return { title: 'Book', meta: [metaText(reviewScenes.length + ' page' + (reviewScenes.length !== 1 ? 's' : ''))] };
     },
+    body: function (ctx) {
+        editCtx = ctx;
+        let block = stateBlock({ loading: reviewLoading && !reviewBook, error: reviewError ? 'Error: ' + reviewError : null, loadingText: 'Loading the book…' });
+        if (block) return block;
+        let b = reviewBook || {};
+        return m('div', { class: 'max-w-4xl space-y-6', 'data-testid': 'cb-book-section' }, [
+            roleBanner(),
+            m('section', [
+                m('h3', { class: 'text-sm font-semibold mb-2' }, 'Book'),
+                m('dl', { class: 'grid grid-cols-[10rem_1fr] gap-y-1 text-sm' }, [
+                    m('dt', { class: 'text-gray-500' }, 'Name'), m('dd', { 'data-testid': 'cb-book-name' }, b.name || b.slug || '—'),
+                    m('dt', { class: 'text-gray-500' }, 'Slug'), m('dd', { class: 'font-mono text-xs' }, b.slug || '—'),
+                    m('dt', { class: 'text-gray-500' }, 'Pages'), m('dd', String(reviewScenes.length)),
+                    m('dt', { class: 'text-gray-500' }, 'Max lines per page'),
+                    m('dd', { 'data-testid': 'cb-book-max-lines' }, [
+                        String(b.maxLinesPerPage != null ? b.maxLinesPerPage : 8),
+                        m('span', { class: 'ml-2 text-xs text-gray-400' }, 'set when the book was created — use Split / Merge on Pages to change a page')
+                    ])
+                ])
+            ]),
+            m('section', [
+                m('h3', { class: 'text-sm font-semibold mb-2' }, 'Pages'),
+                // The SINGLE fixed-page-height toggle (data-testid cb-fix-page-height): an immediate command, saved as
+                // soon as it changes (setBookFixPageHeight checks the PATCH's boolean result).
+                m('label', { class: 'flex items-center gap-2 text-sm dark:text-white cursor-pointer select-none' }, [
+                    m('input', {
+                        type: 'checkbox',
+                        'data-testid': 'cb-fix-page-height',
+                        checked: !!b.fixPageHeight,
+                        disabled: roleWarning || !reviewBook,
+                        onchange: function (e) { setBookFixPageHeight(reviewBook, e.target.checked); }
+                    }),
+                    'Fixed page height',
+                    m('span', { class: 'text-xs text-gray-400' }, '(saved immediately; clamps each page to one height in Read and in the export)')
+                ])
+            ]),
+            m('section', { class: 'max-w-md' }, [
+                m('h3', { class: 'text-sm font-semibold mb-2' }, 'Defaults'),
+                renderChatConfigControl({
+                    stacked: true, label: 'Default chat config — for this session', testid: 'cb-config-chatconfig', ref: configChatConfigRef,
+                    resolving: _configChatConfigResolving, placeholder: '(default — click to select)',
+                    title: 'Used by Analyze, Regen prompt and Render while this session lasts',
+                    onPick: function (ref) { configChatConfigRef = ref; m.redraw(); }
+                }),
+                m('p', { class: 'text-xs text-gray-500 mt-1', 'data-testid': 'cb-config-chatconfig-note' },
+                    'A ChapBook does not store a chat config, so this choice lasts for this session only.')
+            ]),
+            m('section', { class: 'border border-red-200 dark:border-red-900 rounded p-3' }, [
+                m('h3', { class: 'text-sm font-semibold mb-2 text-red-700 dark:text-red-400' }, 'Danger zone'),
+                m('button', {
+                    'data-testid': 'cb-book-delete',
+                    class: BTN_DANGER,
+                    disabled: !reviewBook,
+                    onclick: function () {
+                        doDeleteBook(reviewBook).then(function (ok) { if (ok) m.route.set('/chap-book'); });
+                    }
+                }, 'Delete this ChapBook')
+            ])
+        ]);
+    }
+};
+
+// ── Edit › Style ──────────────────────────────────────────────────────
+
+function renderStyleBar() {
+    let ch = bookStyleChangedKeys();
+    let mark = function (k) { return dirtyMark(ch.indexOf(k) >= 0, 'cb-style-dirty-' + k); };
+    let alignIcons = { left: 'format_align_left', center: 'format_align_center', right: 'format_align_right' };
+    let off = roleWarning || bookStyleSaving;
+    return m('div', { class: 'flex flex-wrap items-center gap-4', 'data-testid': 'cb-style-bar' }, [
+        m('div', { class: 'flex items-center gap-1.5' }, [
+            m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, ['Font', mark('pageFont')]),
+            m('select', {
+                'data-testid': 'cb-style-font',
+                class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs dark:text-white',
+                value: bookStyle.pageFont,
+                disabled: off,
+                onchange: function (e) { setBookStyleDraft('pageFont', e.target.value); }
+            }, FONT_OPTIONS.map(function (opt) { return m('option', { value: opt.value }, opt.label); }))
+        ]),
+        m('div', { class: 'flex items-center gap-1.5' }, [
+            m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, ['Text colour', mark('pageTextColor')]),
+            m('input', {
+                type: 'color', 'data-testid': 'cb-style-text-color',
+                class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
+                value: bookStyle.pageTextColor || '#ffffff',
+                disabled: off,
+                onchange: function (e) { setBookStyleDraft('pageTextColor', e.target.value); }
+            })
+        ]),
+        m('div', { class: 'flex items-center gap-1.5' }, [
+            m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, ['Bg colour', mark('pageBgColor')]),
+            m('input', {
+                type: 'color', 'data-testid': 'cb-style-bg-color',
+                class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
+                value: bookStyle.pageBgColor || '#000000',
+                disabled: off,
+                onchange: function (e) { setBookStyleDraft('pageBgColor', e.target.value); }
+            })
+        ]),
+        // Background opacity (0-100%). Unset renders at the historical default of 40.
+        m('div', { class: 'flex items-center gap-1.5' }, [
+            m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, ['Bg opacity', mark('pageBgOpacity')]),
+            m('input', {
+                type: 'range', min: 0, max: 100, step: 5, 'data-testid': 'cb-style-bg-opacity',
+                class: 'w-24 cursor-pointer',
+                value: (bookStyle.pageBgOpacity != null ? bookStyle.pageBgOpacity : 40),
+                disabled: off,
+                oninput: function (e) { setBookStyleDraft('pageBgOpacity', Number(e.target.value)); }
+            }),
+            m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 w-8 text-right' },
+                (bookStyle.pageBgOpacity != null ? bookStyle.pageBgOpacity : 40) + '%')
+        ]),
+        m('div', { class: 'flex items-center gap-1' }, [
+            m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 mr-1' }, ['Align', mark('pageTextAlign')]),
+            ['left', 'center', 'right'].map(function (align) {
+                let active = bookStyle.pageTextAlign === align;
+                return m('button', {
+                    key: align, type: 'button', 'data-testid': 'cb-style-align-' + align,
+                    class: 'px-1.5 py-1 rounded text-xs ' + (active
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'),
+                    title: align.charAt(0).toUpperCase() + align.slice(1),
+                    disabled: off,
+                    onclick: function () { setBookStyleDraft('pageTextAlign', active ? '' : align); }
+                }, m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, alignIcons[align]));
+            })
+        ])
+    ]);
+}
+
+/** The on-screen preview: the selected (else first) page drawn with the DRAFT book style. */
+function renderStylePreview() {
+    let idx = selectedReviewIndex();
+    let s = reviewScenes[idx >= 0 ? idx : 0];
+    if (!s) return null;
+    let shown = Object.assign({}, s, { imageUrl: reviewSceneImageUrls[s.objectId] || null });
+    BOOK_STYLE_KEYS.forEach(function (k) { shown[k] = bookStyle[k]; });
+    return m('div', { 'data-testid': 'cb-style-preview' }, [
+        m('div', { class: 'text-xs text-gray-500 mb-1' }, 'Preview — page ' + ((idx >= 0 ? idx : 0) + 1) + (bookStyleDirty() ? ' (unsaved)' : '')),
+        m('div', { class: 'rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700' },
+            renderChapBookPage(shown, undefined, !!(reviewBook && reviewBook.fixPageHeight)))
+    ]);
+}
+
+function renderBookImageSettings(bookObjectId) {
+    return m('div', { class: 'border-t border-gray-200 dark:border-gray-700 pt-3' }, [
+        m('button', {
+            type: 'button',
+            'data-testid': 'cb-book-sd-toggle',
+            class: 'flex items-center gap-1 text-sm font-semibold text-gray-700 dark:text-gray-300 hover:text-gray-900',
+            onclick: function () { bookSdExpanded = !bookSdExpanded; m.redraw(); }
+        }, [
+            m('span', {
+                class: 'material-symbols-outlined',
+                style: 'font-size:16px;transition:transform 0.15s;' + (bookSdExpanded ? 'transform:rotate(90deg);' : '')
+            }, 'chevron_right'),
+            m('span', 'Image settings')
+        ]),
+        bookSdExpanded ? ((renderSdConfigInst && renderSdConfigBookId === bookObjectId)
+            ? m('div', { class: 'mt-2' }, [
+                m(SdConfigPanel, { inst: renderSdConfigInst, models: renderSdModelList, loras: renderSdLoraList, onChange: function () { m.redraw(); } }),
+                // P0-10d: explicit save of the book-level SD config to the book's stored row (its own Save, §6.2-1).
+                m('div', { class: 'flex justify-end mt-2' }, m('button', {
+                    'data-testid': 'cb-save-book-sd',
+                    class: BTN_PRIMARY,
+                    title: 'Save the image settings to this book',
+                    disabled: roleWarning || computeBookSdDelta(renderSdConfigInst, renderSdConfigStored) == null,
+                    onclick: function () {
+                        saveBookSdConfig(bookObjectId).catch(function (e) {
+                            page.toast('error', 'Failed to save book image settings: ' + (e.message || ''));
+                        });
+                    }
+                }, 'Save image settings'))
+            ])
+            : renderSdConfigPlaceholder(bookObjectId, 'text-xs')) : null
+    ]);
+}
+
+const cbStyleSection = {
+    dirtyKeys: [CB_STYLE_DIRTY],
+    init: enterSection,
+    select: function (ctx) { editCtx = ctx; },
+    toolbar: function () {
+        let dirty = bookStyleDirty();
+        return {
+            title: 'Style',
+            meta: [dirty ? chip('unsaved', 'amber', { 'data-testid': 'cb-style-unsaved' }) : metaText('applies to every page')],
+            actions: [
+                btn({ label: 'Revert', icon: 'undo', size: 'sm', disabled: !dirty || bookStyleSaving, onclick: discardBookStyle, attrs: { 'data-testid': 'cb-style-revert' } }),
+                btn({ label: bookStyleSaving ? 'Saving…' : 'Save', icon: 'save', size: 'sm', kind: 'primary', disabled: !dirty || bookStyleSaving || roleWarning || !reviewScenes.length,
+                    onclick: function () { saveBookStyle(); }, attrs: { 'data-testid': 'cb-style-save' } })
+            ]
+        };
+    },
+    body: function (ctx) {
+        editCtx = ctx;
+        let block = stateBlock({ loading: reviewLoading, error: reviewError ? 'Error: ' + reviewError : null, loadingText: 'Loading scenes...' });
+        if (block) return block;
+        return m('div', { class: 'max-w-4xl space-y-4', 'data-testid': 'cb-style-section' }, [
+            roleBanner(),
+            m('h3', { class: 'text-sm font-semibold' }, 'Book style'),
+            m('p', { class: 'text-xs text-gray-500' }, 'These apply to every page when you Save (a page can still override them on its Edit tab). Nothing is sent until Save; Revert discards.'),
+            reviewScenes.length ? renderStyleBar() : m('div', { class: 'text-sm text-gray-500' }, 'No pages yet.'),
+            renderStylePreview(),
+            renderBookImageSettings(ctx.bookObjectId)
+        ]);
+    }
+};
+
+// ── Edit › Pages ──────────────────────────────────────────────────────
+
+function pagesToolbar() {
+    let unsaved = reviewScenes.filter(sceneIsDirty).length;
+    return {
+        title: 'Pages',
+        meta: [
+            metaText(reviewScenes.length + ' page' + (reviewScenes.length !== 1 ? 's' : '')),
+            unsaved ? chip(unsaved + ' unsaved', 'amber', { 'data-testid': 'cb-pages-unsaved' }) : null
+        ],
+        actions: [
+            editPoemIds.length ? btn({
+                label: editAnalyzingPoems ? 'Analyzing…' : 'Analyze poems', icon: 'psychology', size: 'sm',
+                title: 'Re-analyze the source poems\' themes with the session chat config (Book section)',
+                disabled: editAnalyzingPoems || roleWarning, onclick: analyzeEditPoems, attrs: { 'data-testid': 'cb-analyze-poems' }
+            }) : null,
+            btn({
+                label: 'Save all', icon: 'save', size: 'sm', kind: 'primary',
+                title: 'Save every page that has unsaved changes',
+                disabled: roleWarning || reviewRendering || !unsaved,
+                onclick: function () { doSaveAllScenes(); }, attrs: { 'data-testid': 'cb-save-all' }
+            })
+        ],
+        refresh: { testid: 'cb-pages-refresh', disabled: reviewLoading, onclick: function () {
+            guardDirty(function () { if (reviewBookObjectId) loadReviewBook(reviewBookObjectId); }, [CB_PAGES_DIRTY]);
+        } }
+    };
+}
+
+function pagesBody(ctx) {
+    pagesCtx = ctx || null;
+    if (ctx) editCtx = ctx;
+    let body = reviewLoading
+        ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-12 text-center' }, 'Loading scenes...')
+        : reviewError
+            ? m('div', { class: 'text-sm text-red-500 py-12 text-center' }, 'Error: ' + reviewError)
+            : reviewScenes.length === 0
+                ? m('div', { class: 'text-center py-12' }, [
+                    m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 block mb-2' }, 'auto_stories'),
+                    m('div', { class: 'text-sm text-gray-500 dark:text-gray-400' },
+                        'No pages yet. Create a ChapBook from the ChapBooks library first.')
+                ])
+                : renderReviewBody();
+    return m('div', { 'data-testid': 'cb-pages-section' }, [
+        roleBanner(),
+        m('p', { class: 'text-xs text-gray-400 dark:text-gray-500 mb-3' },
+            'Pick a page from the list to edit it, then Save it — or use Save all (unsaved pages are flagged in the list). ' +
+            'The Page tab shows it as Read does. Merge folds the next page in and flags its image outdated. Remove deletes a page permanently.'),
+        body
+    ]);
+}
+
+const cbPagesSection = {
+    dirtyKeys: [CB_PAGES_DIRTY],
+    init: function (ctx) {
+        pagesCtx = ctx;
+        enterSection(ctx);
+        if (ctx.item) reviewSelectedOid = ctx.item;
+    },
+    select: function (ctx) {
+        pagesCtx = ctx;
+        editCtx = ctx;
+        if (ctx.item) reviewSelectedOid = ctx.item;
+    },
+    remove: function () { pagesCtx = null; },
+    status: function (ctx) {
+        if (!editLoaded(ctx)) return null;
+        let n = pagesNeedingRender(reviewScenes);
+        return { kind: 'count', count: n, title: n + ' page' + (n !== 1 ? 's' : '') + ' with an outdated image, no prompt or no image' };
+    },
+    toolbar: function () { return pagesToolbar(); },
+    body: function (ctx) { return pagesBody(ctx); }
+};
+
+// ── Edit › Render ─────────────────────────────────────────────────────
+
+/** Edit › Render's Render: the Render Settings dialog's flow, inline. Unsaved pages / style are guarded first. */
+async function runEditRender(bookObjectId) {
+    if (reviewRendering || renderRunningFor || !bookObjectId) return false;
+    return guardDirty(async function () {
+        reviewRendering = true;
+        renderRunningFor = bookObjectId;
+        m.redraw();
+        try {
+            // P0-10d: persist the book-level image settings first (the server render reads the stored row); only a
+            // failed save sends the sparse delta as a one-shot overlay.
+            let synced = await syncBookSdConfigForRender(bookObjectId);
+            let chatConfigName = (renderChatConfigRef && renderChatConfigRef.name)
+                || (configChatConfigRef && configChatConfigRef.name)
+                || await fetchDefaultChatConfigName();
+            if (!chatConfigName) page.toast('warn', 'No chat config found — landscape prompts will use stored values');
+            let result = await renderChapBookScenes(bookObjectId, chatConfigName, synced.sdConfig || {}, function (oid, url) {
+                reviewSceneImageUrls[oid] = url;
+            });
+            toastRenderResult(result);
+            // Reconcile the pages with what landed (images, stale flags); the guard above means no drafts are lost.
+            if (reviewBookObjectId === bookObjectId) await loadReviewBook(bookObjectId);
+        } catch (e) {
+            page.toast('error', 'Render failed: ' + ((e && e.message) || ''));
+        }
+        renderRunningFor = null;
+        reviewRendering = false;
+        m.redraw();
+    }, [CB_PAGES_DIRTY, CB_STYLE_DIRTY]);
+}
+
+function renderStateOf(s) {
+    let p = renderProgress[s.objectId];
+    if (reviewRendering && renderActivityBook === reviewBookObjectId) {
+        if (p === 'generating') return { text: 'rendering', tone: 'purple' };
+        if (p === 'error') return { text: 'failed', tone: 'red' };
+        if (p === 'pinned') return { text: 'left pinned', tone: 'gray' };
+        if (p === 'done') return { text: 'done', tone: 'green' };
+    }
+    if (s.imageStale && s.imageObjectId) return { text: 'image outdated', tone: 'amber' };
+    if (isSceneUnprompted(s)) return { text: 'needs prompt', tone: 'amber' };
+    if (!s.imageObjectId) return { text: 'no image', tone: 'amber' };
+    return { text: s.pinned ? 'rendered · pinned' : 'rendered', tone: 'green' };
+}
+
+const cbRenderSection = {
+    init: function (ctx) {
+        enterSection(ctx);
+        if (!renderChatConfigRef && configChatConfigRef && configChatConfigRef.name) renderChatConfigRef = Object.assign({}, configChatConfigRef);
+        ensureRenderChatConfigDefault();
+    },
+    select: function (ctx) { editCtx = ctx; },
+    status: function (ctx) {
+        if (!editLoaded(ctx)) return null;
+        let n = pagesNeedingRender(reviewScenes);
+        return { kind: 'count', count: n, title: n + ' page' + (n !== 1 ? 's' : '') + ' to render' };
+    },
+    toolbar: function (ctx) {
+        let withImage = reviewScenes.filter(function (s) { return !!s.imageObjectId; }).length;
+        return {
+            title: 'Render',
+            meta: [metaText(withImage + ' of ' + reviewScenes.length + ' have images')],
+            actions: [m('button', {
+                'data-testid': 'cb-render-start',
+                class: 'px-3 py-1 rounded bg-orange-600 text-white text-sm hover:bg-orange-700 disabled:opacity-50 flex items-center gap-1',
+                disabled: reviewRendering || roleWarning || !reviewScenes.length,
+                title: 'Render every page (pinned pages are left as they are)',
+                onclick: function () { runEditRender(ctx.bookObjectId); }
+            }, [
+                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, reviewRendering ? 'hourglass_empty' : 'image'),
+                reviewRendering ? (' ' + renderProgressLabel()) : ' Render'
+            ])]
+        };
+    },
+    body: function (ctx) {
+        editCtx = ctx;
+        let block = stateBlock({ loading: reviewLoading && !reviewScenes.length, error: reviewError ? 'Error: ' + reviewError : null, loadingText: 'Loading scenes...' });
+        if (block) return block;
+        return m('div', { class: 'max-w-4xl space-y-4', 'data-testid': 'cb-render-section' }, [
+            roleBanner(),
+            m('p', { class: 'text-xs text-gray-500' }, 'The chat config drives LLM landscape-prompt generation. Render saves the image settings to the book first.'),
+            m('div', { class: 'max-w-md' }, renderChatConfigControl({
+                stacked: true, testid: 'cb-render-chatconfig', ref: renderChatConfigRef, resolving: _renderChatConfigResolving,
+                onPick: function (ref) { renderChatConfigRef = ref; m.redraw(); }
+            })),
+            m('div', [
+                m('h3', { class: 'text-sm font-semibold mb-2' }, 'Image settings'),
+                (renderSdConfigInst && renderSdConfigBookId === ctx.bookObjectId)
+                    ? [
+                        m(SdConfigPanel, { inst: renderSdConfigInst, models: renderSdModelList, loras: renderSdLoraList, onChange: function () { m.redraw(); } }),
+                        m('div', { class: 'flex justify-end mt-2' }, m('button', {
+                            'data-testid': 'cb-render-save-book-sd',
+                            class: BTN,
+                            disabled: roleWarning || computeBookSdDelta(renderSdConfigInst, renderSdConfigStored) == null,
+                            onclick: function () {
+                                saveBookSdConfig(ctx.bookObjectId).catch(function (e) {
+                                    page.toast('error', 'Failed to save book image settings: ' + (e.message || ''));
+                                });
+                            }
+                        }, 'Save image settings'))
+                    ]
+                    : renderSdConfigPlaceholder(ctx.bookObjectId, 'text-sm')
+            ]),
+            m('div', [
+                m('h3', { class: 'text-sm font-semibold mb-2' }, 'Pages'),
+                m('table', { class: 'w-full text-sm', 'data-testid': 'cb-render-table' }, [
+                    m('thead', m('tr', { class: 'text-left text-xs text-gray-500' }, [m('th', { class: 'py-1' }, '#'), m('th', 'Page'), m('th', 'State'), m('th', '')])),
+                    m('tbody', reviewScenes.map(function (s, i) {
+                        let state = renderStateOf(s);
+                        return m('tr', { key: s.objectId || i, 'data-testid': 'cb-render-row', 'data-scene-oid': s.objectId || '', class: 'border-t border-gray-100 dark:border-gray-800' }, [
+                            m('td', { class: 'py-1 pr-2 text-gray-500' }, String(i + 1)),
+                            m('td', { class: 'truncate max-w-xs' }, s.title || ('Page ' + (i + 1))),
+                            m('td', chip(state.text, state.tone)),
+                            m('td', { class: 'text-right' }, m('a', {
+                                href: '#!' + editLink('cb', ctx.bookObjectId, { type: 'page', id: s.objectId }),
+                                class: 'text-xs underline',
+                                onclick: function (e) { e.preventDefault(); ctx.go('pages', s.objectId); }
+                            }, 'Open'))
+                        ]);
+                    }))
+                ])
+            ]),
+            m('p', { class: 'text-xs text-gray-500' }, 'Each page\'s progress is in the activity panel at the bottom; it stays there while you work in other sections.')
+        ]);
+    }
+};
+
+/** The workspace header (bookWorkspace cfg.header): the title, and Edit → Read keeping the place (§4.3). */
+function cbWorkspaceHeader(ctx) {
+    ensureEditBook(ctx.bookObjectId);
+    return {
+        title: (reviewBook && (reviewBook.name || reviewBook.slug)) || 'ChapBook',
+        onMode: function (mode) {
+            if (mode !== 'read') return;
+            let focus = ctx.section === 'pages' ? (ctx.item || reviewSelectedOid) : readerLastOid;
+            guardDirty(function () { readerFocusOid = focus || null; m.route.set(readRoute('cb', ctx.bookObjectId)); });
+        }
+    };
+}
+
+/** bookWorkspace onEnter: load the book (and with it every rail status). */
+function cbWorkspaceEnter(ctx) {
+    registerEditGuards();
+    ensureEditBook(ctx.bookObjectId);
+}
+
+/** D6 waits for the book before choosing a section (bookWorkspace gives up after 4 s). */
+function cbStatusesReady(ctx) {
+    return !!ctx && reviewBookObjectId === ctx.bookObjectId && !reviewLoading && (reviewBook != null || reviewError != null || reviewScenes.length > 0);
+}
+
+// ── The standalone Pages view (the pre-workspace ChapBookReview, kept for the unit tests and as the Pages
+// section rendered outside the workspace): the Edit header, the Pages toolbar and the Pages body. No route mounts
+// it any more — /chap-book/review/:id redirects into Edit › Pages.
+const ChapBookReview = {
+    oninit: function (vnode) { resetEditBook((vnode && vnode.attrs && vnode.attrs.bookObjectId) || null); },
     view: function () {
         let title = (reviewBook && (reviewBook.name || reviewBook.slug)) || 'ChapBook';
-        // P10-C 4: the page list sits beside the card, so the review is wider than the reader (max-w-3xl).
-        return m('div', { class: 'p-4 max-w-6xl mx-auto' }, [
-            // Issue 9 / D6: role warning banner (mirrors PoemLibrary / ChapBookReader)
-            roleWarning ? m('div', { class: 'mb-4 p-3 rounded bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700 text-sm text-yellow-800 dark:text-yellow-200 flex items-center gap-2' }, [
-                m('span', { class: 'material-symbols-outlined text-yellow-500' }, 'warning'),
-                'You need the AccountUsers role to use ChapBook features.'
-            ]) : null,
-            // Header
-            pageHeader({
-                back: { title: 'Back to Poem Library', onclick: function () { m.route.set('/chap-book'); } },
-                icon: 'edit_note',
-                title: title + ' — Review', titleTip: title,
-                // Render and Export live (once) in the shared ChapBookConfig panel below.
-                actions: [btn({ label: 'Read', icon: 'auto_stories', onclick: function () { m.route.set('/chap-book/read/' + reviewBookObjectId); } })]
-            }),
-            // Shared collapsible config panel (same one shown on create/read) — hosts the single
-            // fixPageHeight toggle, design defaults, the poem queue, and the primary actions (Render,
-            // Export). Bound to reviewBook so its fixPageHeight toggle patches the book being reviewed.
-            m(ChapBookConfig, {
-                mode: 'review',
-                book: reviewBook,
-                bookObjectId: reviewBookObjectId,
-                onRender: renderReviewBook,
-                rendering: reviewRendering,
-                onExport: exportReviewBook,
-                exporting: reviewExporting,
-                canExport: reviewScenes.length > 0
-            }),
-            m('p', { class: 'text-xs text-gray-400 dark:text-gray-500 mb-4' },
-                'Pick a page from the list to edit it, then Save it — or use Save all (unsaved pages are flagged in the list). ' +
-                'Book-style controls below apply to every page. Use Render to generate images. ' +
-                'Merge folds the next page in and flags its image outdated. Remove deletes a page permanently.'),
-            // D1/D2: sticky book-level toolbar — shared style defaults (each control fans out to every
-            // page and persists on change), a collapsible book-level SD config (same instance as the
-            // pre-render dialog), and the book "Save all" action. Only shown when there are pages.
-            reviewScenes.length ? m('div', {
-                class: 'sticky top-0 z-20 mb-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white/95 dark:bg-gray-900/95 backdrop-blur p-3 space-y-2'
-            }, [
-                m('div', { class: 'flex flex-wrap items-center gap-3' }, [
-                    m('span', { class: 'text-xs font-medium text-gray-500 dark:text-gray-400' }, 'Book style'),
-                    // Font
-                    m('div', { class: 'flex items-center gap-1.5' }, [
-                        m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Font'),
-                        m('select', {
-                            class: 'px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-xs dark:text-white',
-                            value: bookStyle.pageFont,
-                            disabled: roleWarning,
-                            onchange: function (e) { applyBookStyle('pageFont', e.target.value); }
-                        }, FONT_OPTIONS.map(function (opt) { return m('option', { value: opt.value }, opt.label); }))
-                    ]),
-                    // Text color
-                    m('div', { class: 'flex items-center gap-1.5' }, [
-                        m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Text color'),
-                        m('input', {
-                            type: 'color',
-                            class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
-                            value: bookStyle.pageTextColor || '#ffffff',
-                            disabled: roleWarning,
-                            onchange: function (e) { applyBookStyle('pageTextColor', e.target.value); }
-                        })
-                    ]),
-                    // Background color
-                    m('div', { class: 'flex items-center gap-1.5' }, [
-                        m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Bg color'),
-                        m('input', {
-                            type: 'color',
-                            class: 'w-8 h-7 rounded border border-gray-300 dark:border-gray-600 cursor-pointer',
-                            value: bookStyle.pageBgColor || '#000000',
-                            disabled: roleWarning,
-                            onchange: function (e) { applyBookStyle('pageBgColor', e.target.value); }
-                        })
-                    ]),
-                    // Background opacity (0-100%). Unset renders at the historical default of 40.
-                    m('div', { class: 'flex items-center gap-1.5' }, [
-                        m('label', { class: 'text-xs text-gray-500 dark:text-gray-400' }, 'Bg opacity'),
-                        m('input', {
-                            type: 'range',
-                            min: 0, max: 100, step: 5,
-                            class: 'w-24 cursor-pointer',
-                            value: (bookStyle.pageBgOpacity != null ? bookStyle.pageBgOpacity : 40),
-                            disabled: roleWarning,
-                            oninput: function (e) { applyBookStyle('pageBgOpacity', Number(e.target.value)); }
-                        }),
-                        m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 w-8 text-right' },
-                            (bookStyle.pageBgOpacity != null ? bookStyle.pageBgOpacity : 40) + '%')
-                    ]),
-                    // Text alignment
-                    m('div', { class: 'flex items-center gap-1' }, [
-                        m('span', { class: 'text-xs text-gray-500 dark:text-gray-400 mr-1' }, 'Align'),
-                        ['left', 'center', 'right'].map(function (align) {
-                            let active = bookStyle.pageTextAlign === align;
-                            let alignIcons = { left: 'format_align_left', center: 'format_align_center', right: 'format_align_right' };
-                            return m('button', {
-                                key: align,
-                                class: 'px-1.5 py-1 rounded text-xs ' + (active
-                                    ? 'bg-purple-600 text-white'
-                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'),
-                                title: align.charAt(0).toUpperCase() + align.slice(1),
-                                disabled: roleWarning,
-                                onclick: function () { applyBookStyle('pageTextAlign', active ? '' : align); }
-                            }, m('span', { class: 'material-symbols-outlined', style: 'font-size:14px;vertical-align:middle' }, alignIcons[align]));
-                        })
-                    ]),
-                    // Fixed page height (book-level print clamp) now lives (once) in the shared
-                    // ChapBookConfig panel above, bound to reviewBook — same setBookFixPageHeight path.
-                    // Save all (book action)
-                    m('button', {
-                        class: 'ml-auto px-3 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1',
-                        title: 'Save every page that has unsaved changes',
-                        disabled: roleWarning || reviewRendering || !reviewScenes.some(sceneIsDirty),
-                        onclick: doSaveAllScenes
-                    }, [
-                        m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'save'),
-                        ' Save all'
-                    ])
-                ]),
-                // Collapsible book-level SD config (shared SdConfigPanel; same instance as the Render dialog)
-                m('div', [
-                    m('button', {
-                        class: 'flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300',
-                        onclick: function () { bookSdExpanded = !bookSdExpanded; m.redraw(); }
-                    }, [
-                        m('span', {
-                            class: 'material-symbols-outlined',
-                            style: 'font-size:16px;transition:transform 0.15s;' + (bookSdExpanded ? 'transform:rotate(90deg);' : '')
-                        }, 'chevron_right'),
-                        m('span', 'Book image settings')
-                    ]),
-                    bookSdExpanded ? (renderSdConfigInst
-                        ? m('div', { class: 'mt-2' }, [
-                            m(SdConfigPanel, {
-                                inst: renderSdConfigInst,
-                                models: renderSdModelList,
-                                loras: renderSdLoraList,
-                                onChange: function () { m.redraw(); }
-                            }),
-                            // P0-10d: explicit save of the book-level SD config to the book's stored row.
-                            m('div', { class: 'flex justify-end mt-2' }, m('button', {
-                                'data-testid': 'cb-save-book-sd',
-                                class: 'px-3 py-1.5 rounded bg-purple-600 text-white text-sm hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1',
-                                title: 'Save the book image settings to this book',
-                                disabled: roleWarning || computeBookSdDelta(renderSdConfigInst, renderSdConfigStored) == null,
-                                onclick: function () {
-                                    saveBookSdConfig(reviewBookObjectId).catch(function (e) {
-                                        page.toast('error', 'Failed to save book image settings: ' + (e.message || ''));
-                                    });
-                                }
-                            }, [
-                                m('span', { class: 'material-symbols-outlined', style: 'font-size:16px;vertical-align:middle' }, 'save'),
-                                ' Save image settings'
-                            ]))
-                        ])
-                        : renderSdConfigPlaceholder(reviewBookObjectId, 'text-xs')) : null
-                ])
-            ]) : null,
-            // Body
-            reviewLoading
-                ? m('div', { class: 'text-sm text-gray-500 dark:text-gray-400 py-12 text-center' }, 'Loading scenes...')
-                : reviewError
-                    ? m('div', { class: 'text-sm text-red-500 py-12 text-center' }, 'Error: ' + reviewError)
-                    : reviewScenes.length === 0
-                        ? m('div', { class: 'text-center py-12' }, [
-                            m('span', { class: 'material-symbols-outlined text-5xl text-gray-300 block mb-2' }, 'auto_stories'),
-                            m('div', { class: 'text-sm text-gray-500 dark:text-gray-400' },
-                                'No pages yet. Create a ChapBook from the Poem Library first.')
-                          ])
-                        : renderReviewBody()
-            // Issue 8: the pre-render SD config dialog is rendered by the ChapBookConfig panel above.
+        return m('div', { class: 'p-4 max-w-6xl mx-auto', 'data-testid': 'cb-pages-standalone' }, [
+            bookHeader({ kind: 'cb', mode: 'edit', bookObjectId: reviewBookObjectId, title: title }),
+            pageHeader(Object.assign({ bar: true }, pagesToolbar(), { back: null })),
+            pagesBody(null)
         ]);
     }
 };
@@ -4891,6 +5452,10 @@ const ChapBookFeature = {
 };
 
 // ── Routes ────────────────────────────────────────────────────────────
+// The feature's table is features/chapBookWorkspace.js (it adds Edit and the /review redirect); these two are the
+// library and Read, which it lists by name.
+
+const ChapBookReaderView = { view: function () { return ChapBookReader.view(); } };
 
 export const routes = {
     '/chap-book': {
@@ -4899,18 +5464,24 @@ export const routes = {
         }
     },
     '/chap-book/read/:bookObjectId': {
-        view: function (vnode) {
-            return layout(pageLayout(m(ChapBookReader, { bookObjectId: vnode.attrs.bookObjectId })));
-        }
-    },
-    '/chap-book/review/:bookObjectId': {
-        view: function (vnode) {
-            return layout(pageLayout(m(ChapBookReview, { bookObjectId: vnode.attrs.bookObjectId })));
+        oninit: function (vnode) { initReader(vnode.attrs.bookObjectId); },
+        // Same route, another book: Mithril reuses the instance, so pick up the change here.
+        onupdate: function (vnode) {
+            let id = vnode.attrs.bookObjectId;
+            if (id && id !== readerBookObjectId) initReader(id);
+        },
+        view: function () {
+            // §8.1 (as PB1's /picture-book/:id): ReaderShell renders its own fullscreen overlay; when active, skip the
+            // layout chrome so the overlay covers it (reads the shell-mutated cbReader.fullscreen).
+            if (cbReader.fullscreen) return m(ChapBookReaderView);
+            return layout(pageLayout(m(ChapBookReaderView)));
         }
     }
 };
 
 export { renderChapBookPage, chapExportPageHtml, ChapBookFeature, ChapBookReader, ChapBookReview, PoemLibrary, ChapBookConfig, openRenderConfigDialog, renderRenderDialog, lacksUserRole, persistReaderPoemIds, loadPersistedReaderPoemIds, renderScenesSerially, renderChapBookScene, renderChapBookScenes, renderResultMessage, renderResultLevel, sceneLlmSignal, isSceneUnprompted, doDeleteBook, createChapBook, startCreateChapBook, createChapBookBody, renderChapBookBgActivity, reattachCreateChapBook, analyzePoem, fetchAllPoemPages, buildBookPatchBody, regenerateScenePrompt, analyzeScene, putSceneLandscapePrompt, promptWriteOutcome, effectiveChatConfigName, computeBookSdDelta, getBookSettings, putBookSettings, saveBookSdConfig, syncBookSdConfigForRender, ensureRenderSdConfig, isChapBookPinnedRefusal, coerceSceneRenderResult, v3JobOutcome, mergeSceneOverlay, renderPageWithPinConfirm, applyPageRenderResult, loadSceneRenderFields, pageLocationLabel, loadSceneOverrides, doSetSceneLocation };
+// Edit mode (§8.2): the SectionAdapters and the workspace hooks features/chapBookWorkspace.js wires up.
+export { cbBookSection, cbStyleSection, cbPagesSection, cbRenderSection, cbWorkspaceHeader, cbWorkspaceEnter, cbStatusesReady, pagesNeedingRender, renderStages, createdBookRoute, readerEditRoute, readerCurrentPageOid, saveBookStyle, bookStyleChangedKeys, runEditRender };
 // Exported for Vitest (P3-7): seed the review view's module state without mounting the route.
 export function __setReviewStateForTest(patch) {
     patch = patch || {};
@@ -4948,13 +5519,48 @@ export { overrideSummary };
 export { selectReviewPage, selectedReviewIndex, ensureReviewSelection, renderReviewPageList as __renderReviewPageListForTest, doSplitScene as __doSplitSceneForTest };
 // Exported for Vitest (P10-D 5, 266 j): the review load itself (the reload path after split / merge / remove).
 export { loadReviewBook as __loadReviewBookForTest };
+export { ensureEditBook as __ensureEditBookForTest };
 export function __reviewPageCountForTest() { return reviewScenes.length; }
+// Exported for Vitest (U4): the edit state the Style / Pages sections read.
+export function __editStateForTest() {
+    return { reviewBookObjectId, reviewScenes, reviewSelectedOid, bookStyle, bookStyleSaved, bookStyleSaving, editNeedsReload, readerFocusOid, pagesCtx, configChatConfigRef, reviewRendering, renderRunningFor };
+}
+export function __setEditStateForTest(patch) {
+    patch = patch || {};
+    if ('bookStyle' in patch) bookStyle = Object.assign({}, patch.bookStyle);
+    if ('bookStyleSaved' in patch) bookStyleSaved = Object.assign({}, patch.bookStyleSaved);
+    if ('editNeedsReload' in patch) editNeedsReload = !!patch.editNeedsReload;
+    if ('renderRunningFor' in patch) renderRunningFor = patch.renderRunningFor || null;
+    if ('reviewLoading' in patch) reviewLoading = !!patch.reviewLoading;
+    if ('reviewError' in patch) reviewError = patch.reviewError || null;
+    if ('pagesCtx' in patch) pagesCtx = patch.pagesCtx || null;
+    if ('editCtx' in patch) editCtx = patch.editCtx || null;
+    if ('readerFocusOid' in patch) readerFocusOid = patch.readerFocusOid || null;
+}
+// Exported for Vitest (U4): the create flow's inputs, and the create itself.
+export function __setCreateStateForTest(patch) {
+    patch = patch || {};
+    if ('selectedIds' in patch) selectedIds = new Set(patch.selectedIds || []);
+    if ('createSlug' in patch) createSlug = patch.createSlug;
+    if ('createTitle' in patch) createTitle = patch.createTitle;
+    if ('createMaxLines' in patch) createMaxLines = patch.createMaxLines;
+    if ('createChatConfigRef' in patch) createChatConfigRef = patch.createChatConfigRef || null;
+    if ('configChatConfigRef' in patch) configChatConfigRef = patch.configChatConfigRef || null;
+    if ('renderSdConfigInst' in patch) renderSdConfigInst = patch.renderSdConfigInst || null;
+    if ('renderSdConfigBookId' in patch) renderSdConfigBookId = patch.renderSdConfigBookId;
+    if ('creating' in patch) creating = !!patch.creating;
+}
+export { doCreateChapBook as __doCreateChapBookForTest };
 // Exported for Vitest (P9-4): seed the reader's module state and render its cover slot without mounting the route.
 export function __setReaderStateForTest(patch) {
     patch = patch || {};
     if ('readerBook' in patch) readerBook = patch.readerBook;
     if ('readerPages' in patch) readerPages = Array.isArray(patch.readerPages) ? patch.readerPages : [];
     if ('readerCovers' in patch) readerCovers = patch.readerCovers || null;
+    if ('readerBookObjectId' in patch) readerBookObjectId = patch.readerBookObjectId || null;
+    if ('currentPage' in patch) cbReader.currentPage = patch.currentPage | 0;
+    if ('fullscreen' in patch) cbReader.fullscreen = !!patch.fullscreen;
+    if ('readerLoading' in patch) readerLoading = !!patch.readerLoading;
 }
 export { renderReaderCover as __renderReaderCoverForTest, readerCoverImageUrl as __readerCoverImageUrlForTest, renderReaderSeriesArt as __renderReaderSeriesArtForTest, readerFront as __readerFrontForTest };
 export default ChapBookFeature;

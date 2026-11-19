@@ -369,6 +369,10 @@ const READER_PLAN = {
     estimate: { scenes: 1, stages: 1, variants: 1, steps: 25, measured: false, source: 'NONE' }
 };
 
+// aiDocs/PictureBookUxConsistencyDesign.md §5.1 / §5.6: the degradation chip and truncated lines are Edit-only parts of
+// the page (renderPb2ScenePage(scene, {mode:'edit'}), the Edit › Scenes › Page tab); Read draws neither. Turning pages
+// in Read still reads the node's plan once (the cache Edit's Page tab shows). The per-page Compose button left Read;
+// Compose is the Scenes section's Composition tab (Page tab 'pb-page-goto-composition').
 describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose deep-link', () => {
     let origFetch;
     let pbf;
@@ -378,6 +382,7 @@ describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose
         { objectId: 's2', sceneIndex: 2, title: 'Market', pinned: false }
     ];
 
+    function editPage() { return pbf.renderPb2ScenePage(null, { mode: 'edit' }); }
     function nextButton() {
         let btns = findAll(pbf.renderPb2Header(), v => v.tag === 'button' && textOf(v) === 'chevron_right');
         expect(btns.length, 'one next-page button').toBe(1);
@@ -409,7 +414,8 @@ describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose
         vi.restoreAllMocks();
     });
 
-    it('turning to a page reads its node\'s NEWEST renderPlan once; the chip shows count + codes, the truncated lines are verbatim; the read is cached', async () => {
+    // Intentionally changed (§5.6): the chip / truncated lines are drawn on the Edit page, never on the Read page.
+    it('turning to a page reads its node\'s NEWEST renderPlan once; the Edit page chip shows count + codes, the truncated lines are verbatim (Read shows neither); the read is cached', async () => {
         nextButton().attrs.onclick();
         await waitFor(() => { let e = pbf.__pb2V3StateForTest().pb2SceneDegradations.n1; return e && !e.loading; });
         expect(calls).toEqual(['GET /rest/olio/picture-book/B1/workflow/node/n1', 'GET /rest/olio/picture-book/B1/artifact/' + PLAN_OID]);
@@ -417,7 +423,9 @@ describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose
         expect(entry.error).toBeNull();
         expect(entry.summary).toEqual({ count: 2, codes: ['MODEL_SUBSTITUTED', 'PROMPT_TRUNCATED'], truncatedDropped: ['props dropped: rope, lantern (9 tokens over budget 75)'] });
 
-        let v = pbf.renderPb2ScenePage();
+        none(pbf.renderPb2ScenePage(), 'pb2-scene-degradations');
+        none(pbf.renderPb2ScenePage(), 'pb2-scene-truncated');
+        let v = editPage();
         let chip = one(v, 'pb2-scene-degradations');
         expect(chip.attrs['data-count']).toBe(2);
         expect(chip.attrs['data-codes']).toBe('MODEL_SUBSTITUTED,PROMPT_TRUNCATED');
@@ -435,12 +443,12 @@ describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose
         await new Promise(r => setTimeout(r, 10));
         expect(pbf.__pb2V3StateForTest().pb2CurrentPage).toBe(2);
         expect(calls.length).toBe(2);
-        none(pbf.renderPb2ScenePage(), 'pb2-scene-degradations');
-        none(pbf.renderPb2ScenePage(), 'pb2-scene-truncated');
+        none(editPage(), 'pb2-scene-degradations');
+        none(editPage(), 'pb2-scene-truncated');
     });
     it('a plan with no degradations shows no chip and no truncated block; a failed node read lands in the entry error, never a toast', async () => {
         pbf.__setPb2V3StateForTest({ pb2CurrentPage: 1, pb2SceneDegradations: { n1: { loading: false, summary: wf.degradationSummary({ degradations: [] }), error: null } } });
-        let v = pbf.renderPb2ScenePage();
+        let v = editPage();
         none(v, 'pb2-scene-degradations');
         none(v, 'pb2-scene-truncated');
         expect(pbf.pb2SceneDegradationEntry(PAGES2[0], null)).toBeNull();
@@ -455,18 +463,34 @@ describe('reader (features/pictureBook.js) — P4-9 degradation chip and Compose
         // nodeView (pictureBookWorkflow.js:73) reports the status, not the body
         expect(entry.error).toBe('nodeView failed: 500');
         expect(page.toast).not.toHaveBeenCalled();
-        let v2 = pbf.renderPb2ScenePage();
+        none(pbf.renderPb2ScenePage(), 'pb2-scene-degradations-error');
+        let v2 = editPage();
         none(v2, 'pb2-scene-degradations');
         // … but the failed read is visible on the page, not silently "no degradations"
         let errChip = one(v2, 'pb2-scene-degradations-error');
         expect(errChip.attrs.title).toBe('nodeView failed: 500');
         expect(textOf(errChip)).toContain('plan not read');
     });
-    it('the Compose button routes to /picture-book/{book}/compose/{scene}', () => {
-        pbf.__setPb2V3StateForTest({ pb2CurrentPage: 1 });
-        let btn = one(pbf.renderPb2ScenePage(), 'pb2-scene-compose');
-        expect(btn.attrs.title).toBe('Open the composition board for this scene (camera, actors, elements, wardrobe)');
-        btn.attrs.onclick();
-        expect(m.route.set).toHaveBeenCalledWith('/picture-book/B1/compose/s1');
+    // Intentionally changed (§5.6, §3): Read has no Compose button; the Page tab's Composition button and the scene tab bar
+    // open Edit › Scenes › this scene › Composition, which is also where the old /compose/{scene} route now lands.
+    it('the Composition tab is the Compose entry point: Page tab button and tab bar open it; /compose/{scene} redirects there', async () => {
+        pbf.__setPb2V3StateForTest({ pb2CurrentPage: 1, pb2SceneDegradations: { n1: { loading: false, summary: null, error: null } } });
+        none(pbf.renderPb2ScenePage(), 'pb2-scene-compose');
+        let edit = await import('../features/pictureBookEdit.js');
+        let nav = await import('../workflows/bookWorkspaceNav.js');
+        edit.__resetPbEditForTest();
+        edit.__setPbEditStateForTest({ sceneRecs: { s1: { loading: false, error: null, rec: { id: 1, objectId: 's1', title: 'Quay' } } } });
+        let ctx = { kind: 'pb', bookObjectId: 'B1', section: 'scenes', item: 's1', tab: 'page', go: vi.fn(), select: vi.fn(), setTab: vi.fn() };
+        let div = document.createElement('div');
+        m.render(div, edit.scenesSection.body(ctx));
+        expect(div.querySelector('[data-testid="pb2-scene-compose"]')).toBeNull();
+        div.querySelector('[data-testid="pb-page-goto-composition"]').click();
+        expect(ctx.setTab).toHaveBeenCalledWith('composition');
+        ctx.setTab.mockClear();
+        div.querySelector('[data-testid="pb-scene-tab-composition"]').click();
+        expect(ctx.setTab).toHaveBeenCalledWith('composition');
+        expect(nav.legacyRedirect('/picture-book/B1/compose/s1')).toBe('/picture-book/B1/edit/scenes/s1?tab=composition');
+        expect(calls).toEqual([]);
+        m.render(div, null);
     });
 });

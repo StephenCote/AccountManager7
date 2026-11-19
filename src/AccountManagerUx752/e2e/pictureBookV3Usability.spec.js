@@ -35,7 +35,7 @@ import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, resolveChatRoute, ensureChatConfig, ensurePath, createObject } from './helpers/api.js';
 import { REST, PB_REST, restLoginShared, loginAsSharedUser } from './helpers/chapbook.js';
-import { openReaderTools, closeReaderTools, clickReaderTool, completeWizardStyleStep } from './helpers/pbReader.js';
+import { clickReaderTool, completeWizardStyleStep, openEditSection, openPageInEdit, openActivityDock, openReviewNode } from './helpers/pbReader.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = '[p90-gate]';
@@ -436,7 +436,11 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const cfsResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/create-from-scenes$/.test(r.url()), { timeout: T.characters }).then(jsonOf).catch(() => null);
             await page.locator('button:has-text("Continue")').first().click();
             const tChars = Date.now();
-            const dlg = page.getByRole('dialog');
+            // §7.1: once the book and its characters exist the wizard closes and Edit › Characters opens (guided); the
+            // character manager that was wizard step 3 renders inline in the workspace pane.
+            await expect.poll(() => page.evaluate(() => location.hash), { timeout: T.characters })
+                .toMatch(/^#!\/picture-book\/[^/]+\/edit\/characters\?guided=1$/);
+            const dlg = page.locator('[data-testid="ws-pane"][data-section="characters"]');
             const empty = dlg.locator('text=No characters extracted yet.');
             const card = dlg.locator('div.font-medium.text-sm').first();
             await Promise.race([empty.waitFor({ state: 'visible', timeout: T.characters }), card.waitFor({ state: 'visible', timeout: T.characters })]).catch(() => {});
@@ -445,7 +449,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await shot(page, '02c-wizard-characters');
             expect(charCount, 'characters created (empty state: ' + (await empty.count()) + ')').toBeGreaterThan(0);
 
-            await completeWizardStyleStep(page); // step 3 → step 4 Style (required) → reader
+            await completeWizardStyleStep(page); // Edit › Style (required) → Read
             await expect.poll(() => page.evaluate(() => location.hash), { timeout: 60000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);
             const bookOid = (await page.evaluate(() => location.hash)).replace(/^#!\/picture-book\/v2\//, '');
             await expect(page.locator('[data-pb2-book-name]')).toBeVisible({ timeout: T.ui });
@@ -507,13 +511,15 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await expect(cover).toContainText('of ' + fx.scenes.length + ' scene');
             const coverText = (await cover.textContent()) || '';
             const chapterSelect = await page.locator('[data-pb2-chapter-select]').count();
-            for (const id of ['pb2-style-link', 'pb2-render-all', 'pb2-tools-menu']) await expect(page.getByTestId(id), id).toBeVisible();
-            await expect(page.locator('[data-pb2-characters="' + fx.book.objectId + '"]')).toBeVisible();
-            // The optional tools are items of the Tools overflow (helpers/pbReader.js).
-            await openReaderTools(page);
-            for (const id of ['pb2-locations-link', 'pb2-compose-link', 'pb2-review-link']) await expect(page.getByTestId(id), id).toBeVisible();
-            await expect(page.locator('button[title="Open Workflow Canvas"]')).toBeVisible();
-            await closeReaderTools(page);
+            // Read | Edit split (design §4.1 / §5.1): Read carries the Edit toggle and no editing tools; every former tool
+            // (Style, Characters, Render, Locations, Composition, Review, Canvas) is a section of the Edit workspace.
+            await expect(page.getByTestId('book-mode-edit')).toBeVisible();
+            for (const id of ['pb2-style-link', 'pb2-render-all', 'pb2-tools-menu']) await expect(page.getByTestId(id), id + ' is not in Read').toHaveCount(0);
+            await expect(page.locator('[data-pb2-characters="' + fx.book.objectId + '"]')).toHaveCount(0);
+            await openEditSection(page, 'book');
+            for (const s of ['style', 'characters', 'render', 'locations', 'scenes', 'review', 'canvas']) await expect(page.getByTestId('ws-rail-' + s), 'rail ' + s).toBeVisible();
+            await page.getByTestId('book-mode-read').click();
+            await expect(page.getByTestId('pb2-reader')).toBeVisible({ timeout: T.ui });
             await openFirstPage(page);
             await expect(page.locator('h2', { hasText: fx.scene0.title || 'Scene' }).first()).toBeVisible({ timeout: T.ui });
             // 213 e / 219 f: no scene has an image yet; the reader shows the placeholder, not pb2-scene-image.
@@ -535,9 +541,8 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
         // ── 4. Style ─────────────────────────────────────────────────────────────────────────────────
         await step(page, 4, 'Style', async () => {
             await openReader(page, fx.book.objectId);
-            await page.getByTestId('pb2-style-link').click();
-            await expect(page).toHaveURL(new RegExp('#!/picture-book/' + fx.book.objectId + '/style$'));
-            await expect(page.getByTestId('pb2-style')).toBeVisible({ timeout: T.ui });
+            await openEditSection(page, 'style');
+            await expect(page).toHaveURL(new RegExp('#!/picture-book/' + fx.book.objectId + '/edit/style$'));
             await expect(page.getByTestId('pb2-style-chain')).toBeVisible({ timeout: T.ui });
             const t0 = Date.now();
             await expect(page.getByTestId('pb2-style-task-availability-sceneDirect')).not.toContainText('checking', { timeout: 300000 });
@@ -590,8 +595,9 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
         // ── 5. Characters ────────────────────────────────────────────────────────────────────────────
         await step(page, 5, 'Characters', async () => {
             await openReader(page, fx.book.objectId);
-            await page.locator('[data-pb2-characters="' + fx.book.objectId + '"]').click();
-            await expect(page.locator('.am7-dialog-title', { hasText: 'Manage Characters' })).toBeVisible({ timeout: T.ui });
+            // The reader's Characters button became Edit › Characters (the pop-in is retired, D2 / §5.4).
+            await openEditSection(page, 'characters');
+            const mgr = page.locator('[data-testid="ws-pane"][data-section="characters"]');
             const items = page.locator('[data-char-item]');
             await expect(items.first()).toBeVisible({ timeout: 60000 });
             const itemCount = await items.count();
@@ -609,11 +615,11 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const regen = page.getByTestId('pbchar-affected-regenerate');
             const regenDisabled = (await regen.count()) ? await regen.isDisabled() : '(absent)';
             const regenTitle = (await regen.count()) ? await regen.getAttribute('title') : '(absent)';
-            const portraitImgBefore = await page.locator('.am7-dialog img').count();
+            const portraitImgBefore = await mgr.locator('img').count();
             await shot(page, '05a-character-detail');
             // The one portrait Ux element the manager has today is the legacy "Regenerate Portrait" → Reimage dialog →
             // Generate → POST /olio/olio.charPerson/{oid}/reimage on .39; the first image becomes profile.portrait.
-            const legacyPortraitBtn = page.locator('.am7-dialog button', { hasText: 'Regenerate Portrait' });
+            const legacyPortraitBtn = mgr.locator('button', { hasText: 'Regenerate Portrait' });
             await expect(legacyPortraitBtn, 'legacy Regenerate Portrait button').toBeVisible();
             await legacyPortraitBtn.click();
             await expect(page.locator('.am7-dialog-title', { hasText: 'Reimage ' })).toBeVisible({ timeout: 60000 });
@@ -627,15 +633,15 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const portraitMs = Date.now() - tPortrait;
             await shot(page, '05c-portrait-result');
             expect(portraitToast, 'portrait render toast').toMatch(/^Created \d+ image\(s\)/);
-            // The success path opens the image gallery over the manager — close it, re-select the character, see the portrait.
-            while ((await page.locator('.am7-dialog').count()) > 1) {
+            // The success path opens the image gallery over the workspace — close it, re-select the character, see the portrait.
+            while ((await page.locator('.am7-dialog').count()) > 0) {
                 await page.locator('button[aria-label="Close dialog"]').last().click({ timeout: 5000 }).catch(() => page.keyboard.press('Escape'));
                 await page.waitForTimeout(300);
             }
             await items.first().click();
             await expect(page.locator('[data-char-name]')).toBeVisible({ timeout: T.ui });
-            await expect(page.locator('.am7-dialog img').first()).toBeVisible({ timeout: 60000 });
-            const portraitImg = await page.locator('.am7-dialog img').count();
+            await expect(mgr.locator('img').first()).toBeVisible({ timeout: 60000 });
+            const portraitImg = await mgr.locator('img').count();
             await shot(page, '05d-character-with-portrait');
             // P10-D 3 (§6.C 267 i): the manager re-reads /characters from reimage's onImages callback, after the
             // profile patch, so the row's `no portrait` badge is gone before any other write (run 24 still read
@@ -664,7 +670,6 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const ab = await pbGet(request, '/' + fx.book.objectId + '/affected-by/olio.charPerson/' + firstOid);
             expect([200, 404], 'GET /affected-by: ' + JSON.stringify(ab.body).slice(0, 200)).toContain(ab.status);
             const listPortraitLabel = ((await items.first().textContent()) || '').replace(/\s+/g, ' ').trim();
-            await page.locator('button[aria-label="Close dialog"]').last().click();
             return itemCount + ' characters; first "' + charName + '" (' + firstOid + ') affected panel: ' + (affectedError ? 'error "' + affectedError + '"' : 'count ' + affectedCount)
                 + ' (REST /affected-by ' + ab.status + (ab.status === 200 ? ' boundNodes=' + ((ab.body.boundNodes || []).length) + ' affectedSceneIndexes=' + JSON.stringify(ab.body.affectedSceneIndexes || []) : ' ' + JSON.stringify(ab.body).slice(0, 80)) + ')'
                 + '; Regenerate disabled=' + regenDisabled + ' title="' + regenTitle + '"; legacy Regenerate Portrait → "' + portraitToast.trim() + '" in ' + Math.round(portraitMs / 1000) + ' s, POST /reimage ' + ri.status() + ' image ' + (riBody && riBody.objectId) + ', dialog <img> ' + portraitImgBefore + ' → ' + portraitImg + ', /characters hasPortrait=' + me.hasPortrait + ', list row after render "' + listPortraitLabel + '"'
@@ -732,7 +737,9 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const propName = ((await first.getByTestId('pb-loc-proposal-name').textContent()) || '').trim();
             await first.getByTestId('pb-loc-proposal-accept').click();
             const acceptToast = await waitForToast(page, /^Accepted /, 60000);
-            const card = page.getByTestId('pb-loc-card').filter({ has: page.getByTestId('pb-loc-name').filter({ hasText: propName }) }).first();
+            // Edit › Locations is master/detail (§5.5): select the accepted location's row to show its page.
+            await page.locator('[data-testid="pb-loc-row"][data-location-name="' + propName + '"]').click();
+            const card = page.locator('[data-testid="pb-loc-card"][data-location-name="' + propName + '"]');
             await expect(card).toBeVisible({ timeout: T.ui });
             const usedBy = ((await card.getByTestId('pb-loc-used-by').textContent().catch(() => '')) || '').trim();
             // A variant (dusk) → render it on the SD server → approve the artifact.
@@ -747,7 +754,8 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const variantId = await variant.getAttribute('data-variant-id');
             const t1 = Date.now();
             await variant.getByTestId('pb-loc-variant-render').click();
-            const run = variant.getByTestId('pb-loc-run');        // renderRun(v.objectId) renders INSIDE the variant element
+            await openActivityDock(page);                         // the variant's run panel is in the activity dock (§4.5)
+            const run = page.getByTestId('ws-dock-panel').getByTestId('pb-loc-run').first();
             await expect(run).toBeVisible({ timeout: 60000 });
             await expect(run).toHaveAttribute('data-run-terminal', '1', { timeout: T.locationRender });
             const runSummary = ((await run.getByTestId('pb-loc-run-counter').textContent()) || '').trim();
@@ -796,8 +804,9 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const chip = (await page.getByTestId('pb2-scene-chip').count()) ? await page.getByTestId('pb2-scene-chip').first().getAttribute('data-chip') : '(no chip)';
             const degr = page.getByTestId('pb2-scene-degradations');
             const degrCount = (await degr.count()) ? await degr.first().getAttribute('data-count') : 'absent';
-            await page.getByTestId('pb2-scene-compose').click();
-            await expect(page.getByTestId('pb-cmp')).toBeVisible({ timeout: 60000 });
+            // The page's Compose button became Edit › Scenes › this scene › Composition (design §5.6).
+            await openPageInEdit(page, 'composition');
+            await expect(page.getByTestId('pb-cmp-composition')).toBeVisible({ timeout: 60000 });
             const emptyBefore = await page.getByTestId('pb-cmp-empty').count();
             const ctl = page.getByTestId('pb-cmp-chatconfig');
             await expect(ctl).toBeVisible({ timeout: T.ui });
@@ -840,9 +849,9 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             expect(upper(dto.body.composition.purpose)).toBe('SCENE');
             expect(dto.body.composition.userEdited).toBe(true);
             expect(dto.body.composition.mood).toBe('wistful, late light (P9-0)');
-            // Back on the reader: render this scene directly (the §16 step-7 control) and observe what the server says.
-            await openReader(page, fx.book.objectId);
-            await openFirstPage(page);
+            // Render this scene directly (the §16 step-7 control, now the scene's Render tab) and observe the server.
+            await page.getByTestId('pb-scene-tab-render').click();
+            await expect(page.getByTestId('pb-render-tab')).toBeVisible({ timeout: T.ui });
             // renderScene() (workflows/pictureBookWorkflow.js:413-417) posts …/render?force=true — match the path with or
             // without a query string (run 9: a `$`-anchored regex never matched and the 409 answered at 21:59:28 went unseen).
             const renderResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/scene\/[^/]+\/render(\?|$)/.test(r.url()), { timeout: 120000 });
@@ -853,14 +862,16 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             // P10-B: Render on a wizard-made book is accepted (202) — never the "no workflow yet" 404 (UAT 2026-11-03).
             expect(rr.status(), 'POST /scene/{id}/render on the wizard book: ' + renderNote).toBe(202);
             if (rr.status() === 202 || rr.status() === 200) {
+                await openActivityDock(page);
                 const progress = page.getByTestId('pb2-run-progress');
                 await expect(progress).toBeVisible({ timeout: 60000 });
                 const t1 = Date.now();
-                // The watcher survives navigate-away/back (re-attached from server state).
+                // The watcher survives navigate-away/back (re-attached from server state); Edit › Render pins the dock open.
                 await page.goto('/#!/picture-book', { timeout: T.ui });
                 await expect(page.locator('[data-pb2-book-list]')).toBeVisible({ timeout: T.ui });
-                await openReader(page, fx.book.objectId);
-                const reattached = await page.getByTestId('pb2-run-progress').isVisible().catch(() => false);
+                await page.goto('/#!/picture-book/' + fx.book.objectId + '/edit/render', { timeout: T.ui });
+                await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'render', { timeout: T.ui });
+                const reattached = await page.getByTestId('pb2-run-progress').isVisible({ timeout: 30000 }).catch(() => false);
                 const resumeBanner = await page.getByTestId('pb2-resume-banner').count();
                 await expect(page.getByTestId('pb2-run-progress')).toHaveAttribute('data-run-terminal', '1', { timeout: T.render });
                 const counter = ((await page.getByTestId('pb2-run-counter').textContent()) || '').trim();
@@ -877,8 +888,8 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
         // ── 8. Workflow canvas (Render all, Plan & generate, node card, plan inspector, drag = 212 p) ──
         await step(page, 8, 'Workflow canvas', async () => {
             await openReader(page, fx.book.objectId);
-            // Render all → dialog → Start: observe the server's answer on this wizard-made book.
-            await page.getByTestId('pb2-render-all').click();
+            // Edit › Render → Render all (the dialog's settings are inline since §5.9): observe the server's answer.
+            await openEditSection(page, 'render');
             await expect(page.getByTestId('pb2-render-dialog')).toBeVisible({ timeout: T.ui });
             await shot(page, '08a-render-all-dialog');
             const raResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/render-all$/.test(r.url()), { timeout: 120000 });
@@ -898,12 +909,13 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
                 await page.getByTestId('pb2-run-dismiss').click().catch(() => {});
             } else {
                 raNote += '; toast "' + String(await page.locator('.toast-text').last().textContent().catch(() => '')).trim().slice(0, 200) + '"';
-                await page.getByTestId('pb2-render-dialog-cancel').click().catch(() => {});
-                await page.keyboard.press('Escape').catch(() => {});
             }
             // Plan & generate on page 1 twice (STANDARD = 3 variants + QA per attempt) — the RENDER_PLAN node and its base variants.
-            await openReader(page, fx.book.objectId);
+            // Plan & generate is on Edit › Scenes › scene 1 › Render (design §5.6).
+            await page.getByTestId('book-mode-read').click();
+            await expect(page.getByTestId('pb2-reader')).toBeVisible({ timeout: T.ui });
             await openFirstPage(page);
+            await openPageInEdit(page, 'render');
             const gens = [];
             for (let attempt = 1; attempt <= 2; attempt++) {
                 await expect(page.getByTestId('pb2-plan-render')).toBeVisible({ timeout: T.ui });
@@ -937,7 +949,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
                 expect(toastText, 'generate attempt ' + attempt).toMatch(/^Scene rendered/);
                 await expect(planDialog).toHaveCount(0, { timeout: T.ui });
             }
-            const imgAfter = await page.getByTestId('pb2-scene-image').count();
+            const imgAfter = await page.getByTestId('pb-render-tab-image').count();
             const coverAfter = ((await page.locator('[data-pb2-cover-count]').textContent().catch(() => '')) || '').trim();
             await shot(page, '08c-reader-after-generate');
             const wf = await pbGet(request, '/' + fx.book.objectId + '/workflow');
@@ -949,8 +961,8 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const arts = nd.body.artifacts || {};
             fx.baseArtifacts = (arts.base || []).map(a => ({ objectId: a.objectId, attempt: a.attempt, variantIndex: a.variantIndex, seed: a.seed, reviewStatus: a.reviewStatus, selected: a.selected, qa: a.qa ? a.qa.result : null }));
 
-            // The canvas: node card → detail → plan inspector → DRAG (212 p: no "Save position failed", position reads back).
-            await page.goto('/#!/picture-book/' + fx.book.objectId + '/workflow', { timeout: T.ui });
+            // The canvas (Edit › Canvas): node card → detail → plan inspector → DRAG (212 p: no "Save position failed", position reads back).
+            await page.goto('/#!/picture-book/' + fx.book.objectId + '/edit/canvas', { timeout: T.ui });
             const card = page.locator('[data-node-id="' + node.objectId + '"]');
             await expect(card).toBeVisible({ timeout: 60000 });
             await card.click({ position: { x: 14, y: 12 } });
@@ -988,7 +1000,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
         // ── 9. Variant strip + compare + retention ───────────────────────────────────────────────────
         await step(page, 9, 'Variant strip and retention', async () => {
             expect(fx.planNode, 'RENDER_PLAN node from step 8').toBeTruthy();
-            await page.goto('/#!/picture-book/' + fx.book.objectId + '/workflow', { timeout: T.ui });
+            await page.goto('/#!/picture-book/' + fx.book.objectId + '/edit/canvas', { timeout: T.ui });
             const card = page.locator('[data-node-id="' + fx.planNode.objectId + '"]');
             await expect(card).toBeVisible({ timeout: 60000 });
             await card.click({ position: { x: 14, y: 12 } });
@@ -1054,7 +1066,8 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
         // ── 10. QA ───────────────────────────────────────────────────────────────────────────────────
         await step(page, 10, 'QA', async () => {
             expect(fx.planNode, 'unreachable: no RENDER_PLAN node from step 8').toBeTruthy();
-            await page.goto('/#!/picture-book/' + fx.book.objectId + '/review', { timeout: T.ui });
+            // Edit › Review is master/detail (§5.8): the badges are on the selected node's artifact rows.
+            await openReviewNode(page, fx.book.objectId, fx.planNode.objectId);
             await expect(page.getByTestId('pb2-review-counts')).toBeVisible({ timeout: 60000 });
             await expect(page.getByTestId('pb2-review-counts')).not.toHaveText('', { timeout: 60000 });
             const qaButtons = page.getByTestId('pb2-review-qa');
@@ -1083,12 +1096,10 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
         // ── 11. Review queue ─────────────────────────────────────────────────────────────────────────
         await step(page, 11, 'Review queue', async () => {
             expect(fx.planNode, 'unreachable: no RENDER_PLAN node from step 8').toBeTruthy();
-            await page.goto('/#!/picture-book/' + fx.book.objectId + '/review', { timeout: T.ui });
+            const nodeRow = await openReviewNode(page, fx.book.objectId, fx.planNode.objectId);
             await expect(page.getByTestId('pb2-review-counts')).toBeVisible({ timeout: 60000 });
             const counts = ((await page.getByTestId('pb2-review-counts').textContent()) || '').trim();
             const autoApprove = await page.getByTestId('pb2-review-auto-approve').getAttribute('data-on');
-            const nodeRow = page.locator('[data-testid="pb2-review-node"][data-node-id="' + fx.planNode.objectId + '"]');
-            await expect(nodeRow).toBeVisible({ timeout: 60000 });
             const rowsAll = await page.getByTestId('pb2-review-artifact').count();
             // A fresh variant's reviewStatus is GENERATED (reviewStatusOf() in pictureBookReview.js:69-71 defaults to it, and
             // the header's "N pending" counts it); IN_REVIEW is a second pending state. Run 9 waited on IN_REVIEW alone → 0.
@@ -1102,10 +1113,9 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const autoEmpty = await page.getByTestId('pb2-review-empty').count();
             await page.getByTestId('pb2-review-filter-all').click();
             await expect(nodeRow).toBeVisible({ timeout: 60000 });
-            const planToggle = nodeRow.getByTestId('pb2-review-plan-toggle');
-            await planToggle.click();
-            await expect(planToggle).toHaveText('Hide plan', { timeout: T.ui });
-            await expect(nodeRow.getByTestId('pb2-review-plan').getByTestId('pb2-plan-inspector')).toBeVisible();
+            // The node's plan is shown expanded in the detail (§5.8) — no Plan toggle.
+            await expect(nodeRow.getByTestId('pb2-review-plan-toggle')).toHaveCount(0);
+            await expect(nodeRow.getByTestId('pb2-review-plan').getByTestId('pb2-plan-inspector')).toBeVisible({ timeout: T.ui });
             await shot(page, '11a-review-queue');
             // Approve one pending base image (the newest attempt's first variant with a thumbnail) → APPROVED on read-back, row leaves the pending set.
             const candidates = nodeRow.locator(PENDING).filter({ has: page.locator('img') });
@@ -1227,10 +1237,11 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             await expect(create).toBeEnabled({ timeout: 5000 });
             const t0c = Date.now();
             await create.click();
-            await page.waitForURL(/#!\/chap-book\/read\//, { timeout: T.plan });
+            // §7.2: a successful Create opens the book in Edit (guided), not the reader.
+            await page.waitForURL(/#!\/chap-book\/edit\//, { timeout: T.plan });
             const createMs = Date.now() - t0c;
-            const cbOid = page.url().split('/chap-book/read/')[1].split(/[?#]/)[0];
-            expect(cbOid, 'reader route after Create').toBeTruthy();
+            const cbOid = decodeURIComponent(page.url()).split('/chap-book/edit/')[1].split(/[/?#]/)[0];
+            expect(cbOid, 'edit route after Create').toBeTruthy();
             const createdToast = await page.locator('.toast-text', { hasText: /ChapBook created/ }).count();
             fx.chapBook = { objectId: cbOid, slug: cbSlug, organizationId: fx.user.organizationId };
             // Read-back: the book the dialog made carries the slug typed into it.
@@ -1242,7 +1253,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             expect(cbPages.length, 'ChapBook pages').toBeGreaterThan(0);
             const p0 = cbPages[0];
             // Review screen: location chip, prompt edit → Save prompt (locks it) → Re-render this page on the SD server.
-            await page.evaluate(h => { location.hash = h; }, '!/chap-book/review/' + cbOid);
+            await page.evaluate(h => { location.hash = h; }, '!/chap-book/edit/' + cbOid + '/pages');
             const ta = page.locator('textarea.cb-scene-prompt[data-scene-oid="' + p0.objectId + '"]');
             await expect(ta).toBeVisible({ timeout: 60000 });
             const chipCount = await page.locator('[data-testid="cb-page-location"][data-scene-oid="' + p0.objectId + '"]').count();
@@ -1345,9 +1356,10 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
             const notes = [];
             // Cover board (cover mode of the composition board, pictureBookCompose.js) on the book the wizard made.
             const openCoverBoard = async (bookOid) => {
-                await page.goto('/#!/picture-book/' + bookOid + '/cover', { timeout: T.ui });
-                await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover art', { timeout: T.ui });
-                await expect(page.getByTestId('pb-cmp-purpose-tabs')).toBeVisible();
+                // Edit › Cover & Art (design §5.7): a master/detail over the purposes (the old /cover route redirects here).
+                await page.goto('/#!/picture-book/' + bookOid + '/edit/cover', { timeout: T.ui });
+                await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover & Art', { timeout: T.ui });
+                await expect(page.getByTestId('pb-cover-md')).toBeVisible();
             };
             // Render → the job strip goes terminal → Approve latest. Either the approve click or the book's
             // auto-approve (a QA verdict on the stack) may be what approves; both end with the approved tile set.
@@ -1357,6 +1369,7 @@ test.describe('PictureBook V3 P9-0 — end-to-end usability gate (§16)', () => 
                 const t0 = Date.now();
                 await page.getByTestId('pb-cmp-render-cover').click();
                 await waitForToast(page, /^Cover render started/, 60000);
+                await openActivityDock(page);                     // the cover render job is in the activity dock (§4.5)
                 const run = page.getByTestId('pb-cmp-render-run');
                 await expect(run).toBeVisible({ timeout: T.ui });
                 await expect(run).toHaveAttribute('data-run-terminal', 'true', { timeout: T.render });

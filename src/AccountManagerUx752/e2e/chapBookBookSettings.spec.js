@@ -157,20 +157,22 @@ test.describe('ChapBook book-level SD config — REST /settings', () => {
  */
 const SAVE_BOOK_SD = '[data-testid="cb-save-book-sd"]';
 
-// The sticky review toolbar that hosts the "Book image settings" collapsible. Scoping every field
-// locator to it keeps the per-scene "Image config overrides" panels (same SdConfigPanel) out of play.
+// Since the Read | Edit split the book-level image settings are the "Image settings" collapsible of Edit › Style
+// (aiDocs/PictureBookUxConsistencyDesign.md §8.2, toggle cb-book-sd-toggle). Scoping every field locator to the
+// Style section keeps the per-page "Image overrides" panels and Edit › Render's panel (same SdConfigPanel) out of play.
+// The helpers keep their names (bookSdToolbar = the Style section that hosts the panel).
 function bookSdToolbar(page) {
-    return page.locator('div.sticky').filter({ has: page.locator('button:has-text("Book image settings")') });
+    return page.locator('[data-testid="cb-style-section"]');
 }
 
-// Navigate a logged-in page to the review view, expand the book SD panel and wait for the real panel
-// (the Composition input), not the "Loading SD configuration…" spinner. Returns the toolbar locator.
+// Navigate a logged-in page to Edit › Style, expand the book SD panel and wait for the real panel
+// (the Composition input), not the "Loading SD configuration…" spinner. Returns the section locator.
 async function openBookSdPanel(page, bookOid) {
-    await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+    await page.goto('/#!/chap-book/edit/' + bookOid + '/style', { timeout: 30000 });
     const toolbar = bookSdToolbar(page);
-    // The toolbar only renders once the scene pages have loaded.
+    // The section body renders once the scene pages have loaded.
     await expect(toolbar).toBeVisible({ timeout: 30000 });
-    await toolbar.locator('button:has-text("Book image settings")').click();
+    await toolbar.getByTestId('cb-book-sd-toggle').click();
     await expect(toolbar.locator('label:text-is("Composition") + input')).toBeVisible({ timeout: 30000 });
     await expect(toolbar.getByText('Loading SD configuration…')).toHaveCount(0);
     return toolbar;
@@ -353,10 +355,10 @@ test.describe('ChapBook book settings — UI (P0-10d)', () => {
         });
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/style', { timeout: 30000 });
         const toolbar = bookSdToolbar(page);
         await expect(toolbar).toBeVisible({ timeout: 30000 });
-        await toolbar.locator('button:has-text("Book image settings")').click();
+        await toolbar.getByTestId('cb-book-sd-toggle').click();
 
         // Error state, not the seed: no Composition input, no Save button, no stuck spinner.
         const err = toolbar.locator('[data-testid="cb-book-sd-load-error"]');

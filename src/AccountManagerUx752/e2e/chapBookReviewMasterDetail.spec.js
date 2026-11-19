@@ -49,7 +49,7 @@ test.describe('ChapBook Review — master/detail page list', () => {
         const n = before.length;
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
 
         // 1. The list and the one card.
         const items = page.locator('[data-page-item]');

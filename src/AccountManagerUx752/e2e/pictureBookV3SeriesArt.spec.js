@@ -39,6 +39,7 @@ import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser, ensureIso42001TestUser } from './helpers/api.js';
 import { gunzipSync } from 'zlib';
 import { mkdirSync, writeFileSync } from 'fs';
+import { openActivityDock } from './helpers/pbReader.js';
 
 const SD_ENABLED = process.env.PB_SD_TESTS === '1';
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
@@ -178,10 +179,14 @@ async function mediaBytes(request, url, what) {
     return raw;
 }
 
+// Since the Read | Edit split the cover board is Edit › Cover & Art (aiDocs/PictureBookUxConsistencyDesign.md §5.7):
+// a master/detail whose list rows are the purposes (pb-cover-list rows pb-cmp-purpose-<word>, same testids as the old
+// purpose tabs), titled "Cover & Art"; the old /cover[/:p] routes redirect to edit/cover[/:p]. The render job is in
+// the workspace's activity dock (§4.5).
 async function openCoverBoard(page, bookOid, word) {
-    await page.goto('/#!/picture-book/' + bookOid + '/cover' + (word ? '/' + word : ''), { timeout: 30000 });
-    await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover art', { timeout: 30000 });
-    await expect(page.getByTestId('pb-cmp-purpose-tabs')).toBeVisible();
+    await page.goto('/#!/picture-book/' + bookOid + '/edit/cover' + (word ? '/' + word : ''), { timeout: 30000 });
+    await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover & Art', { timeout: 30000 });
+    await expect(page.getByTestId('pb-cover-md')).toBeVisible();
 }
 
 async function openReader(page, bookOid) {
@@ -301,15 +306,15 @@ test.describe('PictureBook V3 P10-A 7 — SERIES_ART: created from chapter A, sh
         await loginAsSharedUser(page);
         await openCoverBoard(page, S);
         await expect(page.getByTestId('pb-cmp-purpose-cover')).toHaveAttribute('data-active', 'true');
-        await expect(page.getByTestId('pb-cmp-purpose-tabs').locator('button')).toHaveCount(3);
+        await expect(page.getByTestId('pb-cover-list').locator('button')).toHaveCount(3);
         await expect(page.getByTestId('pb-cmp-purpose-series-art')).toHaveCount(0);
         await expect(page.getByTestId('pb-cmp-empty')).toBeVisible({ timeout: 30000 });
         await page.screenshot({ path: OUT_DIR + '/01-standalone-three-tabs.png', fullPage: true });
         // … and a direct route to it on the standalone is the read path's 404 as the empty state that says "not a
         // chapter" and offers no Create (the create would be the 409), still without the tab. (Run 2 asserted the
         // 409 in pb-cmp-error here - the board GET is never a 409; corrected 2026-11-03, §6.C 257.)
-        await page.goto('/#!/picture-book/' + S + '/cover/series-art', { timeout: 30000 });
-        await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover art', { timeout: 30000 });
+        await page.goto('/#!/picture-book/' + S + '/edit/cover/series-art', { timeout: 30000 });
+        await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover & Art', { timeout: 30000 });
         await expect(page.getByTestId('pb-cmp-empty-message')).toContainText(/has no SERIES_ART composition/i, { timeout: 30000 });
         await expect(page.getByTestId('pb-cmp-empty-not-chapter')).toContainText(/is not a chapter of a series/i, { timeout: 30000 });
         await expect(page.getByTestId('pb-cmp-error')).toHaveCount(0);
@@ -321,13 +326,13 @@ test.describe('PictureBook V3 P10-A 7 — SERIES_ART: created from chapter A, sh
         const posts = [];
         page.on('request', req => { if (req.method() === 'POST' && /\/covers\/series[-_]art$/.test(req.url())) posts.push({ url: req.url(), body: JSON.parse(req.postData() || 'null') }); });
         await openCoverBoard(page, A);
-        await expect(page.getByTestId('pb-cmp-purpose-tabs').locator('button')).toHaveCount(4, { timeout: 30000 });
+        await expect(page.getByTestId('pb-cover-list').locator('button')).toHaveCount(4, { timeout: 30000 });
         const tab = page.getByTestId('pb-cmp-purpose-series-art');
         await expect(tab).toHaveText(/Series art/);
         await expect(tab).toHaveAttribute('data-active', 'false');
         await expect(tab).toHaveAttribute('data-exists', 'false');
         await tab.click();
-        await expect(page).toHaveURL(/\/picture-book\/[^/]+\/cover\/series-art$/);
+        await expect(page).toHaveURL(/\/picture-book\/[^/]+\/edit\/cover\/series-art$/);
         await expect(tab).toHaveAttribute('data-active', 'true');
         await expect(page.getByTestId('pb-cmp-purpose-cover')).toHaveAttribute('data-active', 'false');
         await expect(page.getByTestId('pb-cmp-empty')).toBeVisible({ timeout: 30000 });
@@ -481,6 +486,7 @@ test.describe('PictureBook V3 P10-A 7 — SERIES_ART: created from chapter A, sh
         const t0 = Date.now();
         await page.getByTestId('pb-cmp-render-cover').click();
         await waitForToast(page, /^Series art render started/, 60000);
+        await openActivityDock(page);
         const run = page.getByTestId('pb-cmp-render-run');
         await expect(run).toBeVisible({ timeout: 30000 });
         await expect(run).toContainText('Render series art');

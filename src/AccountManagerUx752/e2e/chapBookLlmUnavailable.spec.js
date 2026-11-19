@@ -382,7 +382,7 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
         expect(resolved.id, 'contentAnalysis resolved to a record other than the unreachable fixture').toBe(fixture.configId);
 
         const getPosts = captureGeneratePosts(page);
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/review/' + oid; }, bookOid);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/pages'; }, bookOid);
 
         // A fresh (un-prompted) scene card exposes the "Regenerate" affordance.
         const regenBtn = page.locator('button[data-testid="cb-page-regenerate"]').first();
@@ -432,15 +432,14 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
 
             await loginAsUser(page, SHARED_USER, SHARED_PASSWORD);
             const getPosts = captureGeneratePosts(page);
-            await page.evaluate((oid) => { window.location.hash = '!/chap-book/review/' + oid; }, bookOid);
+            // The "Default chat config" control moved from the review's config panel to Edit › Book (§8.2 row 1,
+            // cb-config-chatconfig); it is session state, so the pick carries to Edit › Pages through the rail.
+            await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/book'; }, bookOid);
 
-            const regenBtn = page.locator('button[data-testid="cb-page-regenerate"]').first();
-            await expect(regenBtn, 'Regenerate button not visible on a fresh un-prompted scene').toBeVisible({ timeout: 30000 });
-
-            // Pick the throw-away config in the Review tab's "Default chat config" control: single-click
-            // the row (a double-click descends into it), then the picker's confirm (check) button.
-            const cfgControl = page.locator('div:has(> label:text-is("Default chat config")) > div.cursor-pointer').first();
-            await expect(cfgControl, 'Review tab "Default chat config" control missing').toBeVisible({ timeout: 10000 });
+            // Pick the throw-away config: single-click the row (a double-click descends into it), then the
+            // picker's confirm (check) button.
+            const cfgControl = page.getByTestId('cb-config-chatconfig');
+            await expect(cfgControl, 'Edit › Book "Default chat config" control missing').toBeVisible({ timeout: 30000 });
             await cfgControl.click();
             const overlay = page.locator('.am7-picker-overlay');
             await expect(overlay, 'chat-config picker overlay did not open').toBeVisible({ timeout: 15000 });
@@ -454,6 +453,9 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
             await expect(overlay, 'picker did not close after confirm').toBeHidden({ timeout: 10000 });
             await expect(cfgControl, 'control did not show the selected throw-away config').toContainText(THROWAWAY_CFG, { timeout: 10000 });
 
+            await page.getByTestId('ws-rail-pages').click();
+            const regenBtn = page.locator('button[data-testid="cb-page-regenerate"]').first();
+            await expect(regenBtn, 'Regenerate button not visible on a fresh un-prompted scene').toBeVisible({ timeout: 30000 });
             await expect(regenBtn, 'Regenerate button is disabled (role warning or scene saving)').toBeEnabled({ timeout: 10000 });
             await regenBtn.click();
 
@@ -478,7 +480,7 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
     });
 
     // ── Bulk distinct signal: Reader → Render raises the ERROR summary toast ─────────────────────
-    test('UI bulk: Reader Render raises the distinct ERROR summary toast (affected by unavailable LLM/chat config)', async ({ page, request }) => {
+    test('UI bulk: Edit › Render raises the distinct ERROR summary toast (affected by unavailable LLM/chat config)', async ({ page, request }) => {
         test.setTimeout(420000);
 
         await restLoginAs(request, SHARED_USER, SHARED_PASSWORD);
@@ -496,22 +498,11 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
 
             await loginAsUser(page, SHARED_USER, SHARED_PASSWORD);
             const getPosts = captureGeneratePosts(page);
-            await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, bookOid);
-
-            // The reader opens on its Cover; Begin turns the first stanza page.
-            const begin = page.locator('button:has-text("Begin")');
-            await expect(begin, 'reader Cover "Begin" button not visible').toBeVisible({ timeout: 30000 });
-            await begin.click();
-            await expect(page.locator('text=/Page \\d+ of \\d+/').first(), 'reader did not load book pages')
-                .toBeVisible({ timeout: 30000 });
-
-            // Reader header Render (the only orange button) → the "Render Settings" dialog.
-            const headerRender = page.locator('button.bg-orange-600').filter({ hasText: 'Render' }).first();
-            await expect(headerRender, 'reader Render button not visible/enabled').toBeVisible({ timeout: 10000 });
-            await headerRender.click();
-
-            const renderDialog = page.locator('div.fixed.inset-0.z-50').filter({ hasText: 'Render Settings' });
-            await expect(renderDialog, 'Render Settings dialog did not open').toBeVisible({ timeout: 10000 });
+            // Since the Read | Edit split the reader's Render → "Render Settings" dialog is Edit › Render, its settings
+            // inline (aiDocs/PictureBookUxConsistencyDesign.md §8.2 row 7). `renderDialog` keeps its name: the section.
+            await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/render'; }, bookOid);
+            const renderDialog = page.getByTestId('cb-render-section');
+            await expect(renderDialog, 'Edit › Render did not open').toBeVisible({ timeout: 30000 });
 
             // Select the throw-away config in the dialog's "Chat Config" picker: single-click the row
             // (a double-click descends into it), then the picker's confirm (check) button.
@@ -531,8 +522,9 @@ test.describe('ChapBook — LLM-unavailable client signal', () => {
             await expect(chatCfgControl, 'Chat Config control did not show the selected throw-away config').toContainText(THROWAWAY_CFG, { timeout: 10000 });
 
             await page.waitForTimeout(2000); // let the SD config load so a real sdConfig is sent
-            const dialogRender = renderDialog.locator('button.bg-orange-600');
-            await expect(dialogRender, 'dialog Render button not visible').toBeVisible({ timeout: 10000 });
+            const dialogRender = page.getByTestId('cb-render-start');
+            await expect(dialogRender, 'Edit › Render button not visible').toBeVisible({ timeout: 10000 });
+            await expect(dialogRender).toBeEnabled({ timeout: 10000 });
             await dialogRender.click();
 
             // The bulk summary toast must carry the distinct LLM-unavailable clause; it must NOT be the

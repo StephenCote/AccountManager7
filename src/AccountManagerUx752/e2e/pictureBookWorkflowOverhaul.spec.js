@@ -229,7 +229,7 @@ test.describe.serial('PictureBook Workflow Overhaul (W-series) — live LLM end-
 
         // Navigate to the canvas of the un-rendered book: one node card per scene, every badge READY,
         // no empty-state title (those belong to a book with no graph).
-        await page.goto('/#!/picture-book/' + pb2Empty + '/workflow', { timeout: 45000 });
+        await page.goto('/#!/picture-book/' + pb2Empty + '/edit/canvas', { timeout: 45000 });
         // Wait for the route to settle: either an empty-state title or a node card.
         // waitForFunction(fn, arg, options) — the timeout goes in the THIRD argument.
         await page.waitForFunction((states) => {

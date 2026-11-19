@@ -6,7 +6,9 @@
  *   (1) default to the NAMED system-default chatConfig `contentAnalysis` (ChatUtil
  *       .DEFAULT_ANALYSIS_CHAT_CONFIG_NAME), NOT a random one;
  *   (2) the user can SELECT/override the chat config BEFORE the app connects to the LLM;
- *   (3) during edit (the reader view) there is a Re-analyze control whose chat config can be re-picked.
+ *   (3) during edit there is a Re-analyze control whose chat config can be re-picked. Since the Read | Edit split
+ *       (aiDocs/PictureBookUxConsistencyDesign.md §8.1 / §8.2) that is Edit › Book's session chat config
+ *       (cb-config-chatconfig) plus Edit › Pages' "Analyze poems" (cb-analyze-poems); Read carries neither.
  *
  * How this proves it with NO live LLM (Docker cannot reach the LAN LLM at 192.168.1.42, and the whole
  * point of (2) is that selection happens BEFORE any LLM connection): we intercept the analyze POST with
@@ -96,19 +98,27 @@ async function loginAndLoad(page, name, password) {
     );
 }
 
-// Open the reader for `bookOid` with readerPoemIds SEEDED into localStorage (the exact durable key the
-// reader's oninit re-derives from — D5), so the Re-analyze picker + Analyze controls render. Setting a
+// Open Edit › Book for `bookOid` with the poem ids SEEDED into localStorage (the durable key the editor re-derives
+// its source poems from, with GET /poems?bookObjectId — D5), so "Analyze poems" has poems to analyze. Setting a
 // localStorage key from the test is legitimate fixture setup, not production instrumentation.
 async function openReaderWithPoems(page) {
     await page.evaluate(({ oid, pid }) => {
         localStorage.setItem('cb-poemids-' + oid, JSON.stringify([pid]));
-        window.location.hash = '!/chap-book/read/' + oid;
+        window.location.hash = '!/chap-book/edit/' + oid + '/book';
     }, { oid: bookOid, pid: poemOid });
+    await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'book', { timeout: 30000 });
 }
 
-// Locators for the reader's Re-analyze controls (title strings are exact, from chapBook.js).
-function configBtn(page) { return page.locator('button[title="Choose the chat config used to re-analyze poem themes"]'); }
-function analyzeBtn(page) { return page.locator('button[title="Re-analyze poem themes with the selected chat config"]'); }
+// The edit-time chat config is Edit › Book's control; Analyze is Edit › Pages' toolbar "Analyze poems" (reached
+// through the rail, so the session pick carries over — it is module state, as the reader's was).
+function configBtn(page) { return page.getByTestId('cb-config-chatconfig'); }
+function analyzeBtn(page) { return page.getByTestId('cb-analyze-poems'); }
+async function clickAnalyze(page) {
+    await page.getByTestId('ws-rail-pages').click();
+    await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'pages', { timeout: 30000 });
+    await expect(analyzeBtn(page)).toBeEnabled({ timeout: 30000 });
+    await analyzeBtn(page).click();
+}
 
 // Register an /analyze interceptor that captures the POST body and fulfills a canned 200 (NO LLM
 // contacted). Returns a getter for the captured body. Only /analyze is intercepted — the picker's
@@ -197,7 +207,7 @@ test.describe('ChapBook — Issue 2 chat-config default + selection (LLM-free, r
     });
 
     // ── Requirement 1: the default resolves to the NAMED system default `contentAnalysis` (not random) ──
-    test('req1: reader Re-analyze control auto-resolves the default to contentAnalysis (not a random config)', async ({ page }) => {
+    test('req1: Edit › Book chat-config control auto-resolves the default to contentAnalysis (not a random config)', async ({ page }) => {
         await loginAndLoad(page, 'e2etest_shared', 'password');
         await openReaderWithPoems(page);
 
@@ -223,7 +233,7 @@ test.describe('ChapBook — Issue 2 chat-config default + selection (LLM-free, r
         await expect(cfg, 'default not resolved before Analyze').toContainText(SYSTEM_DEFAULT, { timeout: 20000 });
 
         const getCaptured = await interceptAnalyze(page);
-        await analyzeBtn(page).click();
+        await clickAnalyze(page);
 
         // The intercepted analyze POST must carry the default name — proving it is chosen BEFORE the LLM
         // call (we never let the request leave the browser).
@@ -237,7 +247,7 @@ test.describe('ChapBook — Issue 2 chat-config default + selection (LLM-free, r
 
     // ── Requirements 2 + 3: user picks a DIFFERENT config in the reader Re-analyze picker → that name is ──
     //    what the frontend sends to /analyze (selection wins, before the LLM, via the edit-view picker).
-    test('req2+3: picking a different config in the Re-analyze picker sends THAT config to the intercepted /analyze', async ({ page }) => {
+    test('req2+3: picking a different config in Edit › Book sends THAT config to the intercepted /analyze', async ({ page }) => {
         await loginAndLoad(page, 'e2etest_shared', 'password');
         await openReaderWithPoems(page);
 
@@ -270,7 +280,7 @@ test.describe('ChapBook — Issue 2 chat-config default + selection (LLM-free, r
         // Analyze → the intercepted body must carry the SELECTED config, proving user selection wins and
         // happens before the LLM is contacted (through the edit/reader Re-analyze control — Issue 2c).
         const getCaptured = await interceptAnalyze(page);
-        await analyzeBtn(page).click();
+        await clickAnalyze(page);
         await expect.poll(() => getCaptured().length, { timeout: 20000, message: '/analyze was never called after selection' }).toBeGreaterThan(0);
         const calls = getCaptured();
         expect(calls[0].body.chatConfig, 'analyze body did not carry the SELECTED config').toBe(ALT_CONFIG_NAME);

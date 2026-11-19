@@ -182,42 +182,25 @@ test.describe('ChapBook E2E Render — SD + LLM (CHAPBOOK_RENDER_TEST=1)', () =>
             { timeout: 30000 }
         );
 
-        // ── Step 2: navigate to ChapBook Review ───────────────────────────────
-        // ChapBookReview has the Render button wired to openRenderConfigDialog via renderReviewBook()
+        // ── Step 2: navigate to Edit › Render ─────────────────────────────────
+        // Since the Read | Edit split the Render Settings dialog's content is inline on Edit › Render and its Render
+        // (cb-render-start) starts the render (aiDocs/PictureBookUxConsistencyDesign.md §8.2 row 7) — no dialog.
         await page.evaluate((oid) => {
-            window.location.hash = '!/chap-book/review/' + oid;
+            window.location.hash = '!/chap-book/edit/' + oid + '/render';
         }, chapbookObjectId);
-        await page.waitForTimeout(3000);
-        await expect(page.locator('[role="main"]')).toBeVisible({ timeout: 10000 });
+        await expect(page.getByTestId('cb-render-section')).toBeVisible({ timeout: 30000 });
 
-        // ── Step 3: click the Render button ───────────────────────────────────
-        // ChapBookReview renders the Render button in its header row
-        const renderBtn = page.locator('button:has-text("Render")').last();
-        await expect(renderBtn).toBeVisible({ timeout: 15000 });
+        // ── Steps 3–4: the render settings are on screen before anything starts ─
+        await expect(page.getByTestId('cb-render-chatconfig')).toBeVisible({ timeout: 10000 });
+        await expect(page.getByTestId('cb-render-section').getByText('Image settings', { exact: true })).toBeVisible({ timeout: 10000 });
+        console.log('[render-e2e] Edit › Render settings visible');
+
+        // ── Step 5: start the render ──────────────────────────────────────────
+        // Note: the backend uses the SD server configured for the stack; Render saves the book image settings first.
+        const renderBtn = page.getByTestId('cb-render-start');
+        await expect(renderBtn).toBeEnabled({ timeout: 15000 });
         await renderBtn.click();
-        await page.waitForTimeout(600);
-
-        // ── Step 4: SD config dialog opens ────────────────────────────────────
-        const dialog = page.locator('.fixed.inset-0.z-50');
-        await expect(dialog).toBeVisible({ timeout: 5000 });
-        await expect(dialog.getByText('Render Settings')).toBeVisible({ timeout: 3000 });
-        console.log('[render-e2e] SD config dialog visible');
-
-        // Confirm Cancel and Render buttons are present inside the dialog
-        await expect(dialog.locator('button:has-text("Cancel")')).toBeVisible({ timeout: 3000 });
-        const dialogRenderBtn = dialog.locator('button').filter({ hasText: 'Render' }).first();
-        await expect(dialogRenderBtn).toBeVisible({ timeout: 3000 });
-
-        // ── Step 5: submit the dialog ─────────────────────────────────────────
-        // Note: sdConfig from the dialog is NOT forwarded to the backend render endpoint
-        // (ChapBookService.java line 258 passes chatConfig but not sdConfig).
-        // The backend uses the SD server configured via Tomcat init-params.
-        // We just click Render — the backend will use its configured model.
-        await dialogRenderBtn.click();
-        console.log('[render-e2e] Render dialog submitted — waiting for SD server (up to 60s)');
-
-        // Dialog should close immediately
-        await expect(dialog).toBeHidden({ timeout: 5000 });
+        console.log('[render-e2e] Render started — waiting for SD server (up to 60s)');
 
         // ── Step 6: wait for render to complete ───────────────────────────────
         // The UI shows a toast:

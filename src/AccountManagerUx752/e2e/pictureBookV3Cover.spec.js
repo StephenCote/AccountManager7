@@ -36,6 +36,7 @@ import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 import { gunzipSync } from 'zlib';
 import { mkdirSync, writeFileSync } from 'fs';
+import { openActivityDock } from './helpers/pbReader.js';
 
 const SD_ENABLED = process.env.PB_SD_TESTS === '1';
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
@@ -163,10 +164,14 @@ async function savePng(request, PB, artifactObjectId, fileName) {
     return { art, dims, pngPath, raw };
 }
 
+// Since the Read | Edit split the cover board is Edit › Cover & Art (aiDocs/PictureBookUxConsistencyDesign.md §5.7):
+// a master/detail whose list rows are the purposes (pb-cover-list rows pb-cmp-purpose-<word>, same testids as the old
+// purpose tabs), titled "Cover & Art"; the old /cover[/:p] routes redirect to edit/cover[/:p]. The render job is in
+// the workspace's activity dock (§4.5).
 async function openCoverBoard(page, bookOid) {
-    await page.goto('/#!/picture-book/' + bookOid + '/cover', { timeout: 30000 });
-    await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover art', { timeout: 30000 });
-    await expect(page.getByTestId('pb-cmp-purpose-tabs')).toBeVisible();
+    await page.goto('/#!/picture-book/' + bookOid + '/edit/cover', { timeout: 30000 });
+    await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover & Art', { timeout: 30000 });
+    await expect(page.getByTestId('pb-cover-md')).toBeVisible();
 }
 
 /**
@@ -388,13 +393,14 @@ test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover route
         await expect(page.getByTestId('pb-cmp-user-edited')).toBeVisible();
         await page.screenshot({ path: OUT_DIR + '/03-band-saved.png', fullPage: true });
 
-        // The scene board carries the Covers link; it lands on the cover board.
-        await page.goto('/#!/picture-book/' + bookObjectId + '/compose', { timeout: 30000 });
-        await expect(page.getByTestId('pb-cmp-title')).toHaveText('Composition board', { timeout: 30000 });
-        await expect(page.getByTestId('pb-cmp-cover-link')).toBeVisible();
-        await page.getByTestId('pb-cmp-cover-link').click();
-        await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover art', { timeout: 30000 });
-        await expect(page).toHaveURL(/\/picture-book\/[^/]+\/cover$/);
+        // From the scene board (Edit › Scenes) the rail is the way to the cover board — the board's own "Covers"
+        // cross-link is gone (design §4.2: the rail replaces it).
+        await page.goto('/#!/picture-book/' + bookObjectId + '/edit/scenes', { timeout: 30000 });
+        await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'scenes', { timeout: 30000 });
+        await expect(page.getByTestId('pb-cmp-cover-link')).toHaveCount(0);
+        await page.getByTestId('ws-rail-cover').click();
+        await expect(page.getByTestId('pb-cmp-title')).toHaveText('Cover & Art', { timeout: 30000 });
+        await expect(page).toHaveURL(/\/picture-book\/[^/]+\/edit\/cover$/);
         await expect(page.getByTestId('pb-cmp-cover-band')).toHaveText('band bottom', { timeout: 30000 });
 
         // The reader: nothing is approved, so the cover view falls back (no page image yet → 'none') and no band.
@@ -461,6 +467,7 @@ test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover route
         const t0 = Date.now();
         await page.getByTestId('pb-cmp-render-cover').click();
         await expect(page.locator('.toast-text', { hasText: /^Cover render started/ })).toBeVisible({ timeout: 60000 });
+        await openActivityDock(page);
         const run = page.getByTestId('pb-cmp-render-run');
         await expect(run).toBeVisible({ timeout: 30000 });
         await expect(page.getByTestId('pb-cmp-render-cover')).toBeDisabled();
@@ -577,7 +584,7 @@ test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover route
         await expect(tab).toHaveAttribute('data-active', 'false');
         await expect(tab).toHaveAttribute('data-exists', 'false', { timeout: 30000 });
         await tab.click();
-        await expect(page).toHaveURL(/\/picture-book\/[^/]+\/cover\/title-page$/);
+        await expect(page).toHaveURL(/\/picture-book\/[^/]+\/edit\/cover\/title-page$/);
         await expect(tab).toHaveAttribute('data-active', 'true');
         await expect(page.getByTestId('pb-cmp-purpose-cover')).toHaveAttribute('data-active', 'false');
         await expect(page.getByTestId('pb-cmp-empty')).toBeVisible({ timeout: 30000 });
@@ -690,11 +697,12 @@ test.describe('PictureBook V3 P9-4 — cover board, title-safe band, cover route
         await request.get(REST + '/logout');
 
         // ── UI: Render → the job to terminal → Approve latest, test 3's path on the title-page tab.
-        await expect(page).toHaveURL(/\/cover\/title-page$/);
+        await expect(page).toHaveURL(/\/edit\/cover\/title-page$/);
         await expect(tab).toHaveAttribute('data-active', 'true');
         const t1 = Date.now();
         await page.getByTestId('pb-cmp-render-cover').click();
         await waitForToast(page, /^Title page render started/, 60000);
+        await openActivityDock(page);
         const run = page.getByTestId('pb-cmp-render-run');
         await expect(run).toBeVisible({ timeout: 30000 });
         await expect(run).toContainText('Render title page');

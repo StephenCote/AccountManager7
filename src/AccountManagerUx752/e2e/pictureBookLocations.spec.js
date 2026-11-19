@@ -38,7 +38,7 @@
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { ensureSharedTestUser, ensureChatConfig } from './helpers/api.js';
 import { loginAsSharedUser } from './helpers/chapbook.js';
-import { openReaderTools } from './helpers/pbReader.js';
+import { clickReaderTool, openActivityDock } from './helpers/pbReader.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -732,14 +732,32 @@ test.describe('LOCATION node render, approve pins, lock (PB_SD_TESTS=1)', () => 
 const UI_SCENE_INDEX = 201;
 const LIGHTHOUSE = { name: 'The Lighthouse', description: 'A white lighthouse on the headland, gulls wheeling', kind: 'exterior', aliases: ['the light', 'headland light'] };
 
+// Since the Read | Edit split the library is Edit › Locations, a master/detail (design §5.5): one list row per
+// location (pb-loc-row[data-item-id][data-location-name]) under a pinned Proposals row, and only the SELECTED
+// location's page (pb-loc-card) in the detail. The location's render job goes to the workspace's activity dock.
 async function openLibrary(page) {
-    await page.goto('/#!/picture-book/' + bookObjectId + '/locations', { timeout: 30000 });
-    await expect(page.getByTestId('pb-loc')).toBeVisible({ timeout: 30000 });
-    await expect(page.getByTestId('pb-loc-grid')).toBeVisible({ timeout: 30000 });
+    await page.goto('/#!/picture-book/' + bookObjectId + '/edit/locations', { timeout: 30000 });
+    await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'locations', { timeout: 30000 });
+    await expect(page.getByTestId('pb-loc-md')).toBeVisible({ timeout: 30000 });
+}
+
+function rowOf(page, locationObjectId) {
+    return page.locator('[data-testid="pb-loc-row"][data-item-id="' + locationObjectId + '"]');
 }
 
 function cardOf(page, locationObjectId) {
     return page.locator('[data-testid="pb-loc-card"][data-location-id="' + locationObjectId + '"]');
+}
+
+/** Select the location's list row so its page (the card) is the detail; returns the card locator. */
+async function selectLocation(page, locationObjectId) {
+    const row = rowOf(page, locationObjectId);
+    await expect(row).toBeVisible({ timeout: 30000 });
+    if ((await row.getAttribute('data-selected')) !== '1') await row.click();
+    await expect(row).toHaveAttribute('data-selected', '1', { timeout: 30000 });
+    const card = cardOf(page, locationObjectId);
+    await expect(card).toBeVisible({ timeout: 30000 });
+    return card;
 }
 
 function toast(page, text) {
@@ -766,22 +784,20 @@ test.describe('location library Ux (default tier)', () => {
         test.setTimeout(5 * 60 * 1000);
         await loginAsSharedUser(page);
         await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
-        // Locations is an item of the reader's Tools overflow (helpers/pbReader.js).
-        await openReaderTools(page);
-        const link = page.getByTestId('pb2-locations-link');
-        await expect(link).toBeVisible({ timeout: 30000 });
-        await link.click();
-        await expect(page).toHaveURL(new RegExp('#!/picture-book/' + bookObjectId + '/locations$'));
-        await expect(page.getByTestId('pb-loc')).toBeVisible({ timeout: 30000 });
-        await expect(page.getByTestId('pb-loc-grid')).toBeVisible({ timeout: 30000 });
+        // The reader's Tools › Locations is Edit › Locations now (helpers/pbReader.js maps the old testid).
+        await clickReaderTool(page, 'pb2-locations-link');
+        await expect(page).toHaveURL(new RegExp('#!/picture-book/' + bookObjectId + '/edit/locations$'));
+        await expect(page.getByTestId('pb-loc-md')).toBeVisible({ timeout: 30000 });
 
-        // The grid is the API list, card for card.
+        // The list is the API list, row for row; each row's page shows that location.
         const before = (await listLocations()).locations;
         expect(before.map(l => l.objectId), 'the tavern from the CRUD tier is listed').toContain(tavern.objectId);
-        await expect(page.getByTestId('pb-loc-card')).toHaveCount(before.length);
+        await expect(page.getByTestId('pb-loc-row')).toHaveCount(before.length);
         for (const l of before) {
-            await expect(cardOf(page, l.objectId)).toHaveAttribute('data-location-name', l.name);
-            await expect(cardOf(page, l.objectId).getByTestId('pb-loc-description')).toHaveText(l.description || 'No description');
+            await expect(rowOf(page, l.objectId)).toHaveAttribute('data-location-name', l.name);
+            const c = await selectLocation(page, l.objectId);
+            await expect(c).toHaveAttribute('data-location-name', l.name);
+            await expect(c.getByTestId('pb-loc-description')).toHaveText(l.description || 'No description');
         }
         await expect(page.getByTestId('pb-loc-count')).toHaveText(before.length + ' location' + (before.length === 1 ? '' : 's'));
 
@@ -807,8 +823,7 @@ test.describe('location library Ux (default tier)', () => {
         lighthouse = { objectId: rec.objectId, name: rec.name };
         console.log(TAG + ' UI created ' + rec.name + ' ' + rec.objectId);
 
-        const card = cardOf(page, lighthouse.objectId);
-        await expect(card).toBeVisible({ timeout: 30000 });
+        const card = await selectLocation(page, lighthouse.objectId);
         await expect(card).toHaveAttribute('data-location-name', LIGHTHOUSE.name);
         await expect(card).toHaveAttribute('data-locked', '0');
         await expect(card.getByTestId('pb-loc-kind')).toHaveText(LIGHTHOUSE.kind);
@@ -817,7 +832,7 @@ test.describe('location library Ux (default tier)', () => {
         await expect(card.getByTestId('pb-loc-used-by')).toHaveText('Not used by any scene');
         await expect(card.getByTestId('pb-loc-not-rendered')).toHaveText('Not rendered yet');
         await expect(card.getByTestId('pb-loc-variant')).toHaveCount(0);
-        await expect(page.getByTestId('pb-loc-card')).toHaveCount(after.length);
+        await expect(page.getByTestId('pb-loc-row')).toHaveCount(after.length);
     });
 
     test('Add variant creates one; Lock disables edit / render / variant / delete and Unlock restores them', async ({ page }) => {
@@ -825,8 +840,7 @@ test.describe('location library Ux (default tier)', () => {
         expect(lighthouse, 'created by the previous test').toBeTruthy();
         await loginAsSharedUser(page);
         await openLibrary(page);
-        const card = cardOf(page, lighthouse.objectId);
-        await expect(card).toBeVisible({ timeout: 30000 });
+        const card = await selectLocation(page, lighthouse.objectId);
 
         await card.getByTestId('pb-loc-add-variant').click();
         await expect(page.getByTestId('pb-loc-variant-form')).toBeVisible();
@@ -880,7 +894,7 @@ test.describe('location library Ux (default tier)', () => {
         test.setTimeout(8 * 60 * 1000);
         expect(lighthouse && lighthouseVariant && uiSceneObjectId, 'fixtures from the previous tests').toBeTruthy();
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookObjectId, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookObjectId + '/pages', { timeout: 30000 });
         // P10-C 4: the review is master/detail — select the seeded page (scene 201 sorts last when the
         // gated tiers left their pages in the book) so its card, and the chip on it, is the one shown.
         const pageItem = page.locator('[data-page-item="' + uiSceneObjectId + '"]');
@@ -924,8 +938,7 @@ test.describe('location library Ux (default tier)', () => {
         expect(vUsed, 'variant usedByScenes').toEqual([uiSceneObjectId]);
 
         await openLibrary(page);
-        const card = cardOf(page, lighthouse.objectId);
-        await expect(card).toBeVisible({ timeout: 30000 });
+        const card = await selectLocation(page, lighthouse.objectId);
         await expect(card.getByTestId('pb-loc-used-by')).toHaveText('Used by scene ' + UI_SCENE_INDEX);
         const row = card.locator('[data-testid="pb-loc-variant"][data-variant-id="' + lighthouseVariant.objectId + '"]');
         await expect(row.getByTestId('pb-loc-variant-used-by')).toHaveText('Used by scene ' + UI_SCENE_INDEX);
@@ -938,7 +951,7 @@ test.describe('location library Ux (default tier)', () => {
         await expect(card).toBeVisible();
         await getLocation(lighthouse.objectId);
 
-        await page.goto('/#!/chap-book/review/' + bookObjectId, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookObjectId + '/pages', { timeout: 30000 });
         // §24 U-3 (§6.C 312): a fresh load of the master/detail review selects page 1, so the seeded page's
         // chip is only on screen once its row is selected again — exactly as on the first visit above. The
         // omission was invisible while this spec ran with the gated tiers skipped (scene 201 was page 1).
@@ -965,7 +978,7 @@ test.describe('location library Ux (default tier)', () => {
         expect(loc.variants[0].usedByScenes || []).toEqual([]);
 
         await openLibrary(page);
-        await expect(cardOf(page, lighthouse.objectId).getByTestId('pb-loc-used-by')).toHaveText('Not used by any scene');
+        await expect((await selectLocation(page, lighthouse.objectId)).getByTestId('pb-loc-used-by')).toHaveText('Not used by any scene');
         await expect(row.getByTestId('pb-loc-variant-used-by')).toHaveText('Not used by any scene');
     });
 
@@ -974,16 +987,16 @@ test.describe('location library Ux (default tier)', () => {
         expect(lighthouse, 'created by the first test').toBeTruthy();
         await loginAsSharedUser(page);
         await openLibrary(page);
-        const card = cardOf(page, lighthouse.objectId);
-        await expect(card).toBeVisible({ timeout: 30000 });
-        const countBefore = await page.getByTestId('pb-loc-card').count();
+        const card = await selectLocation(page, lighthouse.objectId);
+        const countBefore = await page.getByTestId('pb-loc-row').count();
 
         await card.getByTestId('pb-loc-delete').click();
         await expect(page.locator('.am7-dialog-title', { hasText: 'Delete location' })).toBeVisible();
         await page.locator('.am7-dialog-btn-destructive').click();
         await expect(toast(page, 'Deleted ' + LIGHTHOUSE.name)).toBeVisible({ timeout: 30000 });
         await expect(card).toHaveCount(0, { timeout: 30000 });
-        await expect(page.getByTestId('pb-loc-card')).toHaveCount(countBefore - 1);
+        await expect(rowOf(page, lighthouse.objectId)).toHaveCount(0);
+        await expect(page.getByTestId('pb-loc-row')).toHaveCount(countBefore - 1);
 
         await expectStatus(await api.get(PB + '/' + bookObjectId + '/location/' + lighthouse.objectId), 404, 'deleted lighthouse is gone');
         const names = (await listLocations()).locations.map(l => l.name);
@@ -1005,8 +1018,7 @@ test.describe('location library Ux: Render from the card (PB_SD_TESTS=1)', () =>
 
         await loginAsSharedUser(page);
         await openLibrary(page);
-        const card = cardOf(page, tavern.objectId);
-        await expect(card).toBeVisible({ timeout: 30000 });
+        const card = await selectLocation(page, tavern.objectId);
         await expect(card.getByTestId('pb-loc-node-pinned').first()).toHaveText('pinned');
         for (const id of beforeIds) {
             await expect(card.locator('[data-testid="pb-loc-artifact"][data-artifact-id="' + id + '"]')).toBeVisible();
@@ -1017,13 +1029,14 @@ test.describe('location library Ux: Render from the card (PB_SD_TESTS=1)', () =>
         const refusal = card.getByTestId('pb-loc-pinned');
         await expect(refusal).toBeVisible({ timeout: 30000 });
         await expect(refusal).toContainText(/pinned/i);
-        await expect(card.getByTestId('pb-loc-run')).toHaveCount(0);
+        await expect(page.getByTestId('pb-loc-run')).toHaveCount(0);
         await expect(card.getByTestId('pb-loc-render')).toBeEnabled();
 
         const t0 = Date.now();
         await card.getByTestId('pb-loc-unpin').click();
-        // The location's own run panel precedes the variants in the card.
-        const run = card.getByTestId('pb-loc-run').first();
+        // The location's run panel is in the workspace's activity dock (design §4.5 / §5.5), not in the card.
+        await openActivityDock(page);
+        const run = page.getByTestId('ws-dock-panel').getByTestId('pb-loc-run').first();
         await expect(run).toBeVisible({ timeout: 60000 });
         await expect(card.getByTestId('pb-loc-pinned')).toHaveCount(0);
         await expect(card.getByTestId('pb-loc-render')).toBeDisabled();
@@ -1043,7 +1056,7 @@ test.describe('location library Ux: Render from the card (PB_SD_TESTS=1)', () =>
         await expect(card.locator('[data-testid="pb-loc-artifact"][data-artifact-id="' + fresh[0] + '"]')).toBeVisible({ timeout: 30000 });
         await expect(card.getByTestId('pb-loc-render')).toBeEnabled();
         await run.getByTestId('pb-loc-run-dismiss').click();
-        await expect(card.getByTestId('pb-loc-run')).toHaveCount(0);
+        await expect(page.getByTestId('pb-loc-run')).toHaveCount(0);
     });
 });
 

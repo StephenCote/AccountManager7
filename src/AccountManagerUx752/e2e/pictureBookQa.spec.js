@@ -37,7 +37,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
-import { E2E_STYLE_DESCRIPTION } from './helpers/pbReader.js';
+import { E2E_STYLE_DESCRIPTION, openReviewNode } from './helpers/pbReader.js';
 import { randomUUID } from 'crypto';
 import { mkdirSync } from 'fs';
 
@@ -154,7 +154,8 @@ async function getArtifact(request, bookOid, oid) {
  * "▶ Test" / 🔄 (a real execute / mark-stale POST) instead of selecting the node.
  */
 async function openNodeStrip(page, bookOid, nodeOid) {
-    await page.goto('/#!/picture-book/' + bookOid + '/workflow', { timeout: 30000 });
+    // The canvas is Edit › Canvas since the Read | Edit split (the old /workflow route redirects there, design §5.10).
+    await page.goto('/#!/picture-book/' + bookOid + '/edit/canvas', { timeout: 30000 });
     const card = page.locator('[data-node-id="' + nodeOid + '"]');
     await expect(card, 'node card on the canvas').toBeVisible({ timeout: 60000 });
     await card.click({ position: { x: 14, y: 12 } });
@@ -358,9 +359,8 @@ test.describe('PictureBook V3 P8-5 — visual-QA verdicts on the canvas, the ins
 
     test('3. [review] row badges newest first, advisory only, the badge toggles the inline report, Plan shows the section', async ({ page }) => {
         await loginAsSharedUser(page);
-        await page.goto('/#!/picture-book/' + bookObjectId + '/review', { timeout: 30000 });
-        const node = page.locator('[data-testid="pb2-review-node"][data-node-id="' + nodeObjectId + '"]');
-        await expect(node).toBeVisible({ timeout: 60000 });
+        // Edit › Review is master/detail (§5.8): open it with the node selected; its detail carries the artifact rows.
+        const node = await openReviewNode(page, bookObjectId, nodeObjectId);
         const rows = node.locator('[data-testid="pb2-review-artifact"]');
         await expect(rows).toHaveCount(4);
         expect(await rows.evaluateAll(els => els.map(e => e.getAttribute('data-artifact-id')))).toEqual([art.r4, art.r3, art.r2, art.r1]);
@@ -397,12 +397,10 @@ test.describe('PictureBook V3 P8-5 — visual-QA verdicts on the canvas, the ins
         await expect(badge).toHaveAttribute('data-open', '0');
         await expect(failRow.getByTestId('pb2-review-qa-report')).toHaveCount(0);
 
-        const planToggle = node.getByTestId('pb2-review-plan-toggle');
-        await expect(planToggle).toHaveText('Plan');
-        await planToggle.click();
-        await expect(planToggle).toHaveText('Hide plan', { timeout: 30000 });
+        // The detail shows the node's plan expanded (§5.8) — there is no Plan toggle any more.
+        await expect(node.getByTestId('pb2-review-plan-toggle')).toHaveCount(0);
         const plan = node.getByTestId('pb2-review-plan');
-        await expect(plan.getByTestId('pb2-plan-inspector')).toBeVisible();
+        await expect(plan.getByTestId('pb2-plan-inspector')).toBeVisible({ timeout: 30000 });
         await expect(node.getByTestId('pb2-review-plan-error')).toHaveCount(0);
         await expect(plan.getByTestId('pb2-plan-qa')).toHaveAttribute('data-count', '2');
         expect(await plan.locator('[data-testid="pb2-plan-qa-report"]').evaluateAll(els => els.map(e => [e.getAttribute('data-artifact-id'), e.getAttribute('data-result')])))
@@ -445,9 +443,9 @@ test.describe('PictureBook V3 P8-5 — visual-QA verdicts on the canvas, the ins
         test.skip(live.inventoryUnavailable, 'the renderer inventory is unavailable (' + JSON.stringify(live.inventoryError) + ') — nothing can render');
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/picture-book/v2/' + storyOid, { timeout: 30000 });
-        await page.locator('button', { hasText: 'Begin' }).click();
-        await expect(page.getByText(/^Page 1 of \d+$/).first()).toBeVisible({ timeout: 30000 });
+        // Plan & generate lives on Edit › Scenes › <scene> › Render since the Read | Edit split (design §5.6).
+        await page.goto('/#!/picture-book/' + storyOid + '/edit/scenes/' + scene.objectId + '?tab=render', { timeout: 30000 });
+        await expect(page.getByTestId('pb-render-tab')).toBeVisible({ timeout: 30000 });
         await page.getByTestId('pb2-plan-render').click();
         await expect(page.getByTestId('pb2-plan-dialog')).toBeVisible({ timeout: 30000 });
         await expect(page.getByTestId('pb2-plan-loading')).toHaveCount(0, { timeout: 900000 });
@@ -503,7 +501,7 @@ test.describe('PictureBook V3 P8-5 — visual-QA verdicts on the canvas, the ins
         await page.screenshot({ path: OUT_DIR + '/04-live-canvas.png', fullPage: true });
 
         // Review page: the row carries the same badge; a FAIL / WARN image sits IN_REVIEW unless auto-approve moved it on.
-        await page.goto('/#!/picture-book/' + storyOid + '/review', { timeout: 30000 });
+        await openReviewNode(page, storyOid, planNode.objectId);
         const row = reviewRow(page, planNode.objectId, img.objectId);
         await expect(row).toBeVisible({ timeout: 60000 });
         await expect(row).toHaveAttribute('data-qa-result', img.qa.result);

@@ -280,3 +280,15 @@ Classes: **1** evidence (run logs, classify output, probe JSON) · **2** looked-
   books with their `.39` renders, covers and location variants, the `p90-legacy-mw2…` / `p90-legacy2-mw2…` PB1 groups and imports, the
   `p90-chap-mw2…` ChapBooks, the `000-p90-gate-llm` chat configs) — the spec leaves them in place by design (`[p90-gate] left in place`).
   **Deploy:** the dist into `am7test-am7-1` ~21:05; no jar. `scratch/p10-c/` 8.8 MB, `scratch/` 9 MB — under the limits.
+- 2026-11-19 (PictureBook / ChapBook Read | Edit, `aiDocs/PictureBookUxConsistencyDesign.md` §12) — wrote `scratch/pb-ux/`
+  (69.6 MB after cleanup, under the 200 MB slice limit): `baseline-*`, `build*.log`, `run*-vitest.log`, `e2e-bookModes-*.log`,
+  `final*-*.log` (class 1, quoted in §12; delete after Stephen's reply) and `e2e-migration/` (the e2e-migration agent's per-spec
+  logs + `artifacts/` Playwright traces/screenshots, ~65 MB, class 1/2 — keep until the slice closes). **Deleted** at hand-back:
+  the edit scripts (`edit_reader.py`, `edit_wizard.py`, `fix_pb.py`, `fix_ws.py`, `reader_view.js.txt`), the probe
+  (`probe-books.mjs/.out`), the agent's `e2e-migration/py/` + `diag/` (class 3), and the `scratch/pb-ux/node_modules` junction
+  (removed with `rmdir` — link only; the Ux752 `node_modules` it pointed at is untouched). Gitignored Playwright output:
+  `src/AccountManagerUx752/test-results/` 4.1 MB, `e2e/results/` 0.3 MB (class 2). Subagent scratch lives in the session
+  temp scratchpad, outside the repo (not attributed here). **Seed data changed** (`am7test`, `e2etest_shared`): the `[SD]`
+  test rendered new variants on "Book pb2-pages-muvp86wc" and `ensureBookStyleDescription` may have given it a style
+  description; the Story-tab test restores the page text it edits. **Deploy:** dist into `am7test-am7-1` (several times; last
+  after the canvas-panel fix); no jar.

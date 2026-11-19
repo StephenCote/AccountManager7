@@ -43,7 +43,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
-import { ensureBookStyleDescription } from './helpers/pbReader.js';
+import { ensureBookStyleDescription, openPageInEdit, openActivityDock } from './helpers/pbReader.js';
 import { gunzipSync } from 'zlib';
 import { mkdirSync, writeFileSync } from 'fs';
 
@@ -307,14 +307,17 @@ test.describe('PictureBook V3 §24 I-8 — background-only regenerate (reader bu
         expect(again.status, 'repeat is the same 409: ' + again.text.slice(0, 300)).toBe(409);
         await request.get(REST + '/logout');
 
-        // Reader: page 2 (the unrendered scene) has Render but no Regenerate background.
+        // Reader: page 2 (the unrendered scene) has no image; its Edit › Scenes › Render tab (where the per-page
+        // controls moved, design §5.6) has Render but no Regenerate background.
         await loginAsSharedUser(page);
         await openReader(page, bookObjectId);
         await openFirstPage(page);
         await nextPageButton(page).click();
         await expect(page.getByText(/^Page 2 of \d+$/).first()).toBeVisible();
-        await expect(page.getByTestId('pb2-scene-render')).toBeVisible();
         await expect(page.getByTestId('pb2-scene-image')).toHaveCount(0);
+        await openPageInEdit(page, 'render');
+        await expect(page.getByTestId('pb2-scene-render')).toBeVisible();
+        await expect(page.getByTestId('pb-render-tab-image')).toHaveCount(0);
         await expect(page.getByTestId('pb2-scene-regen-background')).toHaveCount(0);
         mkdirSync(OUT_DIR, { recursive: true });
         await page.screenshot({ path: OUT_DIR + '/1-unrendered-page-no-button.png', fullPage: true });
@@ -359,8 +362,14 @@ test.describe('PictureBook V3 §24 I-8 — background-only regenerate (reader bu
         const img = page.getByTestId('pb2-scene-image');
         await expect(img).toBeVisible();
         await expect.poll(async () => img.evaluate(el => el.complete && el.naturalWidth > 0), { timeout: 60000, message: 'first scene image decoded' }).toBe(true);
-        const firstSrc = await img.getAttribute('src');
+        const readFirstSrc = await img.getAttribute('src');
         await expect(page.getByTestId('pb2-scene-chip')).toHaveAttribute('data-chip', 'review');
+        // The Regenerate-background button moved to Edit › Scenes › this scene › Render (design §5.6); that tab shows
+        // the same scene image.
+        await openPageInEdit(page, 'render');
+        const editImg = page.getByTestId('pb-render-tab-image');
+        await expect(editImg).toBeVisible();
+        const firstSrc = await editImg.getAttribute('src');
         const regenBtn = page.getByTestId('pb2-scene-regen-background');
         await expect(regenBtn).toBeVisible();
         await expect(regenBtn).toBeEnabled();
@@ -390,7 +399,9 @@ test.describe('PictureBook V3 §24 I-8 — background-only regenerate (reader bu
         regen.jobId = sub.jobId;
         regen.runObjectId = sub.runObjectId;
 
-        // Watched to terminal in the reader (one .39 render); the summary toast; the page refreshes with the new image.
+        // Watched to terminal (one .39 render) in the workspace's activity dock (§4.5); the summary toast; the page
+        // refreshes with the new image.
+        await openActivityDock(page);
         const progress = page.getByTestId('pb2-run-progress');
         await expect(progress).toBeVisible();
         await expect(page.getByTestId('pb2-run-stage')).toHaveCount(1);
@@ -402,12 +413,16 @@ test.describe('PictureBook V3 §24 I-8 — background-only regenerate (reader bu
         await expect(page.getByTestId('pb2-run-cancel')).toHaveCount(0);
         await expect(page.getByTestId('pb2-run-dismiss')).toBeVisible();
         await expect.poll(() => capturedToasts(page), { timeout: 30000, message: 'the run summary toast' }).toContain('Render complete: 1 rendered');
-        await expect(img).toBeVisible();
-        await expect.poll(async () => img.getAttribute('src'), { timeout: 60000, message: 'the page shows a different image after the regenerate' }).not.toBe(firstSrc);
+        await expect(editImg).toBeVisible();
+        await expect.poll(async () => editImg.getAttribute('src'), { timeout: 60000, message: 'the page shows a different image after the regenerate' }).not.toBe(firstSrc);
+        await expect(regenBtn).toBeEnabled();
+        // …and Read shows it on page 1 (Edit → Read keeps the page, §4.3).
+        await page.getByTestId('book-mode-read').click();
+        await expect(img).toBeVisible({ timeout: 30000 });
+        await expect.poll(async () => img.getAttribute('src'), { timeout: 60000, message: 'Read shows the regenerated image' }).not.toBe(readFirstSrc);
         await expect.poll(async () => img.evaluate(el => el.complete && el.naturalWidth > 0), { timeout: 60000, message: 'regenerated scene image decoded' }).toBe(true);
         await expect(page.getByTestId('pb2-scene-chip')).toHaveAttribute('data-chip', 'review');
         await expect(page.getByTestId('pb2-stale-badge')).toHaveCount(0);
-        await expect(regenBtn).toBeEnabled();
         await page.screenshot({ path: OUT_DIR + '/2-reader-after-regen.png', fullPage: true });
         console.log(TAG + '-2-toasts ' + JSON.stringify(await capturedToasts(page)));
 
@@ -504,6 +519,7 @@ test.describe('PictureBook V3 §24 I-8 — background-only regenerate (reader bu
         page.on('request', req => { if (req.method() === 'POST' && /\/node\/[^/]+\/pin$/.test(req.url())) pinCalls.push(req.url()); });
         await openReader(page, bookObjectId);
         await openFirstPage(page);
+        await openPageInEdit(page, 'render');
         const regenBtn = page.getByTestId('pb2-scene-regen-background');
         await expect(regenBtn).toBeVisible();
         await expect(regenBtn).toBeEnabled();

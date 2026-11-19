@@ -44,6 +44,7 @@
  */
 import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
+import { openEditSection } from './helpers/pbReader.js';
 import { mkdirSync } from 'fs';
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
@@ -129,9 +130,11 @@ async function modelsForTask(request, task) {
     return JSON.parse(text);
 }
 
+// Since the Read | Edit split the editor is Edit › Style (/picture-book/{book}/edit/style; the old /style route
+// redirects there) — the same renderStyleBody, hosted in the workspace pane.
 async function openStyleEditor(page, bookOid) {
-    await page.goto('/#!/picture-book/' + bookOid + '/style', { timeout: 30000 });
-    await expect(page.getByTestId('pb2-style')).toBeVisible({ timeout: 30000 });
+    await page.goto('/#!/picture-book/' + bookOid + '/edit/style', { timeout: 30000 });
+    await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'style', { timeout: 30000 });
     await expect(page.getByTestId('pb2-style-chain')).toBeVisible({ timeout: 30000 });
 }
 
@@ -195,7 +198,7 @@ test.describe('PictureBook V3 P2-9 — book style editor', () => {
         console.log('[p29-style-cleanup] left in place as the record of the run: ' + JSON.stringify({ book: bookObjectId, slug, ...fx }));
     });
 
-    test('1. a fresh book: reached from the reader header, nothing of its own, six task rows built from the live inventory with one probe when it is unavailable', async ({ page }) => {
+    test('1. a fresh book: reached from the reader header (Edit › Style), nothing of its own, six task rows built from the live inventory with one probe when it is unavailable', async ({ page }) => {
         expect(bookObjectId, 'STORY book seeded in beforeAll').toBeTruthy();
         await loginAsSharedUser(page);
         const probes = [];
@@ -203,11 +206,9 @@ test.describe('PictureBook V3 P2-9 — book style editor', () => {
 
         await page.goto('/#!/picture-book/v2/' + bookObjectId, { timeout: 30000 });
         await expect(page.locator('button', { hasText: 'Begin' })).toBeVisible({ timeout: 30000 });
-        const link = page.getByTestId('pb2-style-link');
-        await expect(link).toBeVisible();
-        await link.click();
-        await expect(page).toHaveURL(new RegExp('#!/picture-book/' + bookObjectId + '/style$'));
-        await expect(page.getByTestId('pb2-style')).toBeVisible({ timeout: 30000 });
+        // The reader's Style button moved to Edit › Style: the header's Edit toggle, then the rail.
+        await openEditSection(page, 'style');
+        await expect(page).toHaveURL(new RegExp('#!/picture-book/' + bookObjectId + '/edit/style$'));
         await expect(page.getByTestId('pb2-style-chain')).toBeVisible({ timeout: 30000 });
 
         await expect(page.getByTestId('pb2-style-own-name')).toHaveCount(0);
@@ -681,10 +682,12 @@ test.describe('PictureBook V3 P2-9 — book style editor', () => {
         const relocked = await getStyle(request, bookObjectId);
         expect(relocked.own.locked, 'unlocked again').toBe(false);
 
-        // The back arrow returns to the reader of this book.
-        await page.getByTestId('pb2-style-back').click();
+        // The section has no back arrow of its own (the rail is the navigation); the header's Read toggle returns to
+        // the reader of this book, whose Edit toggle is the way back.
+        await expect(page.getByTestId('pb2-style-back')).toHaveCount(0);
+        await page.getByTestId('book-mode-read').click();
         await expect(page).toHaveURL(new RegExp('#!/picture-book/v2/' + bookObjectId + '$'));
-        await expect(page.getByTestId('pb2-style-link')).toBeVisible({ timeout: 30000 });
+        await expect(page.getByTestId('book-mode-edit')).toBeVisible({ timeout: 30000 });
         await request.get(REST + '/logout');
     });
 });

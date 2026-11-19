@@ -114,6 +114,14 @@ async function beginReader(page) {
     await begin.click();
 }
 
+// Edit → Read keeps the place (design §4.3): Read reopens on the Cover or on the page Edit last showed. Begin only
+// when the Cover is what Read opened on; callers then assert the page content they need.
+async function beginReaderIfCover(page) {
+    const begin = page.locator('button:has-text("Begin")');
+    await expect(page.getByTestId('book-header')).toHaveAttribute('data-mode', 'read', { timeout: 30000 });
+    if (await begin.waitFor({ state: 'visible', timeout: 10000 }).then(() => true, () => false)) await begin.click();
+}
+
 // ── Setup: create shared user and seed poems via REST ─────────────────────────
 
 let poem1ObjectId = null;
@@ -1010,14 +1018,19 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         // Page N of M footer present.
         await expect(page.locator('text=/Page \\d+ of \\d+/').first(), 'no "Page N of M" footer').toBeVisible({ timeout: 10000 });
 
-        // 5. Analyze + Render controls both present.
-        await expect(page.locator('button:has-text("Analyze")').first()).toBeVisible({ timeout: 10000 });
-        await expect(page.locator('button:has-text("Render")').first()).toBeVisible({ timeout: 5000 });
-
         const shot6d = path.resolve(SPEC_DIR, '../test-results/6D-reader-stanzas.png');
         fs.mkdirSync(path.dirname(shot6d), { recursive: true });
         await page.screenshot({ path: shot6d, fullPage: true });
         console.log('[6D] screenshot: ' + shot6d);
+
+        // 5. Analyze + Render controls both present — in Edit since the Read | Edit split (PictureBookUxConsistencyDesign.md
+        //    §8.1: Read carries neither): Analyze poems on Edit › Pages (the seeded poem ids feed it), Render on Edit › Render.
+        await expect(page.getByTestId('cb-analyze-poems')).toHaveCount(0);
+        await expect(page.getByTestId('cb-render-start')).toHaveCount(0);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/pages'; }, bookObjectId);
+        await expect(page.getByTestId('cb-analyze-poems')).toBeVisible({ timeout: 10000 });
+        await page.getByTestId('ws-rail-render').click();
+        await expect(page.getByTestId('cb-render-start')).toBeVisible({ timeout: 5000 });
     });
 
     // ── Gap 6 — per-scene client render loop (the final evidence gate) ───────────
@@ -1121,22 +1134,18 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
             if (u.includes('/chap-book/render/')) bulkRenderCalls.push(u);
         });
 
-        // 6. Click the reader header Render button → opens the SD-config dialog. (The header's
-        //    only orange button is Render; Review is indigo, Analyze is blue. The dialog is not
-        //    open yet, so .first() is unambiguous.)
-        const headerRender = page.locator('button.bg-orange-600').filter({ hasText: 'Render' }).first();
-        await expect(headerRender, 'reader Render button not visible/enabled').toBeVisible({ timeout: 10000 });
-        await headerRender.click();
-
-        // 7. In the Render Settings dialog, click its (orange) Render to start the per-scene loop.
-        const renderDialog = page.locator('div.fixed.inset-0.z-50').filter({ hasText: 'Render Settings' });
-        await expect(renderDialog, 'Render Settings dialog did not open').toBeVisible({ timeout: 10000 });
-        // Give the SD config a moment to load so a real sdConfig is sent (the dialog Render button
-        // works regardless — doRenderFromDialog falls back to defaults if config is still loading).
+        // 6–7. Render moved from the reader header's dialog to Edit › Render, whose settings are inline and whose Render
+        //      (cb-render-start) starts the per-scene loop directly (§8.2 row 7).
+        await page.getByTestId('book-mode-edit').click();
+        await expect(page.getByTestId('book-workspace')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('ws-rail-render').click();
+        const editRender = page.getByTestId('cb-render-start');
+        await expect(editRender, 'Edit › Render button not visible').toBeVisible({ timeout: 10000 });
+        // Give the SD config a moment to load so a real sdConfig is sent (Render works regardless — it falls back
+        // to defaults if the config is still loading).
         await page.waitForTimeout(3000);
-        const dialogRender = renderDialog.locator('button.bg-orange-600');
-        await expect(dialogRender, 'dialog Render button not visible').toBeVisible({ timeout: 10000 });
-        await dialogRender.click();
+        await expect(editRender).toBeEnabled({ timeout: 10000 });
+        await editRender.click();
 
         // 8. Wait for the ENTIRE serial per-scene loop to finish. The loop renders scenes ONE AT
         //    A TIME (live LLM prompt + SD image, then a 5s cooldown), so the FIRST image appears
@@ -1152,9 +1161,12 @@ test.describe('ChapBook — reader (6A/6D regression proofs)', () => {
         // Wide window (180s, not 90s): after ALL scenes have dispatched, the FINAL scene's real
         // ~45–60s SD render + reader reload can legitimately exceed 90s on a load-saturated host.
         await expect(
-            page.locator('button.bg-orange-600').filter({ hasText: /Rendering/ }),
+            page.getByTestId('cb-render-start').filter({ hasText: /Rendering/ }),
             'render loop did not finish (button still shows "Rendering N/M...")'
         ).toHaveCount(0, { timeout: 180000 });
+        // The page images are checked in Read (Edit → Read).
+        await page.getByTestId('book-mode-read').click();
+        await beginReaderIfCover(page);
         // The ReaderShell shows ONE page at a time (the reload after the loop keeps the current page;
         // only oninit resets to the Cover), so the current page's decoded MediaServlet image must be
         // present after the reload. Wide window (180s): the reload resolving the final scene's /media/
@@ -1572,7 +1584,7 @@ test.describe('ChapBook — delete regressions', () => {
 
         // Drive the review view.
         await loginAsSharedUser(page);
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/review/' + oid; }, bookOid);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/pages'; }, bookOid);
 
         // P10-C 4: the review is master/detail — the page list has one row per page and "Remove this
         // page" is on the ONE selected card (before P10-C 4 every card was stacked and this counted
@@ -1672,7 +1684,7 @@ test.describe('ChapBook — fixed page height clamp (workstream C)', () => {
         return body.results[0].fixPageHeight;
     }
 
-    test('reader fixPageHeight checkbox flips page inline style and PATCH persists', async ({ page, request }) => {
+    test('Edit › Book fixPageHeight checkbox flips the Read page inline style and PATCH persists', async ({ page, request }) => {
         await restLoginShared(request);
 
         // 1. Seed two real poems and build a fresh ChapBook (new slug each run → starts unclamped).
@@ -1714,18 +1726,31 @@ test.describe('ChapBook — fixed page height clamp (workstream C)', () => {
         const style0 = await pageWrapper().getAttribute('style');
         expect(style0, 'default page style should be min-height (grow): ' + style0).toContain('min-height');
 
+        // The single fixed-page-height toggle lives in Edit › Book since the Read | Edit split (§8.2 row 1).
+        const openBook = async () => {
+            await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/book'; }, bookObjectId);
+            await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'book', { timeout: 30000 });
+        };
+        const openRead = async () => {
+            await page.getByTestId('book-mode-read').click();
+            await beginReaderIfCover(page);
+            await expect(page.locator('p').filter({ hasText: stanzaRe }).first(), 'reader stanza not visible').toBeVisible({ timeout: 20000 });
+        };
+        await expect(page.getByTestId('cb-fix-page-height'), 'the toggle is not in Read').toHaveCount(0);
+        await openBook();
         await expect(checkbox(), 'fixPageHeight checkbox not visible').toBeVisible({ timeout: 10000 });
         expect(await checkbox().isChecked(), 'checkbox should start unchecked').toBe(false);
         expect(await checkbox().isEnabled(), 'checkbox should be enabled (user has AccountUsers role)').toBe(true);
 
-        // 4. Toggle ON (single click → one onchange → PATCH). Style flips to clamped on success.
+        // 4. Toggle ON (single click → one onchange → PATCH). The Read page flips to clamped on success.
         await checkbox().click();
+        await expect(checkbox(), 'checkbox should be checked after PATCH success').toBeChecked({ timeout: 15000 });
+        await openRead();
         await expect(pageWrapper(), 'clamp did not apply after enabling fixPageHeight')
             .toHaveAttribute('style', /overflow:\s*hidden/, { timeout: 15000 });
         const styleOn = await pageWrapper().getAttribute('style');
         expect(styleOn, 'clamped style must not carry min-height: ' + styleOn).not.toContain('min-height');
         expect(styleOn, 'clamped style should set a fixed height: ' + styleOn).toContain('height: 70vh');
-        expect(await checkbox().isChecked(), 'checkbox should be checked after PATCH success').toBe(true);
 
         // 5. Persistence at the record level.
         await restLoginShared(request);
@@ -1747,13 +1772,15 @@ test.describe('ChapBook — fixed page height clamp (workstream C)', () => {
             'reader stanza not visible after reload').toBeVisible({ timeout: 20000 });
         await expect(pageWrapper(), 'persisted clamp not rendered on fresh load')
             .toHaveAttribute('style', /overflow:\s*hidden/, { timeout: 15000 });
+        await openBook();
         expect(await checkbox().isChecked(), 'checkbox should be checked after reload').toBe(true);
 
         // 7. Toggle OFF → grow again + persists false.
         await checkbox().click();
+        await expect(checkbox(), 'checkbox should be unchecked after toggling off').not.toBeChecked({ timeout: 15000 });
+        await openRead();
         await expect(pageWrapper(), 'growth did not restore after disabling fixPageHeight')
             .toHaveAttribute('style', /min-height/, { timeout: 15000 });
-        expect(await checkbox().isChecked(), 'checkbox should be unchecked after toggling off').toBe(false);
         await restLoginShared(request);
         expect(await fetchFixPageHeight(request, bookObjectId), 'fixPageHeight not persisted false').toBeFalsy();
         await request.get(REST + '/logout');

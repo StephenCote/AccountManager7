@@ -490,11 +490,17 @@ test.describe('PictureBook V3 PF-9 — plain-PB (STORY) render path over REST', 
         const natural = await img.evaluate(el => [el.naturalWidth, el.naturalHeight]);
         await expect(page.getByTestId('pb2-scene-chip')).toHaveAttribute('data-chip', 'review');
         await expect(page.getByTestId('pb2-stale-badge')).toHaveCount(0);
-        await expect(page.getByTestId('pb2-scene-render')).toHaveText(/Re-render$/);
-        await expect(page.getByTestId('pb2-scene-render')).toBeEnabled();
         await expect(page.getByTestId('pb2-run-progress')).toHaveCount(0);
         mkdirSync(OUT_DIR, { recursive: true });
         await page.screenshot({ path: OUT_DIR + '/reader-forced.png', fullPage: true });
+        // The per-page Render button moved out of Read (design §5.1): the page's "Edit this page" pencil → Edit ›
+        // Scenes › this scene, whose Render tab carries it — Re-render for a scene that has an image.
+        await expect(page.getByTestId('pb2-scene-render'), 'no render control in Read').toHaveCount(0);
+        await page.getByTestId('pb2-edit-page').click();
+        await expect(page.getByTestId('pb-edit-page')).toBeVisible({ timeout: 30000 });
+        await page.getByTestId('pb-scene-tab-render').click();
+        await expect(page.getByTestId('pb2-scene-render')).toHaveText(/Re-render page$/, { timeout: 30000 });
+        await expect(page.getByTestId('pb2-scene-render')).toBeEnabled();
         console.log('[pf9-reader] reader shows the scene image ' + natural[0] + 'x' + natural[1] + ' -> ' + OUT_DIR + '/reader-forced.png');
     });
 });

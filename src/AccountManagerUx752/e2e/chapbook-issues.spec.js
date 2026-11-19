@@ -226,7 +226,7 @@ test.describe('ChapBook/PictureBook — Issues 1, 3, 4, 8, 9, 12', () => {
         try {
             await loginAsSharedUser(page);
             await page.evaluate(() => { window.location.hash = '!/chap-book'; });
-            await expect(page.getByText('ChapBook — Poem Library')).toBeVisible({ timeout: 20000 });
+            await expect(page.getByTestId('cb-library-title')).toHaveText('ChapBooks', { timeout: 20000 });
 
             const rowA = page.locator('tbody tr').filter({ hasText: titleA });
             const rowB = page.locator('tbody tr').filter({ hasText: titleB });
@@ -352,46 +352,38 @@ test.describe('ChapBook/PictureBook — Issues 1, 3, 4, 8, 9, 12', () => {
         }
     });
 
-    // ── Issue 8 — SD config dialog opens before ChapBook render ──────────────
+    // ── Issue 8 — the SD config is presented before a ChapBook render starts ──────────────
     //
-    // Fix (Issue 8): clicking Render opens openRenderConfigDialog() which sets
-    // showRenderDialog=true, rendering the SD config modal. The render does NOT start
-    // immediately — the user must click "Render" inside the dialog.
-    test('Issue 8 — Render button opens SD config dialog instead of starting render', async ({ page }) => {
+    // Fix (Issue 8): the render must not start without the user seeing its SD settings. Since the Read | Edit split
+    // (aiDocs/PictureBookUxConsistencyDesign.md §8.2 row 7) those settings are not a dialog any more: they are inline
+    // on Edit › Render, above its Render button, and opening the section starts nothing.
+    test('Issue 8 — Edit › Render shows the SD config before (and without) starting a render', async ({ page }) => {
         if (!chapbookObjectId) {
             test.skip('chapbookObjectId not set — ChapBook create failed in beforeAll');
             return;
         }
         await loginAsSharedUser(page);
+        const renderPosts = [];
+        page.on('request', (req) => {
+            if (req.method() === 'POST' && /\/chap-book\/(render\/|scene\/[^/]+\/generate)/.test(req.url())) renderPosts.push(req.url());
+        });
 
-        // Navigate to the ChapBook reader (has Render button wired to openRenderConfigDialog)
-        await page.evaluate((oid) => {
-            window.location.hash = '!/chap-book/read/' + oid;
-        }, chapbookObjectId);
+        // The reader carries no Render control any more (§8.1) …
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/read/' + oid; }, chapbookObjectId);
+        await expect(page.getByTestId('book-header')).toHaveAttribute('data-mode', 'read', { timeout: 20000 });
+        await expect(page.getByTestId('cb-render-start')).toHaveCount(0);
 
-        // Wait for reader to load and Render button to appear
-        const renderBtn = page.locator('button').filter({ has: page.locator('span:text-is("image")') }).last();
-        await expect(renderBtn.or(page.locator('button:has-text("Render")'))).toBeVisible({ timeout: 20000 });
+        // … Edit › Render does, with its settings on screen first.
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/render'; }, chapbookObjectId);
+        const section = page.getByTestId('cb-render-section');
+        await expect(section).toBeVisible({ timeout: 20000 });
+        await expect(page.getByTestId('cb-render-chatconfig')).toBeVisible({ timeout: 5000 });
+        await expect(section.getByText('Image settings', { exact: true })).toBeVisible({ timeout: 5000 });
+        await expect(page.getByTestId('cb-render-start')).toBeVisible({ timeout: 5000 });
 
-        // Click the Render button
-        const renderBtnTarget = page.locator('button:has-text("Render")').last();
-        await renderBtnTarget.click();
-        await page.waitForTimeout(600);
-
-        // The SD config dialog must appear (showRenderDialog=true → fixed inset-0 z-50 modal)
-        // The modal contains the heading "Render Settings" (from renderRenderDialog())
-        const dialog = page.locator('.fixed.inset-0.z-50');
-        await expect(dialog).toBeVisible({ timeout: 5000 });
-        await expect(dialog.getByText('Render Settings')).toBeVisible({ timeout: 3000 });
-
-        // Both Cancel and Render buttons inside the dialog
-        await expect(dialog.locator('button:has-text("Cancel")')).toBeVisible({ timeout: 3000 });
-        // There should be a Render button inside the modal (not just outside)
-        await expect(dialog.locator('button').filter({ hasText: 'Render' }).first()).toBeVisible({ timeout: 3000 });
-
-        // Close the dialog without rendering
-        await dialog.locator('button:has-text("Cancel")').click();
-        await expect(dialog).toBeHidden({ timeout: 3000 });
+        // Opening the section did not start a render.
+        await page.waitForTimeout(1500);
+        expect(renderPosts, 'no render request without the Render click').toEqual([]);
     });
 
     // ── Issue 9 — Role warning banner + disabled Extract for user without AccountUsers ─
@@ -552,7 +544,7 @@ test.describe('ChapBook/PictureBook — Issues 1, 3, 4, 8, 9, 12', () => {
     test('Issue 1 — ChapBook Add Poems picker navigate-up then folder click shows contents', async ({ page }) => {
         await loginAsSharedUser(page);
         await page.evaluate(() => { window.location.hash = '!/chap-book'; });
-        await expect(page.getByText('ChapBook — Poem Library')).toBeVisible({ timeout: 20000 });
+        await expect(page.getByTestId('cb-library-title')).toHaveText('ChapBooks', { timeout: 20000 });
 
         // Open the data.note picker via "Add from Note"
         await page.getByRole('button', { name: /Add from Note/ }).click();

@@ -222,10 +222,16 @@ describe('renderProgressBar', () => {
         })(vnode);
         return out.filter(t => /^[A-Z][a-z]+$/.test(t));
     }
-    it('ends at Style — no Images / View steps', () => {
-        pb.__setExtractStateForTest({ step: 3 });
-        let labels = labelsOf(pb.renderProgressBar());
-        expect(labels).toEqual(['Source', 'Scenes', 'Characters', 'Style']);
+    // Intentionally changed (aiDocs/PictureBookUxConsistencyDesign.md §7.1): the wizard covers only Source › Scenes;
+    // Characters, Style and the rest are the Edit workspace's sections, opened in guided mode after Step 2.
+    it('ends at Scenes, then the book workspace — no Characters / Style / Images / View steps', () => {
+        pb.__setExtractStateForTest({ step: 2 });
+        let v = pb.renderProgressBar();
+        let labels = labelsOf(v);
+        expect(labels).toEqual(['Source', 'Scenes']);
+        let div = document.createElement('div');
+        m.render(div, v);
+        expect(div.querySelector('[data-testid="pb-wizard-then"]').textContent).toBe('› then the book workspace');
     });
 });
 
@@ -301,25 +307,28 @@ describe('PB1 viewer /picture-book/:groupOid — a bridge to the V3 reader', () 
 
 // ─────────────────────────── PB2 reader header pencil ───────────────────────
 
-describe('renderPb2Header — the Edit (wizard) pencil is never offered; Characters stays', () => {
+// aiDocs/PictureBookUxConsistencyDesign.md §5.1 / §5.4 (D2): Characters left the Read header — it is the Edit
+// workspace's Characters section (the rail row), reached through the Read | Edit toggle.
+describe('renderPb2Header — the Edit (wizard) pencil is never offered; Characters moved to the Edit rail', () => {
     beforeEach(() => {
         pbf.__pb2StopWatchingForTest();
         vi.spyOn(am7client, 'dotPath').mockReturnValue('Public');
         pbf.__setPb2V3StateForTest({
             pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null, pb2Submitting: false,
-            pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: 'Harlot\'s Eight',
+            pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: "Harlot's Eight", pb2Covers: null, pb2IsChapBook: false,
             pb2Pages: [{ objectId: 's1', sceneIndex: 1, title: 'Arrival', sceneNodeObjectId: 'n1', nodeStatus: 'DONE', dataObjectId: 'd1' }]
         });
     });
     afterEach(() => { pbf.__pb2StopWatchingForTest(); });
-    function pencilCount() {
-        return (JSON.stringify(pbf.renderPb2Header()).match(/"data-pb2-edit"/g) || []).length;
-    }
-    function charactersCount() {
-        return (JSON.stringify(pbf.renderPb2Header()).match(/"data-pb2-characters"/g) || []).length;
-    }
-    it('pencil hidden, Characters stays', () => {
-        expect(pencilCount()).toBe(0);
-        expect(charactersCount()).toBe(1);
+    function header() { let d = document.createElement('div'); m.render(d, pbf.renderPb2Header()); return d; }
+    it('pencil hidden, Characters not in Read; the Edit toggle is the way in and the PictureBook rail has Characters', async () => {
+        let el = header();
+        expect(el.querySelectorAll('[data-pb2-edit]').length).toBe(0);
+        expect(el.querySelectorAll('[data-pb2-characters]').length).toBe(0);
+        expect(el.textContent).not.toContain('Characters');
+        expect(el.querySelector('[data-testid="book-mode-edit"]')).not.toBeNull();
+        let nav = await import('../workflows/bookWorkspaceNav.js');
+        expect(nav.sectionDef('pb', 'characters')).toMatchObject({ id: 'characters', label: 'Characters' });
+        expect(nav.editLink('pb', 'B1', { type: 'character', id: 'c1' })).toBe('/picture-book/B1/edit/characters/c1');
     });
 });

@@ -32,7 +32,7 @@ import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
 import { ensureSharedTestUser, resolveChatRoute, ensureChatConfig, ensurePath } from './helpers/api.js';
 import { REST, PB_REST, restLoginShared, loginAsSharedUser } from './helpers/chapbook.js';
-import { completeWizardStyleStep } from './helpers/pbReader.js';
+import { completeWizardStyleStep, openEditSection, openPageInEdit, openActivityDock } from './helpers/pbReader.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TAG = '[p10b-newbook]';
@@ -282,7 +282,11 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             const cfsResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/create-from-scenes$/.test(r.url()), { timeout: T.characters }).then(jsonOf).catch(() => null);
             await page.locator('button:has-text("Continue")').first().click();
             const tChars = Date.now();
-            const dlg = page.getByRole('dialog');
+            // §7.1: once the book and its characters exist the wizard closes and Edit › Characters opens (guided); the
+            // character manager that was wizard step 3 renders inline in the workspace pane.
+            await expect.poll(() => page.evaluate(() => location.hash), { timeout: T.characters })
+                .toMatch(/^#!\/picture-book\/[^/]+\/edit\/characters\?guided=1$/);
+            const dlg = page.locator('[data-testid="ws-pane"][data-section="characters"]');
             const empty = dlg.locator('text=No characters extracted yet.');
             const card = dlg.locator('div.font-medium.text-sm').first();
             await Promise.race([empty.waitFor({ state: 'visible', timeout: T.characters }), card.waitFor({ state: 'visible', timeout: T.characters })]).catch(() => {});
@@ -291,7 +295,7 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             await shot(page, '01c-wizard-characters');
             expect(charCount, 'characters created (empty state: ' + (await empty.count()) + ')').toBeGreaterThan(0);
 
-            await completeWizardStyleStep(page); // step 3 → step 4 Style (required) → reader
+            await completeWizardStyleStep(page); // Edit › Style (required) → Read
             await expect.poll(() => page.evaluate(() => location.hash), { timeout: 60000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);
             const bookOid = (await page.evaluate(() => location.hash)).replace(/^#!\/picture-book\/v2\//, '');
             await expect(page.locator('[data-pb2-book-name]')).toBeVisible({ timeout: T.ui });
@@ -316,16 +320,19 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
         });
 
         // ── 2. Reader: Render on page 1 → 202 → progress → image ─────────────────────────────────────
-        await step(page, 2, 'Render page 1 in the reader', async () => {
+        // Page 1's Render moved to Edit › Scenes › scene 1 › Render (design §5.6), reached from the page's pencil; the
+        // run panel is the workspace's activity dock (§4.5).
+        await step(page, 2, 'Render page 1 (Edit › Scenes › Render)', async () => {
             expect(fx.book && fx.book.objectId, 'book from step 1').toBeTruthy();
             await openReader(page, fx.book.objectId);
             await openFirstPage(page);
             await armToastSpy();
-            const renderBtn = page.getByTestId('pb2-scene-render');
-            await expect(renderBtn).toBeVisible({ timeout: T.ui });
-            const labelBefore = ((await renderBtn.textContent()) || '').replace(/brush/, '').trim();
             const imgBefore = await page.getByTestId('pb2-scene-image').count();
             await shot(page, '02a-reader-page1-before');
+            await openPageInEdit(page, 'render');
+            const renderBtn = page.getByTestId('pb2-scene-render');
+            await expect(renderBtn).toBeVisible({ timeout: T.ui });
+            const labelBefore = ((await renderBtn.textContent()) || '').trim();
             // renderScene() posts …/render?force=true — match with or without the query string.
             const renderResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/scene\/[^/]+\/render(\?|$)/.test(r.url()), { timeout: 120000 });
             const t0 = Date.now();
@@ -334,6 +341,7 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             const rrBody = await jsonOf(rr);
             expect(rr.status(), 'POST /scene/{id}/render on the fresh book (never the "no workflow yet" 404): ' + JSON.stringify(rrBody).slice(0, 300)).toBe(202);
             expect(noWorkflowToast(), 'no "(404) This book has no workflow yet" toast').toEqual([]);
+            await openActivityDock(page);
             const progress = page.getByTestId('pb2-run-progress');
             await expect(progress).toBeVisible({ timeout: 60000 });
             await shot(page, '02b-reader-render-running');
@@ -342,11 +350,15 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             const counter = ((await page.getByTestId('pb2-run-counter').textContent().catch(() => '')) || '').trim();
             const summary = toasts.slice(-1)[0] || '';
             await page.getByTestId('pb2-run-dismiss').click().catch(() => {});
-            // The page the user is looking at now shows the image, and the button offers a re-render.
+            // The Render tab now shows the image and the button offers a re-render …
+            await expect(page.getByTestId('pb-render-tab-image'), 'the Render tab shows the rendered image after the run').toBeVisible({ timeout: 60000 });
+            await expect.poll(async () => ((await renderBtn.textContent()) || '').trim(), { timeout: 30000 }).toBe('Re-render page');
+            // … and Read (Edit → Read keeps the page, §4.3) shows page 1's image.
+            await page.getByTestId('book-mode-read').click();
             const img = page.getByTestId('pb2-scene-image');
             await expect(img, 'page 1 shows its rendered image after the run').toBeVisible({ timeout: 60000 });
+            await expect.poll(async () => img.evaluate(el => el.complete && el.naturalWidth > 0), { timeout: 60000 }).toBe(true);
             const natural = await img.evaluate(el => ({ w: el.naturalWidth, h: el.naturalHeight, complete: el.complete }));
-            await expect.poll(async () => ((await renderBtn.textContent()) || '').replace(/brush/, '').trim(), { timeout: 30000 }).toBe('Re-render');
             await shot(page, '02c-reader-page1-rendered');
             expect(natural.w, 'the image element actually loaded bytes (naturalWidth)').toBeGreaterThan(0);
             // Read-back: /pages carries the image reference for scene 0.
@@ -357,10 +369,12 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
         });
 
         // ── 3. Render all → 202 (nodes reused, none missing) → every page has an image ───────────────
-        await step(page, 3, 'Render all from the reader', async () => {
+        // Render all is Edit › Render's toolbar button; its settings (the old dialog body) are inline (design §5.9) and
+        // the stage list is the section's pinned-open activity dock.
+        await step(page, 3, 'Render all (Edit › Render)', async () => {
             await openReader(page, fx.book.objectId);
             await armToastSpy();
-            await page.getByTestId('pb2-render-all').click();
+            await openEditSection(page, 'render');
             await expect(page.getByTestId('pb2-render-dialog')).toBeVisible({ timeout: T.ui });
             await shot(page, '03a-render-all-dialog');
             const raResp = page.waitForResponse(r => r.request().method() === 'POST' && /\/render-all$/.test(r.url()), { timeout: 120000 });
@@ -385,6 +399,8 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             const summary = toasts.slice(-1)[0] || '';
             await page.getByTestId('pb2-run-dismiss').click().catch(() => {});
             // Page through the whole book as a reader would: every page shows an image.
+            await page.getByTestId('book-mode-read').click();
+            await expect(page.getByTestId('pb2-reader')).toBeVisible({ timeout: T.ui });
             await openFirstPage(page);
             const withImage = [], without = [];
             for (let i = 0; i < fx.scenes.length; i++) {
@@ -406,7 +422,7 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
 
         // ── 4. Workflow canvas of the wizard book: nodes, no empty state ─────────────────────────────
         await step(page, 4, 'Workflow canvas shows the graph', async () => {
-            await page.goto('/#!/picture-book/' + fx.book.objectId + '/workflow', { timeout: T.ui });
+            await page.goto('/#!/picture-book/' + fx.book.objectId + '/edit/canvas', { timeout: T.ui });
             await armToastSpy();
             const nodes = page.locator('[data-node-id]');
             await expect(nodes.first()).toBeVisible({ timeout: 60000 });
@@ -428,7 +444,7 @@ test.describe('PictureBook V3 P10-B — a new book renders end to end, as a user
             expect(created.status(), 'POST /chapter: ' + JSON.stringify(cb).slice(0, 200)).toBe(200);
             fx.chapterBook = { objectId: cb.bookObjectId, slug };
             const wf0 = await pbGet(request, '/' + cb.bookObjectId + '/workflow');
-            await page.goto('/#!/picture-book/' + cb.bookObjectId + '/workflow', { timeout: T.ui });
+            await page.goto('/#!/picture-book/' + cb.bookObjectId + '/edit/canvas', { timeout: T.ui });
             await armToastSpy();
             const empty = page.locator('.pb-wf-empty');
             await expect(empty).toBeVisible({ timeout: 60000 });

@@ -38,7 +38,7 @@
  */
 import { test as base, expect } from '@playwright/test';
 import { login } from './helpers/auth.js';
-import { openReaderTools, closeReaderTools } from './helpers/pbReader.js';
+import { openEditSection, openPageInEdit } from './helpers/pbReader.js';
 import {
     setupWorkflowTestData, apiLogin, apiLogout, ensureChatConfig,
     ensurePath, createNote, createObject
@@ -824,21 +824,28 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             }
             let names = (extractedScenes[0].characters || []).map(c => typeof c === 'string' ? c : (c && c.name)).filter(Boolean);
             for (let p of pills) expect(names, 'no pill is a character name').not.toContain(p.text);
-            // The auto-approve state is an item of the Tools overflow (helpers/pbReader.js), not a reader pill.
-            await openReaderTools(page);
-            await expect(page.getByTestId('pb2-auto-approve-badge')).toHaveText(/^Auto-approve: (ON|OFF)$/);
-            await closeReaderTools(page);
-
-            // The scene page's own controls and image slot.
-            // Each button's textContent is '<icon name>' + label ('brushRender'), so pin the label's end.
-            await expect(reader.locator('[data-testid="pb2-scene-compose"]')).toHaveText(/Compose$/);
-            await expect(reader.locator('[data-testid="pb2-scene-render"]')).toHaveText(/(Render|Re-render)$/);
-            await expect(reader.locator('[data-testid="pb2-plan-render"]')).toHaveText(/Plan & generate$/);
+            // The scene page's image slot (Read draws no editing controls since the Read | Edit split, design §5.1).
             let imgs = await reader.locator('[data-testid="pb2-scene-image"]').count();
             let placeholders = await reader.locator('span.material-symbols-outlined', { hasText: /^image$/ }).count();
             console.log('  scene image: ' + imgs + ', placeholder: ' + placeholders);
             expect(imgs + placeholders, 'an image or the image placeholder').toBeGreaterThan(0);
-            await expect(reader.locator('button[title="Manage characters"]'), 'characters are managed from the header dialog').toBeVisible();
+            for (const id of ['pb2-scene-compose', 'pb2-scene-render', 'pb2-plan-render']) {
+                await expect(reader.locator('[data-testid="' + id + '"]'), id + ' is not in Read').toHaveCount(0);
+            }
+            await expect(reader.locator('button[title="Manage characters"]'), 'characters are Edit › Characters now, not a header dialog').toHaveCount(0);
+
+            // The scene page's controls are on Edit › Scenes › this scene (the page's "Edit this page" pencil):
+            // Composition is a tab; Render and Plan & generate are on the Render tab.
+            await openPageInEdit(page, 'render');
+            await expect(page.getByTestId('pb-scene-tab-composition')).toHaveText(/Composition$/);
+            await expect(page.getByTestId('pb2-scene-render')).toHaveText(/(Render page|Re-render page)$/);
+            await expect(page.getByTestId('pb2-plan-render')).toHaveText(/Plan & generate$/);
+            await expect(page.getByTestId('ws-rail-characters'), 'characters are managed in Edit › Characters').toBeVisible();
+            // The auto-approve state is a control of Edit › Book (helpers/pbReader.js), not a reader pill.
+            await openEditSection(page, 'book');
+            const aa = page.getByTestId('pb2-auto-approve-badge');
+            await expect(aa).toBeVisible();
+            expect(['0', '1']).toContain(await aa.getAttribute('data-on'));
         });
 
         test('E.4 Navigate ALL pages with screenshots', async ({ page }) => {
@@ -1072,7 +1079,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await expect(reader).toHaveAttribute('data-fullscreen', '0');
             await expect(toggle).toHaveAttribute('title', 'Fullscreen');
             await expect(toggle.locator('.material-symbols-outlined')).toHaveText('fullscreen');
-            await expect(page.locator('button[title="Back to book list"]')).toBeVisible();
+            await expect(page.getByTestId('book-back')).toBeVisible();
 
             await toggle.click();
             await expect(reader).toHaveAttribute('data-fullscreen', '1');
@@ -1081,7 +1088,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await expect(reader).toHaveClass(/fixed inset-0 z-30/);
             await expect(toggle).toHaveAttribute('title', 'Exit fullscreen');
             await expect(toggle.locator('.material-symbols-outlined')).toHaveText('fullscreen_exit');
-            await expect(page.locator('button[title="Back to book list"]')).toHaveCount(0);
+            await expect(page.getByTestId('book-back')).toHaveCount(0);
             // Still the cover: fullscreen never moves the page.
             await expect(page.locator('[data-pb2-cover-count]')).toBeVisible();
             console.log('VERIFIED: Fullscreen toggle ON (data-fullscreen=1, z-30 overlay, Back hidden)');
@@ -1109,7 +1116,7 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             await expect(reader).toHaveAttribute('data-fullscreen', '0');
             await expect(reader).not.toHaveClass(/fixed inset-0/);
             await expect(toggle).toHaveAttribute('title', 'Fullscreen');
-            await expect(page.locator('button[title="Back to book list"]')).toBeVisible();
+            await expect(page.getByTestId('book-back')).toBeVisible();
             await expect(page.locator('[data-pb2-cover-count]')).toBeVisible();
             console.log('VERIFIED: Escape exits fullscreen (data-fullscreen=0, Back visible)');
         });
@@ -1154,7 +1161,10 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
         // no Edit pencil — "the wizard would only hand straight back to this reader" (renderPb2Header,
         // P7-3 / P10-1, archive 217 d). H.1 now pins that header: every V3 tool entry is present and no
         // Edit affordance is.
-        test('H.1 V3 reader header — tool entries present, no Edit affordance', async ({ page }) => {
+        // Since the Read | Edit split (aiDocs/PictureBookUxConsistencyDesign.md §4.1 / §5.1) the Read header carries only
+        // back, the title, the Read | Edit toggle, Export and Fullscreen; every former tool (Style, Characters, Render,
+        // Tools ▾ items, Delete) is an Edit section. H.1 pins both halves.
+        test('H.1 V3 reader header — read-only actions + the Edit toggle; every former tool entry is an Edit section', async ({ page }) => {
             test.setTimeout(60000);
             test.skip(!workObjectId, 'No work created');
             test.skip(!extractedScenes.length, NO_SCENES_REASON);
@@ -1164,34 +1174,36 @@ test.describe('Picture Book — Comprehensive E2E (Phases A–L)', () => {
             let reader = page.locator('[data-testid="pb2-reader"]');
 
             await expect(reader.locator('button[title="Edit Book"]'), 'no Edit Book on the V3 reader').toHaveCount(0);
-            await expect(reader.locator('button[title="Edit"]'), 'no Edit pencil on the V3 reader').toHaveCount(0);
             await expect(reader.locator('textarea'), 'no inline blurb editor').toHaveCount(0);
 
-            await expect(reader.locator('button[title="Back to book list"]')).toBeVisible();
+            await expect(page.getByTestId('book-header')).toHaveAttribute('data-mode', 'read');
+            await expect(page.getByTestId('book-back')).toHaveAttribute('title', 'Back to Picture Books');
             // KI-90 (§24 I-9): the header carries the title the import was given, not "Book <slug>" (§24 U-3, §6.C 312).
-            await expect(reader.locator('[data-pb2-book-name]')).toHaveText(/^AIME Test Book [a-z0-9]+$/);
-            // Toolbar: setup (Style, Characters), the labeled Render, Tools, then Export / Fullscreen / Delete.
-            // Render is titled "Render all scenes" only once the book has a style; without one it is disabled and
-            // titled with the reason (the style gate).
-            await expect(reader.locator('[data-testid="pb2-render-all"]')).toHaveText(/Render$/);
-            await expect(reader.locator('[data-testid="pb2-render-all"]')).toHaveAttribute('title', /^(Render all scenes|Set the book style first)$/);
-            await expect(reader.locator('[data-testid="pb2-style-link"]')).toBeVisible();
-            await expect(reader.locator('button[title="Manage characters"]')).toHaveAttribute('data-pb2-characters', pb2BookObjectId);
-            // The optional tools are items of the Tools overflow (helpers/pbReader.js), mounted at the app root.
-            await openReaderTools(page);
-            await expect(page.getByTestId('pb2-chat-config')).toBeVisible();
-            await expect(page.getByTestId('pb2-auto-approve-badge')).toHaveText(/^Auto-approve: (ON|OFF)$/);
-            await expect(page.getByTestId('pb2-review-link')).toHaveAttribute('title', 'Review queue');
-            await expect(page.getByTestId('pb2-locations-link')).toBeVisible();
-            await expect(page.getByTestId('pb2-compose-link')).toBeVisible();
-            await expect(page.getByTestId('pb2-cover-link')).toBeVisible();
-            await expect(page.locator('button[title="Open Workflow Canvas"]')).toBeVisible();
-            await closeReaderTools(page);
-            await expect(reader.locator('[data-testid="pb2-export"]')).toHaveAttribute('title', 'Export as HTML');
-            await expect(reader.locator('[data-testid="pb2-fullscreen"]')).toHaveAttribute('title', 'Fullscreen');
-            await expect(reader.locator('button[title="Delete picture book"]')).toBeVisible();
+            await expect(page.locator('[data-pb2-book-name]')).toHaveText(/^AIME Test Book [a-z0-9]+$/);
+            await expect(page.getByTestId('pb2-export')).toHaveAttribute('title', 'Export as HTML');
+            await expect(page.getByTestId('pb2-fullscreen')).toHaveAttribute('title', 'Fullscreen');
+            for (const id of ['pb2-tools-menu', 'pb2-style-link', 'pb2-render-all', 'pb2-chat-config', 'pb2-auto-approve-badge']) {
+                await expect(page.getByTestId(id), id + ' is not in Read').toHaveCount(0);
+            }
+            await expect(page.locator('button[title="Manage characters"]')).toHaveCount(0);
+            await expect(page.locator('button[title="Delete picture book"]')).toHaveCount(0);
             await saveScreenshot(page, 'H1-readerHeader');
-            console.log('VERIFIED: V3 reader header carries every tool entry and no Edit affordance');
+
+            // The Edit toggle opens the workspace; its rail is every former tool entry.
+            await openEditSection(page, 'book');
+            for (const s of ['book', 'style', 'characters', 'locations', 'scenes', 'cover', 'review', 'render', 'canvas']) {
+                await expect(page.getByTestId('ws-rail-' + s), 'rail offers ' + s).toBeVisible();
+            }
+            // Edit › Book: chat config, auto-approve, delete (Danger zone).
+            await expect(page.getByTestId('pb2-chat-config')).toBeVisible();
+            expect(['0', '1']).toContain(await page.getByTestId('pb2-auto-approve-badge').getAttribute('data-on'));
+            await expect(page.getByTestId('pb-book-delete')).toBeVisible();
+            // Edit › Render: Render all is titled with what it does once the book has a style, else with the gate's reason.
+            await openEditSection(page, 'render');
+            await expect(page.getByTestId('pb2-render-all-start')).toHaveText(/Render all$/);
+            await expect(page.getByTestId('pb2-render-all-start')).toHaveAttribute('title', /^(Render every scene whose image is missing, stale or rejected|Set the book style first)$/);
+            await saveScreenshot(page, 'H1-editWorkspace');
+            console.log('VERIFIED: Read header is read-only + Edit toggle; every former tool entry is an Edit section');
         });
     });
 

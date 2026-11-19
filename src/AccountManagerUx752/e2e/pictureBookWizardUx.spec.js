@@ -217,7 +217,13 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         // "URI with undefined scheme" for every remaining character -- test-harness noise, not a
         // product defect. 30 min covers ~20 named characters on the local tier.
         const CREATE_CHARACTERS_WAIT_MS = 1800000;
-        let dialog = page.getByRole('dialog');
+        // Since the Read | Edit split (design §7.1) the step-2 Continue closes the wizard once the book and its
+        // characters exist and opens Edit › Characters (guided); the manager that was step 3 renders inline there.
+        await expect.poll(() => page.evaluate(() => location.hash), { timeout: CREATE_CHARACTERS_WAIT_MS })
+            .toMatch(/^#!\/picture-book\/[^/]+\/edit\/characters\?guided=1$/);
+        await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'characters', { timeout: 60000 });
+        await expect(page.locator('text=Picture Book —')).toHaveCount(0);
+        let dialog = page.getByTestId('ws-pane');
         let emptyState = dialog.locator('text=No characters extracted yet.');
         let anyCharacterCard = dialog.locator('div.font-medium.text-sm').first();
         await Promise.race([
@@ -232,28 +238,21 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         let characterCount = await dialog.locator('div.font-medium.text-sm').count();
         expect(characterCount).toBeGreaterThan(0);
 
-        // Select the first character to reveal the detail panel, then confirm "Open Full Editor ->"
-        // opens a NEW TAB (not an in-place navigation) -- there's no back nav that would restore
-        // the in-progress wizard state (extracted scenes, created book/characters) otherwise.
+        // Select the first character to reveal the detail panel, then follow "Open Full Editor ->". Inside the Edit
+        // workspace the book and its characters already exist, so it navigates in place through the dirty guard
+        // (design §5.4 / §6.2-3) instead of the wizard-era new tab; Back returns to Edit › Characters.
         await dialog.locator('div.font-medium.text-sm').first().click();
         let openEditorLink = dialog.locator('text=Open Full Editor');
         await expect(openEditorLink).toBeVisible({ timeout: 10000 });
-        let [editorPopup] = await Promise.all([
-            page.context().waitForEvent('page'),
-            openEditorLink.click()
-        ]);
-        await editorPopup.waitForLoadState();
-        expect(editorPopup.url()).toMatch(/#!\/view\/olio\.charPerson\//);
-        await screenshot(page, 'wizardux-step3-open-full-editor-newtab');
-        await editorPopup.close();
-        // Original tab/wizard must still be on Step 3 with the wizard dialog intact -- proving the
-        // new-tab open didn't navigate the current tab away from the in-progress wizard.
-        await expect(page.locator('text=Picture Book —').first()).toBeVisible({ timeout: 5000 });
-        await expect(openEditorLink).toBeVisible({ timeout: 5000 });
+        const workspaceHash = await page.evaluate(() => location.hash);
+        await openEditorLink.click();
+        await expect.poll(() => page.evaluate(() => location.hash), { timeout: 15000 }).toMatch(/^#!\/view\/olio\.charPerson\//);
+        await screenshot(page, 'wizardux-open-full-editor');
+        await page.evaluate((h) => { location.hash = h; }, workspaceHash);
+        await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'characters', { timeout: 30000 });
 
-        await completeWizardStyleStep(page); // step 3 → step 4 Style (required) → reader
-        // P7-3 (the only path since P10-1): the wizard closes and the V3 reader opens on the book the
-        // wizard created; there is no step 4.
+        await completeWizardStyleStep(page); // Edit › Style (required) → Read
+        // The V3 reader opens on the book the wizard created.
         await expect.poll(() => page.evaluate(() => location.hash), { timeout: 15000 }).toMatch(/^#!\/picture-book\/v2\/[^/]+$/);
         await expect(page.locator('[data-pb2-book-name]').first()).toBeVisible({ timeout: 15000 });
         await expect(page.locator('text=Picture Book —')).toHaveCount(0);

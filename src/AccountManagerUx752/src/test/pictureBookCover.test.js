@@ -23,6 +23,8 @@ import { page } from '../core/pageClient.js';
 import { am7client } from '../core/am7client.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { applicationPath } from '../core/config.js';
+import { jobRunPanel } from '../components/jobRunPanel.js';
+import { getActivity, __resetActivityForTest } from '../workflows/bookActivity.js';
 
 const BOOK = 'book-1';
 const PB = '/rest/olio/picture-book/' + BOOK;
@@ -132,6 +134,8 @@ let wf;
 
 function st() { return cmp.__composeStateForTest(); }
 function view() { return cmp.composeView.view(); }
+/** §4.5: the job panel lives in the book's activity (pill / dock), rendered exactly as the dock renders it. */
+function dock(key) { let a = getActivity(BOOK, key); return a ? jobRunPanel(a) : null; }
 
 /** Seed the board in cover mode (COVER unless o.coverPurpose says otherwise) from a cover-board wire; no fetch is issued. */
 function seedCover(opts) {
@@ -154,6 +158,7 @@ function seedCover(opts) {
 
 beforeEach(async () => {
     origFetch = global.fetch;
+    __resetActivityForTest();
     cmp = await import('../features/pictureBookCompose.js');
     wf = await import('../workflows/pictureBookWorkflow.js');
     cmp.__setComposeStateForTest({ bookObjectId: null, sceneObjectId: null, coverPurpose: null, cover: null, covers: null, coverSeriesObjectId: null, renderRun: null, pages: [], board: null, loading: false, error: null, noComposition: false, noCompositionMessage: null, loadSeq: 0, outfits: {}, plan: null, planError: null, planLoading: false, busy: {}, edits: null, lastEdit: null, characters: [], composeRun: null, drag: null, overrideInst: null, overrideExpanded: false, sdModels: [], sdLoras: [], pollIntervalMs: 1, chatConfigRef: null, chatConfigResolving: false });
@@ -985,7 +990,11 @@ describe('cover render and approve', () => {
         expect(calls[0]).toMatchObject({ method: 'POST', url: PB + '/covers/cover/render' });
         expect(calls[0].rawBody).toBeUndefined();
         expect(toasts()[0]).toEqual(['info', 'Cover render started (render node created)']);
-        let v = view();
+        // §4.5 (2026-11-19): the panel is no longer in the page flow; it is the book's 'cover-render' activity,
+        // owned by Edit › Cover & Art
+        none(view(), 'pb-cmp-render-run');
+        expect(getActivity(BOOK, 'cover-render').section).toBe('cover');
+        let v = [view(), dock('cover-render')];
         let run = one(v, 'pb-cmp-render-run');
         expect(run.attrs['data-run-terminal']).toBe('false');
         expect(textOf(one(v, 'pb-cmp-render-counter'))).toBe('1 of 3 · render');
@@ -1000,14 +1009,15 @@ describe('cover render and approve', () => {
         expect(toasts()[1]).toEqual(['success', 'Cover: Rendered']);
         expect(reads(calls)).toEqual([BOARD_READ, OUTFITS_READ, COVERS_READ, PLAN_READ]);
         expect(st().renderAbort).toBeNull();
-        v = view();
+        v = [view(), dock('cover-render')];
         expect(one(v, 'pb-cmp-render-run').attrs['data-run-terminal']).toBe('true');
         expect(textOf(one(v, 'pb-cmp-render-counter'))).toBe('Rendered');
         expect(one(v, 'pb-cmp-cover-latest').attrs['data-artifact']).toBe('art-2');
         expect(one(v, 'pb-cmp-approve-cover').attrs.disabled).toBe(false);
         one(v, 'pb-cmp-render-dismiss').attrs.onclick();
         expect(st().renderRun).toBeNull();
-        none(view(), 'pb-cmp-render-run');
+        expect(getActivity(BOOK, 'cover-render')).toBeNull();
+        none([view(), dock('cover-render')], 'pb-cmp-render-run');
     });
     it('Re-render on a current (DONE_UNVERIFIED) cover sends ?force=true; a failed job is a warn toast with the error', async () => {
         seedCover({ board: coverBoardWire({ cover: renderedEntryWire() }) });
@@ -1020,7 +1030,7 @@ describe('cover render and approve', () => {
         await settled(calls);
         expect(seqOf(calls)[0]).toBe('POST ' + PB + '/covers/cover/render?force=true');
         expect(toasts()).toEqual([['info', 'Cover render started'], ['warn', 'Cover: Failed: SD backend not configured']]);
-        expect(textOf(one(view(), 'pb-cmp-render-counter'))).toBe('Failed: SD backend not configured');
+        expect(textOf(one(dock('cover-render'), 'pb-cmp-render-counter'))).toBe('Failed: SD backend not configured');
     });
     it('a 409 (pinned / already rendering) is a warn toast, nothing is followed; a 500 (no SD) is an error toast', async () => {
         seedCover();

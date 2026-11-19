@@ -394,7 +394,16 @@ describe('§3.6 — routePrefixes are self-verifying', () => {
             .toEqual(['/game', '/game/:gameId']);
         expect(extractRouteKeys(readFileSync(wiringSourcePath('media'), 'utf-8'))).toEqual([]);
         expect(extractRouteKeys(readFileSync(wiringSourcePath('iso42001'), 'utf-8')).length).toBe(12);
-        expect(extractRouteKeys(readFileSync(wiringSourcePath('pictureBook'), 'utf-8')))
+        // pictureBook's routes factory is the Read + Edit table (features/pictureBookWorkspace.js): the keys it adds
+        // literally — the legacy sub-route redirects and the three Edit arities (PictureBookUxConsistencyDesign §3).
+        expect(extractRouteKeys(readFileSync(wiringSourcePath('pictureBook'), 'utf-8'))).toEqual([
+            '/picture-book/:bookObjectId/style', '/picture-book/:bookObjectId/locations', '/picture-book/:bookObjectId/review',
+            '/picture-book/:bookObjectId/compose', '/picture-book/:bookObjectId/compose/:sceneObjectId',
+            '/picture-book/:bookObjectId/cover', '/picture-book/:bookObjectId/cover/:purpose', '/picture-book/:bookObjectId/workflow',
+            '/picture-book/:bookObjectId/edit', '/picture-book/:bookObjectId/edit/:section', '/picture-book/:bookObjectId/edit/:section/:item'
+        ]);
+        // ...and the reader / library / PB1 routes are still pictureBook.js's own literal table, spread into it.
+        expect(extractRouteKeys(readFileSync(resolve(srcDir, 'features', 'pictureBook.js'), 'utf-8')))
             .toEqual(['/picture-book', '/picture-book/v2/:pb2BookObjectId', '/picture-book/:bookObjectId']);
     });
 

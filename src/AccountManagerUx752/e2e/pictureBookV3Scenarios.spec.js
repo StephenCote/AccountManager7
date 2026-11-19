@@ -43,6 +43,7 @@ import { test, expect } from './helpers/fixtures.js';
 import { ensureSharedTestUser } from './helpers/api.js';
 import { gunzipSync } from 'zlib';
 import { mkdirSync, writeFileSync } from 'fs';
+import { openEditSection, selectReviewNode } from './helpers/pbReader.js';
 
 const SD_ENABLED = process.env.PB_SD_TESTS === '1';
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://localhost:8899';
@@ -626,8 +627,9 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
         // 3. The character manager shows it: "Affected scenes: 2 (1, 4)" + "2 stale".
         await loginAsSharedUser(page);
         await openReader(page, bookObjectId);
-        await page.locator('[data-pb2-characters="' + bookObjectId + '"]').click();
-        await expect(page.locator('.am7-dialog-title', { hasText: 'Manage Characters' })).toBeVisible({ timeout: 30000 });
+        // The reader's Characters button became Edit › Characters (the pop-in is retired, design D2 / §5.4).
+        await openEditSection(page, 'characters');
+        await expect(page.locator('.am7-dialog-title', { hasText: 'Manage Characters' })).toHaveCount(0);
         const item = page.locator('[data-char-item="' + alice.objectId + '"]');
         await expect(item).toBeVisible({ timeout: 30000 });
         await item.click();
@@ -672,7 +674,6 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
         await expect.poll(() => capturedToasts(page), { timeout: 30000, message: 'final toast' }).toContain('Regenerated 1 of 2 scenes, 1 skipped (pinned)');
         console.log(TAG + ' D toasts: ' + JSON.stringify(await capturedToasts(page)));
         await page.screenshot({ path: OUT_DIR + '/d-after-regenerate.png', fullPage: true });
-        await page.locator('button[aria-label="Close dialog"]').first().click();
 
         // 5. Durable state: scene 1 untouched (pinned, the same chain as before the regenerate, still the
         //    approved render selected); scene 4 gained one attempt (variant 0 of each attempt is the one
@@ -763,7 +764,7 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
         await request.get(REST + '/logout');
     });
 
-    test('[SD] Scenario G — Render all from the reader: leave mid-run, the job continues, return and the progress panel re-attaches to terminal; review lists the nodes', async ({ page, request }) => {
+    test('[SD] Scenario G — Render all from Edit › Render: leave mid-run, the job continues, return and the progress panel re-attaches to terminal; review lists the nodes', async ({ page, request }) => {
         test.skip(!SD_ENABLED, 'PB_SD_TESTS!=1 — a skip, not a pass');
         expect(res.E, 'Scenario E ran').toBeTruthy();
         await loginAsSharedUser(page);
@@ -771,8 +772,9 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
         const cover = await page.locator('[data-pb2-cover-count]').textContent();
         console.log(TAG + ' G cover before: ' + cover);
 
-        // 1. Render all → dialog → Start; the 202 names the two stale, unpinned scene nodes.
-        await page.getByTestId('pb2-render-all').click();
+        // 1. Edit › Render → Render all (no dialog since the Read | Edit split, §5.9: the settings are inline); the 202
+        //    names the stale, unpinned scene nodes. The run panel is the section's pinned-open activity dock.
+        await openEditSection(page, 'render');
         await expect(page.getByTestId('pb2-render-dialog')).toBeVisible();
         await captureToasts(page);
         const submitPromise = page.waitForResponse(r => r.request().method() === 'POST' && r.url().includes('/' + bookObjectId + '/render-all'), { timeout: 120000 });
@@ -801,8 +803,8 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
         mkdirSync(OUT_DIR, { recursive: true });
         await page.screenshot({ path: OUT_DIR + '/g-running.png', fullPage: true });
 
-        // 2. Leave the reader; the job is still there and still running.
-        await page.locator('button[title="Back to book list"]').click();
+        // 2. Leave the book (the header's back arrow to the library); the job is still there and still running.
+        await page.getByTestId('book-back').click();
         await expect(page).toHaveURL(/#!\/picture-book$/);
         await expect(progress).toHaveCount(0);
         await login(request);
@@ -810,10 +812,11 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
         console.log(TAG + ' G first poll after leaving (+' + (Date.now() - submittedAt) + 'ms): ' + JSON.stringify({ status: first.status, phase: first.phase, current: first.current, total: first.total, terminal: first.terminal }));
         expect(first.terminal, 'the run was still in flight when the reader was left: ' + JSON.stringify(first)).toBe(false);
 
-        // 3. Return: the reader re-attaches to the running job (progress panel, non-terminal) when it is
+        // 3. Return: Edit › Render re-attaches to the running job (dock panel, non-terminal) when it is
         //    still running; otherwise the run is simply complete. Both are logged; the job itself is then
         //    watched to terminal over REST.
-        await openReader(page, bookObjectId);
+        await page.goto('/#!/picture-book/' + bookObjectId + '/edit/render', { timeout: 30000 });
+        await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'render', { timeout: 30000 });
         const onReturn = await okJson(await request.get(REST + '/job/' + dto.jobId), 'GET /job on return');
         if (!onReturn.terminal) {
             await expect(progress).toBeVisible({ timeout: 30000 });
@@ -848,10 +851,12 @@ test.describe('PictureBook V3 P7-5 — Scenarios A–G on the Docker stack', () 
         expect(upper(runDto.runStatus)).toBe('COMPLETED');
 
         // 4. Inspect: the review page lists the nodes (the three materialized ones included); the pictures.
-        await page.goto('/#!/picture-book/' + bookObjectId + '/review', { timeout: 30000 });
-        await expect(page.getByTestId('pb2-review')).toBeVisible({ timeout: 30000 });
-        for (const idx of [1, 2, 4]) await expect(page.locator('[data-testid="pb2-review-node"][data-node-id="' + fx.nodes[idx].objectId + '"]')).toBeVisible({ timeout: 30000 });
-        for (const o of materialized) await expect(page.locator('[data-testid="pb2-review-node"][data-node-id="' + o.nodeObjectId + '"]')).toBeVisible({ timeout: 30000 });
+        // Edit › Review is master/detail (§5.8): every node is a list row; selecting one shows its detail.
+        await page.goto('/#!/picture-book/' + bookObjectId + '/edit/review', { timeout: 30000 });
+        await expect(page.getByTestId('pb2-review-md')).toBeVisible({ timeout: 30000 });
+        for (const idx of [1, 2, 4]) await expect(page.locator('[data-testid="pb2-review-row"][data-item-id="' + fx.nodes[idx].objectId + '"]')).toBeVisible({ timeout: 30000 });
+        for (const o of materialized) await expect(page.locator('[data-testid="pb2-review-row"][data-item-id="' + o.nodeObjectId + '"]')).toBeVisible({ timeout: 30000 });
+        await selectReviewNode(page, fx.nodes[2].objectId);
         await page.screenshot({ path: OUT_DIR + '/g-review.png', fullPage: true });
         await savePng(request, PB, o2.artifactObjectId, 'g-scene2-v2.png');
         await savePng(request, PB, o4.artifactObjectId, 'g-scene4-v4.png');

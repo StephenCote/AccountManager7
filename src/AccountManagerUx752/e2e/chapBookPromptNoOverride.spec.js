@@ -354,7 +354,7 @@ test.describe('P10-C 1 — ChapBook page prompt with no override', () => {
         const chain = await readChain(request, bookOid, 'UI');
 
         // Review view: the first page card's "Re-render this page" with its prompt textarea untouched.
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
         const promptBox = page.locator('textarea.cb-scene-prompt').first();
         await expect(promptBox, 'page 1 prompt textarea').toBeVisible({ timeout: 60000 });
         const shownPrompt = await promptBox.inputValue();
@@ -415,7 +415,7 @@ test.describe('P10-C 1 — ChapBook page prompt with no override', () => {
 
             await loginSharedWithToasts(page);
             const getPosts = captureGeneratePosts(page);
-            await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+            await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
             const promptBox = page.locator('textarea.cb-scene-prompt').first();
             await expect(promptBox, 'page 1 prompt textarea').toBeVisible({ timeout: 60000 });
             const shownPrompt = await promptBox.inputValue();

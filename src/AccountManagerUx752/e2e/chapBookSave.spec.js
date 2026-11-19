@@ -49,7 +49,7 @@ test.describe('ChapBook Review — explicit Save', () => {
         const oid = before[0].objectId;
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
 
         const card = sceneCards(page).first();
         await expect(card).toBeVisible({ timeout: 20000 });
@@ -88,7 +88,7 @@ test.describe('ChapBook Review — explicit Save', () => {
         const oid1 = before[1].objectId;
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
 
         // P10-C 4: the review is master/detail — one card at a time, picked from the page list. Before
         // P10-C 4 this filled cards.nth(0) and cards.nth(1) side by side; now each page is selected in turn

@@ -43,7 +43,7 @@ test.describe('ChapBook Review — per-scene SD config override', () => {
         expect(s0.configOverride == null || s0.configOverride === '', 'no override at seed').toBe(true);
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
 
         const card = page.locator('div.rounded-lg.border')
             .filter({ has: page.locator('textarea[rows="12"]') }).first();

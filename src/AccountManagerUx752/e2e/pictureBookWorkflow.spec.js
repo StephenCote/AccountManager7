@@ -98,7 +98,7 @@ async function loginAsSharedUser(page) {
 
 async function navigateToWorkflow(page, bookObjectId) {
     await page.evaluate((oid) => {
-        window.location.hash = '!/picture-book/' + oid + '/workflow';
+        window.location.hash = '!/picture-book/' + oid + '/edit/canvas';
     }, bookObjectId);
     await page.waitForTimeout(2000);
 }
@@ -221,10 +221,11 @@ test.describe('PictureBook Workflow Graph', () => {
 
         let hash = await page.evaluate(() => window.location.hash);
         // Mithril router must not have fallen through to a 404/error page
-        // (it would redirect to /main for unregistered routes in some setups)
-        // — just confirm the hash contains 'picture-book' and 'workflow'
+        // (it would redirect to /main for unregistered routes in some setups).
+        // Since the Read | Edit split the legacy /workflow route is registered as a redirect (replace) into
+        // Edit › Canvas (aiDocs/PictureBookUxConsistencyDesign.md §3, D8) — confirm it landed there.
         expect(hash).toContain('picture-book');
-        expect(hash).toContain('workflow');
+        expect(hash).toContain('/picture-book/test-prefix-check/edit/canvas');
     });
 
 });
@@ -671,7 +672,7 @@ test.describe('Workflow Canvas — real PB2 book', () => {
     test('workflow canvas renders node cards for seeded ChapBook', async ({ page }) => {
         test.skip(!wfPb2BookObjectId, 'wfPb2BookObjectId not seeded');
         await loginAsSharedUser(page);
-        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/workflow'; }, wfPb2BookObjectId);
+        await page.evaluate((oid) => { window.location.hash = '!/picture-book/' + oid + '/edit/canvas'; }, wfPb2BookObjectId);
         await page.waitForFunction(
             () => document.querySelectorAll('[data-node-id]').length > 0 ||
                   document.body.innerText.includes('Failed') ||

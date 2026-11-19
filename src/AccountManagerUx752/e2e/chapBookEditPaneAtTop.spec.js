@@ -7,9 +7,11 @@
  * the create navigates to, and the review view's scene cards, start thousands of px below the viewport.
  *
  * This spec drives the REAL UI create (dialog → job → LLM analysis on the live chat route → navigate to
- * /chap-book/read/) as the shared user (never admin), then measures bounding boxes against the viewport:
- *   - read view:   the reader shell's "Back to Poem Library" control is inside the viewport at scroll 0
- *   - review view: the first scene card action (cb-page-analyze) is inside the viewport at scroll 0
+ * /chap-book/edit/:id?guided=1 — design §7.2 since the Read | Edit split) as the shared user (never admin), then
+ * measures bounding boxes against the viewport:
+ *   - edit view right after create: the first page card action (cb-page-analyze) is inside the viewport at scroll 0
+ *   - read view:   the reader's bookHeader back control ("Back to ChapBooks") is inside the viewport at scroll 0
+ *   - edit › pages view (by route): the first scene card action is inside the viewport at scroll 0
  *   - create view: the "My ChapBooks" heading is inside the viewport at scroll 0 (same queue, same fold)
  * Timings are observations, never thresholds — the create waits generously for the live LLM.
  *
@@ -38,7 +40,9 @@ async function placement(page, locator) {
     const box = await locator.first().boundingBox();
     const vp = page.viewportSize();
     const scrollY = await page.evaluate(() => window.scrollY);
-    const panelBox = await page.locator(PANEL).boundingBox();
+    // The poem-queue panel is library-only since the Read | Edit split (§7.2): absent on Edit / Read, so measure it
+    // only where it exists (boundingBox() on a missing element waits out the whole test timeout).
+    const panelBox = (await page.locator(PANEL).count()) ? await page.locator(PANEL).boundingBox() : null;
     const queueRows = await page.locator(PANEL + ' tbody tr').count();
     return {
         top: box ? Math.round(box.y) : null, bottom: box ? Math.round(box.y + box.height) : null,
@@ -70,7 +74,7 @@ function rowCheckbox(page, title) {
 
 test.describe('ChapBook create → the edit / reader pane is in view (P10-C 2)', () => {
 
-    test('UI create as the shared user lands with the reader in view; review + create views too', async ({ page, request }) => {
+    test('UI create as the shared user lands with the edit pane in view; read + edit + create views too', async ({ page, request }) => {
         // One live-LLM create (two poems) plus three measured views.
         test.setTimeout(900000);
         await seedPoems(request);
@@ -98,29 +102,41 @@ test.describe('ChapBook create → the edit / reader pane is in view (P10-C 2)',
         const t0 = Date.now();
         await dialog.getByRole('button', { name: 'Create', exact: true }).click();
 
-        // The create runs the per-poem analysis on the live chat route, then navigates to the reader.
-        await page.waitForURL(/#!\/chap-book\/read\//, { timeout: 840000 });
-        const bookOid = page.url().split('/chap-book/read/')[1].split(/[?#]/)[0];
-        console.log('[p10c2] created ' + bookOid + ' after ' + Math.round((Date.now() - t0) / 1000) + 's (observation)');
-        const back = page.locator('button[title="Back to Poem Library"]');
-        await expect(back.first()).toBeAttached({ timeout: 60000 });
-        await expect(page.locator(PANEL)).toBeVisible();
-        const readView = await placement(page, back);
-        await shot(page, '03-after-create-read.png');
-        console.log('[p10c2] read view after create: ' + JSON.stringify(readView));
-
-        // REVIEW view ("edit view"): the scene cards with the prompt editors.
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        // The create runs the per-poem analysis on the live chat route, then opens the book in Edit (guided, §7.2).
+        await page.waitForURL(/#!\/chap-book\/edit\//, { timeout: 840000 });
+        const bookOid = decodeURIComponent(page.url()).split('/chap-book/edit/')[1].split(/[/?#]/)[0];
+        console.log('[p10c2] created ' + bookOid + ' after ' + Math.round((Date.now() - t0) / 1000) + 's (observation) → ' + decodeURIComponent(new URL(page.url()).hash));
+        await expect(page.getByTestId('book-workspace')).toBeVisible({ timeout: 60000 });
+        await expect(page.locator(PANEL), 'the poem queue is library-only (§7.2)').toHaveCount(0);
+        // The guided entry resolves to the next incomplete section (in practice Pages); measure the page card there.
+        await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'pages', { timeout: 60000 });
         await expect(page.locator('[data-testid="cb-page-analyze"]').first()).toBeAttached({ timeout: 60000 });
-        await expect(page.locator(PANEL)).toBeVisible();
+        const afterCreateView = await placement(page, page.locator('[data-testid="cb-page-analyze"]'));
+        await shot(page, '03-after-create-edit.png');
+        console.log('[p10c2] edit view after create: ' + JSON.stringify(afterCreateView));
+
+        // READ view: the bookHeader back control.
+        await page.goto('/#!/chap-book/read/' + bookOid, { timeout: 30000 });
+        const back = page.getByTestId('book-back');
+        await expect(back).toHaveAttribute('title', 'Back to ChapBooks', { timeout: 60000 });
+        await expect(page.locator(PANEL)).toHaveCount(0);
+        const readView = await placement(page, back);
+        await shot(page, '03b-read-view.png');
+        console.log('[p10c2] read view: ' + JSON.stringify(readView));
+
+        // Edit › Pages by route: the scene cards with the prompt editors.
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
+        await expect(page.locator('[data-testid="cb-page-analyze"]').first()).toBeAttached({ timeout: 60000 });
+        await expect(page.locator(PANEL)).toHaveCount(0);
         const reviewView = await placement(page, page.locator('[data-testid="cb-page-analyze"]'));
         await shot(page, '04-review-view.png');
         console.log('[p10c2] review view: ' + JSON.stringify(reviewView));
 
         fs.mkdirSync(OUT_DIR, { recursive: true });
-        fs.writeFileSync(path.join(OUT_DIR, 'results.json'), JSON.stringify({ bookOid, createView, readView, reviewView }, null, 2));
+        fs.writeFileSync(path.join(OUT_DIR, 'results.json'), JSON.stringify({ bookOid, createView, afterCreateView, readView, reviewView }, null, 2));
 
-        expectInView(readView, 'reader shell (Back to Poem Library) right after the UI create');
+        expectInView(afterCreateView, 'first page card action (cb-page-analyze) in Edit right after the UI create');
+        expectInView(readView, 'reader header (Back to ChapBooks) on the read view');
         expectInView(reviewView, 'first scene card action (cb-page-analyze) on the review view');
         expectInView(createView, '"My ChapBooks" heading on the create view');
     });

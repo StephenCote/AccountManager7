@@ -43,7 +43,7 @@ test.describe('ChapBook Review — per-page font color', () => {
         const scene0Oid = before[0].objectId;
 
         await loginAsSharedUser(page);
-        await page.goto('/#!/chap-book/review/' + bookOid, { timeout: 30000 });
+        await page.goto('/#!/chap-book/edit/' + bookOid + '/pages', { timeout: 30000 });
 
         // First scene card, scoped by its stanza textarea (rows=12 — the prompt textarea is rows=3).
         const card = page.locator('div.rounded-lg.border')

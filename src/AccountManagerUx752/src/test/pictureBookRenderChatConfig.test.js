@@ -9,11 +9,14 @@
  *
  * Covers: renderBody (pure), normalizeRun / the submit normalizer (chatConfig null ↔ ref), the three workflow
  * helpers' wire shape (query flag + JSON body only when a name is set), the reader's seeding (carried config,
- * else the library default, a pick wins), its four submit sites, the header control and the run-progress chip.
+ * else the library default, a pick wins), its four submit sites (Render / Plan & generate now in Edit › Scenes ›
+ * Render, Render all in Edit › Render), the chat config control (Edit › Book and Edit › Render — never in Read,
+ * aiDocs/PictureBookUxConsistencyDesign.md §5.1 / §5.2) and the run-progress chip.
  * The live counterpart is e2e/pictureBookRenderChatConfig.spec.js (PB_LLM_TESTS=1), which asserts the run's
  * chatConfig through GET /run/{id} against the Docker stack.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import m from 'mithril';
 import * as wf from '../workflows/pictureBookWorkflow.js';
 import { Dialog } from '../components/dialogCore.js';
 import { page } from '../core/pageClient.js';
@@ -166,15 +169,22 @@ describe('renderScene / renderAll / renderPlanScene send {chatConfigName} only w
 describe('reader: the picked / carried / default chat config reaches every render submit', () => {
     let origFetch;
     let pbf;
+    let edit;
+    function render(vnode) { let d = document.createElement('div'); m.render(d, vnode); return d; }
+    function ctxFor(over) { return Object.assign({ kind: 'pb', bookObjectId: 'B1', section: 'scenes', item: 's1', tab: 'render', go() {}, select() {}, setTab() {} }, over || {}); }
 
     beforeEach(async () => {
         origFetch = global.fetch;
         pbf = await import('../features/pictureBook.js');
+        edit = await import('../features/pictureBookEdit.js');
+        edit.__resetPbEditForTest();
+        edit.__setPbEditStateForTest({ sceneRecs: { s1: { loading: false, error: null, rec: { id: 1, objectId: 's1', title: 'Arrival' } } } });
         pbf.__pb2StopWatchingForTest();
         pbf.__setPb2V3StateForTest({
             pb2AutoApprove: false, pb2AutoApproveSaving: false, pb2Run: null, pb2ResumeRun: null, pb2Submitting: false,
             pb2CurrentPage: 1, pb2BookObjectId: 'B1', pb2BookName: 'Harlot\'s Eight', pb2PollIntervalMs: 5,
-            pb2Pages: [SCENE], pb2ChatConfig: null, pb2ChatConfigResolving: false
+            pb2Pages: [SCENE], pb2ChatConfig: null, pb2ChatConfigResolving: false, pb2StyleDescribed: null, pb2IsChapBook: false,
+            pb2SceneDegradations: { n1: { loading: false, summary: null, error: null } }
         });
         vi.spyOn(am7client, 'clearCache').mockImplementation(() => {});
         vi.spyOn(am7client, 'dotPath').mockReturnValue('Public');
@@ -254,7 +264,8 @@ describe('reader: the picked / carried / default chat config reaches every rende
         pbf.__setPb2PlanStateForTest({ bookId: null, sceneOid: null, plan: null, error: null, loading: false, rendering: false, open: false, inspect: false, preset: '' });
         let calls = mockFetch();
         let openSpy = vi.spyOn(Dialog, 'open');
-        findByTestId(pbf.renderPb2ScenePage(), 'pb2-plan-render').attrs.onclick();
+        // the button is in Edit › Scenes › Render (§5.6)
+        render(edit.scenesSection.body(ctxFor())).querySelector('[data-testid="pb2-plan-render"]').click();
         await flushPromises();
         let cfg = openSpy.mock.calls[0][0];
         await cfg.actions.view()[1].onclick();
@@ -265,16 +276,30 @@ describe('reader: the picked / carried / default chat config reaches every rende
         expect(page.toast).toHaveBeenCalledWith('success', 'Scene rendered (artifact art-9)');
     });
 
-    it('Tools item: "(click to select)" without a config, the name with one, "Resolving default…" while resolving', () => {
-        // The reader's chat config pick lives in the "Optional tools" overflow (pb2OverflowItems), not on the toolbar.
-        function item() { return pbf.pb2OverflowItems().find(i => i.attrs && i.attrs['data-testid'] === 'pb2-chat-config') || null; }
-        expect(findByTestId(pbf.renderPb2Header(), 'pb2-chat-config')).toBeNull();
-        expect(item()).not.toBeNull();
-        expect(item().label).toContain('(click to select)');
+    // Intentionally changed (§5.1 / §5.2): the pick moved from the Read "Tools" overflow to Edit › Book (and the same
+    // control in Edit › Render); Read has none.
+    it('Edit › Book control: "(click to select)" without a config, the name with one, "Resolving default…" while resolving; none in Read', () => {
+        function label() { return render(edit.bookSection.body(ctxFor({ section: 'book', item: null, tab: null }))).querySelector('[data-testid="pb2-chat-config"]').textContent; }
+        function renderLabel() { return render(edit.renderSection.body(ctxFor({ section: 'render', item: null, tab: null }))).querySelector('[data-testid="pb-render-chat-config"]').textContent; }
+        expect(render(pbf.renderPb2Header()).querySelector('[data-testid="pb2-chat-config"]')).toBeNull();
+        expect(label()).toContain('(click to select)');
+        expect(renderLabel()).toContain('(click to select)');
         pbf.__setPb2V3StateForTest({ pb2ChatConfig: CFG });
-        expect(item().label).toContain(CFG.name);
+        expect(label()).toContain(CFG.name);
+        expect(renderLabel()).toContain(CFG.name);
         pbf.__setPb2V3StateForTest({ pb2ChatConfig: null, pb2ChatConfigResolving: true });
-        expect(item().label).toContain('Resolving default…');
+        expect(label()).toContain('Resolving default…');
+    });
+    it('a pick through Edit › Book is the config the next submit sends', async () => {
+        edit.__resetPbEditForTest();
+        // pbBookApi.setChatConfig is the onPick the Edit › Book / Render controls hand to the picker
+        pbf.pbBookApi.setChatConfig(CFG);
+        expect(pbf.__pb2V3StateForTest().pb2ChatConfig).toEqual(CFG);
+        let calls = mockFetch();
+        await pbf.pbBookApi.renderAll();
+        await waitForTerminal();
+        expect(calls[0].method + ' ' + calls[0].url).toBe('POST /rest/olio/picture-book/B1/render-all');
+        expect(calls[0].body).toEqual({ chatConfigName: CFG.name });
     });
 
     it('opening a book seeds the carried config (a ChapBook) else the library default (contentAnalysis first), and never overwrites a pick', async () => {
@@ -295,15 +320,15 @@ describe('reader: the picked / carried / default chat config reaches every rende
                 if (/\/settings\/auto-approve$/.test(url)) return jsonResponse(200, { autoApprove: false });
                 return jsonResponse(404, { error: 'unexpected ' + url });
             });
-            // A PictureBook: nothing carried → the library default.
-            pbf.__setPb2V3StateForTest({ pb2BookObjectId: 'B1', pb2ChatConfig: null });
+            // A PictureBook: nothing carried → the library default. "Opening" means a book other than the one already
+            // open: pb2EnsureBook only refreshes the open book (so Read ⇄ Edit keeps watching its run, §4.5).
+            pbf.__setPb2V3StateForTest({ pb2BookObjectId: null, pb2Pages: [], pb2ChatConfig: null });
             pbf.routes['/picture-book/v2/:pb2BookObjectId'].oninit({ attrs: { pb2BookObjectId: 'B1' } });
             await flushPromises(); await flushPromises(); await flushPromises();
             expect(pbf.__pb2V3StateForTest().pb2ChatConfig).toEqual({ name: 'contentAnalysis', objectId: 'cc-ca' });
             expect(resolve).toHaveBeenCalledWith('contentAnalysis');
             // A ChapBook: the carried config wins and the library is not asked.
             resolve.mockClear();
-            pbf.__setPb2V3StateForTest({ pb2BookObjectId: 'CB1' });
             pbf.routes['/picture-book/v2/:pb2BookObjectId'].oninit({ attrs: { pb2BookObjectId: 'CB1' } });
             await flushPromises(); await flushPromises();
             expect(pbf.__pb2V3StateForTest().pb2ChatConfig).toEqual({ name: 'cb-carried', objectId: 'cc-cb' });

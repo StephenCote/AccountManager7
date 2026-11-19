@@ -12,13 +12,20 @@ import {
 } from './pictureBookWorkflow.js';
 import { reimage } from './reimage.js';
 import { outfitBuilder } from './outfitBuilder.js';
+import { registerDirty, unregisterDirty, guardDirty } from '../components/dirtyGuard.js';
+import { dirtyMark } from '../components/bookUi.js';
+import { chip } from '../components/pageHeader.js';
+import { btn } from '../components/buttons.js';
+import { editLink, ensureSelection } from './bookWorkspaceNav.js';
 
 /**
  * PictureBook "Manage Characters" workflow — review/edit extracted charPerson records for a book:
  * customize/complete statistics, generate/tag apparel per scene, regenerate a portrait.
- * Launched from the PictureBook wizard (step 4/5) via openCharacterManager(bookObjectId), and
- * directly from the PB2 book list / reader header via openCharacterManager(bookObjectId,
- * {standalone: true}) — see openFullEditor for what `standalone` changes.
+ * Rendered inline by the PictureBook wizard's step 3 (initCharacterManager + renderCharacterManagerContent), and as
+ * the Edit > Characters section of the book workspace via `charactersSection` (a bookWorkspace SectionAdapter:
+ * selection from the route's :item, statistic drafts with explicit Save / Revert under the dirty guard, D4). The
+ * PB2 book list / reader header still open the deprecated pop-in, openCharacterManager(bookObjectId,
+ * {standalone: true}), until they are migrated (D2) — see openFullEditor for what `standalone` changes.
  *
  * Reuses existing workflows wholesale rather than re-implementing them:
  *  - reimage(entity, inst, opts) — portrait regeneration (same call the generic charPerson
@@ -78,6 +85,22 @@ let wardrobeBusy = null;      // 'add' | 'migrate' | 'default:<apparelOid>' | 'r
 let wardrobeAddText = '';     // the "Add alternate" description input
 let wardrobeRuns = {};        // apparelOid -> {jobId, job, error} while a reference render job is watched
 let wardrobeAborts = {};      // apparelOid -> AbortController (stops WATCHING only; the server job keeps going)
+// Edit › Characters (design §5.4): the manager rendered as a bookWorkspace section. `workspace` implies
+// `standalone` (no wizard Dialog underneath) and adds: selection routed through ctx.select (guarded),
+// cross-links into the workspace (§4.7), and the dirtyGuard registration of the drafts below.
+let workspace = false;
+let wsCtx = null;             // the latest SectionAdapter ctx (its select() is what a list click calls)
+let pendingItem;              // ctx.item seen before the list finished loading (undefined = none)
+// D4: statistic slider drafts, per character. charObjectId -> { name, statsId, statsObjectId, values:{field:v}, orig:{field:v} }.
+// A slider move writes here only; Save sends the changed fields in one PATCH; Revert drops the draft.
+let statDrafts = {};
+let savingStats = false;
+// §4.7: the book's /pages rows, read once per workspace section init (only when an affected panel has scenes
+// to link), to map the affected-by sceneIndexes onto scene objectIds — affected-by carries indexes only.
+let scenePages = null;        // { forBook, loading, data, error }
+// Rail status per book: { loaded, count } of characters carrying a warning badge. Survives resetState.
+const statusCache = {};
+const DIRTY_KEY = 'pb-character';
 
 function resetState() {
     bookObjectId = null;
@@ -105,6 +128,118 @@ function resetState() {
     wardrobeBusy = null;
     wardrobeAddText = '';
     wardrobeRuns = {};
+    workspace = false;
+    wsCtx = null;
+    pendingItem = undefined;
+    statDrafts = {};
+    savingStats = false;
+    scenePages = null;
+    unregisterDirty(DIRTY_KEY);
+}
+
+// ── Statistic drafts (D4) ───────────────────────────────────────────────
+
+/** The draft of one character, or null. */
+function statDraftOf(charObjectId) {
+    let d = charObjectId ? statDrafts[charObjectId] : null;
+    return d && Object.keys(d.values).length ? d : null;
+}
+
+function anyStatDraft() {
+    return Object.keys(statDrafts).some(function (k) { return !!statDraftOf(k); });
+}
+
+/** Slider move: record the value against the character's draft; moving back to the stored value clears that field. */
+function setStatDraft(entity, field, value) {
+    let statistics = entity && entity.statistics;
+    if (!statistics) return;
+    let oid = entity.objectId;
+    let d = statDrafts[oid];
+    if (!d) d = statDrafts[oid] = { name: entity.name || oid, statsId: statistics.id, statsObjectId: statistics.objectId, values: {}, orig: {} };
+    let stored = statistics[field] != null ? statistics[field] : 0;
+    if (value === stored) delete d.values[field];
+    else d.values[field] = value;
+    m.redraw();
+}
+
+function statValue(entity, field) {
+    let d = statDraftOf(entity && entity.objectId);
+    if (d && field in d.values) return d.values[field];
+    let s = entity && entity.statistics;
+    return s && s[field] != null ? s[field] : 0;
+}
+
+/**
+ * Save one character's statistic draft: ONE sparse PATCH of olio.statistics (identity + changed fields only — the
+ * same write the slider used to send per move). page.patchObject resolves undefined/false on failure; then the
+ * draft is kept and the error toasted (model-api.md: never discard the update result). Returns true on success.
+ */
+async function saveStatDraft(charObjectId) {
+    let d = statDraftOf(charObjectId);
+    if (!d) return true;
+    if (savingStats) return false;
+    let changed = Object.assign({}, d.values);
+    let patch = Object.assign({ schema: 'olio.statistics', id: d.statsId, objectId: d.statsObjectId }, changed);
+    savingStats = true;
+    m.redraw();
+    let ok = false;
+    try {
+        ok = !!(await page.patchObject(patch));
+        if (!ok) throw new Error('server rejected the update');
+    } catch (e) {
+        ok = false;
+        page.toast('error', 'Failed to save statistics for ' + d.name + ': ' + ((e && e.message) || e));
+    }
+    savingStats = false;
+    if (ok) {
+        // Apply what the server accepted to the loaded record, then drop only those fields from the draft.
+        if (selectedInst && selectedInst.entity && selectedInst.entity.objectId === charObjectId && selectedInst.entity.statistics) {
+            Object.assign(selectedInst.entity.statistics, changed);
+        }
+        let cur = statDrafts[charObjectId];
+        if (cur) Object.keys(changed).forEach(function (f) { if (cur.values[f] === changed[f]) delete cur.values[f]; });
+        if (cur && !Object.keys(cur.values).length) delete statDrafts[charObjectId];
+        am7client.clearCache('olio.statistics', true);
+        page.toast('success', 'Statistics saved');
+    }
+    m.redraw();
+    return ok;
+}
+
+function revertStatDraft(charObjectId) {
+    delete statDrafts[charObjectId];
+    m.redraw();
+}
+
+function identityDirty() {
+    return !!(editingIdentity && selectedInst && identityChangeKind(selectedInst.entity, editName, editDescription) !== 'none');
+}
+
+function dirtyLabel() {
+    let names = Object.keys(statDrafts).filter(function (k) { return !!statDraftOf(k); }).map(function (k) { return statDrafts[k].name; });
+    if (identityDirty() && names.indexOf(selectedInst.entity.name) < 0) names.unshift(selectedInst.entity.name);
+    return 'Character — ' + (names.length ? names.join(', ') : ((selectedInst && selectedInst.entity && selectedInst.entity.name) || ''));
+}
+
+/** dirtyGuard source for Edit › Characters: every unsaved statistic draft plus an open, changed identity edit. */
+function registerCharacterDirty() {
+    registerDirty(DIRTY_KEY, {
+        get label() { return dirtyLabel(); },
+        isDirty: function () { return anyStatDraft() || identityDirty(); },
+        save: async function () {
+            if (identityDirty() && !(await saveIdentity())) return false;
+            let ids = Object.keys(statDrafts);
+            for (let i = 0; i < ids.length; i++) {
+                if (!(await saveStatDraft(ids[i]))) return false;
+            }
+            return true;
+        },
+        discard: function () {
+            statDrafts = {};
+            editingIdentity = false;
+            m.redraw();
+        }
+    });
 }
 
 function stopWardrobeWatches() {
@@ -165,7 +300,42 @@ function scenesForIndexes(pages, indexes) {
 }
 
 function v3Enabled() {
-    return standalone && !!bookObjectId;
+    return (standalone || workspace) && !!bookObjectId;
+}
+
+/** Leave for another route through the dirty guard (workspace mode). */
+function guardedGo(route) {
+    return guardDirty(function () { m.route.set(route); });
+}
+
+/** §4.7: the ONE /pages read per workspace section init, so affected sceneIndexes can link to their scenes. */
+async function loadScenePages() {
+    if (!workspace || !bookObjectId) return;
+    if (scenePages && scenePages.forBook === bookObjectId) return;
+    let book = bookObjectId;
+    scenePages = { forBook: book, loading: true, data: null, error: null };
+    try {
+        let data = await bookPages(book);
+        if (!scenePages || scenePages.forBook !== book) return;
+        scenePages.data = Array.isArray(data) ? data : [];
+    } catch (e) {
+        if (!scenePages || scenePages.forBook !== book) return;
+        scenePages.error = (e && e.message) || 'Could not read the book pages';
+    }
+    scenePages.loading = false;
+    m.redraw();
+}
+
+/** sceneIndex → scene objectId from the cached /pages rows (null when unknown). */
+function sceneObjectIdFor(sceneIndex) {
+    if (!scenePages || !Array.isArray(scenePages.data)) return null;
+    let hit = scenePages.data.find(function (p) { return p && p.objectId && Number(p.sceneIndex) === Number(sceneIndex); });
+    return hit ? hit.objectId : null;
+}
+
+function openScene(sceneObjectId) {
+    if (!workspace || !sceneObjectId) return;
+    guardedGo(editLink('pb', bookObjectId, { type: 'scene', id: sceneObjectId, tab: 'page' }));
 }
 
 /** The ONE affected-by read for a character detail (open, or post-save re-open). */
@@ -185,6 +355,7 @@ async function loadAffected(charObjectId) {
     }
     affected.loading = false;
     m.redraw();
+    if (workspace && affected.data && affectedSummary(affected.data).count) await loadScenePages();
 }
 
 /** The book's bookType ('CHAPBOOK' / …) or null when it cannot be read. */
@@ -226,6 +397,7 @@ async function loadStyleDescribed() {
 /** Style → the book style view. Standalone only, as openReviewQueue. */
 function openBookStyle() {
     if (!v3Enabled()) return;
+    if (workspace) { guardedGo(editLink('pb', bookObjectId, { type: 'style' })); return; }
     Dialog.closeAll();
     m.route.set('/picture-book/' + bookObjectId + '/style');
 }
@@ -233,6 +405,7 @@ function openBookStyle() {
 /** Review → the book's review queue. Standalone only (the manager is the only Dialog open), as openFullEditor. */
 function openReviewQueue() {
     if (!v3Enabled()) return;
+    if (workspace) { guardedGo(editLink('pb', bookObjectId, { type: 'review' })); return; }
     Dialog.closeAll();
     m.route.set('/picture-book/' + bookObjectId + '/review');
 }
@@ -337,8 +510,26 @@ function renderAffectedPanel() {
         let s = affectedSummary(a.data);
         let gate = renderGate({ styleDescribed: styleDescribed });
         body = m('div', { class: 'flex items-center gap-2 flex-wrap text-sm' }, [
-            m('span', { 'data-testid': 'pbchar-affected-count', 'data-count': String(s.count) },
-                'Affected scenes: ' + s.count + (s.count ? ' (' + s.sceneIndexes.join(', ') + ')' : '')),
+            workspace && s.count
+                ? m('span', { 'data-testid': 'pbchar-affected-count', 'data-count': String(s.count) }, [
+                    'Affected scenes: ' + s.count + ' (',
+                    s.sceneIndexes.map(function (idx, i) {
+                        let sid = sceneObjectIdFor(idx);
+                        let sep = i ? ', ' : '';
+                        if (!sid) return [sep, m('span', { 'data-testid': 'pbchar-affected-scene-' + idx, title: scenePages && scenePages.loading ? 'Resolving scene…' : 'No page row for this scene' }, String(idx))];
+                        return [sep, m('a', {
+                            href: '#',
+                            'data-testid': 'pbchar-affected-scene-' + idx,
+                            'data-scene-objectid': sid,
+                            class: 'text-blue-600 dark:text-blue-400 hover:underline',
+                            title: 'Open scene ' + idx + ' in Edit › Scenes',
+                            onclick: function (e) { e.preventDefault(); openScene(sid); }
+                        }, String(idx))];
+                    }),
+                    ')'
+                ])
+                : m('span', { 'data-testid': 'pbchar-affected-count', 'data-count': String(s.count) },
+                    'Affected scenes: ' + s.count + (s.count ? ' (' + s.sceneIndexes.join(', ') + ')' : '')),
             s.drifted ? m('span', { 'data-testid': 'pbchar-affected-drifted', class: 'text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200', title: 'Nodes: ' + s.driftedHandles.join(', ') },
                 s.staleCount + ' stale') : null,
             m('button', {
@@ -632,10 +823,57 @@ function renderWardrobePanel() {
     ]);
 }
 
+/** The warning badges a character row carries (no portrait / no apparel / apparel failed / stats failed). */
+function characterWarnings(c) {
+    c = c || {};
+    let w = [];
+    if (!c.hasPortrait) w.push('no portrait');
+    if (!c.apparelCount) w.push('no apparel');
+    if (c.failedApparel) w.push('apparel failed');
+    if (c.failedStatistics) w.push('stats failed');
+    return w;
+}
+
+function warningCount(list) {
+    return (Array.isArray(list) ? list : []).filter(function (c) { return characterWarnings(c).length > 0; }).length;
+}
+
+function noteStatus(book, list) {
+    if (!book) return;
+    statusCache[book] = { loaded: true, count: warningCount(list), total: Array.isArray(list) ? list.length : 0 };
+}
+
+function charactersStatusFor(theBookObjectId) {
+    let st = statusCache[theBookObjectId];
+    if (!st || !st.loaded) return null;
+    return {
+        kind: 'count',
+        count: st.count,
+        title: st.count ? st.count + ' character' + (st.count !== 1 ? 's need' : ' needs') + ' attention' : 'Every character has a portrait and apparel'
+    };
+}
+
+/**
+ * Rail status for Edit > Characters, for the workspace's onEnter: the same GET /{book}/characters list read the
+ * manager makes (no new endpoint). Resolves the status; a failed read leaves it unknown (null) and never throws.
+ */
+async function loadCharactersStatus(theBookObjectId) {
+    if (!theBookObjectId) return null;
+    try {
+        let list = await listCharacters(theBookObjectId);
+        noteStatus(theBookObjectId, list);
+    } catch (e) {
+        return null;
+    }
+    m.redraw();
+    return charactersStatusFor(theBookObjectId);
+}
+
 async function refreshList() {
     try {
         characters = await listCharacters(bookObjectId);
         listError = null;
+        noteStatus(bookObjectId, characters);
     } catch (e) {
         // §24 UAT-6: never leave the dialog on "Loading characters…" with an unhandled rejection. The list
         // is emptied (a stale list after a failed refresh would misreport what the server holds), the
@@ -667,15 +905,6 @@ async function selectCharacter(objectId) {
     await Promise.all([loadAffected(objectId), loadWardrobe(objectId)]);
 }
 
-async function patchStatField(statistics, field, value) {
-    await page.patchObject({
-        schema: 'olio.statistics',
-        id: statistics.id,
-        objectId: statistics.objectId,
-        [field]: value
-    });
-}
-
 function beginEditIdentity() {
     if (!selectedInst) return;
     editName = selectedInst.entity.name || '';
@@ -696,12 +925,12 @@ function cancelEditIdentity() {
  * undefined on failure (am7client.patch swallows the rejection), so treat a falsy result as failure.
  */
 async function saveIdentity() {
-    if (!selectedInst || savingIdentity) return;
+    if (!selectedInst || savingIdentity) return false;
     let ent = selectedInst.entity;
     let name = (editName || '').trim();
     if (!name) {
         page.toast('error', 'Name is required');
-        return;
+        return false;
     }
     let desc = editDescription || '';
     let patch = { schema: 'olio.charPerson', id: ent.id, objectId: ent.objectId, name: name };
@@ -709,6 +938,7 @@ async function saveIdentity() {
     let changeKind = identityChangeKind(ent, name, desc);
     savingIdentity = true;
     m.redraw();
+    let saved = false;
     try {
         let ok = await page.patchObject(patch);
         if (!ok) throw new Error('server rejected the update');
@@ -721,6 +951,7 @@ async function saveIdentity() {
         // caveat is kept for its panel when only unwatched fields changed.
         affected = null;
         lastSaveKind = changeKind;
+        saved = true;
         await selectCharacter(ent.objectId);
         await refreshList();
     } catch (e) {
@@ -728,6 +959,7 @@ async function saveIdentity() {
     }
     savingIdentity = false;
     m.redraw();
+    return saved;
 }
 
 async function doReimage() {
@@ -805,6 +1037,7 @@ async function doMergeSelected() {
         }
         mergeMode = false;
         mergeSelection = {};
+        dropIds.forEach(function (id) { delete statDrafts[id]; });
         await refreshList();
     } catch (e) {
         page.toast('error', 'Merge failed: ' + (e.message || e));
@@ -850,9 +1083,11 @@ async function doDeleteSelected() {
             page.toast('success', msg);
         }
         delete mergeSelection[selectedObjectId];
+        delete statDrafts[selectedObjectId];
         selectedObjectId = null;
         selectedInst = null;
         await refreshList();
+        if (workspace) applyItem(null);
     } catch (e) {
         page.toast('error', 'Delete failed: ' + (e.message || e));
     }
@@ -893,7 +1128,10 @@ function openInNewTab(type, objectId) {
  */
 function openFullEditor(entity) {
     let type = entity[am7model.jsonModelKey] || 'olio.charPerson';
-    if (standalone) {
+    if (workspace) {
+        // Edit > Characters: leaving the workspace drops drafts, so go through the guard (design 6.2-3).
+        guardedGo('/view/' + type + '/' + entity.objectId);
+    } else if (standalone) {
         Dialog.closeAll();
         m.route.set('/view/' + type + '/' + entity.objectId);
     } else {
@@ -918,13 +1156,27 @@ async function tagApparel(apparelObjectId) {
     }
 }
 
+/**
+ * A list click. In Edit > Characters it goes through ctx.select (routed, so the dirty guard runs and the URL names
+ * the character); the section's select() then loads it. Elsewhere (wizard step 3, the deprecated pop-in) it selects
+ * directly: statistic drafts are kept per character there, so switching does not lose them.
+ */
+function pickCharacter(objectId) {
+    if (workspace && wsCtx && typeof wsCtx.select === 'function') {
+        wsCtx.select(objectId);
+        return;
+    }
+    selectCharacter(objectId);
+}
+
 function renderCharacterListItem(c) {
     let isSelected = c.objectId === selectedObjectId;
-    let badges = [];
-    if (!c.hasPortrait) badges.push(m('span', { class: 'text-xs text-amber-600 dark:text-amber-400' }, 'no portrait'));
-    if (!c.apparelCount) badges.push(m('span', { class: 'text-xs text-amber-600 dark:text-amber-400' }, 'no apparel'));
-    if (c.failedApparel) badges.push(m('span', { class: 'text-xs text-red-600 dark:text-red-400' }, 'apparel failed'));
-    if (c.failedStatistics) badges.push(m('span', { class: 'text-xs text-red-600 dark:text-red-400' }, 'stats failed'));
+    let badges = characterWarnings(c).map(function (w) {
+        let red = w === 'apparel failed' || w === 'stats failed';
+        return m('span', { class: 'text-xs ' + (red ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400') }, w);
+    });
+    // design 6.2-2: an "unsaved" chip on a row whose character holds a statistic draft.
+    if (statDraftOf(c.objectId)) badges.push(chip('unsaved', 'amber', { 'data-testid': 'pbchar-row-unsaved' }));
 
     // In merge mode the KEEPER is whichever character is selected, so it gets no checkbox — you
     // cannot merge someone into themselves, and offering the box would only invite the attempt.
@@ -945,7 +1197,7 @@ function renderCharacterListItem(c) {
         class: 'px-3 py-2 rounded cursor-pointer border ' +
             (isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' : 'border-transparent hover:bg-gray-100 dark:hover:bg-gray-800'),
         'data-char-item': c.objectId,
-        onclick: function () { if (!mergeMode) selectCharacter(c.objectId); }
+        onclick: function () { if (!mergeMode) pickCharacter(c.objectId); }
     }, [
         m('div', { class: 'flex items-center' }, [
             checkbox,
@@ -958,28 +1210,42 @@ function renderCharacterListItem(c) {
     ]);
 }
 
+/**
+ * Statistics: range sliders over a per-character draft (D4: they no longer save on input). A changed slider gets a
+ * dirtyMark; Save commits the changed fields in one sparse PATCH, Revert drops the draft.
+ */
 function renderStatisticsPanel() {
-    let statistics = selectedInst.entity.statistics;
+    let entity = selectedInst.entity;
+    let statistics = entity.statistics;
     if (!statistics) return m('div', { class: 'text-sm text-gray-500' }, 'No statistics record.');
-    return m('div', { class: 'grid grid-cols-2 gap-2' }, STAT_FIELDS.map(function (field) {
-        let value = statistics[field] != null ? statistics[field] : 0;
-        return m('div', { class: 'flex flex-col' }, [
-            m('label', { class: 'text-xs text-gray-500' }, field + ': ' + value),
+    let draft = statDraftOf(entity.objectId);
+    return m('div', { class: 'grid grid-cols-2 gap-2', 'data-testid': 'pbchar-stats' }, STAT_FIELDS.map(function (field) {
+        let value = statValue(entity, field);
+        let changed = !!(draft && field in draft.values);
+        return m('div', { class: 'flex flex-col', 'data-stat': field }, [
+            m('label', { class: 'text-xs text-gray-500' }, [field + ': ' + value, dirtyMark(changed, 'pbchar-stat-dirty-' + field)]),
             renderRange({
                 value: value,
                 min: 0, max: 20, step: 1,
                 name: field,
                 onInput: function (e) {
                     let v = parseInt(e.target.value, 10);
-                    statistics[field] = v;
-                    m.redraw();
-                    patchStatField(statistics, field, v).catch(function (err) {
-                        page.toast('error', 'Failed to save ' + field + ': ' + (err.message || err));
-                    });
+                    if (isNaN(v)) return;
+                    setStatDraft(entity, field, v);
                 }
             })
         ]);
     }));
+}
+
+function renderStatisticsActions() {
+    let entity = selectedInst && selectedInst.entity;
+    if (!entity || !entity.statistics) return null;
+    let dirty = !!statDraftOf(entity.objectId);
+    return m('div', { class: 'flex items-center gap-2' }, [
+        btn({ label: 'Revert', icon: 'undo', size: 'sm', disabled: !dirty || savingStats, onclick: function () { revertStatDraft(entity.objectId); }, attrs: { 'data-testid': 'pbchar-stats-revert' } }),
+        btn({ label: savingStats ? 'Saving…' : 'Save', icon: 'save', size: 'sm', kind: 'primary', disabled: !dirty || savingStats, onclick: function () { saveStatDraft(entity.objectId); }, attrs: { 'data-testid': 'pbchar-stats-save' } })
+    ]);
 }
 
 function renderApparelPanel() {
@@ -1129,7 +1395,10 @@ function renderDetail() {
             renderPortraitPanel()
         ]),
         m('div', [
-            m('div', { class: 'font-medium mb-1' }, 'Statistics'),
+            m('div', { class: 'flex items-center justify-between mb-1' }, [
+                m('div', { class: 'font-medium' }, ['Statistics', dirtyMark(!!statDraftOf(selectedInst.entity.objectId), 'pbchar-stats-dirty')]),
+                renderStatisticsActions()
+            ]),
             renderStatisticsPanel()
         ]),
         m('div', [
@@ -1148,10 +1417,13 @@ function renderMergeToolbar() {
     if (!characters.length) return null;
     let selectedCount = Object.keys(mergeSelection).filter(function (k) { return mergeSelection[k]; }).length;
     if (!mergeMode) {
+        // In Edit > Characters the section toolbar carries "Merge duplicates"; only the merge-mode controls stay here.
+        if (workspace) return null;
         return m('div', { class: 'flex items-center justify-between pb-2 mb-1 border-b border-gray-200 dark:border-gray-700' }, [
             m('span', { class: 'text-xs text-gray-500 uppercase tracking-wide' }, 'Characters'),
             m('a', {
                 href: '#', class: 'text-xs text-blue-600 dark:text-blue-400 hover:underline',
+                'data-testid': 'pbchar-merge-toggle',
                 title: 'Fold duplicate extractions of the same person into one character. Extraction can name an unnamed character differently in different parts of a long work.',
                 onclick: function (e) { e.preventDefault(); toggleMergeMode(); }
             }, 'Merge duplicates')
@@ -1200,6 +1472,8 @@ async function initCharacterManager(theBookObjectId, opts) {
     resetState();
     bookObjectId = theBookObjectId;
     standalone = !!(opts && opts.standalone);
+    workspace = !!(opts && opts.workspace);
+    if (workspace) registerCharacterDirty();
     loading = true;
     m.redraw();
     // Standalone = launched with the olio.pb.book objectId (PB2), the id the V3 routes take; the
@@ -1215,6 +1489,11 @@ function renderCharacterManagerContent() {
 }
 
 /**
+ * @deprecated D2 (aiDocs/PictureBookUxConsistencyDesign.md 5.4): the pop-in is retired in favour of the
+ * Edit > Characters workspace section (`charactersSection`, route /picture-book/:id/edit/characters[/:charObjectId]).
+ * Kept working only until its remaining callers (features/pictureBook.js library row / reader) are migrated; remove
+ * it with them.
+ *
  * Open Manage Characters as its own Dialog — used by the PB2 book list / reader header, which pass
  * {standalone: true} because nothing is open underneath; independent of the wizard Step 3's inline
  * rendering of the exact same content.
@@ -1234,6 +1513,79 @@ async function openCharacterManager(theBookObjectId, opts) {
     await initCharacterManager(theBookObjectId, opts);
 }
 
+// ── Edit > Characters: the bookWorkspace SectionAdapter (design 4.2, 5.4) ───────────
+
+/** Select ctx.item (or, when absent / no longer in the list, the first character). Deferred while the list loads. */
+function applyItem(item) {
+    if (loading) { pendingItem = item; return; }
+    let target = ensureSelection(characters.map(function (c) { return c.objectId; }), item);
+    if (!target) { selectedObjectId = null; selectedInst = null; m.redraw(); return; }
+    if (target === selectedObjectId && selectedInst) return;
+    selectCharacter(target);
+}
+
+async function initWorkspaceSection(ctx) {
+    wsCtx = ctx;
+    let book = ctx.bookObjectId;
+    await initCharacterManager(book, { standalone: true, workspace: true });
+    if (bookObjectId !== book || !workspace) return;   // left, or re-entered for another book, while loading
+    wsCtx = wsCtx || ctx;
+    let item = pendingItem !== undefined ? pendingItem : ctx.item;
+    pendingItem = undefined;
+    applyItem(item);
+}
+
+/** Refresh: re-read the list (badges, rail count) and the selected detail. Statistic drafts survive; an open, changed
+ * identity edit is not re-read over. */
+async function refreshSection() {
+    await refreshList();
+    if (selectedObjectId && !identityDirty()) await selectCharacter(selectedObjectId);
+}
+
+const charactersSection = {
+    dirtyKeys: [DIRTY_KEY],
+    init: function (ctx) { return initWorkspaceSection(ctx); },
+    select: function (ctx) {
+        wsCtx = ctx;
+        if (!workspace || bookObjectId !== ctx.bookObjectId) return;
+        applyItem(ctx.item);
+    },
+    remove: function () {
+        stopWardrobeWatches();
+        resetState();
+    },
+    toolbar: function (ctx) {
+        wsCtx = ctx;
+        let n = characters.length;
+        let warn = warningCount(characters);
+        let meta = [];
+        if (!loading && !listError) {
+            meta.push(chip(n + ' character' + (n !== 1 ? 's' : ''), 'gray', { 'data-testid': 'pbchar-ws-count', 'data-count': String(n) }));
+            if (warn) meta.push(chip(warn + ' need' + (warn === 1 ? 's' : '') + ' attention', 'amber', { 'data-testid': 'pbchar-ws-warn', 'data-count': String(warn) }));
+        }
+        return {
+            title: 'Characters',
+            testid: 'pbchar-ws-toolbar',
+            meta: meta,
+            actions: [
+                btn({
+                    label: mergeMode ? 'Cancel merge' : 'Merge duplicates', icon: 'merge', size: 'sm',
+                    title: 'Fold duplicate extractions of the same person into one character. Extraction can name an unnamed character differently in different parts of a long work.',
+                    disabled: loading || merging || !n,
+                    onclick: toggleMergeMode,
+                    attrs: { 'data-testid': 'pbchar-merge-toggle' }
+                })
+            ],
+            refresh: { testid: 'pbchar-ws-refresh', disabled: loading, onclick: refreshSection }
+        };
+    },
+    body: function (ctx) {
+        wsCtx = ctx;
+        return renderCharacterManagerContent();
+    },
+    status: function (ctx) { return charactersStatusFor(ctx.bookObjectId); }
+};
+
 // ── Vitest seams (P1-10 S5) — not for production callers ─────────────
 export function __pbCharStateForTest() {
     return {
@@ -1241,7 +1593,9 @@ export function __pbCharStateForTest() {
         selectedObjectId: selectedObjectId, selectedInst: selectedInst,
         affected: affected, lastSaveKind: lastSaveKind, regen: regen, styleDescribed: styleDescribed,
         editingIdentity: editingIdentity, editName: editName, editDescription: editDescription,
-        wardrobe: wardrobe, wardrobeBusy: wardrobeBusy, wardrobeAddText: wardrobeAddText, wardrobeRuns: wardrobeRuns
+        wardrobe: wardrobe, wardrobeBusy: wardrobeBusy, wardrobeAddText: wardrobeAddText, wardrobeRuns: wardrobeRuns,
+        workspace: workspace, loading: loading, characters: characters, statDrafts: statDrafts, savingStats: savingStats,
+        scenePages: scenePages, mergeMode: mergeMode
     };
 }
 export function __setPbCharStateForTest(patch) {
@@ -1263,6 +1617,8 @@ export function __setPbCharStateForTest(patch) {
     if ('wardrobeAddText' in patch) wardrobeAddText = patch.wardrobeAddText;
     if ('characters' in patch) characters = patch.characters;
     if ('mergeSelection' in patch) mergeSelection = patch.mergeSelection;
+    if ('statDrafts' in patch) statDrafts = patch.statDrafts || {};
+    if ('scenePages' in patch) scenePages = patch.scenePages;
     if ('wardrobeRuns' in patch) wardrobeRuns = patch.wardrobeRuns && typeof patch.wardrobeRuns === 'object' ? patch.wardrobeRuns : {};
 }
 export const __pbCharSelectCharacterForTest = selectCharacter;
@@ -1276,9 +1632,13 @@ export const __pbCharMigrateSceneTagsForTest = doMigrateSceneTags;
 export const __pbCharDoReimageForTest = doReimage;
 export const __pbCharMergeSelectedForTest = doMergeSelected;
 export const __pbCharDeleteSelectedForTest = doDeleteSelected;
+export const __pbCharSaveStatDraftForTest = saveStatDraft;
+export function __resetPbCharStatusForTest() { Object.keys(statusCache).forEach(function (k) { delete statusCache[k]; }); }
 
 export {
     openCharacterManager, initCharacterManager, renderCharacterManagerContent,
+    // Edit > Characters (design 5.4)
+    charactersSection, loadCharactersStatus, characterWarnings,
     // V3 affected-scenes (pure helpers + panel), exported for Vitest
     WATCHED_CHAR_FIELDS, identityChangeKind, affectedCaveat, affectedSummary, scenesForIndexes,
     renderAffectedPanel,

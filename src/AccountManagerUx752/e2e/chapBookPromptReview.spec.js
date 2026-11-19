@@ -195,7 +195,7 @@ test.describe('ChapBook — per-scene landscape-prompt review', () => {
 
         // 4. Open the review view in the browser.
         await loginAsSharedUser(page);
-        await page.evaluate((oid) => { window.location.hash = '!/chap-book/review/' + oid; }, bookOid);
+        await page.evaluate((oid) => { window.location.hash = '!/chap-book/edit/' + oid + '/pages'; }, bookOid);
 
         // 5. The first card's landscape-prompt textarea pre-fills with the stored prompt.
         const firstTextarea = page.locator('textarea.cb-scene-prompt[data-scene-oid="' + firstOid + '"]');

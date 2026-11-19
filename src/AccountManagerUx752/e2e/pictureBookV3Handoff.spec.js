@@ -259,10 +259,10 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         }
     });
 
-    // 1. create → step 3 → reader. Manual scene entry on a fresh source document; the progress bar
-    //    has no Images/View steps; "Continue to Images" closes the wizard and opens the V3 reader on the
-    //    book the step-2 Continue created; no retired PB1 route is called along the way.
-    test('wizard: step 3 "Continue to Style" → step 4 style → "Continue to Book" hands off to the V3 reader', async ({ page }) => {
+    // 1. create → workspace → reader. Manual scene entry on a fresh source document; the progress bar is
+    //    Source › Scenes only (design §7.1); the step-2 Continue creates the book, closes the wizard and opens
+    //    Edit › Characters (guided); Style is set there, then Read opens on that book; no retired PB1 route is called.
+    test('wizard: step-2 Continue hands off to Edit › Characters (guided) → Edit › Style → the V3 reader', async ({ page }) => {
         const retired = trackRetiredPb1Calls(page);
         await loginAsSharedUser(page);
 
@@ -275,8 +275,10 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
 
         const dlg = wizardDialog(page).last();
         await expect(dlg, 'wizard dialog did not open').toBeVisible({ timeout: 30000 });
-        // Progress bar: Source › Scenes › Characters — there are no Images/View steps.
-        await expect(dlg.getByText('Characters', { exact: true })).toBeVisible();
+        // Progress bar: Source › Scenes — Characters and the rest are Edit workspace sections (§7.1); no Images/View.
+        await expect(dlg.getByText('Source', { exact: true })).toBeVisible();
+        await expect(dlg.getByText('Scenes', { exact: true })).toBeVisible();
+        await expect(dlg.getByText('Characters', { exact: true })).toHaveCount(0);
         await expect(dlg.getByText('Images', { exact: true })).toHaveCount(0);
         await expect(dlg.getByText('View', { exact: true })).toHaveCount(0);
         await screenshot(page, 'p73-wizard-step1');
@@ -294,14 +296,16 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         await screenshot(page, 'p73-wizard-step2');
         await dlg.locator('.am7-dialog-footer button').filter({ hasText: 'Continue' }).filter({ hasNotText: /Images|Style|Book/ }).click();
 
-        // Step 3 (Characters) — reached once POST /chapter + create-from-scenes return. No LLM on this
-        // path, but /chapter builds a world: give it room.
-        const continueToStyle = dlg.getByTestId('pb-wizard-continue-style');
-        await expect(continueToStyle).toBeVisible({ timeout: 180000 });
-        await screenshot(page, 'p73-wizard-step3');
+        // Hand-off (§7.1) — reached once POST /chapter + create-from-scenes return. No LLM on this path, but
+        // /chapter builds a world: give it room. The wizard closes and Edit › Characters opens in guided mode.
+        await expect.poll(() => currentHash(page), { timeout: 180000 }).toMatch(/^#!\/picture-book\/[^/]+\/edit\/characters\?guided=1$/);
+        await expect(wizardDialog(page)).toHaveCount(0);
+        await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'characters', { timeout: 30000 });
+        await expect(page.getByTestId('ws-guided')).toBeVisible();
+        await screenshot(page, 'p73-wizard-workspace-characters');
 
-        // Step 4 (Style, required since 2026-11-16): "Continue to Book" stays disabled until the saved
-        // effective style has a description; the helper asserts that, fills + saves one, then continues.
+        // Style (required since 2026-11-16) is Edit › Style now: the helper fills + saves a description when the
+        // book has none, waits for the rail's ✓, then switches to Read.
         await completeWizardStyleStep(page);
 
         // Hand-off: the wizard closes and the V3 reader opens on the new book.
@@ -321,8 +325,9 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         console.log('[p73] wizard book pb2=' + wizardPb2Oid);
     });
 
-    // 2. resume: the list-row Edit pencil on an existing book opens the V3 reader, never the wizard.
-    test('list-row Edit on an existing book opens the V3 reader, not the wizard', async ({ page }) => {
+    // 2. resume: the list-row Edit pencil on an existing book opens the Edit workspace (§7.1: /picture-book/:id/edit →
+    //    the next incomplete section), never the wizard.
+    test('list-row Edit on an existing book opens the Edit workspace, not the wizard', async ({ page }) => {
         const retired = trackRetiredPb1Calls(page);
         await loginAsSharedUser(page);
         const book = await findBook(page.request, bridgedPb2Oid);
@@ -332,7 +337,8 @@ test.describe('PictureBook V3 hand-off (P7-3)', () => {
         const row = await revealBookRow(page, book);
         await row.locator('[data-pb2-edit="' + bridgedPb2Oid + '"]').click();
 
-        await expect.poll(() => currentHash(page), { timeout: 30000 }).toBe('#!/picture-book/v2/' + bridgedPb2Oid);
+        await expect.poll(() => currentHash(page), { timeout: 30000 }).toMatch(new RegExp('^#!/picture-book/' + bridgedPb2Oid + '/edit/[a-z]+'));
+        await expect(page.getByTestId('book-workspace')).toBeVisible({ timeout: 30000 });
         await expect(page.locator('[data-pb2-book-name]')).toHaveText(displayName(book), { timeout: 30000 });
         await expect(wizardDialog(page)).toHaveCount(0);
         await expect(page.locator('text=Image Generation')).toHaveCount(0);

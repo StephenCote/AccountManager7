@@ -13,6 +13,7 @@ import { ObjectPicker } from '../components/picker.js';
 import { LLMConnector } from '../chat/LLMConnector.js';
 import { resolveDefaultChatConfig, renderChatConfigControl } from '../components/pbChatConfig.js';
 import { bgActivityBanner } from '../components/jobRunPanel.js';
+import { editRoute } from './bookWorkspaceNav.js';
 
 /**
  * Picture Book workflow — multi-step wizard launched from a data.data or data.note object.
@@ -90,6 +91,23 @@ function styleStepState() {
 }
 
 /**
+ * After Step 2 has created the book (aiDocs/PictureBookUxConsistencyDesign.md §7.1): the wizard keeps only the steps
+ * that happen before the book exists (Source, Scenes). It closes and hands off to the Edit workspace in guided mode at
+ * Characters — the same Characters / Style / … sections the user can come back to at any time. Returns the route, or
+ * null when the book has no V3 record yet (resolveWizardPb2Oid toasts why).
+ */
+async function handOffToWorkspace() {
+    let oid = await resolveWizardPb2Oid();
+    if (!oid) return null;
+    let route = editRoute('pb', oid, 'characters', null, { guided: 1 });
+    Dialog.close();
+    m.route.set(route);
+    return route;
+}
+
+/**
+ * @deprecated since the workspace hand-off (§7.1): steps 3 and 4 are no longer reached from Step 2; kept until the
+ * D8 retirement sweep confirms nothing else calls it.
  * Step-4 "Continue to Book": close the wizard and open the V3 reader on the pb2 book. Refused (null) while
  * the step-4 gate is closed; the button is disabled with the reason then, so this is the backstop.
  */
@@ -1936,8 +1954,9 @@ function renderStepContent() {
 }
 
 function renderProgressBar() {
-    // The wizard ends at Style — images are rendered in the V3 reader.
-    let labels = ['Source', 'Scenes', 'Characters', 'Style'];
+    // The wizard covers only what happens before the book exists; Characters, Style and the rest are the Edit
+    // workspace's sections, opened in guided mode after Step 2 (design §7.1).
+    let labels = ['Source', 'Scenes'];
     return m('div', { class: 'flex items-center gap-1 px-4 pt-3 pb-1' },
         labels.map(function (label, i) {
             let n = i + 1;
@@ -1954,7 +1973,7 @@ function renderProgressBar() {
                 m('span', { class: 'text-xs ' + (active ? 'text-blue-500 font-medium' : 'text-gray-400') }, label),
                 n < labels.length ? m('span', { class: 'text-gray-300 dark:text-gray-600 mx-1' }, '›') : null
             ]);
-        })
+        }).concat([m('span', { key: 'then', 'data-testid': 'pb-wizard-then', class: 'text-xs text-gray-400 ml-2' }, '› then the book workspace')])
     );
 }
 
@@ -2026,10 +2045,11 @@ function buildActions() {
                 // against duplicates *within* one createFromScenes call, not across repeated
                 // calls, so never re-run it once bookObjectId is set.
                 if (bookObjectId) {
-                    step = 3;
+                    await handOffToWorkspace();
                     m.redraw();
                     return;
                 }
+                let handedOff = false;
                 creatingChars = true;
                 m.redraw();
                 try {
@@ -2086,7 +2106,8 @@ function buildActions() {
                     } else if (meta.failedExtractions && meta.failedExtractions.length) {
                         page.toast('warn', meta.failedExtractions.length + ' character(s) had LLM extraction failures and may be incomplete.');
                     }
-                    step = 3;
+                    // §7.1: the book exists now — continue in the Edit workspace (guided), not in the dialog.
+                    handedOff = true;
                 } catch (e) {
                     const msg = e?.message || (typeof e === 'string' ? e : null) || 'Unknown error';
                     console.error('[PictureBook] book creation failed:', e);
@@ -2100,12 +2121,19 @@ function buildActions() {
                         actions: [{ label: 'Close', icon: 'close', primary: true, onclick: function() { Dialog.close(); } }]
                     });
                 }
+                creatingChars = false;
+                if (handedOff) {
+                    // The workspace's Characters section loads the list itself; a failed hand-off (no V3 record
+                    // yet) keeps the user on Step 2, where Continue can be pressed again.
+                    await handOffToWorkspace();
+                    m.redraw();
+                    return;
+                }
                 // Non-fatal: initialize character list after the main try so a
                 // fetch failure doesn't mask a successful book creation.
                 if (bookObjectId) {
                     try { await initCharacterManager(bookObjectId); } catch (_) {}
                 }
-                creatingChars = false;
                 m.redraw();
             }
         });
