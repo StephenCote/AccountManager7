@@ -167,14 +167,12 @@
       "Read(//c/Projects/GitHub/AccountManager7/src/AccountManagerService7/**)",
       "Read(//c/Projects/GitHub/AccountManager7/src/aiDocs/**)",
       "Read(//c/projects/logs/**)",
-      "Read(//tmp/**)",
       "WebFetch(domain:192.168.1.42)",
       "WebFetch(domain:codepen.io)",
       "WebFetch(domain:github.com)"
     ],
     "additionalDirectories": [
-      "C:\\Projects\\GitHub\\AccountManager7",
-      "/tmp"
+      "C:\\Projects\\GitHub\\AccountManager7"
     ]
   },
   "skillOverrides": {
