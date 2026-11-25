@@ -175,6 +175,17 @@ Production is unaffected (a real browser has RAF, and `main.js` loads `pageClien
 gate is red but every test passes, suspect an async Mithril redraw without RAF or a module-init circular
 import — not a real test failure.
 
+**Vitest: every suite fails with `reading 'config'` and "no tests".** Measured 2026-11-19 (vitest 4.1.10, node 24):
+running `npx vitest run` in `src/AccountManagerUx752` from Git Bash (cwd `/c/...`, a lowercase `c:` drive) makes every
+suite fail at its first `describe` with `TypeError: Cannot read properties of undefined (reading 'config')`. Vitest loads
+its runner twice under two drive-letter casings. Nothing is actually broken. Run vitest from PowerShell with an uppercase
+path: `Set-Location 'C:\Projects\GitHub\AccountManager7\src\AccountManagerUx752'; npx.cmd vitest run` (`npx.ps1` is
+blocked by the execution policy). Brief any subagent that runs vitest with this.
+
+**Playwright `page.goto` of a hash route adds two history entries** in this app (measured 2026-11-19, the library route
+too). A spec that tests browser Back must reach the route in-app (click through), or Back lands on a duplicate of the
+current route.
+
 **Fresh test users always have `AccountUsers`.** Org initialization auto-enrols every new `system.user`
 into the `AccountUsers` role at creation. A role-gate test that needs a user *without* it therefore
 cannot be built by creating a fresh user — it needs an admin-level removal after creation. Found
