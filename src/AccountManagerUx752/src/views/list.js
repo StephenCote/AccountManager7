@@ -329,6 +329,19 @@ function newListControl() {
         gridSelectedIdx = idx;
         gridMode = 1;
         gridFullView = true;
+        // The gallery pages by appending (loadNextPage → allResults), so the already-loaded table
+        // pages must be kept and update() must stop re-deriving the page from the route. Without
+        // this, onupdate → update() (a) sees gridMode=1 → recordCount 40 ≠ the table's 10 and
+        // rebuilds pagination, emptying results so the selected index clamps to 0 (the "opens the
+        // first item" bug), or (b) recomputes currentPage from the route's startRecord after every
+        // loadNextPage, snapping back to the table page (the "acts like end of page" bug) — which
+        // GridPreview's auto-load-when-it-fits then re-triggers forever (the refresh loop).
+        pagination.setInfiniteScroll(true);
+        // The table's row selection has no representation in the grid, so clear it — otherwise the
+        // toolbar's Open/Edit/Delete stay active on a hidden selection after the viewer closes.
+        // (toggleGrid gets this for free via pagination.new(); openItem keeps the loaded pages.)
+        let ps = pagination.pages().pageState;
+        Object.keys(ps).forEach(function (k) { ps[k].checked = false; });
         m.redraw();
     }
 
@@ -1214,7 +1227,9 @@ function newListControl() {
             let pg = pagination.pages();
             let hasMore = pagination.hasMorePages();
 
-            if (gridSelectedIdx >= results.length) gridSelectedIdx = Math.max(0, results.length - 1);
+            // Only clamp against a loaded result set — clamping while a page is (re)loading and
+            // results is momentarily empty would silently discard the selection and reset it to 0.
+            if (results.length && gridSelectedIdx >= results.length) gridSelectedIdx = results.length - 1;
             if (gridSelectedIdx < 0) gridSelectedIdx = 0;
 
             function gridLoadMore() {
@@ -1438,6 +1453,10 @@ function newListControl() {
             carousel = false;
             gridFullView = false;
             gridMode = 0;
+            // gridMode is reset to table above, so the infinite-scroll flag must be too — otherwise a
+            // remounted table list hits update()'s infinite-scroll early-return and never follows the
+            // route's startRecord (page buttons stop working).
+            pagination.setInfiniteScroll(false);
             showTypePicker = false;
             typePickerAnchorRect = null;
             if (typePickerClickHandler) {

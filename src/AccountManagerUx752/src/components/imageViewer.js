@@ -11,6 +11,19 @@ import m from 'mithril';
 import { am7client } from '../core/am7client.js';
 import { am7model } from '../core/model.js';
 
+// Video loop preference — shared by every renderContent video and persisted across sessions.
+// The native <video> controls have no loop toggle, so the viewers expose one (loopButton).
+const LOOP_KEY = 'am7.video.loop';
+let videoLoop = false;
+try { videoLoop = (typeof localStorage !== 'undefined' && localStorage.getItem(LOOP_KEY) === 'true'); } catch (e) { /* storage unavailable */ }
+function isVideoLoop() { return videoLoop; }
+function setVideoLoop(b) {
+    videoLoop = !!b;
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(LOOP_KEY, String(videoLoop)); } catch (e) { /* storage unavailable */ }
+}
+const videoAspect = {};   // media path → videoWidth / videoHeight, filled on loadedmetadata
+function isVideo(item) { return !!(item && item.contentType && item.contentType.match(/^video/)); }
+
 // GIFs/WebP use full media URL to preserve animation; others use thumbnails
 function thumbUrl(img, size) {
     if (img.contentType && (img.contentType.match(/gif$/) || img.contentType.match(/webp$/))) {
@@ -111,10 +124,35 @@ function renderContent(item, opts) {
         });
     }
     if (ct.match(/^video/)) {
+        // Cross-browser layout: the native controls are drawn on the element box, not on the
+        // picture, and each engine draws them differently. A 100%×100% box (the old full view)
+        // left Chromium/Brave controls at the bottom of the overlay under the "N / M" counter while
+        // Firefox looked clean. So size the box to the picture: aspect-ratio from the loaded
+        // metadata (cached per media path, so a redraw or the grow toggle doesn't lose it), width
+        // capped by the viewport height left after the top bar + counter (96px). dvh is listed after
+        // vh so browsers without it keep the vh value; iOS Safari needs dvh for its toolbar.
+        let ar = videoAspect[path] || (16 / 9);
+        let style;
+        if (opts.fullSize && opts.grow) style = 'display:block;width:100%;height:100%;object-fit:cover';
+        else if (opts.fullSize) style = '--ar:' + ar + ';display:block;aspect-ratio:var(--ar);height:auto;object-fit:contain;'
+            + 'width:min(calc(100vw - 24px), calc((100vh - 96px) * var(--ar)));'
+            + 'width:min(calc(100vw - 24px), calc((100dvh - 96px) * var(--ar)))';
+        else style = 'display:block;height:auto;object-fit:contain';
         return m('video', {
-            class: maxCls + ' rounded',
-            style: opts.fullSize ? 'width:100%;height:100%' : '',
-            preload: 'auto', controls: true
+            class: (opts.fullSize ? '' : maxCls + ' ') + 'rounded bg-black',
+            style: style,
+            preload: 'auto', controls: true,
+            // iOS Safari otherwise takes the video into native fullscreen on play, ignoring the layout.
+            playsinline: true, 'webkit-playsinline': 'true',
+            onloadedmetadata: function (e) {
+                let v = e.target;
+                if (v.videoWidth && v.videoHeight) {
+                    videoAspect[path] = v.videoWidth / v.videoHeight;
+                    v.style.setProperty('--ar', String(videoAspect[path]));
+                }
+            },
+            // Set as a property, so toggling it on a playing element takes effect without a reload.
+            loop: (typeof opts.loop === 'boolean') ? opts.loop : videoLoop
         }, [m('source', { src: path, type: ct })]);
     }
     if (ct.match(/^audio/)) {
@@ -214,6 +252,10 @@ function FullCanvasViewer() {
             m('button', { class: 'iv-ctl', style: 'position:absolute;top:8px;left:12px', title: grow ? 'Fit to screen' : 'Fill screen',
                 onclick: function() { grow = !grow; renderPortal(opts); }
             }, m('span', { class: 'material-symbols-outlined' }, grow ? 'photo_size_select_small' : 'aspect_ratio')),
+            isVideo(img) ? m('button', { class: 'iv-ctl' + (videoLoop ? ' active' : ''), style: 'position:absolute;top:8px;left:56px' + (videoLoop ? ';opacity:1' : ';opacity:0.55'),
+                title: videoLoop ? 'Loop: on' : 'Loop: off',
+                onclick: function() { setVideoLoop(!videoLoop); renderPortal(opts); }
+            }, m('span', { class: 'material-symbols-outlined' }, videoLoop ? 'repeat_on' : 'repeat')) : null,
             m('div', { style: 'position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:0.875rem;padding:2px 12px;border-radius:4px;pointer-events:none;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
                 class: 'text-gray-500 dark:text-gray-400 bg-white/80 dark:bg-black/80'
             }, row.name || img.name || ''),
@@ -373,6 +415,11 @@ function GridPreview() {
                                 class: 'iv-btn bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200',
                                 onclick: function() { opts.onFullView(); }
                             }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, 'fullscreen'), 'View']) : null,
+                            isVideo(ensurePreviewableImage(sel) || sel) ? m('button', {
+                                class: 'iv-btn ' + (videoLoop ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200' : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200'),
+                                title: videoLoop ? 'Loop: on' : 'Loop: off',
+                                onclick: function() { setVideoLoop(!videoLoop); }
+                            }, [m('span', { class: 'material-symbols-outlined', style: 'font-size:14px' }, videoLoop ? 'repeat_on' : 'repeat'), 'Loop']) : null,
                             opts.charInst ? m('button', {
                                 class: 'iv-btn bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200',
                                 onclick: function() { if (opts.onSetProfile) opts.onSetProfile(sel); }
@@ -488,5 +535,5 @@ function injectCSS() {
     document.head.appendChild(style);
 }
 
-export { FullCanvasViewer, GridPreview, renderContent, thumbUrl, injectCSS };
-export default { FullCanvasViewer, GridPreview, renderContent, thumbUrl, injectCSS };
+export { FullCanvasViewer, GridPreview, renderContent, thumbUrl, injectCSS, isVideoLoop, setVideoLoop };
+export default { FullCanvasViewer, GridPreview, renderContent, thumbUrl, injectCSS, isVideoLoop, setVideoLoop };
