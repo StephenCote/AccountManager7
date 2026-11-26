@@ -120,6 +120,8 @@ set "SRC_DIR=%~dp0"
 set "STORE_DIR=%SRC_DIR%docker-data\am7\store"
 REM  Must match the `name:` of the external am7-test-pg volume in docker-compose.test.yml.
 set "PG_VOLUME=am7test_am7-test-pg"
+REM  Pairs the DB volume with this docker-data: holds the volume's CreatedAt. See :ensurepgvolume.
+set "PG_MARKER=%SRC_DIR%docker-data\.pg-volume"
 
 REM  Every optional compose profile this project defines. Lifecycle actions (--stop,
 REM  --start, ps, the `down` advice) must name ALL of them: compose only acts on
@@ -610,9 +612,50 @@ REM  which is how a missing volume once wiped two weeks of data while .setup.don
 REM  said "configured" and the UI routed to /setup with no token to finish it. Create it
 REM  here ONLY for a genuine first run (no .setup.done in the store); a configured store
 REM  with no volume means the DB is gone, and that must stop the run, not be papered over.
+REM
+REM  The REVERSE case (2026-11-26): the volume exists but the store is fresh (no
+REM  .setup.done) - docker-data was wiped but the external volume survived, e.g. after
+REM  deleting the am7test group in Docker Desktop or `down -v`. The old DB still holds
+REM  the old orgs and its setup latch, so /rest/setup/state says initialized, the new
+REM  setup token can never be used, and the UI goes straight to sign-in. A volume that
+REM  exists with no .setup.done is ALSO the normal state between a first run and
+REM  finishing setup, so the two are told apart by PG_MARKER: the volume's CreatedAt,
+REM  written to docker-data when this script creates the volume (or sees it paired
+REM  with a configured store). Fresh store + volume whose CreatedAt does not match
+REM  the marker = the volume predates this store. AM7_REUSE_PG_VOLUME=1 overrides.
 :ensurepgvolume
 docker volume inspect %PG_VOLUME% >nul 2>&1
-if not errorlevel 1 exit /b 0
+if errorlevel 1 goto :pgvolumemissing
+set "PG_CREATED="
+for /f "delims=" %%C in ('docker volume inspect -f "{{.CreatedAt}}" %PG_VOLUME%') do set "PG_CREATED=%%C"
+if exist "%STORE_DIR%\.setup.done" goto :pgwritemarker
+set "PG_MARKED="
+if exist "%PG_MARKER%" set /p PG_MARKED=<"%PG_MARKER%"
+if defined PG_MARKED if "%PG_MARKED%"=="%PG_CREATED%" exit /b 0
+if "%AM7_REUSE_PG_VOLUME%"=="1" (
+    echo  AM7_REUSE_PG_VOLUME=1: keeping the existing database volume %PG_VOLUME% for this fresh store.
+    goto :pgwritemarker
+)
+echo.
+echo ERROR: this store is fresh ^(no %STORE_DIR%\.setup.done^), but the database
+echo        volume %PG_VOLUME% already exists ^(created %PG_CREATED%^) and was not
+echo        created for this store. It still holds the previous install: setup would be
+echo        reported as already done, the new setup token could never be used, and the
+echo        keystores it needs are gone. Deleting the am7test group in Docker Desktop or
+echo        `down -v` does NOT remove this volume - it is external.
+echo        - Full reset ^(deletes the old DB^):   am7-docker-down.bat --reset
+echo        - Or restore the docker-data that belongs to this volume.
+echo        - If you are sure this volume belongs to this store ^(e.g. a first run whose
+echo          setup you have not finished yet^): set AM7_REUSE_PG_VOLUME=1 and re-run.
+echo        See aiDocs\dockerDevSetup.md section 7.
+exit /b 1
+
+:pgwritemarker
+if not exist "%SRC_DIR%docker-data" mkdir "%SRC_DIR%docker-data"
+>"%PG_MARKER%" echo %PG_CREATED%
+exit /b 0
+
+:pgvolumemissing
 if exist "%STORE_DIR%\.setup.done" (
     echo.
     echo ERROR: the database volume %PG_VOLUME% does not exist, but this store is already
@@ -631,7 +674,9 @@ if errorlevel 1 (
     echo ERROR: `docker volume create %PG_VOLUME%` failed.
     exit /b 1
 )
-exit /b 0
+set "PG_CREATED="
+for /f "delims=" %%C in ('docker volume inspect -f "{{.CreatedAt}}" %PG_VOLUME%') do set "PG_CREATED=%%C"
+goto :pgwritemarker
 
 :lifecycleerr
 echo.

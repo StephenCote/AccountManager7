@@ -587,6 +587,15 @@ lost. Now:
 `docker-data/pg` is the pre-migration cluster (clean shutdown 2026-10-10 17:09Z) and was used to
 re-seed the volume on 2026-10-23. It is the only backup of that state — **do not delete it.**
 
+**Scripted (2026-11-26): `am7-docker-down.bat` / `am7-docker-down.sh`.** With no flags it removes the
+am7test containers and network and keeps all data. `--reset` also removes `am7test_am7-test-pg`, the
+Langfuse volumes, the containers' anonymous volumes and all of `docker-data` (including `docker-data/pg`
+if present; the confirmation lists it), after you type `RESET`. `am7test_ollama-models` is kept unless
+you pass `--with-models`. `--dry-run` prints the steps without running them, and `--yes` skips the
+prompt. Deleting the am7test group in Docker Desktop, or running `down -v`, plus clearing `docker-data`
+is **not** a reset: the external DB volume survives, and you get the orphan state, with a fresh setup
+token, `/rest/setup/state` reporting `initialized:true`, and the UI going straight to sign-in.
+
 ```powershell
 Set-Location C:\Projects\GitHub\AccountManager7\src
 docker compose -p am7test -f docker-compose.test.yml down
