@@ -1433,11 +1433,32 @@ public class PbComposeUtil {
 			return null;
 		}
 		String s = v.toString();
-		if(!NarrativeUtil.isMeaningful(s)) {
+		if(!NarrativeUtil.isMeaningful(s) || isPlaceholder(s)) {
 			return null;
 		}
 		s = s.trim();
 		return (s.length() > max ? s.substring(0, max).trim() : s);
+	}
+
+	/// True for text carrying no letter or digit at all - the "..." / "…" a model copies out of the template's
+	/// example shape when it has nothing to say (cb-p1's cover, 2026-11-26: an element described "...").
+	static boolean isPlaceholder(String s) {
+		if(s == null) {
+			return true;
+		}
+		for(int i = 0; i < s.length(); i++) {
+			if(Character.isLetterOrDigit(s.charAt(i))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/// A cover reply is usable only when it says something about the picture itself: a setting, an action or a
+	/// mood. Shot / viewpoint / band alone are the template's example values echoed back, and a composition
+	/// without any of the three cannot be rendered (PbRenderPlanUtil.buildCompositionPlan's 400).
+	static boolean hasCoverText(Proposal p) {
+		return p != null && (p.setting != null || p.action != null || p.mood != null);
 	}
 
 	private static Integer integer(Object v) {

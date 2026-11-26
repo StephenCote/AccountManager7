@@ -474,13 +474,13 @@ public class PbCoverUtil {
 		Proposal p = null;
 		String reply = PictureBookUtil.callLlmForChapBook(user, ctx.chatConfig, PbComposeUtil.PROMPT_COMPOSE_COVER, vars, hard);
 		if(reply != null && !reply.isBlank()) {
-			p = PbComposeUtil.parseStagedProposal(reply, "reply", ctx, aux);
+			p = usableCover(PbComposeUtil.parseStagedProposal(reply, "reply", ctx, aux), "reply", ctx, aux);
 			if(p == null) {
 				// The cover template has no ITEMS block; the retry hint rides on the last block instead.
 				vars.put("locations", vars.get("locations") + PbComposeUtil.RETRY_HINT);
 				reply = PictureBookUtil.callLlmForChapBook(user, ctx.chatConfig, PbComposeUtil.PROMPT_COMPOSE_COVER, vars, hard);
 				if(reply != null && !reply.isBlank()) {
-					p = PbComposeUtil.parseStagedProposal(reply, "retry", ctx, aux);
+					p = usableCover(PbComposeUtil.parseStagedProposal(reply, "retry", ctx, aux), "retry", ctx, aux);
 				}
 			}
 		}
@@ -499,6 +499,19 @@ public class PbCoverUtil {
 		copyNotes(aux, r);
 		BaseRecord comp = createCover(user, ctx, series, s.source, 1, s, null);
 		writeRows(user, ctx, comp, s, r);
+	}
+
+	/// The parsed proposal when it describes a picture (PbComposeUtil.hasCoverText), else null with a warning: a
+	/// reply that only echoes the template's shape (blank setting / action / mood, a "..." element) would be
+	/// written as a composition that can never render, so it is treated like an unparseable reply.
+	static Proposal usableCover(Proposal p, String which, Context ctx, ComposeResult aux) {
+		if(p == null || PbComposeUtil.hasCoverText(p)) {
+			return p;
+		}
+		String w = "The " + which + " gave no setting, action or mood for the " + purposeWord(ctx.purpose) + "; treated as malformed";
+		aux.warnings.add(w);
+		logger.warn("compose-cover " + ctx.label() + ": " + w);
+		return null;
 	}
 
 	/** What one pass over the book's SCENE compositions yields for the cover prompt. */
@@ -665,14 +678,19 @@ public class PbCoverUtil {
 		vars.put("style", PbComposeUtil.styleName(user, ctx, aux));
 		vars.put("title", PbComposeUtil.orNone(PbLocationUtil.sanitizeForPrompt(
 			PbComposeUtil.str(ctx.book.get(FieldNames.FIELD_NAME)), PbComposeUtil.MAX_FIELD_CHARS)));
-		vars.put("summary", summaryText(ctx, series, aux));
+		vars.put("summary", summaryText(ctx, series, aux, (isChapBook(ctx.book) ? chapBookPagesText(user, ctx, aux) : null)));
 		vars.put("cast", PbComposeUtil.castBlock(cast, PbComposeUtil.bookObjectId(ctx)));
 		vars.put("locations", coverLocationsBlock(user, ctx, tally, aux));
 		return vars;
 	}
 
-	/// The book's description; for SERIES_ART the series' description first, then the host chapter's.
 	static String summaryText(Context ctx, BaseRecord series, ComposeResult aux) {
+		return summaryText(ctx, series, aux, null);
+	}
+
+	/// The book's description; for SERIES_ART the series' description first, then the host chapter's; then
+	/// {@code pagesText} (a ChapBook's pages, {@link #chapBookPagesText}) when there is one.
+	static String summaryText(Context ctx, BaseRecord series, ComposeResult aux, String pagesText) {
 		List<String> parts = new ArrayList<>();
 		if(series != null) {
 			String sd = PbComposeUtil.str(series.get(FieldNames.FIELD_DESCRIPTION));
@@ -684,6 +702,9 @@ public class PbCoverUtil {
 		if(NarrativeUtil.isMeaningful(bd)) {
 			parts.add(bd.trim());
 		}
+		if(NarrativeUtil.isMeaningful(pagesText)) {
+			parts.add(pagesText.trim());
+		}
 		if(parts.isEmpty()) {
 			aux.warnings.add("The book has no description; composing the " + purposeWord(ctx.purpose) + " from its title and cast only");
 			return PbComposeUtil.NONE;
@@ -693,6 +714,76 @@ public class PbCoverUtil {
 			aux.warnings.add("Book description truncated from " + text.length() + " to " + PbComposeUtil.MAX_SCENE_TEXT_CHARS + " characters for the prompt");
 		}
 		return PbComposeUtil.orNone(PbLocationUtil.sanitizeForPrompt(text, PbComposeUtil.MAX_SCENE_TEXT_CHARS));
+	}
+
+	/** Per-page caps for {@link #chapBookPagesText}, so a long ChapBook still fits the summary budget. */
+	static final int MAX_PAGE_STANZA_CHARS = 160;
+	static final int MAX_PAGE_IMAGERY_CHARS = 200;
+
+	/// SD quality boilerplate the ChapBook landscape prompts open with; it says nothing about the picture.
+	private static final java.util.regex.Pattern QUALITY_PREFIX = java.util.regex.Pattern.compile(
+		"^\\s*(?:(?:masterpiece|best quality|high quality|highres|high resolution|landscape)\\s*,\\s*)+", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+	/** True for an {@code olio.pb.book} with {@code bookType=CHAPBOOK}. */
+	static boolean isChapBook(BaseRecord book) {
+		if(book == null || !book.hasField(OlioFieldNames.FIELD_PB_BOOK_TYPE)) {
+			return false;
+		}
+		Object bt = book.get(OlioFieldNames.FIELD_PB_BOOK_TYPE);
+		return bt != null && "CHAPBOOK".equalsIgnoreCase(bt.toString());
+	}
+
+	/// A ChapBook has no hero rows, no locations and no SCENE compositions - what it is about lives on its pages:
+	/// each scene's poem stanza and the landscape prompt its page renders from. One line per page, in page order
+	/// (title, stanza, then the prompt with its quality boilerplate stripped), within the summary budget. Read as
+	/// the caller; null when the book has no readable page with any text (the summary then stands alone).
+	static String chapBookPagesText(BaseRecord user, Context ctx, ComposeResult aux) {
+		List<BaseRecord> scenes;
+		try {
+			scenes = PbBookUtil.listScenes(user, ctx.book);
+		}
+		catch(RuntimeException e) {
+			aux.warnings.add("Could not list the ChapBook's pages: " + e.getMessage());
+			logger.warn("compose-cover " + ctx.label() + ": ChapBook page list failed: " + e.getMessage());
+			return null;
+		}
+		int budget = PbComposeUtil.MAX_SCENE_TEXT_CHARS - 512;
+		StringBuilder buf = new StringBuilder();
+		int used = 0;
+		int skipped = 0;
+		for(BaseRecord scene : scenes) {
+			String title = PbComposeUtil.str(scene.get(OlioFieldNames.FIELD_PB_TITLE));
+			String stanza = PbComposeUtil.str(scene.get(OlioFieldNames.FIELD_CB_POEM_STANZA));
+			String imagery = PbComposeUtil.str(scene.get(OlioFieldNames.FIELD_CB_SD_PROMPT));
+			if(NarrativeUtil.isMeaningful(imagery)) {
+				imagery = QUALITY_PREFIX.matcher(imagery).replaceFirst("");
+			}
+			List<String> bits = new ArrayList<>();
+			if(NarrativeUtil.isMeaningful(title)) {
+				bits.add(PbLocationUtil.sanitizeForPrompt(title, PbComposeUtil.MAX_FIELD_CHARS));
+			}
+			if(NarrativeUtil.isMeaningful(stanza)) {
+				bits.add("\"" + PbLocationUtil.sanitizeForPrompt(stanza, MAX_PAGE_STANZA_CHARS) + "\"");
+			}
+			if(NarrativeUtil.isMeaningful(imagery)) {
+				bits.add("imagery: " + PbLocationUtil.sanitizeForPrompt(imagery, MAX_PAGE_IMAGERY_CHARS));
+			}
+			if(bits.isEmpty()) {
+				continue;
+			}
+			Integer idx = scene.get(OlioFieldNames.FIELD_PB_SCENE_INDEX);
+			String line = "Page " + ((idx != null ? idx.intValue() : 0) + 1) + ": " + String.join(" - ", bits);
+			if(used + line.length() + 1 > budget) {
+				skipped++;
+				continue;
+			}
+			buf.append(buf.length() > 0 ? "\n" : "").append(line);
+			used += line.length() + 1;
+		}
+		if(skipped > 0) {
+			aux.warnings.add("Left " + skipped + " ChapBook page(s) out of the cover prompt to stay within " + budget + " characters");
+		}
+		return (buf.length() > 0 ? "PAGES:\n" + buf : null);
 	}
 
 	/// The KNOWN LOCATIONS block with the book's most-used scene location first and tagged, so the LLM has a

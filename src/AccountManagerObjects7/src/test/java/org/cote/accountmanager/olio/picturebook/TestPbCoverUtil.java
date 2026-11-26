@@ -407,6 +407,118 @@ public class TestPbCoverUtil extends BaseTest {
 		}
 	}
 
+	// ─────────────────────────────── ChapBook cover (cb-p1, 2026-11-26) ───────────────────────────────
+
+	/// The reply the LLM gave for cb-p1's cover, verbatim from the Service7 log: the template's example shape echoed
+	/// back with a "..." element and blank setting / action / mood. Written as-is it became a composition the render
+	/// plan refuses ("has no description to render from"). The "..." element is now dropped and the proposal has no
+	/// cover text, so composeAuto treats it as malformed instead of writing it.
+	@Test
+	public void skeletonEchoReplyIsNotUsableCover() {
+		String cbP1Reply = "{\"location\":{\"name\":null,\"sameAs\":null,\"variant\":null},\"camera\":{\"shot\":\"medium\",\"viewpoint\":\"eye_level\",\"focal\":null},"
+			+ "\"actors\":[],\"elements\":[{\"type\":\"nature\",\"description\":\"...\",\"placement\":\"background\"}],"
+			+ "\"setting\":\"\",\"action\":\"\",\"mood\":\"\",\"titleSafeBand\":\"top\"}";
+		Map<String, Object> map = PictureBookUtil.parseLlmJsonObject(cbP1Reply, "test", new ArrayList<>(), new boolean[] { false });
+		assertNotNull("the reply is valid JSON", map);
+		PbComposeUtil.Proposal p = PbComposeUtil.applyReply(map);
+		assertTrue("the '...' element is a placeholder, not an element", p.elements.isEmpty());
+		assertFalse("no setting, action or mood: not a usable cover", PbComposeUtil.hasCoverText(p));
+		assertTrue(PbComposeUtil.isPlaceholder("..."));
+		assertTrue(PbComposeUtil.isPlaceholder(" … "));
+		assertFalse(PbComposeUtil.isPlaceholder("a lone oak"));
+
+		Map<String, Object> good = new LinkedHashMap<>(map);
+		good.put("mood", "solemn");
+		assertTrue("a mood alone makes it a cover", PbComposeUtil.hasCoverText(PbComposeUtil.applyReply(good)));
+	}
+
+	/// A ChapBook-shaped book - bookType CHAPBOOK, a placeholder description, no characters, no locations, no
+	/// scene compositions, pages carrying only a poem stanza and a stored landscape prompt (exactly cb-p1's shape) -
+	/// gets an AUTO cover from the real LLM: the summary sent carries the pages (stanza + prompt, quality boilerplate
+	/// stripped), the cover is written with source LLM and at least one of setting / action / mood, and the render
+	/// plan's own subject text for it is non-empty, i.e. buildCompositionPlan's "no description" 400 cannot fire.
+	@Test(timeout = 1_800_000)
+	public void autoComposesChapBookCoverFromItsPages() throws Exception {
+		BaseRecord u = user();
+		long orgId = orgOf(u);
+		BaseRecord bk = null;
+		BaseRecord cfg = null;
+		try {
+			cfg = OlioTestUtil.getOllamaOpenAIConfig(u, CFG_NAME, testProperties);
+			assertNotNull("chatConfig " + CFG_NAME, cfg);
+			logger.info("[cb-cover-live] route=" + testProperties.getProperty("test.llm.route") + " tier=" + testProperties.getProperty("test.llm.resolvedTier")
+				+ " server=" + testProperties.getProperty("test.llm.connection.server") + " model=" + (Object) cfg.get("model"));
+
+			bk = newBook(u, "cbcover");
+			describeBook(u, bk, "CB P1");
+			BaseRecord typePatch = PbGraphUtil.patchOf(bk, OlioModelNames.MODEL_PB_BOOK, OlioFieldNames.FIELD_PB_BOOK_TYPE);
+			typePatch.set(OlioFieldNames.FIELD_PB_BOOK_TYPE, "CHAPBOOK");
+			assertNotNull("bookType CHAPBOOK patch", ioContext.getAccessPoint().update(u, typePatch));
+			bk = PbBookUtil.readBook(u, oidOf(bk), orgId);
+			assertTrue("the book reads back as a ChapBook", PbCoverUtil.isChapBook(bk));
+
+			String[][] pages = {
+				{ "The ash has settled on the roofs of Hale, / and no bell rings for the miller's son.",
+					"masterpiece, best quality, a quiet mountain village surrounded by ash-filled air, soft gray light filtering through drifting dust and smoke, solemn atmosphere" },
+				{ "Beneath the willow by the blue brook / the dryads keep the morning to themselves.",
+					"masterpiece, best quality, landscape, a quiet grove of willow trees beside a blue brook, soft morning light filtering through leaves" },
+				{ "And in the evening, gold and low, / the forest gathers what the day let go.",
+					"masterpiece, best quality, a soft golden-lit forest glade with dappled sunlight filtering through tall trees, glowing leaves shimmering in warm hues" }
+			};
+			for(int i = 0; i < pages.length; i++) {
+				BaseRecord scene = addScene(u, bk, i, "Poem " + (i + 1), null, null, null);
+				BaseRecord patch = PbGraphUtil.patchOf(scene, OlioModelNames.MODEL_PB_SCENE, OlioFieldNames.FIELD_CB_POEM_STANZA, OlioFieldNames.FIELD_CB_SD_PROMPT);
+				patch.set(OlioFieldNames.FIELD_CB_POEM_STANZA, pages[i][0]);
+				patch.set(OlioFieldNames.FIELD_CB_SD_PROMPT, pages[i][1]);
+				assertNotNull("page " + i + " text patch", ioContext.getAccessPoint().update(u, patch));
+			}
+
+			/// What the composer is fed, checked before the LLM sees it.
+			PbComposeUtil.Context ctx = PbComposeUtil.openBookContext(u, bk, "test");
+			ctx.purpose = PbCompositionPurposeEnumType.COVER;
+			ComposeResult aux = new ComposeResult();
+			String pagesText = PbCoverUtil.chapBookPagesText(u, ctx, aux);
+			log("ChapBook pages text: " + pagesText);
+			assertNotNull("the pages text is built", pagesText);
+			assertTrue("page 1's stanza is in it", pagesText.contains("The ash has settled on the roofs of Hale"));
+			assertTrue("page 3's imagery is in it", pagesText.contains("imagery: a soft golden-lit forest glade"));
+			assertFalse("quality boilerplate is stripped", pagesText.toLowerCase().contains("masterpiece"));
+			assertFalse("the bare 'landscape,' tag is stripped too", pagesText.contains("imagery: landscape"));
+			String summary = PbCoverUtil.summaryText(ctx, null, aux, pagesText);
+			assertTrue("the summary keeps the description and adds the pages", summary.startsWith("CB P1") && summary.contains("PAGES:"));
+
+			CoverResult r = PbCoverUtil.getCreate(u, bk, PbCompositionPurposeEnumType.COVER, Mode.AUTO, null, cfg, dataPath());
+			log("ChapBook AUTO COVER: " + describe(r));
+			log("ChapBook AUTO warnings: " + r.warnings);
+			assertFalse("the LLM answered with a usable cover (" + r.failureReason + ")", r.llmFailure);
+			assertTrue("AUTO wrote the cover: " + r.failureReason, r.isWritten());
+			assertEquals(PbCompositionSourceEnumType.LLM, r.source);
+			assertEquals("a ChapBook has no cast", CastTier.NONE, r.castTier);
+
+			BaseRecord cover = PbComposeUtil.readComposition(u, oidOf(r.composition), orgId);
+			assertNotNull(cover);
+			Object setting = cover.get(OlioFieldNames.FIELD_PB_SETTING_TEXT);
+			Object action = cover.get(OlioFieldNames.FIELD_PB_ACTION);
+			Object mood = cover.get(OlioFieldNames.FIELD_PB_MOOD);
+			log("ChapBook cover setting=" + setting + " | action=" + action + " | mood=" + mood);
+			assertTrue("the cover carries a setting, an action or a mood",
+				org.cote.accountmanager.olio.NarrativeUtil.isMeaningful((String) setting)
+				|| org.cote.accountmanager.olio.NarrativeUtil.isMeaningful((String) action)
+				|| org.cote.accountmanager.olio.NarrativeUtil.isMeaningful((String) mood));
+			String planText = PbRenderPlanUtil.locationText(null, cover);
+			log("render-plan subject text: " + planText);
+			assertFalse("buildCompositionPlan has a description to render from", planText.isEmpty());
+		}
+		finally {
+			deleteBook(u, bk);
+			if(cfg != null) {
+				BaseRecord conn = cfg.get("connection");
+				deleteQuietly(u, cfg);
+				deleteQuietly(u, conn);
+			}
+		}
+	}
+
 	// ─────────────────────────────── SERIES_ART ───────────────────────────────
 
 	/// SERIES_ART on chapter A of a two-chapter series: the row is named series_art.<seriesOid> with the series FK
