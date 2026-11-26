@@ -201,6 +201,8 @@ AM7_DATA_ROOT="${AM7_DATA_DIR:-$SRC_DIR/docker-data}"
 STORE_DIR="$AM7_DATA_ROOT/am7/store"
 # Must match the `name:` of the external am7-test-pg volume in docker-compose.test.yml.
 PG_VOLUME="am7test_am7-test-pg"
+# Pairs the DB volume with this data root: holds the volume's CreatedAt. See ensure_pg_volume.
+PG_MARKER="$AM7_DATA_ROOT/.pg-volume"
 # Records which embedding provider a data volume was last booted with. See the
 # sticky-provider WARN below.
 EMBED_MARKER="$AM7_DATA_ROOT/.embedding-provider"
@@ -432,10 +434,60 @@ dc_all() {
 # here ONLY for a genuine first run (no .setup.done in the store); a configured store
 # with no volume means the DB is gone, and that must stop the run, not be papered over.
 # (The sudo fallback mirrors store_exists below: on Linux the store is often root-owned.)
+#
+# The REVERSE case (2026-11-26): the volume exists but the store is fresh (no
+# .setup.done) - docker-data was wiped but the external volume survived (`down -v`,
+# or deleting the am7test group in Docker Desktop). The old DB still holds the old
+# orgs and its setup latch, so /rest/setup/state says initialized, the new setup
+# token can never be used, and the UI goes straight to sign-in. A volume with no
+# .setup.done is ALSO the normal state between a first run and finishing setup, so
+# the two are told apart by PG_MARKER: the volume's CreatedAt, written to the data
+# root when this script creates the volume (or sees it paired with a configured
+# store). Fresh store + volume whose CreatedAt does not match the marker = the volume
+# predates this store. AM7_REUSE_PG_VOLUME=1 overrides.
+pg_setup_done() {
+  [ -e "$STORE_DIR/.setup.done" ] || \
+    { command -v sudo >/dev/null 2>&1 && sudo -n test -e "$STORE_DIR/.setup.done" 2>/dev/null; }
+}
+pg_write_marker() {
+  mkdir -p "$AM7_DATA_ROOT" 2>/dev/null
+  printf '%s\n' "$(docker volume inspect -f '{{.CreatedAt}}' "$PG_VOLUME" 2>/dev/null)" > "$PG_MARKER" 2>/dev/null || \
+    echo "  WARNING: could not write $PG_MARKER; the next run may report this volume as unpaired." >&2
+}
 ensure_pg_volume() {
-  docker volume inspect "$PG_VOLUME" >/dev/null 2>&1 && return 0
-  if [ -e "$STORE_DIR/.setup.done" ] || \
-     { command -v sudo >/dev/null 2>&1 && sudo -n test -e "$STORE_DIR/.setup.done" 2>/dev/null; }; then
+  if docker volume inspect "$PG_VOLUME" >/dev/null 2>&1; then
+    if pg_setup_done; then
+      pg_write_marker
+      return 0
+    fi
+    local created marked=""
+    created="$(docker volume inspect -f '{{.CreatedAt}}' "$PG_VOLUME" 2>/dev/null)"
+    [ -r "$PG_MARKER" ] && marked="$(head -n1 "$PG_MARKER" 2>/dev/null | tr -d '\r\n')"
+    if [ -n "$marked" ] && [ "$marked" = "$created" ]; then
+      return 0
+    fi
+    if [ "${AM7_REUSE_PG_VOLUME:-}" = "1" ]; then
+      echo " AM7_REUSE_PG_VOLUME=1: keeping the existing database volume $PG_VOLUME for this fresh store."
+      pg_write_marker
+      return 0
+    fi
+    cat >&2 <<EOF
+
+ERROR: this store is fresh (no $STORE_DIR/.setup.done), but the database
+       volume $PG_VOLUME already exists (created $created) and was not
+       created for this store. It still holds the previous install: setup would be
+       reported as already done, the new setup token could never be used, and the
+       keystores it needs are gone. Deleting the am7test group in Docker Desktop or
+       \`down -v\` does NOT remove this volume - it is external.
+       - Full reset (deletes the old DB):   ./am7-docker-down.sh --reset
+       - Or restore the docker-data that belongs to this volume.
+       - If you are sure this volume belongs to this store (e.g. a first run whose
+         setup you have not finished yet): AM7_REUSE_PG_VOLUME=1 ./am7-docker-up.sh ...
+       See aiDocs/dockerDevSetup.md section 7.
+EOF
+    return 1
+  fi
+  if pg_setup_done; then
     cat >&2 <<EOF
 
 ERROR: the database volume $PG_VOLUME does not exist, but this store is already
@@ -455,6 +507,7 @@ EOF
     echo "ERROR: 'docker volume create $PG_VOLUME' failed." >&2
     return 1
   fi
+  pg_write_marker
 }
 
 echo "============================================================"

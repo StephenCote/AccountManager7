@@ -596,6 +596,15 @@ prompt. Deleting the am7test group in Docker Desktop, or running `down -v`, plus
 is **not** a reset: the external DB volume survives, and you get the orphan state, with a fresh setup
 token, `/rest/setup/state` reporting `initialized:true`, and the UI going straight to sign-in.
 
+**`am7-docker-up` now refuses to start in that state.** When it creates the DB volume, it writes the
+volume's `CreatedAt` to `docker-data/.pg-volume`. It also writes that file whenever the volume sits next
+to a configured store (`.setup.done`). If the store is fresh and the volume's `CreatedAt` does not match
+the marker (or there is no marker), the volume belongs to an earlier install, and the script stops before
+starting containers, pointing to `am7-docker-down --reset`. A first run whose setup is not finished yet
+still passes, because the marker matches. If the script stops on a volume you know belongs to this
+store (for example, a first run started before this check existed), set `AM7_REUSE_PG_VOLUME=1` for one
+run to record the pairing.
+
 ```powershell
 Set-Location C:\Projects\GitHub\AccountManager7\src
 docker compose -p am7test -f docker-compose.test.yml down
