@@ -485,25 +485,25 @@ describe('serviceStatus feature wiring', () => {
         });
     });
 
-    it('menu item is admin-only, the route registers at /admin/status, and the prefix owns it', async () => {
-        let { features, isMenuItemVisible, initFeatures, getMenuItems, featureForPath, getManifestErrors } = await import('../features.js');
+    it('is a tab of the Admin panel (no menu item of its own), the route registers at /admin/status, and the prefix owns it', async () => {
+        let { features, initFeatures, getMenuItems, featureForPath, getManifestErrors } = await import('../features.js');
+        let { visibleAdminTabs } = await import('../features/systemAdmin/adminTabs.js');
         let f = features.serviceStatus;
         expect(f).toBeDefined();
         expect(f.required).toBe(false);
         expect(f.deps).toEqual(['core']);
         expect(f.routePrefixes).toEqual(['/admin/status']);
-        expect(f.menuItems).toEqual([{ icon: 'dns', label: 'Service Status', route: '/admin/status', section: 'aside', adminOnly: true, roles: ['admin'] }]);
-        let mi = f.menuItems[0];
-        expect(isMenuItemVisible(mi, { roles: { admin: false, user: true } })).toBe(false);
-        expect(isMenuItemVisible(mi, { roles: { admin: true } })).toBe(true);
+        expect(f.menuItems).toEqual([]);
         expect(featureForPath('/admin/status')).toBe('serviceStatus');
         expect(featureForPath('/admin/system')).toBe('core');
         expect(getManifestErrors()).toEqual([]);
 
         initFeatures('minimal');
         expect(getMenuItems('aside').some(i => i.route === '/admin/status')).toBe(false);
+        expect(visibleAdminTabs().some(t => t.route === '/admin/status')).toBe(false);
         initFeatures(['core', 'serviceStatus']);
-        expect(getMenuItems('aside').some(i => i.route === '/admin/status')).toBe(true);
+        expect(getMenuItems('aside').some(i => i.route === '/admin/status')).toBe(false);
+        expect(visibleAdminTabs().some(t => t.route === '/admin/status')).toBe(true);
         initFeatures('standard');
 
         let routes = (await import('../features/serviceStatus/routes.js')).routes;

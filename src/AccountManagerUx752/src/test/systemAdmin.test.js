@@ -121,3 +121,72 @@ describe('Admin panel wiring (part of core)', () => {
         expect(ids).not.toContain('systemAdmin');
     });
 });
+
+describe('common Admin panel tabs (System / Olio / Service Status)', () => {
+    async function setAdmin(on) {
+        let { page } = await import('../core/pageClient.js');
+        page.context().roles.admin = !!on;
+    }
+
+    it('only the System tab is offered when olioAdmin and serviceStatus are disabled, and no bar renders for one tab', async () => {
+        let m = (await import('mithril')).default;
+        let { initFeatures } = await import('../features.js');
+        let { visibleAdminTabs, adminShell } = await import('../features/systemAdmin/adminTabs.js');
+        await setAdmin(true);
+        try {
+            initFeatures('minimal');
+            expect(visibleAdminTabs().map(t => t.id)).toEqual(['system']);
+            let root = document.createElement('div');
+            m.render(root, adminShell('system', m('div', { id: 'body' }, 'x')));
+            expect(root.querySelector('[data-testid="admin-tabs"]')).toBe(null);
+            expect(root.querySelector('#body')).not.toBe(null);
+        } finally { await setAdmin(false); initFeatures('standard'); }
+    });
+
+    it('renders all three tabs for an admin, marks the active one, and navigates to the tab route on click', async () => {
+        let m = (await import('mithril')).default;
+        let { initFeatures } = await import('../features.js');
+        let { adminShell, ADMIN_TABS } = await import('../features/systemAdmin/adminTabs.js');
+        await setAdmin(true);
+        let origSet = m.route.set;
+        let went = [];
+        m.route.set = (p) => { went.push(p); };
+        try {
+            initFeatures(['core', 'olioAdmin', 'serviceStatus']);
+            let root = document.createElement('div');
+            m.render(root, adminShell('olio', m('div', 'body')));
+            let tabs = [...root.querySelectorAll('[role="tab"]')];
+            expect(tabs.map(t => t.getAttribute('data-testid'))).toEqual(['admin-tab-system', 'admin-tab-olio', 'admin-tab-status']);
+            expect(tabs.map(t => t.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false']);
+            tabs[2].click();
+            tabs[1].click(); // the active tab does not re-navigate
+            tabs[0].click();
+            expect(went).toEqual(['/admin/status', '/admin/system']);
+            expect(ADMIN_TABS.map(t => t.route)).toEqual(['/admin/system', '/admin/olio', '/admin/status']);
+        } finally { m.route.set = origSet; await setAdmin(false); initFeatures('standard'); }
+    });
+
+    it('renders no tab bar for a non-admin (the view shows its own role notice)', async () => {
+        let m = (await import('mithril')).default;
+        let { initFeatures } = await import('../features.js');
+        let { adminShell } = await import('../features/systemAdmin/adminTabs.js');
+        await setAdmin(false);
+        try {
+            initFeatures(['core', 'olioAdmin', 'serviceStatus']);
+            let root = document.createElement('div');
+            m.render(root, adminShell('status', m('div', 'body')));
+            expect(root.querySelector('[data-testid="admin-tabs"]')).toBe(null);
+        } finally { initFeatures('standard'); }
+    });
+
+    it('the aside menu carries one Admin entry, not separate Olio Admin / Service Status entries', async () => {
+        let { initFeatures, getMenuItems, features } = await import('../features.js');
+        initFeatures('full');
+        try {
+            let adminRoutes = getMenuItems('aside').map(i => i.route).filter(r => r.indexOf('/admin/') === 0 && r !== '/admin/features');
+            expect(adminRoutes).toEqual(['/admin/system']);
+            expect(features.olioAdmin.menuItems).toEqual([]);
+            expect(features.serviceStatus.menuItems).toEqual([]);
+        } finally { initFeatures('standard'); }
+    });
+});

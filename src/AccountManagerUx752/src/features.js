@@ -37,6 +37,9 @@ const featureWiring = {
         // own id it surfaced only in organizations with no stored set (e.g. /System). The item is
         // role-gated (adminOnly ⇒ roles.admin); the server's @RolesAllowed admin + in-process role check
         // on /rest/admin is the real boundary, and the org/all-orgs scope is decided there.
+        // It is the common Admin panel: Olio Admin (/admin/olio) and Service Status (/admin/status) are
+        // tabs of it (features/systemAdmin/adminTabs.js) rather than separate menu entries; each still
+        // belongs to, and is gated by, its own feature id.
         routes: () => import('./features/systemAdmin/routes.js'),
         menuItems: [{ icon: 'admin_panel_settings', label: 'Admin', route: '/admin/system', section: 'aside', adminOnly: true, roles: ['admin'] }],
         routePrefixes: ['/admin/system']
@@ -120,9 +123,9 @@ const featureWiring = {
     },
     olioAdmin: {
         routes: () => import('./features/olioAdmin/routes.js'),
-        // adminOnly hides it for non-admins; roles:['admin'] is carried too so the shared
-        // isMenuItemVisible predicate (features.js) gates it consistently (adminOnly ⇒ roles.admin).
-        menuItems: [{ icon: 'travel_explore', label: 'Olio Admin', route: '/admin/olio', section: 'aside', adminOnly: true, roles: ['admin'] }],
+        // No menu item of its own: it is the "Olio" tab of the common Admin panel (core's Admin item,
+        // features/systemAdmin/adminTabs.js), shown only while this feature is enabled.
+        menuItems: [],
         routePrefixes: ['/admin/olio']
     },
     serviceStatus: {
@@ -131,7 +134,9 @@ const featureWiring = {
         // A UI-only gate (design §7 B6): the server authorizes on the admin role, not on this feature id.
         // The user-facing degraded banner (components/serviceStatusBanner.js) is core and not gated by it.
         routes: () => import('./features/serviceStatus/routes.js'),
-        menuItems: [{ icon: 'dns', label: 'Service Status', route: '/admin/status', section: 'aside', adminOnly: true, roles: ['admin'] }],
+        // No menu item of its own: it is the "Service Status" tab of the common Admin panel (core's Admin
+        // item, features/systemAdmin/adminTabs.js), shown only while this feature is enabled.
+        menuItems: [],
         routePrefixes: ['/admin/status']
     }
 };
