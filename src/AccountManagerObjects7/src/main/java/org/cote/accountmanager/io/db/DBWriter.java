@@ -247,6 +247,20 @@ public class DBWriter extends MemoryWriter {
 	    	}
 			st.close();
 			con.commit();
+			/// 2026-11-27: a CREATE must invalidate the model's cached query results. clearCache(rec) (the
+			/// UPDATE path above) only evicts entries that already CONTAIN the record, and a new record is in
+			/// none of them — so a non-empty result cached before the insert (CacheDBSearch keeps them up to
+			/// 360s) would keep omitting it. That broke both plain list re-fetches and PBAC: the name-only
+			/// inspection sub-query in PolicyUtil.evaluateQueryToReadPolicyResponses is cached under a key
+			/// shared by every user, so a record created after any user warmed it was denied to its own owner.
+			/// Cleared after commit, so no read issued after the clear can cache the pre-insert state (a read
+			/// already in flight before the commit can still put its older result back; the TTL bounds that). Scoped to the
+			/// one model (CacheDBSearch keys its maps by query type); auto-created children and participations
+			/// go back through this method via RecordUtil.createRecords and clear their own model.
+			/// Regression test: TestCreateCacheInvalidation.
+			if(op == RecordOperation.CREATE && writeCount > 0) {
+				CacheUtil.clearCacheByModel(firstModel.getSchema());
+			}
 
 
 		}

@@ -334,26 +334,26 @@ describe('§4.7 cross-links leave through the guard', () => {
         expect(m.route.set).toHaveBeenCalledWith('/picture-book/book-1/edit/review');
     });
 
-    it('Open Full Editor asks the guard while a draft is unsaved; Stay does not navigate', async () => {
+    it('Open Full Editor opens a new tab; no guard, no in-place navigation, drafts kept', async () => {
         await enter('c1');
         let dialogs = [];
         vi.spyOn(Dialog, 'open').mockImplementation((cfg) => { dialogs.push(cfg); });
-        vi.spyOn(Dialog, 'close').mockImplementation(() => {});
+        let opened = [];
+        let openSpy = vi.spyOn(window, 'open').mockImplementation((url, tgt) => { opened.push([url, tgt]); return null; });
         move('agility', 1);
-        q('[data-char-full-editor]').click();
-        await flush();
-        expect(dialogs.length).toBe(1);
-        dialogs[0].actions.find(a => a.label === 'Stay').onclick();
+        let link = q('[data-char-full-editor]');
+        expect(link.getAttribute('target')).toBe('_blank');
+        expect(link.getAttribute('href')).toBe('#!/view/olio.charPerson/c1');
+        link.click();
         await settle();
+        expect(dialogs.length).toBe(0);
+        expect(opened.length).toBe(1);
+        expect(opened[0][0]).toMatch(/#!\/view\/olio\.charPerson\/c1$/);
+        expect(opened[0][1]).toBe('_blank');
         expect(m.route.set).not.toHaveBeenCalled();
         expect(pbc.__pbCharStateForTest().statDrafts.c1.values).toEqual({ agility: 1 });
-
-        q('[data-char-full-editor]').click();
-        await flush();
-        dialogs[1].actions.find(a => a.label === 'Discard').onclick();
-        await settle();
-        expect(m.route.set).toHaveBeenCalledWith('/view/olio.charPerson/c1');
         expect(page.patchObject).not.toHaveBeenCalled();
+        openSpy.mockRestore();
     });
 });
 

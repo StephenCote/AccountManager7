@@ -314,6 +314,38 @@ a **different parent** record must re-fetch with an explicit fresh `Query` and `
 substitute `reader.populate(x, [field])`, and do not assume re-querying is inherently fresh. See
 `PictureBookUtil.selectSceneApparel`.
 
+### Creates now invalidate their model's query cache (2026-11-27); what is still not covered
+
+Until 2026-11-27 `DBWriter.write` invalidated only on **update** (`CacheUtil.clearCache(rec)`, which evicts
+cached results that already *contain* the record). A **create** invalidated nothing, and a new record is in
+no cached result by construction, so any non-empty result cached before the insert (`CacheDBSearch` keeps
+them up to 360 s; empty results are never cached) kept omitting it. Two live consequences:
+- **PBAC denied a user their own new record.** A groupless `organizationId + ownerId + name` find
+  (`ChatUtil.getConfig`, or `POST /rest/model/search` with that shape) is authorized by
+  `PolicyUtil.evaluateQueryToReadPolicyResponses`, which runs a name-only inspection sub-query
+  (`name = X`, no owner/org/context user ⇒ a cache key **shared by every user in every org**) through the
+  caching search. If anyone had looked up X while another user's X existed, a new X was invisible to the
+  authorizer: `AUDIT DENY … One or more query fields were not or could not be authorized` for up to 6 min
+  (`GET /rest/chat/library/chat/contentAnalysis` 404 right after creating it).
+- A list re-fetched with the same query shape missed records created since it was cached.
+
+**Now:** after a successful CREATE commit, `DBWriter.write` calls `CacheUtil.clearCacheByModel(schema)` —
+the same model-scoped granularity `MemberUtil.clearParticipationQueryCache` already used. Auto-created
+children and participations come back through `RecordUtil.createRecords` → `DBWriter.write` and clear their
+own bucket. Regression test: `TestCreateCacheInvalidation` (both cases failed before the change).
+
+**Still NOT covered** (same JVM; another JVM — Console7, a second Service7 — is bounded only by the 360 s TTL):
+- An **update that makes a record newly match** a cached query (rename to X, move into a group) — the update
+  path still clears only results that already contain the record.
+- `DBWriter.delete(Query)` calls `CacheUtil.clearCache(query)`, which matches cached results whose schema is
+  `io.query` — i.e. nothing; bulk deletes (`MemberUtil.deleteMembers`, `WorldUtil`, `VectorUtil`,
+  `PageIndexUtil`, the parsers) leave the deleted rows in cached results unless the caller clears itself.
+- Queries of **another** model that join the created model (participation joins, nested foreign fields) are
+  cached in their own bucket and are not cleared — the nested-reference rule above still applies.
+- File-IO caches (`CacheFileSearch`) are cleared by path digest on write, not by model, so a file-IO create
+  has the same staleness. The authorization/policy decision caches stub `clearCacheByModel` (see
+  `MemberUtil.clearParticipationQueryCache` javadoc).
+
 ## `AccessPoint.list` is NOT a per-record authorization boundary
 
 `AccessPoint.find` authorizes the query shape **and then** runs `AuthorizationUtil.canRead` on the

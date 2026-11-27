@@ -390,6 +390,9 @@ public class ServerConfigUtil {
 				}
 			}
 			invalidate(name);
+			/// The Service Status deployment report is a cache of exactly these values; an in-JVM write
+			/// invalidates it at once (cross-JVM edits are bounded by the two TTLs, design §6).
+			SystemCheckUtil.invalidate();
 			return ok;
 		}
 		catch(Exception e) {

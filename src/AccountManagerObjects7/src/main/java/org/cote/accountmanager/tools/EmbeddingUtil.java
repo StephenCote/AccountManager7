@@ -477,6 +477,54 @@ public class EmbeddingUtil {
 		return emb;
 	}
 
+	/// Reason codes from describeTypeUrlMismatch. Null means "no mismatch detected (or nothing to compare)".
+	public static final String MISMATCH_UNPARSEABLE_URL = "unparseable_url";
+	public static final String MISMATCH_LOCAL_OPENAI_SHAPED_URL = "local_openai_shaped_url";
+	public static final String MISMATCH_OPENAI_HOST_ONLY_URL = "openai_host_only_url";
+	public static final String MISMATCH_COMPAT_AZURE_URL = "compat_azure_url";
+	public static final String MISMATCH_OPENAI_COMPAT_URL = "openai_compat_url";
+
+	/// Does embedding.type agree in SHAPE with the effective embedding URL? Moved here (2026-11-27) from
+	/// RestServiceEventListener.warnOnEmbeddingTypeUrlMismatch so the boot listener and the Service Status
+	/// `embedding.config` check share one rule. Returns a REASON CODE (one of the MISMATCH_* constants) or
+	/// null; it never logs and never returns the URL, so a caller can put its result in front of an admin
+	/// who may not see the URL itself. The listener keeps logging its own URL-bearing text per code.
+	///
+	///   LOCAL         expects <host:port> for the bundled embedApiMini.py; it POSTs <url>/generate_embedding
+	///   OPENAI        expects a full Azure URL (/openai/deployments/<dep>/embeddings?api-version=...)
+	///   OPENAI_COMPAT expects a full /v1/embeddings URL (LiteLLM, Ollama)
+	public static String describeTypeUrlMismatch(LLMServiceEnumType type, String url) {
+		if(type == null || url == null || url.isBlank()) {
+			return null;
+		}
+		String path = "";
+		try {
+			java.net.URI uri = java.net.URI.create(url.trim());
+			path = (uri.getPath() != null ? uri.getPath() : "");
+		}
+		catch(IllegalArgumentException e) {
+			return MISMATCH_UNPARSEABLE_URL;
+		}
+		boolean looksAzure = path.contains("/openai/deployments/");
+		boolean looksCompat = path.endsWith("/v1/embeddings");
+		boolean looksOpenAi = looksCompat || looksAzure;
+		/// "No path beyond host:port" - the shape the LOCAL custom service takes.
+		boolean looksLocal = path.isEmpty() || path.equals("/");
+		if(type == LLMServiceEnumType.LOCAL && looksOpenAi) {
+			return MISMATCH_LOCAL_OPENAI_SHAPED_URL;
+		}
+		if((type == LLMServiceEnumType.OPENAI || type == LLMServiceEnumType.OPENAI_COMPAT) && looksLocal) {
+			return MISMATCH_OPENAI_HOST_ONLY_URL;
+		}
+		if(type == LLMServiceEnumType.OPENAI_COMPAT && looksAzure) {
+			return MISMATCH_COMPAT_AZURE_URL;
+		}
+		if(type == LLMServiceEnumType.OPENAI && looksCompat) {
+			return MISMATCH_OPENAI_COMPAT_URL;
+		}
+		return null;
+	}
+
 	public boolean heartbeat() {
 		boolean outBool = false;
 		if(serviceType != LLMServiceEnumType.LOCAL) {

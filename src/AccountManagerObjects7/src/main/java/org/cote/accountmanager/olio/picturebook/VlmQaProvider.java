@@ -24,6 +24,7 @@ import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.util.ClientUtil;
+import org.cote.accountmanager.util.ConnectionProbeUtil;
 import org.cote.accountmanager.util.JSONUtil;
 
 /**
@@ -570,8 +571,8 @@ public final class VlmQaProvider implements QaProvider {
 	// ─── model list ───────────────────────────────────────────────────────────────
 
 	/// Ollama: GET /api/tags → models[].name; OpenAI-compatible: GET /v1/models → data[].id. Null when
-	/// the route does not answer or the body is not the expected shape.
-	@SuppressWarnings("unchecked")
+	/// the route does not answer or the body is not the expected shape. The parse lives in
+	/// ConnectionProbeUtil.parseModelNames (shared with the Service Status probes).
 	List<String> listModels() {
 		boolean ollama = (route.getServiceType() == LLMServiceEnumType.OLLAMA);
 		String url = route.getServerUrl() + (ollama ? "/api/tags" : "/v1/models");
@@ -579,47 +580,12 @@ public final class VlmQaProvider implements QaProvider {
 		if(raw == null) {
 			return null;
 		}
-		Map<String, Object> m = null;
-		try {
-			m = JSONUtil.getMap(raw.getBytes(StandardCharsets.UTF_8), String.class, Object.class);
-		}
-		catch(Exception e) {
-			logger.warn("VlmQaProvider: model list from " + url + " was not JSON: " + e.getMessage());
-		}
-		if(m == null) {
-			return null;
-		}
-		Object arr = m.get(ollama ? "models" : "data");
-		if(!(arr instanceof List)) {
-			return null;
-		}
-		List<String> names = new ArrayList<>();
-		for(Object o : (List<?>) arr) {
-			if(o instanceof Map) {
-				Object n = ((Map<String, Object>) o).get(ollama ? "name" : "id");
-				if(n != null) {
-					names.add(n.toString());
-				}
-			}
-		}
-		return names;
+		return ConnectionProbeUtil.parseModelNames(raw, ollama);
 	}
 
 	/// Exact match tolerating a trailing ":latest" on either side (the LlmTestGate rule).
 	static boolean hasModel(List<String> names, String model) {
-		if(names == null || model == null) return false;
-		String want = stripLatest(model);
-		for(String n : names) {
-			if(n != null && stripLatest(n).equals(want)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private static String stripLatest(String s) {
-		String t = s.trim();
-		return (t.endsWith(":latest") ? t.substring(0, t.length() - ":latest".length()) : t);
+		return ConnectionProbeUtil.hasModel(names, model);
 	}
 
 	// ─── default transport ────────────────────────────────────────────────────────

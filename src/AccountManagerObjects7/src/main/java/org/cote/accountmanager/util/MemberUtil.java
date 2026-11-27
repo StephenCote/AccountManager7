@@ -173,10 +173,10 @@ public class MemberUtil implements IMember {
 	 * {@code DBWriter.updateAutoCreateReference} ({@code DBWriter.java:277-282}) bulk-adds
 	 * {@code StatementUtil.getForeignParticipations(model)} on every create/update of a record that
 	 * carries a foreign LIST field, and {@code StatementUtil.java:119} emits the matching
-	 * {@code DELETE FROM ...participation} when such a record is deleted. Neither path invalidates
-	 * anything. A membership written by a full-record update therefore still exhibits the original
-	 * read-after-write bug this method exists to fix; only memberships written THROUGH
-	 * {@code MemberUtil} are covered.</li>
+	 * {@code DELETE FROM ...participation} when such a record is deleted. Since 2026-11-27 the add
+	 * half is covered: those rows are created through {@code RecordUtil.createRecords} ->
+	 * {@code DBWriter.write}, which now drops the created model's bucket after every CREATE commit
+	 * ({@code TestCreateCacheInvalidation}). The foreign DELETE still invalidates nothing.</li>
 	 * <li><b>Other models' queries that JOIN participation are not covered.</b>
 	 * {@code QueryUtil.filterParticipant}/{@code filterParticipation} results (e.g.
 	 * {@code ScimUserAdapter.java:204,227}, {@code AccessPoint.listMembers}/{@code countMembers}) are

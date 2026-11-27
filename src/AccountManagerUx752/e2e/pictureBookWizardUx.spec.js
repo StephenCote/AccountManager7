@@ -238,17 +238,26 @@ test.describe('Picture Book Wizard — real UX flow', () => {
         let characterCount = await dialog.locator('div.font-medium.text-sm').count();
         expect(characterCount).toBeGreaterThan(0);
 
-        // Select the first character to reveal the detail panel, then follow "Open Full Editor ->". Inside the Edit
-        // workspace the book and its characters already exist, so it navigates in place through the dirty guard
-        // (design §5.4 / §6.2-3) instead of the wizard-era new tab; Back returns to Edit › Characters.
+        // Select the first character to reveal the detail panel, then follow "Open Full Editor ->". It opens the
+        // generic editor in a new tab (Stephen, 2026-11-27); the workspace tab stays on Edit › Characters.
         await dialog.locator('div.font-medium.text-sm').first().click();
         let openEditorLink = dialog.locator('text=Open Full Editor');
         await expect(openEditorLink).toBeVisible({ timeout: 10000 });
         const workspaceHash = await page.evaluate(() => location.hash);
+        // page.addInitScript (helpers/auth.js login) does not reach the popup; stub its WebSocket at context level.
+        await page.context().addInitScript(() => {
+            window.WebSocket = class StubWS {
+                constructor() { this.readyState = 1; setTimeout(() => { if (this.onopen) this.onopen({}); }, 0); }
+                send() {} close() {}
+            };
+        });
+        const popupPromise = page.waitForEvent('popup', { timeout: 15000 });
         await openEditorLink.click();
-        await expect.poll(() => page.evaluate(() => location.hash), { timeout: 15000 }).toMatch(/^#!\/view\/olio\.charPerson\//);
-        await screenshot(page, 'wizardux-open-full-editor');
-        await page.evaluate((h) => { location.hash = h; }, workspaceHash);
+        const popup = await popupPromise;
+        await expect.poll(() => popup.evaluate(() => location.hash), { timeout: 15000 }).toMatch(/^#!\/view\/olio\.charPerson\//);
+        await screenshot(popup, 'wizardux-open-full-editor');
+        await popup.close();
+        expect(await page.evaluate(() => location.hash)).toBe(workspaceHash);
         await expect(page.getByTestId('ws-pane')).toHaveAttribute('data-section', 'characters', { timeout: 30000 });
 
         await completeWizardStyleStep(page); // Edit › Style (required) → Read

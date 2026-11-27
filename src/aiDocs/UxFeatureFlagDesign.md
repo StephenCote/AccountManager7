@@ -9,9 +9,9 @@ toggle UI, and five Vitest suites all exist. What follows is a review of that im
 the changes needed to reach the stated goal ("start out neat/simple, easily tailored").
 
 > Manifest count is maintained by `TestFeatureConfigUtil#TestManifest` (Objects7). As of
-> 2026-09-08 it is **16** ids: core, media, chat, cardGame, games, testHarness, iso42001,
+> 2026-11-27 it is **17** ids: core, media, chat, cardGame, games, testHarness, iso42001,
 > biometrics, schema, webauthn, accessRequests, featureConfig, pictureBook, pictureBookWorkflow,
-> chapBook, olioAdmin. The "13"/"12" figures in §1 and §3.2 below are the point-in-time counts
+> chapBook, olioAdmin, serviceStatus. The "13"/"12" figures in §1 and §3.2 below are the point-in-time counts
 > from the original review and are kept as historical record.
 
 ---

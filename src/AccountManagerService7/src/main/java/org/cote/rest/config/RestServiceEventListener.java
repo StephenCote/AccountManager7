@@ -30,6 +30,7 @@ import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.thread.AsyncJobRegistry;
 import org.cote.accountmanager.thread.Threaded;
+import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.tools.VoiceUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
@@ -40,6 +41,7 @@ import org.cote.accountmanager.util.LLMConnectionManager;
 import org.cote.accountmanager.util.ServerConfigUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.SetupUtil;
+import org.cote.accountmanager.util.SystemCheckUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.jaas.AM7LoginModule;
@@ -104,6 +106,9 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		if (cleanup > 0) {
 			logger.info("Cleaned up " + cleanup + " unboxed streams");
 		}
+
+		/// Phase 0b: Service Status probe/deep executors (daemon threads; idempotent).
+		SystemCheckUtil.shutdown();
 
 		/// Phase 1: Stop all active LLM work (chat streams, summarization, swarm, analysis)
 		logger.info("Stopping all active LLM/chat/swarm connections");
@@ -170,36 +175,34 @@ public class RestServiceEventListener implements ApplicationEventListener {
 	///   LOCAL         expects <host:port> for the bundled embedApiMini.py; it POSTs <url>/generate_embedding
 	///   OPENAI        expects a full Azure URL (/openai/deployments/<dep>/embeddings?api-version=...)
 	///   OPENAI_COMPAT expects a full /v1/embeddings URL (LiteLLM, Ollama)
+	///
+	/// The RULE lives in EmbeddingUtil.describeTypeUrlMismatch (Objects7, shared with the Service Status
+	/// `embedding.config` check), which returns a reason code and never the URL. This method keeps only
+	/// the boot log text, which does name the URL: it is the operator's own boot log.
 	public static void warnOnEmbeddingTypeUrlMismatch(LLMServiceEnumType type, String url) {
-		if (type == null || url == null || url.isBlank()) {
+		String code = EmbeddingUtil.describeTypeUrlMismatch(type, url);
+		if (code == null) {
 			return;
 		}
 		String u = url.trim();
-		String path = "";
-		try {
-			java.net.URI uri = java.net.URI.create(u);
-			path = (uri.getPath() != null ? uri.getPath() : "");
-		} catch (IllegalArgumentException e) {
+		switch (code) {
+		case EmbeddingUtil.MISMATCH_UNPARSEABLE_URL:
 			logger.warn("embedding.server '" + u + "' is not a parseable URL");
-			return;
-		}
-		boolean looksAzure = path.contains("/openai/deployments/");
-		boolean looksCompat = path.endsWith("/v1/embeddings");
-		boolean looksOpenAi = looksCompat || looksAzure;
-		/// "No path beyond host:port" — the shape the LOCAL custom service takes.
-		boolean looksLocal = path.isEmpty() || path.equals("/");
-		if (type == LLMServiceEnumType.LOCAL && looksOpenAi) {
+			break;
+		case EmbeddingUtil.MISMATCH_LOCAL_OPENAI_SHAPED_URL:
 			logger.warn("embedding.type=" + type + " but embedding.server '" + u + "' looks like an OpenAI-shaped"
 					+ " embeddings endpoint. The LOCAL branch POSTs <server>/generate_embedding and will get 404s;"
 					+ " set embedding.type=openai (Azure) or openai_compat (LiteLLM/Ollama /v1/embeddings).");
-		} else if ((type == LLMServiceEnumType.OPENAI || type == LLMServiceEnumType.OPENAI_COMPAT) && looksLocal) {
+			break;
+		case EmbeddingUtil.MISMATCH_OPENAI_HOST_ONLY_URL:
 			logger.warn("embedding.type=" + type + " but embedding.server '" + u + "' has no path — it looks like"
 					+ " the LOCAL /generate_embedding custom service (host:port only). The " + type + " branch POSTs"
 					+ " an OpenAI body to that URL verbatim. Expected a full embeddings URL"
 					+ (type == LLMServiceEnumType.OPENAI ? " (/openai/deployments/<deployment>/embeddings?api-version=...)."
 							: " (.../v1/embeddings).")
 					+ " If embedding.server is DB-backed (system.connection), the stored URL is still the old one.");
-		} else if (type == LLMServiceEnumType.OPENAI_COMPAT && looksAzure) {
+			break;
+		case EmbeddingUtil.MISMATCH_COMPAT_AZURE_URL:
 			/// Seen live 2026-09-29: --ollama set type=openai_compat/model=nomic-embed-text in env, but a
 			/// stored system.connection 'embedding' still pointed at Azure. OPENAI_COMPAT sends no
 			/// `dimensions` (Ollama ignores it) and Bearer auth, so Azure text-embedding-3-small answered
@@ -209,10 +212,15 @@ public class RestServiceEventListener implements ApplicationEventListener {
 					+ " (1536 for text-embedding-3-small), not embedding.dimensions. Use embedding.type=openai for Azure,"
 					+ " or repoint the stored system.connection 'embedding' at the intended /v1/embeddings server"
 					+ " (the env/web.xml embedding.server is only a fallback when no record exists).");
-		} else if (type == LLMServiceEnumType.OPENAI && looksCompat) {
+			break;
+		case EmbeddingUtil.MISMATCH_OPENAI_COMPAT_URL:
 			logger.warn("embedding.type=" + type + " but embedding.server '" + u + "' is a /v1/embeddings endpoint"
 					+ " (LiteLLM/Ollama shape). The OPENAI branch is Azure-specific: it sends the `api-key` header (not"
 					+ " Bearer — LiteLLM will 401) and `dimensions`. Use embedding.type=openai_compat with embedding.model set.");
+			break;
+		default:
+			logger.warn("embedding.type=" + type + " and embedding.server '" + u + "' disagree in shape (" + code + ")");
+			break;
 		}
 	}
 

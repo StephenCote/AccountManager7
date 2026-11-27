@@ -58,6 +58,17 @@ tool for that, not a workaround.
   `am7client.clearCache(type, true)` **and** sends `cache:false` in the request body; (3) on return from
   `/new/`, also set `sort="id"` / `order="descending"` so the new record (highest id) lands on page 1
   regardless of alphabetical position; (4) clear `noCache` after the first successful load.
+  *2026-11-27 — what the server half actually was:* `DBWriter.write` never invalidated
+  `CacheDBSearch` on a **create** (only on update), so a **non-empty** page cached before the create
+  kept omitting the new record for up to 360 s. Fixed (`clearCacheByModel` after every CREATE commit,
+  `TestCreateCacheInvalidation`, see `model-api.md` "Creates now invalidate…"); re-measured on
+  `am7test` after the deploy: the same `/rest/model/search` body with cache left on returned the new
+  `data.note` on the re-fetch (`scratch/create-cache-inval/listcache.mjs`). Two limits on that
+  explanation: `CacheDBSearch` **never caches an empty result**, so a stale *empty* page cannot come
+  from it — that part comes from the client's own `am7client` response cache, which step (2) still
+  has to clear; and the fix is per-JVM, so a create from Console7 or another Service7 is still bounded
+  only by the TTL. Keep the four-step pattern; the pre-fix REST behaviour itself was not re-run
+  (the Java test demonstrated it).
 
 ## `AUDIT DENY ... could not be authorized` can mean "no such record", not "forbidden"
 
@@ -88,6 +99,15 @@ only on whether you were entitled. So:
   misleading, not harmful.
 - I misread exactly this during the async-jobs work and reported it as a product defect affecting
   every LLM feature. It is not. Confirm the record's existence before escalating.
+- **A third case, now fixed (2026-11-27): the record exists, the user owns it, and it was still DENY.**
+  The groupless shape is authorized by a name-only inspection sub-query (`name = X`, no owner/org/user,
+  so one cache key for everybody) that goes through the 360 s `CacheDBSearch`. Creates did not
+  invalidate it, so once anyone had looked up X while some other X existed, a newly created X was
+  invisible to the authorizer and its own owner got `AUDIT DENY … could not be authorized` (seen as
+  `GET /rest/chat/library/chat/contentAnalysis` → 404 right after creating `~/Chat/contentAnalysis`).
+  `DBWriter.write` now clears the model's cache after every create. If you see this shape again
+  **for a record created by another JVM** (Console7), the TTL is still the only bound. The repro is
+  `scratch/chatcfg-resolve/repro.mjs --warm`; the test is `TestCreateCacheInvalidation`.
 
 ## Long-running operations: a 504 with no server-side error is the proxy, not the app
 

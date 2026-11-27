@@ -116,7 +116,7 @@ describe('D2 — one manifest', () => {
 
     it('profileNameFor recovers the profile name the server no longer persists', () => {
         expect(profileNameFor(profiles.compliance)).toBe('compliance');
-        expect(profileNameFor(['iso42001', 'core', 'chat', 'accessRequests', 'featureConfig']))
+        expect(profileNameFor(['iso42001', 'core', 'chat', 'accessRequests', 'featureConfig', 'serviceStatus']))
             .toBe('compliance');
         expect(profileNameFor(profiles.minimal)).toBe('minimal');
         expect(profileNameFor(profiles.full)).toBe('full');

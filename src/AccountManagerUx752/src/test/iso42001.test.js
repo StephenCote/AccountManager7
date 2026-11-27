@@ -29,9 +29,9 @@ describe('ISO 42001 feature + compliance profile', () => {
         expect(features.iso42001.deps).toContain('chat');
     });
 
-    it('compliance profile exists with the §9.2 feature set', () => {
+    it('compliance profile exists with the §9.2 feature set (+ serviceStatus, ServiceStatusDesign D6)', () => {
         expect(profiles.compliance).toBeDefined();
-        expect(profiles.compliance).toEqual(['core', 'chat', 'iso42001', 'accessRequests', 'featureConfig']);
+        expect(profiles.compliance).toEqual(['core', 'chat', 'iso42001', 'accessRequests', 'featureConfig', 'serviceStatus']);
     });
 
     it('compliance profile enables iso42001 + its onboarding/admin features, and nothing else', () => {

@@ -124,6 +124,15 @@ const featureWiring = {
         // isMenuItemVisible predicate (features.js) gates it consistently (adminOnly ⇒ roles.admin).
         menuItems: [{ icon: 'travel_explore', label: 'Olio Admin', route: '/admin/olio', section: 'aside', adminOnly: true, roles: ['admin'] }],
         routePrefixes: ['/admin/olio']
+    },
+    serviceStatus: {
+        // Service Status (/admin/status, aiDocs/ServiceStatusDesign.md): live status of the db, the /System
+        // deployment servers and the system.connection records the caller can read, over /rest/system/check.
+        // A UI-only gate (design §7 B6): the server authorizes on the admin role, not on this feature id.
+        // The user-facing degraded banner (components/serviceStatusBanner.js) is core and not gated by it.
+        routes: () => import('./features/serviceStatus/routes.js'),
+        menuItems: [{ icon: 'dns', label: 'Service Status', route: '/admin/status', section: 'aside', adminOnly: true, roles: ['admin'] }],
+        routePrefixes: ['/admin/status']
     }
 };
 
@@ -196,10 +205,10 @@ const profiles = {
     standard: ['core', 'media', 'chat'],
     full: Object.keys(features),
     gaming: ['core', 'media', 'chat', 'cardGame', 'games', 'biometrics'],
-    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig'],
+    enterprise: ['core', 'media', 'chat', 'iso42001', 'schema', 'webauthn', 'accessRequests', 'featureConfig', 'serviceStatus'],
     // ISO 42001 appliance — minimal compliance-only surface (design §9.2). chat is required (the suite runs
     // LLM tests through LLMConnector); accessRequests + featureConfig support RBAC onboarding + admin toggling.
-    compliance: ['core', 'chat', 'iso42001', 'accessRequests', 'featureConfig']
+    compliance: ['core', 'chat', 'iso42001', 'accessRequests', 'featureConfig', 'serviceStatus']
 };
 
 /**

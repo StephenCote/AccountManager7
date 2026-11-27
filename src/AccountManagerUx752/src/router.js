@@ -24,6 +24,7 @@ import { initTheme } from './components/topMenu.js';
 import { startPolling, stopPolling } from './components/notifications.js';
 import { contextMenuComponent } from './components/contextMenu.js';
 import { ObjectPicker } from './components/picker.js';
+import { serviceStatusBanner } from './components/serviceStatusBanner.js';
 import './components/breadcrumb.js'; // registers page.components.breadCrumb
 
 // --- Performance: guard components skip re-render when state unchanged ---
@@ -61,6 +62,7 @@ const OverlayGuard = {
     view() {
         return [
             m(contextMenuComponent),
+            page.authenticated() ? m(serviceStatusBanner.component) : null,
             page.loadToast(),
             page.components.dialog.loadDialogs()
         ];
@@ -273,6 +275,7 @@ async function refreshApplication() {
     if (usr == null) {
         page.wss.close();
         stopPolling();
+        serviceStatusBanner.stop();
         /// Unauthenticated: decide between the first-run setup page and sign-in. The
         /// /rest/setup/state probe is gated to this path and its "setup not needed" answer is
         /// cached in sessionStorage, so it is not a round trip on every login-page hit.
@@ -303,6 +306,8 @@ async function refreshApplication() {
             page.wss.connect();
             startPolling();
             refreshSdModelLimits();
+            // Degraded-services banner (ServiceStatusDesign §8): fire-and-forget, fails silently, never forceLogin.
+            serviceStatusBanner.start();
         } else {
             rt = "/sig";
         }

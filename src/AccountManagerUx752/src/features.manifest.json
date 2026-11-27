@@ -110,5 +110,12 @@
 		"description": "Load Olio corpus reference data into the current organization (admin only)",
 		"required": false,
 		"deps": ["core"]
+	},
+	{
+		"id": "serviceStatus",
+		"label": "Service Status",
+		"description": "Live status of the database, deployment servers and readable connections (admin only)",
+		"required": false,
+		"deps": ["core"]
 	}
 ]

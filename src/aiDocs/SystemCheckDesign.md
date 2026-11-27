@@ -1,5 +1,7 @@
 # System check: dependency and state report (proposal, 2026-11-17)
 
+> **Superseded 2026-11-27 by [`ServiceStatusDesign.md`](ServiceStatusDesign.md)**, the design of record. This file is kept for its origin and rationale.
+
 Origin: on 2026-11-17 the chat stack ran with every embedding call failing (`ChatWardrobeTokensDesign.md` §1.1). The only symptom was `EmbeddingUtil - Response was null` in the Tomcat log. Stephen asked for a Ux warning when embedding settings are wrong: either in the app profile, or as a system check in the control panel that reports system dependencies and state.
 
 ## Why not only the app profile

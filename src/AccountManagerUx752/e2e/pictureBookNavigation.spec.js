@@ -403,9 +403,9 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         await expect(page.locator('[data-pb2-book-name]')).toHaveText(displayName(sibling), { timeout: 30000 });
     });
 
-    // 8a. Edit › Characters (book list Characters icon → the workspace section): "Open Full Editor" navigates in
-    //     place to /view/olio.charPerson/<oid> (through the dirty guard, §6.2-3). There is no wizard underneath.
-    test('Edit › Characters "Open Full Editor" navigates in place to the generic editor', async ({ page }) => {
+    // 8a. Edit › Characters (book list Characters icon → the workspace section): "Open Full Editor" opens
+    //     /view/olio.charPerson/<oid> in a NEW TAB (Stephen, 2026-11-27); the workspace tab stays where it is.
+    test('Edit › Characters "Open Full Editor" opens the generic editor in a new tab', async ({ page }) => {
         test.skip(!charBook || !character, 'no PB2 book with a named character available to the shared user');
         await loginAsSharedUser(page);
         await gotoHash(page, '!/picture-book');
@@ -418,18 +418,23 @@ test.describe('PictureBook (PB2) navigation + editing', () => {
         const link = mgr.locator('[data-char-full-editor="' + character.objectId + '"]');
         await expect(link).toBeVisible({ timeout: 30000 });
 
-        let popupOpened = false;
-        page.once('popup', () => { popupOpened = true; });
+        const hashBefore = await page.evaluate(() => window.location.hash);
+        // page.addInitScript does not reach the popup; stub its WebSocket at context level (troubleshooting.md #2).
+        await page.context().addInitScript(wsStubInit);
+        const popupPromise = page.waitForEvent('popup', { timeout: 15000 });
         await link.click();
+        const popup = await popupPromise;
 
-        await expect.poll(() => page.evaluate(() => window.location.hash), { timeout: 15000 })
+        await expect.poll(() => popup.evaluate(() => window.location.hash), { timeout: 15000 })
             .toBe('#!/view/olio.charPerson/' + character.objectId);
-        await expect(mgr, 'the workspace is left when navigating in place').toHaveCount(0, { timeout: 10000 });
-        expect(popupOpened, 'standalone must navigate in place, not open a tab').toBe(false);
-        // The generic editor (views/object.js) renders its toolbar and the charPerson form with the name.
-        await expect(page.locator('.list-results-container .result-nav')).toBeVisible({ timeout: 30000 });
-        await expect.poll(() => page.evaluate((n) => Array.from(document.querySelectorAll('.list-results-container input'))
+        // The original tab did not navigate and the workspace is still open.
+        expect(await page.evaluate(() => window.location.hash)).toBe(hashBefore);
+        await expect(mgr, 'the workspace stays open in the original tab').toBeVisible();
+        // The generic editor (views/object.js) renders in the new tab with the charPerson name.
+        await expect(popup.locator('.list-results-container .result-nav')).toBeVisible({ timeout: 30000 });
+        await expect.poll(() => popup.evaluate((n) => Array.from(document.querySelectorAll('.list-results-container input'))
             .some((i) => i.value === n), character.name), { timeout: 30000 }).toBe(true);
+        await popup.close();
     });
 
     // 7. Inline rename round-trip in the character manager (PATCH olio.charPerson), restored afterwards.

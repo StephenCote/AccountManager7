@@ -1936,7 +1936,9 @@ public class ChatUtil {
 	///
 	/// LLMServiceEnumType.LOCAL has no ConnectionDialectEnumType peer, so it survives only via the
 	/// serviceType fallback path (dialect == UNKNOWN).
-	static LLMServiceEnumType resolveServiceType(BaseRecord connection, BaseRecord chatConfig) {
+	/// Public since 2026-11-27 for SystemCheckUtil (Service Status), which resolves an UNKNOWN-dialect
+	/// connection the same way Chat does; the same projection contract applies to that caller.
+	public static LLMServiceEnumType resolveServiceType(BaseRecord connection, BaseRecord chatConfig) {
 		if(connection != null) {
 			ConnectionDialectEnumType dialect = connection.getEnum("dialect");
 			if(dialect != null && dialect != ConnectionDialectEnumType.UNKNOWN) {

@@ -347,9 +347,9 @@ function summaryRow(k, val) {
 /// hint and its resolved feature list shown beneath it.
 const PROFILE_HINTS = {
     minimal: "Bare minimum — core object management, navigation, forms and lists only. Recommended default; switch more on later under Feature Configuration.",
-    compliance: "ISO 42001 only — the compliance appliance surface (adds chat, access requests and feature config to support it).",
+    compliance: "ISO 42001 only — the compliance appliance surface (adds chat, access requests, feature config and service status to support it).",
     standard: "Core plus media processing and LLM chat.",
-    enterprise: "Compliance, schema tools, passkeys and access management on top of the standard set.",
+    enterprise: "Compliance, schema tools, passkeys, access management and service status on top of the standard set.",
     full: "Everything available in this build.",
     gaming: "Core plus media, chat, the card game, mini games and biometrics."
 };

@@ -1106,8 +1106,8 @@ function toggleMergeMode() {
  * this screen renders inside the PictureBook wizard's Dialog (either inline at Step 3, or as the
  * Steps 4/5 stacked popup) there's no route-based back nav that would restore the in-progress
  * wizard state (extracted scenes, created book/characters, etc.) if we navigated away in place.
- * A new tab leaves the wizard exactly as it is. Used for apparel records, and for the character
- * itself unless the manager is `standalone`.
+ * A new tab leaves the wizard exactly as it is. Used for apparel records and for the character
+ * itself (openFullEditor).
  */
 function openInNewTab(type, objectId) {
     let url = window.location.origin + window.location.pathname + '#!/view/' + type + '/' + objectId;
@@ -1119,24 +1119,14 @@ function openInNewTab(type, objectId) {
  * (including anything this screen doesn't expose a dedicated panel for, e.g. a manually-edited
  * narrative.sdPrompt/outfitDescription) without duplicating the generic editor here.
  *
- * Where it opens depends on how the manager was launched:
- *  - standalone (book list / reader header, `openCharacterManager(id, {standalone: true})`): there
- *    is no wizard underneath, so close the manager and navigate in place to the generic editor
- *    route (/view/<type>/:objectId, router.js); the editor's Cancel returns to the launching page.
- *  - inside the wizard (Step 3 inline, or the Steps 4/5 stacked popup): open a new tab via
- *    openInNewTab so the wizard's in-progress state stays exactly as it is.
+ * Always opens in a new tab (Stephen, 2026-11-27), in every launch mode — the Edit > Characters
+ * workspace, the standalone manager, and the wizard. The current tab is never navigated, so
+ * unsaved stat drafts, the wizard's in-progress state and the open manager all stay as they
+ * are, and the unsaved-changes guard is not needed for this link.
  */
 function openFullEditor(entity) {
     let type = entity[am7model.jsonModelKey] || 'olio.charPerson';
-    if (workspace) {
-        // Edit > Characters: leaving the workspace drops drafts, so go through the guard (design 6.2-3).
-        guardedGo('/view/' + type + '/' + entity.objectId);
-    } else if (standalone) {
-        Dialog.closeAll();
-        m.route.set('/view/' + type + '/' + entity.objectId);
-    } else {
-        openInNewTab(type, entity.objectId);
-    }
+    openInNewTab(type, entity.objectId);
 }
 
 async function tagApparel(apparelObjectId) {
@@ -1376,7 +1366,9 @@ function renderDetail() {
             ]),
             m('div', { class: 'flex items-center gap-3 flex-shrink-0' }, [
                 m('a', {
-                    href: '#', class: 'text-sm text-blue-600 dark:text-blue-400 hover:underline',
+                    href: '#!/view/' + (selectedInst.entity[am7model.jsonModelKey] || 'olio.charPerson') + '/' + selectedInst.entity.objectId,
+                    target: '_blank', rel: 'noopener',
+                    class: 'text-sm text-blue-600 dark:text-blue-400 hover:underline',
                     'data-char-full-editor': selectedInst.entity.objectId,
                     onclick: function (e) { e.preventDefault(); openFullEditor(selectedInst.entity); }
                 }, 'Open Full Editor →'),
